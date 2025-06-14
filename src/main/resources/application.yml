@@ -1,0 +1,67 @@
+# Nastavení úrovně logování
+logging:
+  level:
+    root: INFO
+    com.jervis: DEBUG
+    org.springframework.web: INFO
+    org.springframework.web.filter.CommonsRequestLoggingFilter: INFO
+    com.jervis.config.RequestLoggingFilterConfig: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/jervis-app.log
+  logback:
+    rollingpolicy:
+      max-file-size: 1024MB
+      max-history: 7
+
+spring:
+  datasource:
+    url: jdbc:h2:file:~/.jervis/jervis-db;MODE=LEGACY;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+    enabled: true
+  main:
+    allow-bean-definition-overriding: true
+  ai:
+    model:
+      chat: anthropic
+    anthropic:
+      chat:
+        options:
+          model: claude-3-5-sonnet-20240620
+          temperature: 0.7
+          max-tokens: 8000
+    openai:
+      chat:
+        options:
+          model: gpt-4
+
+# Fallback settings
+fallback_to_openai_on_rate_limit: true
+
+# Embedding model configuration
+embedding:
+  code:
+    model: intfloat/multilingual-e5-large
+    dimension: 1024
+  text:
+    model: intfloat/multilingual-e5-large
+    dimension: 1024
+  cache:
+    enabled: true
+
+server:
+  port: 5000
