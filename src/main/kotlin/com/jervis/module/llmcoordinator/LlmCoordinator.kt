@@ -255,9 +255,9 @@ class LlmCoordinator(
         maxTokens: Int = 1024,
         temperature: Float = 0.7f
     ): AnthropicResponse {
-        val apiKey = settingService.getStringValue(SettingService.ANTHROPIC_API_KEY)
+        val apiKey = System.getenv("ANTHROPIC_API_KEY") ?: settingService.getStringValue(SettingService.ANTHROPIC_API_KEY)
         if (apiKey.isBlank() || apiKey == "none") {
-            throw IllegalStateException("Anthropic API key not configured. Please set it in the settings.")
+            throw IllegalStateException("Anthropic API key not configured. Please set it in the environment variables or in the settings.")
         }
 
         val apiUrl = settingService.getStringValue(SettingService.ANTHROPIC_API_URL)
@@ -325,9 +325,9 @@ class LlmCoordinator(
         maxTokens: Int = 1024,
         temperature: Float = 0.7f
     ): OpenAiResponse {
-        val apiKey = settingService.getStringValue(SettingService.OPENAI_API_KEY)
+        val apiKey = System.getenv("OPENAI_API_KEY") ?: settingService.getStringValue(SettingService.OPENAI_API_KEY)
         if (apiKey.isBlank() || apiKey == "none") {
-            throw IllegalStateException("OpenAI API key not configured. Please set it in the settings.")
+            throw IllegalStateException("OpenAI API key not configured. Please set it in the environment variables or in the settings.")
         }
 
         val apiUrl = settingService.getStringValue(SettingService.OPENAI_API_URL)
