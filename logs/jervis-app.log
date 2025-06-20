@@ -1019,3 +1019,132 @@ org.springframework.web.client.HttpClientErrorException$Unauthorized: 401 Unauth
 	at com.jervis.service.ChatService.processQuery(ChatService.kt:26)
 	at com.jervis.window.MainWindow.lambda$4$lambda$3(MainWindow.kt:62)
 	at java.base/java.lang.Thread.run(Thread.java:1583)
+2025-06-20 13:54:34 [SpringApplicationShutdownHook] INFO  o.s.b.w.e.tomcat.GracefulShutdown - Commencing graceful shutdown. Waiting for active requests to complete
+2025-06-20 13:54:34 [tomcat-shutdown] INFO  o.s.b.w.e.tomcat.GracefulShutdown - Graceful shutdown complete
+2025-06-20 13:54:34 [SpringApplicationShutdownHook] INFO  c.j.m.i.t.HuggingFaceTokenizerImpl - Closing HuggingFace tokenizer
+2025-06-20 13:54:34 [SpringApplicationShutdownHook] INFO  c.j.m.i.t.HuggingFaceTokenizerImpl - HuggingFace tokenizer closed successfully
+2025-06-20 13:54:34 [SpringApplicationShutdownHook] INFO  c.j.module.indexer.EmbeddingService - Closing embedding models...
+2025-06-20 13:54:35 [SpringApplicationShutdownHook] INFO  c.j.module.indexer.EmbeddingService - Embedding models closed successfully
+2025-06-20 13:54:35 [SpringApplicationShutdownHook] INFO  c.j.module.vectordb.VectorDbService - Closing Qdrant client
+2025-06-20 13:54:35 [SpringApplicationShutdownHook] INFO  c.j.module.vectordb.VectorDbService - Qdrant client closed successfully
+2025-06-20 13:54:35 [SpringApplicationShutdownHook] INFO  o.s.o.j.LocalContainerEntityManagerFactoryBean - Closing JPA EntityManagerFactory for persistence unit 'default'
+2025-06-20 13:54:35 [SpringApplicationShutdownHook] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Shutdown initiated...
+2025-06-20 13:54:35 [SpringApplicationShutdownHook] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Shutdown completed.
+2025-06-20 13:54:40 [main] INFO  com.jervis.JervisApplicationKt - Starting JervisApplicationKt using Java 21.0.7 with PID 8055 (/Users/damekjan/git/jervis/target/classes started by damekjan in /Users/damekjan/git/jervis)
+2025-06-20 13:54:40 [main] DEBUG com.jervis.JervisApplicationKt - Running with Spring Boot v3.4.5, Spring v6.2.6
+2025-06-20 13:54:40 [main] INFO  com.jervis.JervisApplicationKt - No active profile set, falling back to 1 default profile: "default"
+2025-06-20 13:54:40 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2025-06-20 13:54:40 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Finished Spring Data repository scanning in 21 ms. Found 2 JPA repository interfaces.
+2025-06-20 13:54:41 [main] INFO  o.s.b.w.e.tomcat.TomcatWebServer - Tomcat initialized with port 5500 (http)
+2025-06-20 13:54:41 [main] INFO  o.a.catalina.core.StandardService - Starting service [Tomcat]
+2025-06-20 13:54:41 [main] INFO  o.a.catalina.core.StandardEngine - Starting Servlet engine: [Apache Tomcat/10.1.40]
+2025-06-20 13:54:41 [main] INFO  o.a.c.c.C.[Tomcat].[localhost].[/] - Initializing Spring embedded WebApplicationContext
+2025-06-20 13:54:41 [main] INFO  o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 883 ms
+2025-06-20 13:54:41 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Starting...
+2025-06-20 13:54:41 [main] INFO  com.zaxxer.hikari.pool.HikariPool - HikariPool-1 - Added connection conn0: url=jdbc:h2:file:~/.jervis/jervis-db user=SA
+2025-06-20 13:54:41 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Start completed.
+2025-06-20 13:54:41 [main] INFO  liquibase.database - Set default schema name to PUBLIC
+2025-06-20 13:54:41 [main] INFO  liquibase.changelog - Reading from PUBLIC.DATABASECHANGELOG
+2025-06-20 13:54:41 [main] INFO  liquibase.ui - Database is up to date, no changesets to execute
+2025-06-20 13:54:41 [main] INFO  liquibase.changelog - Reading from PUBLIC.DATABASECHANGELOG
+2025-06-20 13:54:41 [main] INFO  liquibase.util - UPDATE SUMMARY
+2025-06-20 13:54:41 [main] INFO  liquibase.util - Run:                          0
+2025-06-20 13:54:41 [main] INFO  liquibase.util - Previously run:               3
+2025-06-20 13:54:41 [main] INFO  liquibase.util - Filtered out:                 0
+2025-06-20 13:54:41 [main] INFO  liquibase.util - -------------------------------
+2025-06-20 13:54:41 [main] INFO  liquibase.util - Total change sets:            3
+2025-06-20 13:54:41 [main] INFO  liquibase.util - Update summary generated
+2025-06-20 13:54:41 [main] INFO  liquibase.lockservice - Successfully released change log lock
+2025-06-20 13:54:41 [main] INFO  liquibase.command - Command execution complete
+2025-06-20 13:54:41 [main] INFO  o.h.jpa.internal.util.LogHelper - HHH000204: Processing PersistenceUnitInfo [name: default]
+2025-06-20 13:54:41 [main] INFO  org.hibernate.Version - HHH000412: Hibernate ORM core version 6.6.13.Final
+2025-06-20 13:54:41 [main] INFO  o.h.c.i.RegionFactoryInitiator - HHH000026: Second-level cache disabled
+2025-06-20 13:54:42 [main] INFO  o.s.o.j.p.SpringPersistenceUnitInfo - No LoadTimeWeaver setup: ignoring JPA class transformer
+2025-06-20 13:54:42 [main] WARN  org.hibernate.orm.deprecation - HHH90000025: H2Dialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2025-06-20 13:54:42 [main] INFO  o.hibernate.orm.connections.pooling - HHH10001005: Database info:
+	Database JDBC URL [Connecting through datasource 'HikariDataSource (HikariPool-1)']
+	Database driver: undefined/unknown
+	Database version: 2.2.224
+	Autocommit mode: undefined/unknown
+	Isolation level: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2025-06-20 13:54:42 [main] INFO  o.h.e.t.j.p.i.JtaPlatformInitiator - HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2025-06-20 13:54:42 [main] INFO  o.s.o.j.LocalContainerEntityManagerFactoryBean - Initialized JPA EntityManagerFactory for persistence unit 'default'
+2025-06-20 13:54:42 [main] INFO  c.j.module.vectordb.VectorDbService - Initializing Qdrant client at localhost:6334
+2025-06-20 13:54:43 [main] INFO  c.j.module.vectordb.VectorDbService - Collection unified_vectors already exists
+2025-06-20 13:54:43 [main] INFO  c.j.module.vectordb.VectorDbService - Qdrant client initialized successfully
+2025-06-20 13:54:43 [main] INFO  c.j.module.indexer.EmbeddingService - Initializing embedding models...
+2025-06-20 13:54:43 [main] INFO  c.j.module.indexer.EmbeddingService - Loading code embedding model: intfloat/multilingual-e5-large
+2025-06-20 13:54:47 [main] INFO  ai.djl.pytorch.engine.PtEngine - PyTorch graph executor optimizer is enabled, this may impact your inference latency and throughput. See: https://docs.djl.ai/master/docs/development/inference_performance_optimization.html#graph-executor-optimization
+2025-06-20 13:54:47 [main] INFO  ai.djl.pytorch.engine.PtEngine - Number of inter-op threads is 8
+2025-06-20 13:54:47 [main] INFO  ai.djl.pytorch.engine.PtEngine - Number of intra-op threads is 6
+2025-06-20 13:54:49 [main] INFO  ai.djl.util.Platform - Found matching platform from: jar:file:/Users/damekjan/.m2/repository/ai/djl/huggingface/tokenizers/0.33.0/tokenizers-0.33.0.jar!/native/lib/tokenizers.properties
+2025-06-20 13:54:49 [main] INFO  c.j.module.indexer.EmbeddingService - Loading text embedding model: intfloat/multilingual-e5-large
+2025-06-20 13:54:51 [main] INFO  c.j.module.indexer.EmbeddingService - Embedding models initialized successfully
+2025-06-20 13:54:51 [main] INFO  c.j.m.i.t.HuggingFaceTokenizerImpl - Initializing HuggingFace tokenizer with model: gpt2
+2025-06-20 13:54:51 [main] WARN  a.d.h.t.HuggingFaceTokenizer - maxLength is not explicitly specified, use modelMaxLength: 512
+2025-06-20 13:54:51 [main] INFO  c.j.m.i.t.HuggingFaceTokenizerImpl - HuggingFace tokenizer initialized successfully
+2025-06-20 13:54:51 [main] WARN  o.s.b.a.o.j.JpaBaseConfiguration$JpaWebConfiguration - spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
+2025-06-20 13:54:51 [main] INFO  o.s.v.b.OptionalValidatorFactoryBean - Failed to set up a Bean Validation provider: jakarta.validation.NoProviderFoundException: Unable to create a Configuration, because no Jakarta Bean Validation provider could be found. Add a provider like Hibernate Validator (RI) to your classpath.
+2025-06-20 13:54:51 [main] INFO  o.s.b.w.e.tomcat.TomcatWebServer - Tomcat started on port 5500 (http) with context path '/'
+2025-06-20 13:54:51 [main] INFO  com.jervis.JervisApplicationKt - Started JervisApplicationKt in 11.88 seconds (process running for 12.457)
+2025-06-20 13:54:52 [main] INFO  com.jervis.utils.MacOSAppUtils - Ikona v docku byla úspěšně nastavena pomocí Taskbar API
+2025-06-20 13:54:59 [Thread-2] INFO  com.jervis.service.ChatService - Processing chat query: test llm
+2025-06-20 13:54:59 [Thread-2] INFO  com.jervis.service.RagQueryService - Processing RAG query: test llm
+2025-06-20 13:54:59 [Thread-2] DEBUG com.jervis.service.RagQueryService - Phase 1: Initial RAG query
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Searching for similar documents with filter: {project=1}
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Searching in collection: unified_vectors
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Searching in collection: unified_vectors
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Applied filter to search
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Executing search in collection: unified_vectors
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Found 0 results in collection: unified_vectors
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Found 0 total results across all collections
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Returning 0 results after sorting and limiting
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Searching for similar documents with filter: {project=1, source=memory, memory_type=DECISION}
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Empty query vector provided, using default vector
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Searching in collection: unified_vectors
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Searching in collection: unified_vectors
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Applied filter to search
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Executing search in collection: unified_vectors
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Found 0 results in collection: unified_vectors
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Found 0 total results across all collections
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Returning 0 results after sorting and limiting
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Searching for similar documents with filter: {project=1, source=memory, memory_type=PLAN}
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Empty query vector provided, using default vector
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Searching in collection: unified_vectors
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Searching in collection: unified_vectors
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Applied filter to search
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Executing search in collection: unified_vectors
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Found 0 results in collection: unified_vectors
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Found 0 total results across all collections
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Returning 0 results after sorting and limiting
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Searching for similar documents with filter: {project=1, source=memory, memory_type=MEETING_TRANSCRIPT}
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Empty query vector provided, using default vector
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Searching in collection: unified_vectors
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Searching in collection: unified_vectors
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Applied filter to search
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Executing search in collection: unified_vectors
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Found 0 results in collection: unified_vectors
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Found 0 total results across all collections
+2025-06-20 13:54:59 [Thread-2] DEBUG c.j.module.vectordb.VectorDbService - Returning 0 results after sorting and limiting
+2025-06-20 13:55:00 [Thread-2] ERROR com.jervis.service.ChatService - Error processing chat query: 401 Unauthorized on POST request for "https://api.anthropic.com/v1/messages": [no body]
+org.springframework.web.client.HttpClientErrorException$Unauthorized: 401 Unauthorized on POST request for "https://api.anthropic.com/v1/messages": [no body]
+	at org.springframework.web.client.HttpClientErrorException.create(HttpClientErrorException.java:106)
+	at org.springframework.web.client.DefaultResponseErrorHandler.handleError(DefaultResponseErrorHandler.java:186)
+	at org.springframework.web.client.DefaultResponseErrorHandler.handleError(DefaultResponseErrorHandler.java:147)
+	at org.springframework.web.client.RestTemplate.handleResponse(RestTemplate.java:953)
+	at org.springframework.web.client.RestTemplate.doExecute(RestTemplate.java:902)
+	at org.springframework.web.client.RestTemplate.execute(RestTemplate.java:801)
+	at org.springframework.web.client.RestTemplate.postForObject(RestTemplate.java:518)
+	at com.jervis.module.llmcoordinator.LlmCoordinator.callAnthropicApi(LlmCoordinator.kt:408)
+	at com.jervis.module.llmcoordinator.LlmCoordinator.processAnthropicQuery(LlmCoordinator.kt:286)
+	at com.jervis.module.llmcoordinator.LlmCoordinator.processQuery(LlmCoordinator.kt:219)
+	at com.jervis.module.llmcoordinator.LlmCoordinator.processQuery$default(LlmCoordinator.kt:174)
+	at com.jervis.module.ragcore.RagOrchestrator.processQuery(RagOrchestrator.kt:55)
+	at com.jervis.module.ragcore.RagOrchestrator.processQuery$default(RagOrchestrator.kt:28)
+	at com.jervis.service.RagQueryService.processRagQuery(RagQueryService.kt:42)
+	at com.jervis.service.RagQueryService.processRagQuery$default(RagQueryService.kt:34)
+	at com.jervis.service.ChatService.processQuery(ChatService.kt:26)
+	at com.jervis.window.MainWindow.lambda$4$lambda$3(MainWindow.kt:62)
+	at java.base/java.lang.Thread.run(Thread.java:1583)

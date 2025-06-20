@@ -219,7 +219,7 @@ class VectorDbService(
                         .setRange(
                             Points.Range.newBuilder()
                                 .setGt(0.0)
-                                .setLt((projectId as Int).toDouble() + 0.1)
+                                .setLt((projectId as Number).toDouble() + 0.1)
                                 .build()
                         )
                         .build()
