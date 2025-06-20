@@ -1,5 +1,6 @@
 package com.jervis.window
 
+import com.jervis.module.llmcoordinator.LlmCoordinator
 import com.jervis.service.SettingService
 import java.awt.BorderLayout
 import java.awt.Dimension
@@ -16,22 +17,29 @@ import javax.swing.JTextField
 
 class SettingsWindow(
     private val settingService: SettingService,
+    private val llmCoordinator: LlmCoordinator,
 ) : JFrame("Settings") {
     // Common settings
     private val portField = JTextField()
     private val qdrantUrlField = JTextField()
 
     // Anthropic settings
-    private val anthropicApiKeyField = JTextField()
+    private val anthropicApiKeyField = JTextField().apply {
+        preferredSize = Dimension(400, 30)  // Wider field for API keys
+        toolTipText = "Enter your Anthropic API key here"
+    }
     private val anthropicRateLimitInputTokensField = JTextField()
     private val anthropicRateLimitOutputTokensField = JTextField()
     private val anthropicRateLimitWindowField = JTextField()
 
     // OpenAI settings
-    private val openaiApiKeyField = JTextField()
+    private val openaiApiKeyField = JTextField().apply {
+        preferredSize = Dimension(400, 30)  // Wider field for API keys
+        toolTipText = "Enter your OpenAI API key here"
+    }
 
     init {
-        size = Dimension(500, 450)
+        size = Dimension(700, 500)  // Increased width and height for better display of API keys
         setLocationRelativeTo(null)
         layout = BorderLayout()
 
@@ -125,11 +133,43 @@ class SettingsWindow(
         settingService.saveValue(SettingService.RAG_PORT, portField.text)
         settingService.saveValue(SettingService.QDRANT_URL, qdrantUrlField.text)
 
+        // Check if Anthropic API key has changed
+        val currentAnthropicApiKey = settingService.getStringValue(SettingService.ANTHROPIC_API_KEY, "")
+        val newAnthropicApiKey = anthropicApiKeyField.text
+        if (currentAnthropicApiKey != newAnthropicApiKey && newAnthropicApiKey.isNotBlank()) {
+            // Verify the new API key
+            if (!llmCoordinator.verifyAnthropicApiKey(newAnthropicApiKey)) {
+                JOptionPane.showMessageDialog(
+                    this,
+                    "The Anthropic API key could not be verified. Please check it and try again.",
+                    "API Key Verification Failed",
+                    JOptionPane.ERROR_MESSAGE
+                )
+                return false
+            }
+        }
+
         // Save Anthropic API key
-        settingService.saveValue(SettingService.ANTHROPIC_API_KEY, anthropicApiKeyField.text)
+        settingService.saveValue(SettingService.ANTHROPIC_API_KEY, newAnthropicApiKey)
+
+        // Check if OpenAI API key has changed
+        val currentOpenAiApiKey = settingService.getStringValue(SettingService.OPENAI_API_KEY, "")
+        val newOpenAiApiKey = openaiApiKeyField.text
+        if (currentOpenAiApiKey != newOpenAiApiKey && newOpenAiApiKey.isNotBlank()) {
+            // Verify the new API key
+            if (!llmCoordinator.verifyOpenAiApiKey(newOpenAiApiKey)) {
+                JOptionPane.showMessageDialog(
+                    this,
+                    "The OpenAI API key could not be verified. Please check it and try again.",
+                    "API Key Verification Failed",
+                    JOptionPane.ERROR_MESSAGE
+                )
+                return false
+            }
+        }
 
         // Save OpenAI API key
-        settingService.saveValue(SettingService.OPENAI_API_KEY, openaiApiKeyField.text)
+        settingService.saveValue(SettingService.OPENAI_API_KEY, newOpenAiApiKey)
 
         // Save rate limiting settings
         try {

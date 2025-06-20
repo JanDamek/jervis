@@ -30,11 +30,15 @@ class RagOrchestrator(
         val queryEmbedding = embeddingService.generateTextEmbedding(query)
 
         // 2. Retrieve relevant documents
-        val filter = mapOf("project" to projectId.toInt())
+        val filter = mapOf("project" to projectId)
         val retrievedDocs = vectorDbService.searchSimilar(queryEmbedding, limit = 5, filter = filter)
 
-        // 3. Build context from retrieved documents
-        val context = contextManager.buildContext(query, retrievedDocs, options)
+        // Add project ID to options for context building
+        val contextOptions = options.toMutableMap()
+        contextOptions["project_id"] = projectId
+
+        // 3. Build context from retrieved documents and memory items
+        val context = contextManager.buildContext(query, retrievedDocs, contextOptions)
 
         // 4. Generate response using LLM
         val prompt = """

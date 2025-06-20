@@ -70,10 +70,7 @@ class TokenRateLimiter(private val settingService: SettingService) {
      */
     private fun checkAndWait(tokenCount: Int, tokenType: TokenType): Boolean {
         // Get the appropriate rate limit from settings
-        val rateLimit = when (tokenType) {
-            TokenType.INPUT -> settingService.getIntValue(SettingService.ANTHROPIC_RATE_LIMIT_INPUT_TOKENS, 20000)
-            TokenType.OUTPUT -> settingService.getIntValue(SettingService.ANTHROPIC_RATE_LIMIT_OUTPUT_TOKENS, 4000)
-        }
+        val rateLimit = getRateLimit(tokenType)
         val rateLimitWindow = settingService.getIntValue(SettingService.ANTHROPIC_RATE_LIMIT_WINDOW_SECONDS, 60)
         val shouldFallbackToOpenAI = settingService.getBooleanValue(SettingService.FALLBACK_TO_OPENAI_ON_RATE_LIMIT, true)
 
@@ -83,10 +80,7 @@ class TokenRateLimiter(private val settingService: SettingService) {
         }
 
         // Get the appropriate token usage queue
-        val tokenUsage = when (tokenType) {
-            TokenType.INPUT -> inputTokenUsage
-            TokenType.OUTPUT -> outputTokenUsage
-        }
+        val tokenUsage = getTokenUsageQueue(tokenType)
 
         // Clean up old token usage records
         cleanupOldRecords(tokenUsage, rateLimitWindow)
@@ -94,44 +88,102 @@ class TokenRateLimiter(private val settingService: SettingService) {
         // Calculate current token usage in the window
         val currentUsage = getCurrentUsage(tokenUsage)
 
-        // Check if the request would exceed the rate limit
-        if (currentUsage + tokenCount > rateLimit) {
-            // If we should fallback to OpenAI, return false immediately
-            if (shouldFallbackToOpenAI) {
-                logger.info("Rate limit exceeded for ${tokenType.name} tokens. Current usage: $currentUsage, Limit: $rateLimit. Falling back to OpenAI.")
-                return false
-            }
-
-            // Otherwise, calculate how long to wait
-            val oldestTimestamp = getOldestTimestamp(tokenUsage)
-            if (oldestTimestamp != null) {
-                val windowEndTime = oldestTimestamp + TimeUnit.SECONDS.toMillis(rateLimitWindow.toLong())
-                val waitTime = windowEndTime - Instant.now().toEpochMilli()
-
-                if (waitTime > 0) {
-                    try {
-                        // Log that we're waiting for the rate limit to expire
-                        logger.info("Rate limit exceeded for ${tokenType.name} tokens. Current usage: $currentUsage, Limit: $rateLimit. Waiting for ${waitTime/1000.0} seconds until rate limit window expires.")
-
-                        // Wait until we can make the request
-                        Thread.sleep(waitTime)
-
-                        // Log that we've finished waiting
-                        logger.info("Finished waiting for ${tokenType.name} token rate limit. Cleaning up old records.")
-
-                        // After waiting, clean up old records again
-                        cleanupOldRecords(tokenUsage, rateLimitWindow)
-                    } catch (e: InterruptedException) {
-                        Thread.currentThread().interrupt()
-                        return false
-                    }
-                }
-            }
+        // If we're within the limit, record usage and return true
+        if (currentUsage + tokenCount <= rateLimit) {
+            recordTokenUsage(tokenUsage, tokenCount)
+            return true
         }
 
-        // Record the token usage
+        // We're over the limit - handle according to settings
+        return handleRateLimitExceeded(tokenType, tokenUsage, tokenCount, currentUsage, rateLimit, rateLimitWindow, shouldFallbackToOpenAI)
+    }
+
+    /**
+     * Gets the appropriate rate limit for the token type
+     */
+    private fun getRateLimit(tokenType: TokenType): Int = when (tokenType) {
+        TokenType.INPUT -> settingService.getIntValue(SettingService.ANTHROPIC_RATE_LIMIT_INPUT_TOKENS, 20000)
+        TokenType.OUTPUT -> settingService.getIntValue(SettingService.ANTHROPIC_RATE_LIMIT_OUTPUT_TOKENS, 4000)
+    }
+
+    /**
+     * Gets the appropriate token usage queue for the token type
+     */
+    private fun getTokenUsageQueue(tokenType: TokenType): ConcurrentLinkedQueue<TokenUsage> = when (tokenType) {
+        TokenType.INPUT -> inputTokenUsage
+        TokenType.OUTPUT -> outputTokenUsage
+    }
+
+    /**
+     * Records token usage in the queue
+     */
+    private fun recordTokenUsage(tokenUsage: ConcurrentLinkedQueue<TokenUsage>, tokenCount: Int) {
         tokenUsage.add(TokenUsage(tokenCount, Instant.now().toEpochMilli()))
-        return true
+    }
+
+    /**
+     * Handles the case when rate limit is exceeded
+     */
+    private fun handleRateLimitExceeded(
+        tokenType: TokenType,
+        tokenUsage: ConcurrentLinkedQueue<TokenUsage>,
+        tokenCount: Int,
+        currentUsage: Int,
+        rateLimit: Int,
+        rateLimitWindow: Int,
+        shouldFallbackToOpenAI: Boolean
+    ): Boolean {
+        // If we should fallback to OpenAI, return false immediately
+        if (shouldFallbackToOpenAI) {
+            logger.info("Rate limit exceeded for ${tokenType.name} tokens. Current usage: $currentUsage, Limit: $rateLimit. Falling back to OpenAI.")
+            return false
+        }
+
+        // Otherwise, try to wait until the rate limit window expires
+        return tryWaitForRateLimit(tokenType, tokenUsage, tokenCount, currentUsage, rateLimit, rateLimitWindow)
+    }
+
+    /**
+     * Tries to wait until the rate limit window expires
+     */
+    private fun tryWaitForRateLimit(
+        tokenType: TokenType,
+        tokenUsage: ConcurrentLinkedQueue<TokenUsage>,
+        tokenCount: Int,
+        currentUsage: Int,
+        rateLimit: Int,
+        rateLimitWindow: Int
+    ): Boolean {
+        val oldestTimestamp = getOldestTimestamp(tokenUsage) ?: return false
+
+        val windowEndTime = oldestTimestamp + TimeUnit.SECONDS.toMillis(rateLimitWindow.toLong())
+        val waitTime = windowEndTime - Instant.now().toEpochMilli()
+
+        if (waitTime <= 0) {
+            // No need to wait, just clean up and try again
+            cleanupOldRecords(tokenUsage, rateLimitWindow)
+            recordTokenUsage(tokenUsage, tokenCount)
+            return true
+        }
+
+        try {
+            // Log that we're waiting for the rate limit to expire
+            logger.info("Rate limit exceeded for ${tokenType.name} tokens. Current usage: $currentUsage, Limit: $rateLimit. Waiting for ${waitTime/1000.0} seconds until rate limit window expires.")
+
+            // Wait until we can make the request
+            Thread.sleep(waitTime)
+
+            // Log that we've finished waiting
+            logger.info("Finished waiting for ${tokenType.name} token rate limit. Cleaning up old records.")
+
+            // After waiting, clean up old records again
+            cleanupOldRecords(tokenUsage, rateLimitWindow)
+            recordTokenUsage(tokenUsage, tokenCount)
+            return true
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            return false
+        }
     }
 
     /**

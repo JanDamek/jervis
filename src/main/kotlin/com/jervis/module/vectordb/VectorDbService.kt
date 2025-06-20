@@ -1,5 +1,6 @@
 package com.jervis.module.vectordb
 
+import com.jervis.core.AppConstants
 import com.jervis.rag.Document
 import com.jervis.rag.DocumentType
 import io.qdrant.client.QdrantClient
@@ -28,12 +29,7 @@ import org.springframework.beans.factory.annotation.Value as SpringValue
 class VectorDbService(
     @SpringValue("\${qdrant.host:localhost}") private val qdrantHost: String,
     @SpringValue("\${qdrant.port:6334}") private val qdrantPort: Int,
-    @SpringValue("\${qdrant.code.collection:code_vectors}") private val codeCollectionName: String,
-    @SpringValue("\${qdrant.text.collection:text_vectors}") private val textCollectionName: String,
-    @SpringValue("\${qdrant.unified.collection:unified_vectors}") private val unifiedCollectionName: String = "unified_vectors",
-    @SpringValue("\${embedding.code.dimension:384}") private val codeDimension: Int,
-    @SpringValue("\${embedding.text.dimension:1024}") private val textDimension: Int,
-    @SpringValue("\${embedding.unified.dimension:1024}") private val unifiedDimension: Int = 1024
+    @SpringValue("\${embedding.unified.dimension:1024}") private val dimension: Int = 1024
 ) {
     private val logger = KotlinLogging.logger {}
     private lateinit var qdrantClient: QdrantClient
@@ -50,10 +46,8 @@ class VectorDbService(
                         .build(),
                 )
 
-            // Ensure collections exist
-            createCollectionIfNotExists(codeCollectionName, codeDimension)
-            createCollectionIfNotExists(textCollectionName, textDimension)
-            createCollectionIfNotExists(unifiedCollectionName, unifiedDimension)
+            // Ensure collection exists
+            createCollectionIfNotExists(AppConstants.VECTOR_DB_COLLECTION_NAME, dimension)
 
             logger.info { "Qdrant client initialized successfully" }
         } catch (e: Exception) {
@@ -141,8 +135,8 @@ class VectorDbService(
             // Generate a unique ID for the document
             val pointId = UUID.randomUUID().toString()
 
-            // Determine which collection to use based on document type
-            val collectionName = getCollectionForDocument(document)
+            // Use the constant collection name
+            val collectionName = AppConstants.VECTOR_DB_COLLECTION_NAME
 
             // Convert document metadata to Qdrant payload
             val payload = convertMetadataToPayload(document)
@@ -196,10 +190,18 @@ class VectorDbService(
         try {
             logger.debug { "Searching for similar documents with filter: $filter" }
 
-            // Use only the unified collection
-            val collections = listOf(unifiedCollectionName)
+            // Handle empty query vector case by using a default vector
+            val effectiveQuery = if (query.isEmpty()) {
+                logger.debug { "Empty query vector provided, using default vector" }
+                List(dimension) { 0.0f }  // Create a vector of zeros with the correct dimension
+            } else {
+                query
+            }
 
-            logger.debug { "Searching in unified collection: $unifiedCollectionName" }
+            // Use the single collection
+            val collections = listOf(AppConstants.VECTOR_DB_COLLECTION_NAME)
+
+            logger.debug { "Searching in collection: ${AppConstants.VECTOR_DB_COLLECTION_NAME}" }
 
             // Convert filter to Qdrant filter that includes both project-specific and global items
             val qdrantFilter = if (filter != null && filter.isNotEmpty()) {
@@ -298,8 +300,8 @@ class VectorDbService(
                             .setLimit(limit.toLong())
 
                     // Add vector data
-                    for (i in query.indices) {
-                        searchBuilder.addVector(query[i])
+                    for (i in effectiveQuery.indices) {
+                        searchBuilder.addVector(effectiveQuery[i])
                     }
 
                     // Add with payload - include all fields
@@ -368,35 +370,20 @@ class VectorDbService(
      */
     fun deleteDocuments(filter: Map<String, Any>): Int {
         try {
-            // Determine which collections to delete from
-            val collections =
-                if (filter.containsKey("type")) {
-                    val type = filter["type"] as? String
-                    if (type == "code") {
-                        listOf(codeCollectionName)
-                    } else if (type == "text") {
-                        listOf(textCollectionName)
-                    } else {
-                        listOf(codeCollectionName, textCollectionName)
-                    }
-                } else {
-                    listOf(codeCollectionName, textCollectionName)
-                }
+            // Use the single collection
+            val collection = AppConstants.VECTOR_DB_COLLECTION_NAME
 
             // Convert filter to Qdrant filter
             val qdrantFilter = createQdrantFilter(filter)
 
             var totalDeleted = 0
 
-            // Delete from each collection
-            for (collection in collections) {
-                try {
-                    val response = qdrantClient.deleteAsync(collection, qdrantFilter).get()
-                    logger.info { "Deleted ${response.status} documents from $collection" }
-                } catch (e: Exception) {
-                    logger.warn(e) { "Error deleting from collection $collection: ${e.message}" }
-                    // Continue with other collections
-                }
+            try {
+                val response = qdrantClient.deleteAsync(collection, qdrantFilter).get()
+                logger.info { "Deleted ${response.status} documents from $collection" }
+                totalDeleted = 1 // Just indicate success
+            } catch (e: Exception) {
+                logger.warn(e) { "Error deleting from collection $collection: ${e.message}" }
             }
 
             return totalDeleted
@@ -413,8 +400,8 @@ class VectorDbService(
      * @return The name of the collection to use
      */
     private fun getCollectionForDocument(document: Document): String {
-        // Always use the unified collection for all document types
-        return unifiedCollectionName
+        // Always use the single collection for all document types
+        return AppConstants.VECTOR_DB_COLLECTION_NAME
     }
 
     /**

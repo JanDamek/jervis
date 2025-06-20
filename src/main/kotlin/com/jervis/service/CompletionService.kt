@@ -14,7 +14,6 @@ import com.jervis.dto.Usage
 import com.jervis.entity.Project
 import com.jervis.module.indexer.EmbeddingService
 import com.jervis.module.llmcoordinator.LlmCoordinator
-import com.jervis.module.ragcore.RagOrchestrator
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.time.Instant
@@ -22,16 +21,17 @@ import java.util.UUID
 
 /**
  * Service for handling completions and chat functionality.
- * This service integrates RAG and LLM to provide responses to user queries.
+ * This service integrates with LLM and RAG to provide responses to user queries.
  */
 @Service
 class CompletionService(
     private val projectService: ProjectService,
-    private val ragOrchestrator: RagOrchestrator,
     private val embeddingService: EmbeddingService,
-    private val llmCoordinator: LlmCoordinator
+    private val llmCoordinator: LlmCoordinator,
+    private val ragQueryService: RagQueryService
 ) {
     private val logger = KotlinLogging.logger {}
+
     /**
      * Process a completion request using LLM.
      *
@@ -92,11 +92,7 @@ class CompletionService(
     }
 
     /**
-     * Process a chat completion request using a four-phase approach:
-     * 1. First query to RAG
-     * 2. Send result to LLM for query refinement
-     * 3. Final RAG query with refined query
-     * 4. LLM processing of final RAG result
+     * Process a chat completion request using RAG.
      *
      * @param request The chat completion request
      * @return The chat completion response
@@ -110,46 +106,8 @@ class CompletionService(
             val projectName = project?.name ?: "Unknown"
             val projectId = project?.id ?: throw IllegalArgumentException("Project not found")
 
-            // Phase 1: Initial RAG query
-            logger.debug { "Phase 1: Initial RAG query" }
-            val initialRagResponse = ragOrchestrator.processQuery(userPrompt, projectId)
-
-            // Phase 2: LLM query refinement
-            logger.debug { "Phase 2: LLM query refinement" }
-            val refinementPrompt = """
-                Based on the following user query and initial context, please refine the query to better retrieve relevant information from the knowledge base.
-
-                Original query: $userPrompt
-
-                Initial context:
-                ${initialRagResponse.context}
-
-                Please provide a refined query that will help retrieve more relevant information.
-            """.trimIndent()
-
-            val llmRefinementResponse = llmCoordinator.processQuery(refinementPrompt, "")
-            val refinedQuery = llmRefinementResponse.answer
-
-            logger.debug { "Refined query: $refinedQuery" }
-
-            // Phase 3: Final RAG query with refined query
-            logger.debug { "Phase 3: Final RAG query with refined query" }
-            val finalRagResponse = ragOrchestrator.processQuery(refinedQuery, projectId)
-
-            // Phase 4: LLM processing of final RAG result
-            logger.debug { "Phase 4: LLM processing of final RAG result" }
-            val finalPrompt = """
-                Please answer the following user query based on the provided context.
-
-                User query: $userPrompt
-
-                Context:
-                ${finalRagResponse.context}
-
-                Please provide a comprehensive and accurate answer based only on the information in the context.
-            """.trimIndent()
-
-            val finalLlmResponse = llmCoordinator.processQuery(finalPrompt, finalRagResponse.context)
+            // Process the query using the RAG query service
+            val result = ragQueryService.processRagQuery(userPrompt, projectId)
 
             logger.info { "Chat completion request processed successfully" }
             return ChatCompletionResponse(
@@ -163,16 +121,16 @@ class CompletionService(
                             index = 0,
                             message = ChatMessage(
                                 role = "assistant",
-                                content = finalLlmResponse.answer
+                                content = result.answer
                             ),
-                            finish_reason = finalLlmResponse.finishReason,
+                            finish_reason = result.finishReason,
                         ),
                     ),
                 usage =
                     Usage(
-                        prompt_tokens = finalLlmResponse.promptTokens,
-                        completion_tokens = finalLlmResponse.completionTokens,
-                        total_tokens = finalLlmResponse.totalTokens,
+                        prompt_tokens = result.promptTokens,
+                        completion_tokens = result.completionTokens,
+                        total_tokens = result.totalTokens,
                     ),
             )
         } catch (e: Exception) {
@@ -198,6 +156,12 @@ class CompletionService(
         }
     }
 
+    /**
+     * Generate embeddings for text inputs.
+     *
+     * @param request The embedding request
+     * @return The embedding response
+     */
     fun embeddings(request: EmbeddingRequest): EmbeddingResponse {
         // Use the model specified in the request or default to text model
         val model = request.model
@@ -229,11 +193,7 @@ class CompletionService(
     }
 
     /**
-     * Process a chat query using a four-phase approach:
-     * 1. First query to RAG
-     * 2. Send result to LLM for query refinement
-     * 3. Final RAG query with refined query
-     * 4. LLM processing of final RAG result
+     * Process a chat query using RAG.
      *
      * @param query The user query
      * @return The response to the query
@@ -242,62 +202,22 @@ class CompletionService(
         try {
             logger.info { "Processing chat query: $query" }
 
-            // Get the active project
-            val activeProject = projectService.getActiveProject()
-            if (activeProject == null) {
-                logger.warn { "No active project found" }
-                return "No active project selected. Please select a project first."
-            }
-
-            // Phase 1: Initial RAG query
-            logger.debug { "Phase 1: Initial RAG query" }
-            val initialRagResponse = ragOrchestrator.processQuery(query, activeProject.id!!)
-
-            // Phase 2: LLM query refinement
-            logger.debug { "Phase 2: LLM query refinement" }
-            val refinementPrompt = """
-                Based on the following user query and initial context, please refine the query to better retrieve relevant information from the knowledge base.
-
-                Original query: $query
-
-                Initial context:
-                ${initialRagResponse.context}
-
-                Please provide a refined query that will help retrieve more relevant information.
-            """.trimIndent()
-
-            val llmRefinementResponse = llmCoordinator.processQuery(refinementPrompt, "")
-            val refinedQuery = llmRefinementResponse.answer
-
-            logger.debug { "Refined query: $refinedQuery" }
-
-            // Phase 3: Final RAG query with refined query
-            logger.debug { "Phase 3: Final RAG query with refined query" }
-            val finalRagResponse = ragOrchestrator.processQuery(refinedQuery, activeProject.id!!)
-
-            // Phase 4: LLM processing of final RAG result
-            logger.debug { "Phase 4: LLM processing of final RAG result" }
-            val finalPrompt = """
-                Please answer the following user query based on the provided context.
-
-                User query: $query
-
-                Context:
-                ${finalRagResponse.context}
-
-                Please provide a comprehensive and accurate answer based only on the information in the context.
-            """.trimIndent()
-
-            val finalLlmResponse = llmCoordinator.processQuery(finalPrompt, finalRagResponse.context)
+            val result = ragQueryService.processRagQuery(query)
 
             logger.info { "Chat query processed successfully" }
-            return finalLlmResponse.answer
+            return result.answer
         } catch (e: Exception) {
             logger.error(e) { "Error processing chat query: ${e.message}" }
             return "Sorry, an error occurred while processing your query: ${e.message}"
         }
     }
 
+    /**
+     * Resolves a project based on the model ID.
+     *
+     * @param modelId The model ID, which corresponds to a project name
+     * @return The resolved project, or null if not found
+     */
     private fun resolveProject(modelId: String?): Project? =
         if (!modelId.isNullOrBlank()) {
             projectService.getAllProjects().find { it.name == modelId }
