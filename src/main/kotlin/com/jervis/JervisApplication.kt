@@ -1,5 +1,7 @@
 package com.jervis
 
+import com.jervis.module.llmcoordinator.LlmCoordinator
+import com.jervis.service.ChatService
 import com.jervis.service.ProjectService
 import com.jervis.service.SettingService
 import com.jervis.utils.MacOSAppUtils.setDockIcon
@@ -14,65 +16,69 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories
 import java.awt.EventQueue
 
 @SpringBootApplication
-@EntityScan("com.jervis.entity")
-@EnableJpaRepositories("com.jervis.repository")
+@EntityScan(basePackages = ["com.jervis.entity", "com.jervis.module.memory"])
+@EnableJpaRepositories(basePackages = ["com.jervis.repository", "com.jervis.module.memory"])
 class JervisApplication(
     private val settingService: SettingService,
     private val projectService: ProjectService,
-    private val chatService: com.jervis.service.ChatService,
+    private val chatService: ChatService,
+    private val llmCoordinator: LlmCoordinator,
 ) {
     private val logger = KotlinLogging.logger {}
+
     @Bean
     fun initApp(): ApplicationRunner =
         ApplicationRunner {
-            // Zkontrolujeme, zda existuje aktivní projekt a případně ho nastavíme
+            // Check if an active project exists and set it if needed
             ensureActiveProject()
 
-            // Načteme nastavení pro minimalizaci při startu
+            // Load startup minimization settings
             val startMinimized = settingService.getBooleanValue("startup_minimize", false)
 
-            // Vytvoření správce oken
-            val applicationWindows = ApplicationWindowManager(settingService, projectService, chatService)
+            // Create window manager
+            val applicationWindows = ApplicationWindowManager(settingService, projectService, chatService, llmCoordinator)
 
             EventQueue.invokeLater {
-                // Inicializace aplikace s nastavením minimalizace
+                // Initialize application with minimization settings
                 applicationWindows.initialize(startMinimized)
             }
             setDockIcon()
         }
 
     /**
-     * Zajistí, že existuje aktivní projekt pro RAG službu
+     * Ensures that an active project exists for the RAG service
      */
     private fun ensureActiveProject() {
-        // Zkontrolujeme, zda máme aktivní projekt
-        if (projectService.getActiveProject() == null) {
-            // Pokud nemáme aktivní projekt, zkusíme použít výchozí
-            val defaultProject = projectService.getDefaultProject()
-            if (defaultProject != null) {
-                projectService.setActiveProject(defaultProject)
-                logger.info { "Automaticky nastaven výchozí projekt: ${defaultProject.name}" }
-            } else {
-                // Pokud nemáme ani výchozí projekt, zkusíme použít první dostupný
-                val anyProject = projectService.getAllProjects().firstOrNull()
-                if (anyProject != null) {
-                    // Nastavíme tento projekt jako výchozí a aktivní
-                    projectService.setDefaultProject(anyProject)
-                    projectService.setActiveProject(anyProject)
-                    logger.info { "Automaticky nastaven první dostupný projekt: ${anyProject.name}" }
-                } else {
-                    logger.warn { "Upozornění: Není dostupný žádný projekt. RAG služba nebude plně funkční." }
-                }
-            }
+        // Skip if we already have an active project
+        if (projectService.getActiveProject() != null) {
+            return
         }
+
+        // Try to use the default project
+        projectService.getDefaultProject()?.let { defaultProject ->
+            projectService.setActiveProject(defaultProject)
+            logger.info { "Default project automatically set: ${defaultProject.name}" }
+            return
+        }
+
+        // Try to use the first available project
+        projectService.getAllProjects().firstOrNull()?.let { anyProject ->
+            projectService.setDefaultProject(anyProject)
+            projectService.setActiveProject(anyProject)
+            logger.info { "First available project automatically set: ${anyProject.name}" }
+            return
+        }
+
+        // No projects available
+        logger.warn { "Warning: No projects available. RAG service will not be fully functional." }
     }
 }
 
 fun main(args: Array<String>) {
-    // Explicitně vypnout headless režim
+    // Explicitly disable headless mode
     System.setProperty("java.awt.headless", "false")
 
-    // Nastavit cestu k ikoně pro dock (funguje pouze při spuštění, ne za běhu)
+    // Set the dock icon path (only works at startup, not during runtime)
     System.setProperty("apple.awt.application.name", "JERVIS Assistant")
 
     runApplication<JervisApplication>(*args)

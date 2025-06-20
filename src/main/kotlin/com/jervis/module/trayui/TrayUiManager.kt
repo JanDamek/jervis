@@ -1,5 +1,6 @@
 package com.jervis.module.trayui
 
+import com.jervis.module.llmcoordinator.LlmCoordinator
 import com.jervis.service.ProjectService
 import com.jervis.service.SettingService
 import com.jervis.window.TrayIconManager
@@ -15,6 +16,7 @@ class TrayUiManager(
     private val projectService: ProjectService,
     private val settingService: SettingService,
     private val chatService: com.jervis.service.ChatService,
+    private val llmCoordinator: LlmCoordinator,
 ) {
     private var trayIconManager: TrayIconManager? = null
 
@@ -41,7 +43,7 @@ class TrayUiManager(
     /**
      * Create a window manager for the tray UI
      */
-    private fun createWindowManager(): TrayWindowManager = TrayWindowManager(projectService, settingService, chatService)
+    private fun createWindowManager(): TrayWindowManager = TrayWindowManager(projectService, settingService, chatService, llmCoordinator)
 
     /**
      * Dispose of the tray UI

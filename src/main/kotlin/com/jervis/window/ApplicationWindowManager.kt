@@ -1,5 +1,6 @@
 package com.jervis.window
 
+import com.jervis.module.llmcoordinator.LlmCoordinator
 import com.jervis.service.ProjectService
 import com.jervis.service.SettingService
 
@@ -10,13 +11,14 @@ class ApplicationWindowManager(
     private val settingService: SettingService,
     private val projectService: ProjectService,
     private val chatService: com.jervis.service.ChatService,
+    private val llmCoordinator: LlmCoordinator,
 ) {
     private val mainWindow: MainWindow by lazy {
         MainWindow(projectService, chatService)
     }
 
     private val settingsWindow: SettingsWindow by lazy {
-        SettingsWindow(settingService)
+        SettingsWindow(settingService, llmCoordinator)
     }
 
     private val projectSettingsWindow: ProjectSettingWindow by lazy {

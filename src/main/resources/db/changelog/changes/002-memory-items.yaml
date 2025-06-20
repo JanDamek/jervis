@@ -1,0 +1,82 @@
+databaseChangeLog:
+  - changeSet:
+      id: 002
+      author: jervis
+      changes:
+        # Table for memory items (meeting transcripts, notes, decisions, plans, history)
+        - createTable:
+            tableName: memory_items
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: project_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_memory_items_project
+                    references: projects(id)
+                    deleteCascade: true
+              - column:
+                  name: title
+                  type: VARCHAR(200)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: content
+                  type: VARCHAR(10000)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: item_type
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: importance
+                  type: INT
+                  defaultValue: 5
+                  constraints:
+                    nullable: false
+              - column:
+                  name: metadata
+                  type: VARCHAR(1000)
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+
+        # Indexes for faster querying
+        - createIndex:
+            tableName: memory_items
+            indexName: idx_memory_items_project
+            columns:
+              - column:
+                  name: project_id
+                  
+        - createIndex:
+            tableName: memory_items
+            indexName: idx_memory_items_type
+            columns:
+              - column:
+                  name: item_type
+                  
+        - createIndex:
+            tableName: memory_items
+            indexName: idx_memory_items_created_at
+            columns:
+              - column:
+                  name: created_at

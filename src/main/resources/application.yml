@@ -1,4 +1,4 @@
-# Nastavení úrovně logování
+# Logging level configuration
 logging:
   level:
     root: INFO
@@ -33,8 +33,6 @@ spring:
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
     enabled: true
-  main:
-    allow-bean-definition-overriding: true
   ai:
     model:
       chat: anthropic
@@ -60,8 +58,17 @@ embedding:
   text:
     model: intfloat/multilingual-e5-large
     dimension: 1024
+  unified:
+    dimension: 1024
   cache:
     enabled: true
 
+# Qdrant vector database configuration
+qdrant:
+  host: localhost
+  port: 6334
+  unified:
+    collection: unified_vectors
+
 server:
-  port: 5000
+  port: 5500
