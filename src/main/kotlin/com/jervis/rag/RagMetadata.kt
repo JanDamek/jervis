@@ -9,35 +9,35 @@ import java.time.LocalDateTime
 data class RagMetadata(
     val type: DocumentType,
     val project: Int,  // project id or "global"
-    
+
     // For chat messages
     val chatId: String? = null,
     val source: String,
     val sourceId: SourceType? = null,
-    
+
     // Common attributes
     val timestamp: LocalDateTime? = null,
     val tags: List<String> = emptyList(),
-    
+
     // For code
     val filePath: String? = null,
     val symbol: String? = null,
     val language: String? = null,
-    
+
     // For chunking - tracking positions in the original document
     val chunkStart: Int? = null,  // Starting character index in the original document
     val chunkEnd: Int? = null,    // Ending character index in the original document
     val chunkIndex: Int? = null,  // Chunk sequence number
-    
+
     // For tools and actions
     val actionType: ActionType? = null,
     val target: String? = null,  // email, slack username, etc.
     val triggerTime: LocalDateTime? = null,
     val status: ActionStatus? = null,
-    
+
     // Author/owner
     val createdBy: String? = null,
-    
+
     // Extra metadata - flexible dictionary for additional data
     val extra: Map<String, Any> = emptyMap()
 ) {
@@ -73,14 +73,14 @@ data class RagMetadata(
  * Types of documents in the RAG system.
  */
 enum class DocumentType {
-    CHAT, CODE, TEXT, NOTE, MEETING, RULE, ACTION, SYSTEM
+    CHAT, CODE, TEXT, NOTE, MEETING, RULE, ACTION, SYSTEM, GIT_HISTORY, DEPENDENCY, TODO
 }
 
 /**
  * Types of sources for documents.
  */
 enum class SourceType {
-    USER, LLM, GUI, WHISPER, EMAIL, FILE
+    USER, LLM, GUI, WHISPER, EMAIL, FILE, GIT, ANALYSIS
 }
 
 /**

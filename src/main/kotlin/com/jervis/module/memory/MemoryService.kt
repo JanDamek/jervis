@@ -99,8 +99,8 @@ class MemoryService(
      */
     fun searchMemoryItems(project: Project, query: String, limit: Int = 10): List<Document> {
         try {
-            // Generate embedding for the query
-            val queryEmbedding = embeddingService.generateTextEmbedding(query)
+            // Generate embedding for the query using the query-specific method
+            val queryEmbedding = embeddingService.generateQueryEmbedding(query)
 
             // Create filter for the project and memory source
             val filter = MemoryDocument.createProjectFilter(project)
@@ -125,8 +125,8 @@ class MemoryService(
      */
     fun searchMemoryItemsGrouped(project: Project, query: String, limit: Int = 10): List<Document> {
         try {
-            // Generate embedding for the query
-            val queryEmbedding = embeddingService.generateTextEmbedding(query)
+            // Generate embedding for the query using the query-specific method
+            val queryEmbedding = embeddingService.generateQueryEmbedding(query)
 
             // Create filter for the project and memory source
             val filter = MemoryDocument.createProjectFilter(project)
@@ -247,7 +247,7 @@ class MemoryService(
             )
 
             // Generate embedding for the content
-            val embedding = embeddingService.generateTextEmbedding(content)
+            val embedding = embeddingService.generateEmbedding(content)
 
             // Store in vector database
             val vectorId = vectorDbService.storeDocument(document, embedding)
@@ -329,7 +329,7 @@ class MemoryService(
                 val document = Document(chunkContent, chunkMetadata)
 
                 // Generate embedding for the chunk
-                val embedding = embeddingService.generateTextEmbedding(chunkContent)
+                val embedding = embeddingService.generateEmbedding(chunkContent)
 
                 // Store in vector database
                 val vectorId = vectorDbService.storeDocument(document, embedding)
@@ -635,7 +635,7 @@ class MemoryService(
      * @return A list of documents for the active project
      * @throws IllegalArgumentException if no active project is found
      */
-    fun getActiveProjectMemoryItems(type: MemoryItemType? = null, limit: Int = 10): List<Document> {
+    suspend fun getActiveProjectMemoryItems(type: MemoryItemType? = null, limit: Int = 10): List<Document> {
         val activeProject = projectService.getActiveProject()
             ?: throw IllegalArgumentException("No active project selected")
 
@@ -660,7 +660,7 @@ class MemoryService(
      * @param document The document to delete
      */
     @Transactional
-    fun deleteMemoryItem(document: Document) {
+    suspend fun deleteMemoryItem(document: Document) {
         val title = MemoryDocument.getTitle(document)
         val projectId = document.metadata["project"] as? Int
         val projectName = projectId?.let { projectService.getProjectById(it.toLong())?.name } ?: "Unknown"

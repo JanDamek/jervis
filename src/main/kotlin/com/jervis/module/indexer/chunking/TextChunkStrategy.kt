@@ -1,6 +1,5 @@
 package com.jervis.module.indexer.chunking
 
-import com.jervis.module.indexer.tokenizer.TokenizerFactory
 import mu.KotlinLogging
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
@@ -11,7 +10,6 @@ import org.springframework.stereotype.Component
  */
 @Component
 class TextChunkStrategy(
-    private val tokenizerFactory: TokenizerFactory,
     @Value("\${chunking.text.max-chunk-size:1024}") private val defaultMaxChunkSize: Int,
     @Value("\${chunking.text.overlap-size:200}") private val defaultOverlapSize: Int
 ) : ChunkStrategy {
@@ -27,7 +25,6 @@ class TextChunkStrategy(
         maxChunkSize: Int,
         overlapSize: Int
     ): List<Chunk> {
-        val tokenizer = tokenizerFactory.getTokenizer()
         val format = metadata["format"] ?: "text"
         val actualMaxChunkSize = if (maxChunkSize > 0) maxChunkSize else defaultMaxChunkSize
         val actualOverlapSize = if (overlapSize > 0) overlapSize else defaultOverlapSize
@@ -36,9 +33,9 @@ class TextChunkStrategy(
         
         // Special handling for different formats
         return when (format.lowercase()) {
-            "md", "markdown" -> chunkMarkdownText(content, tokenizer, actualMaxChunkSize, actualOverlapSize)
-            "html", "htm" -> chunkHtmlText(content, tokenizer, actualMaxChunkSize, actualOverlapSize)
-            else -> chunkGenericText(content, tokenizer, actualMaxChunkSize, actualOverlapSize)
+            "md", "markdown" -> chunkMarkdownText(content, actualMaxChunkSize, actualOverlapSize)
+            "html", "htm" -> chunkHtmlText(content, actualMaxChunkSize, actualOverlapSize)
+            else -> chunkGenericText(content, actualMaxChunkSize, actualOverlapSize)
         }
     }
     
@@ -51,7 +48,6 @@ class TextChunkStrategy(
      */
     private fun chunkMarkdownText(
         content: String,
-        tokenizer: com.jervis.module.indexer.tokenizer.Tokenizer,
         maxChunkSize: Int,
         overlapSize: Int
     ): List<Chunk> {
@@ -71,7 +67,7 @@ class TextChunkStrategy(
         
         // If no headings, fall back to generic text chunking
         if (headings.isEmpty()) {
-            return chunkGenericText(content, tokenizer, maxChunkSize, overlapSize)
+            return chunkGenericText(content, maxChunkSize, overlapSize)
         }
         
         // Process each section (from one heading to the next)
@@ -84,9 +80,9 @@ class TextChunkStrategy(
             val sectionContent = sectionLines.joinToString("\n")
             
             // Check if section needs to be split further
-            val sectionTokenCount = tokenizer.countTokens(sectionContent)
+            val sectionWordCount = countWords(sectionContent)
             
-            if (sectionTokenCount <= maxChunkSize) {
+            if (sectionWordCount <= maxChunkSize) {
                 // Section fits in one chunk
                 chunks.add(Chunk(
                     content = sectionContent,
@@ -104,7 +100,7 @@ class TextChunkStrategy(
                 
                 // Create chunks from paragraphs with overlap
                 val paragraphChunks = createChunksFromParagraphs(
-                    paragraphs, tokenizer, maxChunkSize, overlapSize,
+                    paragraphs, maxChunkSize, overlapSize,
                     baseMetadata = mapOf(
                         "type" to "section",
                         "heading" to headingText,
@@ -126,7 +122,6 @@ class TextChunkStrategy(
      */
     private fun chunkHtmlText(
         content: String,
-        tokenizer: com.jervis.module.indexer.tokenizer.Tokenizer,
         maxChunkSize: Int,
         overlapSize: Int
     ): List<Chunk> {
@@ -140,7 +135,7 @@ class TextChunkStrategy(
             .replace(Regex("\\s+"), " ") // Normalize whitespace
             .trim()
         
-        return chunkGenericText(textContent, tokenizer, maxChunkSize, overlapSize)
+        return chunkGenericText(textContent, maxChunkSize, overlapSize)
     }
     
     /**
@@ -148,14 +143,13 @@ class TextChunkStrategy(
      */
     private fun chunkGenericText(
         content: String,
-        tokenizer: com.jervis.module.indexer.tokenizer.Tokenizer,
         maxChunkSize: Int,
         overlapSize: Int
     ): List<Chunk> {
         // Split by paragraphs (double newlines)
         val paragraphs = content.split("\n\n")
         
-        return createChunksFromParagraphs(paragraphs, tokenizer, maxChunkSize, overlapSize)
+        return createChunksFromParagraphs(paragraphs, maxChunkSize, overlapSize)
     }
     
     /**
@@ -163,23 +157,22 @@ class TextChunkStrategy(
      */
     private fun createChunksFromParagraphs(
         paragraphs: List<String>,
-        tokenizer: com.jervis.module.indexer.tokenizer.Tokenizer,
         maxChunkSize: Int,
         overlapSize: Int,
         baseMetadata: Map<String, Any> = emptyMap()
     ): List<Chunk> {
         val chunks = mutableListOf<Chunk>()
         var currentChunk = StringBuilder()
-        var currentTokenCount = 0
+        var currentWordCount = 0
         var chunkIndex = 0
         
         for (paragraph in paragraphs) {
             if (paragraph.isBlank()) continue
             
-            val paragraphTokenCount = tokenizer.countTokens(paragraph)
+            val paragraphWordCount = countWords(paragraph)
             
             // If adding this paragraph would exceed the max chunk size, create a new chunk
-            if (currentTokenCount + paragraphTokenCount > maxChunkSize && currentChunk.isNotEmpty()) {
+            if (currentWordCount + paragraphWordCount > maxChunkSize && currentChunk.isNotEmpty()) {
                 chunks.add(Chunk(
                     content = currentChunk.toString().trim(),
                     metadata = baseMetadata + mapOf(
@@ -188,15 +181,15 @@ class TextChunkStrategy(
                 ))
                 
                 // Start a new chunk with overlap
-                val overlapContent = getOverlapContent(currentChunk.toString(), tokenizer, overlapSize)
+                val overlapContent = getOverlapContent(currentChunk.toString(), overlapSize)
                 currentChunk = StringBuilder(overlapContent)
-                currentTokenCount = tokenizer.countTokens(overlapContent)
+                currentWordCount = countWords(overlapContent)
                 chunkIndex++
             }
             
             // Add paragraph to current chunk
             currentChunk.append(paragraph).append("\n\n")
-            currentTokenCount += paragraphTokenCount + 2 // +2 for the newlines
+            currentWordCount += paragraphWordCount + 2 // +2 for the newlines
         }
         
         // Add the last chunk if not empty
@@ -217,7 +210,6 @@ class TextChunkStrategy(
      */
     private fun getOverlapContent(
         content: String,
-        tokenizer: com.jervis.module.indexer.tokenizer.Tokenizer,
         overlapSize: Int
     ): String {
         if (content.isBlank() || overlapSize <= 0) return ""
@@ -226,30 +218,37 @@ class TextChunkStrategy(
         val sentences = content.split(Regex("(?<=[.!?])\\s+"))
         
         if (sentences.size <= 1) {
-            // If no sentence boundaries, just take the last N tokens
-            val tokens = tokenizer.tokenize(content)
-            if (tokens.size <= overlapSize) return content
+            // If no sentence boundaries, just take the last N words
+            val words = content.split(Regex("\\s+"))
+            if (words.size <= overlapSize) return content
             
-            val overlapTokens = tokens.takeLast(overlapSize)
-            return overlapTokens.joinToString(" ")
+            val overlapWords = words.takeLast(overlapSize)
+            return overlapWords.joinToString(" ")
         }
         
         // Build overlap from sentences
         val overlapBuilder = StringBuilder()
-        var overlapTokenCount = 0
+        var overlapWordCount = 0
         
         for (i in sentences.size - 1 downTo 0) {
             val sentence = sentences[i]
-            val sentenceTokenCount = tokenizer.countTokens(sentence)
+            val sentenceWordCount = countWords(sentence)
             
-            if (overlapTokenCount + sentenceTokenCount <= overlapSize || overlapBuilder.isEmpty()) {
+            if (overlapWordCount + sentenceWordCount <= overlapSize || overlapBuilder.isEmpty()) {
                 overlapBuilder.insert(0, sentence + " ")
-                overlapTokenCount += sentenceTokenCount
+                overlapWordCount += sentenceWordCount
             } else {
                 break
             }
         }
         
         return overlapBuilder.toString().trim()
+    }
+    
+    /**
+     * Count words in a string
+     */
+    private fun countWords(text: String): Int {
+        return text.split(Regex("\\s+")).count { it.isNotBlank() }
     }
 }

@@ -7,7 +7,7 @@ import org.springframework.stereotype.Repository
 @Repository
 interface ProjectRepository : JpaRepository<Project, Long> {
     /**
-     * Najde projekt označený jako aktivní (výchozí)
+     * Finds the project marked as active (default)
      */
     fun findByActiveIsTrue(): Project?
 }

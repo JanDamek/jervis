@@ -1,6 +1,8 @@
 package com.jervis.module.trayui
 
 import com.jervis.module.llmcoordinator.LlmCoordinator
+import com.jervis.service.LMStudioService
+import com.jervis.service.OllamaService
 import com.jervis.service.ProjectService
 import com.jervis.service.SettingService
 import com.jervis.window.ApplicationWindowManager
@@ -16,8 +18,10 @@ class TrayWindowManager(
     private val settingService: SettingService,
     private val chatService: com.jervis.service.ChatService,
     private val llmCoordinator: LlmCoordinator,
+    private val ollamaService: OllamaService,
+    private val lmStudioService: LMStudioService,
 ) {
-    private val windowManager = ApplicationWindowManager(settingService, projectService, chatService, llmCoordinator)
+    private val windowManager = ApplicationWindowManager(settingService, projectService, chatService, llmCoordinator, ollamaService, lmStudioService)
 
     /**
      * Initialize the window manager

@@ -1,8 +1,10 @@
 package com.jervis.module.vectordb
 
-import com.jervis.core.AppConstants
+import com.jervis.module.indexer.EmbeddingService
+import com.jervis.module.llm.SettingsChangeEvent
+import com.jervis.module.mcp.McpAction
+import com.jervis.persistence.mongo.ChunkMetadataService
 import com.jervis.rag.Document
-import com.jervis.rag.DocumentType
 import io.qdrant.client.QdrantClient
 import io.qdrant.client.QdrantGrpcClient
 import io.qdrant.client.grpc.Collections.Distance
@@ -13,9 +15,12 @@ import io.qdrant.client.grpc.Points.Filter
 import io.qdrant.client.grpc.Points.Match
 import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
+import kotlinx.coroutines.runBlocking
 import mu.KotlinLogging
+import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Service
 import java.time.Duration
+import java.time.Instant
 import java.util.UUID
 import io.qdrant.client.grpc.JsonWithInt.ListValue as QdrantListValue
 import io.qdrant.client.grpc.JsonWithInt.Value as QdrantValue
@@ -29,9 +34,20 @@ import org.springframework.beans.factory.annotation.Value as SpringValue
 class VectorDbService(
     @SpringValue("\${qdrant.host:localhost}") private val qdrantHost: String,
     @SpringValue("\${qdrant.port:6334}") private val qdrantPort: Int,
-    @SpringValue("\${embedding.unified.dimension:1024}") private val dimension: Int = 1024
+    private val chunkMetadataService: ChunkMetadataService,
+    private val embeddingService: EmbeddingService,
 ) {
     private val logger = KotlinLogging.logger {}
+
+    /**
+     * Sanitize collection name by replacing disallowed characters with underscores
+     * 
+     * @param name The original collection name
+     * @return Sanitized collection name
+     */
+    private fun sanitizeCollectionName(name: String): String {
+        return name.replace("/", "_")
+    }
     private lateinit var qdrantClient: QdrantClient
 
     @PostConstruct
@@ -47,7 +63,11 @@ class VectorDbService(
                 )
 
             // Ensure collection exists
-            createCollectionIfNotExists(AppConstants.VECTOR_DB_COLLECTION_NAME, dimension)
+            val dimension = embeddingService.getEmbeddingDimension()
+            createCollectionIfNotExists(
+                sanitizeCollectionName("jervis_${embeddingService.getModelName()}_dim${dimension}"),
+                dimension,
+            )
 
             logger.info { "Qdrant client initialized successfully" }
         } catch (e: Exception) {
@@ -66,6 +86,39 @@ class VectorDbService(
             }
         } catch (e: Exception) {
             logger.error(e) { "Error closing Qdrant client: ${e.message}" }
+        }
+    }
+
+    /**
+     * Handle settings changes, particularly for embedding dimension
+     */
+    @EventListener
+    fun handleSettingsChangeEvent(event: SettingsChangeEvent) {
+        logger.info { "Settings changed, checking if embedding dimension changed" }
+        try {
+            // Get the current dimension from settings
+            val currentDimension = embeddingService.getEmbeddingDimension()
+
+            // Check if the collection exists and has the correct dimension
+            val collections = qdrantClient.listCollectionsAsync().get()
+            val collectionName = sanitizeCollectionName("jervis_${embeddingService.getModelName()}_dim${currentDimension}")
+            if (collections.contains(collectionName)) {
+                // Collection exists, but we need to recreate it if the dimension changed
+                // Unfortunately, Qdrant doesn't provide a way to get the dimension of an existing collection
+                // So we'll recreate it to be safe
+                logger.info { "Recreating collection with new dimension: $currentDimension" }
+                try {
+                    // Delete the existing collection
+                    qdrantClient.deleteCollectionAsync(collectionName).get()
+                    // Create a new collection with the current dimension
+                    createCollection(collectionName, currentDimension)
+                    logger.info { "Collection recreated successfully with dimension: $currentDimension" }
+                } catch (e: Exception) {
+                    logger.error(e) { "Error recreating collection: ${e.message}" }
+                }
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "Error handling settings change event: ${e.message}" }
         }
     }
 
@@ -135,8 +188,9 @@ class VectorDbService(
             // Generate a unique ID for the document
             val pointId = UUID.randomUUID().toString()
 
-            // Use the constant collection name
-            val collectionName = AppConstants.VECTOR_DB_COLLECTION_NAME
+            // Use the constant collection name with dimension
+            val dimension = embeddingService.getEmbeddingDimension()
+            val collectionName = sanitizeCollectionName("jervis_${embeddingService.getModelName()}_dim${dimension}")
 
             // Convert document metadata to Qdrant payload
             val payload = convertMetadataToPayload(document)
@@ -166,10 +220,116 @@ class VectorDbService(
             // Upsert the point into the collection
             qdrantClient.upsertAsync(collectionName, listOf(point))
 
+            // Store metadata in MongoDB
+            runBlocking {
+                try {
+                    chunkMetadataService.saveChunkMetadata(pointId, document, pointId)
+                    logger.debug { "Stored chunk metadata in MongoDB for chunk $pointId" }
+                } catch (e: Exception) {
+                    logger.error(e) { "Error storing chunk metadata in MongoDB: ${e.message}" }
+                    // Continue even if MongoDB storage fails - we don't want to fail the vector storage
+                }
+            }
+
             logger.debug { "Stored document in $collectionName: ${document.pageContent.take(50)}..." }
             return pointId
         } catch (e: Exception) {
             logger.error(e) { "Error storing document: ${e.message}" }
+            throw e
+        }
+    }
+
+    /**
+     * Store an MCP action and its result in the vector database
+     *
+     * @param action The MCP action
+     * @param result The result of the action
+     * @param query The original query
+     * @param embedding The embedding vector for the action
+     * @param projectId The ID of the project
+     * @return The ID of the stored action
+     */
+    fun storeMcpAction(
+        action: McpAction,
+        result: String,
+        query: String,
+        embedding: List<Float>,
+        projectId: Long? = null,
+    ): String {
+        try {
+            // Generate a unique ID for the action
+            val pointId = UUID.randomUUID().toString()
+
+            // Use the constant collection name with dimension
+            val dimension = embeddingService.getEmbeddingDimension()
+            val collectionName = sanitizeCollectionName("jervis_${embeddingService.getModelName()}_dim${dimension}")
+
+            // Create a document from the action and result
+            val content =
+                """
+                Query: $query
+
+                Action Type: ${action.type}
+                Action Content: ${action.content}
+                Action Parameters: ${action.parameters}
+
+                Result: $result
+                """.trimIndent()
+
+            // Create metadata for the action
+            val metadata =
+                mutableMapOf<String, Any>(
+                    "document_type" to "mcp_action",
+                    "action_type" to action.type,
+                    "timestamp" to Instant.now().toEpochMilli(),
+                    "query" to query,
+                )
+
+            // Add project ID if provided
+            if (projectId != null) {
+                metadata["project"] = projectId
+            }
+
+            // Add action parameters to metadata
+            action.parameters.forEach { (key, value) ->
+                metadata["param_$key"] = value.toString()
+            }
+
+            // Create document
+            val document = Document(content, metadata)
+
+            // Convert document metadata to Qdrant payload
+            val payload = convertMetadataToPayload(document)
+
+            // Convert embedding to Qdrant vector
+            val vectorsBuilder = Points.Vectors.newBuilder()
+            vectorsBuilder.vector =
+                Points.Vector
+                    .newBuilder()
+                    .addAllData(embedding)
+                    .build()
+            val vectors = vectorsBuilder.build()
+
+            // Create point struct
+            val point =
+                Points.PointStruct
+                    .newBuilder()
+                    .setId(
+                        Points.PointId
+                            .newBuilder()
+                            .setUuid(pointId)
+                            .build(),
+                    ).setVectors(vectors)
+                    .putAllPayload(payload)
+                    .build()
+
+            // Upsert the point into the collection
+            qdrantClient.upsertAsync(collectionName, listOf(point))
+
+            logger.debug { "Stored MCP action in $collectionName: ${action.type}" }
+            return pointId
+        } catch (e: Exception) {
+            logger.error(e) { "Error storing MCP action: ${e.message}" }
             throw e
         }
     }
@@ -191,99 +351,111 @@ class VectorDbService(
             logger.debug { "Searching for similar documents with filter: $filter" }
 
             // Handle empty query vector case by using a default vector
-            val effectiveQuery = if (query.isEmpty()) {
-                logger.debug { "Empty query vector provided, using default vector" }
-                List(dimension) { 0.0f }  // Create a vector of zeros with the correct dimension
-            } else {
-                query
-            }
+            val effectiveQuery =
+                if (query.isEmpty()) {
+                    logger.debug { "Empty query vector provided, using default vector" }
+                    List(embeddingService.getEmbeddingDimension()) { 0.0f } // Create a vector of zeros with the correct dimension
+                } else {
+                    query
+                }
 
-            // Use the single collection
-            val collections = listOf(AppConstants.VECTOR_DB_COLLECTION_NAME)
+            // Use the single collection with dimension
+            val dimension = embeddingService.getEmbeddingDimension()
+            val collectionName = sanitizeCollectionName("jervis_${embeddingService.getModelName()}_dim${dimension}")
+            val collections = listOf(collectionName)
 
-            logger.debug { "Searching in collection: ${AppConstants.VECTOR_DB_COLLECTION_NAME}" }
+            logger.debug { "Searching in collection: $collectionName" }
 
             // Convert filter to Qdrant filter that includes both project-specific and global items
-            val qdrantFilter = if (filter != null && filter.isNotEmpty()) {
-                // Check if filter contains project ID
-                if (filter.containsKey("project")) {
-                    // Create a filter that matches either the specified project or global items
-                    val projectId = filter["project"]
+            val qdrantFilter =
+                if (filter != null && filter.isNotEmpty()) {
+                    // Check if filter contains project ID
+                    if (filter.containsKey("project")) {
+                        // Create a filter that matches either the specified project or global items
+                        val projectId = filter["project"]
 
-                    // Create a filter with OR condition: project = specified OR project = -1 (global)
-                    val projectFilter = Filter.newBuilder()
+                        // Create a filter with OR condition: project = specified OR project = -1 (global)
+                        val projectFilter = Filter.newBuilder()
 
-                    // Add condition for the specified project
-                    val projectCondition = FieldCondition.newBuilder()
-                        .setKey("project")
-                        .setRange(
-                            Points.Range.newBuilder()
-                                .setGt(0.0)
-                                .setLt((projectId as Number).toDouble() + 0.1)
-                                .build()
-                        )
-                        .build()
+                        // Add condition for the specified project
+                        val projectCondition =
+                            FieldCondition
+                                .newBuilder()
+                                .setKey("project")
+                                .setRange(
+                                    Points.Range
+                                        .newBuilder()
+                                        .setGt(0.0)
+                                        .setLt((projectId as Number).toDouble() + 0.1)
+                                        .build(),
+                                ).build()
 
-                    // Add condition for global items (project = -1)
-                    val globalCondition = FieldCondition.newBuilder()
-                        .setKey("project")
-                        .setRange(
-                            Points.Range.newBuilder()
-                                .setGt(-1.1)
-                                .setLt(-0.9)
-                                .build()
-                        )
-                        .build()
+                        // Add condition for global items (project = -1)
+                        val globalCondition =
+                            FieldCondition
+                                .newBuilder()
+                                .setKey("project")
+                                .setRange(
+                                    Points.Range
+                                        .newBuilder()
+                                        .setGt(-1.1)
+                                        .setLt(-0.9)
+                                        .build(),
+                                ).build()
 
-                    // Add both conditions with OR logic
-                    projectFilter.addShould(
-                        Points.Condition.newBuilder()
-                            .setField(projectCondition)
-                            .build()
-                    )
-
-                    projectFilter.addShould(
-                        Points.Condition.newBuilder()
-                            .setField(globalCondition)
-                            .build()
-                    )
-
-                    // Create a copy of the filter without the project key
-                    val otherFilters = filter.filterKeys { it != "project" }
-
-                    // If there are other filters, combine them with the project filter using AND logic
-                    if (otherFilters.isNotEmpty()) {
-                        val otherFilter = createQdrantFilter(otherFilters)
-
-                        // Combine filters with AND logic
-                        val combinedFilter = Filter.newBuilder()
-
-                        // Add project filter as one condition
-                        combinedFilter.addMust(
-                            Points.Condition.newBuilder()
-                                .setFilter(projectFilter.build())
-                                .build()
+                        // Add both conditions with OR logic
+                        projectFilter.addShould(
+                            Points.Condition
+                                .newBuilder()
+                                .setField(projectCondition)
+                                .build(),
                         )
 
-                        // Add other filters as another condition
-                        combinedFilter.addMust(
-                            Points.Condition.newBuilder()
-                                .setFilter(otherFilter)
-                                .build()
+                        projectFilter.addShould(
+                            Points.Condition
+                                .newBuilder()
+                                .setField(globalCondition)
+                                .build(),
                         )
 
-                        combinedFilter.build()
+                        // Create a copy of the filter without the project key
+                        val otherFilters = filter.filterKeys { it != "project" }
+
+                        // If there are other filters, combine them with the project filter using AND logic
+                        if (otherFilters.isNotEmpty()) {
+                            val otherFilter = createQdrantFilter(otherFilters)
+
+                            // Combine filters with AND logic
+                            val combinedFilter = Filter.newBuilder()
+
+                            // Add project filter as one condition
+                            combinedFilter.addMust(
+                                Points.Condition
+                                    .newBuilder()
+                                    .setFilter(projectFilter.build())
+                                    .build(),
+                            )
+
+                            // Add other filters as another condition
+                            combinedFilter.addMust(
+                                Points.Condition
+                                    .newBuilder()
+                                    .setFilter(otherFilter)
+                                    .build(),
+                            )
+
+                            combinedFilter.build()
+                        } else {
+                            // If no other filters, just use the project filter
+                            projectFilter.build()
+                        }
                     } else {
-                        // If no other filters, just use the project filter
-                        projectFilter.build()
+                        // If no project filter, use the original filter
+                        createQdrantFilter(filter)
                     }
                 } else {
-                    // If no project filter, use the original filter
-                    createQdrantFilter(filter)
+                    null
                 }
-            } else {
-                null
-            }
 
             val results = mutableListOf<Document>()
 
@@ -305,7 +477,11 @@ class VectorDbService(
                     }
 
                     // Add with payload - include all fields
-                    val withPayloadSelector = Points.WithPayloadSelector.newBuilder().setEnable(true).build()
+                    val withPayloadSelector =
+                        Points.WithPayloadSelector
+                            .newBuilder()
+                            .setEnable(true)
+                            .build()
                     searchBuilder.withPayload = withPayloadSelector
 
                     // Add filter if provided
@@ -370,8 +546,9 @@ class VectorDbService(
      */
     fun deleteDocuments(filter: Map<String, Any>): Int {
         try {
-            // Use the single collection
-            val collection = AppConstants.VECTOR_DB_COLLECTION_NAME
+            // Use the single collection with dimension
+            val dimension = embeddingService.getEmbeddingDimension()
+            val collection = sanitizeCollectionName("jervis_${embeddingService.getModelName()}_dim${dimension}")
 
             // Convert filter to Qdrant filter
             val qdrantFilter = createQdrantFilter(filter)
@@ -391,17 +568,6 @@ class VectorDbService(
             logger.error(e) { "Error deleting documents: ${e.message}" }
             return 0
         }
-    }
-
-    /**
-     * Determine which collection to use for a document
-     *
-     * @param document The document
-     * @return The name of the collection to use
-     */
-    private fun getCollectionForDocument(document: Document): String {
-        // Always use the single collection for all document types
-        return AppConstants.VECTOR_DB_COLLECTION_NAME
     }
 
     /**

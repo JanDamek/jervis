@@ -219,8 +219,8 @@ class IndexerService(
                         metadata = chunkMetadata,
                     )
 
-                // Generate code embeddings and store in vector database
-                val embedding = embeddingService.generateCodeEmbedding(chunk.content)
+                // Generate embeddings and store in vector database
+                val embedding = embeddingService.generateEmbedding(chunk.content)
                 vectorDbService.storeDocument(document, embedding)
             }
         }
@@ -261,8 +261,8 @@ class IndexerService(
                         metadata = chunkMetadata,
                     )
 
-                // Generate text embeddings and store in vector database
-                val embedding = embeddingService.generateTextEmbedding(chunk.content)
+                // Generate embeddings and store in vector database
+                val embedding = embeddingService.generateEmbedding(chunk.content)
                 vectorDbService.storeDocument(document, embedding)
             }
         }

@@ -26,8 +26,8 @@ class RagOrchestrator(
      * @return The RAG response
      */
     fun processQuery(query: String, projectId: Long, options: Map<String, Any> = emptyMap()): RagResponse {
-        // 1. Generate embeddings for the query using the EmbeddingService
-        val queryEmbedding = embeddingService.generateTextEmbedding(query)
+        // 1. Generate embeddings for the query using the query-specific method
+        val queryEmbedding = embeddingService.generateQueryEmbedding(query)
 
         // 2. Retrieve relevant documents
         val filter = mapOf("project" to projectId)
@@ -52,7 +52,7 @@ class RagOrchestrator(
             Please provide a comprehensive and accurate answer based only on the information in the context.
         """.trimIndent()
 
-        val llmResponse = llmCoordinator.processQuery(prompt, context)
+        val llmResponse = llmCoordinator.processQueryBlocking(prompt, context)
 
         return RagResponse(
             answer = llmResponse.answer,

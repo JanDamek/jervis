@@ -2,6 +2,8 @@ package com.jervis
 
 import com.jervis.module.llmcoordinator.LlmCoordinator
 import com.jervis.service.ChatService
+import com.jervis.service.LMStudioService
+import com.jervis.service.OllamaService
 import com.jervis.service.ProjectService
 import com.jervis.service.SettingService
 import com.jervis.utils.MacOSAppUtils.setDockIcon
@@ -23,6 +25,8 @@ class JervisApplication(
     private val projectService: ProjectService,
     private val chatService: ChatService,
     private val llmCoordinator: LlmCoordinator,
+    private val ollamaService: OllamaService,
+    private val lmStudioService: LMStudioService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -33,10 +37,18 @@ class JervisApplication(
             ensureActiveProject()
 
             // Load startup minimization settings
-            val startMinimized = settingService.getBooleanValue("startup_minimize", false)
+            val startMinimized = settingService.getStartupMinimize()
 
             // Create window manager
-            val applicationWindows = ApplicationWindowManager(settingService, projectService, chatService, llmCoordinator)
+            val applicationWindows =
+                ApplicationWindowManager(
+                    settingService,
+                    projectService,
+                    chatService,
+                    llmCoordinator,
+                    ollamaService,
+                    lmStudioService,
+                )
 
             EventQueue.invokeLater {
                 // Initialize application with minimization settings
@@ -50,21 +62,21 @@ class JervisApplication(
      */
     private fun ensureActiveProject() {
         // Skip if we already have an active project
-        if (projectService.getActiveProject() != null) {
+        if (projectService.getActiveProjectBlocking() != null) {
             return
         }
 
         // Try to use the default project
-        projectService.getDefaultProject()?.let { defaultProject ->
-            projectService.setActiveProject(defaultProject)
+        projectService.getDefaultProjectBlocking()?.let { defaultProject ->
+            projectService.setActiveProjectBlocking(defaultProject)
             logger.info { "Default project automatically set: ${defaultProject.name}" }
             return
         }
 
         // Try to use the first available project
-        projectService.getAllProjects().firstOrNull()?.let { anyProject ->
-            projectService.setDefaultProject(anyProject)
-            projectService.setActiveProject(anyProject)
+        projectService.getAllProjectsBlocking().firstOrNull()?.let { anyProject ->
+            projectService.setDefaultProjectBlocking(anyProject)
+            projectService.setActiveProjectBlocking(anyProject)
             logger.info { "First available project automatically set: ${anyProject.name}" }
             return
         }
