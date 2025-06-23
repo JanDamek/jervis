@@ -1,6 +1,9 @@
 package com.jervis.module.llmcoordinator
 
 import com.fasterxml.jackson.annotation.JsonProperty
+import com.jervis.module.llm.ModelRouterService
+import com.jervis.module.llm.ProviderType
+import com.jervis.module.llm.Message
 import com.jervis.service.SettingService
 import mu.KotlinLogging
 import org.springframework.http.HttpEntity
@@ -17,6 +20,7 @@ import org.springframework.web.client.RestTemplate
 class LlmCoordinator(
     private val settingService: SettingService,
     private val tokenRateLimiter: TokenRateLimiter,
+    private val modelRouterService: ModelRouterService,
 ) {
     private val logger = KotlinLogging.logger {}
     private val restTemplate = RestTemplate()
@@ -24,142 +28,26 @@ class LlmCoordinator(
     // Initialize default values for settings
     init {
         initializeApiEndpoints()
-        initializeDefaultParameters()
-        initializeRateLimits()
-        initializeSystemPrompts()
-        initializeAnthropicModels()
-        initializeOpenAiModels()
-        initializeFallbackSettings()
     }
 
     /**
      * Initialize API endpoints
      */
     private fun initializeApiEndpoints() {
-        if (settingService.getStringValue(SettingService.ANTHROPIC_API_URL) == "none") {
-            settingService.saveValue(SettingService.ANTHROPIC_API_URL, "https://api.anthropic.com/v1/messages")
-        }
-        if (settingService.getStringValue(SettingService.ANTHROPIC_API_VERSION) == "none") {
-            settingService.saveValue(SettingService.ANTHROPIC_API_VERSION, "2023-06-01")
-        }
-        if (settingService.getStringValue(SettingService.OPENAI_API_URL) == "none") {
-            settingService.saveValue(SettingService.OPENAI_API_URL, "https://api.openai.com/v1/chat/completions")
-        }
-    }
-
-    /**
-     * Initialize default parameters for LLM requests
-     */
-    private fun initializeDefaultParameters() {
-        if (settingService.getStringValue(SettingService.LLM_DEFAULT_TEMPERATURE) == "none") {
-            settingService.saveValue(SettingService.LLM_DEFAULT_TEMPERATURE, "0.7")
-        }
-        if (settingService.getStringValue(SettingService.LLM_DEFAULT_MAX_TOKENS) == "none") {
-            settingService.saveValue(SettingService.LLM_DEFAULT_MAX_TOKENS, "1024")
-        }
-    }
-
-    /**
-     * Initialize rate limits for API calls
-     */
-    private fun initializeRateLimits() {
-        if (settingService.getIntValue(SettingService.ANTHROPIC_RATE_LIMIT_INPUT_TOKENS) == 0) {
-            settingService.saveIntSetting(SettingService.ANTHROPIC_RATE_LIMIT_INPUT_TOKENS, 20000)
-        }
-        if (settingService.getIntValue(SettingService.ANTHROPIC_RATE_LIMIT_OUTPUT_TOKENS) == 0) {
-            settingService.saveIntSetting(SettingService.ANTHROPIC_RATE_LIMIT_OUTPUT_TOKENS, 4000)
-        }
-        if (settingService.getIntValue(SettingService.ANTHROPIC_RATE_LIMIT_WINDOW_SECONDS) == 0) {
-            settingService.saveIntSetting(SettingService.ANTHROPIC_RATE_LIMIT_WINDOW_SECONDS, 60)
-        }
-    }
-
-    /**
-     * Initialize system prompts for different query types
-     */
-    private fun initializeSystemPrompts() {
-        if (settingService.getStringValue(SettingService.SYSTEM_PROMPT_CODE) == "none") {
-            settingService.saveValue(
-                SettingService.SYSTEM_PROMPT_CODE,
-                "You are an expert programmer. Provide clear, concise code examples and explanations.",
+        if (settingService.getStringValueBlocking(settingService.getAnthropicApiUrl()) == "none") {
+            settingService.saveValueBlocking(
+                settingService.getAnthropicApiUrl(),
+                "https://api.anthropic.com/v1/messages",
             )
         }
-        if (settingService.getStringValue(SettingService.SYSTEM_PROMPT_EXPLANATION) == "none") {
-            settingService.saveValue(
-                SettingService.SYSTEM_PROMPT_EXPLANATION,
-                "You are a helpful assistant. Provide clear, detailed explanations.",
+        if (settingService.getStringValueBlocking(settingService.getAnthropicApiVersion()) == "none") {
+            settingService.saveValueBlocking(settingService.getAnthropicApiVersion(), "2023-06-01")
+        }
+        if (settingService.getStringValueBlocking(settingService.getOpenaiApiUrl()) == "none") {
+            settingService.saveValueBlocking(
+                settingService.getOpenaiApiUrl(),
+                "https://api.openai.com/v1/chat/completions",
             )
-        }
-        if (settingService.getStringValue(SettingService.SYSTEM_PROMPT_SUMMARY) == "none") {
-            settingService.saveValue(
-                SettingService.SYSTEM_PROMPT_SUMMARY,
-                "You are a summarization expert. Provide concise summaries of the information.",
-            )
-        }
-        if (settingService.getStringValue(SettingService.SYSTEM_PROMPT_GENERAL) == "none") {
-            settingService.saveValue(
-                SettingService.SYSTEM_PROMPT_GENERAL,
-                "You are a helpful assistant. Provide accurate and relevant information.",
-            )
-        }
-    }
-
-    /**
-     * Initialize Anthropic models for different query types
-     */
-    private fun initializeAnthropicModels() {
-        if (settingService.getStringValue(SettingService.LLM_MODEL_CODE) == "none") {
-            settingService.saveValue(SettingService.LLM_MODEL_CODE, "claude-3-opus-20240229")
-        } else if (settingService.getStringValue(SettingService.LLM_MODEL_CODE) == "claude-3-opus") {
-            settingService.saveValue(SettingService.LLM_MODEL_CODE, "claude-3-opus-20240229")
-        }
-
-        if (settingService.getStringValue(SettingService.LLM_MODEL_EXPLANATION) == "none") {
-            settingService.saveValue(SettingService.LLM_MODEL_EXPLANATION, "claude-3-5-sonnet-20240620")
-        } else if (settingService.getStringValue(SettingService.LLM_MODEL_EXPLANATION) == "claude-3-sonnet") {
-            settingService.saveValue(SettingService.LLM_MODEL_EXPLANATION, "claude-3-5-sonnet-20240620")
-        }
-
-        if (settingService.getStringValue(SettingService.LLM_MODEL_SUMMARY) == "none") {
-            settingService.saveValue(SettingService.LLM_MODEL_SUMMARY, "claude-3-haiku-20240307")
-        } else if (settingService.getStringValue(SettingService.LLM_MODEL_SUMMARY) == "claude-3-haiku") {
-            settingService.saveValue(SettingService.LLM_MODEL_SUMMARY, "claude-3-haiku-20240307")
-        }
-
-        if (settingService.getStringValue(SettingService.LLM_MODEL_GENERAL) == "none") {
-            settingService.saveValue(SettingService.LLM_MODEL_GENERAL, "claude-3-5-sonnet-20240620")
-        } else if (settingService.getStringValue(SettingService.LLM_MODEL_GENERAL) == "claude-3-sonnet") {
-            settingService.saveValue(SettingService.LLM_MODEL_GENERAL, "claude-3-5-sonnet-20240620")
-        }
-    }
-
-    /**
-     * Initialize OpenAI models for different query types
-     */
-    private fun initializeOpenAiModels() {
-        if (settingService.getStringValue(SettingService.OPENAI_MODEL_CODE) == "none") {
-            settingService.saveValue(SettingService.OPENAI_MODEL_CODE, "gpt-4o")
-        }
-
-        if (settingService.getStringValue(SettingService.OPENAI_MODEL_EXPLANATION) == "none") {
-            settingService.saveValue(SettingService.OPENAI_MODEL_EXPLANATION, "gpt-4o")
-        }
-
-        if (settingService.getStringValue(SettingService.OPENAI_MODEL_SUMMARY) == "none") {
-            settingService.saveValue(SettingService.OPENAI_MODEL_SUMMARY, "gpt-4o")
-        }
-
-        if (settingService.getStringValue(SettingService.OPENAI_MODEL_GENERAL) == "none") {
-            settingService.saveValue(SettingService.OPENAI_MODEL_GENERAL, "gpt-4o")
-        }
-    }
-
-    /**
-     * Initialize fallback settings
-     */
-    private fun initializeFallbackSettings() {
-        if (settingService.getSettingValue(SettingService.FALLBACK_TO_OPENAI_ON_RATE_LIMIT).isNullOrBlank()) {
-            settingService.saveBooleanSetting(SettingService.FALLBACK_TO_OPENAI_ON_RATE_LIMIT, true)
         }
     }
 
@@ -171,11 +59,39 @@ class LlmCoordinator(
      * @param options Additional options for processing
      * @return The LLM response
      */
-    fun processQuery(
+    suspend fun processQuery(
         query: String,
         context: String,
         options: Map<String, Any> = emptyMap(),
     ): LlmResponse {
+        // Check if we should use local LLM models
+        val useLocalModels = options["use_local_models"] as? Boolean ?: true
+
+        if (useLocalModels) {
+            try {
+                logger.info { "Using local LLM models for query" }
+
+                // Format the user message with context if available
+                val userMessage =
+                    if (context.isNotBlank()) {
+                        "Context:\n$context\n\nUser Query: $query"
+                    } else {
+                        query
+                    }
+
+                // Process the query using the model router service
+                // Determine the provider type based on options or default to SIMPLE
+                val providerType = ProviderType.SIMPLE
+                val systemPrompt = options["system_prompt"] as? String
+                return modelRouterService.processQuery(userMessage, providerType, systemPrompt)
+            } catch (e: Exception) {
+                logger.error(e) { "Error using local LLM models, falling back to remote APIs: ${e.message}" }
+                // Fall back to remote APIs
+            }
+        }
+
+        // If we're here, either useLocalModels is false or there was an error with local models
+
         // 1. Analyze the query to determine the best approach
         val queryType = analyzeQuery(query)
 
@@ -185,21 +101,21 @@ class LlmCoordinator(
         // 4. Generate the response using the selected LLM
         val temperature =
             options["temperature"] as? Float
-                ?: settingService.getStringValue(SettingService.LLM_DEFAULT_TEMPERATURE).toFloatOrNull()
-                ?: 0.7f
+                ?: settingService.getLlmTemperature()
 
         val maxTokens =
-            options["max_tokens"] as? Int
-                ?: settingService.getStringValue(SettingService.LLM_DEFAULT_MAX_TOKENS).toIntOrNull()
-                ?: 1024
+            (
+                options["max_tokens"] as? Int
+                    ?: settingService.getLlmDefaultMaxTokensValue()
+            ).coerceAtLeast(1) // Ensure maxTokens is at least 1
 
         // Get the system prompt based on query type
         val systemPrompt =
             when (queryType) {
-                QueryType.CODE -> settingService.getStringValue(SettingService.SYSTEM_PROMPT_CODE)
-                QueryType.EXPLANATION -> settingService.getStringValue(SettingService.SYSTEM_PROMPT_EXPLANATION)
-                QueryType.SUMMARY -> settingService.getStringValue(SettingService.SYSTEM_PROMPT_SUMMARY)
-                QueryType.GENERAL -> settingService.getStringValue(SettingService.SYSTEM_PROMPT_GENERAL)
+                QueryType.CODE -> settingService.getSystemPromptCodeValue()
+                QueryType.EXPLANATION -> settingService.getSystemPromptExplanationValue()
+                QueryType.SUMMARY -> settingService.getSystemPromptSummaryValue()
+                QueryType.GENERAL -> settingService.getSystemPromptGeneralValue()
             }
 
         // Format the user message with context if available
@@ -210,57 +126,23 @@ class LlmCoordinator(
                 query
             }
 
-        try {
-            return when {
-                // Check if the provider is Anthropic
-                llmProvider.startsWith("anthropic.") -> {
-                    // Extract the model name from the provider string (e.g., "anthropic.claude-3-opus" -> "claude-3-opus")
-                    val modelName = llmProvider.substringAfter("anthropic.")
-                    processAnthropicQuery(modelName, systemPrompt, userMessage, maxTokens, temperature)
-                }
-
-                // Check if the provider is OpenAI
-                llmProvider.startsWith("openai.") -> {
-                    // Extract the model name from the provider string (e.g., "openai.gpt-4o" -> "gpt-4o")
-                    val modelName = llmProvider.substringAfter("openai.")
-                    processOpenAiQuery(modelName, systemPrompt, userMessage, maxTokens, temperature)
-                }
-
-                // Unsupported provider
-                else -> throw IllegalArgumentException("Unsupported LLM provider: $llmProvider")
+        return when {
+            // Check if the provider is Anthropic
+            llmProvider.startsWith("anthropic.") -> {
+                // Extract the model name from the provider string (e.g., "anthropic.claude-3-opus" -> "claude-3-opus")
+                val modelName = llmProvider.substringAfter("anthropic.")
+                processAnthropicQuery(modelName, systemPrompt, userMessage, maxTokens, temperature)
             }
-        } catch (e: RuntimeException) {
-            // If Anthropic rate limit is exceeded, try OpenAI as fallback
-            if (e.message?.contains(
-                    "rate limit exceeded",
-                    ignoreCase = true,
-                ) == true &&
-                llmProvider.startsWith("anthropic.")
-            ) {
-                // Log the fallback
-                logger.info { "Anthropic rate limit exceeded, falling back to OpenAI" }
 
-                // Select the appropriate OpenAI model based on query type
-                val openAiModel =
-                    when (queryType) {
-                        QueryType.CODE -> settingService.getStringValue(SettingService.OPENAI_MODEL_CODE)
-                        QueryType.EXPLANATION -> settingService.getStringValue(SettingService.OPENAI_MODEL_EXPLANATION)
-                        QueryType.SUMMARY -> settingService.getStringValue(SettingService.OPENAI_MODEL_SUMMARY)
-                        QueryType.GENERAL -> settingService.getStringValue(SettingService.OPENAI_MODEL_GENERAL)
-                    }
-
-                // Process the query using OpenAI
-                return processOpenAiQuery(
-                    model = openAiModel,
-                    systemPrompt = systemPrompt,
-                    userMessage = userMessage,
-                    maxTokens = maxTokens,
-                    temperature = temperature,
-                )
-            } else {
-                // If it's not a rate limit error or not from Anthropic, rethrow
-                throw e
+            // Check if the provider is OpenAI
+            llmProvider.startsWith("openai.") -> {
+                // Extract the model name from the provider string (e.g., "openai.gpt-4o" -> "gpt-4o")
+                val modelName = llmProvider.substringAfter("openai.")
+                processOpenAiQuery(modelName, systemPrompt, userMessage, maxTokens, temperature)
             }
+
+            // Unsupported provider
+            else -> throw IllegalArgumentException("Unsupported LLM provider: $llmProvider")
         }
     }
 
@@ -358,21 +240,23 @@ class LlmCoordinator(
         maxTokens: Int = 1024,
         temperature: Float = 0.7f,
     ): AnthropicResponse {
-        val apiKey = settingService.getStringValue(SettingService.ANTHROPIC_API_KEY)
+        // Ensure maxTokens is at least 1
+        val validMaxTokens = maxTokens.coerceAtLeast(1)
+        val apiKey = settingService.getAnthropicApiKey()
         if (apiKey.isBlank() || apiKey == "none") {
             throw IllegalStateException("Anthropic API key not configured. Please set it in the settings.")
         }
 
-        val apiUrl = settingService.getStringValue(SettingService.ANTHROPIC_API_URL)
-        val apiVersion = settingService.getStringValue(SettingService.ANTHROPIC_API_VERSION)
+        val apiUrl = settingService.getAnthropicApiUrlValue()
+        val apiVersion = settingService.getAnthropicApiVersionValue()
 
         // Estimate token count for rate limiting
         // This is a simple estimation - in a production system, you might want to use a more accurate tokenizer
         val estimatedInputTokenCount = estimateTokenCount(systemPrompt, userMessage)
 
         // Estimate output token count - this is very rough, but we need some estimate
-        // We'll use the maxTokens as an upper bound, but in practice it will often be less
-        val estimatedOutputTokenCount = maxTokens
+        // We'll use the validMaxTokens as an upper bound, but in practice it will often be less
+        val estimatedOutputTokenCount = validMaxTokens
 
         // Check with rate limiter before proceeding for both input and output tokens
         if (!tokenRateLimiter.checkAndWaitForInput(estimatedInputTokenCount)) {
@@ -398,7 +282,7 @@ class LlmCoordinator(
                 model = model,
                 system = systemPrompt,
                 messages = messages,
-                maxTokens = maxTokens,
+                maxTokens = validMaxTokens,
                 temperature = temperature,
             )
 
@@ -431,12 +315,12 @@ class LlmCoordinator(
         maxTokens: Int = 1024,
         temperature: Float = 0.7f,
     ): OpenAiResponse {
-        val apiKey = settingService.getStringValue(SettingService.OPENAI_API_KEY)
+        val apiKey = settingService.getOpenaiApiKey()
         if (apiKey.isBlank() || apiKey == "none") {
             throw IllegalStateException("OpenAI API key not configured. Please set it in the settings.")
         }
 
-        val apiUrl = settingService.getStringValue(SettingService.OPENAI_API_URL)
+        val apiUrl = settingService.getOpenaiApiUrlValue()
 
         val headers = HttpHeaders()
         headers.contentType = MediaType.APPLICATION_JSON
@@ -505,19 +389,19 @@ class LlmCoordinator(
         // If useOpenAi is true, return OpenAI provider
         if (useOpenAi) {
             return when (queryType) {
-                QueryType.CODE -> "openai.${settingService.getStringValue(SettingService.OPENAI_MODEL_CODE)}"
-                QueryType.EXPLANATION -> "openai.${settingService.getStringValue(SettingService.OPENAI_MODEL_EXPLANATION)}"
-                QueryType.SUMMARY -> "openai.${settingService.getStringValue(SettingService.OPENAI_MODEL_SUMMARY)}"
-                QueryType.GENERAL -> "openai.${settingService.getStringValue(SettingService.OPENAI_MODEL_GENERAL)}"
+                QueryType.CODE -> "openai.${settingService.getOpenaiModelCodeValueBlocking()}"
+                QueryType.EXPLANATION -> "openai.${settingService.getOpenaiModelExplanationValueBlocking()}"
+                QueryType.SUMMARY -> "openai.${settingService.getOpenaiModelSummaryValueBlocking()}"
+                QueryType.GENERAL -> "openai.${settingService.getOpenaiModelGeneralValueBlocking()}"
             }
         }
 
         // Default to Anthropic
         return when (queryType) {
-            QueryType.CODE -> "anthropic.${settingService.getStringValue(SettingService.LLM_MODEL_CODE)}"
-            QueryType.EXPLANATION -> "anthropic.${settingService.getStringValue(SettingService.LLM_MODEL_EXPLANATION)}"
-            QueryType.SUMMARY -> "anthropic.${settingService.getStringValue(SettingService.LLM_MODEL_SUMMARY)}"
-            QueryType.GENERAL -> "anthropic.${settingService.getStringValue(SettingService.LLM_MODEL_GENERAL)}"
+            QueryType.CODE -> "anthropic.${settingService.getLlmModelCodeValueBlocking()}"
+            QueryType.EXPLANATION -> "anthropic.${settingService.getLlmModelExplanationValueBlocking()}"
+            QueryType.SUMMARY -> "anthropic.${settingService.getLlmModelSummaryValueBlocking()}"
+            QueryType.GENERAL -> "anthropic.${settingService.getLlmModelGeneralValueBlocking()}"
         }
     }
 
@@ -545,13 +429,13 @@ class LlmCoordinator(
      * @param apiKey The API key to verify
      * @return True if the API key is valid, false otherwise
      */
-    fun verifyAnthropicApiKey(apiKey: String): Boolean {
+    suspend fun verifyAnthropicApiKey(apiKey: String): Boolean {
         if (apiKey.isBlank()) {
             return false
         }
 
-        val apiUrl = settingService.getStringValue(SettingService.ANTHROPIC_API_URL)
-        val apiVersion = settingService.getStringValue(SettingService.ANTHROPIC_API_VERSION)
+        val apiUrl = settingService.getAnthropicApiUrlValue()
+        val apiVersion = settingService.getAnthropicApiVersionValue()
 
         val headers = HttpHeaders()
         headers.contentType = MediaType.APPLICATION_JSON
@@ -589,12 +473,12 @@ class LlmCoordinator(
      * @param apiKey The API key to verify
      * @return True if the API key is valid, false otherwise
      */
-    fun verifyOpenAiApiKey(apiKey: String): Boolean {
+    suspend fun verifyOpenAiApiKey(apiKey: String): Boolean {
         if (apiKey.isBlank()) {
             return false
         }
 
-        val apiUrl = settingService.getStringValue(SettingService.OPENAI_API_URL)
+        val apiUrl = settingService.getOpenaiApiUrlValue()
 
         val headers = HttpHeaders()
         headers.contentType = MediaType.APPLICATION_JSON
@@ -623,6 +507,23 @@ class LlmCoordinator(
             false
         }
     }
+
+    /**
+     * Non-suspend version of processQuery that uses runBlocking
+     *
+     * @param query The user query
+     * @param context The context for the query
+     * @param options Additional options for processing
+     * @return The LLM response
+     */
+    fun processQueryBlocking(
+        query: String,
+        context: String,
+        options: Map<String, Any> = emptyMap(),
+    ): LlmResponse =
+        kotlinx.coroutines.runBlocking {
+            processQuery(query, context, options)
+        }
 }
 
 /**
@@ -657,15 +558,11 @@ data class AnthropicRequest(
     @JsonProperty("max_tokens")
     val maxTokens: Int = 1024,
     val temperature: Float = 0.7f,
-)
-
-/**
- * Message for Anthropic API
- */
-data class Message(
-    val role: String,
-    val content: String,
-)
+) {
+    init {
+        require(maxTokens >= 1) { "max_tokens must be greater than or equal to 1" }
+    }
+}
 
 /**
  * Anthropic API response

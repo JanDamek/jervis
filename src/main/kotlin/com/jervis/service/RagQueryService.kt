@@ -54,7 +54,7 @@ class RagQueryService(
             Please provide a refined query that will help retrieve more relevant information.
         """.trimIndent()
 
-        val llmRefinementResponse = llmCoordinator.processQuery(refinementPrompt, "")
+        val llmRefinementResponse = llmCoordinator.processQueryBlocking(refinementPrompt, "")
         val refinedQuery = llmRefinementResponse.answer
 
         logger.debug { "Refined query: $refinedQuery" }
@@ -76,7 +76,7 @@ class RagQueryService(
             Please provide a comprehensive and accurate answer based only on the information in the context.
         """.trimIndent()
 
-        val finalLlmResponse = llmCoordinator.processQuery(finalPrompt, finalRagResponse.context)
+        val finalLlmResponse = llmCoordinator.processQueryBlocking(finalPrompt, finalRagResponse.context)
 
         logger.info { "RAG query processed successfully" }
         return RagQueryResult(
@@ -98,12 +98,12 @@ class RagQueryService(
      */
     private fun resolveProjectId(): Long {
         // Get the active project
-        val activeProject = projectService.getActiveProject()
+        val activeProject = projectService.getActiveProjectBlocking()
         if (activeProject == null) {
             logger.warn { "No active project found" }
             throw IllegalArgumentException("No active project selected. Please select a project first.")
         }
-        
+
         return activeProject.id ?: throw IllegalArgumentException("Active project has no ID")
     }
 }

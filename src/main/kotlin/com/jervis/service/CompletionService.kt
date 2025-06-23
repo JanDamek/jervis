@@ -38,7 +38,7 @@ class CompletionService(
      * @param request The completion request
      * @return The completion response
      */
-    fun complete(request: CompletionRequest): CompletionResponse {
+    suspend fun complete(request: CompletionRequest): CompletionResponse {
         try {
             logger.info { "Processing completion request: ${request.prompt.take(50)}..." }
 
@@ -60,14 +60,14 @@ class CompletionService(
                             text = llmResponse.answer,
                             index = 0,
                             logprobs = null,
-                            finish_reason = llmResponse.finishReason,
+                            finishReason = llmResponse.finishReason,
                         ),
                     ),
                 usage =
                     Usage(
-                        prompt_tokens = llmResponse.promptTokens,
-                        completion_tokens = llmResponse.completionTokens,
-                        total_tokens = llmResponse.totalTokens,
+                        promptTokens = llmResponse.promptTokens,
+                        completionTokens = llmResponse.completionTokens,
+                        totalTokens = llmResponse.totalTokens,
                     ),
             )
         } catch (e: Exception) {
@@ -83,10 +83,10 @@ class CompletionService(
                             text = "Error processing request: ${e.message}",
                             index = 0,
                             logprobs = null,
-                            finish_reason = "error",
+                            finishReason = "error",
                         ),
                     ),
-                usage = Usage(0, 0, 0),
+                usage = Usage(promptTokens = 0, completionTokens = 0, totalTokens = 0),
             )
         }
     }
@@ -97,7 +97,7 @@ class CompletionService(
      * @param request The chat completion request
      * @return The chat completion response
      */
-    fun chatComplete(request: ChatCompletionRequest): ChatCompletionResponse {
+    suspend fun chatComplete(request: ChatCompletionRequest): ChatCompletionResponse {
         try {
             val userPrompt = request.messages.lastOrNull()?.content ?: ""
             logger.info { "Processing chat completion request: ${userPrompt.take(50)}..." }
@@ -123,14 +123,14 @@ class CompletionService(
                                 role = "assistant",
                                 content = result.answer
                             ),
-                            finish_reason = result.finishReason,
+                            finishReason = result.finishReason,
                         ),
                     ),
                 usage =
                     Usage(
-                        prompt_tokens = result.promptTokens,
-                        completion_tokens = result.completionTokens,
-                        total_tokens = result.totalTokens,
+                        promptTokens = result.promptTokens,
+                        completionTokens = result.completionTokens,
+                        totalTokens = result.totalTokens,
                     ),
             )
         } catch (e: Exception) {
@@ -148,10 +148,10 @@ class CompletionService(
                                 role = "assistant",
                                 content = "Error processing request: ${e.message}"
                             ),
-                            finish_reason = "error",
+                            finishReason = "error",
                         ),
                     ),
-                usage = Usage(0, 0, 0),
+                usage = Usage(promptTokens = 0, completionTokens = 0, totalTokens = 0),
             )
         }
     }
@@ -162,14 +162,14 @@ class CompletionService(
      * @param request The embedding request
      * @return The embedding response
      */
-    fun embeddings(request: EmbeddingRequest): EmbeddingResponse {
+    suspend fun embeddings(request: EmbeddingRequest): EmbeddingResponse {
         // Use the model specified in the request or default to text model
         val model = request.model
 
         // Generate embeddings for each input text
         val items = request.input.mapIndexed { i, text ->
             // Generate embedding using the embedding service
-            val embedding = embeddingService.generateTextEmbedding(text)
+            val embedding = embeddingService.generateEmbedding(text)
 
             EmbeddingItem(
                 embedding = embedding,
@@ -185,9 +185,9 @@ class CompletionService(
             model = model ?: "default-model",
             usage =
                 Usage(
-                    prompt_tokens = promptTokens,
-                    completion_tokens = 0,
-                    total_tokens = promptTokens,
+                    promptTokens = promptTokens,
+                    completionTokens = 0,
+                    totalTokens = promptTokens,
                 ),
         )
     }
@@ -198,7 +198,7 @@ class CompletionService(
      * @param query The user query
      * @return The response to the query
      */
-    fun processQuery(query: String): String {
+    suspend fun processQuery(query: String): String {
         try {
             logger.info { "Processing chat query: $query" }
 
@@ -218,7 +218,7 @@ class CompletionService(
      * @param modelId The model ID, which corresponds to a project name
      * @return The resolved project, or null if not found
      */
-    private fun resolveProject(modelId: String?): Project? =
+    private suspend fun resolveProject(modelId: String?): Project? =
         if (!modelId.isNullOrBlank()) {
             projectService.getAllProjects().find { it.name == modelId }
         } else {

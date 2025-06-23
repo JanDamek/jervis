@@ -44,7 +44,7 @@ class GitWatcherService(
      * and setting up filesystem watchers
      */
     fun initialize() {
-        projectService.getAllProjects().forEach { project ->
+        projectService.getAllProjectsBlocking().forEach { project ->
             project.id?.let { projectId ->
                 initializeGitWatcher(project, projectId)
                 initializeFileSystemWatcher(project, projectId)
@@ -200,7 +200,7 @@ class GitWatcherService(
      */
     @Scheduled(fixedDelay = 60000) // Check every minute
     fun checkForNewCommits() {
-        projectService.getAllProjects().forEach { project ->
+        projectService.getAllProjectsBlocking().forEach { project ->
             checkProjectForChanges(project)
         }
     }

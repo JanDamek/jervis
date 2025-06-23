@@ -21,7 +21,8 @@ class GitClient {
         val id: String,
         val author: String,
         val time: Instant,
-        val message: String
+        val message: String,
+        val changedFiles: List<String> = emptyList()
     )
 
     /**
@@ -193,5 +194,70 @@ class GitClient {
         process.waitFor(5, TimeUnit.SECONDS)
 
         return output
+    }
+
+    /**
+     * Get the full commit history of the repository
+     * 
+     * @param repoPath Path to the Git repository
+     * @param maxCommits Maximum number of commits to retrieve (default: 100)
+     * @return List of commit information objects
+     */
+    fun getCommitHistory(repoPath: String?, maxCommits: Int = 100): List<CommitInfo> {
+        if (repoPath == null) return emptyList()
+
+        val gitDir = File(repoPath, ".git")
+        if (!gitDir.exists() || !gitDir.isDirectory) {
+            return emptyList()
+        }
+
+        val process = ProcessBuilder()
+            .directory(File(repoPath))
+            .command("git", "log", "-$maxCommits", "--format=%H%n%an%n%cd%n%s", "--date=iso")
+            .start()
+
+        val output = process.inputStream.bufferedReader().readText()
+        process.waitFor(10, TimeUnit.SECONDS)
+
+        if (output.isBlank()) return emptyList()
+
+        val commits = mutableListOf<CommitInfo>()
+        val commitBlocks = output.split("\n\n")
+
+        for (block in commitBlocks) {
+            val lines = block.trim().split("\n")
+            if (lines.size < 4) continue
+
+            try {
+                val commitId = lines[0]
+                val author = lines[1]
+                val dateStr = lines[2]
+                val message = lines[3]
+
+                // Parse the Git date format (e.g., "2023-05-15 10:30:45 +0200")
+                val dateTime = java.time.LocalDateTime.parse(
+                    dateStr.substring(0, 19),
+                    java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                )
+                val time = dateTime.atZone(ZoneId.systemDefault()).toInstant()
+
+                // Get files changed in this commit
+                val filesProcess = ProcessBuilder()
+                    .directory(File(repoPath))
+                    .command("git", "show", "--name-only", "--format=", commitId)
+                    .start()
+
+                val changedFiles = filesProcess.inputStream.bufferedReader().readLines()
+                    .filter { it.isNotBlank() }
+                filesProcess.waitFor(5, TimeUnit.SECONDS)
+
+                commits.add(CommitInfo(commitId, author, time, message, changedFiles))
+            } catch (e: Exception) {
+                println("Error parsing Git commit info: ${e.message}")
+                // Continue with next commit
+            }
+        }
+
+        return commits
     }
 }

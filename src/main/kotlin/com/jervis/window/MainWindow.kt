@@ -1,8 +1,15 @@
 package com.jervis.window
 
 import com.jervis.service.ProjectService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import java.awt.BorderLayout
 import java.awt.Dimension
+import java.awt.event.KeyAdapter
+import java.awt.event.KeyEvent
 import javax.swing.JButton
 import javax.swing.JComboBox
 import javax.swing.JFrame
@@ -14,14 +21,24 @@ import javax.swing.JTextField
 import javax.swing.border.EmptyBorder
 
 class MainWindow(
-    projectService: ProjectService,
+    private val projectService: ProjectService,
     private val chatService: com.jervis.service.ChatService
 ) : JFrame("JERVIS Assistant") {
-    private val projectSelector = JComboBox(projectService.getAllProjects().map { project -> project.name }.toTypedArray())
+    private val projectSelector = JComboBox<String>(arrayOf())
     private val chatArea = JTextArea()
     private val inputField = JTextField()
+    private val coroutineScope = CoroutineScope(Dispatchers.Default)
 
     init {
+        // Load projects in a blocking way during initialization
+        runBlocking {
+            val projects = projectService.getAllProjects()
+            val projectNames = projects.map { project -> project.name }.toTypedArray()
+            java.awt.EventQueue.invokeLater {
+                projectSelector.removeAllItems()
+                projectNames.forEach { projectSelector.addItem(it) }
+            }
+        }
         defaultCloseOperation = HIDE_ON_CLOSE
         size = Dimension(500, 600)
         setLocationRelativeTo(null)
@@ -44,60 +61,92 @@ class MainWindow(
         bottomPanel.border = EmptyBorder(10, 10, 10, 10)
         bottomPanel.add(inputField, BorderLayout.CENTER)
         val sendButton = JButton("Send")
-        sendButton.addActionListener {
-            val text = inputField.text.trim()
-            if (text.isNotEmpty()) {
-                chatArea.append("Me: $text\n")
-                inputField.text = ""
 
-                // Disable input and button while processing
-                inputField.isEnabled = false
-                sendButton.isEnabled = false
-                chatArea.append("Assistant: Processing...\n")
-
-                // Process the query in a background thread to keep UI responsive
-                Thread {
-                    try {
-                        // Process the query using the ChatService
-                        val response = chatService.processQuery(text)
-
-                        // Update UI on the EDT
-                        java.awt.EventQueue.invokeLater {
-                            // Remove the "Processing..." message
-                            val content = chatArea.text
-                            chatArea.text = content.replace("Assistant: Processing...\n", "")
-
-                            // Add the response
-                            chatArea.append("Assistant: $response\n\n")
-
-                            // Re-enable input and button
-                            inputField.isEnabled = true
-                            sendButton.isEnabled = true
-                            inputField.requestFocus()
-                        }
-                    } catch (e: Exception) {
-                        // Handle errors
-                        java.awt.EventQueue.invokeLater {
-                            // Remove the "Processing..." message
-                            val content = chatArea.text
-                            chatArea.text = content.replace("Assistant: Processing...\n", "")
-
-                            // Add the error message
-                            chatArea.append("Assistant: Sorry, an error occurred: ${e.message}\n\n")
-
-                            // Re-enable input and button
-                            inputField.isEnabled = true
-                            sendButton.isEnabled = true
-                            inputField.requestFocus()
-                        }
+        // Add key listener to handle Enter and Shift+Enter
+        inputField.addKeyListener(object : KeyAdapter() {
+            override fun keyPressed(e: KeyEvent) {
+                if (e.keyCode == KeyEvent.VK_ENTER) {
+                    if (e.isShiftDown) {
+                        // Shift+Enter: add a new line
+                        inputField.text += "\n"
+                        // Set caret position to the end of text
+                        inputField.caretPosition = inputField.text.length
+                        e.consume()
+                    } else {
+                        // Enter: send message
+                        e.consume()
+                        sendMessage()
                     }
-                }.start()
+                }
             }
+        })
+
+        // Add action listener to send button
+        sendButton.addActionListener {
+            sendMessage()
         }
+
+        // Make sure the send button is disabled when the input is disabled
+        inputField.addPropertyChangeListener("enabled") { event ->
+            sendButton.isEnabled = event.newValue as Boolean
+        }
+
         bottomPanel.add(sendButton, BorderLayout.EAST)
 
         add(topPanel, BorderLayout.NORTH)
         add(chatScroll, BorderLayout.CENTER)
         add(bottomPanel, BorderLayout.SOUTH)
+    }
+
+    /**
+     * Sends the message from the input field to the chat service
+     */
+    private fun sendMessage() {
+        val text = inputField.text.trim()
+        if (text.isNotEmpty()) {
+            chatArea.append("Me: $text\n")
+            inputField.text = ""
+
+            // Disable input while processing
+            inputField.isEnabled = false
+
+            chatArea.append("Assistant: Processing...\n")
+
+            // Process the query in a coroutine to keep UI responsive
+            coroutineScope.launch {
+                try {
+                    // Process the query using the ChatService
+                    val response = chatService.processQuery(text)
+
+                    // Update UI on the EDT
+                    withContext(Dispatchers.Main) {
+                        // Remove the "Processing..." message
+                        val content = chatArea.text
+                        chatArea.text = content.replace("Assistant: Processing...\n", "")
+
+                        // Add the response
+                        chatArea.append("Assistant: $response\n\n")
+
+                        // Re-enable input and button
+                        inputField.isEnabled = true
+                        inputField.requestFocus()
+                    }
+                } catch (e: Exception) {
+                    // Handle errors
+                    withContext(Dispatchers.Main) {
+                        // Remove the "Processing..." message
+                        val content = chatArea.text
+                        chatArea.text = content.replace("Assistant: Processing...\n", "")
+
+                        // Add the error message
+                        chatArea.append("Assistant: Sorry, an error occurred: ${e.message}\n\n")
+
+                        // Re-enable input
+                        inputField.isEnabled = true
+                        inputField.requestFocus()
+                    }
+                }
+            }
+        }
     }
 }

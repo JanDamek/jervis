@@ -1,8 +1,11 @@
 package com.jervis.service
 
 import com.jervis.entity.Project
+import com.jervis.entity.SettingType
 import com.jervis.module.indexer.IndexerService
+import com.jervis.module.indexer.ProjectIndexer
 import com.jervis.repository.ProjectRepository
+import kotlinx.coroutines.runBlocking
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -13,60 +16,62 @@ class ProjectService(
     private val projectRepository: ProjectRepository,
     private val settingService: SettingService,
     private val indexerService: IndexerService,
+    private val projectIndexer: ProjectIndexer
 ) {
     companion object {
-        // Klíč pro uložení ID aktivního projektu v nastavení
+        // Key for storing active project ID in settings
         const val ACTIVE_PROJECT_ID = "active_project_id"
         private val logger = KotlinLogging.logger {}
     }
 
     /**
-     * Získá všechny projekty
+     * Gets all projects
      */
     fun getAllProjects(): List<Project> = projectRepository.findAll()
 
     /**
-     * Získá projekt podle ID
+     * Gets a project by ID
      */
     fun getProjectById(id: Long): Project? = projectRepository.findById(id).orElse(null)
 
     /**
-     * Získá aktivní projekt
+     * Gets the active project
      */
     fun getActiveProject(): Project? {
-        val projectId = settingService.getIntValue(ACTIVE_PROJECT_ID, -1)
+        val projectIdStr = settingService.getEffectiveValue(ACTIVE_PROJECT_ID) ?: "-1"
+        val projectId = projectIdStr.toIntOrNull() ?: -1
         return if (projectId > 0) {
             getProjectById(projectId.toLong())
         } else {
-            // Pokud není nastaven aktivní projekt, zkusíme najít výchozí
+            // If no active project is set, try to find the default one
             getDefaultProject()
         }
     }
 
     /**
-     * Získá výchozí projekt, pokud existuje
+     * Gets the default project, if it exists
      */
     fun getDefaultProject(): Project? = projectRepository.findByActiveIsTrue()
 
     /**
-     * Nastaví projekt jako aktivní
+     * Sets a project as active
      */
     @Transactional
     fun setActiveProject(project: Project) {
-        // Uložíme ID projektu do nastavení
-        settingService.saveIntSetting(ACTIVE_PROJECT_ID, project.id?.toInt() ?: -1)
+        // Save project ID to settings
+        settingService.saveValue(ACTIVE_PROJECT_ID, (project.id?.toInt() ?: -1).toString(), SettingType.INTEGER)
 
-        // Oznámíme změnu aktivního projektu RAG službě
+        // Notify RAG service about active project change
         // TODO call rag service for set active project
         //        ragService.notifyProjectChanged(project)
     }
 
     /**
-     * Nastaví projekt jako výchozí a zruší výchozí stav u ostatních projektů
+     * Sets a project as default and removes default status from other projects
      */
     @Transactional
     fun setDefaultProject(project: Project) {
-        // Nejprve zrušíme výchozí stav u všech projektů
+        // First, remove default status from all projects
         val allProjects = getAllProjects()
         allProjects.forEach {
             if (it.active && it.id != project.id) {
@@ -76,21 +81,23 @@ class ProjectService(
             }
         }
 
-        // Nastavíme výchozí stav u vybraného projektu
+        // Set default status for the selected project
         if (!project.active) {
             project.active = true
             project.updatedAt = LocalDateTime.now()
             projectRepository.save(project)
         }
 
-        // Pokud není nastaven aktivní projekt, nastavíme tento projekt jako aktivní
-        if (settingService.getIntValue(ACTIVE_PROJECT_ID, -1) <= 0) {
+        // If no active project is set, set this project as active
+        val activeProjectIdStr = settingService.getEffectiveValue(ACTIVE_PROJECT_ID) ?: "-1"
+        val activeProjectId = activeProjectIdStr.toIntOrNull() ?: -1
+        if (activeProjectId <= 0) {
             setActiveProject(project)
         }
     }
 
     /**
-     * Vytvoří nebo aktualizuje projekt
+     * Creates or updates a project
      */
     @Transactional
     fun saveProject(
@@ -102,7 +109,7 @@ class ProjectService(
         val savedProject = projectRepository.save(project)
 
         if (makeDefault || (isNew && getAllProjects().size == 1)) {
-            // Pokud je to první projekt nebo je explicitně požadováno, nastavíme ho jako výchozí
+            // If it's the first project or explicitly requested, set it as default
             setDefaultProject(savedProject)
         }
 
@@ -110,7 +117,7 @@ class ProjectService(
     }
 
     /**
-     * Smaže projekt
+     * Deletes a project
      */
     @Transactional
     fun deleteProject(project: Project) {
@@ -120,18 +127,18 @@ class ProjectService(
         projectRepository.delete(project)
 
         if (isActive) {
-            // Pokud byl projekt aktivní, nastavíme jako aktivní výchozí projekt
+            // If the project was active, set the default project as active
             val defaultProject = getDefaultProject()
             if (defaultProject != null) {
                 setActiveProject(defaultProject)
             } else {
-                // Pokud není žádný výchozí projekt, vymažeme nastavení aktivního projektu
-                settingService.saveIntSetting(ACTIVE_PROJECT_ID, -1)
+                // If there's no default project, clear the active project setting
+                settingService.saveValue(ACTIVE_PROJECT_ID, "-1", SettingType.INTEGER)
             }
         }
 
         if (isDefault) {
-            // Pokud byl projekt výchozí, nastavíme jako výchozí první dostupný projekt
+            // If the project was default, set the first available project as default
             val firstProject = getAllProjects().firstOrNull()
             if (firstProject != null) {
                 setDefaultProject(firstProject)
@@ -140,23 +147,115 @@ class ProjectService(
     }
 
     /**
-     * Načte zdrojové kódy projektu do RAG
-     * Provede indexaci, embedování a uložení do QDrant vector store
+     * Loads project source code into RAG
+     * Performs comprehensive indexing, including:
+     * - Git integration
+     * - Code chunking and embedding
+     * - Dependency analysis
+     * - TODO extraction
+     * - Workspace management
      */
-    fun uploadProjectSource(project: Project) {
+    suspend fun uploadProjectSource(project: Project) {
         if (project.path.isNullOrBlank()) {
-            logger.warn { "Projekt ${project.name} nemá nastavenou cestu ke zdrojovým kódům" }
+            logger.warn { "Project ${project.name} doesn't have a path to source code set" }
             return
         }
 
-        logger.info { "Načítání zdrojových kódů projektu ${project.name} do RAG" }
+        logger.info { "Loading source code of project ${project.name} into RAG" }
 
         try {
-            // Použijeme IndexerService pro indexaci celého adresáře projektu
-            indexerService.indexProject(project)
-            logger.info { "Zdrojové kódy projektu ${project.name} byly úspěšně načteny do RAG" }
+            // Use ProjectIndexer for comprehensive indexing
+            val result = projectIndexer.indexProject(project)
+
+            if (result.success) {
+                logger.info { 
+                    "Source code of project ${project.name} was successfully loaded into RAG. " +
+                    "Files: ${result.filesProcessed}, " +
+                    "Classes: ${result.classesProcessed}, " +
+                    "Embeddings: ${result.embeddingsStored}, " +
+                    "TODOs: ${result.todosExtracted}, " +
+                    "Dependencies: ${result.dependenciesAnalyzed}"
+                }
+            } else {
+                logger.error { "Error loading source code of project ${project.name}: ${result.errorMessage}" }
+            }
         } catch (e: Exception) {
-            logger.error(e) { "Chyba při načítání zdrojových kódů projektu ${project.name}: ${e.message}" }
+            logger.error(e) { "Error loading source code of project ${project.name}: ${e.message}" }
         }
     }
+
+    /**
+     * Non-suspend version of getAllProjects that uses runBlocking
+     */
+    fun getAllProjectsBlocking(): List<Project> =
+        runBlocking {
+            getAllProjects()
+        }
+
+    /**
+     * Non-suspend version of getProjectById that uses runBlocking
+     */
+    fun getProjectByIdBlocking(id: Long): Project? =
+        runBlocking {
+            getProjectById(id)
+        }
+
+    /**
+     * Non-suspend version of getActiveProject that uses runBlocking
+     */
+    fun getActiveProjectBlocking(): Project? =
+        runBlocking {
+            getActiveProject()
+        }
+
+    /**
+     * Non-suspend version of getDefaultProject that uses runBlocking
+     */
+    fun getDefaultProjectBlocking(): Project? =
+        runBlocking {
+            getDefaultProject()
+        }
+
+    /**
+     * Non-suspend version of setActiveProject that uses runBlocking
+     */
+    fun setActiveProjectBlocking(project: Project) =
+        runBlocking {
+            setActiveProject(project)
+        }
+
+    /**
+     * Non-suspend version of setDefaultProject that uses runBlocking
+     */
+    fun setDefaultProjectBlocking(project: Project) =
+        runBlocking {
+            setDefaultProject(project)
+        }
+
+    /**
+     * Non-suspend version of saveProject that uses runBlocking
+     */
+    fun saveProjectBlocking(
+        project: Project,
+        makeDefault: Boolean = false,
+    ): Project =
+        runBlocking {
+            saveProject(project, makeDefault)
+        }
+
+    /**
+     * Non-suspend version of deleteProject that uses runBlocking
+     */
+    fun deleteProjectBlocking(project: Project) =
+        runBlocking {
+            deleteProject(project)
+        }
+
+    /**
+     * Non-suspend version of uploadProjectSource that uses runBlocking
+     */
+    fun uploadProjectSourceBlocking(project: Project) =
+        runBlocking {
+            uploadProjectSource(project)
+        }
 }

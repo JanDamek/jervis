@@ -26,6 +26,11 @@ import javax.swing.ListSelectionModel
 import javax.swing.SwingConstants
 import javax.swing.table.AbstractTableModel
 import javax.swing.table.DefaultTableCellRenderer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 
 /**
  * Okno pro správu projektů
@@ -70,7 +75,7 @@ class ProjectSettingWindow(
         setContentPane(contentPane)
 
         // Načtení projektů
-        loadProjects()
+        loadProjectsWithCoroutine()
     }
 
     /**
@@ -96,7 +101,9 @@ class ProjectSettingWindow(
 
         // Listener pro výběr řádku
         projectTable.selectionModel.addListSelectionListener {
-            updateButtonState()
+            CoroutineScope(Dispatchers.Main).launch {
+                updateButtonState()
+            }
         }
 
         // Double-click na řádek pro editaci
@@ -125,7 +132,9 @@ class ProjectSettingWindow(
         uploadButton.addActionListener { uploadProjectToRag() }
 
         // Počáteční stav tlačítek
-        updateButtonState()
+        CoroutineScope(Dispatchers.Main).launch {
+            updateButtonState()
+        }
     }
 
     /**
@@ -166,7 +175,7 @@ class ProjectSettingWindow(
     /**
      * Aktualizace stavu tlačítek podle výběru
      */
-    private fun updateButtonState() {
+    private suspend fun updateButtonState() {
         val isRowSelected = projectTable.selectedRow != -1
 
         editButton.isEnabled = isRowSelected
@@ -191,10 +200,19 @@ class ProjectSettingWindow(
     /**
      * Načtení seznamu projektů
      */
-    fun loadProjects() {
+    suspend fun loadProjects() {
         val projects = projectService.getAllProjects()
         projectTableModel.updateProjects(projects)
         updateButtonState()
+    }
+
+    /**
+     * Načtení seznamu projektů s použitím coroutine
+     */
+    fun loadProjectsWithCoroutine() {
+        CoroutineScope(Dispatchers.Main).launch {
+            loadProjects()
+        }
     }
 
     /**
@@ -216,8 +234,10 @@ class ProjectSettingWindow(
                     active = false, // Nastaveno služnou, pokud je potřeba
                 )
 
-            projectService.saveProject(newProject, isDefault)
-            loadProjects()
+            CoroutineScope(Dispatchers.Main).launch {
+                projectService.saveProject(newProject, isDefault)
+                loadProjects()
+            }
         }
     }
 
@@ -250,8 +270,10 @@ class ProjectSettingWindow(
                 project.description = description
 
                 // Uložíme projekt a případně nastavíme jako výchozí
-                projectService.saveProject(project, isDefault)
-                loadProjects()
+                CoroutineScope(Dispatchers.Main).launch {
+                    projectService.saveProject(project, isDefault)
+                    loadProjects()
+                }
             }
         }
     }
@@ -274,8 +296,10 @@ class ProjectSettingWindow(
                 )
 
             if (confirm == JOptionPane.YES_OPTION) {
-                projectService.deleteProject(project)
-                loadProjects()
+                CoroutineScope(Dispatchers.Main).launch {
+                    projectService.deleteProject(project)
+                    loadProjects()
+                }
             }
         }
     }
@@ -287,8 +311,10 @@ class ProjectSettingWindow(
         val selectedRow = projectTable.selectedRow
         if (selectedRow != -1) {
             val project = projectTableModel.getProjectAt(selectedRow)
-            projectService.setActiveProject(project)
-            loadProjects()
+            CoroutineScope(Dispatchers.Main).launch {
+                projectService.setActiveProject(project)
+                loadProjects()
+            }
         }
     }
 
@@ -299,8 +325,10 @@ class ProjectSettingWindow(
         val selectedRow = projectTable.selectedRow
         if (selectedRow != -1) {
             val project = projectTableModel.getProjectAt(selectedRow)
-            projectService.setDefaultProject(project)
-            loadProjects()
+            CoroutineScope(Dispatchers.Main).launch {
+                projectService.setDefaultProject(project)
+                loadProjects()
+            }
         }
     }
 
@@ -309,7 +337,7 @@ class ProjectSettingWindow(
      */
     override fun setVisible(visible: Boolean) {
         if (visible) {
-            loadProjects()
+            loadProjectsWithCoroutine()
         }
         super.setVisible(visible)
     }
@@ -324,12 +352,12 @@ class ProjectSettingWindow(
             uploadButton.isEnabled = false
             uploadButton.text = "Probíhá načítání..." // Přidáno - informace o tom, že probíhá načítání
 
-            Thread {
+            CoroutineScope(Dispatchers.Default).launch {
                 try {
                     projectService.uploadProjectSource(project)
-                    javax.swing.SwingUtilities.invokeLater {
+                    withContext(Dispatchers.Main) {
                         JOptionPane.showMessageDialog(
-                            this,
+                            this@ProjectSettingWindow,
                             "Načítání zdrojáků do RAG dokončeno.",
                             "Import dokončen",
                             JOptionPane.INFORMATION_MESSAGE,
@@ -338,9 +366,9 @@ class ProjectSettingWindow(
                         uploadButton.isEnabled = true
                     }
                 } catch (e: Exception) {
-                    javax.swing.SwingUtilities.invokeLater {
+                    withContext(Dispatchers.Main) {
                         JOptionPane.showMessageDialog(
-                            this,
+                            this@ProjectSettingWindow,
                             "Chyba při načítání: ${e.message}",
                             "Chyba importu",
                             JOptionPane.ERROR_MESSAGE,
@@ -349,7 +377,7 @@ class ProjectSettingWindow(
                         uploadButton.isEnabled = true
                     }
                 }
-            }.start()
+            }
         }
     }
 
@@ -361,10 +389,24 @@ class ProjectSettingWindow(
     ) : AbstractTableModel() {
         private val columns = arrayOf("ID", "Název", "Cesta", "Popis", "Výchozí", "Aktivní")
         private var projectList = projects.toMutableList()
+        private var activeProjectId: Long? = null
+
+        init {
+            // Initialize the active project ID
+            updateActiveProjectId()
+        }
 
         fun updateProjects(projects: List<Project>) {
             projectList = projects.toMutableList()
+            updateActiveProjectId()
             fireTableDataChanged()
+        }
+
+        private fun updateActiveProjectId() {
+            CoroutineScope(Dispatchers.Main).launch {
+                activeProjectId = projectService.getActiveProject()?.id
+                fireTableDataChanged()
+            }
         }
 
         fun getProjectAt(row: Int): Project = projectList[row]
@@ -380,7 +422,6 @@ class ProjectSettingWindow(
             columnIndex: Int,
         ): Any {
             val project = projectList[rowIndex]
-            val activeProject = projectService.getActiveProject()
 
             return when (columnIndex) {
                 0 -> project.id ?: 0
@@ -388,7 +429,7 @@ class ProjectSettingWindow(
                 2 -> project.path
                 3 -> project.description ?: ""
                 4 -> project.active
-                5 -> project.id == activeProject?.id
+                5 -> project.id == activeProjectId
                 else -> ""
             }
         }

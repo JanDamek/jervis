@@ -4,11 +4,11 @@ import com.jervis.dto.ChatCompletionRequest
 import com.jervis.dto.CompletionChoice
 import com.jervis.dto.CompletionRequest
 import com.jervis.dto.CompletionResponse
-import com.jervis.dto.Usage
 import com.jervis.dto.EmbeddingItem
 import com.jervis.dto.EmbeddingRequest
 import com.jervis.dto.EmbeddingResponse
 import com.jervis.dto.ModelData
+import com.jervis.dto.Usage
 import com.jervis.module.indexer.EmbeddingService
 import com.jervis.module.llmcoordinator.LlmCoordinator
 import com.jervis.module.ragcore.RagOrchestrator
@@ -34,11 +34,11 @@ class AssistantApiService(
      * @return List of available models
      */
     fun getAvailableModels(): List<ModelData> =
-        projectService.getAllProjects().map { project ->
+        projectService.getAllProjectsBlocking().map { project ->
             ModelData(
                 id = project.name ?: project.id.toString(),
                 `object` = "model",
-                owned_by = "jervis",
+                ownedBy = "jervis",
             )
         }
 
@@ -49,17 +49,17 @@ class AssistantApiService(
      * @return The completion response
      */
     fun processCompletion(request: CompletionRequest): CompletionResponse {
-        val projectId = resolveProjectId(request.model)
+        resolveProjectId(request.model)
 
         // For simple completions, we'll just use the LLM coordinator directly
         val llmResponse =
-            llmCoordinator.processQuery(
+            llmCoordinator.processQueryBlocking(
                 query = request.prompt,
                 context = "",
                 options =
                     mapOf(
                         "temperature" to (request.temperature ?: 0.7f),
-                        "max_tokens" to (request.max_tokens ?: 1024),
+                        "max_tokens" to (request.maxTokens ?: 1024),
                     ),
             )
 
@@ -73,14 +73,14 @@ class AssistantApiService(
                         text = llmResponse.answer,
                         index = 0,
                         logprobs = null,
-                        finish_reason = llmResponse.finishReason,
+                        finishReason = llmResponse.finishReason,
                     ),
                 ),
             usage =
                 Usage(
-                    prompt_tokens = llmResponse.promptTokens,
-                    completion_tokens = llmResponse.completionTokens,
-                    total_tokens = llmResponse.totalTokens,
+                    promptTokens = llmResponse.promptTokens,
+                    completionTokens = llmResponse.completionTokens,
+                    totalTokens = llmResponse.totalTokens,
                 ),
         )
     }
@@ -105,7 +105,7 @@ class AssistantApiService(
                 options =
                     mapOf(
                         "temperature" to (request.temperature ?: 0.7f),
-                        "max_tokens" to (request.max_tokens ?: 1024),
+                        "max_tokens" to (request.maxTokens ?: 1024),
                     ),
             )
 
@@ -119,14 +119,14 @@ class AssistantApiService(
                         text = ragResponse.answer,
                         index = 0,
                         logprobs = null,
-                        finish_reason = ragResponse.finishReason,
+                        finishReason = ragResponse.finishReason,
                     ),
                 ),
             usage =
                 Usage(
-                    prompt_tokens = ragResponse.promptTokens,
-                    completion_tokens = ragResponse.completionTokens,
-                    total_tokens = ragResponse.totalTokens,
+                    promptTokens = ragResponse.promptTokens,
+                    completionTokens = ragResponse.completionTokens,
+                    totalTokens = ragResponse.totalTokens,
                 ),
         )
     }
@@ -138,7 +138,7 @@ class AssistantApiService(
      * @return The embeddings response
      */
     fun processEmbeddings(request: EmbeddingRequest): EmbeddingResponse {
-        val embeddings = embeddingService.generateTextEmbeddings(request.input)
+        val embeddings = embeddingService.generateEmbedding(request.input)
 
         val items =
             request.input.mapIndexed { index, text ->
@@ -150,12 +150,41 @@ class AssistantApiService(
 
         return EmbeddingResponse(
             data = items,
-            model = request.model ?: "default-embedding-model",
+            model = request.model,
             usage =
                 Usage(
-                    prompt_tokens = request.input.sumOf { it.length / 4 },
-                    completion_tokens = 0,
-                    total_tokens = request.input.sumOf { it.length / 4 },
+                    promptTokens = request.input.sumOf { it.length / 4 },
+                    completionTokens = 0,
+                    totalTokens = request.input.sumOf { it.length / 4 },
+                ),
+        )
+    }
+
+    /**
+     * Process an embeddings request (non-blocking version)
+     *
+     * @param request The embeddings request
+     * @return The embeddings response
+     */
+    suspend fun processEmbeddingsSuspend(request: EmbeddingRequest): EmbeddingResponse {
+        val embeddings = embeddingService.generateEmbeddingSuspend(request.input)
+
+        val items =
+            request.input.mapIndexed { index, text ->
+                EmbeddingItem(
+                    embedding = embeddings[index],
+                    index = index,
+                )
+            }
+
+        return EmbeddingResponse(
+            data = items,
+            model = request.model,
+            usage =
+                Usage(
+                    promptTokens = request.input.sumOf { it.length / 4 },
+                    completionTokens = 0,
+                    totalTokens = request.input.sumOf { it.length / 4 },
                 ),
         )
     }
@@ -169,12 +198,15 @@ class AssistantApiService(
     private fun resolveProjectId(modelName: String?): Long {
         if (modelName.isNullOrBlank()) {
             // Use the default project
-            return projectService.getDefaultProject()?.id ?: projectService.getAllProjects().firstOrNull()?.id
+            return projectService.getDefaultProjectBlocking()?.id ?: projectService
+                .getAllProjectsBlocking()
+                .firstOrNull()
+                ?.id
                 ?: throw IllegalStateException("No projects available")
         }
 
         // Find the project by name
-        val project = projectService.getAllProjects().find { it.name == modelName }
+        val project = projectService.getAllProjectsBlocking().find { it.name == modelName }
         return project?.id ?: throw IllegalArgumentException("Project not found for model: $modelName")
     }
 }
