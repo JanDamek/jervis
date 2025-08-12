@@ -24,13 +24,13 @@ spring:
     password: ""
   data:
     mongodb:
-      host: localhost
+      host: 192.168.100.117
       port: 27017
       database: jervis
       # Uncomment and set these for production with authentication
-      # username: jervis_user
-      # password: jervis_password
-      # authentication-database: admin
+      username: root
+      password: REDACTED_MONGODB_PASSWORD
+      authentication-database: admin
   jpa:
     database-platform: org.hibernate.dialect.H2Dialect
     hibernate:
@@ -42,68 +42,11 @@ spring:
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
     enabled: true
-  ai:
-    model:
-      chat: anthropic
-    anthropic:
-      chat:
-        options:
-          model: claude-3-5-sonnet-20240620
-          temperature: 0.7
-          max-tokens: 8000
-    openai:
-      chat:
-        options:
-          model: gpt-4
-
-# Fallback settings
-fallback_to_openai_on_rate_limit: true
-
-# LLM model configuration
-llm:
-  gpu:
-    endpoint: http://localhost:1234/v1/chat/completions
-    model: phi-2
-    timeout: 10000
-  cpu:
-    endpoint: http://localhost:1235/v1/chat/completions
-    model: deepseek-coder-v2-lite
-    timeout: 60000
-  router:
-    # Maximum input length for simple tasks (in characters)
-    max_simple_input_length: 1000
-    # Whether to use simple model for non-code tasks
-    use_simple_for_non_code: true
-    # Whether to fallback to the other model if one is unavailable
-    enable_fallback: true
-
-# Embedding model configuration
-embedding:
-  code:
-    model: intfloat/multilingual-e5-large
-    dimension: 1024
-  text:
-    model: intfloat/multilingual-e5-large
-    dimension: 1024
-  unified:
-    dimension: 1024
-  cache:
-    enabled: true
-  provider:
-    # Default provider for embedding models (huggingface, openai, voyage)
-    default: huggingface
-    # Provider mapping for specific model types
-    openai: openai
-    voyage: voyage
-    free: huggingface
 
 # Qdrant vector database configuration
 qdrant:
-  host: localhost
+  host: 192.168.100.117
   port: 6334
-  unified:
-    collection: unified_vectors
-
 
 server:
   port: 5500

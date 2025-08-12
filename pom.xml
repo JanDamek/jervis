@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-dependencies</artifactId>
-        <version>3.4.5</version>
+        <version>3.5.0</version>
     </parent>
 
     <groupId>com.jervis</groupId>
@@ -20,11 +20,9 @@
         <java.version>21</java.version>
         <kotlin.compiler.jvmTarget>21</kotlin.compiler.jvmTarget>
         <spring.ai.version>1.0.0</spring.ai.version>
-        <h2.version>2.2.224</h2.version>
-        <liquibase.version>4.25.1</liquibase.version>
         <qdrant.version>1.14.0</qdrant.version>
         <djl.version>0.33.0</djl.version>
-        <jackson-module-kotlin.version>2.18.2</jackson-module-kotlin.version>
+        <jackson-module-kotlin.version>2.19.0</jackson-module-kotlin.version>
         <commons-text.version>1.12.0</commons-text.version>
         <kotlin-logging.version>3.0.5</kotlin-logging.version>
         <springdoc-openapi-starter-webflux-ui.version>2.8.9</springdoc-openapi-starter-webflux-ui.version>
@@ -34,6 +32,12 @@
         <kotlin-compiler-embeddable.version>2.1.21</kotlin-compiler-embeddable.version>
         <java-diff-utils.version>4.12</java-diff-utils.version>
         <grpc.version>1.68.1</grpc.version>
+        <kotlinx-coroutines-core.version>1.10.2</kotlinx-coroutines-core.version>
+        <kotlinx-coroutines-swing.version>1.9.0</kotlinx-coroutines-swing.version>
+        <guava.version>33.3.1-jre</guava.version>
+        <slf4j-api.version>2.0.17</slf4j-api.version>
+        <jakarta.annotation-api.version>3.0.0</jakarta.annotation-api.version>
+        <mockito-kotlin.version>5.4.0</mockito-kotlin.version>
     </properties>
 
     <dependencies>
@@ -46,17 +50,17 @@
         <dependency>
             <groupId>org.jetbrains.kotlinx</groupId>
             <artifactId>kotlinx-coroutines-core</artifactId>
-            <version>1.8.0</version>
+            <version>${kotlinx-coroutines-core.version}</version>
         </dependency>
         <dependency>
             <groupId>org.jetbrains.kotlinx</groupId>
             <artifactId>kotlinx-coroutines-reactor</artifactId>
-            <version>1.8.0</version>
+            <version>${kotlinx-coroutines-core.version}</version>
         </dependency>
         <dependency>
             <groupId>org.jetbrains.kotlinx</groupId>
             <artifactId>kotlinx-coroutines-swing</artifactId>
-            <version>1.8.0</version>
+            <version>${kotlinx-coroutines-swing.version}</version>
         </dependency>
         <dependency>
             <groupId>org.jetbrains.kotlin</groupId>
@@ -76,11 +80,6 @@
             <version>${kotlin-logging.version}</version>
         </dependency>
 
-        <!-- JPA a databáze -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-jpa</artifactId>
-        </dependency>
 
         <dependency>
             <groupId>com.fasterxml.jackson.module</groupId>
@@ -88,25 +87,7 @@
             <version>${jackson-module-kotlin.version}</version>
         </dependency>
 
-        <!-- Liquibase pro správu schématu databáze -->
-        <dependency>
-            <groupId>org.liquibase</groupId>
-            <artifactId>liquibase-core</artifactId>
-            <version>${liquibase.version}</version>
-            <exclusions>
-                <exclusion>
-                    <artifactId>commons-text</artifactId>
-                    <groupId>org.apache.commons</groupId>
-                </exclusion>
-            </exclusions>
-        </dependency>
 
-        <!-- H2 Database -->
-        <dependency>
-            <groupId>com.h2database</groupId>
-            <artifactId>h2</artifactId>
-            <version>${h2.version}</version>
-        </dependency>
 
         <!-- MongoDB Reactive -->
         <dependency>
@@ -150,21 +131,21 @@
         <dependency>
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
-            <version>33.3.1-jre</version>
+            <version>${guava.version}</version>
         </dependency>
 
         <!-- SLF4J API pro logování (používá Qdrant klient) -->
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
-            <version>2.0.17</version>
+            <version>${slf4j-api.version}</version>
         </dependency>
 
         <!-- Pokud ještě není v projektu: základní gRPC anotace -->
         <dependency>
             <groupId>jakarta.annotation</groupId>
             <artifactId>jakarta.annotation-api</artifactId>
-            <version>3.0.0</version>
+            <version>${jakarta.annotation-api.version}</version>
         </dependency>
 
         <!-- DJL for embedding models -->
@@ -252,7 +233,7 @@
         <dependency>
             <groupId>org.mockito.kotlin</groupId>
             <artifactId>mockito-kotlin</artifactId>
-            <version>4.1.0</version>
+            <version>${mockito-kotlin.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

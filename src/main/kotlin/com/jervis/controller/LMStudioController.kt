@@ -1,16 +1,18 @@
 package com.jervis.controller
 
-import com.jervis.dto.ChatCompletionRequest
-import com.jervis.dto.ChatCompletionResponse
-import com.jervis.dto.CompletionRequest
-import com.jervis.dto.CompletionResponse
-import com.jervis.dto.EmbeddingRequest
-import com.jervis.dto.EmbeddingResponse
-import com.jervis.module.mcp.McpLlmCoordinator
-import com.jervis.service.CompletionService
-import com.jervis.service.ProjectService
+import com.jervis.dto.ChatMessage
+import com.jervis.dto.Choice
+import com.jervis.dto.Usage
+import com.jervis.dto.completion.ChatCompletionRequest
+import com.jervis.dto.completion.ChatCompletionResponse
+import com.jervis.dto.completion.CompletionRequest
+import com.jervis.dto.completion.CompletionResponse
+import com.jervis.dto.embedding.EmbeddingRequest
+import com.jervis.dto.embedding.EmbeddingResponse
+import com.jervis.service.controller.CompletionService
+import com.jervis.service.mcp.McpLlmCoordinator
+import com.jervis.service.project.ProjectService
 import org.springframework.http.MediaType
-import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.CrossOrigin
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
@@ -18,6 +20,8 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestMethod
 import org.springframework.web.bind.annotation.RestController
+import java.time.Instant
+import java.util.UUID
 
 @RestController
 @RequestMapping("/api/v0")
@@ -58,9 +62,7 @@ class LMStudioController(
     )
     suspend fun getCompletion(
         @RequestBody request: CompletionRequest,
-    ): CompletionResponse {
-        return completionService.complete(request)
-    }
+    ): CompletionResponse = completionService.complete(request)
 
     @PostMapping(
         "/chat/completions",
@@ -87,33 +89,40 @@ class LMStudioController(
 
         // Use an empty query since we're processing the entire messages list
         // The actual processing of messages happens in KoogMcpService
-        val mcpResponse = mcpLlmCoordinator.processQueryWithMcp(
-            query = "",
-            context = "",
-            options = options
-        )
+        val mcpResponse =
+            mcpLlmCoordinator.processQueryWithMcp(
+                query = "",
+                context = "",
+                options = options,
+            )
 
         // Convert MCP response to ChatCompletionResponse
         return ChatCompletionResponse(
-            id = "chat-mcp-${java.util.UUID.randomUUID()}",
+            id = "chat-mcp-${UUID.randomUUID()}",
             `object` = "chat.completion",
             model = mcpResponse.model,
-            created = java.time.Instant.now().epochSecond,
-            choices = listOf(
-                com.jervis.dto.Choice(
-                    index = 0,
-                    message = com.jervis.dto.ChatMessage(
-                        role = "assistant",
-                        content = mcpResponse.answer
+            created =
+                Instant
+                    .now()
+                    .epochSecond,
+            choices =
+                listOf(
+                    Choice(
+                        index = 0,
+                        message =
+                            ChatMessage(
+                                role = "assistant",
+                                content = mcpResponse.answer,
+                            ),
+                        finishReason = "stop",
                     ),
-                    finishReason = "stop"
-                )
-            ),
-            usage = com.jervis.dto.Usage(
-                promptTokens = mcpResponse.promptTokens,
-                completionTokens = mcpResponse.completionTokens,
-                totalTokens = mcpResponse.totalTokens
-            )
+                ),
+            usage =
+                Usage(
+                    promptTokens = mcpResponse.promptTokens,
+                    completionTokens = mcpResponse.completionTokens,
+                    totalTokens = mcpResponse.totalTokens,
+                ),
         )
     }
 
@@ -124,7 +133,5 @@ class LMStudioController(
     )
     suspend fun getEmbeddings(
         @RequestBody request: EmbeddingRequest,
-    ): EmbeddingResponse {
-        return completionService.embeddings(request)
-    }
+    ): EmbeddingResponse = completionService.embeddings(request)
 }
