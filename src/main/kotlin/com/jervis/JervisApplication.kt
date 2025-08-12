@@ -1,25 +1,25 @@
 package com.jervis
 
-import com.jervis.module.llmcoordinator.LlmCoordinator
-import com.jervis.service.ChatService
-import com.jervis.service.LMStudioService
-import com.jervis.service.OllamaService
-import com.jervis.service.ProjectService
-import com.jervis.service.SettingService
-import com.jervis.utils.MacOSAppUtils.setDockIcon
-import com.jervis.window.ApplicationWindowManager
+import com.jervis.service.controller.ChatService
+import com.jervis.service.llm.LlmCoordinator
+import com.jervis.service.llm.lmstudio.LMStudioService
+import com.jervis.service.llm.ollama.OllamaService
+import com.jervis.service.project.ProjectService
+import com.jervis.service.setting.SettingService
+import com.jervis.ui.component.ApplicationWindowManager
+import com.jervis.ui.utils.MacOSAppUtils.setDockIcon
 import mu.KotlinLogging
 import org.springframework.boot.ApplicationRunner
 import org.springframework.boot.autoconfigure.SpringBootApplication
-import org.springframework.boot.autoconfigure.domain.EntityScan
 import org.springframework.boot.runApplication
 import org.springframework.context.annotation.Bean
-import org.springframework.data.jpa.repository.config.EnableJpaRepositories
+import org.springframework.context.annotation.ComponentScan
+import org.springframework.data.mongodb.repository.config.EnableMongoRepositories
 import java.awt.EventQueue
 
 @SpringBootApplication
-@EntityScan(basePackages = ["com.jervis.entity", "com.jervis.module.memory"])
-@EnableJpaRepositories(basePackages = ["com.jervis.repository", "com.jervis.module.memory"])
+@EnableMongoRepositories(basePackages = ["com.jervis.repository.mongo"])
+@ComponentScan(basePackages = ["com.jervis.service", "com.jervis.ui.component", "com.jervis.repository"])
 class JervisApplication(
     private val settingService: SettingService,
     private val projectService: ProjectService,
@@ -37,9 +37,9 @@ class JervisApplication(
             ensureActiveProject()
 
             // Load startup minimization settings
-            val startMinimized = settingService.getStartupMinimize()
+            val startMinimized = settingService.startupMinimize
 
-            // Create window manager
+            // Create a window manager
             val applicationWindows =
                 ApplicationWindowManager(
                     settingService,
@@ -51,7 +51,7 @@ class JervisApplication(
                 )
 
             EventQueue.invokeLater {
-                // Initialize application with minimization settings
+                // Initialize the application with minimization settings
                 applicationWindows.initialize(startMinimized)
             }
             setDockIcon()
