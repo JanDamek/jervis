@@ -57,9 +57,7 @@ class ExternalModelService(
      */
     private fun initializeSimpleModel() {
         val modelName = settingService.modelSimpleName
-        val modelType = settingService.modelSimpleType
-
-        when (modelType) {
+        when (val modelType = settingService.modelSimpleType) {
             ModelProvider.LM_STUDIO -> {
                 if (settingService.lmStudioEnabled) {
                     val endpoint = settingService.lmStudioUrl
@@ -134,8 +132,8 @@ class ExternalModelService(
      * Initialize the complex model provider
      */
     private fun initializeComplexModel() {
-        val modelType = settingService.modelSimpleType
-        val modelName = settingService.modelSimpleName
+        val modelType = settingService.modelComplexType
+        val modelName = settingService.modelComplexName
 
         when (modelType) {
             ModelProvider.LM_STUDIO -> {
@@ -204,7 +202,7 @@ class ExternalModelService(
                 }
             }
 
-            else -> error("No model provider configured for SIMPLE")
+            else -> error("No model provider configured for COMPLEX")
         }
     }
 
@@ -285,7 +283,7 @@ class ExternalModelService(
                 }
             }
 
-            else -> error("No model provider configured for SIMPLE")
+            else -> error("No model provider configured for FINALIZER")
         }
     }
 

@@ -1,6 +1,6 @@
 package com.jervis.service.mcp
 
-import com.jervis.service.vectordb.VectorDbService
+import com.jervis.service.vectordb.VectorStorageService
 import com.jervis.service.llm.LlmCoordinator
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -15,7 +15,7 @@ import java.util.concurrent.Executors
 @Service
 class KoogMcpService(
     private val llmCoordinator: LlmCoordinator,
-    private val vectorDbService: VectorDbService,
+    private val vectorDbService: VectorStorageService,
 ) {
     private val logger = KotlinLogging.logger {}
     private val executor = Executors.newCachedThreadPool()

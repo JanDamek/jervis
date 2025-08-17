@@ -102,7 +102,7 @@ class SettingService(
         set(value) = runBlocking { saveValue(OLLAMA_URL, value, SettingType.STRING) }
 
     var embeddingModelName: String
-        get() = runBlocking { getStringValue(EMBEDDING_MODEL_NAME_VALUE, "sentence-transformers/all-MiniLM-L6-v2") }
+        get() = runBlocking { getStringValue(EMBEDDING_MODEL_NAME_VALUE, "text-embedding-nomic-text-v2-moe") }
         set(value) = runBlocking { saveValue(EMBEDDING_MODEL_NAME_VALUE, value, SettingType.STRING) }
 
     var embeddingModelType: ModelProvider
@@ -111,7 +111,7 @@ class SettingService(
                 ModelProvider.valueOf(
                     getStringValue(
                         EMBEDDING_TYPE_NAME_VALUE,
-                        ModelProvider.OPENAI.name,
+                        ModelProvider.LM_STUDIO.name,
                     ),
                 )
             }

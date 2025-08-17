@@ -8,7 +8,9 @@ import com.jervis.events.SettingsChangeEvent
 import com.jervis.service.indexer.EmbeddingService
 import com.jervis.service.mcp.McpAction
 import com.jervis.service.resilience.DatabaseConnectionManager
-import convertRagDocumentToPayload
+import com.jervis.repository.vector.converter.convertRagDocumentToPayload
+import com.jervis.repository.vector.converter.convertRagDocumentToProperties
+import com.jervis.repository.vector.converter.toQdrantPayload
 import io.grpc.Status
 import io.grpc.StatusRuntimeException
 import io.qdrant.client.QdrantClient

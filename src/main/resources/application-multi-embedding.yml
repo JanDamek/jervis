@@ -1,0 +1,114 @@
+# Multi-Embedding Configuration for JERVIS
+embeddings:
+  models:
+    - id: e5_text_768
+      model: intfloat/multilingual-e5-base
+      djl_url: djl://ai.djl.huggingface/sentence-transformers/intfloat/multilingual-e5-base
+      dimensions: 768
+      target_collection: semantic_text
+      pool_size: 4
+      prefixes:
+        document: "passage: "
+        query: "query: "
+    - id: jina_code_768
+      model: jinaai/jina-embeddings-v2-base-code
+      djl_url: djl://ai.djl.huggingface/sentence-transformers/jinaai/jina-embeddings-v2-base-code
+      dimensions: 768
+      target_collection: semantic_code
+      pool_size: 4
+      prefixes:
+        document: ""
+        query: ""
+
+# Qdrant Configuration
+qdrant:
+  host: localhost
+  port: 6334
+  collections:
+    semantic_text:
+      vector_size: 768
+      distance: cosine
+      hnsw_config:
+        m: 32
+        ef_construct: 256
+        ef: 128
+    semantic_code:
+      vector_size: 768
+      distance: cosine
+      hnsw_config:
+        m: 48
+        ef_construct: 300
+        ef: 256
+      payload_indexes:
+        - field: projectId
+          type: keyword
+        - field: documentType
+          type: keyword
+        - field: isDefaultBranch
+          type: keyword
+        - field: module
+          type: keyword
+        - field: qualifiedName
+          type: keyword
+        - field: canonicalSymbolId
+          type: keyword
+        - field: timestamp
+          type: integer
+        - field: language
+          type: keyword
+
+# Advanced Indexing Configuration
+indexing:
+  advanced:
+    chunk_target_tokens: 350
+    chunk_max_tokens: 400
+    overlap_tokens: 0
+    incremental: true
+    cache_embeddings: true
+    batch_size: 16
+    parallel_workers: 4
+    
+# Query Router Configuration
+query_router:
+  strategies:
+    code_patterns:
+      - "[A-Z]\\w+\\.\\w+"
+      - "`[^`]+`"
+      - "\\([^)]*\\)"
+    text_patterns:
+      - "meeting"
+      - "email"
+      - "discussion"
+      - "communication"
+    api_patterns:
+      - "api"
+      - "endpoint"
+      - "request"
+      - "response"
+    
+# Evaluation Configuration
+evaluation:
+  enabled: true
+  test_queries_file: "eval/test_queries.jsonl"
+  metrics: ["recall@5", "recall@10", "mrr", "ndcg@10"]
+  output_dir: "eval/results"
+  
+# Health Check Configuration
+health_check:
+  embedding_service:
+    enabled: true
+    interval_minutes: 1
+    max_consecutive_failures: 3
+    recovery_attempts: 3
+    
+# Performance Tuning
+performance:
+  rrf:
+    k_parameter: 60
+  boosting:
+    default_branch_boost: 1.2
+    recency_decay_days: 365
+    min_score_factor: 0.8
+  deduplication:
+    enabled: true
+    similarity_threshold: 0.95

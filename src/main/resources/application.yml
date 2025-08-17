@@ -50,3 +50,9 @@ qdrant:
 
 server:
   port: 5500
+
+# Embedding model properties
+embedding:
+  model:
+    text: text-embedding-nomic-text-v2-moe
+    code: nomic-embed-code

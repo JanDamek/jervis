@@ -5,7 +5,7 @@ import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagDocumentType
 import com.jervis.domain.rag.RagSourceType
 import com.jervis.service.llm.ModelRouterService
-import com.jervis.service.vectordb.VectorDbService
+import com.jervis.service.vectordb.VectorStorageService
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -21,7 +21,7 @@ import java.util.UUID
 class DependencyService(
     private val modelRouterService: ModelRouterService,
     private val embeddingService: com.jervis.service.indexer.EmbeddingService,
-    private val vectorDbService: VectorDbService,
+    private val vectorStorageService: VectorStorageService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -63,7 +63,7 @@ class DependencyService(
 
         // Generate embedding and store in a vector database
         val embedding = embeddingService.generateEmbeddingSuspend(content)
-        vectorDbService.storeDocumentSuspend(ragDocument, embedding)
+        vectorStorageService.storeDocumentSuspend(ragDocument, embedding)
 
         logger.debug { "Stored dependency: ${dependency.sourceClass} -> ${dependency.targetClass}" }
 
@@ -106,7 +106,7 @@ class DependencyService(
 
         // Generate embedding and store in a vector database
         val embedding = embeddingService.generateEmbeddingSuspend(description)
-        vectorDbService.storeDocumentSuspend(ragDocument, embedding)
+        vectorStorageService.storeDocumentSuspend(ragDocument, embedding)
 
         logger.info { "Stored dependency description for project: $projectId" }
 
@@ -159,7 +159,7 @@ class DependencyService(
 
         // Generate embedding and store in a vector database
         val embedding = embeddingService.generateEmbeddingSuspend(content)
-        vectorDbService.storeDocumentSuspend(ragDocument, embedding)
+        vectorStorageService.storeDocumentSuspend(ragDocument, embedding)
 
         logger.info { "Stored dependency list for project: $projectId" }
 
@@ -226,7 +226,7 @@ class DependencyService(
                 "document_type" to RagDocumentType.DEPENDENCY.name,
             )
         val dependencyResults =
-            vectorDbService.searchSimilar(
+            vectorStorageService.searchSimilar(
                 query = List(embeddingService.embeddingDimension) { 0f },
                 limit = 1,
                 filter = dependencyFilter,
@@ -243,7 +243,7 @@ class DependencyService(
                 "document_type" to RagDocumentType.DEPENDENCY_DESCRIPTION.name,
             )
         val descriptionResults =
-            vectorDbService.searchSimilar(
+            vectorStorageService.searchSimilar(
                 query = List(embeddingService.embeddingDimension) { 0f },
                 limit = 1,
                 filter = descriptionFilter,

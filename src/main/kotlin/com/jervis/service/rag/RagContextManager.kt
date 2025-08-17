@@ -4,7 +4,7 @@ import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagDocumentType
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.service.indexer.EmbeddingService
-import com.jervis.service.vectordb.VectorDbService
+import com.jervis.service.vectordb.VectorStorageService
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 
@@ -14,7 +14,7 @@ import org.springframework.stereotype.Service
  */
 @Service
 class RagContextManager(
-    private val vectorDbService: VectorDbService,
+    private val vectorDbService: VectorStorageService,
     private val embeddingService: EmbeddingService,
 ) {
     /**

@@ -2,7 +2,7 @@ package com.jervis.service.rag
 
 import com.jervis.service.indexer.EmbeddingService
 import com.jervis.service.llm.LlmCoordinator
-import com.jervis.service.vectordb.VectorDbService
+import com.jervis.service.vectordb.VectorStorageService
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 
@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service
  */
 @Service
 class RagOrchestrator(
-    private val vectorDbService: VectorDbService,
+    private val vectorStorageService: VectorStorageService,
     private val contextManager: RagContextManager,
     private val embeddingService: EmbeddingService,
     private val llmCoordinator: LlmCoordinator,
@@ -35,7 +35,7 @@ class RagOrchestrator(
 
         // 2. Retrieve relevant documents
         val filter = mapOf("project" to projectId)
-        val retrievedDocs = vectorDbService.searchSimilar(queryEmbedding, limit = 5, filter = filter)
+        val retrievedDocs = vectorStorageService.searchSimilar(queryEmbedding, limit = 5, filter = filter)
 
         // Add project ID to options for context building
         val contextOptions = options.toMutableMap()

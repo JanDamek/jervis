@@ -4,7 +4,7 @@ import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagDocumentType
 import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.mongo.ProjectDocument
-import com.jervis.service.vectordb.VectorDbService
+import com.jervis.service.vectordb.VectorStorageService
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -26,7 +26,7 @@ import java.time.ZoneId
  */
 @Service
 class IndexerService(
-    private val vectorDbService: VectorDbService,
+    private val vectorStorageService: VectorStorageService,
     private val embeddingService: EmbeddingService,
     private val chunkingService: ChunkingService,
 ) {
@@ -248,7 +248,7 @@ class IndexerService(
 
                             // Generate embeddings and store in vector database
                             val embedding = embeddingService.generateEmbedding(chunk.content)
-                            vectorDbService.storeDocumentSuspend(ragDocument, embedding)
+                            vectorStorageService.storeDocumentSuspend(ragDocument, embedding)
 
                             // TODO: Class summary generation removed due to metadata dependency issues
                         }
