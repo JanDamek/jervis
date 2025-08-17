@@ -8,7 +8,7 @@ import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.service.gitwatcher.GitClient
 import com.jervis.service.llm.LlmCoordinator
 import com.jervis.service.llm.ModelRouterService
-import com.jervis.service.vectordb.VectorDbService
+import com.jervis.service.vectordb.VectorStorageService
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -30,7 +30,7 @@ class ProjectIndexer(
     private val indexerService: IndexerService,
     private val embeddingService: EmbeddingService,
     private val chunkingService: ChunkingService,
-    private val vectorDbService: VectorDbService,
+    private val vectorDbService: VectorStorageService,
     private val gitClient: GitClient,
     private val dependencyIndexer: DependencyIndexer,
     private val workspaceManager: WorkspaceManager,

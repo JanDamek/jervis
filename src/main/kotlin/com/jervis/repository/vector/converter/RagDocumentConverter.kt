@@ -1,3 +1,5 @@
+package com.jervis.repository.vector.converter
+
 import com.jervis.domain.rag.RagDocument
 import io.qdrant.client.grpc.JsonWithInt
 import org.bson.types.ObjectId
@@ -7,237 +9,140 @@ import kotlin.reflect.full.isSubclassOf
 import kotlin.reflect.full.memberProperties
 import kotlin.reflect.full.primaryConstructor
 
+// POJO for properties used across the project instead of JsonWithInt.Value
+data class Properties(val entries: Map<String, Any?>)
+
+/** Bridge: keep legacy function name but delegate to POJO conversion */
+internal fun RagDocument.convertRagDocumentToPayload(): Map<String, JsonWithInt.Value> =
+    this.convertRagDocumentToProperties().toQdrantPayload()
+
 /**
- * Convert RagDocument to Qdrant payload using reflection
- * Maps all properties of RagDocument to JSON values
- *
- * @param ragDocument The document to convert
- * @return The Qdrant payload
+ * Build a POJO Properties map from RagDocument using reflection
  */
-internal fun RagDocument.convertRagDocumentToPayload(): Map<String, JsonWithInt.Value> {
-    val payload = mutableMapOf<String, JsonWithInt.Value>()
-
-    // Get all properties of RagDocument using reflection
+internal fun RagDocument.convertRagDocumentToProperties(): Properties {
+    val props = mutableMapOf<String, Any?>()
     val kClass = this::class as KClass<RagDocument>
-
     for (property in kClass.memberProperties) {
         val value = property.get(this)
-        val jsonValue = convertValueToJsonValue(value)
-        if (jsonValue != null) {
-            payload[property.name] = jsonValue
+        // Normalize some types to primitives/strings for portability
+        val normalized = when (value) {
+            null -> null
+            is ObjectId -> value.toString()
+            is Enum<*> -> value.name
+            else -> value
+        }
+        if (normalized != null) {
+            props[property.name] = normalized
         }
     }
-
-    return payload
+    return Properties(props)
 }
 
 /**
- * Convert payload back to RagDocument using reflection
- * Maps all available JSON values back to RagDocument constructor parameters
- *
- * @param payload The Qdrant payload
- * @return The reconstructed RagDocument
+ * Convert Properties POJO back to RagDocument using reflection
  */
-internal fun Map<String, JsonWithInt.Value>.convertPayloadToRagDocument(): RagDocument {
+internal fun Properties.convertToRagDocument(): RagDocument {
     val kClass = RagDocument::class
-    val constructor =
-        kClass.primaryConstructor
-            ?: throw IllegalStateException("RagDocument must have a primary constructor")
+    val constructor = kClass.primaryConstructor
+        ?: throw IllegalStateException("RagDocument must have a primary constructor")
 
     val args = mutableMapOf<KParameter, Any?>()
-
     for (parameter in constructor.parameters) {
         val paramName = parameter.name ?: continue
-        val jsonValue = this[paramName]
-
-        if (jsonValue != null) {
-            val convertedValue = convertJsonValueToValue(jsonValue, parameter.type.classifier as? KClass<*>)
+        val value = entries[paramName]
+        if (value != null) {
+            val convertedValue = convertAnyToType(value, parameter.type.classifier as? KClass<*>)
             if (convertedValue != null) {
                 args[parameter] = convertedValue
             }
         } else if (!parameter.isOptional && !parameter.type.isMarkedNullable) {
-            // Provide default values for required parameters that are missing
             args[parameter] = getDefaultValueForType(parameter.type.classifier as? KClass<*>)
         }
     }
-
     return constructor.callBy(args)
 }
 
 /**
- * Convert Kotlin value to JsonWithInt.Value
+ * Convert Properties to Qdrant JsonWithInt.Value payload at repository boundary
  */
-private fun convertValueToJsonValue(value: Any?): JsonWithInt.Value? =
-    when (value) {
-        null -> null
-        is String ->
-            JsonWithInt.Value
-                .newBuilder()
-                .setStringValue(value)
-                .build()
-
-        is Int ->
-            JsonWithInt.Value
-                .newBuilder()
-                .setIntegerValue(value.toLong())
-                .build()
-
-        is Long ->
-            JsonWithInt.Value
-                .newBuilder()
-                .setIntegerValue(value)
-                .build()
-
-        is Float ->
-            JsonWithInt.Value
-                .newBuilder()
-                .setDoubleValue(value.toDouble())
-                .build()
-
-        is Double ->
-            JsonWithInt.Value
-                .newBuilder()
-                .setDoubleValue(value)
-                .build()
-
-        is Boolean ->
-            JsonWithInt.Value
-                .newBuilder()
-                .setBoolValue(value)
-                .build()
-
-        is ObjectId ->
-            JsonWithInt.Value
-                .newBuilder()
-                .setStringValue(value.toString())
-                .build()
-
-        is Enum<*> ->
-            JsonWithInt.Value
-                .newBuilder()
-                .setStringValue(value.name)
-                .build()
-
-        else ->
-            JsonWithInt.Value
-                .newBuilder()
-                .setStringValue(value.toString())
-                .build()
-    }
+internal fun Properties.toQdrantPayload(): Map<String, JsonWithInt.Value> =
+    entries.mapValues { (_, v) -> anyToJsonValue(v) }.toMap()
 
 /**
- * Convert JsonWithInt.Value back to Kotlin value
+ * Convert Qdrant payload back to Properties
  */
-private fun convertJsonValueToValue(
-    jsonValue: JsonWithInt.Value,
-    targetClass: KClass<*>?,
-): Any? =
-    when (targetClass) {
-        String::class ->
-            when {
-                jsonValue.hasStringValue() -> jsonValue.stringValue
-                jsonValue.hasIntegerValue() -> jsonValue.integerValue.toString()
-                jsonValue.hasDoubleValue() -> jsonValue.doubleValue.toString()
-                jsonValue.hasBoolValue() -> jsonValue.boolValue.toString()
-                else -> null
-            }
+internal fun Map<String, JsonWithInt.Value>.toProperties(): Properties =
+    Properties(this.mapValues { (_, v) -> jsonValueToAny(v) })
 
-        Int::class ->
-            when {
-                jsonValue.hasIntegerValue() -> jsonValue.integerValue.toInt()
-                jsonValue.hasDoubleValue() -> jsonValue.doubleValue.toInt()
-                jsonValue.hasStringValue() -> jsonValue.stringValue.toIntOrNull()
-                else -> null
-            }
+private fun anyToJsonValue(value: Any?): JsonWithInt.Value = when (value) {
+    null -> JsonWithInt.Value.getDefaultInstance()
+    is String -> JsonWithInt.Value.newBuilder().setStringValue(value).build()
+    is Int -> JsonWithInt.Value.newBuilder().setIntegerValue(value.toLong()).build()
+    is Long -> JsonWithInt.Value.newBuilder().setIntegerValue(value).build()
+    is Float -> JsonWithInt.Value.newBuilder().setDoubleValue(value.toDouble()).build()
+    is Double -> JsonWithInt.Value.newBuilder().setDoubleValue(value).build()
+    is Boolean -> JsonWithInt.Value.newBuilder().setBoolValue(value).build()
+    else -> JsonWithInt.Value.newBuilder().setStringValue(value.toString()).build()
+}
 
-        Long::class ->
-            when {
-                jsonValue.hasIntegerValue() -> jsonValue.integerValue
-                jsonValue.hasDoubleValue() -> jsonValue.doubleValue.toLong()
-                jsonValue.hasStringValue() -> jsonValue.stringValue.toLongOrNull()
-                else -> null
-            }
+private fun jsonValueToAny(jsonValue: JsonWithInt.Value): Any? = when {
+    jsonValue.hasStringValue() -> jsonValue.stringValue
+    jsonValue.hasIntegerValue() -> jsonValue.integerValue
+    jsonValue.hasDoubleValue() -> jsonValue.doubleValue
+    jsonValue.hasBoolValue() -> jsonValue.boolValue
+    else -> null
+}
 
-        Float::class ->
-            when {
-                jsonValue.hasDoubleValue() -> jsonValue.doubleValue.toFloat()
-                jsonValue.hasIntegerValue() -> jsonValue.integerValue.toFloat()
-                jsonValue.hasStringValue() -> jsonValue.stringValue.toFloatOrNull()
-                else -> null
-            }
-
-        Double::class ->
-            when {
-                jsonValue.hasDoubleValue() -> jsonValue.doubleValue
-                jsonValue.hasIntegerValue() -> jsonValue.integerValue.toDouble()
-                jsonValue.hasStringValue() -> jsonValue.stringValue.toDoubleOrNull()
-                else -> null
-            }
-
-        Boolean::class ->
-            when {
-                jsonValue.hasBoolValue() -> jsonValue.boolValue
-                jsonValue.hasStringValue() -> jsonValue.stringValue.toBooleanStrictOrNull()
-                else -> null
-            }
-
-        ObjectId::class ->
-            when {
-                jsonValue.hasStringValue() ->
-                    try {
-                        ObjectId(jsonValue.stringValue)
-                    } catch (_: Exception) {
-                        null
-                    }
-
-                else -> null
-            }
-
-        else -> {
-            // Handle enums
-            if (targetClass?.isSubclassOf(Enum::class) == true) {
-                if (jsonValue.hasStringValue()) {
-                    try {
-                        // Get enum constants and find matching name
-                        val enumConstants = targetClass.java.enumConstants
-                        enumConstants?.find { (it as Enum<*>).name == jsonValue.stringValue }
-                    } catch (_: Exception) {
-                        null
-                    }
-                } else {
-                    null
-                }
-            } else {
-                // Fallback to string representation
-                when {
-                    jsonValue.hasStringValue() -> jsonValue.stringValue
-                    jsonValue.hasIntegerValue() -> jsonValue.integerValue
-                    jsonValue.hasDoubleValue() -> jsonValue.doubleValue
-                    jsonValue.hasBoolValue() -> jsonValue.boolValue
-                    else -> null
-                }
-            }
+private fun convertAnyToType(value: Any?, targetClass: KClass<*>?): Any? {
+    if (value == null) return null
+    return when {
+        targetClass == null -> value
+        targetClass == String::class -> value.toString()
+        targetClass == Int::class -> when (value) {
+            is Number -> value.toInt()
+            is String -> value.toIntOrNull()
+            else -> null
         }
+        targetClass == Long::class -> when (value) {
+            is Number -> value.toLong()
+            is String -> value.toLongOrNull()
+            else -> null
+        }
+        targetClass == Float::class -> when (value) {
+            is Number -> value.toFloat()
+            is String -> value.toFloatOrNull()
+            else -> null
+        }
+        targetClass == Double::class -> when (value) {
+            is Number -> value.toDouble()
+            is String -> value.toDoubleOrNull()
+            else -> null
+        }
+        targetClass == Boolean::class -> when (value) {
+            is Boolean -> value
+            is String -> value.equals("true", ignoreCase = true) || value == "1"
+            is Number -> value.toInt() != 0
+            else -> null
+        }
+        targetClass.isSubclassOf(Enum::class) -> when (value) {
+            is String -> try {
+                @Suppress("UNCHECKED_CAST")
+                java.lang.Enum.valueOf(targetClass.java as Class<out Enum<*>>, value)
+            } catch (_: Exception) { null }
+            else -> null
+        }
+        else -> value
     }
+}
 
-/**
- * Get default value for a type when parameter is missing
- */
 private fun getDefaultValueForType(targetClass: KClass<*>?): Any? =
     when (targetClass) {
         String::class -> ""
         Int::class -> 0
         Long::class -> 0L
-        Float::class -> 0f
+        Float::class -> 0.0f
         Double::class -> 0.0
         Boolean::class -> false
-        ObjectId::class -> ObjectId()
-        else -> {
-            if (targetClass?.isSubclassOf(Enum::class) == true) {
-                // Return first enum constant as default
-                targetClass.java.enumConstants?.firstOrNull()
-            } else {
-                null
-            }
-        }
+        else -> null
     }
+
