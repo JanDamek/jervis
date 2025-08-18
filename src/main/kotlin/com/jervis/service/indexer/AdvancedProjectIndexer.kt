@@ -276,6 +276,7 @@ class AdvancedProjectIndexer(
     ): AdvancedRagDocument {
         return AdvancedRagDocument(
             projectId = project.id,
+            clientId = project.clientId,
             documentType = determineDocumentType(chunk),
             ragSourceType = RagSourceType.FILE,
             timestamp = Instant.now(),
@@ -286,7 +287,9 @@ class AdvancedProjectIndexer(
             relations = extractSymbolRelations(chunk.content),
             summary = generateSummary(chunk),
             codeExcerpt = chunk.content,
-            doc = chunk.symbol.documentation
+            doc = chunk.symbol.documentation,
+            inspirationOnly = project.inspirationOnly,
+            isDefaultBranch = true
         )
     }
     

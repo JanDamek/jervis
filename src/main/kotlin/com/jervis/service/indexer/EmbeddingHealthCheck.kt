@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component
 
 @Component
 class EmbeddingHealthCheck(
-    private val multiEmbeddingService: MultiEmbeddingService
+    private val embeddingService: EmbeddingService
 ) {
     private val logger = KotlinLogging.logger {}
     
@@ -51,7 +51,7 @@ class EmbeddingHealthCheck(
     
     private suspend fun performTextEmbeddingHealthCheck(): Boolean {
         return try {
-            val testEmbedding = multiEmbeddingService.generateTextEmbedding("health check")
+            val testEmbedding: List<Float> = embeddingService.generateQueryEmbedding("health check")
             if (testEmbedding.isEmpty()) {
                 logger.warn { "Text embedding service returned empty result" }
                 false
@@ -68,7 +68,7 @@ class EmbeddingHealthCheck(
     private suspend fun performCodeEmbeddingHealthCheck(): Boolean {
         return try {
             val testCode = "fun healthCheck() { return true }"
-            val testEmbedding = multiEmbeddingService.generateCodeEmbedding(testCode)
+            val testEmbedding: List<Float> = embeddingService.generateEmbedding(testCode)
             if (testEmbedding.isEmpty()) {
                 logger.warn { "Code embedding service returned empty result" }
                 false
@@ -121,7 +121,7 @@ class EmbeddingHealthCheck(
             logger.info { "Attempting to recover embedding services..." }
             
             // Trigger service reinitialization
-            multiEmbeddingService.reinitializeProviders()
+            embeddingService.handleSettingsChangeEvent()
             
             logger.info { "Embedding service recovery attempt completed" }
             

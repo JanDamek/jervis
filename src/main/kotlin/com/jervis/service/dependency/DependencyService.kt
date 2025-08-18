@@ -59,6 +59,7 @@ class DependencyService(
                 documentType = RagDocumentType.DEPENDENCY,
                 ragSourceType = RagSourceType.ANALYSIS,
                 pageContent = content,
+                source = RagSourceType.ANALYSIS.name
             )
 
         // Generate embedding and store in a vector database
@@ -102,6 +103,7 @@ class DependencyService(
                 documentType = RagDocumentType.DEPENDENCY_DESCRIPTION,
                 ragSourceType = RagSourceType.LLM,
                 pageContent = description,
+                source = RagSourceType.LLM.name
             )
 
         // Generate embedding and store in a vector database

@@ -237,6 +237,10 @@ Limit your answer to 1024 tokens.
                                     documentType = RagDocumentType.GIT_HISTORY,
                                     ragSourceType = RagSourceType.GIT,
                                     pageContent = pageContent,
+                                    clientId = project.clientId,
+                                    source = RagSourceType.GIT.name,
+                                    inspirationOnly = project.inspirationOnly,
+                                    isDefaultBranch = true
                                 )
 
                             // Generate embedding and store document
@@ -273,6 +277,10 @@ Limit your answer to 1024 tokens.
                     documentType = RagDocumentType.GIT_HISTORY,
                     ragSourceType = RagSourceType.GIT,
                     pageContent = gitHistoryDescription,
+                    clientId = project.clientId,
+                    source = RagSourceType.GIT.name,
+                    inspirationOnly = project.inspirationOnly,
+                    isDefaultBranch = true
                 )
 
             val historyEmbedding = embeddingService.generateEmbedding(historyRagDocument.pageContent)
@@ -307,6 +315,10 @@ Limit your answer to 1024 tokens.
                         documentType = RagDocumentType.GIT_HISTORY,
                         ragSourceType = RagSourceType.GIT,
                         pageContent = commitListContent,
+                        clientId = project.clientId,
+                        source = RagSourceType.GIT.name,
+                        inspirationOnly = project.inspirationOnly,
+                        isDefaultBranch = true
                     )
 
                 try {
@@ -521,6 +533,7 @@ Limit your answer to 1024 tokens.
                         documentType = RagDocumentType.CLASS_SUMMARY,
                         ragSourceType = RagSourceType.CLASS,
                         pageContent = projectDescription,
+                        source = RagSourceType.CLASS.name
                     )
 
                 val projectDescriptionEmbedding =

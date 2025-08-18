@@ -69,7 +69,7 @@ class ExternalModelService(
                                 settingService = settingService,
                                 modelType = ModelType.SIMPLE,
                             )
-                        logger.info { "Initialized LM Studio model provider for SIMPLE with endpoint: $endpoint and model: $modelName" }
+                        logger.info { "Initialized LM Studio model provider with endpoint: $endpoint and model: $modelName" }
                     }
                 }
             }
@@ -85,7 +85,7 @@ class ExternalModelService(
                                 settingService = settingService,
                                 modelType = ModelType.SIMPLE,
                             )
-                        logger.info { "Initialized Ollama model provider for SIMPLE with endpoint: $endpoint and model: $modelName" }
+                        logger.info { "Initialized Ollama model provider with endpoint: $endpoint and model: $modelName" }
                     }
                 }
             }
@@ -102,7 +102,7 @@ class ExternalModelService(
                                 settingService = settingService,
                                 modelType = ModelType.SIMPLE,
                             )
-                        logger.info { "Initialized OpenAI model provider for SIMPLE with endpoint: $endpoint and model: $modelName" }
+                        logger.info { "Initialized OpenAI model provider with endpoint: $endpoint and model: $modelName" }
                     }
                 }
             }
@@ -119,12 +119,12 @@ class ExternalModelService(
                                 settingService = settingService,
                                 modelType = ModelType.SIMPLE,
                             )
-                        logger.info { "Initialized Anthropic model provider for SIMPLE with endpoint: $endpoint and model: $modelName" }
+                        logger.info { "Initialized Anthropic model provider with endpoint: $endpoint and model: $modelName" }
                     }
                 }
             }
 
-            else -> error("No model provider configured for SIMPLE")
+            else -> error("No suitable model provider configured")
         }
     }
 
@@ -147,7 +147,7 @@ class ExternalModelService(
                                 settingService = settingService,
                                 modelType = ModelType.COMPLEX,
                             )
-                        logger.info { "Initialized LM Studio model provider for COMPLEX with endpoint: $endpoint and model: $modelName" }
+                        logger.info { "Initialized LM Studio model provider with endpoint: $endpoint and model: $modelName" }
                     }
                 }
             }
@@ -163,7 +163,7 @@ class ExternalModelService(
                                 settingService = settingService,
                                 modelType = ModelType.COMPLEX,
                             )
-                        logger.info { "Initialized Ollama model provider for COMPLEX with endpoint: $endpoint and model: $modelName" }
+                        logger.info { "Initialized Ollama model provider with endpoint: $endpoint and model: $modelName" }
                     }
                 }
             }
@@ -180,7 +180,7 @@ class ExternalModelService(
                                 settingService = settingService,
                                 modelType = ModelType.COMPLEX,
                             )
-                        logger.info { "Initialized OpenAI model provider for COMPLEX with endpoint: $endpoint and model: $modelName" }
+                        logger.info { "Initialized OpenAI model provider with endpoint: $endpoint and model: $modelName" }
                     }
                 }
             }
@@ -197,12 +197,12 @@ class ExternalModelService(
                                 settingService = settingService,
                                 modelType = ModelType.COMPLEX,
                             )
-                        logger.info { "Initialized Anthropic model provider for COMPLEX with endpoint: $endpoint and model: $modelName" }
+                        logger.info { "Initialized Anthropic model provider with endpoint: $endpoint and model: $modelName" }
                     }
                 }
             }
 
-            else -> error("No model provider configured for COMPLEX")
+            else -> error("No suitable model provider configured")
         }
     }
 
@@ -224,9 +224,7 @@ class ExternalModelService(
                                 settingService = settingService,
                                 modelType = ModelType.FINALIZER,
                             )
-                        logger.info {
-                            "Initialized LM Studio model provider for FINALIZATION with endpoint: $endpoint and model: $modelName"
-                        }
+                        logger.info { "Initialized LM Studio model provider with endpoint: $endpoint and model: $modelName" }
                     }
                 }
             }
@@ -242,7 +240,7 @@ class ExternalModelService(
                                 settingService = settingService,
                                 modelType = ModelType.FINALIZER,
                             )
-                        logger.info { "Initialized Ollama model provider for FINALIZATION with endpoint: $endpoint and model: $modelName" }
+                        logger.info { "Initialized Ollama model provider with endpoint: $endpoint and model: $modelName" }
                     }
                 }
             }
@@ -259,7 +257,7 @@ class ExternalModelService(
                                 settingService = settingService,
                                 modelType = ModelType.FINALIZER,
                             )
-                        logger.info { "Initialized OpenAI model provider for FINALIZATION with endpoint: $endpoint and model: $modelName" }
+                        logger.info { "Initialized OpenAI model provider with endpoint: $endpoint and model: $modelName" }
                     }
                 }
             }
@@ -276,14 +274,12 @@ class ExternalModelService(
                                 settingService = settingService,
                                 modelType = ModelType.FINALIZER,
                             )
-                        logger.info {
-                            "Initialized Anthropic model provider for FINALIZATION with endpoint: $endpoint and model: $modelName"
-                        }
+                        logger.info { "Initialized Anthropic model provider with endpoint: $endpoint and model: $modelName" }
                     }
                 }
             }
 
-            else -> error("No model provider configured for FINALIZER")
+            else -> error("No suitable model provider configured")
         }
     }
 

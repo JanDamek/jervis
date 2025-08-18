@@ -39,17 +39,17 @@ class ModelRouterService(
     ): LlmResponse {
         val startTime = Instant.now()
 
-        logger.info { "Processing query with model provider type: $modelType" }
+        logger.info { "Processing query with selected model provider" }
 
         try {
             // Select provider based on purpose
             val provider = selectProvider(modelType)
-            logger.info { "Selected ${provider.getName()} provider for ${modelType.name} purpose" }
+            logger.info { "Selected provider ${provider.getName()}" }
 
             // Check provider availability
             if (!provider.isAvailable()) {
-                logger.error { "Provider ${provider.getName()} for purpose $modelType is not available" }
-                throw RuntimeException("Required language model provider for $modelType is not available")
+                logger.error { "Selected provider ${provider.getName()} is not available" }
+                throw RuntimeException("No available language model provider")
             }
 
             // Process query with the appropriate provider
@@ -72,13 +72,12 @@ class ModelRouterService(
             // Add provider information to the response
             return response.copy(
                 answer =
-                    "${response.answer}\n\n[Processed by: ${provider.getName()} " +
-                        "(${modelType.name}) using ${provider.getModel()}]",
+                    "${response.answer}\n\n[Provider: ${provider.getName()} | Model: ${provider.getModel()}]",
             )
         } catch (e: Exception) {
             val endTime = Instant.now()
             val duration = Duration.between(startTime, endTime).toMillis()
-            logger.error(e) { "Error processing query with purpose $modelType after $duration ms: ${e.message}" }
+            logger.error(e) { "Error processing query after $duration ms: ${e.message}" }
             throw e
         }
     }

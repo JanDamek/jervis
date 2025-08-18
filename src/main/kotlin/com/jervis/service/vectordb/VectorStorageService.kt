@@ -61,7 +61,10 @@ class VectorStorageService(
             createCollectionIfNotExists(SEMANTIC_TEXT_COLLECTION)
             createCollectionIfNotExists(SEMANTIC_CODE_COLLECTION)
 
-            logger.info { "VectorStorageService (merged) initialized successfully" }
+            // TODO: Create payload indexes on Qdrant when client API is available.
+            // Required fields per spec: clientId, projectId, inspirationOnly, qualifiedName, language, timestamp, isDefaultBranch.
+            // Current client lib doesn't expose payload index creation; ensure server-side config or manage via admin scripts.
+            logger.info { "VectorStorageService (merged) initialized successfully; ensure Qdrant payload indexes exist for clientId, projectId, inspirationOnly, qualifiedName, language, timestamp, isDefaultBranch" }
         } catch (e: Exception) {
             logger.error(e) { "Failed to initialize VectorStorageService: ${e.message}" }
         }
@@ -71,10 +74,10 @@ class VectorStorageService(
         try {
             val client = qdrantClient ?: throw RuntimeException("Qdrant client not initialized")
 
-            // Check if collection exists
+            // Pre-check existing collections to avoid Qdrant client error logs
             val collections = client.listCollectionsAsync().get().toList()
             if (collections.contains(collectionName)) {
-                logger.info { "Collection $collectionName already exists" }
+                logger.info { "Collection $collectionName already exists, skipping creation" }
                 return
             }
 
@@ -94,18 +97,17 @@ class VectorStorageService(
                 else -> throw IllegalArgumentException("Unknown collection: $collectionName")
             }
 
-            try {
-                client.createCollectionAsync(collectionName, vectorParams).get()
-                logger.info { "Created Qdrant collection: $collectionName" }
-            } catch (e: StatusRuntimeException) {
-                if (e.status.code == Status.Code.ALREADY_EXISTS) {
-                    logger.info { "Collection $collectionName already exists, skipping creation" }
-                } else {
-                    throw e
-                }
-            }
+            client.createCollectionAsync(collectionName, vectorParams).get()
+            logger.info { "Created Qdrant collection: $collectionName" }
         } catch (e: Exception) {
-            logger.warn { "Failed to create collection $collectionName: ${e.message}" }
+            // Log but avoid noisy ALREADY_EXISTS since we pre-checked
+            if (e is StatusRuntimeException && e.status.code == Status.Code.ALREADY_EXISTS) {
+                logger.info { "Collection $collectionName already exists, skipping creation" }
+            } else if (e.cause is StatusRuntimeException && (e.cause as StatusRuntimeException).status.code == Status.Code.ALREADY_EXISTS) {
+                logger.info { "Collection $collectionName already exists, skipping creation" }
+            } else {
+                logger.error(e) { "Failed to ensure collection $collectionName: ${e.message}" }
+            }
         }
     }
 
@@ -393,17 +395,20 @@ class VectorStorageService(
     private fun buildPayload(document: AdvancedRagDocument): Map<String, JsonWithInt.Value> {
         return mapOf(
             // ACL and base metadata
+            "clientId" to createValue(document.clientId?.toString() ?: ""),
             "projectId" to createValue(document.projectId.toString()),
             "documentType" to createValue(document.documentType.name),
             "ragSourceType" to createValue(document.ragSourceType.name),
-            "isDefaultBranch" to createValue(true),
+            "source" to createValue(document.ragSourceType.name),
+            "isDefaultBranch" to createValue(document.isDefaultBranch),
+            "inspirationOnly" to createValue(document.inspirationOnly),
             "timestamp" to createValue(document.timestamp.toEpochMilli()),
 
             // Symbol metadata
             "symbolKind" to createValue(document.symbol.kind.name),
             "symbolName" to createValue(document.symbol.name),
             "qualifiedName" to createValue(document.symbol.qualifiedName),
-            "canonicalSymbolId" to createValue("${'$'}{document.projectId}:${'$'}{document.symbol.qualifiedName}"),
+            "canonicalSymbolId" to createValue("${document.projectId}:${document.symbol.qualifiedName}"),
             "language" to createValue(document.language),
             "module" to createValue(document.module),
             "path" to createValue(document.path),
@@ -444,6 +449,7 @@ data class ScoredDocument(
 
 data class AdvancedRagDocument(
     val projectId: ObjectId,
+    val clientId: ObjectId? = null,
     val documentType: RagDocumentType,
     val ragSourceType: RagSourceType,
     val timestamp: Instant,
@@ -454,7 +460,9 @@ data class AdvancedRagDocument(
     val relations: SymbolRelations,
     val summary: String,
     val codeExcerpt: String,
-    val doc: String?
+    val doc: String?,
+    val inspirationOnly: Boolean = false,
+    val isDefaultBranch: Boolean = true,
 )
 
 

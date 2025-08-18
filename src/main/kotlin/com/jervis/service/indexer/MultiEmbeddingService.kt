@@ -43,8 +43,8 @@ class MultiEmbeddingService(
     
     @PostConstruct
     fun initialize() {
-        loadEmbeddingConfigurations()
-        initializeProviders()
+        // Disable DJL-based initialization; use EmbeddingService (LM Studio-only) instead.
+        logger.info { "MultiEmbeddingService: DJL providers disabled; delegating to EmbeddingService for embeddings." }
     }
     
     private fun loadEmbeddingConfigurations() {
