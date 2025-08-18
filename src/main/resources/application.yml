@@ -17,11 +17,6 @@ logging:
       max-history: 7
 
 spring:
-  datasource:
-    url: jdbc:h2:file:~/.jervis/jervis-db;MODE=LEGACY;DB_CLOSE_ON_EXIT=FALSE
-    driver-class-name: org.h2.Driver
-    username: sa
-    password: ""
   data:
     mongodb:
       host: 192.168.100.117
@@ -31,17 +26,6 @@ spring:
       username: root
       password: REDACTED_MONGODB_PASSWORD
       authentication-database: admin
-  jpa:
-    database-platform: org.hibernate.dialect.H2Dialect
-    hibernate:
-      ddl-auto: validate
-    show-sql: false
-    properties:
-      hibernate:
-        format_sql: true
-  liquibase:
-    change-log: classpath:db/changelog/db.changelog-master.yaml
-    enabled: true
 
 # Qdrant vector database configuration
 qdrant:

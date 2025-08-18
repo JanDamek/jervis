@@ -12,5 +12,14 @@ data class RagDocument(
     val documentType: RagDocumentType,
     val ragSourceType: RagSourceType,
     val pageContent: String,
+    // Optional payload metadata (to align with advanced docs/Qdrant payload requirements)
+    val clientId: ObjectId? = null,
+    val source: String? = null,
+    val language: String? = null,
+    val module: String? = null,
+    val path: String? = null,
+    val timestamp: Long = System.currentTimeMillis(),
+    val isDefaultBranch: Boolean = true,
+    val inspirationOnly: Boolean = false,
     val createdAt: Instant = Instant.now(),
 )

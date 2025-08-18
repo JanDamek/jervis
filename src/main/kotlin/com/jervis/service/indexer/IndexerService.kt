@@ -170,18 +170,43 @@ class IndexerService(
      * @param projectRoot The root directory of the project
      * @param filePath The path to the file to index
      */
+    /**
+     * Index a specific file
+     *
+     * @param projectId The ID of the project
+     * @param projectRoot The root directory of the project
+     * @param filePath The path to the file to index
+     */
     suspend fun indexFile(
         projectId: ObjectId,
         projectRoot: Path,
         filePath: Path,
     ) {
-        projectRoot.relativize(filePath).toString()
+        val relativePath = projectRoot.relativize(filePath).toString()
         val content = String(Files.readAllBytes(filePath), StandardCharsets.UTF_8)
-        filePath.toString().substringAfterLast('.', "")
+        val extension = filePath.toString().substringAfterLast('.', "")
 
         // Skip empty files
         if (content.isBlank()) {
             return
+        }
+
+        if (extension in codeExtensions) {
+            // Existing code path for code chunks
+            indexCodeFile(projectId, content)
+        } else if (extension in textExtensions) {
+            // Minimal text indexing with required basic payload
+            val ragDocument = RagDocument(
+                projectId = projectId,
+                documentType = RagDocumentType.TEXT,
+                ragSourceType = RagSourceType.FILE,
+                pageContent = content,
+                source = RagSourceType.FILE.name,
+                language = extension,
+                path = relativePath,
+            )
+            val embedding = embeddingService.generateEmbedding(ragDocument.pageContent)
+            vectorStorageService.storeDocumentSuspend(ragDocument, embedding)
         }
     }
 
@@ -244,6 +269,7 @@ class IndexerService(
                                     documentType = RagDocumentType.CLASS_SUMMARY,
                                     ragSourceType = RagSourceType.CLASS,
                                     pageContent = chunk.content,
+                                    source = RagSourceType.CLASS.name
                                 )
 
                             // Generate embeddings and store in vector database

@@ -332,8 +332,17 @@ class VectorStorageRepository(
         collectionName: String,
         dimension: Int,
     ) {
-        // Simply try to create the collection - if it exists, createCollection will handle it gracefully
         try {
+            val client = getQdrantClient()
+            if (client == null) {
+                logger.warn { "Cannot ensure collection existence - Qdrant client not available" }
+                return
+            }
+            val collections = client.listCollectionsAsync().get().toList()
+            if (collections.contains(collectionName)) {
+                logger.info { "Collection $collectionName already exists, skipping creation" }
+                return
+            }
             createCollection(collectionName, dimension)
         } catch (e: Exception) {
             logger.error(e) { "Failed to ensure collection exists: $collectionName" }

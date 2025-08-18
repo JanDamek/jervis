@@ -2,6 +2,7 @@ package com.jervis.service.project
 
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.entity.mongo.SettingType
+import com.jervis.repository.mongo.ClientMongoRepository
 import com.jervis.repository.mongo.ProjectMongoRepository
 import com.jervis.service.indexer.IndexerService
 import com.jervis.service.indexer.ProjectIndexer
@@ -65,9 +66,7 @@ class ProjectService(
      */
     suspend fun setActiveProject(project: ProjectDocument) {
         // Save project ID to settings
-        project.id?.let { projectId ->
-            settingService.saveValue(ACTIVE_PROJECT_ID, projectId.toString(), SettingType.STRING)
-        }
+        settingService.saveValue(ACTIVE_PROJECT_ID, project.id.toString(), SettingType.STRING)
 
         // Notify RAG service about active project change
         // TODO call rag service for set active project
