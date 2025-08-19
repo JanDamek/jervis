@@ -55,6 +55,12 @@ data class ProjectDocument(
     // Indexing rules
     val indexingRules: IndexingRules = IndexingRules(),
 
+    // Dependencies on other projects (by id)
+    val dependsOnProjects: List<ObjectId> = emptyList(),
+
+    // Whether the project is disabled globally
+    val isDisabled: Boolean = false,
+
     // Whether the project is currently active (legacy "default" semantics)
     val isActive: Boolean = false,
 

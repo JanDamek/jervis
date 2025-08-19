@@ -5,6 +5,8 @@ import com.jervis.service.llm.LlmCoordinator
 import com.jervis.service.llm.lmstudio.LMStudioService
 import com.jervis.service.llm.ollama.OllamaService
 import com.jervis.service.project.ProjectService
+import com.jervis.service.client.ClientService
+import com.jervis.service.client.ClientProjectLinkService
 import com.jervis.service.setting.SettingService
 import com.jervis.ui.component.ApplicationWindowManager
 import com.jervis.ui.utils.MacOSAppUtils.setDockIcon
@@ -27,6 +29,8 @@ class JervisApplication(
     private val llmCoordinator: LlmCoordinator,
     private val ollamaService: OllamaService,
     private val lmStudioService: LMStudioService,
+    private val clientService: ClientService,
+    private val linkService: ClientProjectLinkService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -48,6 +52,8 @@ class JervisApplication(
                     llmCoordinator,
                     ollamaService,
                     lmStudioService,
+                    clientService,
+                    linkService,
                 )
 
             EventQueue.invokeLater {

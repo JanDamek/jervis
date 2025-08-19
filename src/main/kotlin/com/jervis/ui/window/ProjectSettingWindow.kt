@@ -1,6 +1,7 @@
 package com.jervis.ui.window
 
 import com.jervis.entity.mongo.ProjectDocument
+import com.jervis.entity.mongo.ClientDocument
 import com.jervis.service.project.ProjectService
 import org.bson.types.ObjectId
 import kotlinx.coroutines.CoroutineScope
@@ -33,6 +34,8 @@ import javax.swing.JScrollPane
 import javax.swing.JTable
 import javax.swing.JTextArea
 import javax.swing.JTextField
+import javax.swing.JComboBox
+import javax.swing.DefaultListCellRenderer
 import javax.swing.ListSelectionModel
 import javax.swing.SwingConstants
 import javax.swing.border.EmptyBorder
@@ -45,6 +48,7 @@ import javax.swing.table.DefaultTableCellRenderer
  */
 class ProjectSettingWindow(
     private val projectService: ProjectService,
+    private val clientService: com.jervis.service.client.ClientService,
 ) : JFrame("Project Management") {
     
     private val projectTableModel = ProjectTableModel(emptyList())
@@ -55,6 +59,10 @@ class ProjectSettingWindow(
     private val deleteButton = JButton("Delete Project")
     private val activateButton = JButton("Activate Project")
     private val defaultButton = JButton("Set as Default")
+    private val assignClientButton = JButton("Assign Client…")
+    private val newClientButton = JButton("New Client…")
+    private val dependenciesButton = JButton("Dependencies…")
+    private val toggleDisabledButton = JButton("Toggle Disabled")
 
     private var activeProjectId: ObjectId? = null
 
@@ -91,6 +99,10 @@ class ProjectSettingWindow(
         buttonPanel.add(deleteButton)
         buttonPanel.add(activateButton)
         buttonPanel.add(defaultButton)
+        buttonPanel.add(assignClientButton)
+        buttonPanel.add(newClientButton)
+        buttonPanel.add(dependenciesButton)
+        buttonPanel.add(toggleDisabledButton)
 
         mainPanel.add(tablePanel, BorderLayout.CENTER)
         mainPanel.add(buttonPanel, BorderLayout.SOUTH)
@@ -107,6 +119,10 @@ class ProjectSettingWindow(
         deleteButton.addActionListener { deleteSelectedProject() }
         activateButton.addActionListener { activateSelectedProject() }
         defaultButton.addActionListener { setSelectedProjectAsDefault() }
+        assignClientButton.addActionListener { assignClientToSelectedProject() }
+        newClientButton.addActionListener { createNewClient() }
+        dependenciesButton.addActionListener { editDependenciesForSelectedProject() }
+        toggleDisabledButton.addActionListener { toggleDisabledForSelectedProject() }
 
         // Table selection listener
         projectTable.selectionModel.addListSelectionListener { updateButtonState() }
@@ -298,6 +314,209 @@ class ProjectSettingWindow(
         }
     }
 
+    private fun assignClientToSelectedProject() {
+        val selectedRow = projectTable.selectedRow
+        if (selectedRow == -1) {
+            JOptionPane.showMessageDialog(this, "Please select a project first.", "Info", JOptionPane.INFORMATION_MESSAGE)
+            return
+        }
+        val project = projectTableModel.getProjectAt(selectedRow)
+
+        CoroutineScope(Dispatchers.Main).launch {
+            try {
+                val clients = clientService.list()
+                if (clients.isEmpty()) {
+                    JOptionPane.showMessageDialog(this@ProjectSettingWindow, "No clients found. Create a client first.", "Info", JOptionPane.INFORMATION_MESSAGE)
+                    return@launch
+                }
+
+                val dialog = JDialog(this@ProjectSettingWindow, "Assign Client", true)
+                val combo = JComboBox<ClientDocument>()
+                clients.forEach { combo.addItem(it) }
+                combo.renderer = object : DefaultListCellRenderer() {
+                    override fun getListCellRendererComponent(list: javax.swing.JList<*>?, value: Any?, index: Int, isSelected: Boolean, cellHasFocus: Boolean): java.awt.Component {
+                        val label = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus) as JLabel
+                        val c = value as? ClientDocument
+                        if (c != null) label.text = "${c.name} (${c.slug})"
+                        return label
+                    }
+                }
+                val okBtn = JButton("OK")
+                val cancelBtn = JButton("Cancel")
+
+                okBtn.addActionListener {
+                    val selected = combo.selectedItem as? ClientDocument
+                    if (selected == null) {
+                        JOptionPane.showMessageDialog(dialog, "Please select a client.", "Validation", JOptionPane.WARNING_MESSAGE)
+                    } else {
+                        CoroutineScope(Dispatchers.Main).launch {
+                            try {
+                                val updated = project.copy(clientId = selected.id)
+                                projectService.saveProject(updated, false)
+                                loadProjects()
+                            } catch (e: Exception) {
+                                JOptionPane.showMessageDialog(dialog, "Failed to assign client: ${e.message}", "Error", JOptionPane.ERROR_MESSAGE)
+                            } finally {
+                                dialog.dispose()
+                            }
+                        }
+                    }
+                }
+                cancelBtn.addActionListener { dialog.dispose() }
+
+                val panel = JPanel(BorderLayout(8, 8))
+                panel.border = EmptyBorder(12, 12, 12, 12)
+                panel.add(JLabel("Select client:"), BorderLayout.NORTH)
+                panel.add(combo, BorderLayout.CENTER)
+                val btnPanel = JPanel(FlowLayout(FlowLayout.RIGHT))
+                btnPanel.add(okBtn)
+                btnPanel.add(cancelBtn)
+                panel.add(btnPanel, BorderLayout.SOUTH)
+
+                dialog.contentPane = panel
+                dialog.pack()
+                dialog.setLocationRelativeTo(this@ProjectSettingWindow)
+                dialog.isVisible = true
+            } catch (e: Exception) {
+                JOptionPane.showMessageDialog(this@ProjectSettingWindow, "Error loading clients: ${e.message}", "Error", JOptionPane.ERROR_MESSAGE)
+            }
+        }
+    }
+
+    private fun createNewClient() {
+        val dialog = JDialog(this, "New Client", true)
+        val nameField = JTextField(30)
+        val slugField = JTextField(30)
+
+        val form = JPanel(GridBagLayout())
+        val gbc = GridBagConstraints()
+        gbc.insets = Insets(6, 8, 6, 8)
+        gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.LINE_END
+        form.add(JLabel("Name:*"), gbc)
+        gbc.gridx = 1; gbc.anchor = GridBagConstraints.LINE_START; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0
+        form.add(nameField, gbc)
+        gbc.gridx = 0; gbc.gridy = 1; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0.0; gbc.anchor = GridBagConstraints.LINE_END
+        form.add(JLabel("Slug:*"), gbc)
+        gbc.gridx = 1; gbc.anchor = GridBagConstraints.LINE_START; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0
+        form.add(slugField, gbc)
+
+        val okBtn = JButton("Create")
+        val cancelBtn = JButton("Cancel")
+        val btnPanel = JPanel(FlowLayout(FlowLayout.RIGHT))
+        btnPanel.add(okBtn)
+        btnPanel.add(cancelBtn)
+
+        val panel = JPanel(BorderLayout(8, 8))
+        panel.border = EmptyBorder(12, 12, 12, 12)
+        panel.add(form, BorderLayout.CENTER)
+        panel.add(btnPanel, BorderLayout.SOUTH)
+
+        okBtn.addActionListener {
+            val name = nameField.text.trim()
+            val slug = slugField.text.trim()
+            val regex = Regex("^[a-z0-9-]+$")
+            if (name.isEmpty()) {
+                JOptionPane.showMessageDialog(dialog, "Name is required.", "Validation", JOptionPane.WARNING_MESSAGE); return@addActionListener
+            }
+            if (!regex.matches(slug)) {
+                JOptionPane.showMessageDialog(dialog, "Slug must match ^[a-z0-9-]+$", "Validation", JOptionPane.WARNING_MESSAGE); return@addActionListener
+            }
+            CoroutineScope(Dispatchers.Main).launch {
+                try {
+                    val client = ClientDocument(name = name, slug = slug)
+                    clientService.create(client)
+                    JOptionPane.showMessageDialog(dialog, "Client created.", "Success", JOptionPane.INFORMATION_MESSAGE)
+                } catch (e: Exception) {
+                    JOptionPane.showMessageDialog(dialog, "Failed to create client: ${e.message}", "Error", JOptionPane.ERROR_MESSAGE)
+                } finally {
+                    dialog.dispose()
+                }
+            }
+        }
+        cancelBtn.addActionListener { dialog.dispose() }
+
+        dialog.contentPane = panel
+        dialog.pack()
+        dialog.setLocationRelativeTo(this)
+        dialog.isVisible = true
+    }
+
+    private fun editDependenciesForSelectedProject() {
+        val selectedRow = projectTable.selectedRow
+        if (selectedRow == -1) {
+            JOptionPane.showMessageDialog(this, "Please select a project first.", "Info", JOptionPane.INFORMATION_MESSAGE)
+            return
+        }
+        val project = projectTableModel.getProjectAt(selectedRow)
+        CoroutineScope(Dispatchers.Main).launch {
+            val allProjects = withContext(Dispatchers.IO) { projectService.getAllProjects() }
+            val selectable = allProjects.filter { it.id != project.id }
+            val listModel = javax.swing.DefaultListModel<ProjectDocument>()
+            selectable.forEach { listModel.addElement(it) }
+            val list = javax.swing.JList(listModel)
+            list.selectionMode = ListSelectionModel.MULTIPLE_INTERVAL_SELECTION
+            list.cellRenderer = object : DefaultListCellRenderer() {
+                override fun getListCellRendererComponent(listComp: javax.swing.JList<*>?, value: Any?, index: Int, isSelected: Boolean, cellHasFocus: Boolean): java.awt.Component {
+                    val label = super.getListCellRendererComponent(listComp, value, index, isSelected, cellHasFocus) as JLabel
+                    val p = value as? ProjectDocument
+                    if (p != null) label.text = "${p.name} (${p.slug})"
+                    return label
+                }
+            }
+            val preselect = selectable.mapIndexedNotNull { idx, p -> if (project.dependsOnProjects.contains(p.id)) idx else null }.toIntArray()
+            list.selectedIndices = preselect
+
+            val ok = JButton("OK")
+            val cancel = JButton("Cancel")
+            val dialog = JDialog(this@ProjectSettingWindow, "Dependencies", true)
+            ok.addActionListener {
+                val selected = list.selectedValuesList
+                CoroutineScope(Dispatchers.Main).launch {
+                    try {
+                        val updated = project.copy(dependsOnProjects = selected.map { it.id })
+                        withContext(Dispatchers.IO) { projectService.saveProject(updated, false) }
+                        loadProjects()
+                        JOptionPane.showMessageDialog(this@ProjectSettingWindow, "Dependencies saved.", "Info", JOptionPane.INFORMATION_MESSAGE)
+                    } catch (e: Exception) {
+                        JOptionPane.showMessageDialog(this@ProjectSettingWindow, "Failed to save: ${e.message}", "Error", JOptionPane.ERROR_MESSAGE)
+                    } finally {
+                        dialog.dispose()
+                    }
+                }
+            }
+            cancel.addActionListener { dialog.dispose() }
+
+            val panel = JPanel(BorderLayout(8, 8))
+            panel.border = EmptyBorder(12, 12, 12, 12)
+            panel.add(JScrollPane(list), BorderLayout.CENTER)
+            val btns = JPanel(FlowLayout(FlowLayout.RIGHT)).apply { add(ok); add(cancel) }
+            panel.add(btns, BorderLayout.SOUTH)
+            dialog.contentPane = panel
+            dialog.setSize(520, 420)
+            dialog.setLocationRelativeTo(this@ProjectSettingWindow)
+            dialog.isVisible = true
+        }
+    }
+
+    private fun toggleDisabledForSelectedProject() {
+        val selectedRow = projectTable.selectedRow
+        if (selectedRow == -1) {
+            JOptionPane.showMessageDialog(this, "Please select a project first.", "Info", JOptionPane.INFORMATION_MESSAGE)
+            return
+        }
+        val project = projectTableModel.getProjectAt(selectedRow)
+        CoroutineScope(Dispatchers.Main).launch {
+            try {
+                val updated = project.copy(isDisabled = !project.isDisabled)
+                withContext(Dispatchers.IO) { projectService.saveProject(updated, false) }
+                loadProjects()
+                JOptionPane.showMessageDialog(this@ProjectSettingWindow, if (updated.isDisabled) "Project disabled." else "Project enabled.", "Info", JOptionPane.INFORMATION_MESSAGE)
+            } catch (e: Exception) {
+                JOptionPane.showMessageDialog(this@ProjectSettingWindow, "Failed to toggle disabled: ${e.message}", "Error", JOptionPane.ERROR_MESSAGE)
+            }
+        }
+    }
+
     /**
      * Table model for projects
      */
@@ -305,7 +524,7 @@ class ProjectSettingWindow(
         private var projectList: List<ProjectDocument>
     ) : AbstractTableModel() {
 
-        private val columns = arrayOf("ID", "Name", "Path", "Description", "Active", "Is Current")
+        private val columns = arrayOf("ID", "Name", "Path", "Description", "Client", "Disabled", "Active", "Is Current")
 
         fun updateProjects(projects: List<ProjectDocument>) {
             this.projectList = projects
@@ -328,8 +547,10 @@ class ProjectSettingWindow(
                 1 -> project.name
                 2 -> project.path
                 3 -> project.description ?: ""
-                4 -> project.isActive
-                5 -> false // TODO: Implement current project logic
+                4 -> project.clientId?.toHexString() ?: ""
+                5 -> project.isDisabled
+                6 -> project.isActive
+                7 -> false // TODO: Implement current project logic
                 else -> ""
             }
         }
@@ -337,7 +558,7 @@ class ProjectSettingWindow(
         override fun getColumnClass(columnIndex: Int): Class<*> =
             when (columnIndex) {
                 0 -> String::class.java
-                4, 5 -> Boolean::class.java
+                5, 6, 7 -> Boolean::class.java
                 else -> String::class.java
             }
 

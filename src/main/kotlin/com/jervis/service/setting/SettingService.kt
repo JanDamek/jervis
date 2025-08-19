@@ -14,7 +14,120 @@ import java.time.Instant
 class SettingService(
     private val settingRepository: SettingMongoRepository,
     private val eventPublisher: ApplicationEventPublisher,
+    private val environment: org.springframework.core.env.Environment,
 ) {
+    // -------- Unified models config (primary/fallback by usage) --------
+    private val MODELS_CONFIG_VALUE = "models.config"
+
+    private enum class Role { PRIMARY, FALLBACK }
+
+    private data class ModelEntry(
+        val model: String,
+        val provider: ModelProvider?,
+        val usage: String,
+        val tokens: Int?,
+        val maxTokens: Int?,
+        val role: Role?,
+    )
+
+    private data class ResolvedModel(
+        val provider: ModelProvider,
+        val model: String,
+        val maxTokens: Int?,
+        val role: String? = null,
+    )
+
+    // Parse models.config content supporting JSON array of objects or CSV-like lines.
+    private fun parseModelsConfig(raw: String): List<ModelEntry> {
+        if (raw.isBlank()) return emptyList()
+        val text = raw.trim()
+        return try {
+            if (text.startsWith("[") || text.startsWith("{")) {
+                // Try JSON array first
+                val mapper = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
+                val list: List<Map<String, Any?>> = if (text.startsWith("{")) listOf(mapper.readValue(text, Map::class.java) as Map<String, Any?>) else mapper.readValue(text, mapper.typeFactory.constructCollectionType(List::class.java, Map::class.java))
+                list.mapNotNull { m ->
+                    val model = (m["model"] as? String)?.trim().orEmpty()
+                    val providerStr = (m["provider"] as? String)?.trim()?.uppercase()
+                    val usage = ((m["usage"] as? String) ?: (m["purpose"] as? String) ?: "").trim()
+                    if (model.isBlank() || usage.isBlank()) return@mapNotNull null
+                    val provider = providerStr?.let { runCatching { ModelProvider.valueOf(it) }.getOrNull() }
+                    val tokens = (m["tokens"] as? Number)?.toInt()
+                    val maxTokens = ((m["maxTokens"] ?: m["max-token"]) as? Number)?.toInt()
+                    val role = ((m["role"] as? String)?.lowercase())?.let { if (it == "primary") Role.PRIMARY else if (it == "fallback") Role.FALLBACK else null }
+                    ModelEntry(model, provider, usage, tokens, maxTokens, role)
+                }
+            } else {
+                // CSV-like: model, provider, maxTokens, usage, role (order flexible), allow numbers for tokens/maxTokens
+                val providers = setOf("OPENAI", "ANTHROPIC", "OLLAMA", "LM_STUDIO")
+                text.lines()
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() && !it.startsWith("#") }
+                    .mapNotNull { line ->
+                        val parts = line.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                        if (parts.isEmpty()) return@mapNotNull null
+                        val model = parts.first()
+                        var provider: ModelProvider? = null
+                        var usage: String? = null
+                        var tokens: Int? = null
+                        var maxTokens: Int? = null
+                        var role: Role? = null
+                        for (i in 1 until parts.size) {
+                            val p = parts[i]
+                            val up = p.uppercase()
+                            when {
+                                providers.contains(up) -> provider = runCatching { ModelProvider.valueOf(up) }.getOrNull()
+                                p.equals("primary", true) -> role = Role.PRIMARY
+                                p.equals("fallback", true) -> role = Role.FALLBACK
+                                p.matches(Regex("\\d+")) -> {
+                                    val n = p.toInt()
+                                    if (maxTokens == null) maxTokens = n else if (tokens == null) tokens = n
+                                }
+                                else -> usage = p
+                            }
+                        }
+                        if (usage.isNullOrBlank()) return@mapNotNull null
+                        ModelEntry(model, provider, usage!!, tokens, maxTokens, role)
+                    }
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun readModelsConfigFromProperties(): String {
+        // Read YAML list only: models[0], models[1], ...
+        val lines = mutableListOf<String>()
+        var i = 0
+        while (i < 1000) {
+            val v = environment.getProperty("models[$i]")?.trim()
+            if (v == null) break
+            if (v.isNotEmpty()) lines.add(v)
+            i++
+        }
+        return lines.joinToString("\n")
+    }
+
+    private fun resolveForUsageFromConfig(usage: String): ResolvedModel? {
+        val raw = readModelsConfigFromProperties()
+        val entries = parseModelsConfig(raw)
+            .filter { it.usage.equals(usage, ignoreCase = true) }
+            .filter { it.provider != null } // require provider specified in YAML
+        if (entries.isEmpty()) return null
+        val primaries = entries.filter { it.role == Role.PRIMARY }
+        val fallbacks = entries.filter { it.role == Role.FALLBACK }
+        val unspecified = entries.filter { it.role == null }
+        val chosenPrimaries = when {
+            primaries.isNotEmpty() -> primaries
+            fallbacks.isNotEmpty() -> unspecified
+            unspecified.size == 1 -> unspecified
+            unspecified.size > 1 -> listOf(unspecified.first())
+            else -> emptyList()
+        }
+        val first = chosenPrimaries.firstOrNull() ?: fallbacks.firstOrNull() ?: entries.first()
+        val provider = first.provider!!
+        return ResolvedModel(provider = provider, model = first.model, maxTokens = first.maxTokens, role = first.role?.name?.lowercase())
+    }
     // Batch mode for controlling event publishing
     private var batchMode = false
     private val batchChangedSettings = mutableSetOf<String>()
@@ -38,7 +151,25 @@ class SettingService(
 
     // Constants for external model settings
     private val EMBEDDING_MODEL_NAME_VALUE = "embedding_model"
-    private val EMBEDDING_TYPE_NAME_VALUE = "embedding_type"
+    private val EMBEDDING_TYPE_NAME_VALUE = "embedding_type" // legacy key, kept for compatibility
+    private val EMBEDDING_PROVIDER_NAME_VALUE = "embedding.provider" // new key
+    private val EMBEDDING_MAX_TOKENS_VALUE = "embedding.max.tokens" // new key
+    // New embedding/translation model keys (LM Studio defaults)
+    private val EMBEDDING_TEXT_MODEL_NAME_VALUE = "embedding.model.text"
+    private val EMBEDDING_TEXT_MAX_TOKENS_VALUE = "embedding.model.text.max.tokens"
+    private val EMBEDDING_CODE_MODEL_NAME_VALUE = "embedding.model.code"
+    private val EMBEDDING_CODE_MAX_TOKENS_VALUE = "embedding.model.code.max.tokens"
+    private val TRANSLATION_QUICK_MODEL_NAME_VALUE = "translation.model.quick"
+    private val TRANSLATION_QUICK_MAX_TOKENS_VALUE = "translation.model.quick.max.tokens"
+    private val TRANSLATION_QUICK_MAX_TOKENS_EXCEPTIONAL_VALUE = "translation.model.quick.max.tokens.exceptional"
+
+    // Ollama defaults (optimized for ~20 GB RAM)
+    private val OLLAMA_TEXT_EMBED_MODEL_NAME_VALUE = "ollama.embedding.model.text"
+    private val OLLAMA_TEXT_EMBED_MAX_TOKENS_VALUE = "ollama.embedding.model.text.max.tokens"
+    private val OLLAMA_CODE_EMBED_MODEL_NAME_VALUE = "ollama.embedding.model.code"
+    private val OLLAMA_CODE_EMBED_MAX_TOKENS_VALUE = "ollama.embedding.model.code.max.tokens"
+    private val OLLAMA_TRANSLATION_MODEL_NAME_VALUE = "ollama.translation.model"
+    private val OLLAMA_TRANSLATION_MAX_TOKENS_VALUE = "ollama.translation.model.max.tokens"
 
     // Model settings - type and name are stored separately
     private val MODEL_SIMPLE_TYPE_VALUE = "external_model_simple_type"
@@ -102,20 +233,23 @@ class SettingService(
         set(value) = runBlocking { saveValue(OLLAMA_URL, value, SettingType.STRING) }
 
     var embeddingModelName: String
-        get() = runBlocking { getStringValue(EMBEDDING_MODEL_NAME_VALUE, "text-embedding-nomic-text-v2-moe") }
+        get() = runBlocking {
+            resolveForUsageFromConfig("embedding")?.model
+                ?: error("No 'embedding' model configured in application.yml (models)")
+        }
         set(value) = runBlocking { saveValue(EMBEDDING_MODEL_NAME_VALUE, value, SettingType.STRING) }
 
     var embeddingModelType: ModelProvider
         get() =
             runBlocking {
-                ModelProvider.valueOf(
-                    getStringValue(
-                        EMBEDDING_TYPE_NAME_VALUE,
-                        ModelProvider.LM_STUDIO.name,
-                    ),
-                )
+                resolveForUsageFromConfig("embedding")?.provider
+                    ?: error("No 'embedding' provider configured in application.yml (models)")
             }
-        set(value) = runBlocking { saveValue(EMBEDDING_TYPE_NAME_VALUE, value.name, SettingType.STRING) }
+        set(value) = runBlocking {
+            // Save new provider key and legacy key for compatibility
+            saveValue(EMBEDDING_PROVIDER_NAME_VALUE, value.name, SettingType.STRING)
+            saveValue(EMBEDDING_TYPE_NAME_VALUE, value.name, SettingType.STRING)
+        }
 
     var anthropicApiKey: String
         get() = runBlocking { getStringValue(ANTHROPIC_API_KEY_VALUE, "") }
@@ -152,6 +286,65 @@ class SettingService(
     var openaiApiUrl: String
         get() = runBlocking { getStringValue(OPENAI_API_URL_VALUE, "https://api.openai.com") }
         set(value) = runBlocking { saveValue(OPENAI_API_URL_VALUE, value, SettingType.STRING) }
+
+    // LM Studio specific embedding and translation defaults
+    var lmStudioEmbeddingTextModelName: String
+        get() = runBlocking { getStringValue(EMBEDDING_TEXT_MODEL_NAME_VALUE, "text-embedding-nomic-embed-text-v2-moe") }
+        set(value) = runBlocking { saveValue(EMBEDDING_TEXT_MODEL_NAME_VALUE, value, SettingType.STRING) }
+
+    var lmStudioEmbeddingTextMaxTokens: Int
+        get() = runBlocking { getIntValue(EMBEDDING_TEXT_MAX_TOKENS_VALUE, 512) }
+        set(value) = runBlocking { saveIntSetting(EMBEDDING_TEXT_MAX_TOKENS_VALUE, value) }
+
+    var lmStudioEmbeddingCodeModelName: String
+        get() = runBlocking { getStringValue(EMBEDDING_CODE_MODEL_NAME_VALUE, "nomic-embed-code") }
+        set(value) = runBlocking { saveValue(EMBEDDING_CODE_MODEL_NAME_VALUE, value, SettingType.STRING) }
+
+    var lmStudioEmbeddingCodeMaxTokens: Int
+        get() = runBlocking { getIntValue(EMBEDDING_CODE_MAX_TOKENS_VALUE, 4096) }
+        set(value) = runBlocking { saveIntSetting(EMBEDDING_CODE_MAX_TOKENS_VALUE, value) }
+
+    var lmStudioTranslationQuickModelName: String
+        get() = runBlocking { getStringValue(TRANSLATION_QUICK_MODEL_NAME_VALUE, "deepseek-coder-v2-lite-instruct") }
+        set(value) = runBlocking { saveValue(TRANSLATION_QUICK_MODEL_NAME_VALUE, value, SettingType.STRING) }
+
+    var lmStudioTranslationQuickMaxTokens: Int
+        get() = runBlocking { getIntValue(TRANSLATION_QUICK_MAX_TOKENS_VALUE, 4096) }
+        set(value) = runBlocking { saveIntSetting(TRANSLATION_QUICK_MAX_TOKENS_VALUE, value) }
+
+    var lmStudioTranslationQuickMaxTokensExceptional: Int
+        get() = runBlocking { getIntValue(TRANSLATION_QUICK_MAX_TOKENS_EXCEPTIONAL_VALUE, 9196) }
+        set(value) = runBlocking { saveIntSetting(TRANSLATION_QUICK_MAX_TOKENS_EXCEPTIONAL_VALUE, value) }
+
+    // Ollama defaults (20 GB RAM friendly)
+    var ollamaTextEmbeddingModelName: String
+        get() = runBlocking { getStringValue(OLLAMA_TEXT_EMBED_MODEL_NAME_VALUE, "nomic-embed-text") }
+        set(value) = runBlocking { saveValue(OLLAMA_TEXT_EMBED_MODEL_NAME_VALUE, value, SettingType.STRING) }
+
+    var ollamaTextEmbeddingMaxTokens: Int
+        get() = runBlocking { getIntValue(OLLAMA_TEXT_EMBED_MAX_TOKENS_VALUE, 512) }
+        set(value) = runBlocking { saveIntSetting(OLLAMA_TEXT_EMBED_MAX_TOKENS_VALUE, value) }
+
+    var ollamaCodeEmbeddingModelName: String
+        get() = runBlocking { getStringValue(OLLAMA_CODE_EMBED_MODEL_NAME_VALUE, "nomic-embed-code") }
+        set(value) = runBlocking { saveValue(OLLAMA_CODE_EMBED_MODEL_NAME_VALUE, value, SettingType.STRING) }
+
+    var ollamaCodeEmbeddingMaxTokens: Int
+        get() = runBlocking { getIntValue(OLLAMA_CODE_EMBED_MAX_TOKENS_VALUE, 4096) }
+        set(value) = runBlocking { saveIntSetting(OLLAMA_CODE_EMBED_MAX_TOKENS_VALUE, value) }
+
+    var ollamaTranslationModelName: String
+        get() = runBlocking { getStringValue(OLLAMA_TRANSLATION_MODEL_NAME_VALUE, "llama3.1:8b-instruct") }
+        set(value) = runBlocking { saveValue(OLLAMA_TRANSLATION_MODEL_NAME_VALUE, value, SettingType.STRING) }
+
+    var ollamaTranslationMaxTokens: Int
+        get() = runBlocking { getIntValue(OLLAMA_TRANSLATION_MAX_TOKENS_VALUE, 4096) }
+        set(value) = runBlocking { saveIntSetting(OLLAMA_TRANSLATION_MAX_TOKENS_VALUE, value) }
+
+    // Unified embedding max tokens (triplet: model, provider, max tokens)
+    var embeddingMaxTokens: Int
+        get() = runBlocking { getIntValue(EMBEDDING_MAX_TOKENS_VALUE, 4096) }
+        set(value) = runBlocking { saveIntSetting(EMBEDDING_MAX_TOKENS_VALUE, value) }
 
     var llmTemperature: Float
         get() = runBlocking { getStringValue(LLM_TEMPERATURE_VALUE, "0.7").toFloatOrNull() ?: 0.7f }
@@ -357,49 +550,37 @@ class SettingService(
     var modelSimpleType: ModelProvider
         get() =
             runBlocking {
-                ModelProvider.valueOf(
-                    getStringValue(
-                        MODEL_SIMPLE_TYPE_VALUE,
-                        ModelProvider.OPENAI.name,
-                    ),
-                )
+                resolveForUsageFromConfig("simple")?.provider
+                    ?: error("No 'simple' provider configured in application.yml (models)")
             }
         set(value) = runBlocking { saveValue(MODEL_SIMPLE_TYPE_VALUE, value.name, SettingType.STRING) }
 
     var modelSimpleName: String
-        get() = runBlocking { getStringValue(MODEL_SIMPLE_NAME_VALUE, "gpt-3.5-turbo") }
+        get() = runBlocking { resolveForUsageFromConfig("simple")?.model ?: error("No 'simple' model configured in application.yml (models)") }
         set(value) = runBlocking { saveValue(MODEL_SIMPLE_NAME_VALUE, value, SettingType.STRING) }
 
     var modelComplexType: ModelProvider
         get() =
             runBlocking {
-                ModelProvider.valueOf(
-                    getStringValue(
-                        MODEL_COMPLEX_TYPE_VALUE,
-                        ModelProvider.OPENAI.name,
-                    ),
-                )
+                resolveForUsageFromConfig("complex")?.provider
+                    ?: error("No 'complex' provider configured in application.yml (models)")
             }
         set(value) = runBlocking { saveValue(MODEL_COMPLEX_TYPE_VALUE, value.name, SettingType.STRING) }
 
     var modelComplexName: String
-        get() = runBlocking { getStringValue(MODEL_COMPLEX_NAME_VALUE, "gpt-4") }
+        get() = runBlocking { resolveForUsageFromConfig("complex")?.model ?: error("No 'complex' model configured in application.yml (models)") }
         set(value) = runBlocking { saveValue(MODEL_COMPLEX_NAME_VALUE, value, SettingType.STRING) }
 
     var modelFinalizingType: ModelProvider
         get() =
             runBlocking {
-                ModelProvider.valueOf(
-                    getStringValue(
-                        MODEL_FINALIZING_TYPE_VALUE,
-                        ModelProvider.OPENAI.name,
-                    ),
-                )
+                resolveForUsageFromConfig("finalizing")?.provider
+                    ?: error("No 'finalizing' provider configured in application.yml (models)")
             }
         set(value) = runBlocking { saveValue(MODEL_FINALIZING_TYPE_VALUE, value.name, SettingType.STRING) }
 
     var modelFinalizingName: String
-        get() = runBlocking { getStringValue(MODEL_FINALIZING_NAME_VALUE, "gpt-4") }
+        get() = runBlocking { resolveForUsageFromConfig("finalizing")?.model ?: error("No 'finalizing' model configured in application.yml (models)") }
         set(value) = runBlocking { saveValue(MODEL_FINALIZING_NAME_VALUE, value, SettingType.STRING) }
 
     // Convenience methods for setting both type and name

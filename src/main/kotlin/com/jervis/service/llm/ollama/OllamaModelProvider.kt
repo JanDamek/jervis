@@ -58,8 +58,11 @@ class OllamaModelProvider(
             // Make API call to Ollama
             val entity = HttpEntity(ollamaRequest, headers)
             val response =
-                restTemplate.postForObject("$apiEndpoint/api/generate", entity, OllamaResponse::class.java)
-                    ?: throw RuntimeException("Failed to get response from Ollama API")
+                restTemplate.postForObject(
+                    OllamaUrl.buildApiUrl(apiEndpoint, "/generate"),
+                    entity,
+                    OllamaResponse::class.java,
+                ) ?: throw RuntimeException("Failed to get response from Ollama API")
 
             val endTime = Instant.now()
             val duration = Duration.between(startTime, endTime).toMillis()
@@ -93,7 +96,7 @@ class OllamaModelProvider(
             logger.debug { "Checking health of Ollama model provider..." }
 
             // Check if the Ollama server is available by listing models
-            val response = restTemplate.getForObject("$apiEndpoint/api/tags", OllamaTagsResponse::class.java)
+            val response = restTemplate.getForObject(OllamaUrl.buildApiUrl(apiEndpoint, "/tags"), OllamaTagsResponse::class.java)
 
             // Check if our model is available
             val modelAvailable = response?.models?.any { it.name == modelName } ?: false

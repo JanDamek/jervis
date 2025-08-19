@@ -10,6 +10,8 @@ import com.jervis.ui.window.MainWindow
 import com.jervis.ui.window.ProjectSettingWindow
 import com.jervis.ui.window.SettingsWindow
 import com.jervis.ui.window.TrayIconManager
+import com.jervis.ui.window.ClientsWindow
+import com.jervis.service.client.ClientProjectLinkService
 
 /**
  * Třída pro centrální správu všech oken aplikace
@@ -21,6 +23,8 @@ class ApplicationWindowManager(
     private val llmCoordinator: LlmCoordinator,
     private val ollamaService: OllamaService,
     private val lmStudioService: LMStudioService,
+    private val clientService: com.jervis.service.client.ClientService,
+    private val linkService: com.jervis.service.client.ClientProjectLinkService,
 ) {
     private val mainWindow: MainWindow by lazy {
         MainWindow(projectService, chatService)
@@ -31,7 +35,11 @@ class ApplicationWindowManager(
     }
 
     private val projectSettingsWindow: ProjectSettingWindow by lazy {
-        ProjectSettingWindow(projectService)
+        ProjectSettingWindow(projectService, clientService)
+    }
+
+    private val clientsWindow: ClientsWindow by lazy {
+        ClientsWindow(clientService, projectService, linkService)
     }
 
     private val trayIconManager: TrayIconManager by lazy {
@@ -72,6 +80,7 @@ class ApplicationWindowManager(
         mainWindow.isVisible = false
         settingsWindow.isVisible = false
         projectSettingsWindow.isVisible = false
+        clientsWindow.isVisible = false
     }
 
     /**
@@ -80,10 +89,16 @@ class ApplicationWindowManager(
     fun dispose() {
         mainWindow.dispose()
         settingsWindow.dispose()
+        projectSettingsWindow.dispose()
+        clientsWindow.dispose()
         trayIconManager.dispose()
     }
 
     fun showProjectSettingWindow() {
         projectSettingsWindow.isVisible = true
+    }
+
+    fun showClientsWindow() {
+        clientsWindow.isVisible = true
     }
 }

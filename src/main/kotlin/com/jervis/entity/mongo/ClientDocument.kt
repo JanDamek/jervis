@@ -22,6 +22,12 @@ data class ClientDocument(
     val defaultAnonymization: Anonymization = Anonymization(),
     val defaultInspirationPolicy: InspirationPolicy = InspirationPolicy(),
     val tools: ClientTools = ClientTools(),
+    // Client-level dependencies on other projects
+    val dependsOnProjects: List<ObjectId> = emptyList(),
+    // Client enable/disable flag
+    val isDisabled: Boolean = false,
+    // Projects temporarily disabled for this client
+    val disabledProjects: List<ObjectId> = emptyList(),
     val createdAt: Instant = Instant.now(),
     val updatedAt: Instant = Instant.now(),
 )

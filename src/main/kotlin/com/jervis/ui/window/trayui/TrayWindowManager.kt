@@ -6,6 +6,8 @@ import com.jervis.service.llm.lmstudio.LMStudioService
 import com.jervis.service.llm.ollama.OllamaService
 import com.jervis.service.project.ProjectService
 import com.jervis.service.setting.SettingService
+import com.jervis.service.client.ClientService
+import com.jervis.service.client.ClientProjectLinkService
 import com.jervis.ui.component.ApplicationWindowManager
 import org.springframework.stereotype.Component
 
@@ -21,6 +23,8 @@ class TrayWindowManager(
     llmCoordinator: LlmCoordinator,
     ollamaService: OllamaService,
     lmStudioService: LMStudioService,
+    clientService: ClientService,
+    linkService: ClientProjectLinkService,
 ) {
     private val windowManager =
         ApplicationWindowManager(
@@ -30,6 +34,8 @@ class TrayWindowManager(
             llmCoordinator,
             ollamaService,
             lmStudioService,
+            clientService,
+            linkService,
         )
 
     /**
