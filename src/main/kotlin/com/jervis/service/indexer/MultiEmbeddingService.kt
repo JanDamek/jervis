@@ -15,7 +15,8 @@ import java.io.Closeable
 
 @Service
 class MultiEmbeddingService(
-    private val settingService: SettingService
+    private val settingService: SettingService,
+    private val embeddingService: EmbeddingService,
 ) : Closeable {
     private val logger = KotlinLogging.logger {}
     private val embeddingProviders = mutableMapOf<String, DjlEmbeddingProvider>()
@@ -102,65 +103,52 @@ class MultiEmbeddingService(
         embeddingType: EmbeddingType,
         forQuery: Boolean = false
     ): List<FloatArray> = coroutineScope {
-        val configId = when (embeddingType) {
-            EmbeddingType.TEXT -> "e5_text_768"
-            EmbeddingType.CODE -> "jina_code_768"
-        }
-        
-        val config = embeddingConfigs[configId] ?: throw IllegalStateException("Config not found")
-        val provider = embeddingProviders[configId] ?: throw IllegalStateException("Provider not found")
-        
-        // Apply prefixes with guard
-        val prefix = if (forQuery) config.prefixes.query else config.prefixes.document
-        val prefixedContents = contents.map { EmbeddingUtils.applyPrefix(it, prefix) }
-        
-        // Check cache first
-        val cachedResults = mutableMapOf<String, FloatArray>()
-        val uncachedContents = mutableListOf<String>()
-        val uncachedIndices = mutableListOf<Int>()
-        
-        prefixedContents.forEachIndexed { index, content ->
-            val cacheKey = "${configId}:${content.hashCode()}"
-            val cached = embeddingCache[cacheKey]
+        // Delegate to EmbeddingService, which is configured via application.yml models
+        if (contents.isEmpty()) return@coroutineScope emptyList()
+
+        // Simple cache by content hash to avoid duplicate calls in the same session
+        val results = ArrayList<FloatArray>(contents.size)
+        val toCompute = mutableListOf<Pair<Int, String>>()
+        val interim = arrayOfNulls<FloatArray>(contents.size)
+
+        contents.forEachIndexed { idx, text ->
+            val key = "${embeddingType}:${forQuery}:${text.hashCode()}"
+            val cached = embeddingCache[key]
             if (cached != null) {
-                cachedResults[index.toString()] = cached
+                interim[idx] = cached
             } else {
-                uncachedContents.add(content)
-                uncachedIndices.add(index)
+                toCompute.add(idx to text)
             }
         }
-        
-        // Batch process uncached content
-        val newEmbeddings = if (uncachedContents.isNotEmpty()) {
-            uncachedContents.chunked(16).map { batch -> // Batch size of 16
-                async {
-                    provider.predictBatch(batch)
+
+        if (toCompute.isNotEmpty()) {
+            if (forQuery) {
+                // No batch API for query embeddings; process sequentially
+                toCompute.map { (idx, text) ->
+                    async {
+                        val vec = embeddingService.generateQueryEmbedding(text).toFloatArray()
+                        idx to vec
+                    }
+                }.awaitAll().forEach { (idx, vec) ->
+                    val key = "${embeddingType}:${forQuery}:${contents[idx].hashCode()}"
+                    embeddingCache[key] = vec
+                    interim[idx] = vec
                 }
-            }.awaitAll().flatten()
-        } else {
-            emptyList()
+            } else {
+                // Use batch embedding where available
+                val batchInputs = toCompute.map { it.second }
+                val batch = embeddingService.generateEmbedding(batchInputs).map { it.toFloatArray() }
+                toCompute.forEachIndexed { i, (idx, _) ->
+                    val vec = batch[i]
+                    val key = "${embeddingType}:${forQuery}:${contents[idx].hashCode()}"
+                    embeddingCache[key] = vec
+                    interim[idx] = vec
+                }
+            }
         }
-        
-        // Cache new embeddings
-        newEmbeddings.forEachIndexed { batchIndex, embedding ->
-            val originalIndex = uncachedIndices[batchIndex]
-            val content = prefixedContents[originalIndex]
-            val cacheKey = "${configId}:${content.hashCode()}"
-            embeddingCache[cacheKey] = embedding
-        }
-        
-        // Combine results
-        val finalResults = Array<FloatArray?>(contents.size) { null }
-        
-        cachedResults.forEach { (indexStr, embedding) ->
-            finalResults[indexStr.toInt()] = embedding
-        }
-        
-        uncachedIndices.forEachIndexed { batchIndex, originalIndex ->
-            finalResults[originalIndex] = newEmbeddings[batchIndex]
-        }
-        
-        return@coroutineScope finalResults.filterNotNull()
+
+        interim.forEach { arr -> if (arr != null) results.add(arr) }
+        return@coroutineScope results
     }
     
     /**

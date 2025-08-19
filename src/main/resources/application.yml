@@ -35,8 +35,12 @@ qdrant:
 server:
   port: 5500
 
-# Embedding model properties
-embedding:
-  model:
-    text: text-embedding-nomic-text-v2-moe
-    code: nomic-embed-code
+models:
+  - text-embedding-nomic-embed-text-v2-moe, LM_STUDIO, 512, embedding, primary
+  - nomic-embed-code, OLLAMA, 4096, embedding, fallback
+  - nomic-embed-code, LM_STUDIO, 4096, embedding, primary
+  - llama3.1:8b-instruct, OLLAMA, 4096, simple, primary
+  - llama3.1:8b-instruct, OLLAMA, 4096, complex, primary
+  - llama3.1:8b-instruct, OLLAMA, 4096, finalizing, primary
+  - deepseek-coder-v2-lite-instruct, OLLAMA, 4096, general, fallback, 163986
+  - deepseek-coder-v2-lite-instruct, LM_STUDIO, 4096, general, fallback

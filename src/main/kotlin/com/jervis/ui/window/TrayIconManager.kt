@@ -63,6 +63,11 @@ class TrayIconManager {
             windowManager.showProjectSettingWindow()
         }
 
+        val openClientsItem = MenuItem("Správa klientů")
+        openClientsItem.addActionListener {
+            windowManager.showClientsWindow()
+        }
+
         val openMainItem = MenuItem("Otevřít hlavní okno")
         openMainItem.addActionListener {
             windowManager.showMainWindow()
@@ -77,6 +82,7 @@ class TrayIconManager {
         popup.addSeparator()
         popup.add(openSettingsItem)
         popup.add(openProjectSettingsItem)
+        popup.add(openClientsItem)
         popup.addSeparator()
         popup.add(exitItem)
 

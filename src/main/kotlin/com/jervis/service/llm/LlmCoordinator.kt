@@ -524,4 +524,72 @@ class LlmCoordinator(
         runBlocking {
             processQuery(query, context, options)
         }
+    /**
+     * List available OpenAI models via GET /v1/models
+     */
+    private fun normalizeV1Base(url: String): String {
+        val raw = url.trim()
+        val noSlash = raw.trimEnd('/')
+        // If contains "/v1" anywhere, cut before it
+        val idx = noSlash.indexOf("/v1")
+        if (idx >= 0) return noSlash.substring(0, idx)
+        // Otherwise, fallback to scheme://host[:port]
+        return try {
+            val uri = java.net.URI(noSlash)
+            if (uri.scheme != null && uri.host != null) {
+                val portPart = if (uri.port != -1) ":${uri.port}" else ""
+                "${uri.scheme}://${uri.host}$portPart"
+            } else {
+                // crude fallback: take up to first '/'
+                val slash = noSlash.indexOf('/')
+                if (slash > 0) noSlash.substring(0, slash) else noSlash
+            }
+        } catch (_: Exception) {
+            val slash = noSlash.indexOf('/')
+            if (slash > 0) noSlash.substring(0, slash) else noSlash
+        }
+    }
+
+    fun listOpenAiModels(apiKey: String): Set<String> {
+        return try {
+            val base0 = settingService.openaiApiUrl
+            val base = normalizeV1Base(base0)
+            val headers = HttpHeaders()
+            headers.contentType = MediaType.APPLICATION_JSON
+            headers.setBearerAuth(apiKey)
+            val entity = HttpEntity<String>(headers)
+            val resp = restTemplate.exchange("$base/v1/models", org.springframework.http.HttpMethod.GET, entity, OpenAiModelsResponse::class.java)
+            resp.body?.data?.mapNotNull { it.id }?.toSet() ?: emptySet()
+        } catch (e: Exception) {
+            logger.warn { "Failed to list OpenAI models: ${e.message}" }
+            emptySet()
+        }
+    }
+
+    /**
+     * List available Anthropic models via GET /v1/models
+     */
+    fun listAnthropicModels(apiKey: String): Set<String> {
+        return try {
+            val base0 = settingService.anthropicApiUrl
+            val base = normalizeV1Base(base0)
+            val headers = HttpHeaders()
+            headers.contentType = MediaType.APPLICATION_JSON
+            headers["x-api-key"] = apiKey
+            headers["anthropic-version"] = settingService.anthropicApiVersion
+            val entity = HttpEntity<String>(headers)
+            val resp = restTemplate.exchange("$base/v1/models", org.springframework.http.HttpMethod.GET, entity, AnthropicModelsResponse::class.java)
+            resp.body?.data?.mapNotNull { it.id }?.toSet() ?: emptySet()
+        } catch (e: Exception) {
+            logger.warn { "Failed to list Anthropic models: ${e.message}" }
+            emptySet()
+        }
+    }
 }
+
+// DTOs for /v1/models
+private data class OpenAiModelsResponse(val data: List<OpenAiModelInfo> = emptyList())
+private data class OpenAiModelInfo(val id: String = "", val owned_by: String? = null)
+
+private data class AnthropicModelsResponse(val data: List<AnthropicModelInfo> = emptyList())
+private data class AnthropicModelInfo(val id: String = "", val type: String? = null)

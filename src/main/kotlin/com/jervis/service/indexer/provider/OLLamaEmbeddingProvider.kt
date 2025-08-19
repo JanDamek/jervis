@@ -63,7 +63,7 @@ class OLLamaEmbeddingProvider(
         val request = HttpEntity(requestBody, headers)
         val response =
             restTemplate.postForObject(
-                "$apiUrl/api/embeddings",
+                com.jervis.service.llm.ollama.OllamaUrl.buildApiUrl(apiUrl, "/embeddings"),
                 request,
                 OLLamaEmbeddingResponse::class.java,
             )

@@ -6,6 +6,8 @@ import com.jervis.service.llm.lmstudio.LMStudioService
 import com.jervis.service.llm.ollama.OllamaService
 import com.jervis.service.project.ProjectService
 import com.jervis.service.setting.SettingService
+import com.jervis.service.client.ClientService
+import com.jervis.service.client.ClientProjectLinkService
 import com.jervis.ui.window.TrayIconManager
 import org.springframework.stereotype.Service
 import java.awt.SystemTray
@@ -22,6 +24,8 @@ class TrayUiManager(
     private val llmCoordinator: LlmCoordinator,
     private val ollamaService: OllamaService,
     private val lmStudioService: LMStudioService,
+    private val clientService: ClientService,
+    private val linkService: ClientProjectLinkService,
 ) {
     private var trayIconManager: TrayIconManager? = null
 
@@ -49,7 +53,7 @@ class TrayUiManager(
      * Create a window manager for the tray UI
      */
     private fun createWindowManager(): TrayWindowManager =
-        TrayWindowManager(projectService, settingService, chatService, llmCoordinator, ollamaService, lmStudioService)
+        TrayWindowManager(projectService, settingService, chatService, llmCoordinator, ollamaService, lmStudioService, clientService, linkService)
 
     /**
      * Dispose of the tray UI
