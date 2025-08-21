@@ -1,11 +1,16 @@
 package com.jervis.domain.model
 
 /**
- * Enum representing model types
+ * Enum representing model types mapped directly from properties keys.
+ * Must match keys under `models:` in application properties.
  */
 enum class ModelType {
-    SIMPLE,
-    COMPLEX,
-    FINALIZER,
-    EMBEDDING,
+    EMBEDDING_TEXT,
+    EMBEDDING_CODE,
+    TRANSLATION,
+    RAG,
+    INTERNAL,
+    SPEEK,
+    CHAT_INTERNAL,
+    CHAT_EXTERNAL,
 }

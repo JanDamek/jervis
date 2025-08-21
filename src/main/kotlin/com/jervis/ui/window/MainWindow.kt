@@ -1,6 +1,6 @@
 package com.jervis.ui.window
 
-import com.jervis.service.controller.ChatService
+import com.jervis.controller.ChatService
 import com.jervis.service.project.ProjectService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,9 +36,16 @@ class MainWindow(
         runBlocking {
             val projects = projectService.getAllProjects()
             val projectNames = projects.map { project -> project.name }.toTypedArray()
+            val defaultProject = projectService.getDefaultProject()
             EventQueue.invokeLater {
                 projectSelector.removeAllItems()
                 projectNames.forEach { projectSelector.addItem(it) }
+                val defaultName = defaultProject?.name
+                if (defaultName != null) {
+                    projectSelector.selectedItem = defaultName
+                } else if (projectNames.isNotEmpty()) {
+                    projectSelector.selectedIndex = 0
+                }
             }
         }
         defaultCloseOperation = HIDE_ON_CLOSE
@@ -49,7 +56,7 @@ class MainWindow(
         // Horní panel s výběrem projektu
         val topPanel = JPanel(BorderLayout())
         topPanel.border = EmptyBorder(10, 10, 10, 10)
-        topPanel.add(JLabel("Active Project:"), BorderLayout.WEST)
+        topPanel.add(JLabel("Default Project:"), BorderLayout.WEST)
         topPanel.add(projectSelector, BorderLayout.CENTER)
 
         // Střední oblast s přehledem chatu
@@ -102,14 +109,16 @@ class MainWindow(
         add(bottomPanel, BorderLayout.SOUTH)
 
         // Add ESC key handling - ESC hides the window
-        addKeyListener(object : KeyAdapter() {
-            override fun keyPressed(e: KeyEvent) {
-                if (e.keyCode == KeyEvent.VK_ESCAPE) {
-                    isVisible = false // Hide the window
+        addKeyListener(
+            object : KeyAdapter() {
+                override fun keyPressed(e: KeyEvent) {
+                    if (e.keyCode == KeyEvent.VK_ESCAPE) {
+                        isVisible = false // Hide the window
+                    }
                 }
-            }
-        })
-        
+            },
+        )
+
         // Make sure the window can receive key events
         isFocusable = true
     }

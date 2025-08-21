@@ -10,4 +10,6 @@ data class LlmResponse(
     val completionTokens: Int = 0,
     val totalTokens: Int = 0,
     val finishReason: String = "stop",
+    val id: String? = null,
+    val created: Long? = null,
 )

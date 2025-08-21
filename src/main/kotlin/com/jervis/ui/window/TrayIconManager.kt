@@ -53,11 +53,6 @@ class TrayIconManager {
 
         val popup = PopupMenu()
 
-        val openSettingsItem = MenuItem("Nastavení aplikace")
-        openSettingsItem.addActionListener {
-            windowManager.showSettingsWindow()
-        }
-
         val openProjectSettingsItem = MenuItem("Nastavení projektu")
         openProjectSettingsItem.addActionListener {
             windowManager.showProjectSettingWindow()
@@ -80,7 +75,6 @@ class TrayIconManager {
 
         popup.add(openMainItem)
         popup.addSeparator()
-        popup.add(openSettingsItem)
         popup.add(openProjectSettingsItem)
         popup.add(openClientsItem)
         popup.addSeparator()

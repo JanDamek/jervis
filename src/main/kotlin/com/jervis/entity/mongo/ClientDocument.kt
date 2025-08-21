@@ -13,7 +13,7 @@ data class ClientDocument(
     @Indexed(unique = true)
     val name: String,
     @Indexed(unique = true)
-    val slug: String, // [a-z0-9-]+
+    val slug: String = name.lowercase().replace(" ", "-").replace(Regex("[^a-z0-9-]"), ""),
     val description: String? = null,
     val defaultCodingGuidelines: Guidelines = Guidelines(),
     val defaultReviewPolicy: ReviewPolicy = ReviewPolicy(),
@@ -56,21 +56,23 @@ data class Formatting(
 )
 
 data class SecretsPolicy(
-    val bannedPatterns: List<String> = listOf(
-        "AKIA[0-9A-Z]{16}",
-        "xoxb-[0-9a-zA-Z-]+",
-        "(?i)api[_-]?key\\s*[:=]\\s*[A-Za-z0-9-_]{20,}"
-    ),
+    val bannedPatterns: List<String> =
+        listOf(
+            "AKIA[0-9A-Z]{16}",
+            "xoxb-[0-9a-zA-Z-]+",
+            "(?i)api[_-]?key\\s*[:=]\\s*[A-Za-z0-9-_]{20,}",
+        ),
     val cloudUploadAllowed: Boolean = false,
     val allowPII: Boolean = false,
 )
 
 data class Anonymization(
     val enabled: Boolean = false,
-    val rules: List<String> = listOf(
-        "(?i)Acme(\\s+Corp)? -> [CLIENT]",
-        "([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+) -> [EMAIL]",
-    ),
+    val rules: List<String> =
+        listOf(
+            "(?i)Acme(\\s+Corp)? -> [CLIENT]",
+            "([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+) -> [EMAIL]",
+        ),
 )
 
 // Inspiration Policy controls how and whether cross-client inspiration is used

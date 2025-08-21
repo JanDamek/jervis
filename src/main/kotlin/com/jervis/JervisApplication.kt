@@ -1,13 +1,9 @@
 package com.jervis
 
-import com.jervis.service.controller.ChatService
-import com.jervis.service.llm.LlmCoordinator
-import com.jervis.service.llm.lmstudio.LMStudioService
-import com.jervis.service.llm.ollama.OllamaService
-import com.jervis.service.project.ProjectService
-import com.jervis.service.client.ClientService
+import com.jervis.controller.ChatService
 import com.jervis.service.client.ClientProjectLinkService
-import com.jervis.service.setting.SettingService
+import com.jervis.service.client.ClientService
+import com.jervis.service.project.ProjectService
 import com.jervis.ui.component.ApplicationWindowManager
 import com.jervis.ui.utils.MacOSAppUtils.setDockIcon
 import mu.KotlinLogging
@@ -21,14 +17,15 @@ import java.awt.EventQueue
 
 @SpringBootApplication
 @EnableMongoRepositories(basePackages = ["com.jervis.repository.mongo"])
-@ComponentScan(basePackages = ["com.jervis.service", "com.jervis.ui.component", "com.jervis.repository"])
+@ComponentScan(
+    basePackages = [
+        "com.jervis.service", "com.jervis.ui.component",
+        "com.jervis.repository", "com.jervis.configuration", "com.jervis.controller",
+    ],
+)
 class JervisApplication(
-    private val settingService: SettingService,
     private val projectService: ProjectService,
     private val chatService: ChatService,
-    private val llmCoordinator: LlmCoordinator,
-    private val ollamaService: OllamaService,
-    private val lmStudioService: LMStudioService,
     private val clientService: ClientService,
     private val linkService: ClientProjectLinkService,
 ) {
@@ -37,53 +34,39 @@ class JervisApplication(
     @Bean
     fun initApp(): ApplicationRunner =
         ApplicationRunner {
-            // Check if an active project exists and set it if needed
-            ensureActiveProject()
-
-            // Load startup minimization settings
-            val startMinimized = settingService.startupMinimize
+            // Ensure a default project is set (fallback to first if none)
+            ensureDefaultProject()
 
             // Create a window manager
             val applicationWindows =
                 ApplicationWindowManager(
-                    settingService,
                     projectService,
                     chatService,
-                    llmCoordinator,
-                    ollamaService,
-                    lmStudioService,
                     clientService,
                     linkService,
                 )
 
             EventQueue.invokeLater {
-                // Initialize the application with minimization settings
-                applicationWindows.initialize(startMinimized)
+                // Initialize the application and show the main chat window
+                applicationWindows.initialize()
+                applicationWindows.showMainWindow()
             }
             setDockIcon()
         }
 
     /**
-     * Ensures that an active project exists for the RAG service
+     * Ensures that a default project exists for the application.
      */
-    private fun ensureActiveProject() {
-        // Skip if we already have an active project
-        if (projectService.getActiveProjectBlocking() != null) {
+    private fun ensureDefaultProject() {
+        // If a default project already exists, nothing to do
+        if (projectService.getDefaultProjectBlocking() != null) {
             return
         }
 
-        // Try to use the default project
-        projectService.getDefaultProjectBlocking()?.let { defaultProject ->
-            projectService.setActiveProjectBlocking(defaultProject)
-            logger.info { "Default project automatically set: ${defaultProject.name}" }
-            return
-        }
-
-        // Try to use the first available project
+        // Try to use the first available project as default
         projectService.getAllProjectsBlocking().firstOrNull()?.let { anyProject ->
             projectService.setDefaultProjectBlocking(anyProject)
-            projectService.setActiveProjectBlocking(anyProject)
-            logger.info { "First available project automatically set: ${anyProject.name}" }
+            logger.info { "Default project automatically set to first available: ${anyProject.name}" }
             return
         }
 
