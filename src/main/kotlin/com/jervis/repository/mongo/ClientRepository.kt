@@ -5,6 +5,4 @@ import org.springframework.data.repository.kotlin.CoroutineCrudRepository
 import org.springframework.stereotype.Repository
 
 @Repository
-interface ClientMongoRepository : CoroutineCrudRepository<ClientDocument, String> {
-    suspend fun findBySlug(slug: String): ClientDocument?
-}
+interface ClientMongoRepository : CoroutineCrudRepository<ClientDocument, String>

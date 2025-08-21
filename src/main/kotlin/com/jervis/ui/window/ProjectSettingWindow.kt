@@ -57,7 +57,7 @@ class ProjectSettingWindow(
     private val addButton = JButton("Add Project")
     private val editButton = JButton("Edit Project")
     private val deleteButton = JButton("Delete Project")
-    private val activateButton = JButton("Activate Project")
+    private val activateButton = JButton("Activate Project").apply { isVisible = false; isEnabled = false }
     private val defaultButton = JButton("Set as Default")
     private val assignClientButton = JButton("Assign Client…")
     private val newClientButton = JButton("New Client…")
@@ -158,23 +158,13 @@ class ProjectSettingWindow(
         val hasSelection = projectTable.selectedRow != -1
         editButton.isEnabled = hasSelection
         deleteButton.isEnabled = hasSelection
-        activateButton.isEnabled = hasSelection
-        defaultButton.isEnabled = hasSelection
-
+        activateButton.isEnabled = false
+        activateButton.isVisible = false
         if (hasSelection) {
             val selectedProject = projectTableModel.getProjectAt(projectTable.selectedRow)
-            val activeProject = CoroutineScope(Dispatchers.Default).launch {
-                val active = projectService.getActiveProject()
-                withContext(Dispatchers.Main) {
-                    activeProjectId = active?.id
-                    // Activation button is enabled only if project is not active
-                    activateButton.isEnabled = selectedProject.id != activeProjectId
-                    // Default button is enabled only if project is not default
-                    defaultButton.isEnabled = !selectedProject.isActive
-                }
-            }
+            // Default button is enabled only if project is not default
+            defaultButton.isEnabled = !selectedProject.isActive
         } else {
-            activateButton.isEnabled = false
             defaultButton.isEnabled = false
         }
     }

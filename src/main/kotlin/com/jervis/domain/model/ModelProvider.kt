@@ -8,5 +8,4 @@ enum class ModelProvider {
     LM_STUDIO,
     OPENAI,
     ANTHROPIC,
-    DJL,
 }

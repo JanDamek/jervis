@@ -35,12 +35,129 @@ qdrant:
 server:
   port: 5500
 
-models:
-  - text-embedding-nomic-embed-text-v2-moe, LM_STUDIO, 512, embedding, primary
-  - nomic-embed-code, OLLAMA, 4096, embedding, fallback
-  - nomic-embed-code, LM_STUDIO, 4096, embedding, primary
-  - llama3.1:8b-instruct, OLLAMA, 4096, simple, primary
-  - llama3.1:8b-instruct, OLLAMA, 4096, complex, primary
-  - llama3.1:8b-instruct, OLLAMA, 4096, finalizing, primary
-  - deepseek-coder-v2-lite-instruct, OLLAMA, 4096, general, fallback, 163986
-  - deepseek-coder-v2-lite-instruct, LM_STUDIO, 4096, general, fallback
+models: # embedding is only 762 dimensions
+  EMBEDDING_TEXT:
+    - provider: LM_STUDIO
+      model: text-embedding-nomic-embed-text-v2-moe
+      maxTokens: 512
+      maxInputTokens: 512
+      maxRequests: 12
+  #    - provider: OLLAMA
+  #      model: text-embedding-nomic-embed-text-v2-moe
+  #      maxTokens: 512
+  #      maxInputTokens: 512
+  #      maxRequests: 8
+
+  EMBEDDING_CODE:
+    - provider: LM_STUDIO
+      model: nomic-embed-code
+      maxTokens: 4096
+      maxInputTokens: 4096
+      maxRequests: 4
+  #    - provider: OLLAMA
+  #      model: nomic-embed-code
+  #      maxTokens: 4096
+  #      maxInputTokens: 4096
+  #      maxRequests: 8
+
+  TRANSLATION:
+    - provider: OLLAMA
+      model: llama3.1:8b-instruct-q4_K_M
+      maxTokens: 4096
+      maxRequests: 2
+    - provider: OLLAMA
+      model: deepseek-coder-v2:latest
+      maxTokens: 163986
+      maxRequests: 2
+
+  RAG:
+    - provider: OLLAMA
+      model: llama3.1:8b-instruct-q4_K_M
+      maxTokens: 4096
+      maxRequests: 2
+    - provider: LM_STUDIO
+      model: deepseek-coder-v2-lite-instruct
+      maxTokens: 4096
+      maxRequests: 1
+    - provider: OPENAI
+      model: gpt-4o
+      maxTokens: 8196
+      maxRequests: 24
+    - provider: ANTHROPIC
+      model: claude-3-5-sonnet
+      maxTokens: 8196
+      maxRequests: 30
+
+  INTERNAL:
+    - provider: OLLAMA
+      model: deepseek-coder-v2:latest
+      maxTokens: 163986
+      maxRequests: 1
+    - provider: OLLAMA
+      model: llama3.1:8b-instruct-q4_K_M
+      maxTokens: 4096
+      maxRequests: 2
+    - provider: OPENAI
+      model: gpt-4o
+      maxTokens: 8196
+      maxRequests: 24
+    - provider: ANTHROPIC
+      model: claude-3-5-sonnet
+      maxTokens: 8196
+      maxRequests: 30
+
+  SPEEK:
+    - provider: OLLAMA
+      model: deepseek-coder-v2:latest
+      maxTokens: 163986
+      maxRequests: 1
+    - provider: OLLAMA
+      model: llama3.1:8b-instruct-q4_K_M
+      maxTokens: 4096
+      maxRequests: 2
+    - provider: OPENAI
+      model: gpt-4o
+      maxTokens: 8196
+      maxRequests: 24
+    - provider: ANTHROPIC
+      model: claude-3-5-sonnet
+      maxTokens: 8196
+      maxRequests: 30
+
+  CHAT_INTERNAL:
+    - provider: OLLAMA
+      model: deepseek-coder-v2:latest
+      maxTokens: 163986
+      maxRequests: 1
+    - provider: OLLAMA
+      model: llama3.1:8b-instruct-q4_K_M
+      maxTokens: 4096
+      maxRequests: 2
+    - provider: OPENAI
+      model: gpt-4o
+      maxTokens: 8196
+      maxRequests: 24
+    - provider: ANTHROPIC
+      model: claude-3-5-sonnet
+      maxTokens: 8196
+      maxRequests: 30
+
+  CHAT_EXTERNAL:
+    - provider: OPENAI
+      model: gpt-4o
+      maxTokens: 8196
+      maxRequests: 24
+    - provider: ANTHROPIC
+      model: claude-3-5-sonnet
+      maxTokens: 8196
+      maxRequests: 30
+
+endpoints:
+  openai:
+    apiKey: ${OPENAI_API_KEY:}
+  anthropic:
+    apiKey: ${ANTHROPIC_API_KEY:}
+  ollama:
+    baseUrl: ${OLLAMA_BASE_URL:http://192.168.100.117:11434/}
+  lmStudio:
+    baseUrl: ${LMSTUDIO_BASE_URL:http://192.168.101.249:1234/}
