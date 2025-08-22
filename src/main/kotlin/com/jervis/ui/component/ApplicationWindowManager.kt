@@ -1,6 +1,6 @@
 package com.jervis.ui.component
 
-import com.jervis.service.agent.coordinator.ChatCoordinatorService
+import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.client.ClientProjectLinkService
 import com.jervis.service.client.ClientService
 import com.jervis.service.project.ProjectService
@@ -14,7 +14,7 @@ import com.jervis.ui.window.TrayIconManager
  */
 class ApplicationWindowManager(
     private val projectService: ProjectService,
-    private val chatCoordinator: ChatCoordinatorService,
+    private val chatCoordinator: AgentOrchestratorService,
     private val clientService: ClientService,
     private val linkService: ClientProjectLinkService,
 ) {

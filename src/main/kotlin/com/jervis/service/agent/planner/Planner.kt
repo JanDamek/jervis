@@ -25,12 +25,22 @@ class Planner(
                     status = PlanStatus.CREATED,
                     steps = listOf(
                         PlanStep(
+                            name = AgentConstants.DefaultSteps.SCOPE_RESOLVE,
+                            status = StepStatus.PENDING,
+                            output = null,
+                        ),
+                        PlanStep(
                             name = AgentConstants.DefaultSteps.CONTEXT_ECHO,
                             status = StepStatus.PENDING,
                             output = null,
                         ),
                         PlanStep(
                             name = AgentConstants.DefaultSteps.LANGUAGE_NORMALIZE,
+                            status = StepStatus.PENDING,
+                            output = null,
+                        ),
+                        PlanStep(
+                            name = AgentConstants.DefaultSteps.RAG_QUERY,
                             status = StepStatus.PENDING,
                             output = null,
                         ),
@@ -43,12 +53,22 @@ class Planner(
                     status = PlanStatus.CREATED,
                     steps = listOf(
                         PlanStep(
+                            name = AgentConstants.DefaultSteps.SCOPE_RESOLVE,
+                            status = StepStatus.PENDING,
+                            output = null,
+                        ),
+                        PlanStep(
                             name = AgentConstants.DefaultSteps.CONTEXT_ECHO,
                             status = StepStatus.PENDING,
                             output = null,
                         ),
                         PlanStep(
                             name = AgentConstants.DefaultSteps.LANGUAGE_NORMALIZE,
+                            status = StepStatus.PENDING,
+                            output = null,
+                        ),
+                        PlanStep(
+                            name = AgentConstants.DefaultSteps.RAG_QUERY,
                             status = StepStatus.PENDING,
                             output = null,
                         ),
@@ -62,12 +82,18 @@ class Planner(
         val updated = executor.execute(planToRun)
         val persisted = planRepo.save(updated)
         val shouldContinue = persisted.status == PlanStatus.RUNNING || persisted.steps.any { it.status == StepStatus.PENDING }
-        val lastOutput = persisted.steps.lastOrNull { it.status == StepStatus.DONE }?.output?.takeIf { !it.isNullOrBlank() }
+        val normalizedOutput =
+            persisted.steps.lastOrNull { it.name == AgentConstants.DefaultSteps.LANGUAGE_NORMALIZE && it.status == StepStatus.DONE }
+                ?.output
+                ?.takeIf { !it.isNullOrBlank() }
+                ?: persisted.steps.lastOrNull { it.status == StepStatus.DONE }
+                    ?.output
+                    ?.takeIf { !it.isNullOrBlank() }
 
         return PlannerResult(
             message = "",
             chosenProject = "",
-            englishText = lastOutput,
+            englishText = normalizedOutput,
             shouldContinue = shouldContinue,
         )
     }

@@ -1,6 +1,6 @@
 package com.jervis.ui.window
 
-import com.jervis.service.agent.coordinator.ChatCoordinatorService
+import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.dto.ChatRequestContext
 import com.jervis.service.project.ProjectService
 import kotlinx.coroutines.CoroutineScope
@@ -27,7 +27,7 @@ import javax.swing.border.EmptyBorder
 
 class MainWindow(
     private val projectService: ProjectService,
-    private val chatCoordinator: ChatCoordinatorService,
+    private val chatCoordinator: AgentOrchestratorService,
     private val clientService: com.jervis.service.client.ClientService,
     private val linkService: com.jervis.service.client.ClientProjectLinkService,
 ) : JFrame("JERVIS Assistant") {
