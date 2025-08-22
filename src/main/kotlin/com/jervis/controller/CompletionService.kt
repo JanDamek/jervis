@@ -13,10 +13,11 @@ import com.jervis.dto.embedding.EmbeddingItem
 import com.jervis.dto.embedding.EmbeddingRequest
 import com.jervis.dto.embedding.EmbeddingResponse
 import com.jervis.entity.mongo.ProjectDocument
+import com.jervis.service.agent.coordinator.LanguageOrchestrator
+import com.jervis.service.agent.planner.Planner
+import com.jervis.service.agent.context.ContextService
 import com.jervis.service.gateway.EmbeddingGateway
-import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.project.ProjectService
-import com.jervis.service.rag.RagQueryService
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.time.Instant
@@ -24,14 +25,15 @@ import java.util.UUID
 
 /**
  * Service for handling completions and chat functionality.
- * This service integrates with LLM and RAG to provide responses to user queries.
+ * Routes calls through Planner for project scoping and uses LanguageOrchestrator for LLM generation.
  */
 @Service
 class CompletionService(
     private val projectService: ProjectService,
-    private val llmGateway: LlmGateway,
+    private val planner: Planner,
+    private val languageOrchestrator: LanguageOrchestrator,
     private val embeddingGateway: EmbeddingGateway,
-    private val ragQueryService: RagQueryService,
+    private val contextService: ContextService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -45,11 +47,22 @@ class CompletionService(
         try {
             logger.info { "Processing completion request: ${request.prompt.take(50)}..." }
 
-            val project = resolveProject(request.model)
-            val projectName = project?.name ?: "Unknown"
+            val initialProject = resolveProject(request.model)
+            val context = contextService.persistContext(
+                clientName = "unknown",
+                projectName = initialProject?.name,
+                autoScope = false,
+                englishText = null,
+                contextId = null,
+            )
+            val plan = planner.execute(contextId = context.id)
+            val projectName = plan.chosenProject.ifBlank { initialProject?.name ?: "Unknown" }
 
-            // Process the prompt with LLM
-            val llmResponse = llmGateway.callLlm(ModelType.CHAT_INTERNAL, userPrompt = request.prompt)
+            val answer =
+                languageOrchestrator.generate(
+                    type = ModelType.CHAT_INTERNAL,
+                    userPrompt = request.prompt,
+                )
 
             logger.info { "Completion request processed successfully" }
             return CompletionResponse(
@@ -60,17 +73,17 @@ class CompletionService(
                 choices =
                     listOf(
                         CompletionChoice(
-                            text = llmResponse.answer,
+                            text = answer,
                             index = 0,
                             logprobs = null,
-                            finishReason = llmResponse.finishReason,
+                            finishReason = "stop",
                         ),
                     ),
                 usage =
                     Usage(
-                        promptTokens = llmResponse.promptTokens,
-                        completionTokens = llmResponse.completionTokens,
-                        totalTokens = llmResponse.totalTokens,
+                        promptTokens = 0,
+                        completionTokens = 0,
+                        totalTokens = 0,
                     ),
             )
         } catch (e: Exception) {
@@ -105,12 +118,22 @@ class CompletionService(
             val userPrompt = request.messages.lastOrNull()?.content ?: ""
             logger.info { "Processing chat completion request: ${userPrompt.take(50)}..." }
 
-            val project = resolveProject(request.model)
-            val projectName = project?.name ?: "Unknown"
-            val projectId = project?.id ?: throw IllegalArgumentException("Project not found")
+            val initialProject = resolveProject(request.model)
+            val context = contextService.persistContext(
+                clientName = "unknown",
+                projectName = initialProject?.name,
+                autoScope = false,
+                englishText = null,
+                contextId = null,
+            )
+            val plan = planner.execute(contextId = context.id)
+            val projectName = plan.chosenProject.ifBlank { initialProject?.name ?: "Unknown" }
 
-            // Process the query using the RAG query service
-            val result = ragQueryService.processRagQuery(userPrompt, projectId)
+            val answer =
+                languageOrchestrator.generate(
+                    type = ModelType.CHAT_INTERNAL,
+                    userPrompt = userPrompt,
+                )
 
             logger.info { "Chat completion request processed successfully" }
             return ChatCompletionResponse(
@@ -125,16 +148,16 @@ class CompletionService(
                             message =
                                 ChatMessage(
                                     role = "assistant",
-                                    content = result.answer,
+                                    content = answer,
                                 ),
-                            finishReason = result.finishReason,
+                            finishReason = "stop",
                         ),
                     ),
                 usage =
                     Usage(
-                        promptTokens = result.promptTokens,
-                        completionTokens = result.completionTokens,
-                        totalTokens = result.totalTokens,
+                        promptTokens = 0,
+                        completionTokens = 0,
+                        totalTokens = 0,
                     ),
             )
         } catch (e: Exception) {

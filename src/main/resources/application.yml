@@ -61,24 +61,24 @@ models: # embedding is only 762 dimensions
   #      maxRequests: 8
 
   TRANSLATION:
-    - provider: OLLAMA
-      model: llama3.1:8b-instruct-q4_K_M
-      maxTokens: 4096
+    - provider: LM_STUDIO
+      model: deepseek-coder-v2-lite-instruct
+      maxTokens: 9196
       maxRequests: 2
     - provider: OLLAMA
       model: deepseek-coder-v2:latest
-      maxTokens: 163986
+      maxTokens: 4096
       maxRequests: 2
 
   RAG:
-    - provider: OLLAMA
-      model: llama3.1:8b-instruct-q4_K_M
-      maxTokens: 4096
-      maxRequests: 2
     - provider: LM_STUDIO
       model: deepseek-coder-v2-lite-instruct
+      maxTokens: 9196
+      maxRequests: 2
+    - provider: OLLAMA
+      model: deepseek-coder-v2:latest
       maxTokens: 4096
-      maxRequests: 1
+      maxRequests: 2
     - provider: OPENAI
       model: gpt-4o
       maxTokens: 8196
@@ -89,6 +89,10 @@ models: # embedding is only 762 dimensions
       maxRequests: 30
 
   INTERNAL:
+    - provider: LM_STUDIO
+      model: deepseek-coder-v2-lite-instruct
+      maxTokens: 9196
+      maxRequests: 2
     - provider: OLLAMA
       model: deepseek-coder-v2:latest
       maxTokens: 163986
@@ -106,7 +110,11 @@ models: # embedding is only 762 dimensions
       maxTokens: 8196
       maxRequests: 30
 
-  SPEEK:
+  SPEECH:
+    - provider: LM_STUDIO
+      model: deepseek-coder-v2-lite-instruct
+      maxTokens: 9196
+      maxRequests: 2
     - provider: OLLAMA
       model: deepseek-coder-v2:latest
       maxTokens: 163986
@@ -125,6 +133,10 @@ models: # embedding is only 762 dimensions
       maxRequests: 30
 
   CHAT_INTERNAL:
+    - provider: LM_STUDIO
+      model: deepseek-coder-v2-lite-instruct
+      maxTokens: 9196
+      maxRequests: 2
     - provider: OLLAMA
       model: deepseek-coder-v2:latest
       maxTokens: 163986

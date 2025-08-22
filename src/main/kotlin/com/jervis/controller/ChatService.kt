@@ -1,36 +1,34 @@
 package com.jervis.controller
 
-import com.jervis.service.rag.RagQueryService
+import com.jervis.dto.ChatRequestContext
+import com.jervis.dto.ChatResponse
+import com.jervis.service.agent.coordinator.ChatCoordinator
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
 /**
  * Service for handling chat functionality.
- * This service uses the RagQueryService to provide responses to user queries.
  */
 @Service
 class ChatService(
-    private val ragQueryService: RagQueryService,
+    private val coordinator: ChatCoordinator,
 ) {
     private val logger = KotlinLogging.logger {}
 
     /**
-     * Process a chat query using the RAG query service.
-     *
-     * @param query The user query
-     * @return The response to the query
+     * Process a chat query using the provided context.
      */
-    suspend fun processQuery(query: String): String {
+    suspend fun processQuery(
+        text: String,
+        ctx: ChatRequestContext,
+    ): ChatResponse =
         try {
-            logger.info { "Processing chat query: $query" }
-
-            val result = ragQueryService.processRagQuery(query)
-
-            logger.info { "Chat query processed successfully" }
-            return result.answer
+            logger.info {
+                "Processing chat query with ctx: client=${ctx.clientName}, project=${ctx.projectName}, auto=${ctx.autoScope}"
+            }
+            coordinator.handle(text = text, ctx = ctx)
         } catch (e: Exception) {
             logger.error(e) { "Error processing chat query: ${e.message}" }
-            return "Sorry, an error occurred while processing your query: ${e.message}"
+            ChatResponse(message = "Sorry, an error occurred while processing your query: ${e.message}")
         }
-    }
 }

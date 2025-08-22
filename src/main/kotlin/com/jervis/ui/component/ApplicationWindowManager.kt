@@ -19,7 +19,7 @@ class ApplicationWindowManager(
     private val linkService: ClientProjectLinkService,
 ) {
     private val mainWindow: MainWindow by lazy {
-        MainWindow(projectService, chatService)
+        MainWindow(projectService, chatService, clientService, linkService)
     }
 
     private val projectSettingsWindow: ProjectSettingWindow by lazy {
