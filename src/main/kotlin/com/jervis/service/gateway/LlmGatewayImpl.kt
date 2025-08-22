@@ -5,26 +5,23 @@ import com.jervis.configuration.ModelsProperties
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProvider
 import com.jervis.domain.model.ModelType
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import mu.KotlinLogging
-import org.springframework.http.HttpEntity
-import org.springframework.http.HttpHeaders
-import org.springframework.http.MediaType
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
-import org.springframework.web.client.RestTemplate
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Semaphore
+import org.springframework.web.reactive.function.client.WebClient
+import org.springframework.web.reactive.function.client.awaitBody
 
 @Service
 class LlmGatewayImpl(
     private val modelsProperties: ModelsProperties,
     private val endpoints: EndpointProperties,
+    @Qualifier("lmStudioWebClient") private val lmStudioClient: WebClient,
+    @Qualifier("ollamaWebClient") private val ollamaClient: WebClient,
+    @Qualifier("openaiWebClient") private val openaiClient: WebClient,
+    @Qualifier("anthropicWebClient") private val anthropicClient: WebClient,
 ) : LlmGateway {
     private val logger = KotlinLogging.logger {}
-    private val restTemplate = RestTemplate()
-    private val semaphores = ConcurrentHashMap<String, Semaphore>()
 
     override suspend fun callLlm(
         type: ModelType,
@@ -37,11 +34,8 @@ class LlmGatewayImpl(
 
         val finalUser = buildUserPrompt(userPrompt, outputLanguage)
         var lastError: Throwable? = null
-        for ((idx, candidate) in candidates.withIndex()) {
+        for ((_, candidate) in candidates.withIndex()) {
             val provider = candidate.provider ?: continue
-            val key = semaphoreKey(type, idx)
-            val capacity = candidate.concurrency ?: defaultConcurrency(provider)
-            val semaphore = semaphores.computeIfAbsent(key) { Semaphore(capacity) }
             val timeout = candidate.timeoutMs
             logger.info { "Calling LLM type=$type provider=$provider model=${candidate.model}" }
             val startNs = System.nanoTime()
@@ -49,18 +43,6 @@ class LlmGatewayImpl(
                 val result =
                     if (timeout != null && timeout > 0) {
                         withTimeout(timeout) {
-                            withPermit(semaphore) {
-                                doCall(
-                                    provider,
-                                    candidate.model,
-                                    systemPrompt,
-                                    finalUser,
-                                    candidate,
-                                )
-                            }
-                        }
-                    } else {
-                        withPermit(semaphore) {
                             doCall(
                                 provider,
                                 candidate.model,
@@ -69,6 +51,14 @@ class LlmGatewayImpl(
                                 candidate,
                             )
                         }
+                    } else {
+                        doCall(
+                            provider,
+                            candidate.model,
+                            systemPrompt,
+                            finalUser,
+                            candidate,
+                        )
                     }
                 val tookMs = (System.nanoTime() - startNs) / 1_000_000
                 logger.info { "LLM call succeeded provider=$provider model=${candidate.model} in ${tookMs}ms" }
@@ -89,23 +79,19 @@ class LlmGatewayImpl(
         userPrompt: String,
         candidate: ModelsProperties.ModelDetail,
     ): LlmResponse =
-        withContext(Dispatchers.IO) {
-            when (provider) {
-                ModelProvider.LM_STUDIO -> callLmStudio(model, systemPrompt, userPrompt, candidate)
-                ModelProvider.OLLAMA -> callOllama(model, systemPrompt, userPrompt, candidate)
-                ModelProvider.OPENAI -> callOpenAi(model, systemPrompt, userPrompt, candidate)
-                ModelProvider.ANTHROPIC -> callAnthropic(model, systemPrompt, userPrompt, candidate)
-            }
+        when (provider) {
+            ModelProvider.LM_STUDIO -> callLmStudio(model, systemPrompt, userPrompt, candidate)
+            ModelProvider.OLLAMA -> callOllama(model, systemPrompt, userPrompt, candidate)
+            ModelProvider.OPENAI -> callOpenAi(model, systemPrompt, userPrompt, candidate)
+            ModelProvider.ANTHROPIC -> callAnthropic(model, systemPrompt, userPrompt, candidate)
         }
 
-    private fun callLmStudio(
+    private suspend fun callLmStudio(
         model: String,
         systemPrompt: String?,
         userPrompt: String,
         c: ModelsProperties.ModelDetail,
     ): LlmResponse {
-        val url = "${endpoints.lmStudio.baseUrl?.trimEnd('/') ?: "http://localhost:1234"}/v1/chat/completions"
-        val headers = HttpHeaders().apply { contentType = MediaType.APPLICATION_JSON }
         val messages = mutableListOf<Map<String, Any>>()
         if (!systemPrompt.isNullOrBlank()) messages += mapOf("role" to "system", "content" to systemPrompt)
         messages += mapOf("role" to "user", "content" to userPrompt)
@@ -117,19 +103,25 @@ class LlmGatewayImpl(
         c.temperature?.let { body["temperature"] = it }
         c.topP?.let { body["top_p"] = it }
         c.maxTokens?.let { body["max_tokens"] = it }
-        val resp = restTemplate.postForObject(url, HttpEntity(body, headers), OpenAiStyleResponse::class.java)
+        val resp: OpenAiStyleResponse =
+            lmStudioClient
+                .post()
+                .uri("/v1/chat/completions")
+                .bodyValue(body)
+                .retrieve()
+                .awaitBody()
         val answer =
             resp
-                ?.choices
-                ?.firstOrNull()
+                .choices
+                .firstOrNull()
                 ?.message
                 ?.content
                 .orEmpty()
-        val finish = resp?.choices?.firstOrNull()?.finish_reason ?: "stop"
-        val rModel = resp?.model ?: model
-        val p = resp?.usage?.prompt_tokens ?: 0
-        val cTok = resp?.usage?.completion_tokens ?: 0
-        val t = resp?.usage?.total_tokens ?: (p + cTok)
+        val finish = resp.choices.firstOrNull()?.finish_reason ?: "stop"
+        val rModel = resp.model ?: model
+        val p = resp.usage?.prompt_tokens ?: 0
+        val cTok = resp.usage?.completion_tokens ?: 0
+        val t = resp.usage?.total_tokens ?: (p + cTok)
         return LlmResponse(
             answer = answer,
             model = rModel,
@@ -140,15 +132,12 @@ class LlmGatewayImpl(
         )
     }
 
-    private fun callOllama(
+    private suspend fun callOllama(
         model: String,
         systemPrompt: String?,
         userPrompt: String,
         c: ModelsProperties.ModelDetail,
     ): LlmResponse {
-        // Use /generate (single-turn). Include system prompt inline.
-        val url = OllamaUrl.buildApiUrl(endpoints.ollama.baseUrl ?: "http://localhost:11434", "/generate")
-        val headers = HttpHeaders().apply { contentType = MediaType.APPLICATION_JSON }
         val fullPrompt = if (!systemPrompt.isNullOrBlank()) "${systemPrompt}\n\n$userPrompt" else userPrompt
         val options = mutableMapOf<String, Any>()
         c.temperature?.let { options["temperature"] = it }
@@ -161,12 +150,18 @@ class LlmGatewayImpl(
                 "options" to options,
                 "stream" to false,
             )
-        val resp = restTemplate.postForObject(url, HttpEntity(body, headers), OllamaGenerateResponse::class.java)
-        val answer = resp?.response.orEmpty()
-        val rModel = resp?.model ?: model
-        val finish = resp?.done_reason ?: "stop"
-        val p = resp?.prompt_eval_count ?: 0
-        val cTok = resp?.eval_count ?: 0
+        val resp: OllamaGenerateResponse =
+            ollamaClient
+                .post()
+                .uri("/generate")
+                .bodyValue(body)
+                .retrieve()
+                .awaitBody()
+        val answer = resp.response.orEmpty()
+        val rModel = resp.model ?: model
+        val finish = resp.done_reason ?: "stop"
+        val p = resp.prompt_eval_count ?: 0
+        val cTok = resp.eval_count ?: 0
         val t = p + cTok
         return LlmResponse(
             answer = answer,
@@ -178,19 +173,12 @@ class LlmGatewayImpl(
         )
     }
 
-    private fun callOpenAi(
+    private suspend fun callOpenAi(
         model: String,
         systemPrompt: String?,
         userPrompt: String,
         c: ModelsProperties.ModelDetail,
     ): LlmResponse {
-        val base = endpoints.openai.baseUrl?.trimEnd('/') ?: "https://api.openai.com/v1"
-        val url = "$base/chat/completions"
-        val headers =
-            HttpHeaders().apply {
-                contentType = MediaType.APPLICATION_JSON
-                set("Authorization", "Bearer ${endpoints.openai.apiKey.orEmpty()}")
-            }
         val messages = mutableListOf<Map<String, Any>>()
         if (!systemPrompt.isNullOrBlank()) messages += mapOf("role" to "system", "content" to systemPrompt)
         messages += mapOf("role" to "user", "content" to userPrompt)
@@ -202,19 +190,25 @@ class LlmGatewayImpl(
         c.temperature?.let { body["temperature"] = it }
         c.topP?.let { body["top_p"] = it }
         c.maxTokens?.let { body["max_tokens"] = it }
-        val resp = restTemplate.postForObject(url, HttpEntity(body, headers), OpenAiStyleResponse::class.java)
+        val resp: OpenAiStyleResponse =
+            openaiClient
+                .post()
+                .uri("/chat/completions")
+                .bodyValue(body)
+                .retrieve()
+                .awaitBody()
         val answer =
             resp
-                ?.choices
-                ?.firstOrNull()
+                .choices
+                .firstOrNull()
                 ?.message
                 ?.content
                 .orEmpty()
-        val finish = resp?.choices?.firstOrNull()?.finish_reason ?: "stop"
-        val rModel = resp?.model ?: model
-        val p = resp?.usage?.prompt_tokens ?: 0
-        val cTok = resp?.usage?.completion_tokens ?: 0
-        val t = resp?.usage?.total_tokens ?: (p + cTok)
+        val finish = resp.choices.firstOrNull()?.finish_reason ?: "stop"
+        val rModel = resp.model ?: model
+        val p = resp.usage?.prompt_tokens ?: 0
+        val cTok = resp.usage?.completion_tokens ?: 0
+        val t = resp.usage?.total_tokens ?: (p + cTok)
         return LlmResponse(
             answer = answer,
             model = rModel,
@@ -225,20 +219,12 @@ class LlmGatewayImpl(
         )
     }
 
-    private fun callAnthropic(
+    private suspend fun callAnthropic(
         model: String,
         systemPrompt: String?,
         userPrompt: String,
         c: ModelsProperties.ModelDetail,
     ): LlmResponse {
-        val base = endpoints.anthropic.baseUrl?.trimEnd('/') ?: "https://api.anthropic.com"
-        val url = "$base/v1/messages"
-        val headers =
-            HttpHeaders().apply {
-                contentType = MediaType.APPLICATION_JSON
-                set("x-api-key", endpoints.anthropic.apiKey.orEmpty())
-                set("anthropic-version", "2023-06-01")
-            }
         val messages = listOf(mapOf("role" to "user", "content" to userPrompt))
         val body =
             mutableMapOf<String, Any>(
@@ -248,17 +234,23 @@ class LlmGatewayImpl(
             )
         if (!systemPrompt.isNullOrBlank()) body["system"] = systemPrompt
         c.temperature?.let { body["temperature"] = it }
-        val resp = restTemplate.postForObject(url, HttpEntity(body, headers), AnthropicMessagesResponse::class.java)
+        val resp: AnthropicMessagesResponse =
+            anthropicClient
+                .post()
+                .uri("/v1/messages")
+                .bodyValue(body)
+                .retrieve()
+                .awaitBody()
         val answer =
             resp
-                ?.content
-                ?.firstOrNull()
+                .content
+                .firstOrNull()
                 ?.text
                 .orEmpty()
-        val finish = resp?.stop_reason ?: "stop"
-        val rModel = resp?.model ?: model
-        val p = resp?.usage?.input_tokens ?: 0
-        val cTok = resp?.usage?.output_tokens ?: 0
+        val finish = resp.stop_reason ?: "stop"
+        val rModel = resp.model ?: model
+        val p = resp.usage?.input_tokens ?: 0
+        val cTok = resp.usage?.output_tokens ?: 0
         val t = p + cTok
         return LlmResponse(
             answer = answer,
@@ -277,30 +269,6 @@ class LlmGatewayImpl(
         if (outputLanguage.isNullOrBlank()) return userPrompt
         return "$userPrompt\n\nPlease respond in language: $outputLanguage"
     }
-
-    private fun semaphoreKey(
-        type: ModelType,
-        index: Int,
-    ) = "${type.name}#$index"
-
-    private fun defaultConcurrency(provider: ModelProvider): Int =
-        when (provider) {
-            ModelProvider.LM_STUDIO -> 2
-            ModelProvider.OLLAMA -> 4
-            ModelProvider.OPENAI -> 10
-            ModelProvider.ANTHROPIC -> 10
-        }
-
-    private suspend fun <T> withPermit(
-        sem: Semaphore,
-        block: suspend () -> T,
-    ): T =
-        try {
-            withContext(Dispatchers.IO) { sem.acquire() }
-            block()
-        } finally {
-            sem.release()
-        }
 }
 
 // Provider DTOs (subset)

@@ -4,27 +4,23 @@ import com.jervis.configuration.EndpointProperties
 import com.jervis.configuration.ModelsProperties
 import com.jervis.domain.model.ModelProvider
 import com.jervis.domain.model.ModelType
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import mu.KotlinLogging
-import org.springframework.http.HttpEntity
-import org.springframework.http.HttpHeaders
-import org.springframework.http.MediaType
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
-import org.springframework.web.client.RestTemplate
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Semaphore
+import org.springframework.web.reactive.function.client.WebClient
+import org.springframework.web.reactive.function.client.awaitBody
 import kotlin.math.sqrt
 
 @Service
 class EmbeddingGatewayImpl(
     private val modelsProperties: ModelsProperties,
     private val endpoints: EndpointProperties,
+    @Qualifier("lmStudioWebClient") private val lmStudioClient: WebClient,
+    @Qualifier("ollamaWebClient") private val ollamaClient: WebClient,
+    @Qualifier("openaiWebClient") private val openaiClient: WebClient,
 ) : EmbeddingGateway {
     private val logger = KotlinLogging.logger {}
-    private val restTemplate = RestTemplate()
-    private val semaphores = ConcurrentHashMap<String, Semaphore>()
 
     override suspend fun callEmbedding(
         type: ModelType,
@@ -38,25 +34,15 @@ class EmbeddingGatewayImpl(
 
         for ((index, candidate) in candidates.withIndex()) {
             val provider = candidate.provider ?: continue
-            val key = semaphoreKey(type, index)
-            val capacity = candidate.concurrency ?: defaultConcurrency(provider)
-            val semaphore = semaphores.computeIfAbsent(key) { Semaphore(capacity) }
-
             val timeout = candidate.timeoutMs
             try {
-                return if (timeout != null && timeout > 0) {
-                    withTimeout(timeout) {
-                        withPermit(semaphore) {
-                            doCallEmbedding(
-                                provider,
-                                candidate.model,
-                                trimmed,
-                            )
-                        }
+                val result =
+                    if (timeout != null && timeout > 0) {
+                        withTimeout(timeout) { doCallEmbedding(provider, candidate.model, trimmed) }
+                    } else {
+                        doCallEmbedding(provider, candidate.model, trimmed)
                     }
-                } else {
-                    withPermit(semaphore) { doCallEmbedding(provider, candidate.model, trimmed) }
-                }
+                return l2Normalize(result)
             } catch (t: Throwable) {
                 lastError = t
                 logger.warn(t) { "Embedding candidate $index ($provider:${candidate.model}) failed, trying next if available" }
@@ -70,80 +56,57 @@ class EmbeddingGatewayImpl(
         model: String,
         text: String,
     ): List<Float> =
-        withContext(Dispatchers.IO) {
-            val vec: List<Float> =
-                when (provider) {
-                    ModelProvider.LM_STUDIO -> callLmStudioEmbedding(model, text)
-                    ModelProvider.OLLAMA -> callOllamaEmbedding(model, text)
-                    ModelProvider.OPENAI -> callOpenAiEmbedding(model, text)
-                    ModelProvider.ANTHROPIC -> error("Anthropic does not provide embeddings API")
-                }
-            l2Normalize(vec)
+        when (provider) {
+            ModelProvider.LM_STUDIO -> callLmStudioEmbedding(model, text)
+            ModelProvider.OLLAMA -> callOllamaEmbedding(model, text)
+            ModelProvider.OPENAI -> callOpenAiEmbedding(model, text)
+            ModelProvider.ANTHROPIC -> error("Anthropic does not provide embeddings API")
         }
 
-    private fun callLmStudioEmbedding(
+    private suspend fun callLmStudioEmbedding(
         model: String,
         input: String,
     ): List<Float> {
-        val url = "${endpoints.lmStudio.baseUrl?.trimEnd('/') ?: "http://localhost:1234"}/v1/embeddings"
-        val headers = HttpHeaders().apply { contentType = MediaType.APPLICATION_JSON }
         val body = mapOf("model" to model, "input" to input)
-        val resp = restTemplate.postForObject(url, HttpEntity(body, headers), LmStudioEmbResp::class.java)
-        return resp?.data?.firstOrNull()?.embedding ?: emptyList()
+        val resp: LmStudioEmbResp =
+            lmStudioClient
+                .post()
+                .uri("/v1/embeddings")
+                .bodyValue(body)
+                .retrieve()
+                .awaitBody()
+        return resp.data.firstOrNull()?.embedding ?: emptyList()
     }
 
-    private fun callOllamaEmbedding(
+    private suspend fun callOllamaEmbedding(
         model: String,
         prompt: String,
     ): List<Float> {
-        val url = OllamaUrl.buildApiUrl(endpoints.ollama.baseUrl ?: "http://localhost:11434", "/embeddings")
-        val headers = HttpHeaders().apply { contentType = MediaType.APPLICATION_JSON }
         val body = mapOf("model" to model, "prompt" to prompt)
-        val resp = restTemplate.postForObject(url, HttpEntity(body, headers), OllamaEmbResp::class.java)
-        return resp?.embedding ?: emptyList()
+        val resp: OllamaEmbResp =
+            ollamaClient
+                .post()
+                .uri("/embeddings")
+                .bodyValue(body)
+                .retrieve()
+                .awaitBody()
+        return resp.embedding
     }
 
-    private fun callOpenAiEmbedding(
+    private suspend fun callOpenAiEmbedding(
         model: String,
         input: String,
     ): List<Float> {
-        val base = endpoints.openai.baseUrl?.trimEnd('/') ?: "https://api.openai.com/v1"
-        val url = "$base/embeddings"
-        val headers =
-            HttpHeaders().apply {
-                contentType = MediaType.APPLICATION_JSON
-                set("Authorization", "Bearer ${endpoints.openai.apiKey.orEmpty()}")
-            }
         val body = mapOf("model" to model, "input" to input)
-        val resp = restTemplate.postForObject(url, HttpEntity(body, headers), OpenAiEmbResp::class.java)
-        return resp?.data?.firstOrNull()?.embedding ?: emptyList()
+        val resp: OpenAiEmbResp =
+            openaiClient
+                .post()
+                .uri("/embeddings")
+                .bodyValue(body)
+                .retrieve()
+                .awaitBody()
+        return resp.data.firstOrNull()?.embedding ?: emptyList()
     }
-
-    private fun semaphoreKey(
-        type: ModelType,
-        index: Int,
-    ) = "${type.name}#$index"
-
-    private fun defaultConcurrency(provider: ModelProvider): Int =
-        when (provider) {
-            ModelProvider.LM_STUDIO -> 2
-            ModelProvider.OLLAMA -> 4
-            ModelProvider.OPENAI -> 10
-            ModelProvider.ANTHROPIC -> 10
-        }
-
-    private suspend fun <T> withPermit(
-        sem: Semaphore,
-        block: suspend () -> T,
-    ): T =
-        try {
-            withContext(Dispatchers.IO) {
-                sem.acquire()
-            }
-            block()
-        } finally {
-            sem.release()
-        }
 
     private fun l2Normalize(vec: List<Float>): List<Float> {
         var sum = 0.0
