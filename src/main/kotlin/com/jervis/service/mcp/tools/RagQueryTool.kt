@@ -1,10 +1,9 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.repository.mongo.TaskContextMongoRepository
+import com.jervis.entity.mongo.TaskContextDocument
 import com.jervis.service.agent.AgentConstants
-import com.jervis.service.mcp.McpAction
 import com.jervis.service.mcp.McpTool
-import org.bson.types.ObjectId
+import com.jervis.service.mcp.ToolResult
 import org.springframework.stereotype.Service
 
 /**
@@ -13,21 +12,14 @@ import org.springframework.stereotype.Service
  * without introducing external dependencies.
  */
 @Service
-class RagQueryTool(
-    private val taskContextRepo: TaskContextMongoRepository,
-) : McpTool {
+class RagQueryTool : McpTool {
     override val name: String = AgentConstants.DefaultSteps.RAG_QUERY
+    override val description: String = "Perform a placeholder RAG query (not configured) and echo the query."
 
-    override val action: McpAction = McpAction(
-        type = "rag",
-        content = "query",
-        parameters = emptyMap(),
-    )
-
-    override suspend fun execute(action: String, contextId: ObjectId): String {
-        val ctx = taskContextRepo.findByContextId(contextId)
-        val query = ctx?.initialQuery?.trim().orEmpty()
+    override suspend fun execute(context: TaskContextDocument, parameters: Map<String, Any>): ToolResult {
+        val query = context.initialQuery.trim()
         val suffix = if (query.isEmpty()) "(no query)" else query
-        return "RAG placeholder: no results (service not configured). Query=\"$suffix\""
+        val message = "RAG placeholder: no results (service not configured). Query=\"$suffix\""
+        return ToolResult(success = true, output = message)
     }
 }

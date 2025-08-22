@@ -9,13 +9,16 @@ import com.jervis.service.agent.AgentConstants
 import com.jervis.service.agent.execution.PlanExecutor
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
+import mu.KotlinLogging
 
 @Service
 class Planner(
     private val planRepo: PlanMongoRepository,
     private val executor: PlanExecutor,
 ) {
+    private val logger = KotlinLogging.logger {}
     suspend fun execute(contextId: ObjectId): PlannerResult {
+        logger.info { "PLANNER_START: Preparing plan for contextId=$contextId" }
         // Load or create plan for this context
         val existing = planRepo.findByContextId(contextId)
         val planToRun = when {
@@ -79,6 +82,8 @@ class Planner(
             else -> existing
         }
 
+        val pendingBefore = planToRun.steps.count { it.status == StepStatus.PENDING }
+        logger.debug { "PLANNER_PLAN: Using plan ${planToRun.id} with ${planToRun.steps.size} steps, pending=$pendingBefore, status=${planToRun.status}" }
         val updated = executor.execute(planToRun)
         val persisted = planRepo.save(updated)
         val shouldContinue = persisted.status == PlanStatus.RUNNING || persisted.steps.any { it.status == StepStatus.PENDING }
@@ -90,6 +95,8 @@ class Planner(
                     ?.output
                     ?.takeIf { !it.isNullOrBlank() }
 
+        logger.info { "PLANNER_RESULT: plan=${persisted.id} status=${persisted.status} shouldContinue=${shouldContinue}" }
+        normalizedOutput?.let { logger.debug { "PLANNER_OUTPUT_NORMALIZED: length=${it.length}" } }
         return PlannerResult(
             message = "",
             chosenProject = "",

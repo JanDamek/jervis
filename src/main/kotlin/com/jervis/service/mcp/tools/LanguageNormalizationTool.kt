@@ -1,11 +1,10 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.repository.mongo.TaskContextMongoRepository
+import com.jervis.entity.mongo.TaskContextDocument
 import com.jervis.service.agent.AgentConstants
-import com.jervis.service.mcp.McpAction
-import com.jervis.service.mcp.McpTool
 import com.jervis.service.agent.coordinator.LanguageOrchestrator
-import org.bson.types.ObjectId
+import com.jervis.service.mcp.McpTool
+import com.jervis.service.mcp.ToolResult
 import org.springframework.stereotype.Service
 
 /**
@@ -14,22 +13,16 @@ import org.springframework.stereotype.Service
  */
 @Service
 class LanguageNormalizationTool(
-    private val taskContextRepo: TaskContextMongoRepository,
     private val language: LanguageOrchestrator,
 ) : McpTool {
     override val name: String = AgentConstants.DefaultSteps.LANGUAGE_NORMALIZE
+    override val description: String = "Normalize the initial query to English using LanguageOrchestrator."
 
-    override val action: McpAction = McpAction(
-        type = "language",
-        content = "normalize",
-        parameters = emptyMap(),
-    )
-
-    override suspend fun execute(action: String, contextId: ObjectId): String {
-        val ctx = taskContextRepo.findByContextId(contextId)
-        val query = ctx?.initialQuery?.trim().orEmpty()
-        if (query.isEmpty()) return ""
+    override suspend fun execute(context: TaskContextDocument, parameters: Map<String, Any>): ToolResult {
+        val query = context.initialQuery.trim()
+        if (query.isEmpty()) return ToolResult(success = true, output = "")
         val lang = language.detectLanguage(query)
-        return if (lang == "en") query else language.translateToEnglish(query, lang)
+        val normalized = if (lang == "en") query else language.translateToEnglish(query, lang)
+        return ToolResult(success = true, output = normalized)
     }
 }

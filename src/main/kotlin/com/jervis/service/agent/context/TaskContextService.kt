@@ -2,18 +2,16 @@ package com.jervis.service.agent.context
 
 import com.jervis.entity.mongo.TaskContextDocument
 import com.jervis.repository.mongo.TaskContextMongoRepository
-import com.jervis.service.agent.ScopeResolutionService
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 
 @Service
 class TaskContextService(
     private val taskContextRepo: TaskContextMongoRepository,
-    private val scopeResolver: ScopeResolutionService,
 ) {
     /**
-     * Create a TaskContextDocument for the given ContextDocument id.
-     * It stores the resolved client/project (ids and names) and the initial query (preferably English text).
+     * Create a TaskContextDocument for the given contextId.
+     * This service only persists and retrieves TaskContextDocument without any scope resolution.
      */
     suspend fun create(
         contextId: ObjectId,
@@ -21,14 +19,12 @@ class TaskContextService(
         projectName: String?,
         initialQuery: String,
     ): TaskContextDocument {
-        val resolved = scopeResolver.resolve(clientName, projectName)
-
         val toSave = TaskContextDocument(
             contextId = contextId,
-            clientId = resolved.clientId,
-            projectId = resolved.projectId,
-            clientName = resolved.clientName,
-            projectName = resolved.projectName,
+            clientId = null,
+            projectId = null,
+            clientName = clientName,
+            projectName = projectName,
             initialQuery = initialQuery,
         )
         return taskContextRepo.save(toSave)

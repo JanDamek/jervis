@@ -1,11 +1,11 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.domain.agent.TaskStatus
+import com.jervis.entity.mongo.TaskContextDocument
 import com.jervis.repository.mongo.TaskContextMongoRepository
 import com.jervis.service.agent.AgentConstants
-import com.jervis.service.mcp.McpAction
 import com.jervis.service.mcp.McpTool
-import org.bson.types.ObjectId
+import com.jervis.service.mcp.ToolResult
 import org.springframework.stereotype.Service
 
 /**
@@ -17,19 +17,13 @@ class UserInteractionTool(
     private val taskContextRepo: TaskContextMongoRepository,
 ) : McpTool {
     override val name: String = AgentConstants.DefaultSteps.USER_AWAIT
+    override val description: String = "Mark task as awaiting user input and persist the state."
 
-    override val action: McpAction = McpAction(
-        type = "user",
-        content = "await",
-        parameters = emptyMap(),
-    )
-
-    override suspend fun execute(action: String, contextId: ObjectId): String {
-        val ctx = taskContextRepo.findByContextId(contextId) ?: return "No task context found"
-        val wm = ctx.workingMemory.toMutableMap()
+    override suspend fun execute(context: TaskContextDocument, parameters: Map<String, Any>): ToolResult {
+        val wm = context.workingMemory.toMutableMap()
         wm["awaitingUser"] = true
-        val updated = ctx.copy(status = TaskStatus.AWAITING_USER, workingMemory = wm)
+        val updated = context.copy(status = TaskStatus.AWAITING_USER, workingMemory = wm)
         taskContextRepo.save(updated)
-        return "Awaiting user input"
+        return ToolResult(success = true, output = "Awaiting user input")
     }
 }

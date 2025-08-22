@@ -3,6 +3,7 @@ logging:
   level:
     root: INFO
     com.jervis: DEBUG
+    com.jervis.service.agent: DEBUG
     org.springframework.web: INFO
     org.springframework.web.filter.CommonsRequestLoggingFilter: INFO
     com.jervis.config.RequestLoggingFilterConfig: INFO

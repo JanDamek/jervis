@@ -14,11 +14,12 @@ import com.jervis.dto.embedding.EmbeddingRequest
 import com.jervis.dto.embedding.EmbeddingResponse
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.service.agent.coordinator.LanguageOrchestrator
-import com.jervis.service.agent.planner.Planner
-import com.jervis.service.agent.context.ContextService
+import com.jervis.service.agent.planner.PlanningRunner
+import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.project.ProjectService
 import mu.KotlinLogging
+import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 import java.time.Instant
 import java.util.UUID
@@ -30,10 +31,10 @@ import java.util.UUID
 @Service
 class CompletionService(
     private val projectService: ProjectService,
-    private val planner: Planner,
+    private val planningRunner: PlanningRunner,
     private val languageOrchestrator: LanguageOrchestrator,
     private val embeddingGateway: EmbeddingGateway,
-    private val contextService: ContextService,
+    private val taskContextService: TaskContextService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -48,15 +49,15 @@ class CompletionService(
             logger.info { "Processing completion request: ${request.prompt.take(50)}..." }
 
             val initialProject = resolveProject(request.model)
-            val context = contextService.persistContext(
+            val contextId = ObjectId.get()
+            taskContextService.create(
+                contextId = contextId,
                 clientName = "unknown",
                 projectName = initialProject?.name,
-                autoScope = false,
-                englishText = null,
-                contextId = null,
+                initialQuery = request.prompt,
             )
-            val plan = planner.execute(contextId = context.id)
-            val projectName = plan.chosenProject.ifBlank { initialProject?.name ?: "Unknown" }
+            val planResult = planningRunner.run(contextId = contextId)
+            val projectName = planResult.chosenProject.ifBlank { initialProject?.name ?: "Unknown" }
 
             val answer =
                 languageOrchestrator.generate(
@@ -119,15 +120,15 @@ class CompletionService(
             logger.info { "Processing chat completion request: ${userPrompt.take(50)}..." }
 
             val initialProject = resolveProject(request.model)
-            val context = contextService.persistContext(
+            val contextId = ObjectId.get()
+            taskContextService.create(
+                contextId = contextId,
                 clientName = "unknown",
                 projectName = initialProject?.name,
-                autoScope = false,
-                englishText = null,
-                contextId = null,
+                initialQuery = userPrompt,
             )
-            val plan = planner.execute(contextId = context.id)
-            val projectName = plan.chosenProject.ifBlank { initialProject?.name ?: "Unknown" }
+            val planResult = planningRunner.run(contextId = contextId)
+            val projectName = planResult.chosenProject.ifBlank { initialProject?.name ?: "Unknown" }
 
             val answer =
                 languageOrchestrator.generate(
