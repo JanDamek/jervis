@@ -11,20 +11,28 @@ enum class StepStatus { PENDING, RUNNING, COMPLETED, FAILED }
 /**
  * A single executable step in the plan.
  */
-data class PlanStep(
-    val id: Int,
-    val description: String,
-    val toolName: String,
-    val parameters: Map<String, Any?>,
-    var status: StepStatus = StepStatus.PENDING,
-    var resultKey: String? = null,
-)
+ data class PlanStep(
+     val id: Int,
+     val description: String,
+     val toolName: String,
+     val parameters: Map<String, Any?>,
+     var status: StepStatus = StepStatus.PENDING,
+     var resultKey: String? = null,
+ )
 
 /**
  * The complete plan for achieving a goal.
  */
-data class Plan(
-    val goal: String,
-    val steps: List<PlanStep>,
-    var currentStepIndex: Int = 0,
-)
+ data class Plan(
+     val goal: String,
+     val steps: List<PlanStep>,
+     var currentStepIndex: Int = 0,
+ ) {
+     fun getCurrentStep(): PlanStep? = steps.getOrNull(currentStepIndex)
+
+     fun moveToNextStep() {
+         if (currentStepIndex < steps.size - 1) {
+             currentStepIndex++
+         }
+     }
+ }

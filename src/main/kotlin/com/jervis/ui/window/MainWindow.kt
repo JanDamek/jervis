@@ -1,6 +1,6 @@
 package com.jervis.ui.window
 
-import com.jervis.controller.ChatService
+import com.jervis.service.agent.coordinator.ChatCoordinatorService
 import com.jervis.dto.ChatRequestContext
 import com.jervis.service.project.ProjectService
 import kotlinx.coroutines.CoroutineScope
@@ -27,7 +27,7 @@ import javax.swing.border.EmptyBorder
 
 class MainWindow(
     private val projectService: ProjectService,
-    private val chatService: ChatService,
+    private val chatCoordinator: ChatCoordinatorService,
     private val clientService: com.jervis.service.client.ClientService,
     private val linkService: com.jervis.service.client.ClientProjectLinkService,
 ) : JFrame("JERVIS Assistant") {
@@ -189,8 +189,8 @@ class MainWindow(
                             autoScope = false,
                         )
 
-                    // Process the query using the ChatService
-                    val response = chatService.processQuery(text, ctx)
+                    // Process the query using the ChatCoordinator
+                    val response = chatCoordinator.handle(text, ctx)
 
                     // Update UI on the EDT
                     withContext(Dispatchers.Swing) {

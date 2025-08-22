@@ -2,16 +2,14 @@ package com.jervis.service.agent.context
 
 import com.jervis.entity.mongo.TaskContextDocument
 import com.jervis.repository.mongo.TaskContextMongoRepository
-import com.jervis.service.client.ClientService
-import com.jervis.service.project.ProjectService
+import com.jervis.service.agent.ScopeResolutionService
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 
 @Service
 class TaskContextService(
     private val taskContextRepo: TaskContextMongoRepository,
-    private val clientService: ClientService,
-    private val projectService: ProjectService,
+    private val scopeResolver: ScopeResolutionService,
 ) {
     /**
      * Create a TaskContextDocument for the given ContextDocument id.
@@ -23,17 +21,14 @@ class TaskContextService(
         projectName: String?,
         initialQuery: String,
     ): TaskContextDocument {
-        val clients = clientService.list()
-        val projects = projectService.getAllProjects()
-        val client = clientName?.let { name -> clients.firstOrNull { it.name.equals(name, ignoreCase = true) } }
-        val project = projectName?.let { name -> projects.firstOrNull { it.name.equals(name, ignoreCase = true) } }
+        val resolved = scopeResolver.resolve(clientName, projectName)
 
         val toSave = TaskContextDocument(
             contextId = contextId,
-            clientId = client?.id,
-            projectId = project?.id,
-            clientName = clientName,
-            projectName = projectName,
+            clientId = resolved.clientId,
+            projectId = resolved.projectId,
+            clientName = resolved.clientName,
+            projectName = resolved.projectName,
             initialQuery = initialQuery,
         )
         return taskContextRepo.save(toSave)

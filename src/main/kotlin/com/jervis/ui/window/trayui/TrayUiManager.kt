@@ -1,6 +1,6 @@
 package com.jervis.ui.window.trayui
 
-import com.jervis.controller.ChatService
+import com.jervis.service.agent.coordinator.ChatCoordinatorService
 import com.jervis.service.client.ClientProjectLinkService
 import com.jervis.service.client.ClientService
 import com.jervis.service.project.ProjectService
@@ -15,7 +15,7 @@ import java.awt.SystemTray
 @Service
 class TrayUiManager(
     private val projectService: ProjectService,
-    private val chatService: ChatService,
+    private val chatCoordinator: ChatCoordinatorService,
     private val clientService: ClientService,
     private val linkService: ClientProjectLinkService,
 ) {
@@ -47,7 +47,7 @@ class TrayUiManager(
     private fun createWindowManager(): TrayWindowManager =
         TrayWindowManager(
             projectService,
-            chatService,
+            chatCoordinator,
             clientService,
             linkService,
         )

@@ -2,6 +2,7 @@ package com.jervis.service.mcp.tools
 
 import com.jervis.entity.mongo.TaskContextDocument
 import com.jervis.repository.mongo.TaskContextMongoRepository
+import com.jervis.service.agent.AgentConstants
 import com.jervis.service.mcp.McpAction
 import com.jervis.service.mcp.McpTool
 import org.bson.types.ObjectId
@@ -15,7 +16,7 @@ import org.springframework.stereotype.Service
 class ContextEchoTool(
     private val taskContextRepo: TaskContextMongoRepository,
 ) : McpTool {
-    override val name: String = "context.echo"
+    override val name: String = AgentConstants.DefaultSteps.CONTEXT_ECHO
 
     override val action: McpAction = McpAction(
         type = "context",

@@ -1,7 +1,7 @@
 package com.jervis.dto
 
 /**
- * Response from ChatService including detected scope and optional English translation.
+ * Represents the response sent back to the UI.
  */
 data class ChatResponse(
     val message: String,
