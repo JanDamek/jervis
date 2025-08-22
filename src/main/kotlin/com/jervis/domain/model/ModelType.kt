@@ -10,7 +10,7 @@ enum class ModelType {
     TRANSLATION,
     RAG,
     INTERNAL,
-    SPEEK,
+    SPEECH,
     CHAT_INTERNAL,
     CHAT_EXTERNAL,
 }

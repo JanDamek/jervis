@@ -1,18 +1,22 @@
 package com.jervis.ui.window
 
 import com.jervis.controller.ChatService
+import com.jervis.dto.ChatRequestContext
 import com.jervis.service.project.ProjectService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.swing.Swing
 import kotlinx.coroutines.withContext
+import org.bson.types.ObjectId
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.EventQueue
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
 import javax.swing.JButton
+import javax.swing.JCheckBox
 import javax.swing.JComboBox
 import javax.swing.JFrame
 import javax.swing.JLabel
@@ -25,26 +29,54 @@ import javax.swing.border.EmptyBorder
 class MainWindow(
     private val projectService: ProjectService,
     private val chatService: ChatService,
+    private val clientService: com.jervis.service.client.ClientService,
+    private val linkService: com.jervis.service.client.ClientProjectLinkService,
 ) : JFrame("JERVIS Assistant") {
+    private val clientSelector = JComboBox<String>(arrayOf())
     private val projectSelector = JComboBox<String>(arrayOf())
+    private val autoScopeCheck = JCheckBox("Auto determine project", true)
     private val chatArea = JTextArea()
     private val inputField = JTextField()
     private val coroutineScope = CoroutineScope(Dispatchers.Default)
 
+    private val clientIdByName = mutableMapOf<String, ObjectId>()
+    private val projectNameById = mutableMapOf<ObjectId, String>()
+
     init {
-        // Load projects in a blocking way during initialization
+        // Load clients and projects in a blocking way during initialization
         runBlocking {
+            val clients = clientService.list()
+            EventQueue.invokeLater {
+                clientSelector.removeAllItems()
+                clients.forEach { c ->
+                    clientIdByName[c.name] = c.id
+                    clientSelector.addItem(c.name)
+                }
+                if (clients.isNotEmpty()) {
+                    clientSelector.selectedIndex = 0
+                }
+            }
+
+            val selectedClientId = clients.firstOrNull()?.id
+            val linkedProjectIds =
+                selectedClientId?.let { id ->
+                    linkService.listForClient(id).map { it.projectId }.toSet()
+                } ?: emptySet()
+
             val projects = projectService.getAllProjects()
-            val projectNames = projects.map { project -> project.name }.toTypedArray()
+            projectNameById.clear()
+            projects.forEach { p -> projectNameById[p.id] = p.name }
+
+            val filtered =
+                if (linkedProjectIds.isNotEmpty()) projects.filter { it.id in linkedProjectIds } else projects
+            val projectNames = filtered.map { it.name }.toTypedArray()
             val defaultProject = projectService.getDefaultProject()
             EventQueue.invokeLater {
                 projectSelector.removeAllItems()
                 projectNames.forEach { projectSelector.addItem(it) }
-                val defaultName = defaultProject?.name
+                val defaultName = defaultProject?.name ?: projectNames.firstOrNull()
                 if (defaultName != null) {
                     projectSelector.selectedItem = defaultName
-                } else if (projectNames.isNotEmpty()) {
-                    projectSelector.selectedIndex = 0
                 }
             }
         }
@@ -53,11 +85,18 @@ class MainWindow(
         setLocationRelativeTo(null)
         layout = BorderLayout()
 
-        // Horní panel s výběrem projektu
+        // Top panel: client + auto-scope + project
         val topPanel = JPanel(BorderLayout())
         topPanel.border = EmptyBorder(10, 10, 10, 10)
-        topPanel.add(JLabel("Default Project:"), BorderLayout.WEST)
-        topPanel.add(projectSelector, BorderLayout.CENTER)
+        val row1 = JPanel()
+        row1.add(JLabel("Client:"))
+        row1.add(clientSelector)
+        row1.add(autoScopeCheck)
+        val row2 = JPanel()
+        row2.add(JLabel("Project:"))
+        row2.add(projectSelector)
+        topPanel.add(row1, BorderLayout.NORTH)
+        topPanel.add(row2, BorderLayout.SOUTH)
 
         // Střední oblast s přehledem chatu
         chatArea.isEditable = false
@@ -108,6 +147,19 @@ class MainWindow(
         add(chatScroll, BorderLayout.CENTER)
         add(bottomPanel, BorderLayout.SOUTH)
 
+        // Toggle enable/disable of project selector based on auto-scope
+        projectSelector.isEnabled = !autoScopeCheck.isSelected
+        autoScopeCheck.addActionListener {
+            projectSelector.isEnabled = !autoScopeCheck.isSelected
+        }
+
+        // Refresh projects when client changes (only if auto-scope is OFF)
+        clientSelector.addActionListener {
+            if (!autoScopeCheck.isSelected) {
+                refreshProjectsForSelectedClient()
+            }
+        }
+
         // Add ESC key handling - ESC hides the window
         addKeyListener(
             object : KeyAdapter() {
@@ -140,17 +192,47 @@ class MainWindow(
             // Process the query in a coroutine to keep UI responsive
             coroutineScope.launch {
                 try {
+                    // Build context from UI selections
+                    val ctx =
+                        ChatRequestContext(
+                            clientName = clientSelector.selectedItem as? String,
+                            projectName = if (autoScopeCheck.isSelected) null else projectSelector.selectedItem as? String,
+                            autoScope = autoScopeCheck.isSelected,
+                        )
+
                     // Process the query using the ChatService
-                    val response = chatService.processQuery(text)
+                    val response = chatService.processQuery(text, ctx)
 
                     // Update UI on the EDT
-                    withContext(Dispatchers.Main) {
+                    withContext(Dispatchers.Swing) {
                         // Remove the "Processing..." message
                         val content = chatArea.text
                         chatArea.text = content.replace("Assistant: Processing...\n", "")
 
-                        // Add the response
-                        chatArea.append("Assistant: $response\n\n")
+                        // Apply detected client/project if provided
+                        response.detectedClient?.let { detectedClient ->
+                            val size = clientSelector.itemCount
+                            for (i in 0 until size) {
+                                if (clientSelector.getItemAt(i) == detectedClient) {
+                                    clientSelector.selectedIndex = i
+                                    break
+                                }
+                            }
+                        }
+                        // Refresh projects for selected client and then select detected project if any
+                        refreshProjectsForSelectedClient()
+                        response.detectedProject?.let { detectedProject ->
+                            val size = projectSelector.itemCount
+                            for (i in 0 until size) {
+                                if (projectSelector.getItemAt(i) == detectedProject) {
+                                    projectSelector.selectedIndex = i
+                                    break
+                                }
+                            }
+                        }
+
+                        // Add the response message
+                        chatArea.append("Assistant: ${response.message}\n\n")
 
                         // Re-enable input and button
                         inputField.isEnabled = true
@@ -158,7 +240,7 @@ class MainWindow(
                     }
                 } catch (e: Exception) {
                     // Handle errors
-                    withContext(Dispatchers.Main) {
+                    withContext(Dispatchers.Swing) {
                         // Remove the "Processing..." message
                         val content = chatArea.text
                         chatArea.text = content.replace("Assistant: Processing...\n", "")
@@ -171,6 +253,38 @@ class MainWindow(
                         inputField.requestFocus()
                     }
                 }
+            }
+        }
+    }
+
+    private fun refreshProjectsForSelectedClient() {
+        val clientName = clientSelector.selectedItem as? String ?: return
+        val clientId = clientIdByName[clientName] ?: return
+        coroutineScope.launch {
+            try {
+                val links = linkService.listForClient(clientId)
+                val linkedIds = links.map { it.projectId }.toSet()
+                val projects = projectService.getAllProjects()
+                val filtered = if (linkedIds.isEmpty()) projects else projects.filter { it.id in linkedIds }
+                val names = filtered.map { it.name }
+                val defaultProject = projectService.getDefaultProject()
+                val previous = projectSelector.selectedItem as? String
+                val preferred =
+                    when {
+                        previous != null && names.contains(previous) -> previous
+                        defaultProject?.name != null && names.contains(defaultProject.name) -> defaultProject.name
+                        names.isNotEmpty() -> names.first()
+                        else -> null
+                    }
+                withContext(Dispatchers.Swing) {
+                    projectSelector.removeAllItems()
+                    names.forEach { projectSelector.addItem(it) }
+                    if (preferred != null) {
+                        projectSelector.selectedItem = preferred
+                    }
+                }
+            } catch (_: Exception) {
+                // ignore UI refresh errors
             }
         }
     }
