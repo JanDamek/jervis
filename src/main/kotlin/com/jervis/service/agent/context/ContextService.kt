@@ -2,16 +2,14 @@ package com.jervis.service.agent.context
 
 import com.jervis.entity.mongo.ContextDocument
 import com.jervis.repository.mongo.ContextMongoRepository
-import com.jervis.service.client.ClientService
-import com.jervis.service.project.ProjectService
+import com.jervis.service.agent.ScopeResolutionService
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 
 @Service
 class ContextService(
     private val contextRepo: ContextMongoRepository,
-    private val clientService: ClientService,
-    private val projectService: ProjectService,
+    private val scopeResolver: ScopeResolutionService,
 ) {
     suspend fun persistContext(
         clientName: String?,
@@ -21,29 +19,26 @@ class ContextService(
         contextId: ObjectId? = null,
         sourceLanguage: String? = null,
     ): ContextDocument {
-        val clients = clientService.list()
-        val projects = projectService.getAllProjects()
-        val client = clients.firstOrNull { it.name == clientName }
-        val project = projects.firstOrNull { it.name == projectName }
+        val resolved = scopeResolver.resolve(clientName, projectName)
 
         val existing = contextId?.let { contextRepo.findById(it.toString()) }
         val toSave =
             if (existing != null) {
                 existing.copy(
-                    clientId = client?.id,
-                    projectId = project?.id,
-                    clientName = clientName,
-                    projectName = projectName,
+                    clientId = resolved.clientId,
+                    projectId = resolved.projectId,
+                    clientName = resolved.clientName,
+                    projectName = resolved.projectName,
                     autoScope = autoScope,
                     englishText = englishText ?: existing.englishText,
                     sourceLanguage = sourceLanguage ?: existing.sourceLanguage,
                 )
             } else {
                 ContextDocument(
-                    clientId = client?.id,
-                    projectId = project?.id,
-                    clientName = clientName,
-                    projectName = projectName,
+                    clientId = resolved.clientId,
+                    projectId = resolved.projectId,
+                    clientName = resolved.clientName,
+                    projectName = resolved.projectName,
                     autoScope = autoScope,
                     englishText = englishText,
                     sourceLanguage = sourceLanguage,

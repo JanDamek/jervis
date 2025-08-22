@@ -4,38 +4,70 @@ import com.jervis.entity.mongo.PlanDocument
 import com.jervis.entity.mongo.PlanStatus
 import com.jervis.entity.mongo.PlanStep
 import com.jervis.entity.mongo.StepStatus
+import com.jervis.repository.mongo.PlanMongoRepository
+import com.jervis.service.agent.AgentConstants
+import com.jervis.service.agent.execution.PlanExecutor
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 
 @Service
 class Planner(
-    private val planRepo: com.jervis.repository.mongo.PlanMongoRepository,
-    private val executor: com.jervis.service.agent.execution.PlanExecutor,
+    private val planRepo: PlanMongoRepository,
+    private val executor: PlanExecutor,
 ) {
-    private suspend fun createAndExecutePlan(contextId: ObjectId): Boolean {
-        var plan = PlanDocument(
-            contextId = contextId,
-            status = PlanStatus.CREATED,
-            steps = listOf(
-                PlanStep(
-                    name = "context.echo",
-                    status = StepStatus.PENDING,
-                    output = null,
-                ),
-            ),
-        )
-        plan = planRepo.save(plan)
-        plan = executor.execute(plan)
-        planRepo.save(plan)
-        return plan.status == PlanStatus.RUNNING
-    }
-
     suspend fun execute(contextId: ObjectId): PlannerResult {
-        val shouldContinue = createAndExecutePlan(contextId)
+        // Load or create plan for this context
+        val existing = planRepo.findByContextId(contextId)
+        val planToRun = when {
+            existing == null -> {
+                val initial = PlanDocument(
+                    contextId = contextId,
+                    status = PlanStatus.CREATED,
+                    steps = listOf(
+                        PlanStep(
+                            name = AgentConstants.DefaultSteps.CONTEXT_ECHO,
+                            status = StepStatus.PENDING,
+                            output = null,
+                        ),
+                        PlanStep(
+                            name = AgentConstants.DefaultSteps.LANGUAGE_NORMALIZE,
+                            status = StepStatus.PENDING,
+                            output = null,
+                        ),
+                    ),
+                )
+                planRepo.save(initial)
+            }
+            existing.steps.isEmpty() -> {
+                val enriched = existing.copy(
+                    status = PlanStatus.CREATED,
+                    steps = listOf(
+                        PlanStep(
+                            name = AgentConstants.DefaultSteps.CONTEXT_ECHO,
+                            status = StepStatus.PENDING,
+                            output = null,
+                        ),
+                        PlanStep(
+                            name = AgentConstants.DefaultSteps.LANGUAGE_NORMALIZE,
+                            status = StepStatus.PENDING,
+                            output = null,
+                        ),
+                    ),
+                )
+                planRepo.save(enriched)
+            }
+            else -> existing
+        }
+
+        val updated = executor.execute(planToRun)
+        val persisted = planRepo.save(updated)
+        val shouldContinue = persisted.status == PlanStatus.RUNNING || persisted.steps.any { it.status == StepStatus.PENDING }
+        val lastOutput = persisted.steps.lastOrNull { it.status == StepStatus.DONE }?.output?.takeIf { !it.isNullOrBlank() }
+
         return PlannerResult(
             message = "",
             chosenProject = "",
-            englishText = null,
+            englishText = lastOutput,
             shouldContinue = shouldContinue,
         )
     }

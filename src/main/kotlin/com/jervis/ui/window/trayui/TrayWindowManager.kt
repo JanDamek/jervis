@@ -1,6 +1,6 @@
 package com.jervis.ui.window.trayui
 
-import com.jervis.controller.ChatService
+import com.jervis.service.agent.coordinator.ChatCoordinatorService
 import com.jervis.service.client.ClientProjectLinkService
 import com.jervis.service.client.ClientService
 import com.jervis.service.project.ProjectService
@@ -14,14 +14,14 @@ import org.springframework.stereotype.Component
 @Component
 class TrayWindowManager(
     projectService: ProjectService,
-    chatService: ChatService,
+    chatCoordinator: ChatCoordinatorService,
     clientService: ClientService,
     linkService: ClientProjectLinkService,
 ) {
     private val windowManager =
         ApplicationWindowManager(
             projectService,
-            chatService,
+            chatCoordinator,
             clientService,
             linkService,
         )

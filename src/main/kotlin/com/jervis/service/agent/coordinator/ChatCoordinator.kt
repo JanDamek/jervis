@@ -3,11 +3,13 @@ package com.jervis.service.agent.coordinator
 import com.jervis.dto.ChatRequestContext
 import com.jervis.dto.ChatResponse
 import com.jervis.entity.mongo.AuditType
+import com.jervis.service.agent.AgentConstants
+import com.jervis.service.agent.ScopeResolutionService
 import com.jervis.service.agent.context.ContextService
 import com.jervis.service.agent.context.ContextTool
 import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.finalizer.Finalizer
-import com.jervis.service.agent.planner.Planner
+import com.jervis.service.agent.planner.PlanningRunner
 import com.jervis.service.audit.AuditLogService
 import com.jervis.service.client.ClientService
 import com.jervis.service.project.ProjectService
@@ -29,12 +31,13 @@ class ChatCoordinator(
     private val contextService: ContextService,
     private val taskContextService: TaskContextService,
     private val language: LanguageOrchestrator,
-    private val planner: Planner,
+    private val planningRunner: PlanningRunner,
     private val finalizer: Finalizer,
     private val auditLog: AuditLogService,
     private val clientService: ClientService,
     private val projectService: ProjectService,
     private val contextTool: ContextTool,
+    private val scopeResolver: ScopeResolutionService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -61,7 +64,7 @@ class ChatCoordinator(
             auditLog.start(
                 type = AuditType.TRANSLATION_DETECTION,
                 inputText = text,
-                userPrompt = "scope-detection", // overwritten by orchestrator prompt internally
+                userPrompt = AgentConstants.AuditPrompts.SCOPE_DETECTION, // overwritten by orchestrator prompt internally
                 clientHint = ctx.clientName,
                 projectHint = ctx.projectName,
                 contextId = initialCtx.id,
@@ -82,8 +85,9 @@ class ChatCoordinator(
             LanguageOrchestrator.ScopeDetectionResult(client = ctx.clientName, project = ctx.projectName, englishText = null)
         }
 
-        val finalClient = ctx.clientName
-        val finalProject = ctx.projectName
+        val resolved = scopeResolver.resolve(ctx.clientName, ctx.projectName)
+        val finalClient = resolved.clientName
+        val finalProject = resolved.projectName
 
         // 3) Persist detected scope and translated text
         contextService.persistContext(
@@ -106,31 +110,13 @@ class ChatCoordinator(
         )
 
         // Build validation/warning message based on original hints
-        val chosen = ctx.projectName?.trim()
-        val warnings = mutableListOf<String>()
-        if (chosen != null) {
-            val project = projects.firstOrNull { it.name.equals(chosen, ignoreCase = true) }
-            if (project == null) {
-                warnings += "Warning: project '$chosen' not found"
-            } else if (ctx.clientName != null) {
-                val client = clients.firstOrNull { it.name.equals(ctx.clientName, ignoreCase = true) }
-                if (client != null && project.clientId != client.id) {
-                    warnings += "Warning: project '$chosen' does not belong to client '${ctx.clientName}'"
-                }
-            }
-        }
+        val chosen = finalProject?.trim()
         val baseMsg = chosen?.let { "OK, working in project $it" }
-            ?: "OK, context applied for client ${ctx.clientName ?: "unknown"}"
-        val msg = if (warnings.isEmpty()) baseMsg else "$baseMsg. ${warnings.joinToString("; ")}" 
+            ?: "OK, context applied for client ${finalClient ?: "unknown"}"
+        val msg = if (resolved.warnings.isEmpty()) baseMsg else "$baseMsg. ${resolved.warnings.joinToString("; ")}" 
 
         // 4) Plan using resolved context only (Planner relies solely on context)
-        var planResult = planner.execute(contextId = initialCtx.id)
-
-        var iterations = 0
-        while (planResult.shouldContinue && iterations < 10) {
-            planResult = planner.execute(contextId = initialCtx.id)
-            iterations++
-        }
+        val planResult = planningRunner.run(contextId = initialCtx.id)
 
         val finalPlanResult = planResult.copy(
             message = msg,
