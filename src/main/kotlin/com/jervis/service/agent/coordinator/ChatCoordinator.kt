@@ -5,6 +5,7 @@ import com.jervis.dto.ChatResponse
 import com.jervis.entity.mongo.AuditType
 import com.jervis.service.agent.context.ContextService
 import com.jervis.service.agent.context.ContextTool
+import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.finalizer.Finalizer
 import com.jervis.service.agent.planner.Planner
 import com.jervis.service.audit.AuditLogService
@@ -26,6 +27,7 @@ import org.springframework.stereotype.Service
 @Service
 class ChatCoordinator(
     private val contextService: ContextService,
+    private val taskContextService: TaskContextService,
     private val language: LanguageOrchestrator,
     private val planner: Planner,
     private val finalizer: Finalizer,
@@ -80,8 +82,8 @@ class ChatCoordinator(
             LanguageOrchestrator.ScopeDetectionResult(client = ctx.clientName, project = ctx.projectName, englishText = null)
         }
 
-        val finalProject = detection.project ?: projectService.getDefaultProject()?.name ?: "default"
-        val finalClient = detection.client ?: ctx.clientName
+        val finalClient = ctx.clientName
+        val finalProject = ctx.projectName
 
         // 3) Persist detected scope and translated text
         contextService.persistContext(
@@ -94,6 +96,14 @@ class ChatCoordinator(
         )
         // Apply resolved context globally (UI hooks etc.)
         contextTool.applyContext(finalClient, finalProject)
+
+        // 3b) Create task context linked to ContextDocument for long-running planner/executor
+        taskContextService.create(
+            contextId = initialCtx.id,
+            clientName = finalClient,
+            projectName = finalProject,
+            initialQuery = detection.englishText ?: text,
+        )
 
         // Build validation/warning message based on original hints
         val chosen = ctx.projectName?.trim()
@@ -124,7 +134,7 @@ class ChatCoordinator(
 
         val finalPlanResult = planResult.copy(
             message = msg,
-            chosenProject = finalProject,
+            chosenProject = finalProject ?: "",
             detectedClient = finalClient,
             detectedProject = finalProject,
         )
