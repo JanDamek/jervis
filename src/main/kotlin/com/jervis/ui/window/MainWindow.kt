@@ -16,7 +16,6 @@ import java.awt.EventQueue
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
 import javax.swing.JButton
-import javax.swing.JCheckBox
 import javax.swing.JComboBox
 import javax.swing.JFrame
 import javax.swing.JLabel
@@ -34,7 +33,6 @@ class MainWindow(
 ) : JFrame("JERVIS Assistant") {
     private val clientSelector = JComboBox<String>(arrayOf())
     private val projectSelector = JComboBox<String>(arrayOf())
-    private val autoScopeCheck = JCheckBox("Auto determine project", true)
     private val chatArea = JTextArea()
     private val inputField = JTextField()
     private val coroutineScope = CoroutineScope(Dispatchers.Default)
@@ -68,7 +66,7 @@ class MainWindow(
             projects.forEach { p -> projectNameById[p.id] = p.name }
 
             val filtered =
-                if (linkedProjectIds.isNotEmpty()) projects.filter { it.id in linkedProjectIds } else projects
+                if (linkedProjectIds.isNotEmpty()) projects.filter { it.id in linkedProjectIds } else projects.filter { it.clientId == selectedClientId }
             val projectNames = filtered.map { it.name }.toTypedArray()
             val defaultProject = projectService.getDefaultProject()
             EventQueue.invokeLater {
@@ -91,7 +89,6 @@ class MainWindow(
         val row1 = JPanel()
         row1.add(JLabel("Client:"))
         row1.add(clientSelector)
-        row1.add(autoScopeCheck)
         val row2 = JPanel()
         row2.add(JLabel("Project:"))
         row2.add(projectSelector)
@@ -147,17 +144,9 @@ class MainWindow(
         add(chatScroll, BorderLayout.CENTER)
         add(bottomPanel, BorderLayout.SOUTH)
 
-        // Toggle enable/disable of project selector based on auto-scope
-        projectSelector.isEnabled = !autoScopeCheck.isSelected
-        autoScopeCheck.addActionListener {
-            projectSelector.isEnabled = !autoScopeCheck.isSelected
-        }
-
-        // Refresh projects when client changes (only if auto-scope is OFF)
+        // Refresh projects when client changes
         clientSelector.addActionListener {
-            if (!autoScopeCheck.isSelected) {
-                refreshProjectsForSelectedClient()
-            }
+            refreshProjectsForSelectedClient()
         }
 
         // Add ESC key handling - ESC hides the window
@@ -196,8 +185,8 @@ class MainWindow(
                     val ctx =
                         ChatRequestContext(
                             clientName = clientSelector.selectedItem as? String,
-                            projectName = if (autoScopeCheck.isSelected) null else projectSelector.selectedItem as? String,
-                            autoScope = autoScopeCheck.isSelected,
+                            projectName = projectSelector.selectedItem as? String,
+                            autoScope = false,
                         )
 
                     // Process the query using the ChatService
@@ -265,7 +254,7 @@ class MainWindow(
                 val links = linkService.listForClient(clientId)
                 val linkedIds = links.map { it.projectId }.toSet()
                 val projects = projectService.getAllProjects()
-                val filtered = if (linkedIds.isEmpty()) projects else projects.filter { it.id in linkedIds }
+                val filtered = if (linkedIds.isEmpty()) projects.filter { it.clientId == clientId } else projects.filter { it.id in linkedIds }
                 val names = filtered.map { it.name }
                 val defaultProject = projectService.getDefaultProject()
                 val previous = projectSelector.selectedItem as? String
