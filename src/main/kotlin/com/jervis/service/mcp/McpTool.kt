@@ -1,21 +1,30 @@
 package com.jervis.service.mcp
 
-import org.bson.types.ObjectId
+import com.jervis.entity.mongo.TaskContextDocument
 
 /**
- * Base interface for MCP Tools (actions the planner can schedule in a plan).
- * Only the API is defined now; implementations will be provided later.
+ * Base interface for MCP Tools executed by the planner/executor.
+ * Tools should be side-effect free unless explicitly designed to persist changes.
  */
 interface McpTool {
     val name: String
-    val action: McpAction
+    val description: String
 
     /**
-     * Execute the tool with provided action and current context id.
-     * Returns textual output to be stored in the context/plan step.
+     * Execute the tool using the current task context and parameters.
+     * Return ToolResult with success flag and output payload.
      */
     suspend fun execute(
-        action: String,
-        contextId: ObjectId,
-    ): String
+        context: TaskContextDocument,
+        parameters: Map<String, Any>
+    ): ToolResult
 }
+
+/**
+ * Standardized result returned by MCP tools.
+ */
+data class ToolResult(
+    val success: Boolean,
+    val output: Any,
+    val errorMessage: String? = null,
+)

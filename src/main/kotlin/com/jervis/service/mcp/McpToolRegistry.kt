@@ -13,4 +13,6 @@ class McpToolRegistry(
     fun all(): List<McpTool> = tools
 
     fun byName(name: String): McpTool? = tools.find { it.name == name }
+
+    fun getAllToolDescriptions(): List<String> = tools.map { tool -> "${tool.name}: ${tool.description}" }
 }
