@@ -1,6 +1,6 @@
 package com.jervis
 
-import com.jervis.service.agent.coordinator.ChatCoordinatorService
+import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.client.ClientProjectLinkService
 import com.jervis.service.client.ClientService
 import com.jervis.service.project.ProjectService
@@ -25,7 +25,7 @@ import java.awt.EventQueue
 )
 class JervisApplication(
     private val projectService: ProjectService,
-    private val chatCoordinator: ChatCoordinatorService,
+    private val chatCoordinator: AgentOrchestratorService,
     private val clientService: ClientService,
     private val linkService: ClientProjectLinkService,
 ) {
