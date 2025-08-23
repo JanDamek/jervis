@@ -10,12 +10,12 @@ import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
 /**
- * PlanFactory creates a plan for a given task context.
+ * Planner creates a plan for a given task context.
  * For now it deterministically creates a default plan while emitting detailed logs,
  * but it is designed to be LLM-driven in future iterations.
  */
 @Service
-class PlanFactory(
+class Planner(
     private val toolRegistry: McpToolRegistry,
 ) {
     private val logger = KotlinLogging.logger {}

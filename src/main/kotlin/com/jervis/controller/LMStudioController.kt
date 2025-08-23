@@ -1,11 +1,15 @@
 package com.jervis.controller
 
+import com.jervis.dto.ChatMessage
+import com.jervis.dto.ChatRequestContext
+import com.jervis.dto.Choice
+import com.jervis.dto.Usage
 import com.jervis.dto.completion.ChatCompletionRequest
 import com.jervis.dto.completion.ChatCompletionResponse
+import com.jervis.dto.completion.CompletionChoice
 import com.jervis.dto.completion.CompletionRequest
 import com.jervis.dto.completion.CompletionResponse
-import com.jervis.dto.embedding.EmbeddingRequest
-import com.jervis.dto.embedding.EmbeddingResponse
+import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.project.ProjectService
 import org.springframework.http.MediaType
 import org.springframework.web.bind.annotation.CrossOrigin
@@ -15,6 +19,8 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestMethod
 import org.springframework.web.bind.annotation.RestController
+import java.time.Instant
+import java.util.UUID
 
 @RestController
 @RequestMapping("/api/v0")
@@ -24,7 +30,7 @@ import org.springframework.web.bind.annotation.RestController
     methods = [RequestMethod.GET, RequestMethod.POST, RequestMethod.OPTIONS],
 )
 class LMStudioController(
-    private val completionService: CompletionService,
+    private val agentOrchestrator: AgentOrchestratorService,
     private val projectService: ProjectService,
 ) {
     @GetMapping("/models", produces = [MediaType.APPLICATION_JSON_VALUE])
@@ -54,7 +60,30 @@ class LMStudioController(
     )
     suspend fun getCompletion(
         @RequestBody request: CompletionRequest,
-    ): CompletionResponse = completionService.complete(request)
+    ): CompletionResponse {
+        val userPrompt = request.prompt
+        val response =
+            agentOrchestrator.handle(
+                text = userPrompt,
+                ctx = ChatRequestContext(clientName = null, projectName = null, autoScope = false),
+            )
+        return CompletionResponse(
+            id = "cmpl-${UUID.randomUUID()}",
+            `object` = "text_completion",
+            model = request.model ?: "unknown",
+            created = Instant.now().epochSecond,
+            choices =
+                listOf(
+                    CompletionChoice(
+                        text = response.message,
+                        index = 0,
+                        logprobs = null,
+                        finishReason = "stop",
+                    ),
+                ),
+            usage = Usage(promptTokens = 0, completionTokens = 0, totalTokens = 0),
+        )
+    }
 
     @PostMapping(
         "/chat/completions",
@@ -63,14 +92,27 @@ class LMStudioController(
     )
     suspend fun getChatCompletion(
         @RequestBody chatRequest: ChatCompletionRequest,
-    ): ChatCompletionResponse = completionService.chatComplete(chatRequest)
-
-    @PostMapping(
-        "/embeddings",
-        consumes = [MediaType.APPLICATION_JSON_VALUE],
-        produces = [MediaType.APPLICATION_JSON_VALUE],
-    )
-    suspend fun getEmbeddings(
-        @RequestBody request: EmbeddingRequest,
-    ): EmbeddingResponse = completionService.embeddings(request)
+    ): ChatCompletionResponse {
+        val userPrompt = chatRequest.messages.lastOrNull()?.content ?: ""
+        val response =
+            agentOrchestrator.handle(
+                text = userPrompt,
+                ctx = ChatRequestContext(clientName = null, projectName = null, autoScope = false),
+            )
+        return ChatCompletionResponse(
+            id = "chat-${UUID.randomUUID()}",
+            `object` = "chat.completion",
+            model = chatRequest.model ?: "unknown",
+            created = Instant.now().epochSecond,
+            choices =
+                listOf(
+                    Choice(
+                        index = 0,
+                        message = ChatMessage(role = "assistant", content = response.message),
+                        finishReason = "stop",
+                    ),
+                ),
+            usage = Usage(promptTokens = 0, completionTokens = 0, totalTokens = 0),
+        )
+    }
 }
