@@ -1,11 +1,15 @@
 package com.jervis.configuration
 
+import io.netty.channel.ChannelOption
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.MediaType
+import org.springframework.http.client.reactive.ReactorClientHttpConnector
 import org.springframework.web.reactive.function.client.ExchangeStrategies
 import org.springframework.web.reactive.function.client.WebClient
+import reactor.netty.http.client.HttpClient
+import java.time.Duration
 
 @Configuration
 class WebClientConfig {
@@ -21,7 +25,14 @@ class WebClientConfig {
                 headers.contentType = MediaType.APPLICATION_JSON
                 headers.accept = listOf(MediaType.APPLICATION_JSON)
             }.exchangeStrategies(defaultExchangeStrategies())
-            .build()
+            .clientConnector(
+                ReactorClientHttpConnector(
+                    HttpClient
+                        .create()
+                        .responseTimeout(Duration.ofSeconds(30))
+                        .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000),
+                ),
+            ).build()
 
     @Bean
     @Qualifier("ollamaWebClient")
@@ -35,7 +46,14 @@ class WebClientConfig {
                 headers.contentType = MediaType.APPLICATION_JSON
                 headers.accept = listOf(MediaType.APPLICATION_JSON)
             }.exchangeStrategies(defaultExchangeStrategies())
-            .build()
+            .clientConnector(
+                ReactorClientHttpConnector(
+                    HttpClient
+                        .create()
+                        .responseTimeout(Duration.ofSeconds(30))
+                        .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000),
+                ),
+            ).build()
 
     @Bean
     @Qualifier("openaiWebClient")
@@ -51,7 +69,14 @@ class WebClientConfig {
                 val key = endpoints.openai.apiKey
                 if (!key.isNullOrBlank()) headers.set("Authorization", "Bearer $key")
             }.exchangeStrategies(defaultExchangeStrategies())
-            .build()
+            .clientConnector(
+                ReactorClientHttpConnector(
+                    HttpClient
+                        .create()
+                        .responseTimeout(Duration.ofSeconds(30))
+                        .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000),
+                ),
+            ).build()
 
     @Bean
     @Qualifier("anthropicWebClient")
@@ -68,7 +93,14 @@ class WebClientConfig {
                 if (!key.isNullOrBlank()) headers.set("x-api-key", key)
                 headers.set("anthropic-version", ANTHROPIC_VERSION)
             }.exchangeStrategies(defaultExchangeStrategies())
-            .build()
+            .clientConnector(
+                ReactorClientHttpConnector(
+                    HttpClient
+                        .create()
+                        .responseTimeout(Duration.ofSeconds(30))
+                        .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000),
+                ),
+            ).build()
 
     private fun defaultExchangeStrategies(): ExchangeStrategies =
         ExchangeStrategies

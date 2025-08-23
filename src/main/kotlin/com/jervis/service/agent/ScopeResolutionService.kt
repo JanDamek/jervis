@@ -5,13 +5,12 @@ import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.service.client.ClientService
 import com.jervis.service.project.ProjectService
 import org.bson.types.ObjectId
-import org.springframework.stereotype.Service
 
 /**
  * Centralized resolution of client/project scope based on optional name hints.
  * Returns matched ids and normalized names along with warnings.
  */
-@Service
+// service removed
 class ScopeResolutionService(
     private val clientService: ClientService,
     private val projectService: ProjectService,
@@ -32,7 +31,8 @@ class ScopeResolutionService(
         val projects: List<ProjectDocument> = projectService.getAllProjects()
 
         val matchedClient = clientHint?.let { name -> clients.firstOrNull { it.name.equals(name, ignoreCase = true) } }
-        val matchedProject = projectHint?.let { name -> projects.firstOrNull { it.name.equals(name, ignoreCase = true) } }
+        val matchedProject =
+            projectHint?.let { name -> projects.firstOrNull { it.name.equals(name, ignoreCase = true) } }
 
         val warnings = mutableListOf<String>()
         if (projectHint?.isNotBlank() == true && matchedProject == null) {

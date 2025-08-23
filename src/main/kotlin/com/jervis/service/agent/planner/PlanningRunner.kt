@@ -18,25 +18,29 @@ import org.springframework.stereotype.Service
 class PlanningRunner(
     private val planRepo: PlanMongoRepository,
     private val taskContextRepo: TaskContextMongoRepository,
-    private val planFactory: PlanFactory,
+    private val planner: Planner,
     private val executor: PlanExecutor,
 ) {
     private val logger = KotlinLogging.logger {}
 
     suspend fun run(contextId: ObjectId): PlannerResult {
         logger.info { "AGENT_LOOP_START: Planning loop for context: $contextId" }
-        val taskContext = taskContextRepo.findByContextId(contextId)
-            ?: run {
-                logger.error { "RUNNER_CONTEXT_MISSING: contextId=$contextId" }
-                return PlannerResult(message = "", chosenProject = "", englishText = null, shouldContinue = false)
-            }
+        val taskContext =
+            taskContextRepo.findByContextId(contextId)
+                ?: run {
+                    logger.error { "RUNNER_CONTEXT_MISSING: contextId=$contextId" }
+                    return PlannerResult(message = "", chosenProject = "", englishText = null, shouldContinue = false)
+                }
 
         // Load or create a plan for this context
         val existing: PlanDocument? = planRepo.findByContextId(contextId)
-        var plan: PlanDocument = if (existing == null || existing.steps.isEmpty()) {
-            val created = planFactory.createPlan(taskContext)
-            planRepo.save(created)
-        } else existing
+        var plan: PlanDocument =
+            if (existing == null || existing.steps.isEmpty()) {
+                val created = planner.createPlan(taskContext)
+                planRepo.save(created)
+            } else {
+                existing
+            }
 
         var iterations = 0
         while (iterations < AgentConstants.MAX_PLANNING_ITERATIONS) {
@@ -55,10 +59,12 @@ class PlanningRunner(
 
         val shouldContinue = plan.status == PlanStatus.RUNNING || plan.steps.any { it.status == StepStatus.PENDING }
         val normalizedOutput =
-            plan.steps.lastOrNull { it.name == com.jervis.service.agent.AgentConstants.DefaultSteps.LANGUAGE_NORMALIZE && it.status == StepStatus.DONE }
+            plan.steps
+                .lastOrNull { it.name == AgentConstants.DefaultSteps.LANGUAGE_NORMALIZE && it.status == StepStatus.DONE }
                 ?.output
                 ?.takeIf { !it.isNullOrBlank() }
-                ?: plan.steps.lastOrNull { it.status == StepStatus.DONE }
+                ?: plan.steps
+                    .lastOrNull { it.status == StepStatus.DONE }
                     ?.output
                     ?.takeIf { !it.isNullOrBlank() }
 

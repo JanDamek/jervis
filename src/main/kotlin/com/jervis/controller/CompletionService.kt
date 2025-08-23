@@ -13,14 +13,13 @@ import com.jervis.dto.embedding.EmbeddingItem
 import com.jervis.dto.embedding.EmbeddingRequest
 import com.jervis.dto.embedding.EmbeddingResponse
 import com.jervis.entity.mongo.ProjectDocument
+import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.coordinator.LanguageOrchestrator
 import com.jervis.service.agent.planner.PlanningRunner
-import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.project.ProjectService
 import mu.KotlinLogging
 import org.bson.types.ObjectId
-import org.springframework.stereotype.Service
 import java.time.Instant
 import java.util.UUID
 
@@ -28,7 +27,6 @@ import java.util.UUID
  * Service for handling completions and chat functionality.
  * Routes calls through Planner for project scoping and uses LanguageOrchestrator for LLM generation.
  */
-@Service
 class CompletionService(
     private val projectService: ProjectService,
     private val planningRunner: PlanningRunner,

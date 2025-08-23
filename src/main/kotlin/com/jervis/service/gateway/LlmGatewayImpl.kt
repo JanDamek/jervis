@@ -66,7 +66,14 @@ class LlmGatewayImpl(
             } catch (t: Throwable) {
                 lastError = t
                 val tookMs = (System.nanoTime() - startNs) / 1_000_000
-                logger.error { "LLM call failed provider=$provider model=${candidate.model} after ${tookMs}ms: ${t.message}" }
+                val errDetail =
+                    when (t) {
+                        is org.springframework.web.reactive.function.client.WebClientResponseException ->
+                            "status=${t.statusCode.value()} body='${t.responseBodyAsString.take(500)}'"
+
+                        else -> "${t::class.simpleName}: ${t.message}"
+                    }
+                logger.error { "LLM call failed provider=$provider model=${candidate.model} after ${tookMs}ms: $errDetail" }
             }
         }
         throw IllegalStateException("All LLM candidates failed for $type", lastError)
@@ -138,28 +145,79 @@ class LlmGatewayImpl(
         userPrompt: String,
         c: ModelsProperties.ModelDetail,
     ): LlmResponse {
-        val fullPrompt = if (!systemPrompt.isNullOrBlank()) "${systemPrompt}\n\n$userPrompt" else userPrompt
         val options = mutableMapOf<String, Any>()
-        c.temperature?.let { options["temperature"] = it }
-        c.topP?.let { options["top_p"] = it }
-        c.maxTokens?.let { options["num_predict"] = it }
-        val body =
-            mapOf(
-                "model" to model,
-                "prompt" to fullPrompt,
-                "options" to options,
-                "stream" to false,
+        c.temperature?.takeIf { it > 0.0 }?.let { options["temperature"] = it }
+        c.topP?.takeIf { it in 0.0..1.0 }?.let { options["top_p"] = it }
+        c.maxTokens?.takeIf { it > 0 }?.let { options["num_predict"] = it }
+
+        val body = mutableMapOf<String, Any>(
+            "model" to model,
+            "prompt" to userPrompt,
+            "stream" to false,
+        )
+        if (!systemPrompt.isNullOrBlank()) body["system"] = systemPrompt
+        if (options.isNotEmpty()) body["options"] = options
+
+        logger.debug {
+            val opts = if (options.isEmpty()) "none" else options.keys.joinToString(",")
+            "OLLAMA_REQUEST: path=/api/generate model=$model stream=false options=$opts system=${!systemPrompt.isNullOrBlank()}"
+        }
+        try {
+            val resp: OllamaGenerateResponse =
+                ollamaClient
+                    .post()
+                    .uri("/api/generate")
+                    .bodyValue(body)
+                    .retrieve()
+                    .awaitBody()
+            val answer = resp.response.orEmpty()
+            val rModel = resp.model ?: model
+            val finish = resp.done_reason ?: "stop"
+            val p = resp.prompt_eval_count ?: 0
+            val cTok = resp.eval_count ?: 0
+            val t = p + cTok
+            return LlmResponse(
+                answer = answer,
+                model = rModel,
+                promptTokens = p,
+                completionTokens = cTok,
+                totalTokens = t,
+                finishReason = finish,
             )
-        val resp: OllamaGenerateResponse =
+        } catch (e: org.springframework.web.reactive.function.client.WebClientResponseException) {
+            logger.info { "OLLAMA_FALLBACK: /api/generate failed (${e.statusCode.value()}), retrying via /api/chat" }
+            return callOllamaChat(model, systemPrompt, userPrompt, options)
+        }
+    }
+
+    private suspend fun callOllamaChat(
+        model: String,
+        systemPrompt: String?,
+        userPrompt: String,
+        options: Map<String, Any>,
+    ): LlmResponse {
+        val messages = mutableListOf<Map<String, Any>>()
+        if (!systemPrompt.isNullOrBlank()) messages += mapOf("role" to "system", "content" to systemPrompt)
+        messages += mapOf("role" to "user", "content" to userPrompt)
+        val body = mutableMapOf<String, Any>(
+            "model" to model,
+            "messages" to messages,
+            "stream" to false,
+        )
+        if (options.isNotEmpty()) body["options"] = options
+        logger.debug {
+            val opts = if (options.isEmpty()) "none" else options.keys.joinToString(",")
+            "OLLAMA_REQUEST: path=/api/chat model=$model stream=false options=$opts system=${!systemPrompt.isNullOrBlank()}"
+        }
+        val resp: OllamaChatResponse =
             ollamaClient
                 .post()
-                .uri("/generate")
+                .uri("/api/chat")
                 .bodyValue(body)
                 .retrieve()
                 .awaitBody()
-        val answer = resp.response.orEmpty()
+        val answer = resp.message?.content.orEmpty()
         val rModel = resp.model ?: model
-        val finish = resp.done_reason ?: "stop"
         val p = resp.prompt_eval_count ?: 0
         val cTok = resp.eval_count ?: 0
         val t = p + cTok
@@ -169,7 +227,7 @@ class LlmGatewayImpl(
             promptTokens = p,
             completionTokens = cTok,
             totalTokens = t,
-            finishReason = finish,
+            finishReason = "stop",
         )
     }
 
@@ -303,6 +361,18 @@ private data class OllamaGenerateResponse(
     val done_reason: String? = null,
     val prompt_eval_count: Int? = null,
     val eval_count: Int? = null,
+)
+
+private data class OllamaChatResponse(
+    val model: String? = null,
+    val message: OllamaChatMessage? = null,
+    val prompt_eval_count: Int? = null,
+    val eval_count: Int? = null,
+)
+
+private data class OllamaChatMessage(
+    val role: String? = null,
+    val content: String = "",
 )
 
 private data class AnthropicMessagesResponse(
