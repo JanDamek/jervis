@@ -2,9 +2,9 @@ package com.jervis.service.agent.coordinator
 
 import com.jervis.dto.ChatRequestContext
 import com.jervis.dto.ChatResponse
+import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.finalizer.Finalizer
 import com.jervis.service.agent.planner.PlanningRunner
-import com.jervis.service.agent.context.TaskContextService
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -40,12 +40,14 @@ class AgentOrchestratorService(
         val planResult = planningRunner.run(contextId = contextId)
         logger.info { "AGENT_LOOP_END: shouldContinue=${planResult.shouldContinue}" }
 
-        val response = finalizer.finalize(
-            plannerResult = planResult,
-            requestLanguage = "en",
-            englishText = planResult.englishText ?: text,
-        )
-        logger.info { "AGENT_END: Responding to user with: \"${response.message}\"" }
+        val response =
+            finalizer.finalize(
+                plannerResult = planResult,
+                requestLanguage = "en",
+                englishText = planResult.englishText ?: text,
+            )
+        logger.info { "AGENT_END: Final response generated." }
+        logger.debug { "AGENT_FINAL_RESPONSE: \"${response.message}\"" }
         return response
     }
 }

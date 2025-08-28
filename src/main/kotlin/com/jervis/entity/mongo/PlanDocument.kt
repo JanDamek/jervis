@@ -27,6 +27,7 @@ enum class PlanStatus {
 
 data class PlanStep(
     val name: String,
+    val parameters: Map<String, Any> = emptyMap(),
     val status: StepStatus = StepStatus.PENDING,
     val output: String? = null,
 )

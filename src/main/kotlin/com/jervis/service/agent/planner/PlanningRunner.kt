@@ -48,7 +48,7 @@ class PlanningRunner(
             if (pendingIndex < 0) break
             val step = plan.steps[pendingIndex]
             logger.info { "RUNNER: Executing step $pendingIndex ('${step.name}') using tool '${step.name}'" }
-            logger.debug { "RUNNER_PARAMS: {}" }
+            logger.debug { "RUNNER_PARAMS: ${step.parameters}" }
 
             val updated = executor.execute(plan)
             plan = planRepo.save(updated)

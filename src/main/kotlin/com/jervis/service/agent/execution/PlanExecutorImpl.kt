@@ -33,27 +33,30 @@ class PlanExecutorImpl(
         }
 
         val step = plan.steps[idx]
-        val tool = mcpToolRegistry.byName(step.name)
-            ?: run {
-                logger.error { "EXECUTOR_TOOL_MISSING: step='${step.name}' plan=${plan.id} -> FAILED" }
+        val tool =
+            mcpToolRegistry.byName(step.name)
+                ?: run {
+                    logger.error { "EXECUTOR_TOOL_MISSING: step='${step.name}' plan=${plan.id} -> FAILED" }
+                    return plan.copy(status = PlanStatus.FAILED, updatedAt = now)
+                }
+
+        val context =
+            taskContextRepo.findByContextId(plan.contextId)
+                ?: run {
+                    logger.error { "EXECUTOR_CONTEXT_MISSING: contextId=${plan.contextId} plan=${plan.id} -> FAILED" }
+                    return plan.copy(status = PlanStatus.FAILED, updatedAt = now)
+                }
+
+        logger.info { "EXECUTOR_STEP_START: index=$idx step='${step.name}' plan=${plan.id}" }
+        logger.debug { "EXECUTOR_STEP_TOOL: tool='${tool.name}', parameters=${step.parameters}" }
+
+        val result =
+            try {
+                tool.execute(context = context, parameters = step.parameters)
+            } catch (e: Exception) {
+                logger.error(e) { "EXECUTOR_STEP_EXCEPTION: index=$idx step='${step.name}'" }
                 return plan.copy(status = PlanStatus.FAILED, updatedAt = now)
             }
-
-        val context = taskContextRepo.findByContextId(plan.contextId)
-            ?: run {
-                logger.error { "EXECUTOR_CONTEXT_MISSING: contextId=${plan.contextId} plan=${plan.id} -> FAILED" }
-                return plan.copy(status = PlanStatus.FAILED, updatedAt = now)
-            }
-
-        logger.info { "EXECUTOR_STEP_START: index=${idx} step='${step.name}' plan=${plan.id}" }
-        logger.debug { "EXECUTOR_STEP_TOOL: tool='${tool.name}', parameters={}" }
-
-        val result = try {
-            tool.execute(context = context, parameters = emptyMap())
-        } catch (e: Exception) {
-            logger.error(e) { "EXECUTOR_STEP_EXCEPTION: index=${idx} step='${step.name}'" }
-            return plan.copy(status = PlanStatus.FAILED, updatedAt = now)
-        }
 
         logger.info { "EXECUTOR: Tool '${tool.name}' finished with success=${result.success}" }
         logger.debug { "EXECUTOR_OUTPUT: ${result.output}" }
@@ -61,13 +64,18 @@ class PlanExecutorImpl(
         val newStatusForStep = if (result.success) StepStatus.DONE else StepStatus.ERROR
         val outputText = result.output.toString()
         val newStep = step.copy(status = newStatusForStep, output = outputText)
-        val newSteps = plan.steps.toMutableList().apply { this[idx] = newStep }.toList()
+        val newSteps =
+            plan.steps
+                .toMutableList()
+                .apply { this[idx] = newStep }
+                .toList()
 
-        val newPlanStatus = when {
-            newStatusForStep == StepStatus.ERROR -> PlanStatus.FAILED
-            newSteps.any { it.status == StepStatus.PENDING } -> PlanStatus.RUNNING
-            else -> PlanStatus.COMPLETED
-        }
+        val newPlanStatus =
+            when {
+                newStatusForStep == StepStatus.ERROR -> PlanStatus.FAILED
+                newSteps.any { it.status == StepStatus.PENDING } -> PlanStatus.RUNNING
+                else -> PlanStatus.COMPLETED
+            }
         return plan.copy(status = newPlanStatus, steps = newSteps, updatedAt = now)
     }
 }
