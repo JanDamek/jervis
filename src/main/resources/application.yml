@@ -84,10 +84,12 @@ models: # embedding is only 762 dimensions
       model: gpt-4o
       maxTokens: 8196
       maxRequests: 24
+      quick: true
     - provider: ANTHROPIC
       model: claude-3-5-sonnet
       maxTokens: 8196
       maxRequests: 30
+      quick: true
 
   INTERNAL:
     - provider: LM_STUDIO
@@ -106,10 +108,12 @@ models: # embedding is only 762 dimensions
       model: gpt-4o
       maxTokens: 8196
       maxRequests: 24
+      quick: true
     - provider: ANTHROPIC
       model: claude-3-5-sonnet
       maxTokens: 8196
       maxRequests: 30
+      quick: true
 
   SPEECH:
     - provider: LM_STUDIO
@@ -128,10 +132,12 @@ models: # embedding is only 762 dimensions
       model: gpt-4o
       maxTokens: 8196
       maxRequests: 24
+      quick: true
     - provider: ANTHROPIC
       model: claude-3-5-sonnet
       maxTokens: 8196
       maxRequests: 30
+      quick: true
 
   CHAT_INTERNAL:
     - provider: LM_STUDIO
@@ -150,27 +156,31 @@ models: # embedding is only 762 dimensions
       model: gpt-4o
       maxTokens: 8196
       maxRequests: 24
+      quick: true
     - provider: ANTHROPIC
       model: claude-3-5-sonnet
       maxTokens: 8196
       maxRequests: 30
+      quick: true
 
   CHAT_EXTERNAL:
     - provider: OPENAI
       model: gpt-4o
       maxTokens: 8196
       maxRequests: 24
+      quick: true
     - provider: ANTHROPIC
       model: claude-3-5-sonnet
       maxTokens: 8196
       maxRequests: 30
+      quick: true
 
 endpoints:
   openai:
-    apiKey: ${OPENAI_API_KEY:}
+    api-key: ${OPENAI_API_KEY:}
   anthropic:
-    apiKey: ${ANTHROPIC_API_KEY:}
+    api-key: ${ANTHROPIC_API_KEY:}
   ollama:
-    baseUrl: ${OLLAMA_BASE_URL:http://192.168.100.117:11434/}
+    base-url: ${OLLAMA_BASE_URL:http://192.168.100.117:11434/}
   lmStudio:
-    baseUrl: ${LMSTUDIO_BASE_URL:http://192.168.101.249:1234/}
+    base-url: ${LMSTUDIO_BASE_URL:http://192.168.101.249:1234/}

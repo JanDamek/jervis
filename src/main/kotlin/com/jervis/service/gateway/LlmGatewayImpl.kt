@@ -28,8 +28,10 @@ class LlmGatewayImpl(
         userPrompt: String,
         systemPrompt: String?,
         outputLanguage: String?,
+        quick: Boolean,
     ): LlmResponse {
-        val candidates = modelsProperties.models[type].orEmpty()
+        val base = modelsProperties.models[type].orEmpty()
+        val candidates = if (quick) base.filter { it.quick }.ifEmpty { base } else base
         if (candidates.isEmpty()) error("No LLM candidates configured for $type")
 
         val finalUser = buildUserPrompt(userPrompt, outputLanguage)
