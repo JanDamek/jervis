@@ -20,9 +20,10 @@ class LanguageOrchestrator(
         type: ModelType,
         systemPrompt: String? = null,
         userPrompt: String,
+        quick: Boolean = false,
     ): String {
-        val requestLang = detectLanguage(userPrompt)
-        val englishPrompt = translateToEnglish(userPrompt, requestLang)
+        val requestLang = detectLanguage(userPrompt, quick)
+        val englishPrompt = translateToEnglish(userPrompt, requestLang, quick)
         logger.debug { "LanguageOrchestrator: detected=$requestLang" }
         return llmGateway
             .callLlm(
@@ -30,12 +31,16 @@ class LanguageOrchestrator(
                 systemPrompt = systemPrompt,
                 userPrompt = englishPrompt,
                 outputLanguage = requestLang,
+                quick = quick,
             ).answer
     }
 
-    suspend fun detectLanguage(text: String): String {
+    suspend fun detectLanguage(
+        text: String,
+        quick: Boolean = false,
+    ): String {
         val prompt = "Return only ISO-639-1 code for language of the following text (no comments, no spaces):\n$text"
-        val res = llmGateway.callLlm(type = ModelType.TRANSLATION, userPrompt = prompt).answer
+        val res = llmGateway.callLlm(type = ModelType.TRANSLATION, userPrompt = prompt, quick = quick).answer
         val code = res.trim().take(5).lowercase()
         return when {
             code.startsWith("en") -> "en"
@@ -47,19 +52,21 @@ class LanguageOrchestrator(
     suspend fun translateToEnglish(
         text: String,
         lang: String,
+        quick: Boolean = false,
     ): String {
         if (lang == "en") return text
         val prompt = "Translate the following text to English. Return only the translation.\n$text"
-        return llmGateway.callLlm(type = ModelType.TRANSLATION, userPrompt = prompt).answer.trim()
+        return llmGateway.callLlm(type = ModelType.TRANSLATION, userPrompt = prompt, quick = quick).answer.trim()
     }
 
     suspend fun translateToLanguage(
         text: String,
         targetLang: String,
+        quick: Boolean = false,
     ): String {
-        if (targetLang == "en") return translateToEnglish(text, "cs") // force translation path if needed
+        if (targetLang == "en") return translateToEnglish(text, "cs", quick) // force translation path if needed
         val prompt = "Translate the following text to ${'$'}targetLang (ISO-639-1). Return only the translation.\n$text"
-        return llmGateway.callLlm(type = ModelType.TRANSLATION, userPrompt = prompt).answer.trim()
+        return llmGateway.callLlm(type = ModelType.TRANSLATION, userPrompt = prompt, quick = quick).answer.trim()
     }
 
     data class ScopeDetectionResult(
@@ -112,7 +119,9 @@ class LanguageOrchestrator(
 
         val baseCatalog =
             preselectedClient
-                ?.let { clientName -> catalog.filter { it.name.equals(clientName, ignoreCase = true) }.ifEmpty { catalog } }
+                ?.let { clientName ->
+                    catalog.filter { it.name.equals(clientName, ignoreCase = true) }.ifEmpty { catalog }
+                }
                 ?: catalog
         val limitedCatalog =
             preselectedProject?.let { pn ->
@@ -132,7 +141,7 @@ class LanguageOrchestrator(
             }
         val clientsStr =
             limitedCatalog.joinToString("\n") { client ->
-                val projs = client.projects.joinToString("; ") { p -> "${'$'}{p.name}: ${'$'}{p.description}" }
+                client.projects.joinToString("; ") { p -> "${'$'}{p.name}: ${'$'}{p.description}" }
                 "- Client: ${'$'}{client.name} (${'$'}{client.description}) | Projects: ${'$'}projs"
             }
 

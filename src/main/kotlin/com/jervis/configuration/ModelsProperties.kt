@@ -22,5 +22,7 @@ class ModelsProperties {
         var topP: Double? = null,
         var timeoutMs: Long? = null,
         var backoffSeconds: Long? = null,
+        /** When true, this model is considered a quick (fast) candidate for prompt routing. */
+        var quick: Boolean = false,
     )
 }

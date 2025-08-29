@@ -18,6 +18,7 @@ class TaskContextService(
         clientName: String?,
         projectName: String?,
         initialQuery: String,
+        quick: Boolean = false,
     ): TaskContextDocument {
         val toSave = TaskContextDocument(
             contextId = contextId,
@@ -26,6 +27,7 @@ class TaskContextService(
             clientName = clientName,
             projectName = projectName,
             initialQuery = initialQuery,
+            quick = quick,
         )
         return taskContextRepo.save(toSave)
     }

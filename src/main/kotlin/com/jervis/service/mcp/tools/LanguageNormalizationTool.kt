@@ -21,8 +21,8 @@ class LanguageNormalizationTool(
     override suspend fun execute(context: TaskContextDocument, parameters: Map<String, Any>): ToolResult {
         val query = context.initialQuery.trim()
         if (query.isEmpty()) return ToolResult(success = true, output = "")
-        val lang = language.detectLanguage(query)
-        val normalized = if (lang == "en") query else language.translateToEnglish(query, lang)
+        val lang = language.detectLanguage(query, context.quick)
+        val normalized = if (lang == "en") query else language.translateToEnglish(query, lang, context.quick)
         return ToolResult(success = true, output = normalized)
     }
 }

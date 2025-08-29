@@ -28,4 +28,5 @@ data class TaskContextDocument(
     var failureReason: String? = null,
     val createdAt: Instant = Instant.now(),
     var updatedAt: Instant = Instant.now(),
+    var quick: Boolean = false,
 )

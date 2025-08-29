@@ -12,5 +12,6 @@ interface LlmGateway {
         userPrompt: String,
         systemPrompt: String? = null,
         outputLanguage: String? = null,
+        quick: Boolean = false,
     ): LlmResponse
 }

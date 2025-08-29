@@ -1,7 +1,7 @@
 package com.jervis.ui.window
 
-import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.dto.ChatRequestContext
+import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.project.ProjectService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,6 +16,7 @@ import java.awt.EventQueue
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
 import javax.swing.JButton
+import javax.swing.JCheckBox
 import javax.swing.JComboBox
 import javax.swing.JFrame
 import javax.swing.JLabel
@@ -33,6 +34,7 @@ class MainWindow(
 ) : JFrame("JERVIS Assistant") {
     private val clientSelector = JComboBox<String>(arrayOf())
     private val projectSelector = JComboBox<String>(arrayOf())
+    private val quickCheckbox = JCheckBox("Quick response", false)
     private val chatArea = JTextArea()
     private val inputField = JTextField()
     private val coroutineScope = CoroutineScope(Dispatchers.Default)
@@ -66,7 +68,14 @@ class MainWindow(
             projects.forEach { p -> projectNameById[p.id] = p.name }
 
             val filtered =
-                if (linkedProjectIds.isNotEmpty()) projects.filter { it.id in linkedProjectIds } else projects.filter { it.clientId == selectedClientId }
+                if (linkedProjectIds.isNotEmpty()) {
+                    projects.filter { it.id in linkedProjectIds }
+                } else {
+                    projects.filter {
+                        it.clientId ==
+                            selectedClientId
+                    }
+                }
             val projectNames = filtered.map { it.name }.toTypedArray()
             val defaultProject = projectService.getDefaultProject()
             EventQueue.invokeLater {
@@ -92,6 +101,7 @@ class MainWindow(
         val row2 = JPanel()
         row2.add(JLabel("Project:"))
         row2.add(projectSelector)
+        row2.add(quickCheckbox)
         topPanel.add(row1, BorderLayout.NORTH)
         topPanel.add(row2, BorderLayout.SOUTH)
 
@@ -187,6 +197,7 @@ class MainWindow(
                             clientName = clientSelector.selectedItem as? String,
                             projectName = projectSelector.selectedItem as? String,
                             autoScope = false,
+                            quick = quickCheckbox.isSelected,
                         )
 
                     // Process the query using the ChatCoordinator
@@ -254,7 +265,8 @@ class MainWindow(
                 val links = linkService.listForClient(clientId)
                 val linkedIds = links.map { it.projectId }.toSet()
                 val projects = projectService.getAllProjects()
-                val filtered = if (linkedIds.isEmpty()) projects.filter { it.clientId == clientId } else projects.filter { it.id in linkedIds }
+                val filtered =
+                    if (linkedIds.isEmpty()) projects.filter { it.clientId == clientId } else projects.filter { it.id in linkedIds }
                 val names = filtered.map { it.name }
                 val defaultProject = projectService.getDefaultProject()
                 val previous = projectSelector.selectedItem as? String

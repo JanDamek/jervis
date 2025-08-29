@@ -34,6 +34,7 @@ class AgentOrchestratorService(
             clientName = ctx.clientName,
             projectName = ctx.projectName,
             initialQuery = text,
+            quick = ctx.quick,
         )
 
         logger.info { "AGENT_LOOP_START: Planning loop for context: $contextId" }
