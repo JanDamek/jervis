@@ -1,5 +1,6 @@
 package com.jervis.service.agent.planner
 
+// ... existing code ...
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.PlanStatus
@@ -8,13 +9,14 @@ import com.jervis.entity.mongo.PlanStep
 import com.jervis.entity.mongo.TaskContextDocument
 import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.mcp.McpToolRegistry
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.flowOf
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
-/**
- * Planner creates a plan for a given task context.
- * Prefers LLM-driven plan, falls back to deterministic default when needed.
- */
+// ... existing code ...
+
 @Service
 class Planner(
     private val toolRegistry: McpToolRegistry,
@@ -46,18 +48,16 @@ class Planner(
             logger.debug { "PLANNER_LLM_RESPONSE_START\n$llmAnswer\nPLANNER_LLM_RESPONSE_END" }
         }
 
-        val steps = parseAnswerToSteps(llmAnswer)
+        val steps: Flow<PlanStep> = parseAnswerToSteps(llmAnswer)
 
         val plan =
             PlanDocument(
-                contextId = context.contextId,
+                contextId = context.id,
                 status = PlanStatus.CREATED,
                 steps = steps,
             )
-        logger.info { "PLANNER_LLM_PLAN_BUILT: model=${llmResponse?.model ?: "n/a"} steps=${plan.steps.size}" }
-        plan.steps.forEachIndexed { index, step ->
-            logger.debug { "  - Step ${index + 1}: Tool='${step.name}', params=${step.parameters}" }
-        }
+        context.plans = flowOf(plan)
+        logger.info { "PLANNER_LLM_PLAN_BUILT: model=${llmResponse?.model ?: "n/a"}" }
         return plan
     }
 
@@ -66,7 +66,7 @@ class Planner(
 Your job is to generate the shortest actionable plan to fulfill the user's task using ONLY available tools.
 
 Output format:
-Return a JSON array (no wrapper), where each item is:
+ALWAYS return a JSON array (no wrapper), even if there is only one step. Each item must be:
 {
   "name": "<tool.name>",
   "parameters": "<short instruction describing the action to take using this tool, fully customized to the task, client, and project>"
@@ -77,7 +77,8 @@ Strict constraints:
 - Each step MUST be directly actionable.
 - Parameters MUST be specific to the task context (including project, client, and user intent).
 - DO NOT explain anything. DO NOT add non-JSON content. DO NOT wrap in an object.
-- Output ONLY pure JSON.
+- DO NOT use code fences or backticks.
+- Output ONLY pure JSON array.
 
 Tool List:
 One tool per line in JSON format:
@@ -91,41 +92,84 @@ $toolsJsonLines
             appendLine("Project: ${context.projectName ?: "unknown"}")
         }
 
-    private fun parseAnswerToSteps(inputJson: String): List<PlanStep> {
-        if (inputJson.isBlank()) return emptyList()
+    private fun parseAnswerToSteps(inputJson: String): Flow<PlanStep> {
+        var cnt = 0
+        if (inputJson.isBlank()) return emptyList<PlanStep>().asFlow()
 
-        return try {
-            val raw = mapper.readTree(inputJson)
-            if (!raw.isArray) throw IllegalArgumentException("LLM answer is not a JSON array")
-            raw.map { node ->
-                val name =
-                    node
-                        .get("name")
-                        ?.asText()
-                        ?.trim()
-                        .orEmpty()
-                var parameters =
-                    node
-                        .get("parameters")
-                        ?.asText()
-                        ?.trim()
-                        .orEmpty()
-
-                // Basic sanity check
-                if (name.isBlank() || parameters.isBlank()) {
-                    throw IllegalArgumentException("Invalid step: missing name or parameters")
-                }
-
-                // Optional post-processing: enrich parameters for rag.query, etc.
-                if (name == "rag.query" && parameters.startsWith("Perform a placeholder")) {
-                    parameters = "Query semantic index for project and client context."
-                }
-
-                PlanStep(name = name, parameters = parameters)
-            }
-        } catch (e: Exception) {
-            logger.warn(e) { "PLANNER_STEP_PARSE_ERROR: LLM answer could not be parsed" }
-            emptyList()
+        fun toPlanStep(node: com.fasterxml.jackson.databind.JsonNode): PlanStep {
+            val name = node["name"]?.asText()?.trim().orEmpty()
+            val parameters = node["parameters"]?.asText()?.trim().orEmpty()
+            require(!(name.isBlank() || parameters.isBlank())) { "Invalid step: missing name or parameters" }
+            return PlanStep(name = name, parameters = parameters, order = ++cnt)
         }
+
+        fun findArrayWithSteps(obj: com.fasterxml.jackson.databind.JsonNode): List<PlanStep>? {
+            val fields = obj.fields()
+            while (fields.hasNext()) {
+                val entry = fields.next()
+                val value = entry.value
+                if (value.isArray && value.all { it.isObject && it.has("name") && it.has("parameters") }) {
+                    return value.map { toPlanStep(it) }
+                }
+            }
+            return null
+        }
+
+        fun stripCodeFences(s: String): String {
+            val trimmed = s.trim()
+            if (trimmed.startsWith("```") && trimmed.endsWith("```") && trimmed.length >= 6) {
+                val inner = trimmed.removePrefix("```").removeSuffix("```").trim()
+                val firstNewline = inner.indexOf('\n')
+                val languageHint = if (firstNewline >= 0) inner.substring(0, firstNewline).trim() else ""
+                val withoutLang =
+                    if (languageHint.matches(Regex("(?i)json|javascript|ts|typescript|kotlin|java|txt"))) {
+                        if (firstNewline >= 0) inner.substring(firstNewline + 1) else ""
+                    } else {
+                        inner
+                    }
+                return withoutLang.trim()
+            }
+            return s
+        }
+
+        tailrec fun parseNode(
+            text: String,
+            depth: Int = 0,
+        ): List<PlanStep> {
+            if (depth > 2) return emptyList()
+            val cleaned = stripCodeFences(text)
+            val raw =
+                try {
+                    mapper.readTree(cleaned)
+                } catch (e: Exception) {
+                    logger.warn(e) { "PLANNER_STEP_PARSE_ERROR: invalid JSON from LLM" }
+                    return emptyList()
+                }
+            return when {
+                raw.isArray -> raw.map { toPlanStep(it) }
+                raw.isObject -> {
+                    when {
+                        raw.has("name") && raw.has("parameters") -> listOf(toPlanStep(raw))
+                        else ->
+                            findArrayWithSteps(raw) ?: run {
+                                // try nested textual field containing JSON
+                                val textField =
+                                    raw
+                                        .fields()
+                                        .asSequence()
+                                        .firstOrNull { it.value.isTextual }
+                                        ?.value
+                                if (textField != null) parseNode(textField.asText(), depth + 1) else emptyList()
+                            }
+                    }
+                }
+
+                raw.isTextual -> parseNode(raw.asText(), depth + 1)
+                else -> emptyList()
+            }
+        }
+
+        val list = parseNode(inputJson)
+        return list.asFlow()
     }
 }

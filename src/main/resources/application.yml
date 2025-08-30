@@ -27,6 +27,7 @@ spring:
       username: root
       password: qusre5-mYfpox-dikpef
       authentication-database: admin
+      auto-index-creation: true
 
 # Qdrant vector database configuration
 qdrant:

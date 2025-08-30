@@ -6,6 +6,4 @@ import org.springframework.data.repository.kotlin.CoroutineCrudRepository
 import org.springframework.stereotype.Repository
 
 @Repository
-interface TaskContextMongoRepository : CoroutineCrudRepository<TaskContextDocument, String> {
-    suspend fun findByContextId(contextId: ObjectId): TaskContextDocument?
-}
+interface TaskContextMongoRepository : CoroutineCrudRepository<TaskContextDocument, ObjectId>

@@ -40,7 +40,8 @@ class ScopeResolutionTool(
         val client = matchedClient?.name ?: clientHint ?: "unknown"
         val project = matchedProject?.name ?: projectHint ?: "unknown"
         val warningsSuffix = if (warnings.isEmpty()) "" else "; warnings=" + warnings.joinToString(" | ")
-        val summary = "client=$client; project=$project$warningsSuffix"
+        val summary =
+            "client=$client; project=$project$warningsSuffix; client_description=${matchedClient?.description}; project_description=${matchedProject?.description}"
         return ToolResult.ok(summary)
     }
 }
