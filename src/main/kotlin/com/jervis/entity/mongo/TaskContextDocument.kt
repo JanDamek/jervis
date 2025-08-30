@@ -1,10 +1,9 @@
 package com.jervis.entity.mongo
 
-import com.jervis.domain.agent.Plan
-import com.jervis.domain.agent.TaskStatus
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.Indexed
+import org.springframework.data.mongodb.core.mapping.DBRef
 import org.springframework.data.mongodb.core.mapping.Document
 import java.time.Instant
 
@@ -13,17 +12,18 @@ data class TaskContextDocument(
     @Id
     val id: ObjectId = ObjectId.get(),
     @Indexed
-    val contextId: ObjectId,
+    val contextId: ObjectId = ObjectId.get(),
     @Indexed
-    val clientId: ObjectId? = null,
+    var clientId: ObjectId? = null,
     @Indexed
-    val projectId: ObjectId? = null,
-    val clientName: String? = null,
-    val projectName: String? = null,
-    var status: TaskStatus = TaskStatus.PLANNING,
+    var projectId: ObjectId? = null,
+    var clientName: String? = null,
+    var projectName: String? = null,
     var initialQuery: String,
-    var plan: Plan? = null,
-    var workingMemory: Map<String, Any?> = mutableMapOf(),
+    var originalLanguage: String? = null,
+    @DBRef
+    var plan: PlanDocument? = null,
+    var contextSummary: String? = null,
     var finalResult: String? = null,
     var failureReason: String? = null,
     val createdAt: Instant = Instant.now(),

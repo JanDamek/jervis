@@ -1,10 +1,9 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.entity.mongo.TaskContextDocument
-import com.jervis.service.agent.AgentConstants
 import com.jervis.service.client.ClientService
 import com.jervis.service.mcp.McpTool
-import com.jervis.service.mcp.ToolResult
+import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.project.ProjectService
 import org.springframework.stereotype.Service
 
@@ -13,12 +12,12 @@ class ScopeResolutionTool(
     private val clientService: ClientService,
     private val projectService: ProjectService,
 ) : McpTool {
-    override val name: String = AgentConstants.DefaultSteps.SCOPE_RESOLVE
+    override val name: String = "scope.resolve"
     override val description: String = "Resolve client/project scope using hints from the task context."
 
     override suspend fun execute(
         context: TaskContextDocument,
-        parameters: Map<String, Any>,
+        parameters: String,
     ): ToolResult {
         val clients = clientService.list()
         val projects = projectService.getAllProjects()
@@ -42,6 +41,6 @@ class ScopeResolutionTool(
         val project = matchedProject?.name ?: projectHint ?: "unknown"
         val warningsSuffix = if (warnings.isEmpty()) "" else "; warnings=" + warnings.joinToString(" | ")
         val summary = "client=$client; project=$project$warningsSuffix"
-        return ToolResult(success = true, output = summary)
+        return ToolResult.ok(summary)
     }
 }

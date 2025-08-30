@@ -19,9 +19,7 @@
         <kotlin.version>2.1.21</kotlin.version>
         <java.version>21</java.version>
         <kotlin.compiler.jvmTarget>21</kotlin.compiler.jvmTarget>
-        <spring.ai.version>1.0.0</spring.ai.version>
         <qdrant.version>1.14.0</qdrant.version>
-        <djl.version>0.33.0</djl.version>
         <jackson-module-kotlin.version>2.19.0</jackson-module-kotlin.version>
         <commons-text.version>1.12.0</commons-text.version>
         <kotlin-logging.version>3.0.5</kotlin-logging.version>
@@ -152,28 +150,6 @@
             <version>${jakarta.annotation-api.version}</version>
         </dependency>
 
-        <!-- DJL for embedding models -->
-        <dependency>
-            <groupId>ai.djl</groupId>
-            <artifactId>api</artifactId>
-            <version>${djl.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>ai.djl.huggingface</groupId>
-            <artifactId>tokenizers</artifactId>
-            <version>${djl.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>ai.djl.pytorch</groupId>
-            <artifactId>pytorch-engine</artifactId>
-            <version>${djl.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>ai.djl.pytorch</groupId>
-            <artifactId>pytorch-model-zoo</artifactId>
-            <version>${djl.version}</version>
-        </dependency>
-
         <!-- Text processing -->
         <dependency>
             <groupId>org.apache.commons</groupId>
@@ -258,6 +234,8 @@
                             <version>${project.parent.version}</version>
                         </path>
                     </annotationProcessorPaths>
+                    <source>9</source>
+                    <target>9</target>
                 </configuration>
             </plugin>
 
@@ -281,7 +259,7 @@
                     </execution>
                 </executions>
                 <configuration>
-                    <jvmTarget>21</jvmTarget>
+                    <jvmTarget>${java.version}</jvmTarget>
                     <compilerPlugins>
                         <plugin>jpa</plugin>
                         <plugin>spring</plugin>

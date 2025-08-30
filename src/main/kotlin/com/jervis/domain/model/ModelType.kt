@@ -13,4 +13,5 @@ enum class ModelType {
     SPEECH,
     CHAT_INTERNAL,
     CHAT_EXTERNAL,
+    PLANNER,
 }

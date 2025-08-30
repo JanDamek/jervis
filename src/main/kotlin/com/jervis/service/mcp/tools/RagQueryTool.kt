@@ -1,9 +1,8 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.entity.mongo.TaskContextDocument
-import com.jervis.service.agent.AgentConstants
 import com.jervis.service.mcp.McpTool
-import com.jervis.service.mcp.ToolResult
+import com.jervis.service.mcp.domain.ToolResult
 import org.springframework.stereotype.Service
 
 /**
@@ -13,13 +12,15 @@ import org.springframework.stereotype.Service
  */
 @Service
 class RagQueryTool : McpTool {
-    override val name: String = AgentConstants.DefaultSteps.RAG_QUERY
+    override val name: String = "rag.query"
     override val description: String = "Perform a placeholder RAG query (not configured) and echo the query."
 
-    override suspend fun execute(context: TaskContextDocument, parameters: Map<String, Any>): ToolResult {
-        val query = context.initialQuery.trim()
-        val suffix = if (query.isEmpty()) "(no query)" else query
+    override suspend fun execute(
+        context: TaskContextDocument,
+        parameters: String,
+    ): ToolResult {
+        val suffix = if (parameters.isEmpty()) "(no query)" else parameters
         val message = "RAG placeholder: no results (service not configured). Query=\"$suffix\""
-        return ToolResult(success = true, output = message)
+        return ToolResult.ok(message)
     }
 }

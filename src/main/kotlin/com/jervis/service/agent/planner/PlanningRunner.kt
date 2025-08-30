@@ -1,11 +1,10 @@
 package com.jervis.service.agent.planner
 
+import com.jervis.domain.plan.PlanStatus
+import com.jervis.domain.plan.StepStatus
 import com.jervis.entity.mongo.PlanDocument
-import com.jervis.entity.mongo.PlanStatus
-import com.jervis.entity.mongo.StepStatus
 import com.jervis.repository.mongo.PlanMongoRepository
 import com.jervis.repository.mongo.TaskContextMongoRepository
-import com.jervis.service.agent.AgentConstants
 import com.jervis.service.agent.execution.PlanExecutor
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -23,13 +22,13 @@ class PlanningRunner(
 ) {
     private val logger = KotlinLogging.logger {}
 
-    suspend fun run(contextId: ObjectId): PlannerResult {
+    suspend fun run(contextId: ObjectId) {
         logger.info { "AGENT_LOOP_START: Planning loop for context: $contextId" }
         val taskContext =
             taskContextRepo.findByContextId(contextId)
                 ?: run {
                     logger.error { "RUNNER_CONTEXT_MISSING: contextId=$contextId" }
-                    return PlannerResult(message = "", chosenProject = "", englishText = null, shouldContinue = false)
+                    return
                 }
 
         // Load or create a plan for this context
@@ -42,38 +41,21 @@ class PlanningRunner(
                 existing
             }
 
-        var iterations = 0
-        while (iterations < AgentConstants.MAX_PLANNING_ITERATIONS) {
+        while (true) {
             val pendingIndex = plan.steps.indexOfFirst { it.status == StepStatus.PENDING }
             if (pendingIndex < 0) break
             val step = plan.steps[pendingIndex]
             logger.info { "RUNNER: Executing step $pendingIndex ('${step.name}') using tool '${step.name}'" }
             logger.debug { "RUNNER_PARAMS: ${step.parameters}" }
 
-            val updated = executor.execute(plan)
-            plan = planRepo.save(updated)
+            executor.execute(plan)
+            plan = planRepo.save(plan)
 
             if (plan.status == PlanStatus.FAILED || plan.status == PlanStatus.COMPLETED) break
-            iterations++
         }
 
         val shouldContinue = plan.status == PlanStatus.RUNNING || plan.steps.any { it.status == StepStatus.PENDING }
-        val normalizedOutput =
-            plan.steps
-                .lastOrNull { it.name == AgentConstants.DefaultSteps.LANGUAGE_NORMALIZE && it.status == StepStatus.DONE }
-                ?.output
-                ?.takeIf { !it.isNullOrBlank() }
-                ?: plan.steps
-                    .lastOrNull { it.status == StepStatus.DONE }
-                    ?.output
-                    ?.takeIf { !it.isNullOrBlank() }
 
-        logger.info { "AGENT_LOOP_END: iterations=$iterations shouldContinue=$shouldContinue" }
-        return PlannerResult(
-            message = "",
-            chosenProject = "",
-            englishText = normalizedOutput,
-            shouldContinue = shouldContinue,
-        )
+        logger.info { "AGENT_LOOP_END: shouldContinue=$shouldContinue" }
     }
 }

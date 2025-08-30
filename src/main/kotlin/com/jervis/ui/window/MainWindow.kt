@@ -208,35 +208,88 @@ class MainWindow(
                         // Remove the "Processing..." message
                         val content = chatArea.text
                         chatArea.text = content.replace("Assistant: Processing...\n", "")
+                    }
 
-                        // Apply detected client/project if provided
-                        response.detectedClient?.let { detectedClient ->
-                            val size = clientSelector.itemCount
-                            for (i in 0 until size) {
-                                if (clientSelector.getItemAt(i) == detectedClient) {
-                                    clientSelector.selectedIndex = i
-                                    break
+                    if (response.requiresConfirmation) {
+                        // Show confirmation dialog on EDT to let the user choose scope
+                        val choice =
+                            withContext(Dispatchers.Swing) {
+                                showScopeConfirmationDialog(
+                                    originalClient = ctx.clientName,
+                                    originalProject = ctx.projectName,
+                                    suggestedClient = response.detectedClient,
+                                    suggestedProject = response.detectedProject,
+                                    explanation = response.scopeExplanation,
+                                    englishText = response.englishText,
+                                )
+                            }
+                        // Re-call with confirmed scope
+                        val confirmedCtx =
+                            ChatRequestContext(
+                                clientName = choice.first,
+                                projectName = choice.second,
+                                autoScope = false,
+                                quick = ctx.quick,
+                                confirmedScope = true,
+                            )
+                        val confirmedResponse = chatCoordinator.handle(text, confirmedCtx)
+
+                        withContext(Dispatchers.Swing) {
+                            // Apply confirmed scope to selectors
+                            choice.first?.let { detectedClient ->
+                                val size = clientSelector.itemCount
+                                for (i in 0 until size) {
+                                    if (clientSelector.getItemAt(i) == detectedClient) {
+                                        clientSelector.selectedIndex = i
+                                        break
+                                    }
                                 }
                             }
-                        }
-                        // Refresh projects for selected client and then select detected project if any
-                        refreshProjectsForSelectedClient()
-                        response.detectedProject?.let { detectedProject ->
-                            val size = projectSelector.itemCount
-                            for (i in 0 until size) {
-                                if (projectSelector.getItemAt(i) == detectedProject) {
-                                    projectSelector.selectedIndex = i
-                                    break
+                            refreshProjectsForSelectedClient()
+                            choice.second?.let { detectedProject ->
+                                val size = projectSelector.itemCount
+                                for (i in 0 until size) {
+                                    if (projectSelector.getItemAt(i) == detectedProject) {
+                                        projectSelector.selectedIndex = i
+                                        break
+                                    }
                                 }
                             }
+                            chatArea.append("Assistant: ${confirmedResponse.message}\n\n")
+                            inputField.isEnabled = true
+                            inputField.requestFocus()
                         }
+                    } else {
+                        withContext(Dispatchers.Swing) {
+                            // Apply detected client/project if provided
+                            response.detectedClient?.let { detectedClient ->
+                                val size = clientSelector.itemCount
+                                for (i in 0 until size) {
+                                    if (clientSelector.getItemAt(i) == detectedClient) {
+                                        clientSelector.selectedIndex = i
+                                        break
+                                    }
+                                }
+                            }
+                            // Refresh projects for selected client and then select detected project if any
+                            refreshProjectsForSelectedClient()
+                            response.detectedProject?.let { detectedProject ->
+                                val size = projectSelector.itemCount
+                                for (i in 0 until size) {
+                                    if (projectSelector.getItemAt(i) == detectedProject) {
+                                        projectSelector.selectedIndex = i
+                                        break
+                                    }
+                                }
+                            }
 
-                        // Add the response message
-                        chatArea.append("Assistant: ${response.message}\n\n")
+                            // Add the response message
+                            chatArea.append("Assistant: ${response.message}\n\n")
 
-                        // Re-enable input and button
-                        inputField.isEnabled = true
-                        inputField.requestFocus()
+                            // Re-enable input and button
+                            inputField.isEnabled = true
+                            inputField.requestFocus()
+                        }
                     }
                 } catch (e: Exception) {
                     // Handle errors
@@ -255,6 +308,149 @@ class MainWindow(
                 }
             }
         }
+    }
+
+    private fun showScopeConfirmationDialog(
+        originalClient: String?,
+        originalProject: String?,
+        suggestedClient: String?,
+        suggestedProject: String?,
+        explanation: String?,
+        englishText: String?,
+    ): Pair<String?, String?> {
+        val dialog = javax.swing.JDialog(this, "Confirm scope", true)
+        dialog.layout = BorderLayout()
+        val panel = JPanel()
+        panel.layout = javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS)
+        panel.border = EmptyBorder(10, 10, 10, 10)
+
+        val info = JTextArea()
+        info.isEditable = false
+        info.lineWrap = true
+        info.wrapStyleWord = true
+        val reasonText = (explanation ?: "Model suggested a different scope based on the request.")
+        val english = englishText?.let { "\n\nEnglish translation:\n$it" } ?: ""
+        info.text = "Reason: $reasonText$english"
+        val infoScroll = JScrollPane(info)
+        infoScroll.preferredSize = Dimension(460, 100)
+        panel.add(infoScroll)
+
+        val clientRow = JPanel(BorderLayout())
+        clientRow.add(JLabel("Client:"), BorderLayout.WEST)
+        val clientCombo = JComboBox<String>()
+        // populate clients from current UI selector
+        for (i in 0 until clientSelector.itemCount) {
+            clientCombo.addItem(clientSelector.getItemAt(i))
+        }
+        clientRow.add(clientCombo, BorderLayout.CENTER)
+        panel.add(clientRow)
+
+        val projectRow = JPanel(BorderLayout())
+        projectRow.add(JLabel("Project:"), BorderLayout.WEST)
+        val projectCombo = JComboBox<String>()
+        projectRow.add(projectCombo, BorderLayout.CENTER)
+        panel.add(projectRow)
+
+        fun loadProjectsForClient(cname: String?) {
+            projectCombo.removeAllItems()
+            val names: List<String> =
+                if (cname == null) {
+                    emptyList()
+                } else {
+                    runBlocking {
+                        val cid = clientIdByName[cname]
+                        if (cid == null) {
+                            emptyList()
+                        } else {
+                            val links = linkService.listForClient(cid)
+                            val linkedIds = links.map { it.projectId }.toSet()
+                            val all = projectService.getAllProjects()
+                            val base = all.filter { it.clientId == cid }
+                            val filtered = if (linkedIds.isEmpty()) base else base.filter { it.id in linkedIds }
+                            filtered.map { it.name }
+                        }
+                    }
+                }
+            names.forEach { projectCombo.addItem(it) }
+        }
+
+        // Set initial selections
+        val initialClient = suggestedClient ?: originalClient ?: (clientSelector.selectedItem as? String)
+        clientCombo.selectedItem = initialClient
+        loadProjectsForClient(initialClient)
+        val initialProject =
+            when {
+                suggestedProject != null &&
+                    (0 until projectCombo.itemCount).any {
+                        projectCombo.getItemAt(
+                            it,
+                        ) == suggestedProject
+                    }
+                -> suggestedProject
+
+                originalProject != null &&
+                    (0 until projectCombo.itemCount).any {
+                        projectCombo.getItemAt(
+                            it,
+                        ) == originalProject
+                    }
+                -> originalProject
+
+                else -> projectCombo.getItemAt(0)?.toString()
+            }
+        if (initialProject != null) projectCombo.selectedItem = initialProject
+
+        clientCombo.addActionListener {
+            val selected = clientCombo.selectedItem as? String
+            loadProjectsForClient(selected)
+            // try to keep suggested project when switching clients
+            val target = suggestedProject ?: originalProject
+            if (target != null) {
+                for (i in 0 until projectCombo.itemCount) {
+                    if (projectCombo.getItemAt(i) == target) {
+                        projectCombo.selectedIndex = i
+                        break
+                    }
+                }
+            }
+        }
+
+        val buttons = JPanel()
+        val ok = JButton("OK")
+        val cancel = JButton("Cancel")
+        buttons.add(ok)
+        buttons.add(cancel)
+
+        var result: Pair<String?, String?> = Pair(originalClient, originalProject)
+        ok.addActionListener {
+            result = Pair(clientCombo.selectedItem as? String, projectCombo.selectedItem as? String)
+            dialog.dispose()
+        }
+        cancel.addActionListener {
+            result = Pair(originalClient, originalProject)
+            dialog.dispose()
+        }
+
+        // ESC = keep original
+        val escKey = javax.swing.KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0)
+        dialog.rootPane.registerKeyboardAction(
+            {
+                result = Pair(originalClient, originalProject)
+                dialog.dispose()
+            },
+            escKey,
+            javax.swing.JComponent.WHEN_IN_FOCUSED_WINDOW,
+        )
+        // ENTER = accept current selection (defaults to suggested)
+        dialog.rootPane.defaultButton = ok
+
+        dialog.add(panel, BorderLayout.CENTER)
+        dialog.add(buttons, BorderLayout.SOUTH)
+        dialog.setSize(500, 320)
+        dialog.setLocationRelativeTo(this)
+        dialog.isResizable = true
+        dialog.isVisible = true
+        return result
     }
 
     private fun refreshProjectsForSelectedClient() {

@@ -2,7 +2,6 @@ package com.jervis.entity.mongo
 
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
-import org.springframework.data.mongodb.core.index.Indexed
 import org.springframework.data.mongodb.core.mapping.Document
 import java.time.Instant
 
@@ -13,8 +12,6 @@ import java.time.Instant
 data class AuditLogDocument(
     @Id
     val id: ObjectId = ObjectId.get(),
-    @Indexed
-    val type: AuditType,
     val inputText: String,
     val systemPrompt: String? = null,
     val userPrompt: String,
@@ -26,9 +23,3 @@ data class AuditLogDocument(
     val createdAt: Instant = Instant.now(),
     val updatedAt: Instant = Instant.now(),
 )
-
-enum class AuditType {
-    TRANSLATION_DETECTION,
-    LANGUAGE_DETECT,
-    TRANSLATION,
-}
