@@ -8,4 +8,6 @@ data class ChatResponse(
     val detectedClient: String? = null,
     val detectedProject: String? = null,
     val englishText: String? = null,
+    val requiresConfirmation: Boolean = false,
+    val scopeExplanation: String? = null,
 )

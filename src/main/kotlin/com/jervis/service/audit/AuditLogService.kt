@@ -1,7 +1,6 @@
 package com.jervis.service.audit
 
 import com.jervis.entity.mongo.AuditLogDocument
-import com.jervis.entity.mongo.AuditType
 import com.jervis.repository.mongo.AuditLogMongoRepository
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -12,7 +11,6 @@ class AuditLogService(
     private val repo: AuditLogMongoRepository,
 ) {
     suspend fun start(
-        type: AuditType,
         inputText: String,
         userPrompt: String,
         systemPrompt: String? = null,
@@ -22,7 +20,6 @@ class AuditLogService(
     ): ObjectId {
         val doc =
             AuditLogDocument(
-                type = type,
                 inputText = inputText,
                 systemPrompt = systemPrompt,
                 userPrompt = userPrompt,
@@ -43,17 +40,17 @@ class AuditLogService(
         errorText: String? = null,
     ): AuditLogDocument? {
         val existing = repo.findById(id.toHexString()) ?: return null
-        val updated = existing.copy(
-            responseText = responseText ?: existing.responseText,
-            errorText = errorText,
-            updatedAt = Instant.now(),
-        )
+        val updated =
+            existing.copy(
+                responseText = responseText ?: existing.responseText,
+                errorText = errorText,
+                updatedAt = Instant.now(),
+            )
         return repo.save(updated)
     }
 
     // Keep for backward compatibility where needed
     suspend fun log(
-        type: AuditType,
         inputText: String,
         userPrompt: String,
         responseText: String? = null,
@@ -64,7 +61,6 @@ class AuditLogService(
     ) {
         val doc =
             AuditLogDocument(
-                type = type,
                 inputText = inputText,
                 systemPrompt = systemPrompt,
                 userPrompt = userPrompt,

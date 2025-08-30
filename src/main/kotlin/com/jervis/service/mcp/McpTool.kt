@@ -1,6 +1,7 @@
 package com.jervis.service.mcp
 
 import com.jervis.entity.mongo.TaskContextDocument
+import com.jervis.service.mcp.domain.ToolResult
 
 /**
  * Base interface for MCP Tools executed by the planner/executor.
@@ -12,19 +13,11 @@ interface McpTool {
 
     /**
      * Execute the tool using the current task context and parameters.
-     * Return ToolResult with success flag and output payload.
+     * Return ToolResult representing either success (ToolOkResult) or error (ToolErrorResult).
+     * The output is always a String.
      */
     suspend fun execute(
         context: TaskContextDocument,
-        parameters: Map<String, Any>
+        parameters: String,
     ): ToolResult
 }
-
-/**
- * Standardized result returned by MCP tools.
- */
-data class ToolResult(
-    val success: Boolean,
-    val output: Any,
-    val errorMessage: String? = null,
-)

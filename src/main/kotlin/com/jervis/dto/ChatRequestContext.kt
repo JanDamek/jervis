@@ -14,4 +14,5 @@ data class ChatRequestContext(
     val projectName: String?,
     val autoScope: Boolean = false,
     val quick: Boolean = false,
+    val confirmedScope: Boolean = false,
 )

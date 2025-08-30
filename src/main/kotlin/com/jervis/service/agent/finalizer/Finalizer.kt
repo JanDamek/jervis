@@ -1,15 +1,11 @@
 package com.jervis.service.agent.finalizer
 
 import com.jervis.dto.ChatResponse
-import com.jervis.service.agent.planner.PlannerResult
+import org.bson.types.ObjectId
 
 /**
  * Finalizer produces the final user-facing response based on accumulated context and planner outcome.
  */
 fun interface Finalizer {
-    suspend fun finalize(
-        plannerResult: PlannerResult,
-        requestLanguage: String,
-        englishText: String?,
-    ): ChatResponse
+    suspend fun finalize(contextId: ObjectId): ChatResponse
 }

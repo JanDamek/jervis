@@ -4,7 +4,7 @@ import com.jervis.domain.model.ModelType
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagDocumentType
 import com.jervis.domain.rag.RagSourceType
-import com.jervis.repository.vector.converter.convertRagDocumentToPayload
+import com.jervis.repository.vector.converter.rag.convertRagDocumentToPayload
 import io.grpc.Status
 import io.grpc.StatusRuntimeException
 import io.qdrant.client.QdrantClient

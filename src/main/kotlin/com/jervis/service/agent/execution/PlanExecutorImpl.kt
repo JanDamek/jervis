@@ -1,8 +1,8 @@
 package com.jervis.service.agent.execution
 
+import com.jervis.domain.plan.PlanStatus
+import com.jervis.domain.plan.StepStatus
 import com.jervis.entity.mongo.PlanDocument
-import com.jervis.entity.mongo.PlanStatus
-import com.jervis.entity.mongo.StepStatus
 import com.jervis.repository.mongo.TaskContextMongoRepository
 import com.jervis.service.mcp.McpToolRegistry
 import mu.KotlinLogging
@@ -16,20 +16,25 @@ import java.time.Instant
 class PlanExecutorImpl(
     private val mcpToolRegistry: McpToolRegistry,
     private val taskContextRepo: TaskContextMongoRepository,
+    private val ragIngestService: com.jervis.service.rag.RagIngestService,
 ) : PlanExecutor {
     private val logger = KotlinLogging.logger {}
 
-    override suspend fun execute(plan: PlanDocument): PlanDocument {
+    override suspend fun execute(plan: PlanDocument) {
         val now = Instant.now()
         if (plan.steps.isEmpty()) {
             logger.info { "EXECUTOR_NO_STEPS: plan=${plan.id} -> COMPLETED" }
-            return plan.copy(status = PlanStatus.COMPLETED, updatedAt = now)
+            plan.status = PlanStatus.COMPLETED
+            plan.updatedAt = now
+            return
         }
 
         val idx = plan.steps.indexOfFirst { it.status == StepStatus.PENDING }
         if (idx < 0) {
             logger.info { "EXECUTOR_NO_PENDING: plan=${plan.id} -> COMPLETED" }
-            return plan.copy(status = PlanStatus.COMPLETED, updatedAt = now)
+            plan.status = PlanStatus.COMPLETED
+            plan.updatedAt = now
+            return
         }
 
         val step = plan.steps[idx]
@@ -37,14 +42,18 @@ class PlanExecutorImpl(
             mcpToolRegistry.byName(step.name)
                 ?: run {
                     logger.error { "EXECUTOR_TOOL_MISSING: step='${step.name}' plan=${plan.id} -> FAILED" }
-                    return plan.copy(status = PlanStatus.FAILED, updatedAt = now)
+                    plan.status = PlanStatus.FAILED
+                    plan.updatedAt = now
+                    return
                 }
 
         val context =
             taskContextRepo.findByContextId(plan.contextId)
                 ?: run {
                     logger.error { "EXECUTOR_CONTEXT_MISSING: contextId=${plan.contextId} plan=${plan.id} -> FAILED" }
-                    return plan.copy(status = PlanStatus.FAILED, updatedAt = now)
+                    plan.status = PlanStatus.FAILED
+                    plan.updatedAt = now
+                    return
                 }
 
         logger.info { "EXECUTOR_STEP_START: index=$idx step='${step.name}' plan=${plan.id}" }
@@ -55,27 +64,31 @@ class PlanExecutorImpl(
                 tool.execute(context = context, parameters = step.parameters)
             } catch (e: Exception) {
                 logger.error(e) { "EXECUTOR_STEP_EXCEPTION: index=$idx step='${step.name}'" }
-                return plan.copy(status = PlanStatus.FAILED, updatedAt = now)
+                plan.status = PlanStatus.FAILED
+                plan.updatedAt = now
+                return
             }
 
-        logger.info { "EXECUTOR: Tool '${tool.name}' finished with success=${result.success}" }
-        logger.debug { "EXECUTOR_OUTPUT: ${result.output}" }
+        logger.info { "EXECUTOR: Tool '${tool.name}' finished with output='${result.output.take(200)}'" }
 
-        val newStatusForStep = if (result.success) StepStatus.DONE else StepStatus.ERROR
-        val outputText = result.output.toString()
-        val newStep = step.copy(status = newStatusForStep, output = outputText)
-        val newSteps =
-            plan.steps
-                .toMutableList()
-                .apply { this[idx] = newStep }
-                .toList()
+        // Update context summary with the latest tool result and persist
+        val updatedContext =
+            context.copy(
+                contextSummary = result.render().take(500),
+                updatedAt = now,
+            )
+        runCatching { taskContextRepo.save(updatedContext) }
+            .onSuccess { logger.info { "EXECUTOR_CONTEXT_SAVED: contextId=${updatedContext.contextId}" } }
+            .onFailure { t -> logger.warn(t) { "EXECUTOR_CONTEXT_SAVE_FAIL: contextId=${updatedContext.contextId}" } }
 
-        val newPlanStatus =
-            when {
-                newStatusForStep == StepStatus.ERROR -> PlanStatus.FAILED
-                newSteps.any { it.status == StepStatus.PENDING } -> PlanStatus.RUNNING
-                else -> PlanStatus.COMPLETED
-            }
-        return plan.copy(status = newPlanStatus, steps = newSteps, updatedAt = now)
+        // Ingest step into RAG (best-effort)
+        runCatching { ragIngestService.ingestStep(updatedContext, tool.name, step.parameters, result) }
+            .onSuccess { pointId -> logger.info { "EXECUTOR_RAG_INGESTED: pointId=${pointId ?: "n/a"} tool='${tool.name}'" } }
+            .onFailure { t -> logger.warn(t) { "EXECUTOR_RAG_INGEST_FAIL: tool='${tool.name}'" } }
+
+        step.status = StepStatus.DONE
+        step.output = result
+
+        plan.updatedAt = now
     }
 }
