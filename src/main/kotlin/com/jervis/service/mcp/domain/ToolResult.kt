@@ -1,6 +1,7 @@
 package com.jervis.service.mcp.domain
 
-// Kotlin
+import com.jervis.entity.mongo.PlanStep
+
 sealed interface ToolResult {
     val output: String
 
@@ -17,11 +18,17 @@ sealed interface ToolResult {
         override val output: String,
     ) : ToolResult
 
+    data class Deferred(
+        override val output: String,
+        val requiredStep: PlanStep,
+    ) : ToolResult
+
     fun render(): String =
         when (this) {
             is Ok -> "OK: ${this.output}"
             is Error -> "ERROR: ${this.errorMessage ?: "Unknown"}"
             is Ask -> "ASK: ${this.output}"
+            is Deferred -> "DEFER: ${this.output} (inject '${this.requiredStep.name}')"
         }
 
     companion object {
@@ -33,5 +40,10 @@ sealed interface ToolResult {
         ): ToolResult = Error(output, message)
 
         fun ask(output: String): ToolResult = Ask(output)
+
+        fun defer(
+            output: String,
+            requiredStep: PlanStep,
+        ): ToolResult = Deferred(output, requiredStep)
     }
 }

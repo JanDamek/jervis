@@ -1,115 +1,275 @@
 package com.jervis.service.mcp.tools
 
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.fasterxml.jackson.module.kotlin.readValue
+import com.jervis.domain.model.ModelType
 import com.jervis.entity.mongo.TaskContextDocument
-import com.jervis.repository.mongo.TaskContextMongoRepository
-import com.jervis.service.agent.coordinator.LanguageOrchestrator
+import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.swing.Swing
+import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
-import java.time.Instant
+import java.awt.BorderLayout
+import java.awt.Color
+import java.awt.Dimension
+import java.awt.FlowLayout
+import java.awt.Font
+import java.awt.Frame
+import java.awt.event.KeyEvent
+import javax.swing.BorderFactory
+import javax.swing.JButton
+import javax.swing.JComponent
+import javax.swing.JDialog
+import javax.swing.JLabel
+import javax.swing.JPanel
+import javax.swing.JScrollPane
+import javax.swing.JTextArea
+import javax.swing.JTextField
+import javax.swing.KeyStroke
+import javax.swing.WindowConstants
 
 /**
  * UserInteractionTool integrates the agent with the UI to handle interactive questions and answers.
- * It produces either an ASK payload (to display a question) or an OK payload (to confirm answer captured).
+ * Produces an ASK payload awaiting user input. Parameters can contain the question.
  */
 @Service
 class UserInteractionTool(
-    private val taskContextRepo: TaskContextMongoRepository,
-    private val language: LanguageOrchestrator,
+    private val gateway: LlmGateway,
 ) : McpTool {
-    private val mapper = jacksonObjectMapper()
-
     override val name: String = "user.await"
     override val description: String =
-        "Display a user dialog (ask/confirm); optionally translate question/answer and store a brief summary into context."
+        "Display a blocking user dialog, show request details and collect user’s answer."
 
     override suspend fun execute(
         context: TaskContextDocument,
         parameters: String,
     ): ToolResult {
-        val params: Map<String, Any?> = parseParams(parameters)
-        val fast = (params["quick"] as? Boolean) ?: context.quick
+        val userLang = context.originalLanguage?.lowercase()?.ifBlank { null }
 
-        // Answer mode
-        val answerRaw = params["answer"]?.toString()?.trim()?.takeIf { it.isNotBlank() }
-        if (answerRaw != null) return handleAnswer(context, answerRaw, fast)
+        val questionTranslated =
+            gateway
+                .callLlm(
+                    ModelType.TRANSLATION,
+                    parameters,
+                    "Translate user prompt.",
+                    userLang,
+                    context.quick,
+                ).answer
+                .trim()
 
-        // Ask mode
-        val questionRawParam = params["question"]?.toString()?.trim().orEmpty()
-        val questionRaw = questionRawParam.ifBlank { pickQuestionFromContext(context) }
-        if (questionRaw.isBlank()) {
-            return ToolResult.error(output = "Invalid parameters", message = "Missing 'question' or 'answer'")
-        }
-        val interactionType = params["type"]?.toString()?.lowercase()?.takeIf { it.isNotBlank() } ?: "ask"
-        val reason = params["reason"]?.toString()?.takeIf { it.isNotBlank() }
+        val questionRephrased =
+            runCatching {
+                gateway
+                    .callLlm(
+                        type = ModelType.INTERNAL,
+                        systemPrompt = """
+                        Reformulate the following user request clearly and politely.
+                        Return only the reformulated sentence.""",
+                        userPrompt =
+                            """
+                            Request:
+                            $questionTranslated
+                            """.trimIndent(),
+                        outputLanguage = userLang ?: "en",
+                        quick = context.quick,
+                    ).answer
+            }.getOrElse { questionTranslated }
 
-        val targetLang = context.originalLanguage?.takeIf { it.isNotBlank() } ?: "en"
-        val localizedQuestion = translateTo(targetLang, questionRaw, fast)
+        val proposedAnswer =
+            runCatching {
+                gateway
+                    .callLlm(
+                        type = ModelType.INTERNAL,
+                        systemPrompt = "Provide a concise, helpful answer to the following request. Keep it short and actionable.",
+                        userPrompt =
+                            """
+                            Request:
+                            $questionRephrased
+                            """.trimIndent(),
+                        outputLanguage = userLang ?: "en",
+                        quick = context.quick,
+                    ).answer
+            }.getOrElse {
+                if ((userLang ?: "en") == "en") "I need more details, please." else "Potřebuji více informací, prosím."
+            }
 
-        val updated =
-            context.copy(
-                contextSummary = "ASK[$targetLang]: $localizedQuestion",
-                updatedAt = Instant.now(),
-            )
-        taskContextRepo.save(updated)
+        val previousOutput = context.finalResult ?: context.contextSummary
+        val client = context.clientName
+        val project = context.projectName
 
-        val payload =
-            mapOf(
-                "awaitingUser" to true,
-                "language" to targetLang,
-                "question" to localizedQuestion,
-                "type" to interactionType,
-                "reason" to reason,
-                "context" to
-                    mapOf(
-                        "contextId" to context.contextId.toHexString(),
-                        "clientName" to context.clientName,
-                        "projectName" to context.projectName,
-                        "initialQuery" to context.initialQuery,
-                    ),
-            )
-        return ToolResult.ask(output = mapper.writeValueAsString(payload))
+        val decisionResult =
+            withContext(Dispatchers.Swing) {
+                showUserAwaitDialog(
+                    owner = null,
+                    client = client,
+                    project = project,
+                    previousOutput = previousOutput,
+                    questionOriginal = parameters,
+                    questionTranslated = questionTranslated,
+                    questionRephrased = questionRephrased,
+                    proposedAnswer = proposedAnswer,
+                )
+            }
+
+        val finalAnswerOriginal =
+            when (decisionResult.decision) {
+                UserDecision.ESC -> {
+                    runCatching {
+                        "Provide the best possible short answer based on the last user request. Keep it concise and helpful."
+                    }.getOrElse {
+                        "Proceeding with the model's decision."
+                    }
+                }
+
+                UserDecision.ENTER -> {
+                    decisionResult.answerText.ifBlank { proposedAnswer }
+                }
+
+                UserDecision.EDIT -> {
+                    decisionResult.answerText.ifBlank { proposedAnswer }
+                }
+            }
+
+        val finalAnswerEn =
+            runCatching {
+                gateway
+                    .callLlm(
+                        ModelType.TRANSLATION,
+                        userPrompt = finalAnswerOriginal,
+                        systemPrompt = "Translate.",
+                        "en",
+                        quick = context.quick,
+                    ).answer
+            }.getOrElse { finalAnswerOriginal }
+
+        return ToolResult.ok(finalAnswerEn)
     }
 
-    private suspend fun handleAnswer(
-        context: TaskContextDocument,
-        answerRaw: String,
-        quick: Boolean,
-    ): ToolResult {
-        val englishAnswer = translateTo("en", answerRaw, quick)
+    data class UserDecisionResult(
+        val decision: UserDecision,
+        val answerText: String = "",
+    )
 
-        val updated =
-            context.copy(
-                contextSummary = "ANSWER: $englishAnswer",
-                updatedAt = Instant.now(),
-            )
-        taskContextRepo.save(updated)
-
-        val payload =
-            mapOf(
-                "awaitingUser" to false,
-                "accepted" to true,
-                "englishAnswer" to englishAnswer,
-                "originalAnswer" to answerRaw,
-            )
-        return ToolResult.ok(output = mapper.writeValueAsString(payload))
+    enum class UserDecision {
+        ENTER,
+        ESC,
+        EDIT,
     }
 
-    private fun parseParams(parameters: String): Map<String, Any?> =
-        try {
-            mapper.readValue(parameters)
-        } catch (_: Exception) {
-            // fallback: treat the whole string as question text
-            mapOf("question" to parameters)
+    fun showUserAwaitDialog(
+        owner: java.awt.Component? = null,
+        client: String?,
+        project: String?,
+        previousOutput: String?,
+        questionOriginal: String,
+        questionTranslated: String,
+        questionRephrased: String,
+        proposedAnswer: String,
+    ): UserDecisionResult {
+        var result = UserDecision.ESC
+        var finalAnswer = proposedAnswer
+
+        val dialog = JDialog(null as Frame?, "User Interaction", true)
+        dialog.defaultCloseOperation = WindowConstants.DISPOSE_ON_CLOSE
+        dialog.setSize(600, 480)
+        dialog.setLocationRelativeTo(owner)
+
+        val panel =
+            JPanel(BorderLayout(10, 10)).apply {
+                border = BorderFactory.createEmptyBorder(10, 10, 10, 10)
+            }
+
+        val header =
+            StringBuilder().apply {
+                appendLine("Client: ${client ?: "(unknown)"}")
+                appendLine("Project: ${project ?: "(unknown)"}")
+                appendLine("Original prompt: $questionOriginal")
+                appendLine("Rephrased: $questionRephrased")
+                if (!previousOutput.isNullOrBlank()) {
+                    appendLine("\nPrevious output:")
+                    appendLine(previousOutput.take(500))
+                }
+            }
+
+        val promptArea =
+            JTextArea(header.toString()).apply {
+                isEditable = false
+                background = Color(245, 245, 245)
+                font = Font("Monospaced", Font.PLAIN, 12)
+                lineWrap = true
+                wrapStyleWord = true
+            }
+
+        val scrollPane =
+            JScrollPane(promptArea).apply {
+                preferredSize = Dimension(580, 200)
+            }
+
+        val translatedLabel = JLabel("Translated prompt:")
+        val translatedArea =
+            JTextArea(questionTranslated).apply {
+                isEditable = false
+                background = Color(250, 250, 250)
+                font = Font("Monospaced", Font.PLAIN, 12)
+                lineWrap = true
+                wrapStyleWord = true
+            }
+        val translatedScroll =
+            JScrollPane(translatedArea).apply {
+                preferredSize = Dimension(580, 80)
+            }
+
+        val translatedPanel =
+            JPanel(BorderLayout(6, 6)).apply {
+                add(translatedLabel, BorderLayout.NORTH)
+                add(translatedScroll, BorderLayout.CENTER)
+            }
+
+        val answerField =
+            JTextField(proposedAnswer).apply {
+                toolTipText = "Můžete lehce upravit navrženou odpověď."
+                selectAll()
+            }
+
+        val centerStack =
+            JPanel(BorderLayout(10, 10)).apply {
+                border = BorderFactory.createEmptyBorder(4, 0, 4, 0)
+                add(translatedPanel, BorderLayout.NORTH)
+                add(answerField, BorderLayout.CENTER)
+            }
+
+        val buttonPanel = JPanel(FlowLayout(FlowLayout.RIGHT))
+        val okButton = JButton("OK")
+        val cancelButton = JButton("Cancel")
+
+        okButton.addActionListener {
+            result = if (answerField.text == proposedAnswer) UserDecision.ENTER else UserDecision.EDIT
+            finalAnswer = answerField.text
+            dialog.dispose()
         }
 
-    private fun pickQuestionFromContext(context: TaskContextDocument): String = context.contextSummary ?: ""
+        cancelButton.addActionListener {
+            result = UserDecision.ESC
+            dialog.dispose()
+        }
 
-    private suspend fun translateTo(
-        targetLang: String,
-        text: String,
-        quick: Boolean,
-    ): String = language.translate(text = text, targetLang = targetLang, quick = quick)
+        dialog.rootPane.defaultButton = okButton
+        dialog.rootPane.registerKeyboardAction(
+            { dialog.dispose() },
+            KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
+            JComponent.WHEN_IN_FOCUSED_WINDOW,
+        )
+
+        buttonPanel.add(okButton)
+        buttonPanel.add(cancelButton)
+
+        panel.add(scrollPane, BorderLayout.NORTH)
+        panel.add(centerStack, BorderLayout.CENTER)
+        panel.add(buttonPanel, BorderLayout.SOUTH)
+
+        dialog.contentPane = panel
+        dialog.isVisible = true
+
+        return UserDecisionResult(decision = result, answerText = finalAnswer)
+    }
 }

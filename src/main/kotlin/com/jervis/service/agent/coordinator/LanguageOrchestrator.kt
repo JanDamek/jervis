@@ -48,10 +48,10 @@ class LanguageOrchestrator(
     ): List<ClientEntry> {
         val byClient = projects.groupBy { it.clientId }
         return clients.map { c ->
-            val projs = byClient[c.id].orEmpty()
+            val projects = byClient[c.id].orEmpty()
             ClientEntry(
                 name = c.name,
-                projects = projs.map { ProjectEntry(name = it.name, description = it.description.orEmpty()) },
+                projects = projects.map { ProjectEntry(name = it.name, description = it.description.orEmpty()) },
                 description = c.description.orEmpty(),
             )
         }
@@ -76,7 +76,7 @@ class LanguageOrchestrator(
             preselectedProject?.let { pn ->
                 baseCatalog.map { c ->
                     val filtered = c.projects.filter { it.name.equals(pn, ignoreCase = true) }
-                    c.copy(projects = if (filtered.isEmpty()) c.projects else filtered)
+                    c.copy(projects = filtered.ifEmpty { c.projects })
                 }
             } ?: baseCatalog
 
@@ -84,15 +84,13 @@ class LanguageOrchestrator(
         val clientsList = allowedClients.joinToString(", ")
         val projectsByClient = limitedCatalog.associate { it.name to it.projects.map { p -> p.name } }
         val projectsLines =
-            projectsByClient.entries.joinToString("\n") { (cname, projs) ->
-                val values = if (projs.isEmpty()) "(none)" else projs.joinToString(", ")
+            projectsByClient.entries.joinToString("\n") { (cname, projects) ->
+                val values = if (projects.isEmpty()) "(none)" else projects.joinToString(", ")
                 "- $cname: $values"
             }
         val clientsStr =
             limitedCatalog.joinToString("\n") { client ->
-                if (client.projects.isEmpty()) {
-                    "(none)"
-                } else {
+                if (client.projects.isNotEmpty()) {
                     client.projects.joinToString(
                         "; ",
                     ) { p -> "${p.name}: ${p.description}" }
@@ -118,7 +116,7 @@ User request:
 $text
 
 JSON:
-""".trim()
+"""
         return instruction
     }
 
@@ -128,14 +126,13 @@ JSON:
         } catch (_: Exception) {
             val start = answer.indexOf('{')
             val end = answer.lastIndexOf('}')
-            if (start >= 0 && end > start) mapper.readValue(answer.substring(start, end + 1)) else DetectionResult()
+            if (start in 0..<end) mapper.readValue(answer.substring(start, end + 1)) else DetectionResult()
         }
 
     /**
      * General text generation entry. Thin wrapper around LlmGateway.
      */
     suspend fun generate(
-        type: ModelType,
         userPrompt: String,
         systemPrompt: String? = null,
         outputLanguage: String? = null,
@@ -143,33 +140,13 @@ JSON:
     ): String =
         llmGateway
             .callLlm(
-                type = type,
+                type = ModelType.TRANSLATION,
                 userPrompt = userPrompt,
                 systemPrompt = systemPrompt,
                 outputLanguage = outputLanguage,
                 quick = quick,
             ).answer
             .trim()
-
-    /**
-     * Translate provided text to the target language (ISO-639-1). Always attempts translation; returns original on failure/blank.
-     */
-    suspend fun translate(
-        text: String,
-        targetLang: String,
-        quick: Boolean = false,
-    ): String {
-        val lang = targetLang.lowercase()
-        val prompt = "Translate the following text to the target language. Return only the translation.\n$text"
-        return llmGateway
-            .callLlm(
-                type = ModelType.TRANSLATION,
-                userPrompt = prompt,
-                outputLanguage = lang,
-                quick = quick,
-            ).answer
-            .trim().ifBlank { text }
-    }
 }
 
 private data class ClientEntry(

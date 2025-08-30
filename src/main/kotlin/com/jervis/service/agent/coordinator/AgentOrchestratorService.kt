@@ -2,12 +2,13 @@ package com.jervis.service.agent.coordinator
 
 import com.jervis.dto.ChatRequestContext
 import com.jervis.dto.ChatResponse
-import com.jervis.repository.mongo.TaskContextMongoRepository
 import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.finalizer.Finalizer
+import com.jervis.service.agent.planner.Planner
 import com.jervis.service.agent.planner.PlanningRunner
+import com.jervis.service.client.ClientService
+import com.jervis.service.project.ProjectService
 import mu.KotlinLogging
-import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 
 /**
@@ -19,10 +20,10 @@ class AgentOrchestratorService(
     private val taskContextService: TaskContextService,
     private val planningRunner: PlanningRunner,
     private val finalizer: Finalizer,
-    private val taskContextRepo: TaskContextMongoRepository,
     private val languageOrchestrator: LanguageOrchestrator,
-    private val clientService: com.jervis.service.client.ClientService,
-    private val projectService: com.jervis.service.project.ProjectService,
+    private val clientService: ClientService,
+    private val projectService: ProjectService,
+    private val planner: Planner,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -71,19 +72,21 @@ class AgentOrchestratorService(
         val finalClient = ctx.clientName ?: suggestedClient
         val finalProject = ctx.projectName ?: suggestedProject
 
-        val contextId = ObjectId.get()
-        taskContextService.create(
-            contextId = contextId,
-            clientName = finalClient,
-            projectName = finalProject,
-            initialQuery = scope.englishText,
-            originalLanguage = scope.originalLanguage,
-            quick = ctx.quick,
-        )
+        val context =
+            taskContextService.create(
+                clientName = finalClient,
+                projectName = finalProject,
+                initialQuery = scope.englishText,
+                originalLanguage = scope.originalLanguage,
+                quick = ctx.quick,
+            )
 
-        logger.info { "AGENT_LOOP_START: Planning loop for context: $contextId" }
-        planningRunner.run(contextId = contextId)
-        val response = finalizer.finalize(contextId)
+        logger.info { "AGENT_LOOP_START: Planning loop for context: ${context.id}" }
+        planner.createPlan(context)
+        taskContextService.save(context)
+        planningRunner.run(context)
+        val response = finalizer.finalize(context)
+        taskContextService.save(context)
         logger.info { "AGENT_END: Final response generated." }
         logger.debug { "AGENT_FINAL_RESPONSE: \"${response.message}\"" }
         return response

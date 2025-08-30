@@ -30,13 +30,13 @@ class RagIngestService(
     ): String? {
         val projectId = context.projectId
         if (projectId == null) {
-            logger.debug { "RAG_INGEST_SKIP: No projectId in contextId=${context.contextId}" }
+            logger.debug { "RAG_INGEST_SKIP: No projectId in contextId=${context.id}" }
             return null
         }
         val content =
             buildString {
                 appendLine("Agent step artifact")
-                appendLine("contextId=${context.contextId}")
+                appendLine("contextId=${context.id}")
                 appendLine("client=${context.clientName ?: "unknown"}")
                 appendLine("project=${context.projectName ?: "unknown"}")
                 appendLine("tool=$toolName")
@@ -47,11 +47,11 @@ class RagIngestService(
             try {
                 embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, content)
             } catch (t: Throwable) {
-                logger.warn(t) { "RAG_EMBED_FAIL: tool=$toolName contextId=${context.contextId}" }
+                logger.warn(t) { "RAG_EMBED_FAIL: tool=$toolName contextId=${context.id}" }
                 emptyList()
             }
         if (embedding.isEmpty()) {
-            logger.debug { "RAG_INGEST_SKIP: Empty embedding tool=$toolName contextId=${context.contextId}" }
+            logger.debug { "RAG_INGEST_SKIP: Empty embedding tool=$toolName contextId=${context.id}" }
             return null
         }
         val doc =
@@ -67,10 +67,10 @@ class RagIngestService(
             )
         return try {
             val pointId = vectorStorage.store(ModelType.EMBEDDING_TEXT, doc, embedding)
-            logger.info { "RAG_INGESTED: tool=$toolName contextId=${context.contextId} pointId=$pointId" }
+            logger.info { "RAG_INGESTED: tool=$toolName contextId=${context.id} pointId=$pointId" }
             pointId
         } catch (t: Throwable) {
-            logger.warn(t) { "RAG_STORE_FAIL: tool=$toolName contextId=${context.contextId}" }
+            logger.warn(t) { "RAG_STORE_FAIL: tool=$toolName contextId=${context.id}" }
             null
         }
     }

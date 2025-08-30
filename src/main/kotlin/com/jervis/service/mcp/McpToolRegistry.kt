@@ -16,8 +16,6 @@ class McpToolRegistry(
 
     fun names(): Set<String> = tools.map { it.name }.toSet()
 
-    fun getAllToolDescriptions(): List<String> = tools.map { tool -> "${tool.name}: ${tool.description}" }
-
     /**
      * Returns JSON lines (one JSON per line) describing available MCP tools.
      */
