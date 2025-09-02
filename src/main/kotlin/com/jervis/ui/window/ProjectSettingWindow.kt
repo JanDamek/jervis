@@ -2,7 +2,9 @@ package com.jervis.ui.window
 
 import com.jervis.entity.mongo.ClientDocument
 import com.jervis.entity.mongo.ProjectDocument
+import com.jervis.service.indexing.IndexingService
 import com.jervis.service.project.ProjectService
+import com.jervis.ui.component.ClientSettingsComponents
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -45,6 +47,7 @@ import javax.swing.table.DefaultTableCellRenderer
 class ProjectSettingWindow(
     private val projectService: ProjectService,
     private val clientService: com.jervis.service.client.ClientService,
+    private val indexingService: IndexingService,
 ) : JFrame("Project Management") {
     private val projectTableModel = ProjectTableModel(emptyList())
     private val projectTable = JTable(projectTableModel)
@@ -62,6 +65,8 @@ class ProjectSettingWindow(
     private val newClientButton = JButton("New Client…")
     private val dependenciesButton = JButton("Dependencies…")
     private val toggleDisabledButton = JButton("Toggle Disabled")
+    private val reindexProjectButton = JButton("Reindex Project")
+    private val reindexAllButton = JButton("Reindex All Projects")
 
     init {
         setupUI()
@@ -80,6 +85,7 @@ class ProjectSettingWindow(
         // Configure table
         projectTable.selectionModel.selectionMode = ListSelectionModel.SINGLE_SELECTION
         projectTable.setDefaultRenderer(Boolean::class.java, BooleanTableCellRenderer())
+        projectTable.autoResizeMode = JTable.AUTO_RESIZE_OFF
 
         // Main panel
         val mainPanel = JPanel(BorderLayout(10, 10))
@@ -100,11 +106,48 @@ class ProjectSettingWindow(
         buttonPanel.add(newClientButton)
         buttonPanel.add(dependenciesButton)
         buttonPanel.add(toggleDisabledButton)
+        buttonPanel.add(reindexProjectButton)
+        buttonPanel.add(reindexAllButton)
 
         mainPanel.add(tablePanel, BorderLayout.CENTER)
         mainPanel.add(buttonPanel, BorderLayout.SOUTH)
 
         add(mainPanel)
+
+        // Configure column widths after all components are added
+        configureTableColumnWidths()
+    }
+
+    /**
+     * Configure table column widths to prevent character corruption
+     */
+    private fun configureTableColumnWidths() {
+        val columnModel = projectTable.columnModel
+
+        // Set preferred widths for each column based on content type
+        // Column 0: ID - shorter since it's a hex string
+        columnModel.getColumn(0).preferredWidth = 120
+
+        // Column 1: Name - medium width for project names
+        columnModel.getColumn(1).preferredWidth = 180
+
+        // Column 2: Path - wider for file paths
+        columnModel.getColumn(2).preferredWidth = 250
+
+        // Column 3: Description - wide for descriptions
+        columnModel.getColumn(3).preferredWidth = 200
+
+        // Column 4: Client - medium width for client names
+        columnModel.getColumn(4).preferredWidth = 150
+
+        // Column 5: Disabled - narrow for boolean
+        columnModel.getColumn(5).preferredWidth = 80
+
+        // Column 6: Active - narrow for boolean
+        columnModel.getColumn(6).preferredWidth = 80
+
+        // Column 7: Is Current - narrow for boolean
+        columnModel.getColumn(7).preferredWidth = 80
     }
 
     /**
@@ -120,6 +163,8 @@ class ProjectSettingWindow(
         newClientButton.addActionListener { createNewClient() }
         dependenciesButton.addActionListener { editDependenciesForSelectedProject() }
         toggleDisabledButton.addActionListener { toggleDisabledForSelectedProject() }
+        reindexProjectButton.addActionListener { reindexSelectedProject() }
+        reindexAllButton.addActionListener { reindexAllProjects() }
 
         // Table selection listener
         projectTable.selectionModel.addListSelectionListener { updateButtonState() }
@@ -197,18 +242,29 @@ class ProjectSettingWindow(
 
         val result = dialog.result
         if (result != null) {
-            val (name, path, description, isDefault) = result
-
             val newProject =
                 ProjectDocument(
-                    name = name,
-                    paths = listOf(path),
-                    description = description,
+                    name = result.name,
+                    path = result.path,
+                    description = result.description,
+                    languages = result.languages,
+                    primaryUrl = result.primaryUrl.takeIf { it.isNotBlank() },
+                    extraUrls = result.extraUrls,
+                    credentialsRef = result.credentialsRef,
+                    defaultBranch = result.defaultBranch,
+                    inspirationOnly = result.inspirationOnly,
+                    indexingRules =
+                        com.jervis.domain.project.IndexingRules(
+                            includeGlobs = result.includeGlobs,
+                            excludeGlobs = result.excludeGlobs,
+                            maxFileSizeMB = result.maxFileSizeMB,
+                        ),
+                    isDisabled = result.isDisabled,
                     isActive = false,
                 )
 
             CoroutineScope(Dispatchers.Main).launch {
-                projectService.saveProject(newProject, isDefault)
+                projectService.saveProject(newProject, result.isDefault)
                 loadProjects()
             }
         }
@@ -227,27 +283,48 @@ class ProjectSettingWindow(
                     this,
                     "Edit Project",
                     project.name,
-                    project.paths.firstOrNull() ?: "",
+                    project.path,
                     project.description ?: "",
+                    project.primaryUrl ?: "",
+                    project.extraUrls.joinToString(", "),
+                    project.credentialsRef ?: "",
+                    project.languages.joinToString(", "),
+                    project.inspirationOnly,
+                    project.defaultBranch,
+                    project.indexingRules.includeGlobs.joinToString(", "),
+                    project.indexingRules.excludeGlobs.joinToString(", "),
+                    project.indexingRules.maxFileSizeMB,
+                    project.isDisabled,
                     project.isActive,
                 )
             dialog.isVisible = true
 
             val result = dialog.result
             if (result != null) {
-                val (name, path, description, isDefault) = result
-
                 // Create updated project
                 val updatedProject =
                     project.copy(
-                        name = name,
-                        paths = listOf(path),
-                        description = description,
+                        name = result.name,
+                        path = result.path,
+                        description = result.description,
+                        languages = result.languages,
+                        primaryUrl = result.primaryUrl.takeIf { it.isNotBlank() },
+                        extraUrls = result.extraUrls,
+                        credentialsRef = result.credentialsRef,
+                        defaultBranch = result.defaultBranch,
+                        inspirationOnly = result.inspirationOnly,
+                        indexingRules =
+                            com.jervis.domain.project.IndexingRules(
+                                includeGlobs = result.includeGlobs,
+                                excludeGlobs = result.excludeGlobs,
+                                maxFileSizeMB = result.maxFileSizeMB,
+                            ),
+                        isDisabled = result.isDisabled,
                     )
 
                 // Save project and optionally set as default
                 CoroutineScope(Dispatchers.Main).launch {
-                    projectService.saveProject(updatedProject, isDefault)
+                    projectService.saveProject(updatedProject, result.isDefault)
                     loadProjects()
                 }
             }
@@ -356,7 +433,7 @@ class ProjectSettingWindow(
                                     cellHasFocus,
                                 ) as JLabel
                             val c = value as? ClientDocument
-                            if (c != null) label.text = "${c.name} (${c.slug})"
+                            if (c != null) label.text = c.name
                             return label
                         }
                     }
@@ -484,7 +561,7 @@ class ProjectSettingWindow(
             }
             CoroutineScope(Dispatchers.Main).launch {
                 try {
-                    val client = ClientDocument(name = name, slug = slug)
+                    val client = ClientDocument(name = name)
                     clientService.create(client)
                     JOptionPane.showMessageDialog(dialog, "Client created.", "Success", JOptionPane.INFORMATION_MESSAGE)
                 } catch (e: Exception) {
@@ -526,8 +603,14 @@ class ProjectSettingWindow(
             selectable.forEach { listModel.addElement(it) }
             val list = javax.swing.JList(listModel)
             list.selectionMode = ListSelectionModel.MULTIPLE_INTERVAL_SELECTION
+
             list.cellRenderer =
                 object : DefaultListCellRenderer() {
+                    init {
+                        // Ensure renderer is opaque to prevent background from painting over text
+                        isOpaque = true
+                    }
+
                     override fun getListCellRendererComponent(
                         listComp: javax.swing.JList<*>?,
                         value: Any?,
@@ -544,7 +627,7 @@ class ProjectSettingWindow(
                                 cellHasFocus,
                             ) as JLabel
                         val p = value as? ProjectDocument
-                        if (p != null) label.text = "${p.name} (${p.slug})"
+                        if (p != null) label.text = p.name
                         return label
                     }
                 }
@@ -664,7 +747,7 @@ class ProjectSettingWindow(
             return when (columnIndex) {
                 0 -> project.id.toHexString() ?: ""
                 1 -> project.name
-                2 -> project.paths.firstOrNull() ?: ""
+                2 -> project.path
                 3 -> project.description ?: ""
                 4 -> project.clientId?.toHexString() ?: ""
                 5 -> project.isDisabled
@@ -697,6 +780,16 @@ class ProjectSettingWindow(
         initialName: String = "",
         initialPath: String = "",
         initialDescription: String = "",
+        initialPrimaryUrl: String = "",
+        initialExtraUrls: String = "",
+        initialCredentialsRef: String = "",
+        initialLanguages: String = "",
+        initialInspirationOnly: Boolean = false,
+        initialDefaultBranch: String = "main",
+        initialIncludeGlobs: String = "**/*.kt, **/*.java, **/*.md",
+        initialExcludeGlobs: String = "**/build/**, **/.git/**, **/*.min.*",
+        initialMaxFileSizeMB: Int = 5,
+        initialIsDisabled: Boolean = false,
         initialDefault: Boolean = false,
     ) : JDialog(owner, title, true) {
         private val nameField =
@@ -711,7 +804,7 @@ class ProjectSettingWindow(
             }
         private val browseButton = JButton("Browse…")
         private val descriptionArea =
-            JTextArea(initialDescription.ifEmpty { "Optional project description" }, 8, 50).apply {
+            JTextArea(initialDescription.ifEmpty { "Optional project description" }, 4, 50).apply {
                 // Add placeholder functionality
                 if (initialDescription.isEmpty()) {
                     foreground = java.awt.Color.GRAY
@@ -734,7 +827,64 @@ class ProjectSettingWindow(
                     )
                 }
             }
+        private val primaryUrlField =
+            JTextField(initialPrimaryUrl).apply {
+                preferredSize = Dimension(480, 30)
+                toolTipText = "Primary repository URL (Git, HTTP, or SSH)."
+            }
+        private val extraUrlsField =
+            JTextField(initialExtraUrls).apply {
+                preferredSize = Dimension(480, 30)
+                toolTipText = "Additional repository URLs (comma-separated)."
+            }
+        private val credentialsRefField =
+            JTextField(initialCredentialsRef).apply {
+                preferredSize = Dimension(480, 30)
+                toolTipText = "Reference to stored credentials for repository access."
+            }
+        private val languagesField =
+            JTextField(initialLanguages).apply {
+                preferredSize = Dimension(480, 30)
+                toolTipText = "Programming languages used in project (comma-separated)."
+            }
+        private val inspirationOnlyCheckbox =
+            JCheckBox("Inspiration only", initialInspirationOnly).apply {
+                toolTipText = "If checked, this project is used only for inspiration and not active development."
+            }
+        private val defaultBranchField =
+            JTextField(initialDefaultBranch).apply {
+                preferredSize = Dimension(480, 30)
+                toolTipText = "Default branch name for the repository."
+            }
+        private val includeGlobsField =
+            JTextField(initialIncludeGlobs).apply {
+                preferredSize = Dimension(480, 30)
+                toolTipText = "File patterns to include in indexing (comma-separated glob patterns)."
+            }
+        private val excludeGlobsField =
+            JTextField(initialExcludeGlobs).apply {
+                preferredSize = Dimension(480, 30)
+                toolTipText = "File patterns to exclude from indexing (comma-separated glob patterns)."
+            }
+        private val maxFileSizeMBField =
+            JTextField(initialMaxFileSizeMB.toString()).apply {
+                preferredSize = Dimension(480, 30)
+                toolTipText = "Maximum file size in MB to include in indexing."
+            }
+        private val isDisabledCheckbox =
+            JCheckBox("Project disabled", initialIsDisabled).apply {
+                toolTipText = "If checked, this project is globally disabled."
+            }
         private val defaultCheckbox = JCheckBox("Set as default project", initialDefault)
+
+        // Project Override Panels (nullable, can override client settings)
+        private val guidelinesPanel = ClientSettingsComponents.createGuidelinesPanel()
+        private val reviewPolicyPanel = ClientSettingsComponents.createReviewPolicyPanel()
+        private val formattingPanel = ClientSettingsComponents.createFormattingPanel()
+        private val secretsPolicyPanel = ClientSettingsComponents.createSecretsPolicyPanel()
+        private val anonymizationPanel = ClientSettingsComponents.createAnonymizationPanel()
+        private val inspirationPolicyPanel = ClientSettingsComponents.createInspirationPolicyPanel()
+        private val clientToolsPanel = ClientSettingsComponents.createClientToolsPanel()
 
         private val okButton = JButton("OK")
         private val cancelButton = JButton("Cancel")
@@ -743,8 +893,8 @@ class ProjectSettingWindow(
 
         init {
             // Basic dialog setup
-            preferredSize = Dimension(620, 480)
-            minimumSize = Dimension(600, 440)
+            preferredSize = Dimension(720, 650)
+            minimumSize = Dimension(700, 600)
             isResizable = true
             defaultCloseOperation = DISPOSE_ON_CLOSE
 
@@ -757,78 +907,38 @@ class ProjectSettingWindow(
             cancelButton.addActionListener { dispose() }
             browseButton.addActionListener { browsePath() }
 
-            // Build UI
+            // Build UI with tabs
             val panel = JPanel(BorderLayout())
             panel.border = EmptyBorder(16, 16, 16, 16)
 
-            // Form panel with GridBagLayout (2 columns + buttons)
-            val formPanel = JPanel(GridBagLayout())
-            val gbc = GridBagConstraints()
-            gbc.insets = Insets(8, 8, 8, 8)
+            val tabbedPane = javax.swing.JTabbedPane()
 
-            // Project name (required)
-            gbc.gridx = 0
-            gbc.gridy = 0
-            gbc.anchor = GridBagConstraints.LINE_END
-            gbc.fill = GridBagConstraints.NONE
-            formPanel.add(JLabel("Name:*"), gbc)
+            // Basic Information Tab
+            val basicPanel = createBasicInfoPanel()
+            tabbedPane.addTab("Basic Information", basicPanel)
 
-            gbc.gridx = 1
-            gbc.gridwidth = 2
-            gbc.anchor = GridBagConstraints.LINE_START
-            gbc.fill = GridBagConstraints.HORIZONTAL
-            gbc.weightx = 1.0
-            formPanel.add(nameField, gbc)
+            // Repository Tab
+            val repoPanel = createRepositoryPanel()
+            tabbedPane.addTab("Repository", repoPanel)
 
-            // Project path (required)
-            gbc.gridx = 0
-            gbc.gridy = 1
-            gbc.gridwidth = 1
-            gbc.anchor = GridBagConstraints.LINE_END
-            gbc.fill = GridBagConstraints.NONE
-            gbc.weightx = 0.0
-            formPanel.add(JLabel("Local project folder:*"), gbc)
+            // Indexing Tab
+            val indexingPanel = createIndexingPanel()
+            tabbedPane.addTab("Indexing", indexingPanel)
 
-            gbc.gridx = 1
-            gbc.anchor = GridBagConstraints.LINE_START
-            gbc.fill = GridBagConstraints.HORIZONTAL
-            gbc.weightx = 1.0
-            formPanel.add(pathField, gbc)
+            // Advanced Tab
+            val advancedPanel = createAdvancedPanel()
+            tabbedPane.addTab("Advanced", advancedPanel)
 
-            gbc.gridx = 2
-            gbc.fill = GridBagConstraints.NONE
-            gbc.weightx = 0.0
-            formPanel.add(browseButton, gbc)
-
-            // Project description (optional)
-            gbc.gridx = 0
-            gbc.gridy = 2
-            gbc.anchor = GridBagConstraints.LINE_END
-            gbc.fill = GridBagConstraints.NONE
-            formPanel.add(JLabel("Description:"), gbc)
-
-            gbc.gridx = 1
-            gbc.gridwidth = 2
-            gbc.anchor = GridBagConstraints.LINE_START
-            gbc.fill = GridBagConstraints.BOTH
-            gbc.weightx = 1.0
-            gbc.weighty = 1.0
-            formPanel.add(JScrollPane(descriptionArea), gbc)
-
-            // Default project checkbox
-            gbc.gridx = 1
-            gbc.gridy = 3
-            gbc.gridwidth = 2
-            gbc.weighty = 0.0
-            gbc.fill = GridBagConstraints.HORIZONTAL
-            formPanel.add(defaultCheckbox, gbc)
+            // Project Overrides Tab
+            val overridesPanel = createProjectOverridesPanel()
+            tabbedPane.addTab("Project Overrides", overridesPanel)
 
             // Button panel
             val buttonPanel = JPanel(FlowLayout(FlowLayout.RIGHT))
             buttonPanel.add(okButton)
             buttonPanel.add(cancelButton)
 
-            panel.add(formPanel, BorderLayout.CENTER)
+            panel.add(tabbedPane, BorderLayout.CENTER)
             panel.add(buttonPanel, BorderLayout.SOUTH)
 
             add(panel)
@@ -855,13 +965,352 @@ class ProjectSettingWindow(
             isFocusable = true
         }
 
+        private fun createBasicInfoPanel(): JPanel {
+            val panel = JPanel(GridBagLayout())
+            val gbc = GridBagConstraints()
+            gbc.insets = Insets(8, 8, 8, 8)
+
+            var row = 0
+
+            // Project name (required)
+            gbc.gridx = 0
+            gbc.gridy = row
+            gbc.anchor = GridBagConstraints.LINE_END
+            gbc.fill =
+                GridBagConstraints.NONE
+            gbc.weightx = 0.0
+            panel.add(JLabel("Name:*"), gbc)
+            gbc.gridx = 1
+            gbc.gridwidth = 2
+            gbc.anchor = GridBagConstraints.LINE_START
+            gbc.fill =
+                GridBagConstraints.HORIZONTAL
+            gbc.weightx = 1.0
+            panel.add(nameField, gbc)
+            row++
+
+            // Project path (required)
+            gbc.gridx = 0
+            gbc.gridy = row
+            gbc.gridwidth = 1
+            gbc.anchor = GridBagConstraints.LINE_END
+            gbc.fill =
+                GridBagConstraints.NONE
+            gbc.weightx = 0.0
+            panel.add(JLabel("Local project folder:*"), gbc)
+            gbc.gridx = 1
+            gbc.anchor = GridBagConstraints.LINE_START
+            gbc.fill =
+                GridBagConstraints.HORIZONTAL
+            gbc.weightx = 1.0
+            panel.add(pathField, gbc)
+            gbc.gridx = 2
+            gbc.fill = GridBagConstraints.NONE
+            gbc.weightx = 0.0
+            panel.add(browseButton, gbc)
+            row++
+
+            // Project description (optional)
+            gbc.gridx = 0
+            gbc.gridy = row
+            gbc.anchor = GridBagConstraints.LINE_END
+            gbc.fill = GridBagConstraints.NONE
+            panel.add(JLabel("Description:"), gbc)
+            gbc.gridx = 1
+            gbc.gridwidth = 2
+            gbc.anchor = GridBagConstraints.LINE_START
+            gbc.fill =
+                GridBagConstraints.BOTH
+            gbc.weightx = 1.0
+            gbc.weighty = 1.0
+            panel.add(JScrollPane(descriptionArea), gbc)
+            row++
+
+            // Languages
+            gbc.gridx = 0
+            gbc.gridy = row
+            gbc.gridwidth = 1
+            gbc.anchor = GridBagConstraints.LINE_END
+            gbc.fill =
+                GridBagConstraints.NONE
+            gbc.weightx = 0.0
+            gbc.weighty = 0.0
+            panel.add(JLabel("Languages:"), gbc)
+            gbc.gridx = 1
+            gbc.gridwidth = 2
+            gbc.anchor = GridBagConstraints.LINE_START
+            gbc.fill =
+                GridBagConstraints.HORIZONTAL
+            gbc.weightx = 1.0
+            panel.add(languagesField, gbc)
+            row++
+
+            // Checkboxes
+            gbc.gridx = 1
+            gbc.gridy = row
+            gbc.gridwidth = 2
+            gbc.fill = GridBagConstraints.HORIZONTAL
+            panel.add(defaultCheckbox, gbc)
+
+            return panel
+        }
+
+        private fun createRepositoryPanel(): JPanel {
+            val panel = JPanel(GridBagLayout())
+            val gbc = GridBagConstraints()
+            gbc.insets = Insets(8, 8, 8, 8)
+
+            var row = 0
+
+            // Primary URL (optional)
+            gbc.gridx = 0
+            gbc.gridy = row
+            gbc.anchor = GridBagConstraints.LINE_END
+            gbc.fill =
+                GridBagConstraints.NONE
+            gbc.weightx = 0.0
+            panel.add(JLabel("Primary URL:"), gbc)
+            gbc.gridx = 1
+            gbc.anchor = GridBagConstraints.LINE_START
+            gbc.fill =
+                GridBagConstraints.HORIZONTAL
+            gbc.weightx = 1.0
+            panel.add(primaryUrlField, gbc)
+            row++
+
+            // Extra URLs
+            gbc.gridx = 0
+            gbc.gridy = row
+            gbc.anchor = GridBagConstraints.LINE_END
+            gbc.fill =
+                GridBagConstraints.NONE
+            gbc.weightx = 0.0
+            panel.add(JLabel("Extra URLs:"), gbc)
+            gbc.gridx = 1
+            gbc.anchor = GridBagConstraints.LINE_START
+            gbc.fill =
+                GridBagConstraints.HORIZONTAL
+            gbc.weightx = 1.0
+            panel.add(extraUrlsField, gbc)
+            row++
+
+            // Credentials Reference
+            gbc.gridx = 0
+            gbc.gridy = row
+            gbc.anchor = GridBagConstraints.LINE_END
+            gbc.fill =
+                GridBagConstraints.NONE
+            gbc.weightx = 0.0
+            panel.add(JLabel("Credentials Ref:"), gbc)
+            gbc.gridx = 1
+            gbc.anchor = GridBagConstraints.LINE_START
+            gbc.fill =
+                GridBagConstraints.HORIZONTAL
+            gbc.weightx = 1.0
+            panel.add(credentialsRefField, gbc)
+            row++
+
+            // Default Branch
+            gbc.gridx = 0
+            gbc.gridy = row
+            gbc.anchor = GridBagConstraints.LINE_END
+            gbc.fill =
+                GridBagConstraints.NONE
+            gbc.weightx = 0.0
+            panel.add(JLabel("Default Branch:"), gbc)
+            gbc.gridx = 1
+            gbc.anchor = GridBagConstraints.LINE_START
+            gbc.fill =
+                GridBagConstraints.HORIZONTAL
+            gbc.weightx = 1.0
+            panel.add(defaultBranchField, gbc)
+            row++
+
+            // Add spacer to push content to top
+            gbc.gridx = 0
+            gbc.gridy = row
+            gbc.gridwidth = 2
+            gbc.weighty = 1.0
+            panel.add(JPanel(), gbc)
+
+            return panel
+        }
+
+        private fun createIndexingPanel(): JPanel {
+            val panel = JPanel(GridBagLayout())
+            val gbc = GridBagConstraints()
+            gbc.insets = Insets(8, 8, 8, 8)
+
+            var row = 0
+
+            // Include Globs
+            gbc.gridx = 0
+            gbc.gridy = row
+            gbc.anchor = GridBagConstraints.LINE_END
+            gbc.fill =
+                GridBagConstraints.NONE
+            gbc.weightx = 0.0
+            panel.add(JLabel("Include Patterns:"), gbc)
+            gbc.gridx = 1
+            gbc.anchor = GridBagConstraints.LINE_START
+            gbc.fill =
+                GridBagConstraints.HORIZONTAL
+            gbc.weightx = 1.0
+            panel.add(includeGlobsField, gbc)
+            row++
+
+            // Exclude Globs
+            gbc.gridx = 0
+            gbc.gridy = row
+            gbc.anchor = GridBagConstraints.LINE_END
+            gbc.fill =
+                GridBagConstraints.NONE
+            gbc.weightx = 0.0
+            panel.add(JLabel("Exclude Patterns:"), gbc)
+            gbc.gridx = 1
+            gbc.anchor = GridBagConstraints.LINE_START
+            gbc.fill =
+                GridBagConstraints.HORIZONTAL
+            gbc.weightx = 1.0
+            panel.add(excludeGlobsField, gbc)
+            row++
+
+            // Max File Size
+            gbc.gridx = 0
+            gbc.gridy = row
+            gbc.anchor = GridBagConstraints.LINE_END
+            gbc.fill =
+                GridBagConstraints.NONE
+            gbc.weightx = 0.0
+            panel.add(JLabel("Max File Size (MB):"), gbc)
+            gbc.gridx = 1
+            gbc.anchor = GridBagConstraints.LINE_START
+            gbc.fill =
+                GridBagConstraints.HORIZONTAL
+            gbc.weightx = 1.0
+            panel.add(maxFileSizeMBField, gbc)
+            row++
+
+            // Add spacer to push content to top
+            gbc.gridx = 0
+            gbc.gridy = row
+            gbc.gridwidth = 2
+            gbc.weighty = 1.0
+            panel.add(JPanel(), gbc)
+
+            return panel
+        }
+
+        private fun createAdvancedPanel(): JPanel {
+            val panel = JPanel(GridBagLayout())
+            val gbc = GridBagConstraints()
+            gbc.insets = Insets(8, 8, 8, 8)
+
+            var row = 0
+
+            // Checkboxes
+            gbc.gridx = 0
+            gbc.gridy = row
+            gbc.gridwidth = 2
+            gbc.anchor = GridBagConstraints.LINE_START
+            gbc.fill =
+                GridBagConstraints.NONE
+            panel.add(inspirationOnlyCheckbox, gbc)
+            row++
+
+            gbc.gridx = 0
+            gbc.gridy = row
+            gbc.gridwidth = 2
+            gbc.anchor = GridBagConstraints.LINE_START
+            gbc.fill =
+                GridBagConstraints.NONE
+            panel.add(isDisabledCheckbox, gbc)
+            row++
+
+            // Add spacer to push content to top
+            gbc.gridx = 0
+            gbc.gridy = row
+            gbc.gridwidth = 2
+            gbc.weighty = 1.0
+            panel.add(JPanel(), gbc)
+
+            return panel
+        }
+
+        private fun createProjectOverridesPanel(): JPanel {
+            val panel = JPanel(BorderLayout())
+
+            val tabbedPane = javax.swing.JTabbedPane()
+
+            // Guidelines Override Tab
+            tabbedPane.addTab("Guidelines", JScrollPane(guidelinesPanel))
+
+            // Review Policy Override Tab
+            tabbedPane.addTab("Review Policy", JScrollPane(reviewPolicyPanel))
+
+            // Formatting Override Tab
+            tabbedPane.addTab("Formatting", JScrollPane(formattingPanel))
+
+            // Secrets Policy Override Tab
+            tabbedPane.addTab("Secrets Policy", JScrollPane(secretsPolicyPanel))
+
+            // Anonymization Override Tab
+            tabbedPane.addTab("Anonymization", JScrollPane(anonymizationPanel))
+
+            // Inspiration Policy Override Tab
+            tabbedPane.addTab("Inspiration Policy", JScrollPane(inspirationPolicyPanel))
+
+            // Client Tools Override Tab
+            tabbedPane.addTab("Client Tools", JScrollPane(clientToolsPanel))
+
+            panel.add(tabbedPane, BorderLayout.CENTER)
+
+            return panel
+        }
+
         private fun saveAndClose() {
             val name = nameField.text.trim()
             val path = pathField.text.trim()
             val description =
                 if (descriptionArea.text.trim() == "Optional project description") "" else descriptionArea.text.trim()
+            val primaryUrl = primaryUrlField.text.trim()
+            val extraUrls =
+                extraUrlsField.text
+                    .trim()
+                    .split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+            val credentialsRef = credentialsRefField.text.trim().ifEmpty { null }
+            val languages =
+                languagesField.text
+                    .trim()
+                    .split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+            val inspirationOnly = inspirationOnlyCheckbox.isSelected
+            val defaultBranch = defaultBranchField.text.trim()
+            val includeGlobs =
+                includeGlobsField.text
+                    .trim()
+                    .split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+            val excludeGlobs =
+                excludeGlobsField.text
+                    .trim()
+                    .split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+            val maxFileSizeMB =
+                try {
+                    maxFileSizeMBField.text.trim().toInt()
+                } catch (e: NumberFormatException) {
+                    5 // default value
+                }
+            val isDisabled = isDisabledCheckbox.isSelected
             val isDefault = defaultCheckbox.isSelected
 
+            // Validate required fields
             if (name.isBlank()) {
                 JOptionPane.showMessageDialog(this, "Project name cannot be empty.", "Error", JOptionPane.ERROR_MESSAGE)
                 return
@@ -883,7 +1332,46 @@ class ProjectSettingWindow(
                 return
             }
 
-            result = ProjectResult(name, path, description, isDefault)
+            if (maxFileSizeMB <= 0) {
+                JOptionPane.showMessageDialog(
+                    this,
+                    "Max file size must be a positive number.",
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE,
+                )
+                return
+            }
+
+            // Collect override data from panels
+            val overrides =
+                com.jervis.domain.project.ProjectOverrides(
+                    codingGuidelines = guidelinesPanel.getGuidelines(),
+                    reviewPolicy = reviewPolicyPanel.getReviewPolicy(),
+                    formatting = formattingPanel.getFormatting(),
+                    secretsPolicy = secretsPolicyPanel.getSecretsPolicy(),
+                    anonymization = anonymizationPanel.getAnonymization(),
+                    inspirationPolicy = inspirationPolicyPanel.getInspirationPolicy(),
+                    tools = clientToolsPanel.getClientTools(),
+                )
+
+            result =
+                ProjectResult(
+                    name,
+                    path,
+                    description,
+                    primaryUrl,
+                    extraUrls,
+                    credentialsRef,
+                    languages,
+                    inspirationOnly,
+                    defaultBranch,
+                    includeGlobs,
+                    excludeGlobs,
+                    maxFileSizeMB,
+                    isDisabled,
+                    isDefault,
+                    overrides,
+                )
             dispose()
         }
 
@@ -914,13 +1402,29 @@ class ProjectSettingWindow(
         val name: String,
         val path: String,
         val description: String,
+        val primaryUrl: String,
+        val extraUrls: List<String>,
+        val credentialsRef: String?,
+        val languages: List<String>,
+        val inspirationOnly: Boolean,
+        val defaultBranch: String,
+        val includeGlobs: List<String>,
+        val excludeGlobs: List<String>,
+        val maxFileSizeMB: Int,
+        val isDisabled: Boolean,
         val isDefault: Boolean,
+        val overrides: com.jervis.domain.project.ProjectOverrides,
     )
 
     /**
      * Custom cell renderer for boolean values
      */
     private class BooleanTableCellRenderer : DefaultTableCellRenderer() {
+        init {
+            // Ensure renderer is opaque to prevent grid lines from painting over text
+            isOpaque = true
+        }
+
         override fun setValue(value: Any?) {
             text =
                 when (value as? Boolean) {
@@ -929,6 +1433,115 @@ class ProjectSettingWindow(
                     else -> ""
                 }
             horizontalAlignment = CENTER
+        }
+    }
+
+    /**
+     * Reindex the selected project
+     */
+    private fun reindexSelectedProject() {
+        val selectedRow = projectTable.selectedRow
+        if (selectedRow == -1) {
+            JOptionPane.showMessageDialog(
+                this,
+                "Please select a project to reindex.",
+                "No Selection",
+                JOptionPane.WARNING_MESSAGE,
+            )
+            return
+        }
+
+        val project = projectTableModel.getProjectAt(selectedRow)
+        val confirm =
+            JOptionPane.showConfirmDialog(
+                this,
+                "Do you want to reindex project '${project.name}'?\nThis operation may take several minutes.",
+                "Confirm Reindexing",
+                JOptionPane.YES_NO_OPTION,
+            )
+
+        if (confirm != JOptionPane.YES_OPTION) return
+
+        // Disable the button to prevent multiple clicks
+        reindexProjectButton.isEnabled = false
+        reindexProjectButton.text = "Reindexing..."
+
+        CoroutineScope(Dispatchers.Main).launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    indexingService.indexProject(project)
+                }
+
+                JOptionPane.showMessageDialog(
+                    this@ProjectSettingWindow,
+                    "Project '${project.name}' has been successfully reindexed.",
+                    "Reindexing Complete",
+                    JOptionPane.INFORMATION_MESSAGE,
+                )
+            } catch (e: Exception) {
+                JOptionPane.showMessageDialog(
+                    this@ProjectSettingWindow,
+                    "Error during reindexing: ${e.message}",
+                    "Reindexing Error",
+                    JOptionPane.ERROR_MESSAGE,
+                )
+            } finally {
+                // Re-enable the button
+                reindexProjectButton.isEnabled = true
+                reindexProjectButton.text = "Reindex Project"
+            }
+        }
+    }
+
+    /**
+     * Reindex all projects in the system
+     */
+    private fun reindexAllProjects() {
+        val confirm =
+            JOptionPane.showConfirmDialog(
+                this,
+                "Do you want to reindex ALL projects in the system?\nThis operation may take a very long time and will process all projects.",
+                "Confirm Full System Reindexing",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE,
+            )
+
+        if (confirm != JOptionPane.YES_OPTION) return
+
+        // Disable both buttons to prevent multiple operations
+        reindexProjectButton.isEnabled = false
+        reindexAllButton.isEnabled = false
+        reindexAllButton.text = "Reindexing All..."
+
+        CoroutineScope(Dispatchers.Main).launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    val allProjects = projectService.getAllProjects()
+                    indexingService.indexAllProjects(allProjects)
+                }
+
+                JOptionPane.showMessageDialog(
+                    this@ProjectSettingWindow,
+                    "All projects have been successfully reindexed.\nThe system will now reload project data.",
+                    "Full Reindexing Complete",
+                    JOptionPane.INFORMATION_MESSAGE,
+                )
+
+                // Reload projects to reflect any changes
+                loadProjectsWithCoroutine()
+            } catch (e: Exception) {
+                JOptionPane.showMessageDialog(
+                    this@ProjectSettingWindow,
+                    "Error during full system reindexing: ${e.message}",
+                    "Reindexing Error",
+                    JOptionPane.ERROR_MESSAGE,
+                )
+            } finally {
+                // Re-enable both buttons
+                reindexProjectButton.isEnabled = true
+                reindexAllButton.isEnabled = true
+                reindexAllButton.text = "Reindex All Projects"
+            }
         }
     }
 }

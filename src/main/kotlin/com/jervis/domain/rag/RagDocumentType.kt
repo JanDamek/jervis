@@ -16,4 +16,5 @@ enum class RagDocumentType {
     ACTION,
     DECISION,
     PLAN,
+    JOERN_ANALYSIS,
 }

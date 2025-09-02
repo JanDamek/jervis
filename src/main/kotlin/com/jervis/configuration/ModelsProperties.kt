@@ -24,5 +24,7 @@ class ModelsProperties {
         var backoffSeconds: Long? = null,
         /** When true, this model is considered a quick (fast) candidate for prompt routing. */
         var quick: Boolean = false,
+        /** Dimension of vectors produced by this model (required for embedding models). */
+        var dimension: Int? = null,
     )
 }

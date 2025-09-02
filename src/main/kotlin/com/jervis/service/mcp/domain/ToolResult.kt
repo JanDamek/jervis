@@ -1,7 +1,5 @@
 package com.jervis.service.mcp.domain
 
-import com.jervis.entity.mongo.PlanStep
-
 sealed interface ToolResult {
     val output: String
 
@@ -18,9 +16,9 @@ sealed interface ToolResult {
         override val output: String,
     ) : ToolResult
 
-    data class Deferred(
+    data class Stop(
         override val output: String,
-        val requiredStep: PlanStep,
+        val reason: String,
     ) : ToolResult
 
     fun render(): String =
@@ -28,7 +26,7 @@ sealed interface ToolResult {
             is Ok -> "OK: ${this.output}"
             is Error -> "ERROR: ${this.errorMessage ?: "Unknown"}"
             is Ask -> "ASK: ${this.output}"
-            is Deferred -> "DEFER: ${this.output} (inject '${this.requiredStep.name}')"
+            is Stop -> "STOP: ${this.reason}"
         }
 
     companion object {
@@ -41,9 +39,9 @@ sealed interface ToolResult {
 
         fun ask(output: String): ToolResult = Ask(output)
 
-        fun defer(
+        fun stop(
             output: String,
-            requiredStep: PlanStep,
-        ): ToolResult = Deferred(output, requiredStep)
+            reason: String,
+        ): ToolResult = Stop(output, reason)
     }
 }

@@ -1,5 +1,8 @@
 package com.jervis.repository.vector
 
+import com.jervis.configuration.ModelsProperties
+import com.jervis.configuration.QdrantProperties
+import com.jervis.configuration.TimeoutsProperties
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagDocumentType
@@ -17,7 +20,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import mu.KotlinLogging
 import org.bson.types.ObjectId
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Repository
 import java.time.Duration
 import java.util.UUID
@@ -31,8 +33,9 @@ import java.util.concurrent.atomic.AtomicReference
  */
 @Repository
 class VectorStorageRepository(
-    @Value("\${qdrant.host:localhost}") private val qdrantHost: String,
-    @Value("\${qdrant.port:6334}") private val qdrantPort: Int,
+    private val qdrantProperties: QdrantProperties,
+    private val modelsProperties: ModelsProperties,
+    private val timeoutsProperties: TimeoutsProperties,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -40,14 +43,94 @@ class VectorStorageRepository(
     private val isConnected = AtomicBoolean(false)
     private val qdrantClientRef = AtomicReference<QdrantClient?>(null)
 
-    companion object {
-        const val SEMANTIC_TEXT_COLLECTION = "semantic_text"
-        const val SEMANTIC_CODE_COLLECTION = "semantic_code"
-        const val VECTOR_SIZE = 768
+    // Collections cache to avoid recreating them during runtime
+    // Using @Volatile HashMap since writes only happen at startup and rest are read-only
+    @Volatile
+    private var collectionsCache = HashMap<ModelType, String>()
+
+    /**
+     * Get dimension for specific embedding model type from configuration
+     */
+    private fun getDimensionForModelType(modelType: ModelType): Int {
+        val modelList = modelsProperties.models[modelType] ?: emptyList()
+        val firstModel =
+            modelList.firstOrNull()
+                ?: throw IllegalArgumentException("No models configured for type: $modelType")
+
+        return firstModel.dimension
+            ?: throw IllegalArgumentException("No dimension configured for model type: $modelType")
+    }
+
+    /**
+     * Generate collection name using only embedding type and dimension
+     * Format: {embedding_type}_{dimension}
+     */
+    private fun getCollectionNameForModelType(modelType: ModelType): String {
+        val dimension = getDimensionForModelType(modelType)
+
+        val typePrefix =
+            when (modelType) {
+                ModelType.EMBEDDING_TEXT -> "text"
+                ModelType.EMBEDDING_CODE -> "code"
+                else -> throw IllegalArgumentException("Unsupported collection type: $modelType")
+            }
+
+        return "${typePrefix}_$dimension"
+    }
+
+    /**
+     * Get collection name from cache, fallback to generation if not cached
+     */
+    private fun getCachedCollectionName(modelType: ModelType): String =
+        collectionsCache[modelType] ?: run {
+            logger.warn { "Collection not found in cache for $modelType, generating dynamically" }
+            getCollectionNameForModelType(modelType)
+        }
+
+    /**
+     * Validate that all embedding models of the same type have consistent dimensions
+     * This prevents dimension mismatch errors when the same model might have different contexts on different machines
+     */
+    private fun validateEmbeddingDimensionsConsistency() {
+        try {
+            val embeddingTypes = listOf(ModelType.EMBEDDING_TEXT, ModelType.EMBEDDING_CODE)
+
+            for (embeddingType in embeddingTypes) {
+                val modelList = modelsProperties.models[embeddingType] ?: emptyList()
+                if (modelList.isEmpty()) continue
+
+                val dimensions = modelList.mapNotNull { it.dimension }.distinct()
+                val modelNames = modelList.map { it.model }.distinct()
+
+                when {
+                    dimensions.isEmpty() -> {
+                        logger.warn { "No dimensions configured for $embeddingType models: $modelNames" }
+                    }
+
+                    dimensions.size > 1 -> {
+                        logger.error {
+                            "DIMENSION MISMATCH for $embeddingType: Found dimensions $dimensions for models $modelNames. All models of the same type must have the same dimension!"
+                        }
+                        throw IllegalStateException("Dimension mismatch for $embeddingType: $dimensions")
+                    }
+
+                    else -> {
+                        val dimension = dimensions.first()
+                        logger.info { "Dimension validation OK for $embeddingType: dimension=$dimension, models=$modelNames" }
+                    }
+                }
+            }
+
+            logger.info { "Embedding dimensions validation completed successfully" }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to validate embedding dimensions: ${e.message}" }
+            throw e
+        }
     }
 
     init {
         logger.info { "Starting Qdrant client initialization (non-blocking)" }
+        validateEmbeddingDimensionsConsistency()
         CoroutineScope(Dispatchers.IO).launch {
             attemptConnection()
         }
@@ -72,12 +155,12 @@ class VectorStorageRepository(
      * Create a new Qdrant client
      */
     private suspend fun createQdrantClient(): QdrantClient {
-        logger.debug { "Creating Qdrant client at $qdrantHost:$qdrantPort" }
+        logger.debug { "Creating Qdrant client at ${qdrantProperties.host}:${qdrantProperties.port}" }
         val client =
             QdrantClient(
                 QdrantGrpcClient
-                    .newBuilder(qdrantHost, qdrantPort, false, true)
-                    .withTimeout(Duration.ofSeconds(15))
+                    .newBuilder(qdrantProperties.host, qdrantProperties.port, false, true)
+                    .withTimeout(Duration.ofMinutes(timeoutsProperties.qdrant.operationTimeoutMinutes))
                     .build(),
             )
         // Test the connection
@@ -86,14 +169,25 @@ class VectorStorageRepository(
     }
 
     /**
-     * Initialize both TEXT and CODE collections once connected
+     * Initialize both TEXT and CODE collections once connected and populate cache
      */
     private suspend fun initializeCollections() {
         try {
-            createCollectionIfNotExists(SEMANTIC_CODE_COLLECTION, VECTOR_SIZE)
-            createCollectionIfNotExists(SEMANTIC_TEXT_COLLECTION, VECTOR_SIZE)
+            val codeCollectionName = getCollectionNameForModelType(ModelType.EMBEDDING_CODE)
+            val textCollectionName = getCollectionNameForModelType(ModelType.EMBEDDING_TEXT)
+            val codeDimension = getDimensionForModelType(ModelType.EMBEDDING_CODE)
+            val textDimension = getDimensionForModelType(ModelType.EMBEDDING_TEXT)
 
-            logger.info { "Collections initialized: text=$SEMANTIC_TEXT_COLLECTION, code=$SEMANTIC_CODE_COLLECTION (dim=$VECTOR_SIZE)" }
+            createCollectionIfNotExists(codeCollectionName, codeDimension)
+            createCollectionIfNotExists(textCollectionName, textDimension)
+
+            // Cache the collection names to avoid recreation during runtime
+            collectionsCache[ModelType.EMBEDDING_CODE] = codeCollectionName
+            collectionsCache[ModelType.EMBEDDING_TEXT] = textCollectionName
+
+            logger.info {
+                "Collections initialized and cached: text=$textCollectionName (dim=$textDimension), code=$codeCollectionName (dim=$codeDimension)"
+            }
         } catch (e: Exception) {
             logger.error(e) { "Failed to initialize collections: ${e.message}" }
         }
@@ -204,12 +298,7 @@ class VectorStorageRepository(
         ragDocument: RagDocument,
         embedding: List<Float>,
     ): String {
-        val collection =
-            when (collectionType) {
-                ModelType.EMBEDDING_TEXT -> SEMANTIC_TEXT_COLLECTION
-                ModelType.EMBEDDING_CODE -> SEMANTIC_CODE_COLLECTION
-                else -> throw IllegalArgumentException("Unsupported collection type: $collectionType")
-            }
+        val collection = getCachedCollectionName(collectionType)
         val pointId = UUID.randomUUID().toString()
 
         val vectors =
@@ -222,6 +311,12 @@ class VectorStorageRepository(
                         .build(),
                 ).build()
 
+        val payload = ragDocument.convertRagDocumentToPayload()
+
+        // Debug logging for vector store payload
+        logger.debug { "Vector Store Payload - collection=$collection, pointId=$pointId, payload=$payload" }
+        logger.debug { "Vector Store Payload - embedding size=${embedding.size}, ragDocument=$ragDocument" }
+
         val point =
             Points.PointStruct
                 .newBuilder()
@@ -231,7 +326,7 @@ class VectorStorageRepository(
                         .setUuid(pointId)
                         .build(),
                 ).setVectors(vectors)
-                .putAllPayload(ragDocument.convertRagDocumentToPayload())
+                .putAllPayload(payload)
                 .build()
 
         val ok =
@@ -252,17 +347,16 @@ class VectorStorageRepository(
         limit: Int = 5,
         filter: Map<String, Any>? = null,
     ): List<RagDocument> {
-        val collection =
-            when (collectionType) {
-                ModelType.EMBEDDING_TEXT -> SEMANTIC_TEXT_COLLECTION
-                ModelType.EMBEDDING_CODE -> SEMANTIC_CODE_COLLECTION
-                else -> throw IllegalArgumentException("Unsupported collection type: $collectionType")
-            }
-
-        val effectiveQuery = if (query.isEmpty()) List(VECTOR_SIZE) { 0.0f } else query
+        val collection = getCachedCollectionName(collectionType)
+        val dimension = getDimensionForModelType(collectionType)
+        val effectiveQuery = if (query.isEmpty()) List(dimension) { 0.0f } else query
 
         val qdrantFilter =
             if (filter != null && filter.isNotEmpty()) createQdrantFilter(filter) else null
+
+        // Debug logging for vector store search payload
+        logger.debug { "Vector Store Search - collection=$collection, limit=$limit, query size=${effectiveQuery.size}" }
+        logger.debug { "Vector Store Search - filter=$filter, qdrantFilter=$qdrantFilter" }
 
         val searchBuilder =
             Points.SearchPoints
@@ -279,6 +373,8 @@ class VectorStorageRepository(
                     if (qdrantFilter != null) b.filter = qdrantFilter
                 }.build()
 
+        logger.debug { "Vector Store Search - complete searchBuilder payload: $searchBuilder" }
+
         val results =
             executeQdrantOperation("Search in $collection") { client ->
                 client.searchAsync(searchBuilder).get()
@@ -287,10 +383,10 @@ class VectorStorageRepository(
         val out = mutableListOf<RagDocument>()
         for (point in results) {
             val payload = point.payloadMap.toMap()
-            val pageContent = payload["page_content"]?.stringValue ?: ""
+            val pageContent = payload["pageContent"]?.stringValue ?: ""
             val meta = mutableMapOf<String, Any>()
             for ((key, v) in payload) {
-                if (key != "page_content") {
+                if (key != "pageContent") {
                     when {
                         v.hasStringValue() -> meta[key] = v.stringValue
                         v.hasIntegerValue() -> meta[key] = v.integerValue
@@ -311,6 +407,7 @@ class VectorStorageRepository(
                     "dependency" -> RagDocumentType.DEPENDENCY
                     "todo" -> RagDocumentType.UNKNOWN
                     "class_summary" -> RagDocumentType.CLASS_SUMMARY
+                    "JOERN_ANALYSIS" -> RagDocumentType.JOERN_ANALYSIS
                     else -> RagDocumentType.CODE
                 }
 

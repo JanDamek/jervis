@@ -1,6 +1,7 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.entity.mongo.TaskContextDocument
+import com.jervis.domain.context.TaskContext
+import com.jervis.domain.plan.Plan
 import com.jervis.service.client.ClientService
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
@@ -13,35 +14,18 @@ class ScopeResolutionTool(
     private val projectService: ProjectService,
 ) : McpTool {
     override val name: String = "scope.resolve"
-    override val description: String = "Resolve client/project scope using hints from the task context."
+    override val description: String =
+        "Resolves and validates client/project scope from task context. Use to establish working context and verify client-project relationships before performing scoped operations."
 
     override suspend fun execute(
-        context: TaskContextDocument,
-        parameters: String,
+        context: TaskContext,
+        plan: Plan,
+        taskDescription: String,
     ): ToolResult {
-        val clients = clientService.list()
-        val projects = projectService.getAllProjects()
-
-        val clientHint = context.clientName
-        val projectHint = context.projectName
-
-        val matchedClient = clientHint?.let { name -> clients.firstOrNull { it.name.equals(name, ignoreCase = true) } }
-        val matchedProject =
-            projectHint?.let { name -> projects.firstOrNull { it.name.equals(name, ignoreCase = true) } }
-
-        val warnings = mutableListOf<String>()
-        if (projectHint?.isNotBlank() == true && matchedProject == null) {
-            warnings += "Warning: project '$projectHint' not found"
-        }
-        if (matchedClient != null && matchedProject != null && matchedProject.clientId != matchedClient.id) {
-            warnings += "Warning: project '${matchedProject.name}' does not belong to client '${matchedClient.name}'"
-        }
-
-        val client = matchedClient?.name ?: clientHint ?: "unknown"
-        val project = matchedProject?.name ?: projectHint ?: "unknown"
-        val warningsSuffix = if (warnings.isEmpty()) "" else "; warnings=" + warnings.joinToString(" | ")
+        val client = context.clientDocument
+        val project = context.projectDocument
         val summary =
-            "client=$client; project=$project$warningsSuffix; client_description=${matchedClient?.description}; project_description=${matchedProject?.description}"
+            "client=$client; project=$project; client_description=${client.description}; project_description=${project.description}"
         return ToolResult.ok(summary)
     }
 }

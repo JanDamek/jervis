@@ -1,14 +1,19 @@
 package com.jervis.service.agent.finalizer
 
+import com.jervis.domain.context.TaskContext
 import com.jervis.domain.model.ModelType
+import com.jervis.domain.plan.PlanStatus
 import com.jervis.dto.ChatResponse
-import com.jervis.entity.mongo.TaskContextDocument
 import com.jervis.service.gateway.LlmGateway
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
+import java.time.Instant
 
 /**
  * Finalizer produces the final user-facing response based on the task context.
+ * It goes through all context plans that are COMPLETED or FAILED and finalizes them
+ * with an LLM call. The LLM result is stored in the plan as a finalAnswer and
+ * the plan is marked as FINALIZED. The response aggregates summaries of all processed plans.
  */
 @Service
 class Finalizer(
@@ -16,62 +21,91 @@ class Finalizer(
 ) {
     private val logger = KotlinLogging.logger {}
 
-    suspend fun finalize(context: TaskContextDocument): ChatResponse {
-        val baseEnglish = (context.finalResult ?: context.contextSummary ?: "No execution output available.").trim()
-        val userLang = context.originalLanguage?.takeIf { it.isNotBlank() } ?: "en"
-        val contextBlock =
-            buildString {
-                appendLine("client=${context.clientName ?: "unknown"}")
-                appendLine("project=${context.projectName ?: "unknown"}")
-                appendLine("initialQuery=${context.initialQuery}")
-            }
+    suspend fun finalize(context: TaskContext): ChatResponse {
+        val finalizedPlans =
+            context.plans
+                .filter { it.status == PlanStatus.COMPLETED || it.status == PlanStatus.FAILED }
+                .map { plan ->
+                    val userLang = plan.originalLanguage.ifBlank { "en" }
+                    val userPrompt =
+                        buildUserPrompt(
+                            originalQuestion = plan.originalQuestion,
+                            englishQuestion = plan.englishQuestion,
+                            contextSummary = plan.contextSummary,
+                            failureReason = plan.failureReason,
+                        )
 
-        val systemPrompt = (
-            """
-            You are a Finalizer assistant. Produce one clear and unambiguous answer for the user.
-            - Be concise and actionable.
-            - If a direct answer is possible, state it immediately.
-            - Summarize key reasoning or steps only if necessary.
-            - Do not mention internal tools, steps, or planning.
-            """.trimIndent()
-        )
+                    val answer =
+                        runCatching {
+                            gateway
+                                .callLlm(
+                                    type = ModelType.INTERNAL,
+                                    userPrompt = userPrompt,
+                                    systemPrompt = buildSystemPrompt(),
+                                    outputLanguage = userLang,
+                                    quick = context.quick,
+                                ).answer
+                                .trim()
+                        }.getOrElse {
+                            logger.warn(it) { "FINALIZER_LLM_FAIL: Falling back to summary for plan=${'$'}{plan.id}" }
+                            (
+                                plan.finalAnswer ?: plan.contextSummary ?: plan.failureReason
+                                    ?: "No output available"
+                            ).trim()
+                        }.ifBlank { plan.contextSummary ?: plan.failureReason ?: "No output available" }
 
-        val userPrompt = (
-            """
-            User language (ISO-639-1): $userLang
-            Answer strictly in this language.
+                    plan.finalAnswer = answer
+                    plan.status = PlanStatus.FINALIZED
+                    plan.updatedAt = Instant.now()
+                    plan
+                }
 
-            Context:
-            $contextBlock
-
-            Execution output (English):
-            $baseEnglish
-
-            Write the final answer for the user.
-            """.trimIndent()
-        )
-
-        val finalMessage =
-            try {
-                gateway
-                    .callLlm(
-                        type = ModelType.INTERNAL,
-                        systemPrompt = systemPrompt,
-                        userPrompt = userPrompt,
-                        outputLanguage = userLang,
-                        quick = context.quick,
-                    ).answer
-                    .trim()
-            } catch (e: Exception) {
-                logger.warn(e) { "FINALIZER_LLM_FAIL: Falling back to passthrough message." }
-                baseEnglish
-            }.ifBlank { baseEnglish }
+        val aggregatedMessage =
+            finalizedPlans
+                .filter { it.status == PlanStatus.FINALIZED }
+                .toList()
+                .joinToString(separator = "\n\n") { plan ->
+                    val title = plan.originalQuestion.ifBlank { plan.englishQuestion }
+                    buildList {
+                        title.takeIf { it.isNotBlank() }?.let { add("Question: $it") }
+                        plan.finalAnswer?.let { add("Answer: $it") }
+                        plan.failureReason?.takeIf { it.isNotBlank() }?.let { add("Failure: $it") }
+                    }.joinToString("\n")
+                }.ifBlank { "No plans were finalized." }
 
         return ChatResponse(
-            message = finalMessage,
-            detectedClient = context.clientName,
-            detectedProject = context.projectName,
-            englishText = baseEnglish,
+            message = aggregatedMessage,
         )
     }
+
+    private fun buildSystemPrompt(): String =
+        """
+        You are a Finalizer assistant. Produce one clear and unambiguous answer for the user based on the provided plan context.
+        
+        CRITICAL REQUIREMENT: You must NEVER invent or fabricate any information. All information you provide must come from available tools (McpTools) or the actual plan context provided to you. If you don't have access to specific information through tools, explicitly state that you cannot provide it rather than guessing or inventing details.
+        
+        - Be concise and actionable.
+        - If a direct answer is possible, state it immediately.
+        - Summarize only what is necessary for the user to act.
+        - Do not mention internal tools, steps, or planning.
+        """.trimIndent()
+
+    private fun buildUserPrompt(
+        originalQuestion: String,
+        englishQuestion: String,
+        contextSummary: String?,
+        failureReason: String?,
+    ): String =
+        buildString {
+            appendLine("User language (ISO-639-1): ${'$'}language")
+            appendLine("Answer strictly in this language.")
+            appendLine()
+            appendLine("Context:")
+            appendLine("originalQuestion=$originalQuestion")
+            appendLine("englishQuestion=$englishQuestion")
+            if (!contextSummary.isNullOrBlank()) appendLine("summary=$contextSummary")
+            if (!failureReason.isNullOrBlank()) appendLine("failure=$failureReason")
+            appendLine()
+            appendLine("Write the final answer for the user.")
+        }
 }

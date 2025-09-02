@@ -53,22 +53,22 @@ class TrayIconManager {
 
         val popup = PopupMenu()
 
-        val openProjectSettingsItem = MenuItem("Nastavení projektu")
+        val openProjectSettingsItem = MenuItem("Project Settings")
         openProjectSettingsItem.addActionListener {
             windowManager.showProjectSettingWindow()
         }
 
-        val openClientsItem = MenuItem("Správa klientů")
+        val openClientsItem = MenuItem("Client Management")
         openClientsItem.addActionListener {
             windowManager.showClientsWindow()
         }
 
-        val openMainItem = MenuItem("Otevřít hlavní okno")
+        val openMainItem = MenuItem("Open Main Window")
         openMainItem.addActionListener {
             windowManager.showMainWindow()
         }
 
-        val exitItem = MenuItem("Ukončit")
+        val exitItem = MenuItem("Exit")
         exitItem.addActionListener {
             System.exit(0)
         }

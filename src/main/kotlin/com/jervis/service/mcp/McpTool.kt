@@ -1,6 +1,7 @@
 package com.jervis.service.mcp
 
-import com.jervis.entity.mongo.TaskContextDocument
+import com.jervis.domain.context.TaskContext
+import com.jervis.domain.plan.Plan
 import com.jervis.service.mcp.domain.ToolResult
 
 /**
@@ -12,12 +13,13 @@ interface McpTool {
     val description: String
 
     /**
-     * Execute the tool using the current task context and parameters.
+     * Execute the tool using the current task context and task description from planner.
      * Return ToolResult representing either success (ToolOkResult) or error (ToolErrorResult).
      * The output is always a String.
      */
     suspend fun execute(
-        context: TaskContextDocument,
-        parameters: String,
+        context: TaskContext,
+        plan: Plan,
+        taskDescription: String,
     ): ToolResult
 }

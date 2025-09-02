@@ -1,10 +1,8 @@
 package com.jervis.service.agent.planner
 
+import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.PlanStatus
-import com.jervis.entity.mongo.TaskContextDocument
 import com.jervis.service.agent.execution.PlanExecutor
-import kotlinx.coroutines.flow.count
-import kotlinx.coroutines.flow.filter
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
@@ -17,12 +15,11 @@ class PlanningRunner(
 ) {
     private val logger = KotlinLogging.logger {}
 
-    suspend fun run(taskContext: TaskContextDocument) {
+    suspend fun run(taskContext: TaskContext) {
         logger.info { "AGENT_LOOP_START: Planning loop for context: ${taskContext.id}" }
 
         while (taskContext.plans
-                .filter { it.status != PlanStatus.FAILED && it.status != PlanStatus.COMPLETED }
-                .count() > 0
+                .count { it.status != PlanStatus.FAILED && it.status != PlanStatus.COMPLETED } > 0
         ) {
             executor.execute(taskContext)
         }

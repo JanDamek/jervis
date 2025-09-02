@@ -9,10 +9,14 @@ import org.springframework.http.client.reactive.ReactorClientHttpConnector
 import org.springframework.web.reactive.function.client.ExchangeStrategies
 import org.springframework.web.reactive.function.client.WebClient
 import reactor.netty.http.client.HttpClient
+import reactor.netty.resources.ConnectionProvider
 import java.time.Duration
 
 @Configuration
-class WebClientConfig {
+class WebClientConfig(
+    private val connectionPoolProperties: ConnectionPoolProperties,
+    private val timeoutsProperties: TimeoutsProperties,
+) {
     @Bean
     @Qualifier("lmStudioWebClient")
     fun lmStudioWebClient(
@@ -25,14 +29,8 @@ class WebClientConfig {
                 headers.contentType = MediaType.APPLICATION_JSON
                 headers.accept = listOf(MediaType.APPLICATION_JSON)
             }.exchangeStrategies(defaultExchangeStrategies())
-            .clientConnector(
-                ReactorClientHttpConnector(
-                    HttpClient
-                        .create()
-                        .responseTimeout(Duration.ofSeconds(30))
-                        .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000),
-                ),
-            ).build()
+            .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
+            .build()
 
     @Bean
     @Qualifier("ollamaWebClient")
@@ -46,14 +44,8 @@ class WebClientConfig {
                 headers.contentType = MediaType.APPLICATION_JSON
                 headers.accept = listOf(MediaType.APPLICATION_JSON)
             }.exchangeStrategies(defaultExchangeStrategies())
-            .clientConnector(
-                ReactorClientHttpConnector(
-                    HttpClient
-                        .create()
-                        .responseTimeout(Duration.ofSeconds(30))
-                        .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000),
-                ),
-            ).build()
+            .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
+            .build()
 
     @Bean
     @Qualifier("openaiWebClient")
@@ -67,16 +59,10 @@ class WebClientConfig {
                 headers.contentType = MediaType.APPLICATION_JSON
                 headers.accept = listOf(MediaType.APPLICATION_JSON)
                 val key = endpoints.openai.apiKey
-                if (!key.isNullOrBlank()) headers.set("Authorization", "Bearer $key")
+                if (!key.isNullOrBlank()) headers["Authorization"] = "Bearer $key"
             }.exchangeStrategies(defaultExchangeStrategies())
-            .clientConnector(
-                ReactorClientHttpConnector(
-                    HttpClient
-                        .create()
-                        .responseTimeout(Duration.ofSeconds(30))
-                        .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000),
-                ),
-            ).build()
+            .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
+            .build()
 
     @Bean
     @Qualifier("anthropicWebClient")
@@ -90,23 +76,38 @@ class WebClientConfig {
                 headers.contentType = MediaType.APPLICATION_JSON
                 headers.accept = listOf(MediaType.APPLICATION_JSON)
                 val key = endpoints.anthropic.apiKey
-                if (!key.isNullOrBlank()) headers.set("x-api-key", key)
-                headers.set("anthropic-version", ANTHROPIC_VERSION)
+                if (!key.isNullOrBlank()) headers["x-api-key"] = key
+                headers["anthropic-version"] = ANTHROPIC_VERSION
             }.exchangeStrategies(defaultExchangeStrategies())
-            .clientConnector(
-                ReactorClientHttpConnector(
-                    HttpClient
-                        .create()
-                        .responseTimeout(Duration.ofSeconds(30))
-                        .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000),
-                ),
-            ).build()
+            .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
+            .build()
 
     private fun defaultExchangeStrategies(): ExchangeStrategies =
         ExchangeStrategies
             .builder()
             .codecs { it.defaultCodecs().maxInMemorySize(DEFAULT_MAX_IN_MEMORY_BYTES) }
             .build()
+
+    private fun createHttpClientWithTimeouts(): HttpClient {
+        val connectionProvider =
+            ConnectionProvider
+                .builder("embedding-pool")
+                .maxConnections(connectionPoolProperties.getWebClientMaxConnections())
+                .maxIdleTime(connectionPoolProperties.getWebClientMaxIdleTime())
+                .maxLifeTime(connectionPoolProperties.getWebClientMaxLifeTime())
+                .pendingAcquireTimeout(connectionPoolProperties.getWebClientPendingAcquireTimeout())
+                .pendingAcquireMaxCount(connectionPoolProperties.webclient.pendingAcquireMaxCount)
+                .evictInBackground(connectionPoolProperties.getWebClientEvictInBackground())
+                .build()
+
+        return HttpClient
+            .create(connectionProvider)
+            .option(
+                ChannelOption.CONNECT_TIMEOUT_MILLIS,
+                (timeoutsProperties.webclient.connectTimeoutMinutes * 60 * 1000).toInt(),
+            ).responseTimeout(Duration.ofMinutes(timeoutsProperties.webclient.responseTimeoutMinutes))
+        // Removed ReadTimeoutHandler and WriteTimeoutHandler to eliminate timeouts
+    }
 
     companion object {
         private const val DEFAULT_MAX_IN_MEMORY_BYTES = 8 * 1024 * 1024 // 8 MB

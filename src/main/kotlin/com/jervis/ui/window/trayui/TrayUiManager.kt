@@ -1,8 +1,10 @@
 package com.jervis.ui.window.trayui
 
+import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.client.ClientProjectLinkService
 import com.jervis.service.client.ClientService
+import com.jervis.service.indexing.IndexingService
 import com.jervis.service.project.ProjectService
 import com.jervis.ui.window.TrayIconManager
 import org.springframework.stereotype.Service
@@ -18,6 +20,8 @@ class TrayUiManager(
     private val chatCoordinator: AgentOrchestratorService,
     private val clientService: ClientService,
     private val linkService: ClientProjectLinkService,
+    private val taskContextService: TaskContextService,
+    private val indexingService: IndexingService,
 ) {
     private var trayIconManager: TrayIconManager? = null
 
@@ -50,5 +54,7 @@ class TrayUiManager(
             chatCoordinator,
             clientService,
             linkService,
+            taskContextService,
+            indexingService,
         )
 }

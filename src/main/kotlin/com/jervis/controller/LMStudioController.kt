@@ -62,10 +62,20 @@ class LMStudioController(
         @RequestBody request: CompletionRequest,
     ): CompletionResponse {
         val userPrompt = request.prompt
+        val defaultProject =
+            projectService.getDefaultProject()
+                ?: throw IllegalStateException("Default project not found")
         val response =
             agentOrchestrator.handle(
                 text = userPrompt,
-                ctx = ChatRequestContext(clientName = null, projectName = null, autoScope = false),
+                ctx =
+                    ChatRequestContext(
+                        clientId =
+                            defaultProject.clientId
+                                ?: throw IllegalStateException("Default project has no client"),
+                        projectId = defaultProject.id,
+                        autoScope = false,
+                    ),
             )
         return CompletionResponse(
             id = "cmpl-${UUID.randomUUID()}",
@@ -94,10 +104,20 @@ class LMStudioController(
         @RequestBody chatRequest: ChatCompletionRequest,
     ): ChatCompletionResponse {
         val userPrompt = chatRequest.messages.lastOrNull()?.content ?: ""
+        val defaultProject =
+            projectService.getDefaultProject()
+                ?: throw IllegalStateException("Default project not found")
         val response =
             agentOrchestrator.handle(
                 text = userPrompt,
-                ctx = ChatRequestContext(clientName = null, projectName = null, autoScope = false),
+                ctx =
+                    ChatRequestContext(
+                        clientId =
+                            defaultProject.clientId
+                                ?: throw IllegalStateException("Default project has no client"),
+                        projectId = defaultProject.id,
+                        autoScope = false,
+                    ),
             )
         return ChatCompletionResponse(
             id = "chat-${UUID.randomUUID()}",

@@ -13,35 +13,30 @@ class ClientService(
     private val clientRepository: ClientMongoRepository,
 ) {
     private val logger = KotlinLogging.logger {}
-    private val slugRegex = Regex("^[a-z0-9-]+$")
 
     suspend fun create(client: ClientDocument): ClientDocument {
-        validateClient(client)
         val toSave = client.copy(updatedAt = Instant.now())
         val saved = clientRepository.save(toSave)
-        logger.info { "Created client ${saved.name} (${saved.slug})" }
+        logger.info { "Created client ${saved.name}" }
         return saved
     }
 
-    suspend fun update(id: ObjectId, client: ClientDocument): ClientDocument {
-        validateClient(client)
-        val existing = clientRepository.findById(id.toString()) ?: throw NoSuchElementException("Client not found")
+    suspend fun update(
+        id: ObjectId,
+        client: ClientDocument,
+    ): ClientDocument {
+        val existing = clientRepository.findById(id) ?: throw NoSuchElementException("Client not found")
         val merged = client.copy(id = existing.id, createdAt = existing.createdAt, updatedAt = Instant.now())
         return clientRepository.save(merged)
     }
 
     suspend fun delete(id: ObjectId) {
-        val existing = clientRepository.findById(id.toString()) ?: return
+        val existing = clientRepository.findById(id) ?: return
         clientRepository.delete(existing)
-        logger.info { "Deleted client ${existing.name} (${existing.slug})" }
+        logger.info { "Deleted client ${existing.name}" }
     }
 
     suspend fun list(): List<ClientDocument> = clientRepository.findAll().toList()
 
-    suspend fun get(id: ObjectId): ClientDocument? = clientRepository.findById(id.toString())
-
-    private fun validateClient(client: ClientDocument) {
-        require(client.slug.matches(slugRegex)) { "Invalid slug: must match [a-z0-9-]+" }
-        // Additional minimal checks can be added later
-    }
+    suspend fun getClientById(id: ObjectId): ClientDocument? = clientRepository.findById(id)
 }
