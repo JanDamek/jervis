@@ -17,9 +17,9 @@ class EmbeddingStartupValidator(
     fun validate() {
         listOf(ModelType.EMBEDDING_TEXT, ModelType.EMBEDDING_CODE).forEach { type ->
             val invalid = modelsProperties.models[type].orEmpty().any { it.provider == ModelProvider.ANTHROPIC }
-            if (invalid) {
-                throw IllegalStateException("Anthropic provider is not supported for embeddings. Please remove ANTHROPIC from models.$type in application.yml")
-            }
+            check(
+                !invalid,
+            ) { "Anthropic provider is not supported for embeddings. Please remove ANTHROPIC from models.$type in application.yml" }
         }
     }
 }

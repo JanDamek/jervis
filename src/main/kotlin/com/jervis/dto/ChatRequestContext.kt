@@ -1,5 +1,7 @@
 package com.jervis.dto
 
+import org.bson.types.ObjectId
+
 /**
  * Provides the context for a user's chat request.
  *
@@ -10,8 +12,8 @@ package com.jervis.dto
  * When quick is true, routing prefers models marked as quick.
  */
 data class ChatRequestContext(
-    val clientName: String?,
-    val projectName: String?,
+    val clientId: ObjectId,
+    val projectId: ObjectId,
     val autoScope: Boolean = false,
     val quick: Boolean = false,
     val confirmedScope: Boolean = false,

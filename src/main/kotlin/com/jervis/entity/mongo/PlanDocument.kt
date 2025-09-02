@@ -1,11 +1,9 @@
 package com.jervis.entity.mongo
 
+import com.jervis.domain.plan.Plan
 import com.jervis.domain.plan.PlanStatus
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
-import org.springframework.data.annotation.Transient
 import org.springframework.data.mongodb.core.index.Indexed
 import org.springframework.data.mongodb.core.mapping.Document
 import java.time.Instant
@@ -16,9 +14,46 @@ data class PlanDocument(
     val id: ObjectId = ObjectId.get(),
     @Indexed
     var contextId: ObjectId,
+    val originalQuestion: String,
+    val originalLanguage: String,
+    val englishQuestion: String,
     var status: PlanStatus = PlanStatus.CREATED,
-    @Transient
-    var steps: Flow<PlanStep> = emptyFlow(),
+    var contextSummary: String? = null,
+    var finalAnswer: String? = null,
+    var failureReason: String? = null,
     val createdAt: Instant = Instant.now(),
     var updatedAt: Instant = Instant.now(),
-)
+) {
+    fun toDomain(steps: List<PlanStepDocument> = emptyList()): Plan =
+        Plan(
+            id = this.id,
+            contextId = this.contextId,
+            originalQuestion = this.originalQuestion,
+            originalLanguage = this.originalLanguage,
+            englishQuestion = this.englishQuestion,
+            status = this.status,
+            steps = steps.map { it.toDomain() },
+            contextSummary = this.contextSummary,
+            finalAnswer = this.finalAnswer,
+            failureReason = this.failureReason,
+            createdAt = this.createdAt,
+            updatedAt = this.updatedAt,
+        )
+
+    companion object {
+        fun fromDomain(plan: Plan): PlanDocument =
+            PlanDocument(
+                id = plan.id,
+                contextId = plan.contextId,
+                originalQuestion = plan.originalQuestion,
+                originalLanguage = plan.originalLanguage,
+                englishQuestion = plan.englishQuestion,
+                status = plan.status,
+                contextSummary = plan.contextSummary,
+                finalAnswer = plan.finalAnswer,
+                failureReason = plan.failureReason,
+                createdAt = plan.createdAt,
+                updatedAt = plan.updatedAt,
+            )
+    }
+}

@@ -1,12 +1,13 @@
 package com.jervis.ui.window
 
-import com.jervis.domain.project.Repo
 import com.jervis.entity.mongo.ClientDocument
 import com.jervis.entity.mongo.ClientProjectLinkDocument
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.service.client.ClientProjectLinkService
 import com.jervis.service.client.ClientService
+import com.jervis.service.indexing.IndexingService
 import com.jervis.service.project.ProjectService
+import com.jervis.ui.component.ClientSettingsComponents
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -40,28 +41,31 @@ class ClientsWindow(
     private val clientService: ClientService,
     private val projectService: ProjectService,
     private val linkService: ClientProjectLinkService,
-) : JFrame("Správa klientů") {
+    private val indexingService: IndexingService,
+) : JFrame("Client Management") {
     private val clientsList = JList<ClientDocument>()
     private val listModel = javax.swing.DefaultListModel<ClientDocument>()
 
     private val nameField = JTextField()
-    private val slugField = JTextField()
     private val descriptionField = JTextField()
-    private val anonymizeCheckbox = JCheckBox("Klient zakázán")
+    private val anonymizeCheckbox = JCheckBox("Client disabled")
 
-    private val saveBtn = JButton("Uložit klienta")
-    private val newBtn = JButton("Nový klient")
-    private val deleteBtn = JButton("Smazat klienta")
-    private val addProjectBtn = JButton("Přidat nový projekt…")
-    private val assignExistingBtn = JButton("Přiřadit existující projekty…")
-    private val dependenciesBtn = JButton("Závislosti…")
+    private val saveBtn = JButton("Save Client")
+    private val settingsBtn = JButton("Client Settings…")
+    private val newClientWithSettingsBtn = JButton("New Client with Settings…")
+    private val newBtn = JButton("New Client")
+    private val deleteBtn = JButton("Delete Client")
+    private val addProjectBtn = JButton("Add New Project…")
+    private val assignExistingBtn = JButton("Assign Existing Projects…")
+    private val dependenciesBtn = JButton("Dependencies…")
+    private val reindexBtn = JButton("Reindex Client Projects")
 
     private val projectsList = JList<ProjectDocument>()
     private val projectsModel = javax.swing.DefaultListModel<ProjectDocument>()
-    private val removeProjectBtn = JButton("Odebrat z klienta")
-    private val toggleDisableForClientBtn = JButton("Přepnout zakázání u klienta")
-    private val toggleAnonymizeForClientBtn = JButton("Přepnout anonymizaci u klienta")
-    private val toggleHistoricalForClientBtn = JButton("Přepnout historical u klienta")
+    private val removeProjectBtn = JButton("Remove from Client")
+    private val toggleDisableForClientBtn = JButton("Toggle Disable for Client")
+    private val toggleAnonymizeForClientBtn = JButton("Toggle Anonymization for Client")
+    private val toggleHistoricalForClientBtn = JButton("Toggle Historical for Client")
 
     private var selectedClientId: ObjectId? = null
     private var clientDependencies: MutableSet<ObjectId> = mutableSetOf()
@@ -81,10 +85,11 @@ class ClientsWindow(
         // Left: clients list
         val leftPanel = JPanel(BorderLayout(6, 6))
         val leftHeader = JPanel(BorderLayout())
-        leftHeader.add(JLabel("Klienti").apply { horizontalAlignment = SwingConstants.LEFT }, BorderLayout.WEST)
+        leftHeader.add(JLabel("Clients").apply { horizontalAlignment = SwingConstants.LEFT }, BorderLayout.WEST)
         val leftButtons =
             JPanel(FlowLayout(FlowLayout.RIGHT)).apply {
                 add(newBtn)
+                add(newClientWithSettingsBtn)
                 add(deleteBtn)
             }
         leftHeader.add(leftButtons, BorderLayout.EAST)
@@ -94,6 +99,11 @@ class ClientsWindow(
         clientsList.model = listModel
         clientsList.cellRenderer =
             object : javax.swing.DefaultListCellRenderer() {
+                init {
+                    // Ensure renderer is opaque to prevent background from painting over text
+                    isOpaque = true
+                }
+
                 override fun getListCellRendererComponent(
                     list: JList<*>?,
                     value: Any?,
@@ -104,7 +114,7 @@ class ClientsWindow(
                     val label =
                         super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus) as JLabel
                     val c = value as? ClientDocument
-                    label.text = c?.let { "${it.name} (${it.slug})" } ?: ""
+                    label.text = c?.let { it.name } ?: ""
                     return label
                 }
             }
@@ -153,7 +163,6 @@ class ClientsWindow(
         }
 
         addRow("Název:*", nameField)
-        addRow("Slug:*", slugField)
         addRow("Popis:", descriptionField)
         // Anonymization toggle
         gbc.gridx = 1
@@ -166,9 +175,11 @@ class ClientsWindow(
         val formButtons =
             JPanel(FlowLayout(FlowLayout.RIGHT)).apply {
                 add(saveBtn)
+                add(settingsBtn)
                 add(addProjectBtn)
                 add(assignExistingBtn)
                 add(dependenciesBtn)
+                add(reindexBtn)
             }
 
         val formWrapper =
@@ -184,7 +195,7 @@ class ClientsWindow(
                 border = EmptyBorder(8, 8, 8, 8)
             }
         val projHeader = JPanel(BorderLayout())
-        projHeader.add(JLabel("Projekty vybraného klienta"), BorderLayout.WEST)
+        projHeader.add(JLabel("Projects of Selected Client"), BorderLayout.WEST)
         val projBtns =
             JPanel(FlowLayout(FlowLayout.RIGHT)).apply {
                 add(removeProjectBtn)
@@ -194,6 +205,7 @@ class ClientsWindow(
             }
         projHeader.add(projBtns, BorderLayout.EAST)
         projectsList.model = projectsModel
+
         projectsPanel.add(projHeader, BorderLayout.NORTH)
         projectsPanel.add(JScrollPane(projectsList), BorderLayout.CENTER)
 
@@ -213,11 +225,14 @@ class ClientsWindow(
             clientDependencies.clear()
             anonymizeCheckbox.isSelected = false
         }
+        newClientWithSettingsBtn.addActionListener { createNewClientWithSettings() }
         deleteBtn.addActionListener { deleteSelectedClient() }
         saveBtn.addActionListener { saveClient() }
+        settingsBtn.addActionListener { showClientSettingsDialog() }
         addProjectBtn.addActionListener { showAddProjectDialog() }
         assignExistingBtn.addActionListener { showAssignExistingProjectsDialog() }
         dependenciesBtn.addActionListener { showClientDependenciesDialog() }
+        reindexBtn.addActionListener { reindexClientProjects() }
         removeProjectBtn.addActionListener { removeSelectedProjectFromClient() }
         toggleDisableForClientBtn.addActionListener { toggleDisableForClientForSelectedProject() }
         toggleAnonymizeForClientBtn.addActionListener { toggleAnonymizeForClientForSelectedProject() }
@@ -237,16 +252,14 @@ class ClientsWindow(
 
     private fun fillClientForm(c: ClientDocument) {
         nameField.text = c.name
-        slugField.text = c.slug
         descriptionField.text = c.description ?: ""
-        anonymizeCheckbox.toolTipText = "Pokud je zaškrtnuto, klient je dočasně zakázán."
+        anonymizeCheckbox.toolTipText = "If checked, the client is temporarily disabled."
         anonymizeCheckbox.isSelected = c.isDisabled
         clientDependencies = c.dependsOnProjects.toMutableSet()
     }
 
     private fun clearClientForm() {
         nameField.text = ""
-        slugField.text = ""
         descriptionField.text = ""
         anonymizeCheckbox.isSelected = false
         clientDependencies.clear()
@@ -256,21 +269,10 @@ class ClientsWindow(
 
     private fun saveClient() {
         val name = nameField.text.trim()
-        val slug = slugField.text.trim()
         val desc = descriptionField.text.trim().ifEmpty { null }
         val disabled = anonymizeCheckbox.isSelected
-        val regex = Regex("^[a-z0-9-]+$")
         if (name.isBlank()) {
             JOptionPane.showMessageDialog(this, "Název je povinný.", "Validace", JOptionPane.WARNING_MESSAGE)
-            return
-        }
-        if (!regex.matches(slug)) {
-            JOptionPane.showMessageDialog(
-                this,
-                "Slug musí odpovídat ^[a-z0-9-]+$",
-                "Validace",
-                JOptionPane.WARNING_MESSAGE,
-            )
             return
         }
         CoroutineScope(Dispatchers.Main).launch {
@@ -280,19 +282,18 @@ class ClientsWindow(
                     val c =
                         ClientDocument(
                             name = name,
-                            slug = slug,
                             description = desc,
                             isDisabled = disabled,
                             dependsOnProjects = clientDependencies.toList(),
                         )
                     withContext(Dispatchers.IO) { clientService.create(c) }
                 } else {
-                    val existing = withContext(Dispatchers.IO) { clientService.get(id) }
+                    val existing = withContext(Dispatchers.IO) { clientService.getClientById(id) }
                     if (existing == null) {
                         JOptionPane.showMessageDialog(
                             this@ClientsWindow,
-                            "Klient nenalezen.",
-                            "Chyba",
+                            "Client not found.",
+                            "Error",
                             JOptionPane.ERROR_MESSAGE,
                         )
                         return@launch
@@ -300,7 +301,6 @@ class ClientsWindow(
                     val updated =
                         existing.copy(
                             name = name,
-                            slug = slug,
                             description = desc,
                             isDisabled = disabled,
                             dependsOnProjects = clientDependencies.toList(),
@@ -311,15 +311,15 @@ class ClientsWindow(
                 loadClients()
                 JOptionPane.showMessageDialog(
                     this@ClientsWindow,
-                    "Klient uložen.",
+                    "Client saved.",
                     "Info",
                     JOptionPane.INFORMATION_MESSAGE,
                 )
             } catch (e: Exception) {
                 JOptionPane.showMessageDialog(
                     this@ClientsWindow,
-                    "Chyba uložení klienta: ${e.message}",
-                    "Chyba",
+                    "Error saving client: ${e.message}",
+                    "Error",
                     JOptionPane.ERROR_MESSAGE,
                 )
             }
@@ -329,14 +329,14 @@ class ClientsWindow(
     private fun deleteSelectedClient() {
         val sel =
             clientsList.selectedValue ?: run {
-                JOptionPane.showMessageDialog(this, "Vyberte prosím klienta.", "Info", JOptionPane.INFORMATION_MESSAGE)
+                JOptionPane.showMessageDialog(this, "Please select a client.", "Info", JOptionPane.INFORMATION_MESSAGE)
                 return
             }
         val confirm =
             JOptionPane.showConfirmDialog(
                 this,
-                "Opravdu smazat klienta '${sel.name}'?",
-                "Potvrzení",
+                "Really delete client '${sel.name}'?",
+                "Confirmation",
                 JOptionPane.YES_NO_OPTION,
             )
         if (confirm != JOptionPane.YES_OPTION) return
@@ -350,8 +350,8 @@ class ClientsWindow(
             } catch (e: Exception) {
                 JOptionPane.showMessageDialog(
                     this@ClientsWindow,
-                    "Chyba mazání: ${e.message}",
-                    "Chyba",
+                    "Delete error: ${e.message}",
+                    "Error",
                     JOptionPane.ERROR_MESSAGE,
                 )
             }
@@ -374,6 +374,11 @@ class ClientsWindow(
             projectsList.model = projectsModel
             projectsList.cellRenderer =
                 object : javax.swing.DefaultListCellRenderer() {
+                    init {
+                        // Ensure renderer is opaque to prevent background from painting over text
+                        isOpaque = true
+                    }
+
                     override fun getListCellRendererComponent(
                         list: JList<*>?,
                         value: Any?,
@@ -394,7 +399,7 @@ class ClientsWindow(
                                 if (link.historical) markers.add("HIST")
                             }
                             val suffix = if (markers.isNotEmpty()) " [" + markers.joinToString(", ") + "]" else ""
-                            label.text = "${p.name} (${p.slug})$suffix"
+                            label.text = "${p.name}$suffix"
                         } else {
                             label.text = ""
                         }
@@ -407,7 +412,12 @@ class ClientsWindow(
     private fun showAssignExistingProjectsDialog() {
         val clientId =
             selectedClientId ?: run {
-                JOptionPane.showMessageDialog(this, "Vyberte nejprve klienta.", "Info", JOptionPane.INFORMATION_MESSAGE)
+                JOptionPane.showMessageDialog(
+                    this,
+                    "Please select a client first.",
+                    "Info",
+                    JOptionPane.INFORMATION_MESSAGE,
+                )
                 return
             }
         CoroutineScope(Dispatchers.Main).launch {
@@ -427,8 +437,14 @@ class ClientsWindow(
             allProjects.forEach { listModel.addElement(it) }
             val list = JList(listModel)
             list.selectionMode = ListSelectionModel.MULTIPLE_INTERVAL_SELECTION
+
             list.cellRenderer =
                 object : javax.swing.DefaultListCellRenderer() {
+                    init {
+                        // Ensure renderer is opaque to prevent background from painting over text
+                        isOpaque = true
+                    }
+
                     override fun getListCellRendererComponent(
                         listComp: JList<*>?,
                         value: Any?,
@@ -449,7 +465,7 @@ class ClientsWindow(
                             val assigned = p.clientId?.toHexString()
                             val suffix =
                                 if (assigned != null && assigned != clientId.toHexString()) " — přiřazeno jinému klientovi" else ""
-                            label.text = "${p.name} (${p.slug})$suffix"
+                            label.text = "${p.name}$suffix"
                         }
                         return label
                     }
@@ -524,8 +540,14 @@ class ClientsWindow(
             allProjects.forEach { listModel.addElement(it) }
             val list = JList(listModel)
             list.selectionMode = ListSelectionModel.MULTIPLE_INTERVAL_SELECTION
+
             list.cellRenderer =
                 object : javax.swing.DefaultListCellRenderer() {
+                    init {
+                        // Ensure renderer is opaque to prevent background from painting over text
+                        isOpaque = true
+                    }
+
                     override fun getListCellRendererComponent(
                         listComp: JList<*>?,
                         value: Any?,
@@ -542,7 +564,7 @@ class ClientsWindow(
                                 cellHasFocus,
                             ) as JLabel
                         val p = value as? ProjectDocument
-                        if (p != null) label.text = "${p.name} (${p.slug})"
+                        if (p != null) label.text = p.name
                         return label
                     }
                 }
@@ -588,7 +610,12 @@ class ClientsWindow(
     private fun removeSelectedProjectFromClient() {
         val clientId =
             selectedClientId ?: run {
-                JOptionPane.showMessageDialog(this, "Vyberte nejprve klienta.", "Info", JOptionPane.INFORMATION_MESSAGE)
+                JOptionPane.showMessageDialog(
+                    this,
+                    "Please select a client first.",
+                    "Info",
+                    JOptionPane.INFORMATION_MESSAGE,
+                )
                 return
             }
         val project =
@@ -613,15 +640,15 @@ class ClientsWindow(
                 loadProjectsForClient(clientId)
                 JOptionPane.showMessageDialog(
                     this@ClientsWindow,
-                    "Projekt odebrán z klienta.",
+                    "Project removed from client.",
                     "Info",
                     JOptionPane.INFORMATION_MESSAGE,
                 )
             } catch (e: Exception) {
                 JOptionPane.showMessageDialog(
                     this@ClientsWindow,
-                    "Chyba odebrání: ${e.message}",
-                    "Chyba",
+                    "Removal error: ${e.message}",
+                    "Error",
                     JOptionPane.ERROR_MESSAGE,
                 )
             }
@@ -821,10 +848,8 @@ class ClientsWindow(
                         ProjectDocument(
                             clientId = clientId,
                             name = name,
-                            slug = slug,
                             description = desc,
-                            paths = listOf(path),
-                            repo = Repo(primaryUrl = url),
+                            path = path,
                             isActive = false,
                         )
                     withContext(Dispatchers.IO) { projectService.saveProject(project, false) }
@@ -850,5 +875,443 @@ class ClientsWindow(
         cancel.addActionListener { dialog.dispose() }
 
         dialog.isVisible = true
+    }
+
+    private fun createNewClientWithSettings() {
+        val dialog = NewClientWithSettingsDialog(this)
+        dialog.isVisible = true
+
+        val result = dialog.result
+        if (result != null) {
+            CoroutineScope(Dispatchers.Main).launch {
+                try {
+                    withContext(Dispatchers.IO) { clientService.create(result) }
+                    loadClients()
+                    JOptionPane.showMessageDialog(
+                        this@ClientsWindow,
+                        "Klient '${result.name}' byl úspěšně vytvořen s kompletním nastavením.",
+                        "Úspěch",
+                        JOptionPane.INFORMATION_MESSAGE,
+                    )
+                } catch (e: Exception) {
+                    JOptionPane.showMessageDialog(
+                        this@ClientsWindow,
+                        "Chyba při vytváření klienta: ${e.message}",
+                        "Chyba",
+                        JOptionPane.ERROR_MESSAGE,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun showClientSettingsDialog() {
+        val client =
+            currentClient ?: run {
+                JOptionPane.showMessageDialog(this, "Vyberte nejprve klienta.", "Info", JOptionPane.INFORMATION_MESSAGE)
+                return
+            }
+
+        val dialog = ClientSettingsDialog(this, client)
+        dialog.isVisible = true
+
+        val result = dialog.result
+        if (result != null) {
+            CoroutineScope(Dispatchers.Main).launch {
+                try {
+                    withContext(Dispatchers.IO) { clientService.update(client.id, result) }
+                    currentClient = result
+                    fillClientForm(result)
+                    JOptionPane.showMessageDialog(
+                        this@ClientsWindow,
+                        "Nastavení klienta bylo uloženo.",
+                        "Info",
+                        JOptionPane.INFORMATION_MESSAGE,
+                    )
+                } catch (e: Exception) {
+                    JOptionPane.showMessageDialog(
+                        this@ClientsWindow,
+                        "Chyba při ukládání nastavení: ${e.message}",
+                        "Chyba",
+                        JOptionPane.ERROR_MESSAGE,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun reindexClientProjects() {
+        val clientId =
+            selectedClientId ?: run {
+                JOptionPane.showMessageDialog(this, "Vyberte nejprve klienta.", "Info", JOptionPane.INFORMATION_MESSAGE)
+                return
+            }
+
+        val currentClient =
+            this.currentClient ?: run {
+                JOptionPane.showMessageDialog(this, "Klient nebyl nalezen.", "Chyba", JOptionPane.ERROR_MESSAGE)
+                return
+            }
+
+        val confirm =
+            JOptionPane.showConfirmDialog(
+                this,
+                "Opravdu chcete reindexovat všechny projekty klienta '${currentClient.name}'?\nTato operace může trvat několik minut.",
+                "Potvrzení reindexace",
+                JOptionPane.YES_NO_OPTION,
+            )
+
+        if (confirm != JOptionPane.YES_OPTION) return
+
+        // Disable the button to prevent multiple clicks
+        reindexBtn.isEnabled = false
+        reindexBtn.text = "Probíhá reindexace..."
+
+        CoroutineScope(Dispatchers.Main).launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    val links = linkService.listForClient(clientId)
+                    val allProjects = projectService.getAllProjects()
+                    val clientProjects =
+                        allProjects.filter { project ->
+                            links.any { link -> link.projectId == project.id && !link.isDisabled }
+                        }
+                    indexingService.indexProjectsForClient(clientProjects, currentClient.name)
+                }
+
+                JOptionPane.showMessageDialog(
+                    this@ClientsWindow,
+                    "Reindexace projektů klienta '${currentClient.name}' byla úspěšně dokončena.",
+                    "Reindexace dokončena",
+                    JOptionPane.INFORMATION_MESSAGE,
+                )
+            } catch (e: Exception) {
+                JOptionPane.showMessageDialog(
+                    this@ClientsWindow,
+                    "Chyba při reindexaci: ${e.message}",
+                    "Chyba reindexace",
+                    JOptionPane.ERROR_MESSAGE,
+                )
+            } finally {
+                // Re-enable the button
+                reindexBtn.isEnabled = true
+                reindexBtn.text = "Reindexace projektů klienta"
+            }
+        }
+    }
+
+    /**
+     * Dialog for creating a new client with comprehensive settings
+     */
+    private class NewClientWithSettingsDialog(
+        owner: JFrame,
+    ) : JDialog(owner, "Nový klient s kompletním nastavením", true) {
+        private val nameField =
+            JTextField().apply {
+                preferredSize = Dimension(400, 30)
+                toolTipText = "Název klienta (povinné)"
+            }
+
+        private val descriptionField =
+            JTextField().apply {
+                preferredSize = Dimension(400, 30)
+                toolTipText = "Popis klienta (nepovinné)"
+            }
+
+        private val isDisabledCheckbox =
+            JCheckBox("Klient zakázán").apply {
+                toolTipText = "Pokud je zaškrtnuto, klient je dočasně zakázán"
+            }
+
+        private val guidelinesPanel = ClientSettingsComponents.createGuidelinesPanel()
+        private val reviewPolicyPanel = ClientSettingsComponents.createReviewPolicyPanel()
+        private val formattingPanel = ClientSettingsComponents.createFormattingPanel()
+        private val secretsPolicyPanel = ClientSettingsComponents.createSecretsPolicyPanel()
+        private val anonymizationPanel = ClientSettingsComponents.createAnonymizationPanel()
+        private val inspirationPolicyPanel = ClientSettingsComponents.createInspirationPolicyPanel()
+        private val clientToolsPanel = ClientSettingsComponents.createClientToolsPanel()
+
+        private val okButton = JButton("Vytvořit klienta")
+        private val cancelButton = JButton("Zrušit")
+
+        var result: ClientDocument? = null
+
+        init {
+            preferredSize = Dimension(850, 750)
+            minimumSize = Dimension(800, 700)
+            isResizable = true
+            defaultCloseOperation = DISPOSE_ON_CLOSE
+
+            setupLayout()
+            setupEventHandlers()
+        }
+
+        private fun setupLayout() {
+            val panel = JPanel(BorderLayout())
+            panel.border = EmptyBorder(16, 16, 16, 16)
+
+            val tabbedPane = javax.swing.JTabbedPane()
+
+            // Basic Information Tab
+            val basicPanel = createBasicInfoPanel()
+            tabbedPane.addTab("Základní informace", basicPanel)
+
+            // Guidelines Tab
+            tabbedPane.addTab("Coding Guidelines", JScrollPane(guidelinesPanel))
+
+            // Review Policy Tab
+            tabbedPane.addTab("Review Policy", JScrollPane(reviewPolicyPanel))
+
+            // Formatting Tab
+            tabbedPane.addTab("Formatting", JScrollPane(formattingPanel))
+
+            // Secrets Policy Tab
+            tabbedPane.addTab("Secrets Policy", JScrollPane(secretsPolicyPanel))
+
+            // Anonymization Tab
+            tabbedPane.addTab("Anonymization", JScrollPane(anonymizationPanel))
+
+            // Inspiration Policy Tab
+            tabbedPane.addTab("Inspiration Policy", JScrollPane(inspirationPolicyPanel))
+
+            // Client Tools Tab
+            tabbedPane.addTab("Client Tools", JScrollPane(clientToolsPanel))
+
+            // Button panel
+            val buttonPanel = JPanel(FlowLayout(FlowLayout.RIGHT))
+            buttonPanel.add(okButton)
+            buttonPanel.add(cancelButton)
+
+            panel.add(tabbedPane, BorderLayout.CENTER)
+            panel.add(buttonPanel, BorderLayout.SOUTH)
+
+            add(panel)
+        }
+
+        private fun createBasicInfoPanel(): JPanel {
+            val panel = JPanel(GridBagLayout())
+            val gbc = GridBagConstraints().apply { insets = Insets(8, 8, 8, 8) }
+            var row = 0
+
+            // Name
+            gbc.gridx = 0
+            gbc.gridy = row
+            gbc.anchor = GridBagConstraints.LINE_END
+            gbc.fill =
+                GridBagConstraints.NONE
+            gbc.weightx = 0.0
+            panel.add(JLabel("Název:*"), gbc)
+            gbc.gridx = 1
+            gbc.anchor = GridBagConstraints.LINE_START
+            gbc.fill =
+                GridBagConstraints.HORIZONTAL
+            gbc.weightx = 1.0
+            panel.add(nameField, gbc)
+            row++
+
+            // Description
+            gbc.gridx = 0
+            gbc.gridy = row
+            gbc.anchor = GridBagConstraints.LINE_END
+            gbc.fill =
+                GridBagConstraints.NONE
+            gbc.weightx = 0.0
+            panel.add(JLabel("Popis:"), gbc)
+            gbc.gridx = 1
+            gbc.anchor = GridBagConstraints.LINE_START
+            gbc.fill =
+                GridBagConstraints.HORIZONTAL
+            gbc.weightx = 1.0
+            panel.add(descriptionField, gbc)
+            row++
+
+            // Disabled checkbox
+            gbc.gridx = 1
+            gbc.gridy = row
+            gbc.anchor = GridBagConstraints.LINE_START
+            gbc.fill =
+                GridBagConstraints.NONE
+            panel.add(isDisabledCheckbox, gbc)
+            row++
+
+            // Add spacer to push content to top
+            gbc.gridx = 0
+            gbc.gridy = row
+            gbc.gridwidth = 2
+            gbc.weighty = 1.0
+            panel.add(JPanel(), gbc)
+
+            return panel
+        }
+
+        private fun setupEventHandlers() {
+            okButton.addActionListener { saveAndClose() }
+            cancelButton.addActionListener { dispose() }
+
+            // ESC key handling
+            addKeyListener(
+                object : java.awt.event.KeyAdapter() {
+                    override fun keyPressed(e: java.awt.event.KeyEvent) {
+                        if (e.keyCode == java.awt.event.KeyEvent.VK_ESCAPE) {
+                            dispose()
+                        }
+                    }
+                },
+            )
+
+            isFocusable = true
+        }
+
+        private fun saveAndClose() {
+            val name = nameField.text.trim()
+            val description = descriptionField.text.trim().ifEmpty { null }
+            val isDisabled = isDisabledCheckbox.isSelected
+
+            // Validation
+            if (name.isBlank()) {
+                JOptionPane.showMessageDialog(this, "Název je povinný.", "Validace", JOptionPane.WARNING_MESSAGE)
+                return
+            }
+
+            try {
+                val newClient =
+                    ClientDocument(
+                        name = name,
+                        description = description,
+                        defaultCodingGuidelines = guidelinesPanel.getGuidelines(),
+                        defaultReviewPolicy = reviewPolicyPanel.getReviewPolicy(),
+                        defaultFormatting = formattingPanel.getFormatting(),
+                        defaultSecretsPolicy = secretsPolicyPanel.getSecretsPolicy(),
+                        defaultAnonymization = anonymizationPanel.getAnonymization(),
+                        defaultInspirationPolicy = inspirationPolicyPanel.getInspirationPolicy(),
+                        tools = clientToolsPanel.getClientTools(),
+                        isDisabled = isDisabled,
+                    )
+
+                result = newClient
+                dispose()
+            } catch (e: Exception) {
+                JOptionPane.showMessageDialog(
+                    this,
+                    "Chyba při validaci nastavení: ${e.message}",
+                    "Chyba",
+                    JOptionPane.ERROR_MESSAGE,
+                )
+            }
+        }
+    }
+
+    /**
+     * Dialog for comprehensive client settings configuration
+     */
+    private class ClientSettingsDialog(
+        owner: JFrame,
+        private val client: ClientDocument,
+    ) : JDialog(owner, "Nastavení klienta: ${client.name}", true) {
+        private val guidelinesPanel = ClientSettingsComponents.createGuidelinesPanel(client.defaultCodingGuidelines)
+        private val reviewPolicyPanel = ClientSettingsComponents.createReviewPolicyPanel(client.defaultReviewPolicy)
+        private val formattingPanel = ClientSettingsComponents.createFormattingPanel(client.defaultFormatting)
+        private val secretsPolicyPanel = ClientSettingsComponents.createSecretsPolicyPanel(client.defaultSecretsPolicy)
+        private val anonymizationPanel = ClientSettingsComponents.createAnonymizationPanel(client.defaultAnonymization)
+        private val inspirationPolicyPanel =
+            ClientSettingsComponents.createInspirationPolicyPanel(client.defaultInspirationPolicy)
+        private val clientToolsPanel = ClientSettingsComponents.createClientToolsPanel(client.tools)
+
+        private val okButton = JButton("OK")
+        private val cancelButton = JButton("Cancel")
+
+        var result: ClientDocument? = null
+
+        init {
+            preferredSize = Dimension(800, 700)
+            minimumSize = Dimension(750, 650)
+            isResizable = true
+            defaultCloseOperation = DISPOSE_ON_CLOSE
+
+            setupLayout()
+            setupEventHandlers()
+        }
+
+        private fun setupLayout() {
+            val panel = JPanel(BorderLayout())
+            panel.border = EmptyBorder(16, 16, 16, 16)
+
+            val tabbedPane = javax.swing.JTabbedPane()
+
+            // Guidelines Tab
+            tabbedPane.addTab("Coding Guidelines", JScrollPane(guidelinesPanel))
+
+            // Review Policy Tab
+            tabbedPane.addTab("Review Policy", JScrollPane(reviewPolicyPanel))
+
+            // Formatting Tab
+            tabbedPane.addTab("Formatting", JScrollPane(formattingPanel))
+
+            // Secrets Policy Tab
+            tabbedPane.addTab("Secrets Policy", JScrollPane(secretsPolicyPanel))
+
+            // Anonymization Tab
+            tabbedPane.addTab("Anonymization", JScrollPane(anonymizationPanel))
+
+            // Inspiration Policy Tab
+            tabbedPane.addTab("Inspiration Policy", JScrollPane(inspirationPolicyPanel))
+
+            // Client Tools Tab
+            tabbedPane.addTab("Client Tools", JScrollPane(clientToolsPanel))
+
+            // Button panel
+            val buttonPanel = JPanel(FlowLayout(FlowLayout.RIGHT))
+            buttonPanel.add(okButton)
+            buttonPanel.add(cancelButton)
+
+            panel.add(tabbedPane, BorderLayout.CENTER)
+            panel.add(buttonPanel, BorderLayout.SOUTH)
+
+            add(panel)
+        }
+
+        private fun setupEventHandlers() {
+            okButton.addActionListener { saveAndClose() }
+            cancelButton.addActionListener { dispose() }
+
+            // ESC key handling
+            addKeyListener(
+                object : java.awt.event.KeyAdapter() {
+                    override fun keyPressed(e: java.awt.event.KeyEvent) {
+                        if (e.keyCode == java.awt.event.KeyEvent.VK_ESCAPE) {
+                            dispose()
+                        }
+                    }
+                },
+            )
+
+            isFocusable = true
+        }
+
+        private fun saveAndClose() {
+            try {
+                val updatedClient =
+                    client.copy(
+                        defaultCodingGuidelines = guidelinesPanel.getGuidelines(),
+                        defaultReviewPolicy = reviewPolicyPanel.getReviewPolicy(),
+                        defaultFormatting = formattingPanel.getFormatting(),
+                        defaultSecretsPolicy = secretsPolicyPanel.getSecretsPolicy(),
+                        defaultAnonymization = anonymizationPanel.getAnonymization(),
+                        defaultInspirationPolicy = inspirationPolicyPanel.getInspirationPolicy(),
+                        tools = clientToolsPanel.getClientTools(),
+                        updatedAt = java.time.Instant.now(),
+                    )
+
+                result = updatedClient
+                dispose()
+            } catch (e: Exception) {
+                JOptionPane.showMessageDialog(
+                    this,
+                    "Chyba při validaci nastavení: ${e.message}",
+                    "Chyba",
+                    JOptionPane.ERROR_MESSAGE,
+                )
+            }
+        }
     }
 }

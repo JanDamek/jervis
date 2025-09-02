@@ -5,7 +5,6 @@ import com.jervis.repository.mongo.ProjectMongoRepository
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import mu.KotlinLogging
-import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 import java.time.Instant
 
@@ -21,16 +20,6 @@ class ProjectService(
      * Gets all projects
      */
     suspend fun getAllProjects(): List<ProjectDocument> = projectRepository.findAll().toList()
-
-    /**
-     * Gets a project by ID
-     */
-    suspend fun getProjectById(id: ObjectId): ProjectDocument? = projectRepository.findById(id.toString())
-
-    /**
-     * Gets the active project
-     */
-    suspend fun getActiveProject(): ProjectDocument? = getDefaultProject()
 
     /**
      * Gets the default project if it exists
@@ -117,19 +106,9 @@ class ProjectService(
             getAllProjects()
         }
 
-    fun getActiveProjectBlocking(): ProjectDocument? =
-        runBlocking {
-            getActiveProject()
-        }
-
     fun getDefaultProjectBlocking(): ProjectDocument? =
         runBlocking {
             getDefaultProject()
-        }
-
-    fun setActiveProjectBlocking(project: ProjectDocument) =
-        runBlocking {
-            setActiveProject(project)
         }
 
     fun setDefaultProjectBlocking(project: ProjectDocument) =

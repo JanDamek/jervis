@@ -1,6 +1,7 @@
 package com.jervis.ui.window
 
 import com.jervis.dto.ChatRequestContext
+import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.project.ProjectService
 import kotlinx.coroutines.CoroutineScope
@@ -13,17 +14,29 @@ import org.bson.types.ObjectId
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.EventQueue
+import java.awt.event.ComponentAdapter
+import java.awt.event.ComponentEvent
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
+import javax.swing.DefaultListModel
 import javax.swing.JButton
 import javax.swing.JCheckBox
 import javax.swing.JComboBox
+import javax.swing.JDialog
 import javax.swing.JFrame
 import javax.swing.JLabel
+import javax.swing.JList
+import javax.swing.JMenuItem
+import javax.swing.JOptionPane
 import javax.swing.JPanel
+import javax.swing.JPopupMenu
 import javax.swing.JScrollPane
+import javax.swing.JSplitPane
 import javax.swing.JTextArea
 import javax.swing.JTextField
+import javax.swing.ListSelectionModel
 import javax.swing.border.EmptyBorder
 
 class MainWindow(
@@ -31,16 +44,68 @@ class MainWindow(
     private val chatCoordinator: AgentOrchestratorService,
     private val clientService: com.jervis.service.client.ClientService,
     private val linkService: com.jervis.service.client.ClientProjectLinkService,
+    private val taskContextService: TaskContextService,
 ) : JFrame("JERVIS Assistant") {
-    private val clientSelector = JComboBox<String>(arrayOf())
-    private val projectSelector = JComboBox<String>(arrayOf())
+    private val clientSelector = JComboBox<SelectorItem>(arrayOf())
+    private val projectSelector = JComboBox<SelectorItem>(arrayOf())
     private val quickCheckbox = JCheckBox("Quick response", false)
+
+    // Chat UI (right side)
     private val chatArea = JTextArea()
     private val inputField = JTextField()
+
+    // Context list UI (left side)
+    private val contextListModel = DefaultListModel<Any>()
+    private val contextList = JList<Any>(contextListModel)
+
     private val coroutineScope = CoroutineScope(Dispatchers.Default)
 
-    private val clientIdByName = mutableMapOf<String, ObjectId>()
     private val projectNameById = mutableMapOf<ObjectId, String>()
+
+    // In-memory context storage, grouped by (client, project)
+    private val contextsByScope = mutableMapOf<Pair<String?, String?>, MutableList<UiChatContext>>()
+
+    init {
+        // initialize context list defaults
+        contextList.selectionMode = ListSelectionModel.SINGLE_SELECTION
+        contextList.visibleRowCount = -1
+
+        // Set opaque cell renderer to prevent text overlap issues
+        contextList.cellRenderer =
+            object : javax.swing.DefaultListCellRenderer() {
+                init {
+                    // Ensure renderer is opaque to prevent background from painting over text
+                    isOpaque = true
+                }
+            }
+    }
+
+    // UI selector models
+    data class SelectorItem(
+        val id: ObjectId,
+        val name: String,
+    ) {
+        override fun toString(): String = name
+    }
+
+    // UI context models
+    data class UiPlan(
+        val userQueryOriginal: String,
+        val englishText: String?,
+        val finalAnswer: String?,
+        val createdAt: java.time.Instant = java.time.Instant.now(),
+    )
+
+    data class UiChatContext(
+        val id: java.util.UUID = java.util.UUID.randomUUID(),
+        var name: String,
+        val client: String?,
+        val project: String?,
+        val plans: MutableList<UiPlan> = mutableListOf(),
+        var lastUpdated: java.time.Instant = java.time.Instant.now(),
+    ) {
+        override fun toString(): String = name
+    }
 
     init {
         // Load clients and projects in a blocking way during initialization
@@ -49,8 +114,7 @@ class MainWindow(
             EventQueue.invokeLater {
                 clientSelector.removeAllItems()
                 clients.forEach { c ->
-                    clientIdByName[c.name] = c.id
-                    clientSelector.addItem(c.name)
+                    clientSelector.addItem(SelectorItem(c.id, c.name))
                 }
                 if (clients.isNotEmpty()) {
                     clientSelector.selectedIndex = 0
@@ -65,7 +129,9 @@ class MainWindow(
 
             val projects = projectService.getAllProjects()
             projectNameById.clear()
-            projects.forEach { p -> projectNameById[p.id] = p.name }
+            projects.forEach { p ->
+                projectNameById[p.id] = p.name
+            }
 
             val filtered =
                 if (linkedProjectIds.isNotEmpty()) {
@@ -76,19 +142,19 @@ class MainWindow(
                             selectedClientId
                     }
                 }
-            val projectNames = filtered.map { it.name }.toTypedArray()
+            val projectItems = filtered.map { SelectorItem(it.id, it.name) }
             val defaultProject = projectService.getDefaultProject()
             EventQueue.invokeLater {
                 projectSelector.removeAllItems()
-                projectNames.forEach { projectSelector.addItem(it) }
-                val defaultName = defaultProject?.name ?: projectNames.firstOrNull()
-                if (defaultName != null) {
-                    projectSelector.selectedItem = defaultName
+                projectItems.forEach { projectSelector.addItem(it) }
+                val defaultItem = projectItems.find { it.name == defaultProject?.name } ?: projectItems.firstOrNull()
+                if (defaultItem != null) {
+                    projectSelector.selectedItem = defaultItem
                 }
             }
         }
         defaultCloseOperation = HIDE_ON_CLOSE
-        size = Dimension(500, 600)
+        size = Dimension(900, 650)
         setLocationRelativeTo(null)
         layout = BorderLayout()
 
@@ -105,13 +171,21 @@ class MainWindow(
         topPanel.add(row1, BorderLayout.NORTH)
         topPanel.add(row2, BorderLayout.SOUTH)
 
-        // Střední oblast s přehledem chatu
+        // Center area: split pane with left context list and right chat
         chatArea.isEditable = false
         chatArea.lineWrap = true
         val chatScroll = JScrollPane(chatArea)
         chatScroll.border = EmptyBorder(10, 10, 10, 10)
 
-        // Dolní panel s inputem
+        val contextScroll = JScrollPane(contextList)
+        contextScroll.border = EmptyBorder(10, 5, 10, 5)
+        contextScroll.preferredSize = Dimension(200, 500)
+
+        val split = JSplitPane(JSplitPane.HORIZONTAL_SPLIT, contextScroll, chatScroll)
+        split.resizeWeight = 0.0
+        split.dividerLocation = 200
+
+        // Bottom panel with input
         val bottomPanel = JPanel(BorderLayout())
         bottomPanel.border = EmptyBorder(10, 10, 10, 10)
         bottomPanel.add(inputField, BorderLayout.CENTER)
@@ -151,12 +225,17 @@ class MainWindow(
         bottomPanel.add(sendButton, BorderLayout.EAST)
 
         add(topPanel, BorderLayout.NORTH)
-        add(chatScroll, BorderLayout.CENTER)
+        add(split, BorderLayout.CENTER)
         add(bottomPanel, BorderLayout.SOUTH)
 
         // Refresh projects when client changes
         clientSelector.addActionListener {
             refreshProjectsForSelectedClient()
+            refreshContextsFromDbForCurrentSelection(selectFirst = true)
+        }
+        // Refresh context list when project changes
+        projectSelector.addActionListener {
+            refreshContextsFromDbForCurrentSelection(selectFirst = true)
         }
 
         // Add ESC key handling - ESC hides the window
@@ -172,6 +251,19 @@ class MainWindow(
 
         // Make sure the window can receive key events
         isFocusable = true
+
+        // Setup context list UI and populate for current scope
+        installContextListHandlers()
+        refreshContextsFromDbForCurrentSelection(selectFirst = true)
+
+        // Refresh contexts whenever the window is shown
+        addComponentListener(
+            object : ComponentAdapter() {
+                override fun componentShown(e: ComponentEvent) {
+                    refreshContextsFromDbForCurrentSelection(selectFirst = true)
+                }
+            },
+        )
     }
 
     /**
@@ -192,10 +284,17 @@ class MainWindow(
             coroutineScope.launch {
                 try {
                     // Build context from UI selections
+                    val selectedClient = clientSelector.selectedItem as? SelectorItem
+                    val selectedProject = projectSelector.selectedItem as? SelectorItem
+
+                    if (selectedClient == null || selectedProject == null) {
+                        throw IllegalStateException("Client and project must be selected")
+                    }
+
                     val ctx =
                         ChatRequestContext(
-                            clientName = clientSelector.selectedItem as? String,
-                            projectName = projectSelector.selectedItem as? String,
+                            clientId = selectedClient.id,
+                            projectId = selectedProject.id,
                             autoScope = false,
                             quick = quickCheckbox.isSelected,
                         )
@@ -210,86 +309,26 @@ class MainWindow(
                         chatArea.text = content.replace("Assistant: Processing...\n", "")
                     }
 
-                    if (response.requiresConfirmation) {
-                        // Show confirmation dialog on EDT to let the user choose scope
-                        val choice =
-                            withContext(Dispatchers.Swing) {
-                                showScopeConfirmationDialog(
-                                    originalClient = ctx.clientName,
-                                    originalProject = ctx.projectName,
-                                    suggestedClient = response.detectedClient,
-                                    suggestedProject = response.detectedProject,
-                                    explanation = response.scopeExplanation,
-                                    englishText = response.englishText,
-                                )
-                            }
-                        // Re-call with confirmed scope
-                        val confirmedCtx =
-                            ChatRequestContext(
-                                clientName = choice.first,
-                                projectName = choice.second,
-                                autoScope = false,
-                                quick = ctx.quick,
-                                confirmedScope = true,
-                            )
-                        val confirmedResponse = chatCoordinator.handle(text, confirmedCtx)
+                    // Ensure a UI context exists (name from the first message if needed)
+                    val uiCtx = withContext(Dispatchers.Swing) { ensureSelectedContextForCurrentScope(text) }
+                    withContext(Dispatchers.Swing) {
+                        // Display only final assistant message; scope decisions happen in services
+                        chatArea.append("Assistant: ${response.message}\n\n")
 
-                        withContext(Dispatchers.Swing) {
-                            // Apply confirmed scope to selectors
-                            choice.first?.let { detectedClient ->
-                                val size = clientSelector.itemCount
-                                for (i in 0 until size) {
-                                    if (clientSelector.getItemAt(i) == detectedClient) {
-                                        clientSelector.selectedIndex = i
-                                        break
-                                    }
-                                }
-                            }
-                            refreshProjectsForSelectedClient()
-                            choice.second?.let { detectedProject ->
-                                val size = projectSelector.itemCount
-                                for (i in 0 until size) {
-                                    if (projectSelector.getItemAt(i) == detectedProject) {
-                                        projectSelector.selectedIndex = i
-                                        break
-                                    }
-                                }
-                            }
-                            chatArea.append("Assistant: ${confirmedResponse.message}\n\n")
-                            inputField.isEnabled = true
-                            inputField.requestFocus()
-                        }
-                    } else {
-                        withContext(Dispatchers.Swing) {
-                            // Apply detected client/project if provided
-                            response.detectedClient?.let { detectedClient ->
-                                val size = clientSelector.itemCount
-                                for (i in 0 until size) {
-                                    if (clientSelector.getItemAt(i) == detectedClient) {
-                                        clientSelector.selectedIndex = i
-                                        break
-                                    }
-                                }
-                            }
-                            // Refresh projects for selected client and then select detected project if any
-                            refreshProjectsForSelectedClient()
-                            response.detectedProject?.let { detectedProject ->
-                                val size = projectSelector.itemCount
-                                for (i in 0 until size) {
-                                    if (projectSelector.getItemAt(i) == detectedProject) {
-                                        projectSelector.selectedIndex = i
-                                        break
-                                    }
-                                }
-                            }
+                        // Store as a new plan in the selected UI context
+                        uiCtx.plans.add(
+                            UiPlan(
+                                userQueryOriginal = text,
+                                englishText = null,
+                                finalAnswer = response.message,
+                            ),
+                        )
+                        uiCtx.lastUpdated = java.time.Instant.now()
+                        rebuildContextList()
 
-                            // Add the response message
-                            chatArea.append("Assistant: ${response.message}\n\n")
-
-                            // Re-enable input and button
-                            inputField.isEnabled = true
-                            inputField.requestFocus()
-                        }
+                        // Re-enable input
+                        inputField.isEnabled = true
+                        inputField.requestFocus()
                     }
                 } catch (e: Exception) {
                     // Handle errors
@@ -310,152 +349,10 @@ class MainWindow(
         }
     }
 
-    private fun showScopeConfirmationDialog(
-        originalClient: String?,
-        originalProject: String?,
-        suggestedClient: String?,
-        suggestedProject: String?,
-        explanation: String?,
-        englishText: String?,
-    ): Pair<String?, String?> {
-        val dialog = javax.swing.JDialog(this, "Confirm scope", true)
-        dialog.layout = BorderLayout()
-        val panel = JPanel()
-        panel.layout = javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS)
-        panel.border = EmptyBorder(10, 10, 10, 10)
-
-        val info = JTextArea()
-        info.isEditable = false
-        info.lineWrap = true
-        info.wrapStyleWord = true
-        val reasonText = (explanation ?: "Model suggested a different scope based on the request.")
-        val english = englishText?.let { "\n\nEnglish translation:\n$it" } ?: ""
-        info.text = "Reason: $reasonText$english"
-        val infoScroll = JScrollPane(info)
-        infoScroll.preferredSize = Dimension(460, 100)
-        panel.add(infoScroll)
-
-        val clientRow = JPanel(BorderLayout())
-        clientRow.add(JLabel("Client:"), BorderLayout.WEST)
-        val clientCombo = JComboBox<String>()
-        // populate clients from current UI selector
-        for (i in 0 until clientSelector.itemCount) {
-            clientCombo.addItem(clientSelector.getItemAt(i))
-        }
-        clientRow.add(clientCombo, BorderLayout.CENTER)
-        panel.add(clientRow)
-
-        val projectRow = JPanel(BorderLayout())
-        projectRow.add(JLabel("Project:"), BorderLayout.WEST)
-        val projectCombo = JComboBox<String>()
-        projectRow.add(projectCombo, BorderLayout.CENTER)
-        panel.add(projectRow)
-
-        fun loadProjectsForClient(cname: String?) {
-            projectCombo.removeAllItems()
-            val names: List<String> =
-                if (cname == null) {
-                    emptyList()
-                } else {
-                    runBlocking {
-                        val cid = clientIdByName[cname]
-                        if (cid == null) {
-                            emptyList()
-                        } else {
-                            val links = linkService.listForClient(cid)
-                            val linkedIds = links.map { it.projectId }.toSet()
-                            val all = projectService.getAllProjects()
-                            val base = all.filter { it.clientId == cid }
-                            val filtered = if (linkedIds.isEmpty()) base else base.filter { it.id in linkedIds }
-                            filtered.map { it.name }
-                        }
-                    }
-                }
-            names.forEach { projectCombo.addItem(it) }
-        }
-
-        // Set initial selections
-        val initialClient = suggestedClient ?: originalClient ?: (clientSelector.selectedItem as? String)
-        clientCombo.selectedItem = initialClient
-        loadProjectsForClient(initialClient)
-        val initialProject =
-            when {
-                suggestedProject != null &&
-                    (0 until projectCombo.itemCount).any {
-                        projectCombo.getItemAt(
-                            it,
-                        ) == suggestedProject
-                    }
-                -> suggestedProject
-
-                originalProject != null &&
-                    (0 until projectCombo.itemCount).any {
-                        projectCombo.getItemAt(
-                            it,
-                        ) == originalProject
-                    }
-                -> originalProject
-
-                else -> projectCombo.getItemAt(0)?.toString()
-            }
-        if (initialProject != null) projectCombo.selectedItem = initialProject
-
-        clientCombo.addActionListener {
-            val selected = clientCombo.selectedItem as? String
-            loadProjectsForClient(selected)
-            // try to keep suggested project when switching clients
-            val target = suggestedProject ?: originalProject
-            if (target != null) {
-                for (i in 0 until projectCombo.itemCount) {
-                    if (projectCombo.getItemAt(i) == target) {
-                        projectCombo.selectedIndex = i
-                        break
-                    }
-                }
-            }
-        }
-
-        val buttons = JPanel()
-        val ok = JButton("OK")
-        val cancel = JButton("Cancel")
-        buttons.add(ok)
-        buttons.add(cancel)
-
-        var result: Pair<String?, String?> = Pair(originalClient, originalProject)
-        ok.addActionListener {
-            result = Pair(clientCombo.selectedItem as? String, projectCombo.selectedItem as? String)
-            dialog.dispose()
-        }
-        cancel.addActionListener {
-            result = Pair(originalClient, originalProject)
-            dialog.dispose()
-        }
-
-        // ESC = keep original
-        val escKey = javax.swing.KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0)
-        dialog.rootPane.registerKeyboardAction(
-            {
-                result = Pair(originalClient, originalProject)
-                dialog.dispose()
-            },
-            escKey,
-            javax.swing.JComponent.WHEN_IN_FOCUSED_WINDOW,
-        )
-        // ENTER = accept current selection (defaults to suggested)
-        dialog.rootPane.defaultButton = ok
-
-        dialog.add(panel, BorderLayout.CENTER)
-        dialog.add(buttons, BorderLayout.SOUTH)
-        dialog.setSize(500, 320)
-        dialog.setLocationRelativeTo(this)
-        dialog.isResizable = true
-        dialog.isVisible = true
-        return result
-    }
-
     private fun refreshProjectsForSelectedClient() {
-        val clientName = clientSelector.selectedItem as? String ?: return
-        val clientId = clientIdByName[clientName] ?: return
+        val selectedClient = clientSelector.selectedItem as? SelectorItem ?: return
+        selectedClient.name
+        val clientId = selectedClient.id
         coroutineScope.launch {
             try {
                 val links = linkService.listForClient(clientId)
@@ -475,14 +372,204 @@ class MainWindow(
                     }
                 withContext(Dispatchers.Swing) {
                     projectSelector.removeAllItems()
-                    names.forEach { projectSelector.addItem(it) }
-                    if (preferred != null) {
-                        projectSelector.selectedItem = preferred
+                    filtered.forEach { project ->
+                        projectSelector.addItem(SelectorItem(project.id, project.name))
+                    }
+                    val preferredItem = filtered.find { it.name == preferred }?.let { SelectorItem(it.id, it.name) }
+                    if (preferredItem != null) {
+                        projectSelector.selectedItem = preferredItem
                     }
                 }
             } catch (_: Exception) {
                 // ignore UI refresh errors
             }
         }
+    }
+
+    private fun refreshContextsFromDbForCurrentSelection(selectFirst: Boolean = false) {
+        val selectedClient =
+            clientSelector.selectedItem as? SelectorItem ?: run {
+                contextsByScope[currentScopeKey()] = mutableListOf()
+                rebuildContextList(selectFirst)
+                return
+            }
+        val clientName = selectedClient.name
+        val clientId = selectedClient.id
+        val selectedProject = projectSelector.selectedItem as? SelectorItem
+        val projectName = selectedProject?.name
+        val projectId = selectedProject?.id
+
+        coroutineScope.launch {
+            try {
+                val docs = taskContextService.listFor(clientId, projectId)
+                val mapped =
+                    docs
+                        .map { doc ->
+                            UiChatContext(
+                                name =
+                                    buildString {
+                                        if (doc.quick) append("⚡ ")
+                                        append(doc.projectDocument.name)
+                                        append(" • ")
+                                        append(doc.updatedAt)
+                                    },
+                                client = clientName,
+                                project = projectName,
+                                plans = mutableListOf(),
+                                lastUpdated = doc.updatedAt,
+                            )
+                        }.toMutableList()
+                withContext(Dispatchers.Swing) {
+                    contextsByScope[currentScopeKey()] = mapped
+                    rebuildContextList(selectFirst)
+                }
+            } catch (_: Exception) {
+                withContext(Dispatchers.Swing) {
+                    contextsByScope[currentScopeKey()] = mutableListOf()
+                    rebuildContextList(selectFirst)
+                }
+            }
+        }
+    }
+
+    // --- Context list helpers and tool skeletons ---
+    private val NEW_CONTEXT_LABEL = "➕ New context"
+
+    private fun currentScopeKey(): Pair<String?, String?> =
+        Pair(
+            (clientSelector.selectedItem as? SelectorItem)?.name,
+            (projectSelector.selectedItem as? SelectorItem)?.name,
+        )
+
+    private fun contextsForCurrentScope(): MutableList<UiChatContext> = contextsByScope.getOrPut(currentScopeKey()) { mutableListOf() }
+
+    private fun installContextListHandlers() {
+        contextList.addMouseListener(
+            object : MouseAdapter() {
+                override fun mouseClicked(e: MouseEvent) {
+                    if (e.clickCount == 2) {
+                        val index = contextList.locationToIndex(e.point)
+                        if (index >= 0) {
+                            when (val item = contextListModel.getElementAt(index)) {
+                                is String ->
+                                    if (item == NEW_CONTEXT_LABEL) {
+                                        val created = createAndSelectNewContext()
+                                        promptRename(created)
+                                    }
+
+                                is UiChatContext -> openContextConversationDialog(item)
+                            }
+                        }
+                    }
+                }
+
+                override fun mousePressed(e: MouseEvent) = maybeShowPopup(e)
+
+                override fun mouseReleased(e: MouseEvent) = maybeShowPopup(e)
+
+                private fun maybeShowPopup(e: MouseEvent) {
+                    if (e.isPopupTrigger) {
+                        val index = contextList.locationToIndex(e.point)
+                        if (index >= 0) {
+                            contextList.selectedIndex = index
+                            val item = contextListModel.getElementAt(index)
+                            if (item is UiChatContext) {
+                                val menu = JPopupMenu()
+                                val openItem = JMenuItem("Open conversation…")
+                                val renameItem = JMenuItem("Rename…")
+                                openItem.addActionListener { openContextConversationDialog(item) }
+                                renameItem.addActionListener {
+                                    promptRename(item)
+                                }
+                                menu.add(openItem)
+                                menu.add(renameItem)
+                                menu.show(contextList, e.x, e.y)
+                            }
+                        }
+                    }
+                }
+            },
+        )
+    }
+
+    private fun promptRename(ctx: UiChatContext) {
+        val newName = JOptionPane.showInputDialog(this, "Context name:", ctx.name)
+        if (newName != null && newName.isNotBlank()) {
+            ctx.name = newName.trim()
+            ctx.lastUpdated = java.time.Instant.now()
+            rebuildContextList()
+        }
+    }
+
+    private fun rebuildContextList(selectFirst: Boolean = false) {
+        val items = mutableListOf<Any>()
+        items.add(NEW_CONTEXT_LABEL)
+        val contexts = contextsForCurrentScope().sortedByDescending { it.lastUpdated }
+        items.addAll(contexts)
+        EventQueue.invokeLater {
+            contextListModel.removeAllElements()
+            items.forEach { contextListModel.addElement(it) }
+            if (selectFirst) {
+                contextList.selectedIndex = 0
+            }
+        }
+    }
+
+    private fun createAndSelectNewContext(defaultNameFromText: String? = null): UiChatContext {
+        val key = currentScopeKey()
+        val name = (defaultNameFromText?.take(40)?.ifBlank { null }) ?: "New context"
+        val ctx = UiChatContext(name = name, client = key.first, project = key.second)
+        val list = contextsByScope.getOrPut(key) { mutableListOf() }
+        list.add(ctx)
+        ctx.lastUpdated = java.time.Instant.now()
+        rebuildContextList()
+        // select just-created context (index 1: under the NEW item)
+        EventQueue.invokeLater {
+            for (i in 0 until contextListModel.size()) {
+                val item = contextListModel.getElementAt(i)
+                if (item is UiChatContext && item.id == ctx.id) {
+                    contextList.selectedIndex = i
+                    break
+                }
+            }
+        }
+        return ctx
+    }
+
+    private fun ensureSelectedContextForCurrentScope(defaultNameFromText: String?): UiChatContext {
+        val selected = contextList.selectedValue
+        return if (selected is UiChatContext) selected else createAndSelectNewContext(defaultNameFromText)
+    }
+
+    private fun openContextConversationDialog(ctx: UiChatContext) {
+        val dlg = JDialog(this, "Context: ${'$'}{ctx.name}", true)
+        val area = JTextArea()
+        area.isEditable = false
+        area.lineWrap = true
+        area.wrapStyleWord = true
+        val sb = StringBuilder()
+        if (ctx.plans.isEmpty()) {
+            sb.appendLine("No conversation yet.")
+        } else {
+            ctx.plans.sortedBy { it.createdAt }.forEachIndexed { idx, p ->
+                sb.appendLine("# Plan ${'$'}{idx + 1}")
+                sb.appendLine("- Original query: ${'$'}{p.userQueryOriginal}")
+                p.englishText?.let { sb.appendLine("- English normalized: ${'$'}it") }
+                p.finalAnswer?.let { sb.appendLine("- Final answer: ${'$'}it") }
+                sb.appendLine()
+            }
+        }
+        area.text = sb.toString()
+        dlg.add(JScrollPane(area), BorderLayout.CENTER)
+        val close = JButton("Close")
+        close.addActionListener { dlg.dispose() }
+        val south = JPanel(BorderLayout())
+        val hint = JLabel("Double-click a context in the list to open.")
+        south.add(hint, BorderLayout.WEST)
+        south.add(close, BorderLayout.EAST)
+        dlg.add(south, BorderLayout.SOUTH)
+        dlg.setSize(640, 480)
+        dlg.setLocationRelativeTo(this)
+        dlg.isVisible = true
     }
 }

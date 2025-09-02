@@ -1,11 +1,9 @@
 package com.jervis.service.gateway
 
-import com.jervis.configuration.EndpointProperties
 import com.jervis.configuration.ModelsProperties
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProvider
 import com.jervis.domain.model.ModelType
-import kotlinx.coroutines.withTimeout
 import mu.KotlinLogging
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
@@ -15,7 +13,6 @@ import org.springframework.web.reactive.function.client.awaitBody
 @Service
 class LlmGatewayImpl(
     private val modelsProperties: ModelsProperties,
-    private val endpoints: EndpointProperties,
     @Qualifier("lmStudioWebClient") private val lmStudioClient: WebClient,
     @Qualifier("ollamaWebClient") private val ollamaClient: WebClient,
     @Qualifier("openaiWebClient") private val openaiClient: WebClient,
@@ -35,33 +32,24 @@ class LlmGatewayImpl(
         if (candidates.isEmpty()) error("No LLM candidates configured for $type")
 
         val finalUser = buildUserPrompt(userPrompt, outputLanguage)
+
         var lastError: Throwable? = null
-        for ((_, candidate) in candidates.withIndex()) {
+        for (candidate in candidates) {
             val provider = candidate.provider ?: continue
-            val timeout = candidate.timeoutMs
             logger.info { "Calling LLM type=$type provider=$provider model=${candidate.model}" }
             val startNs = System.nanoTime()
             try {
+                logger.debug {
+                    "LLM Request - type=$type, quick=$quick, userPrompt=$finalUser}, systemPrompt=$systemPrompt"
+                }
                 val result =
-                    if (timeout != null && timeout > 0) {
-                        withTimeout(timeout) {
-                            doCall(
-                                provider,
-                                candidate.model,
-                                systemPrompt,
-                                finalUser,
-                                candidate,
-                            )
-                        }
-                    } else {
-                        doCall(
-                            provider,
-                            candidate.model,
-                            systemPrompt,
-                            finalUser,
-                            candidate,
-                        )
-                    }
+                    doCall(
+                        provider,
+                        candidate.model,
+                        systemPrompt,
+                        finalUser,
+                        candidate,
+                    )
                 val tookMs = (System.nanoTime() - startNs) / 1_000_000
                 logger.info { "LLM call succeeded provider=$provider model=${candidate.model} in ${tookMs}ms" }
                 if (result.answer.isNotBlank()) return result
@@ -152,18 +140,15 @@ class LlmGatewayImpl(
         c.topP?.takeIf { it in 0.0..1.0 }?.let { options["top_p"] = it }
         c.maxTokens?.takeIf { it > 0 }?.let { options["num_predict"] = it }
 
-        val body = mutableMapOf<String, Any>(
-            "model" to model,
-            "prompt" to userPrompt,
-            "stream" to false,
-        )
+        val body =
+            mutableMapOf<String, Any>(
+                "model" to model,
+                "prompt" to userPrompt,
+                "stream" to false,
+            )
         if (!systemPrompt.isNullOrBlank()) body["system"] = systemPrompt
         if (options.isNotEmpty()) body["options"] = options
 
-        logger.debug {
-            val opts = if (options.isEmpty()) "none" else options.keys.joinToString(",")
-            "OLLAMA_REQUEST: path=/api/generate model=$model stream=false options=$opts system=${!systemPrompt.isNullOrBlank()}"
-        }
         try {
             val resp: OllamaGenerateResponse =
                 ollamaClient
@@ -201,11 +186,12 @@ class LlmGatewayImpl(
         val messages = mutableListOf<Map<String, Any>>()
         if (!systemPrompt.isNullOrBlank()) messages += mapOf("role" to "system", "content" to systemPrompt)
         messages += mapOf("role" to "user", "content" to userPrompt)
-        val body = mutableMapOf<String, Any>(
-            "model" to model,
-            "messages" to messages,
-            "stream" to false,
-        )
+        val body =
+            mutableMapOf<String, Any>(
+                "model" to model,
+                "messages" to messages,
+                "stream" to false,
+            )
         if (options.isNotEmpty()) body["options"] = options
         logger.debug {
             val opts = if (options.isEmpty()) "none" else options.keys.joinToString(",")

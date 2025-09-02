@@ -1,10 +1,11 @@
 package com.jervis.service.rag
 
+import com.jervis.domain.context.TaskContext
 import com.jervis.domain.model.ModelType
+import com.jervis.domain.plan.Plan
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagDocumentType
 import com.jervis.domain.rag.RagSourceType
-import com.jervis.entity.mongo.TaskContextDocument
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.mcp.domain.ToolResult
@@ -23,24 +24,21 @@ class RagIngestService(
     private val logger = KotlinLogging.logger {}
 
     suspend fun ingestStep(
-        context: TaskContextDocument,
+        context: TaskContext,
+        plan: Plan,
         toolName: String,
-        parameters: String,
+        taskDescription: String,
         output: ToolResult,
     ): String? {
-        val projectId = context.projectId
-        if (projectId == null) {
-            logger.debug { "RAG_INGEST_SKIP: No projectId in contextId=${context.id}" }
-            return null
-        }
+        val projectId = context.projectDocument.id
         val content =
             buildString {
                 appendLine("Agent step artifact")
                 appendLine("contextId=${context.id}")
-                appendLine("client=${context.clientName ?: "unknown"}")
-                appendLine("project=${context.projectName ?: "unknown"}")
+                appendLine("clientId=${context.clientDocument.id}")
+                appendLine("projectId=${context.projectDocument.id}")
                 appendLine("tool=$toolName")
-                appendLine("parameters=$parameters")
+                appendLine("taskDescription=$taskDescription")
                 appendLine("output=${output.render().take(4000)}")
             }
         val embedding =
@@ -60,8 +58,8 @@ class RagIngestService(
                 documentType = RagDocumentType.ACTION,
                 ragSourceType = RagSourceType.AGENT,
                 pageContent = content,
-                clientId = context.clientId,
-                language = context.originalLanguage ?: "en",
+                clientId = context.clientDocument.id,
+                language = (plan.originalLanguage.takeIf { it.isNotBlank() } ?: "en"),
                 module = toolName,
                 path = "agent/step/$toolName",
             )

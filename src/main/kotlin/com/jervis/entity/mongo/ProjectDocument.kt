@@ -2,7 +2,6 @@ package com.jervis.entity.mongo
 
 import com.jervis.domain.project.IndexingRules
 import com.jervis.domain.project.ProjectOverrides
-import com.jervis.domain.project.Repo
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.Indexed
@@ -20,17 +19,18 @@ data class ProjectDocument(
     @Indexed
     val clientId: ObjectId? = null,
     val name: String,
-    @Indexed
-    val slug: String = "", // [a-z0-9-]+
     val description: String? = null,
-    val paths: List<String> = emptyList(),
-    val repo: Repo = Repo(primaryUrl = ""),
+    val path: String = "",
     val languages: List<String> = emptyList(),
+    // Repository/Git settings (optional - project doesn't have to be in Git)
+    val primaryUrl: String? = null,
+    val extraUrls: List<String> = emptyList(),
+    val credentialsRef: String? = null,
+    val defaultBranch: String = "main",
     // Per-project overrides (nullable fields).
     val overrides: ProjectOverrides = ProjectOverrides(),
-    // Inspiration-only flag and default branch.
+    // Inspiration-only flag.
     val inspirationOnly: Boolean = false,
-    val isDefaultBranch: String = "main",
     // Indexing rules.
     val indexingRules: IndexingRules = IndexingRules(),
     // Dependencies on other projects (by id).

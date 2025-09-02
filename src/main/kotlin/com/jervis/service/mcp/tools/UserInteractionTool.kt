@@ -1,7 +1,10 @@
 package com.jervis.service.mcp.tools
 
+import com.jervis.domain.context.TaskContext
 import com.jervis.domain.model.ModelType
-import com.jervis.entity.mongo.TaskContextDocument
+import com.jervis.domain.plan.Plan
+import com.jervis.entity.mongo.ClientDocument
+import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
@@ -13,7 +16,6 @@ import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Dimension
 import java.awt.FlowLayout
-import java.awt.Font
 import java.awt.Frame
 import java.awt.event.KeyEvent
 import javax.swing.BorderFactory
@@ -41,21 +43,11 @@ class UserInteractionTool(
         "Display a blocking user dialog, show request details and collect user’s answer."
 
     override suspend fun execute(
-        context: TaskContextDocument,
-        parameters: String,
+        context: TaskContext,
+        plan: Plan,
+        taskDescription: String,
     ): ToolResult {
-        val userLang = context.originalLanguage?.lowercase()?.ifBlank { null }
-
-        val questionTranslated =
-            gateway
-                .callLlm(
-                    ModelType.TRANSLATION,
-                    parameters,
-                    "Translate user prompt.",
-                    userLang,
-                    context.quick,
-                ).answer
-                .trim()
+        val userLang = plan.originalLanguage.lowercase().ifBlank { null }
 
         val questionRephrased =
             runCatching {
@@ -68,45 +60,37 @@ class UserInteractionTool(
                         userPrompt =
                             """
                             Request:
-                            $questionTranslated
+                            $taskDescription
                             """.trimIndent(),
-                        outputLanguage = userLang ?: "en",
+                        outputLanguage = userLang,
                         quick = context.quick,
                     ).answer
-            }.getOrElse { questionTranslated }
-
-        val proposedAnswer =
-            runCatching {
-                gateway
-                    .callLlm(
-                        type = ModelType.INTERNAL,
-                        systemPrompt = "Provide a concise, helpful answer to the following request. Keep it short and actionable.",
-                        userPrompt =
-                            """
-                            Request:
-                            $questionRephrased
-                            """.trimIndent(),
-                        outputLanguage = userLang ?: "en",
-                        quick = context.quick,
-                    ).answer
-            }.getOrElse {
-                if ((userLang ?: "en") == "en") "I need more details, please." else "Potřebuji více informací, prosím."
             }
 
-        val previousOutput = context.finalResult ?: context.contextSummary
-        val client = context.clientName
-        val project = context.projectName
+        val proposedAnswer =
+            gateway
+                .callLlm(
+                    type = ModelType.INTERNAL,
+                    systemPrompt = "Provide a concise, helpful answer to the following request. Keep it short and actionable.",
+                    userPrompt =
+                        """
+                        Request:
+                        $questionRephrased
+                        """.trimIndent(),
+                    outputLanguage = userLang,
+                    quick = context.quick,
+                ).answer
 
+        val previousOutput = plan.finalAnswer ?: plan.contextSummary
         val decisionResult =
             withContext(Dispatchers.Swing) {
                 showUserAwaitDialog(
                     owner = null,
-                    client = client,
-                    project = project,
+                    client = context.clientDocument,
+                    project = context.projectDocument,
                     previousOutput = previousOutput,
-                    questionOriginal = parameters,
-                    questionTranslated = questionTranslated,
-                    questionRephrased = questionRephrased,
+                    questionOriginal = taskDescription,
+                    questionTranslated = taskDescription,
                     proposedAnswer = proposedAnswer,
                 )
             }
@@ -158,12 +142,11 @@ class UserInteractionTool(
 
     fun showUserAwaitDialog(
         owner: java.awt.Component? = null,
-        client: String?,
-        project: String?,
+        client: ClientDocument,
+        project: ProjectDocument,
         previousOutput: String?,
         questionOriginal: String,
         questionTranslated: String,
-        questionRephrased: String,
         proposedAnswer: String,
     ): UserDecisionResult {
         var result = UserDecision.ESC
@@ -181,10 +164,9 @@ class UserInteractionTool(
 
         val header =
             StringBuilder().apply {
-                appendLine("Client: ${client ?: "(unknown)"}")
-                appendLine("Project: ${project ?: "(unknown)"}")
+                appendLine("Client: ${client.name}")
+                appendLine("Project: ${project.name}")
                 appendLine("Original prompt: $questionOriginal")
-                appendLine("Rephrased: $questionRephrased")
                 if (!previousOutput.isNullOrBlank()) {
                     appendLine("\nPrevious output:")
                     appendLine(previousOutput.take(500))
@@ -195,7 +177,6 @@ class UserInteractionTool(
             JTextArea(header.toString()).apply {
                 isEditable = false
                 background = Color(245, 245, 245)
-                font = Font("Monospaced", Font.PLAIN, 12)
                 lineWrap = true
                 wrapStyleWord = true
             }
@@ -210,7 +191,6 @@ class UserInteractionTool(
             JTextArea(questionTranslated).apply {
                 isEditable = false
                 background = Color(250, 250, 250)
-                font = Font("Monospaced", Font.PLAIN, 12)
                 lineWrap = true
                 wrapStyleWord = true
             }

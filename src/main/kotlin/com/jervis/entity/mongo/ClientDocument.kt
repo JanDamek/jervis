@@ -19,8 +19,6 @@ data class ClientDocument(
     val id: ObjectId = ObjectId.get(),
     @Indexed(unique = true)
     val name: String,
-    @Indexed(unique = true)
-    val slug: String = name.lowercase().replace(" ", "-").replace(Regex("[^a-z0-9-]"), ""),
     val description: String? = null,
     val defaultCodingGuidelines: Guidelines = Guidelines(),
     val defaultReviewPolicy: ReviewPolicy = ReviewPolicy(),

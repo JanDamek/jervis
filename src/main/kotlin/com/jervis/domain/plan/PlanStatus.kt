@@ -4,5 +4,6 @@ enum class PlanStatus {
     CREATED,
     RUNNING,
     COMPLETED,
+    FINALIZED,
     FAILED,
 }

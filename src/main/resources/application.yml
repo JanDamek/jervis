@@ -37,13 +37,14 @@ qdrant:
 server:
   port: 5500
 
-models: # embedding is only 762 dimensions
+models: # embedding dimensions configured per model
   EMBEDDING_TEXT:
     - provider: LM_STUDIO
       model: text-embedding-nomic-embed-text-v2-moe
       maxTokens: 512
       maxInputTokens: 512
       maxRequests: 12
+      dimension: 768
   #    - provider: OLLAMA
   #      model: text-embedding-nomic-embed-text-v2-moe
   #      maxTokens: 512
@@ -52,10 +53,11 @@ models: # embedding is only 762 dimensions
 
   EMBEDDING_CODE:
     - provider: LM_STUDIO
-      model: nomic-embed-code
+      model: text-embedding-nomic-embed-code
       maxTokens: 4096
       maxInputTokens: 4096
       maxRequests: 4
+      dimension: 3584
   #    - provider: OLLAMA
   #      model: nomic-embed-code
   #      maxTokens: 4096
@@ -205,3 +207,99 @@ endpoints:
     base-url: ${OLLAMA_BASE_URL:http://192.168.100.117:11434/}
   lmStudio:
     base-url: ${LMSTUDIO_BASE_URL:http://192.168.101.249:1234/}
+
+# JARVIS workspace now uses project paths directly from active project
+
+# Service-specific timeout configurations
+timeouts:
+  embedding:
+    requestTimeoutMinutes: 10
+    connectionTimeoutMinutes: 5
+    providers:
+      lm_studio:
+        requestTimeoutMinutes: 15
+        connectionTimeoutMinutes: 10
+      ollama:
+        requestTimeoutMinutes: 10
+        connectionTimeoutMinutes: 5
+      openai:
+        requestTimeoutMinutes: 8
+        connectionTimeoutMinutes: 3
+
+  joern:
+    processTimeoutMinutes: 30
+    helpCommandTimeoutMinutes: 30
+    scanTimeoutMinutes: 30
+    scriptTimeoutMinutes: 30
+    parseTimeoutMinutes: 30
+    versionTimeoutMinutes: 30
+
+  webclient:
+    connectTimeoutMinutes: 30
+    responseTimeoutMinutes: 30
+    pendingAcquireTimeoutMinutes: 30
+
+  qdrant:
+    operationTimeoutMinutes: 30
+
+  mcp:
+    joernToolTimeoutSeconds: 1800
+    terminalToolTimeoutSeconds: 1800
+
+# Service-specific retry configurations
+retrys:
+  embedding:
+    retryCount: 3
+    backoffDurationSeconds: 2
+    maxBackoffDurationSeconds: 30
+    providers:
+      lm_studio:
+        retryCount: 5
+        backoffDurationSeconds: 3
+        maxBackoffDurationSeconds: 60
+      ollama:
+        retryCount: 3
+        backoffDurationSeconds: 2
+        maxBackoffDurationSeconds: 30
+      openai:
+        retryCount: 4
+        backoffDurationSeconds: 1
+        maxBackoffDurationSeconds: 20
+
+  llm:
+    retryCount: 3
+    backoffDurationSeconds: 1
+    maxBackoffDurationSeconds: 10
+    providers: { }
+
+  qdrant:
+    connectionRetryCount: 3
+    connectionBackoffDurationSeconds: 5
+    operationRetryCount: 2
+    operationBackoffDurationSeconds: 2
+
+# Service-specific connection pool configurations
+connection-pools:
+  webclient:
+    maxConnections: 500
+    maxIdleTimeMinutes: 30
+    maxLifeTimeMinutes: 60
+    pendingAcquireTimeoutMinutes: 30
+    evictInBackgroundMinutes: 60
+    pendingAcquireMaxCount: 1000
+
+  qdrant:
+    maxConnections: 50
+    keepAliveTimeoutMinutes: 30
+    connectionTimeoutMinutes: 5
+
+  embedding:
+    enableRateLimiting: true
+    defaultMaxConcurrentRequests: 10
+    providers:
+      lm_studio:
+        maxConcurrentRequests: 4  # Conservative limit for LM Studio
+      ollama:
+        maxConcurrentRequests: 8
+      openai:
+        maxConcurrentRequests: 20

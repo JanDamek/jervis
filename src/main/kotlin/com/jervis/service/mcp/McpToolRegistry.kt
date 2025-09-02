@@ -1,5 +1,7 @@
 package com.jervis.service.mcp
 
+import com.jervis.service.agent.planner.Planner
+import jakarta.annotation.PostConstruct
 import org.springframework.stereotype.Service
 
 /**
@@ -9,18 +11,17 @@ import org.springframework.stereotype.Service
 @Service
 class McpToolRegistry(
     private val tools: List<McpTool>,
+    private val planner: Planner,
 ) {
     fun all(): List<McpTool> = tools
 
-    fun byName(name: String): McpTool? = tools.find { it.name == name }
+    fun byName(name: String): McpTool = tools.first { it.name == name }
 
-    fun names(): Set<String> = tools.map { it.name }.toSet()
-
-    /**
-     * Returns JSON lines (one JSON per line) describing available MCP tools.
-     */
-    fun getAllToolDescriptionsJson(): String =
-        tools.joinToString(separator = "\n") {
-            """{"name": "${it.name}", "description": "${it.description}"}"""
-        }
+    @PostConstruct
+    fun initialize() {
+        planner.allToolDescriptions =
+            tools.joinToString(separator = "\n\n") { tool ->
+                "Tool: ${tool.name}\nDescription: ${tool.description}"
+            }
+    }
 }

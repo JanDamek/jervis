@@ -1,18 +1,18 @@
 package com.jervis.repository.mongo
 
 import com.jervis.domain.plan.StepStatus
-import com.jervis.entity.mongo.PlanStep
+import com.jervis.entity.mongo.PlanStepDocument
 import kotlinx.coroutines.flow.Flow
 import org.bson.types.ObjectId
 import org.springframework.data.repository.kotlin.CoroutineCrudRepository
 import org.springframework.stereotype.Repository
 
 @Repository
-interface PlanStepMongoRepository : CoroutineCrudRepository<PlanStep, String> {
-    fun findByPlanId(planId: ObjectId): Flow<PlanStep>
+interface PlanStepMongoRepository : CoroutineCrudRepository<PlanStepDocument, String> {
+    fun findByPlanId(planId: ObjectId): Flow<PlanStepDocument>
 
     suspend fun findFirstByPlanIdAndStatusOrderByOrder(
         planId: ObjectId,
         status: StepStatus,
-    ): PlanStep?
+    ): PlanStepDocument?
 }

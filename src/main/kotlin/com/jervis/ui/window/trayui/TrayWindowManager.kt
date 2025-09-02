@@ -1,8 +1,10 @@
 package com.jervis.ui.window.trayui
 
+import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.client.ClientProjectLinkService
 import com.jervis.service.client.ClientService
+import com.jervis.service.indexing.IndexingService
 import com.jervis.service.project.ProjectService
 import com.jervis.ui.component.ApplicationWindowManager
 import org.springframework.stereotype.Component
@@ -17,6 +19,8 @@ class TrayWindowManager(
     chatCoordinator: AgentOrchestratorService,
     clientService: ClientService,
     linkService: ClientProjectLinkService,
+    taskContextService: TaskContextService,
+    indexingService: IndexingService,
 ) {
     private val windowManager =
         ApplicationWindowManager(
@@ -24,6 +28,8 @@ class TrayWindowManager(
             chatCoordinator,
             clientService,
             linkService,
+            taskContextService,
+            indexingService,
         )
 
     /**
