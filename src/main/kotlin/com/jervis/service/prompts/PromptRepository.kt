@@ -16,6 +16,23 @@ class PromptRepository(
 ) {
     private val logger = KotlinLogging.logger {}
 
+    init {
+        logger.info { "PromptRepository initialized with configuration:" }
+        logger.info { "  Prompts count: ${promptsConfig.prompts.size}" }
+        logger.info { "  Creativity levels count: ${promptsConfig.creativityLevels.size}" }
+        logger.info { "  Available prompt types: ${promptsConfig.prompts.keys}" }
+
+        if (promptsConfig.prompts.isEmpty()) {
+            logger.error { "WARNING: No prompts loaded from configuration! Check YAML binding." }
+        } else {
+            promptsConfig.prompts.forEach { (type, config) ->
+                logger.debug {
+                    "  $type: hasSystemPrompt=${!config.systemPrompt.isNullOrBlank()}, hasDescription=${!config.description
+                        .isNullOrBlank()}" }
+            }
+        }
+    }
+
     /**
      * Get system prompt by type - direct map lookup
      */

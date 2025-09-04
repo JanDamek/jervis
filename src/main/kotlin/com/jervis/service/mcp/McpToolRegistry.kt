@@ -2,6 +2,7 @@ package com.jervis.service.mcp
 
 import com.jervis.service.agent.planner.Planner
 import jakarta.annotation.PostConstruct
+import org.springframework.context.annotation.DependsOn
 import org.springframework.stereotype.Service
 
 /**
@@ -9,19 +10,18 @@ import org.springframework.stereotype.Service
  * Currently only collects beans by injection; selection logic will be added later.
  */
 @Service
+@DependsOn("promptRepository")
 class McpToolRegistry(
     private val tools: List<McpTool>,
     private val planner: Planner,
 ) {
-    fun all(): List<McpTool> = tools
-
     fun byName(name: String): McpTool = tools.first { it.name == name }
 
     @PostConstruct
     fun initialize() {
         planner.allToolDescriptions =
-            tools.joinToString(separator = "\n\n") { tool ->
-                "Tool: ${tool.name}\nDescription: ${tool.description}"
+            tools.joinToString(separator = "\n") { tool ->
+                "${tool.name} : ${tool.description}"
             }
     }
 }
