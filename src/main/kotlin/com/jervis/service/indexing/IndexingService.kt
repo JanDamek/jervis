@@ -33,6 +33,10 @@ class IndexingService(
     private val textEmbeddingService: TextEmbeddingService,
     private val vectorStorage: VectorStorageRepository,
     private val embeddingGateway: EmbeddingGateway,
+    private val meetingIndexingService: MeetingIndexingService,
+    private val gitHistoryIndexingService: GitHistoryIndexingService,
+    private val dependencyIndexingService: DependencyIndexingService,
+    private val classSummaryIndexingService: ClassSummaryIndexingService,
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -383,6 +387,182 @@ class IndexingService(
             } catch (e: Exception) {
                 logger.error(e) { "Error during Joern analysis results indexing for project: ${project.name}" }
                 IndexingResult(0, 0, 1, "JOERN_INDEX")
+            }
+        }
+
+    /**
+     * Index git history with incremental updates
+     */
+    suspend fun indexGitHistory(
+        project: ProjectDocument,
+        projectPath: Path,
+    ): IndexingResult =
+        withContext(Dispatchers.Default) {
+            try {
+                val result = gitHistoryIndexingService.indexGitHistory(project, projectPath)
+                IndexingResult(
+                    result.processedCommits,
+                    result.skippedCommits,
+                    result.errorCommits,
+                    "GIT_HISTORY_INDEX",
+                )
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to index git history for project: ${project.name}" }
+                IndexingResult(0, 0, 1, "GIT_HISTORY_INDEX")
+            }
+        }
+
+    /**
+     * Index dependencies from Joern analysis
+     */
+    suspend fun indexDependencies(
+        project: ProjectDocument,
+        projectPath: Path,
+        joernDir: Path,
+    ): IndexingResult =
+        withContext(Dispatchers.Default) {
+            try {
+                val result = dependencyIndexingService.indexDependenciesFromJoern(project, projectPath, joernDir)
+                IndexingResult(
+                    result.processedDependencies,
+                    result.skippedDependencies,
+                    result.errorDependencies,
+                    "DEPENDENCY_INDEX",
+                )
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to index dependencies for project: ${project.name}" }
+                IndexingResult(0, 0, 1, "DEPENDENCY_INDEX")
+            }
+        }
+
+    /**
+     * Index class summaries using LLM analysis
+     */
+    suspend fun indexClassSummaries(
+        project: ProjectDocument,
+        projectPath: Path,
+        joernDir: Path,
+    ): IndexingResult =
+        withContext(Dispatchers.Default) {
+            try {
+                val result = classSummaryIndexingService.indexClassSummaries(project, projectPath, joernDir)
+                IndexingResult(
+                    result.processedClasses,
+                    result.skippedClasses,
+                    result.errorClasses,
+                    "CLASS_SUMMARY_INDEX",
+                )
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to index class summaries for project: ${project.name}" }
+                IndexingResult(0, 0, 1, "CLASS_SUMMARY_INDEX")
+            }
+        }
+
+    /**
+     * Index meeting transcript from Whisper service
+     */
+    suspend fun indexMeetingTranscript(
+        project: ProjectDocument,
+        meetingId: String,
+        transcript: String,
+        meetingTitle: String,
+        participantList: List<String> = emptyList(),
+    ): Boolean =
+        try {
+            meetingIndexingService.indexMeetingFromWhisper(
+                project,
+                meetingId,
+                transcript,
+                meetingTitle,
+                participantList,
+            )
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to index meeting transcript: $meetingTitle" }
+            false
+        }
+
+    /**
+     * Index meeting notes manually
+     */
+    suspend fun indexMeetingNotes(
+        project: ProjectDocument,
+        meetingTitle: String,
+        notes: String,
+    ): Boolean =
+        try {
+            meetingIndexingService.indexMeetingNotes(project, meetingTitle, notes)
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to index meeting notes: $meetingTitle" }
+            false
+        }
+
+    /**
+     * Comprehensive project indexing that includes all document types
+     */
+    suspend fun indexProjectComprehensive(project: ProjectDocument): IndexingResult =
+        withContext(Dispatchers.Default) {
+            try {
+                logger.info { "Starting comprehensive indexing for project: ${project.name}" }
+                val projectPath = Paths.get(project.path)
+
+                if (!Files.exists(projectPath)) {
+                    logger.error { "Project path does not exist: ${project.path}" }
+                    return@withContext IndexingResult(0, 0, 1, "COMPREHENSIVE_INDEX")
+                }
+
+                val results = mutableListOf<IndexingResult>()
+
+                // 1. Index code files
+                logger.info { "Indexing code files for project: ${project.name}" }
+                results.add(indexCodeFiles(project, projectPath))
+
+                // 2. Index text content
+                logger.info { "Indexing text content for project: ${project.name}" }
+                results.add(indexTextContent(project, projectPath))
+
+                // 3. Index git history
+                logger.info { "Indexing git history for project: ${project.name}" }
+                results.add(indexGitHistory(project, projectPath))
+
+                // 4. Run Joern analysis and index results
+                logger.info { "Running Joern analysis and indexing results for project: ${project.name}" }
+                try {
+                    val joernDir = joernAnalysisService.setupJoernDirectory(projectPath)
+                    if (joernDir != null) {
+                        // Perform Joern analysis
+                        joernAnalysisService.performJoernAnalysis(project, projectPath, joernDir)
+
+                        if (Files.exists(joernDir)) {
+                            // Index Joern analysis results
+                            results.add(indexJoernAnalysisResults(project, projectPath, joernDir))
+
+                            // Index dependencies from Joern
+                            results.add(indexDependencies(project, projectPath, joernDir))
+
+                            // Index class summaries
+                            results.add(indexClassSummaries(project, projectPath, joernDir))
+                        }
+                    } else {
+                        logger.warn { "Joern analysis setup failed for project: ${project.name}" }
+                    }
+                } catch (e: Exception) {
+                    logger.error(e) { "Joern analysis failed for project: ${project.name}" }
+                }
+
+                // Aggregate results
+                val totalProcessed = results.sumOf { it.processedFiles }
+                val totalSkipped = results.sumOf { it.skippedFiles }
+                val totalErrors = results.sumOf { it.errorFiles }
+
+                logger.info {
+                    "Comprehensive indexing completed for project: ${project.name} - " +
+                        "Total processed: $totalProcessed, Total skipped: $totalSkipped, Total errors: $totalErrors"
+                }
+
+                IndexingResult(totalProcessed, totalSkipped, totalErrors, "COMPREHENSIVE_INDEX")
+            } catch (e: Exception) {
+                logger.error(e) { "Comprehensive indexing failed for project: ${project.name}" }
+                IndexingResult(0, 0, 1, "COMPREHENSIVE_INDEX")
             }
         }
 

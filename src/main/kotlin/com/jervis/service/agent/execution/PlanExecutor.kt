@@ -34,7 +34,7 @@ class PlanExecutor(
 
             try {
                 plan.steps.sortedBy { it.order }.first { it.status == StepStatus.PENDING }.let { step ->
-                    mcpToolRegistry.byName(step.name)?.let { tool ->
+                    mcpToolRegistry.byName(step.name).let { tool ->
                         logger.info { "EXECUTOR_STEP_START: stepId=${step.id} step='${step.name}' plan=${plan.id}" }
                         logger.debug { "EXECUTOR_STEP_TOOL: tool='${tool.name}', taskDescription=${step.taskDescription}" }
 
@@ -102,7 +102,6 @@ class PlanExecutor(
                             }
                         }
 
-                        ragIngestService.ingestStep(context, plan, tool.name, step.taskDescription, result)
                         taskContextService.save(context)
                     }
                 }

@@ -84,7 +84,7 @@ fun main(args: Array<String>) {
 
     try {
         UIManager.setLookAndFeel(FlatLightLaf())
-    } catch (e: Exception) {
+    } catch (_: Exception) {
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName())
         } catch (ex: Exception) {

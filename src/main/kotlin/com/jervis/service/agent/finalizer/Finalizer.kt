@@ -1,10 +1,12 @@
 package com.jervis.service.agent.finalizer
 
+import com.jervis.configuration.prompts.PromptType
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.PlanStatus
 import com.jervis.dto.ChatResponse
 import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.prompts.PromptRepository
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.time.Instant
@@ -18,6 +20,7 @@ import java.time.Instant
 @Service
 class Finalizer(
     private val gateway: LlmGateway,
+    private val promptRepository: PromptRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -35,15 +38,19 @@ class Finalizer(
                             failureReason = plan.failureReason,
                         )
 
+                    val systemPrompt = promptRepository.getSystemPrompt(PromptType.FINALIZER_SYSTEM)
+                    val modelParams = promptRepository.getEffectiveModelParams(PromptType.FINALIZER_SYSTEM)
+
                     val answer =
                         runCatching {
                             gateway
                                 .callLlm(
                                     type = ModelType.INTERNAL,
                                     userPrompt = userPrompt,
-                                    systemPrompt = buildSystemPrompt(),
+                                    systemPrompt = systemPrompt,
                                     outputLanguage = userLang,
                                     quick = context.quick,
+                                    modelParams = modelParams,
                                 ).answer
                                 .trim()
                         }.getOrElse {

@@ -50,12 +50,13 @@ Use this tool for vulnerability research, automated code review, or post-process
     @Serializable
     data class JoernQuery(
         val scriptContent: String,
+        val scriptFilename: String,
         val terminalCommand: String,
     )
 
     private suspend fun parseTaskDescription(
         taskDescription: String,
-        projectPath: String,
+        context: TaskContext,
     ): JoernParams {
         val systemPrompt =
             """
@@ -64,6 +65,7 @@ Your job is to convert a natural-language description of a static analysis task 
 Each operation must return the following JSON fields:
 {
   "scriptContent": "<Scala-based .sc script executed by Joern>",
+  "scriptFilename": "<Name of the .sc script file (e.g., 'op-001-detect-lang.sc')>",
   "terminalCommand": "<Shell command that executes the script on macOS>"
 }
 ────────────────────────────
@@ -115,6 +117,7 @@ You must return only a valid JSON object with this structure:
   "operations": [
     {
       "scriptContent": "FULL .sc SCRIPT WITH @main",
+      "scriptFilename": "SCRIPT FILENAME (e.g., 'op-001-detect-lang.sc')",
       "terminalCommand": "FULL SHELL COMMAND TO EXECUTE"
     }
   ],
@@ -127,10 +130,10 @@ You must return only a valid JSON object with this structure:
 TERMINAL EXECUTION CONTEXT:
 ────────────────────────────
 • The working directory contains `.jervis/cpg.bin` which is the input CPG file.
-• All output files should be placed in `.jervis/ops/`, such as:
-    - script: `.jervis/ops/op-001-eval-calls.sc`
-    - output: `.jervis/ops/op-001-eval-calls.json`
-    - log: `.jervis/ops/op-001-eval-calls.run.log`
+• All output files should be placed in `.jervis/`, such as:
+    - script: `.jervis/op-001-eval-calls.sc`
+    - output: `.jervis/op-001-eval-calls.json`
+    - log: `.jervis/op-001-eval-calls.run.log`
 • Joern is already installed and available in PATH.
 ────────────────────────────
 EXAMPLES:
@@ -144,11 +147,13 @@ Example task: "Find all uses of `eval()` and show the code + line number"
     "file" -> x.file.name,
     "line" -> x.lineNumber
   )).toJsonPretty #> outFile
+→ operations[0].scriptFilename:
+op-001-eval-calls.sc
 → operations[0].terminalCommand:
-joern --script "$projectPath/.jervis/ops/op-001-eval-calls.sc" \
-      --param cpgFile="$projectPath/.jervis/cpg.bin" \
-      --param outFile="$projectPath/.jervis/ops/op-001-eval-calls.json" \
-      2>&1 | tee "$projectPath/.jervis/ops/op-001-eval-calls.run.log"
+joern --script ".jervis/op-001-eval-calls.sc" \
+      --param cpgFile=".jervis/cpg.bin" \
+      --param outFile=".jervis/op-001-eval-calls.json" \
+      2>&1 | tee ".jervis/op-001-eval-calls.run.log"
 ────────────────────────────
 QUALITY CONTROL CHECKLIST:
 ────────────────────────────
@@ -164,6 +169,8 @@ Return ONLY the required JSON object as shown above.
                 type = ModelType.INTERNAL,
                 systemPrompt = systemPrompt,
                 userPrompt = taskDescription,
+                outputLanguage = "en",
+                quick = context.quick,
             )
 
         val cleanedResponse =
@@ -188,8 +195,7 @@ Return ONLY the required JSON object as shown above.
             return ToolResult.error("Project path does not exist or is not a directory: $projectDir")
         }
 
-        val parsed =
-            parseTaskDescription(taskDescription, projectDir.absolutePath)
+        val parsed = parseTaskDescription(taskDescription, context)
 
         if (parsed.operations.isEmpty()) {
             return ToolResult.error("Joern operations cannot be empty")
@@ -214,8 +220,8 @@ Return ONLY the required JSON object as shown above.
                     for ((index, operation) in parsed.operations.withIndex()) {
                         jobs.add(
                             launch {
-                                // Save scriptContent to a script file
-                                val scriptFile = joernDir.resolve("script_${index + 1}.sc").toFile()
+                                // Save scriptContent to a script file using the designated filename
+                                val scriptFile = joernDir.resolve(operation.scriptFilename).toFile()
                                 scriptFile.writeText(operation.scriptContent)
 
                                 // Execute the terminal command using ProcessStreamingUtils
@@ -279,6 +285,7 @@ Return ONLY the required JSON object as shown above.
             finalPrompt = parsed.finalPrompt,
             systemPrompt = mcpFinalPromptProcessor.createJoernSystemPrompt(),
             originalResult = result,
+            context = context,
         )
     }
 

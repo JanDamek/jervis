@@ -1,5 +1,7 @@
 package com.jervis.service.mcp.tools
 
+import com.jervis.configuration.prompts.McpToolType
+import com.jervis.configuration.prompts.PromptType
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
@@ -9,11 +11,14 @@ import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.mcp.util.McpFinalPromptProcessor
+import com.jervis.service.prompts.PromptRepository
+import io.qdrant.client.grpc.JsonWithInt
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
 @Service
@@ -22,10 +27,15 @@ class RagQueryTool(
     private val vectorStorage: VectorStorageRepository,
     private val llmGateway: LlmGateway,
     private val mcpFinalPromptProcessor: McpFinalPromptProcessor,
+    private val promptRepository: PromptRepository,
 ) : McpTool {
+    companion object {
+        private val logger = KotlinLogging.logger {}
+    }
+
     override val name: String = "rag.query"
-    override val description: String =
-        "Performs semantic search across code repositories and documentation using vector embeddings. Use for finding existing implementations, APIs, documentation, and understanding codebase structure. Specify search scope: 'find API documentation for authentication', 'search code examples for file handling', or 'look for similar implementations of user management'."
+    override val description: String
+        get() = promptRepository.getMcpToolDescription(McpToolType.RAG_QUERY)
 
     @Serializable
     data class RagQueryRequest(
@@ -33,6 +43,7 @@ class RagQueryTool(
         val embedding: String,
         val topK: Int? = null,
         val finalPrompt: String? = null,
+        val filters: Map<String, String>? = null,
     )
 
     @Serializable
@@ -40,56 +51,25 @@ class RagQueryTool(
         val queries: List<RagQueryRequest>,
         val topK: Int = 5,
         val finalPrompt: String? = null,
+        val globalFilters: Map<String, String>? = null,
     )
 
-    private suspend fun parseTaskDescription(taskDescription: String): RagQueryParams {
-        val systemPrompt =
-            """
-            You are the RAG Query Tool parameter resolver. Your task is to convert a natural language task description into proper parameters for the RAG Query Tool.        
-            The RAG Query Tool provides:
-            - Semantic search across code repositories and documentation using vector embeddings
-            - Ability to search both text embeddings (documentation, comments) and code embeddings (source code)
-            - Multiple parallel queries for comprehensive coverage
-            - LLM processing of search results for actionable insights
-            - Project-specific filtering and context awareness
-            
-            Available embedding types: "text" (for documentation/comments), "code" (for source code)
-            
-            Return ONLY a valid JSON object with this exact structure:
-            {
-              "queries": [
-                {
-                  "query": "<search query 1>",
-                  "embedding": "<text or code>",
-                  "topK": <number of results, optional>,
-                  "finalPrompt": "<LLM prompt to process results, optional>"
-                }
-              ],
-              "topK": <global number of results, default 5>,
-              "finalPrompt": "<global LLM prompt to process all results, optional>"
-            }
-            
-            Examples:
-            - "find API documentation for authentication" → {"queries": [{"query": "authentication API documentation", "embedding": "text"}], "topK": 5}
-            - "search code examples for file handling" → {"queries": [{"query": "file handling examples", "embedding": "code"}], "topK": 7}
-            - "look for similar implementations of user management" → {"queries": [{"query": "user management", "embedding": "text"}, {"query": "user management implementation", "embedding": "code"}], "topK": 5}
-            
-            Rules:
-            - Create 1-3 queries that best cover the search intent
-            - Use "text" embedding for documentation/API/concept searches
-            - Use "code" embedding for implementation/pattern searches
-            - For broad searches, create both text and code queries
-            - topK should be 3-10 depending on search scope (default 5)
-            - Add finalPrompt only if results need specific processing
-            - Return only valid JSON, no explanations or markdown
-            """.trimIndent()
+    private suspend fun parseTaskDescription(
+        taskDescription: String,
+        context: TaskContext,
+    ): RagQueryParams {
+        val systemPrompt = promptRepository.getSystemPrompt(PromptType.RAG_QUERY_SYSTEM)
+        val modelParams = promptRepository.getEffectiveModelParams(PromptType.RAG_QUERY_SYSTEM)
 
         return try {
             val llmResponse =
                 llmGateway.callLlm(
                     type = ModelType.INTERNAL,
                     systemPrompt = systemPrompt,
-                    userPrompt = "Task: $taskDescription",
+                    userPrompt = taskDescription,
+                    outputLanguage = "en",
+                    quick = context.quick,
+                    modelParams = modelParams,
                 )
 
             val cleanedResponse =
@@ -102,64 +82,8 @@ class RagQueryTool(
 
             Json.decodeFromString<RagQueryParams>(cleanedResponse)
         } catch (e: Exception) {
-            // Enhanced fallback logic based on keywords
-            val isCodeFocused =
-                taskDescription.contains("implementation", ignoreCase = true) ||
-                    taskDescription.contains("code", ignoreCase = true) ||
-                    taskDescription.contains("function", ignoreCase = true) ||
-                    taskDescription.contains("method", ignoreCase = true) ||
-                    taskDescription.contains("class", ignoreCase = true)
-
-            val isDocFocused =
-                taskDescription.contains("documentation", ignoreCase = true) ||
-                    taskDescription.contains("API", ignoreCase = true) ||
-                    taskDescription.contains("guide", ignoreCase = true) ||
-                    taskDescription.contains("tutorial", ignoreCase = true)
-
-            val queries =
-                when {
-                    isCodeFocused && !isDocFocused ->
-                        listOf(
-                            RagQueryRequest(
-                                query = taskDescription,
-                                embedding = "code",
-                                topK = null,
-                                finalPrompt = null,
-                            ),
-                        )
-
-                    isDocFocused && !isCodeFocused ->
-                        listOf(
-                            RagQueryRequest(
-                                query = taskDescription,
-                                embedding = "text",
-                                topK = null,
-                                finalPrompt = null,
-                            ),
-                        )
-
-                    else ->
-                        listOf(
-                            RagQueryRequest(
-                                query = taskDescription,
-                                embedding = "text",
-                                topK = null,
-                                finalPrompt = null,
-                            ),
-                            RagQueryRequest(
-                                query = taskDescription,
-                                embedding = "code",
-                                topK = null,
-                                finalPrompt = null,
-                            ),
-                        )
-                }
-
-            RagQueryParams(
-                queries = queries,
-                topK = 5,
-                finalPrompt = null,
-            )
+            logger.error(e) { "Error while calling RagQueryTool" }
+            throw e
         }
     }
 
@@ -170,7 +94,7 @@ class RagQueryTool(
     ): ToolResult {
         val queryParams =
             runCatching {
-                parseTaskDescription(taskDescription)
+                parseTaskDescription(taskDescription, context)
             }.getOrElse { return ToolResult.error("Invalid RAG query parameters: ${it.message}") }
 
         if (queryParams.queries.isEmpty()) {
@@ -187,7 +111,6 @@ class RagQueryTool(
                         }
                     }.awaitAll()
 
-            // Process individual query results and then apply global final prompt if needed
             val aggregatedResult = aggregateResults(queryResults, queryParams.queries.size > 1)
 
             // Apply global final prompt processing if specified
@@ -196,6 +119,7 @@ class RagQueryTool(
                     finalPrompt = globalFinalPrompt,
                     systemPrompt = mcpFinalPromptProcessor.createRagSystemPrompt(),
                     originalResult = aggregatedResult,
+                    context = context,
                 )
             } ?: aggregatedResult
         }
@@ -228,13 +152,30 @@ class RagQueryTool(
         // Use query-specific topK if provided, otherwise use global topK
         val effectiveTopK = queryRequest.topK ?: globalParams.topK
 
+        // Build combined filter: mandatory projectId + global filters + query-specific filters
+        val combinedFilter =
+            buildMap<String, Any> {
+                // Always include projectId for security
+                put("projectId", context.projectDocument.id.toHexString())
+
+                // Add global filters if present
+                globalParams.globalFilters?.forEach { (key, value) ->
+                    put(key, value)
+                }
+
+                // Add query-specific filters if present (these override global filters for same keys)
+                queryRequest.filters?.forEach { (key, value) ->
+                    put(key, value)
+            }
+        }
+
         val results =
             try {
                 vectorStorage.search(
                     collectionType = modelType,
                     query = embedding,
                     limit = effectiveTopK,
-                    filter = mapOf("projectId" to context.projectDocument.id.toHexString()),
+                    filter = combinedFilter,
                 )
             } catch (e: Exception) {
                 return ToolResult.error("Vector search failed for query $queryIndex: ${e.message}")
@@ -245,37 +186,15 @@ class RagQueryTool(
         }
 
         val enhancedResults = StringBuilder()
-        enhancedResults.appendLine("🔍 Query $queryIndex Results: '${queryRequest.query}'")
-        enhancedResults.appendLine("Found ${results.size} relevant result(s)")
-        enhancedResults.appendLine()
-
         results.forEachIndexed { index, doc ->
-            val content = doc.pageContent.trim()
-            enhancedResults.appendLine(
-                "📄 Result ${index + 1}: ${doc.documentType.name.lowercase()} from ${doc.ragSourceType.name.lowercase()}",
-            )
-            enhancedResults.appendLine("🆔 Project: ${doc.projectId}")
+            enhancedResults.appendLine("Result ${index + 1}:")
 
-            if (content.isEmpty()) {
-                enhancedResults.appendLine("⚠️  [No content available - this may indicate a data storage issue]")
-            } else {
-                val displayContent =
-                    when {
-                        doc.documentType.name
-                            .lowercase()
-                            .contains("code") && content.length <= 2000 -> content
-
-                        content.length > 1000 -> content.take(1000) + "\n... [truncated - showing first 1000 characters]"
-                        else -> content
-                    }
-
-                enhancedResults.appendLine("```")
-                enhancedResults.appendLine(displayContent)
-                enhancedResults.appendLine("```")
-
-                enhancedResults.appendLine(
-                    "💡 This ${doc.documentType.name.lowercase()} content comes from ${doc.ragSourceType.name.lowercase()} source.",
-                )
+            // Iterate through all map entries and output KEY: VALUE pairs
+            doc.forEach { (key, value) ->
+                val stringValue = getStringValue(value)
+                if (stringValue.isNotEmpty()) {
+                    enhancedResults.appendLine("$key: $stringValue")
+                }
             }
 
             if (index < results.size - 1) {
@@ -287,12 +206,12 @@ class RagQueryTool(
 
         val initialResult = ToolResult.ok(enhancedResults.toString())
 
-        // Apply query-specific final prompt if provided
         return queryRequest.finalPrompt?.let { queryFinalPrompt ->
             mcpFinalPromptProcessor.processFinalPrompt(
                 finalPrompt = queryFinalPrompt,
                 systemPrompt = mcpFinalPromptProcessor.createRagSystemPrompt(),
                 originalResult = initialResult,
+                context = context,
             )
         } ?: initialResult
     }
@@ -318,7 +237,7 @@ class RagQueryTool(
         val aggregatedOutput =
             if (isMultipleQueries) {
                 buildString {
-                    appendLine("🔍 Multi-Query RAG Search Results (${successResults.size} queries executed in parallel)")
+                    appendLine("Multi-Query RAG Search Results (${successResults.size} queries executed in parallel)")
                     appendLine("=".repeat(80))
                     appendLine()
                     successResults.forEachIndexed { index, result ->
@@ -336,4 +255,17 @@ class RagQueryTool(
 
         return ToolResult.ok(aggregatedOutput)
     }
+
+    /**
+     * Helper function to extract string value from JsonWithInt.Value
+     */
+    private fun getStringValue(value: JsonWithInt.Value?): String =
+        when {
+            value == null -> ""
+            value.hasStringValue() -> value.stringValue
+            value.hasIntegerValue() -> value.integerValue.toString()
+            value.hasDoubleValue() -> value.doubleValue.toString()
+            value.hasBoolValue() -> value.boolValue.toString()
+            else -> ""
+        }
 }

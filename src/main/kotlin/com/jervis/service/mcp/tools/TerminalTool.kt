@@ -36,7 +36,7 @@ class TerminalTool(
 
     override val name: String = "terminal"
     override val description: String =
-        "Executes system commands and development tools via terminal. Use for building, testing, git operations, file management, package installation, and running development tools. Specify command details: 'run mvn test in target directory', 'build project with npm', 'check git status', or 'install dependencies with timeout 300s'."
+        "Executes system commands and development tools via terminal. Use for building, testing, git operations, file management, package installation, and running development tools. Specify command details: 'run mvn test in target directory', 'build project with npm', 'check git status', or 'install dependencies with timeout 300s'. Not use for joern-have s separate tool."
 
     @Serializable
     data class TerminalParams(
@@ -45,7 +45,10 @@ class TerminalTool(
         val finalPrompt: String? = null,
     )
 
-    private suspend fun parseTaskDescription(taskDescription: String): TerminalParams {
+    private suspend fun parseTaskDescription(
+        taskDescription: String,
+        context: TaskContext,
+    ): TerminalParams {
         val systemPrompt =
             """
             You are the Terminal Tool parameter resolver. Your task is to convert a natural language task description into proper parameters for the Terminal Tool.           
@@ -56,7 +59,7 @@ class TerminalTool(
             - Installing dependencies and packages (npm install, pip install, apt-get, etc.)
             - Git operations and version control (git status, git commit, git push, etc.)
             - File system operations (ls, find, grep, mkdir, cp, etc.)
-            - Database operations, deployment commands, and development server management            
+            - Database operations, deployment commands, and development server management      
             Return ONLY a valid JSON object with this exact structure:
             {
               "command": "<terminal command to execute>",
@@ -68,6 +71,7 @@ class TerminalTool(
             - "build the project" → {"command": "mvn clean compile"}
             - "check git status" → {"command": "git status"}            
             Rules:
+            - not use for joern - this have separate tool
             - command: must be a specific, executable terminal command
             - timeout: only specify if command might take longer than default (>60s)
             - finalPrompt: add if results need specific interpretation
@@ -80,7 +84,9 @@ class TerminalTool(
                 llmGateway.callLlm(
                     type = ModelType.INTERNAL,
                     systemPrompt = systemPrompt,
-                    userPrompt = "Task: $taskDescription",
+                    userPrompt = taskDescription,
+                    outputLanguage = "en",
+                    quick = context.quick,
                 )
 
             val cleanedResponse =
@@ -122,7 +128,7 @@ class TerminalTool(
         plan: Plan,
         taskDescription: String,
     ): ToolResult {
-        val parsed = parseTaskDescription(taskDescription)
+        val parsed = parseTaskDescription(taskDescription, context)
 
         val validationResult = validateCommand(parsed)
         validationResult?.let { return it }
@@ -133,6 +139,7 @@ class TerminalTool(
             finalPrompt = parsed.finalPrompt,
             systemPrompt = mcpFinalPromptProcessor.createTerminalSystemPrompt(),
             originalResult = executionResult,
+            context = context,
         )
     }
 

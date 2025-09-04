@@ -67,10 +67,10 @@ class EmbeddingGatewayImpl(
         val candidates = modelsProperties.models[type].orEmpty()
         check(candidates.isNotEmpty()) { "No embedding model candidates configured for $type" }
 
-        val trimmed = text.ifBlank { "" }
+        val trimmed = text.trim()
 
         // Debug logging for embedding request details
-        logger.debug { "Embedding Request - type=$type, text length=${text.length}, text preview=$text" }
+        logger.debug { "Embedding Request - type=$type, text length=${trimmed.length}, text preview=$trimmed" }
 
         var lastError: Throwable? = null
 
