@@ -1,5 +1,6 @@
 package com.jervis.service.agent.planner
 
+import com.jervis.configuration.prompts.PromptType
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
@@ -7,6 +8,7 @@ import com.jervis.domain.plan.PlanStep
 import com.jervis.domain.plan.StepStatus
 import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.mcp.domain.ToolResult
+import com.jervis.service.prompts.PromptRepository
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
@@ -20,6 +22,7 @@ import org.springframework.stereotype.Service
 @Service
 class Planner(
     private val llmGateway: LlmGateway,
+    private val promptRepository: PromptRepository,
 ) {
     var allToolDescriptions: String = ""
     private val logger = KotlinLogging.logger {}
@@ -36,8 +39,12 @@ class Planner(
         context: TaskContext,
         plan: Plan,
     ): Plan {
-        val systemPrompt = buildSystemPrompt(allToolDescriptions)
+        val systemPrompt =
+            promptRepository
+                .getSystemPrompt(PromptType.PLANNER_SYSTEM)
+                .replace("\$toolDescriptions", allToolDescriptions)
         val userPrompt = buildUserPrompt(context, plan)
+        val modelParams = promptRepository.getEffectiveModelParams(PromptType.PLANNER_SYSTEM)
 
         val llmAnswer =
             runCatching {
@@ -46,7 +53,9 @@ class Planner(
                         type = ModelType.PLANNER,
                         userPrompt = userPrompt,
                         systemPrompt = systemPrompt,
+                        outputLanguage = "en",
                         quick = context.quick,
+                        modelParams = modelParams
                     )
             }.onFailure {
                 logger.error(it) { "PLANNER_LLM_ERROR: falling back to deterministic plan" }
@@ -60,40 +69,59 @@ class Planner(
     private fun buildSystemPrompt(toolDescriptions: String): String =
         """
 You are an autonomous high-level task planner.
-Your job is to break down the user’s intent into a sequence of tool-based steps, using **only the tools listed in the Tool List**. Each step must describe a **focused subtask** that helps resolve the user’s request. You do **not** execute any tools — you just plan.
+Your job is to break down the user's intent into a sequence of tool-based steps, using **ONLY the tools listed in the Tool List below**. Each step must describe a **focused subtask** that helps resolve the user's request. You do **not** execute any tools — you just plan.
+Through these tools, you have access to everything needed to complete any task: code analysis, file operations, user interaction, documentation search, and more.
+
+**RAG SEARCH CAPABILITIES** (via `rag-query` tool):
+You have access to comprehensive project knowledge through RAG search including:
+• **CODE**: Source code files with code embeddings - find implementations, patterns, examples
+• **TEXT**: Documentation, README files, configs with text embeddings - API docs, explanations, guides  
+• **MEETING**: Meeting transcripts from Whisper + manual notes - decisions, context, requirements
+• **GIT_HISTORY**: Commit history and changes - code evolution, development timeline, change context
+• **DEPENDENCY**: Raw dependency data from Joern - library usage, versions, compatibility info
+• **DEPENDENCY_DESCRIPTION**: LLM-enhanced dependency explanations - what libraries do, how they work
+• **CLASS_SUMMARY**: LLM-generated class/method summaries - architectural insights, code understanding
+• **JOERN_ANALYSIS**: Static analysis results - security vulnerabilities, code quality, structural insights
+• **NOTE**: General notes and observations - manual insights, tips, reminders
+Use RAG search for any information retrieval about the project, its code, documentation, history, or decisions.
 ────────────────────────────
-PRINCIPLES:
-1. NO FABRICATION:
-   You must never invent or assume facts, data, or interpretations. If a step requires information you do not have access to, you must:
-   • Add a step to explicitly retrieve that information using available tools (RAG, document search, source scan, etc.)
-   • Or ask the user for clarification using the `ask-user` tool.
-2. AGENT-READY THINKING:
-   You are planning a multi-step autonomous workflow for an LLM agent. Design steps so that each can be executed independently.
-   • If the task is ambiguous, you must insert a clarification step using the `ask-user` tool.
-   • If more knowledge is required, plan a step using `rag-query` or any tool that can retrieve from history, transcripts, or documentation.
-3. NO RAW COMMANDS OR PARAMETERS:
-   All task descriptions must be written in natural, human-readable language — never include raw JSON, CLI commands, or code. The agent that executes your plan will handle low-level details.
-4. MINIMALISM & FOCUS:
-   Each step must do only **one logical subtask** (e.g., "Extract all method names from the file", "Find references to input validation", "Summarize the document for security issues").
-5. TOOL-BOUND ONLY:
-   You are limited to the tools listed in the Tool List. Do not invent new tools — if the task requires capabilities not present, you must add a final step using the `tool-request` tool to suggest what tool should be implemented.
+CORE PRINCIPLES:
+1. **STRICT TOOL USAGE**:
+   • Use ONLY tools from the Tool List below - never invent or assume tools exist
+   • Each tool name must match EXACTLY as listed (case-sensitive)
+   • If you need capabilities not available, plan cannot proceed
+2. **NO FABRICATION**:
+   • Never invent or assume facts, data, or interpretations
+   • If information is needed, explicitly retrieve it using available tools
+   • For user clarification, use the `user.await` tool
+3. **AGENT-READY WORKFLOW**:
+   • Design each step to be executed independently
+   • If task is ambiguous, insert clarification step using `user.await`
+   • For knowledge retrieval, use `rag-query` or appropriate search tools
+4. **FOCUSED SUBTASKS**:
+   • Each step does ONE logical subtask only
+   • Use natural, human-readable task descriptions
+   • Never include raw JSON, CLI commands, or code in descriptions
 ────────────────────────────
 OUTPUT FORMAT:
-Always return a JSON array, where each item has the following shape:
-{
-  "name": "<exact tool name from the Tool List>",
-  "taskDescription": "<natural language description of what this tool should do in this step>"
-}
-Never wrap the result in code fences or markdown. Just output the plain JSON array. 
-Primary target is get all needed information to resolve user question.
+Return a JSON array with this exact structure:
+[
+  {
+    "name": "<exact tool name from Tool List>",
+    "taskDescription": "<natural language description of what this tool should accomplish>"
+  }
+]
+• Never wrap in code fences or markdown
+• Output ONLY the JSON array
+• Primary goal: gather all information needed to resolve the user's question
 ────────────────────────────
-FAILURE MODES TO AVOID:
-NEVER return JSON with missing fields or raw code
-NEVER guess if something is unclear — insert `ask-user` or `rag-query`
-NEVER describe tasks for tools that are not in the tool list
-NEVER summarize or comment — return only the JSON array
+CRITICAL REQUIREMENTS:
+✓ Use EXACT tool names from the Tool List
+✓ Never guess - use `user.await` for clarification
+✓ Never create tasks for non-existent tools  
+✓ Return pure JSON array only
 ────────────────────────────
-TOOL LIST:
+AVAILABLE TOOL LIST:
 $toolDescriptions
         """.trimIndent()
 
@@ -103,7 +131,7 @@ $toolDescriptions
     ): String =
         buildString {
             appendLine("PRIMARY USER GOAL:")
-            appendLine("→ ${plan.englishQuestion}")
+            appendLine(plan.englishQuestion)
             appendLine()
             appendLine("CLIENT & PROJECT CONTEXT:")
             appendLine("Client description: ${context.clientDocument.description}")

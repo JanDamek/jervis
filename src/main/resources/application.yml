@@ -73,6 +73,16 @@ models: # embedding dimensions configured per model
       model: deepseek-coder-v2:latest
       maxTokens: 4096
       maxRequests: 2
+    - provider: OPENAI
+      model: gpt-4o
+      maxTokens: 8196
+      maxRequests: 24
+      quick: true
+    - provider: ANTHROPIC
+      model: claude-3-5-sonnet
+      maxTokens: 8196
+      maxRequests: 30
+      quick: true
 
   RAG:
     - provider: LM_STUDIO

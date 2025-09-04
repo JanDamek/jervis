@@ -1,5 +1,6 @@
 package com.jervis.service.mcp.util
 
+import com.jervis.domain.context.TaskContext
 import com.jervis.domain.model.ModelType
 import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.mcp.domain.ToolResult
@@ -28,6 +29,7 @@ class McpFinalPromptProcessor(
         systemPrompt: String,
         originalResult: ToolResult,
         modelType: ModelType = ModelType.INTERNAL,
+        context: TaskContext,
     ): ToolResult =
         if (finalPrompt != null && originalResult is ToolResult.Ok) {
             try {
@@ -44,6 +46,8 @@ class McpFinalPromptProcessor(
                         type = modelType,
                         systemPrompt = systemPrompt,
                         userPrompt = userPrompt,
+                        outputLanguage = "en",
+                        quick = context.quick,
                     )
 
                 ToolResult.ok(llmResponse.answer)
@@ -101,31 +105,30 @@ class McpFinalPromptProcessor(
         
         CRITICAL REQUIREMENT: You must NEVER invent or fabricate any information. All information you provide must come from available tools (McpTools) or the actual RAG search results provided to you. If you don't have access to specific information through tools, explicitly state that you cannot provide it rather than guessing or inventing details.
         
+        UNDERSTANDING RAG SEARCH RESULTS:
+        The search results come from a vector database containing code and documentation with the following metadata fields:
+        - projectId: Project identifier (always filtered for security)
+        - documentType: Type of document (UNKNOWN, CODE, TEXT, MEETING, NOTE, GIT_HISTORY, DEPENDENCY, DEPENDENCY_DESCRIPTION, CLASS_SUMMARY, ACTION, DECISION, PLAN, JOERN_ANALYSIS)
+        - ragSourceType: Source type (LLM, FILE, GIT, ANALYSIS, CLASS, AGENT)  
+        - source: Source file path or identifier
+        - language: Programming language (e.g., kotlin, java, python)
+        - module: Module or component name
+        - path: File path
+        - pageContent: The actual content that was searched
+        - timestamp: When the document was indexed
+        - isDefaultBranch: Whether from default branch (true/false)
+        - inspirationOnly: Whether for inspiration only (true/false)
+        - createdAt: Creation timestamp
+        
+        The results may be filtered by any of these fields to provide targeted search results.
+        
         You must always include:
         1. Clear specifications about where relevant information is located (file paths, line numbers, functions)
         2. Code snippets that are directly relevant to the query
         3. Specific next steps or recommendations
         4. Any patterns or relationships found in the results
+        5. Analysis of which document types and sources provided the most relevant information
         
         Be precise and actionable in your response. Focus on what the user needs to know for their next step.
-        """.trimIndent()
-
-    /**
-     * Creates a system prompt template for planning analysis.
-     */
-    fun createPlannerSystemPrompt(): String =
-        """
-        You are an expert task planner. Your role is to analyze execution context and create actionable next steps.
-        
-        CRITICAL REQUIREMENT: You must NEVER invent or fabricate any information. All information you provide must come from available tools (McpTools) or the actual execution context provided to you. If you don't have access to specific information through tools, explicitly state that you cannot provide it rather than guessing or inventing details.
-        
-        You must always include:
-        1. Clear assessment of current situation based on previous steps
-        2. Specific, actionable next steps with priorities
-        3. Dependencies and prerequisites for each step
-        4. Risk assessment and mitigation strategies
-        5. Success criteria for upcoming actions
-        
-        Be precise and practical. Focus on creating a roadmap that leads to successful task completion.
         """.trimIndent()
 }

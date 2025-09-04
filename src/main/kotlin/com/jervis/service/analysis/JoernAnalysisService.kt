@@ -310,7 +310,7 @@ class JoernAnalysisService(
             val scriptFile = joernDir.resolve("query_${System.currentTimeMillis()}.sc")
             val scriptContent =
                 buildString {
-                    appendLine("loadCpg(\"${cpgPath.pathString}\")")
+                    appendLine("importCpg(\"${cpgPath.pathString}\")")
                     appendLine("val res = $query")
                     appendLine("println(res)")
                 }
@@ -677,16 +677,44 @@ class JoernAnalysisService(
     private suspend fun getToolVersion(toolName: String): String =
         withContext(Dispatchers.IO) {
             try {
+                // Joern doesn't support --version flag, use --help instead
+                val command =
+                    when (toolName) {
+                        "joern" -> listOf(toolName, "--help")
+                        "joern-scan" -> {
+                            // Try --version first for joern-scan, fallback to --help
+                            val versionRes =
+                                runCatching {
+                                    runProcessStreaming(
+                                        displayName = "$toolName --version",
+                                        command = listOf(toolName, "--version"),
+                                        workingDir = null,
+                                        timeout = timeoutsProperties.joern.versionTimeoutMinutes,
+                                        unit = TimeUnit.MINUTES,
+                                    )
+                                }.getOrNull()
+
+                            if (versionRes != null && !versionRes.timedOut && versionRes.exitCode == 0) {
+                                return@withContext extractVersionFromOutput(versionRes.stdout, versionRes.stderr)
+                            }
+
+                            listOf(toolName, "--help")
+                        }
+
+                        else -> listOf(toolName, "--version")
+                    }
+
                 val res =
                     runProcessStreaming(
-                        displayName = "$toolName --version",
-                        command = listOf(toolName, "--version"),
+                        displayName = "$toolName version check",
+                        command = command,
                         workingDir = null,
                         timeout = timeoutsProperties.joern.versionTimeoutMinutes,
                         unit = TimeUnit.MINUTES,
                     )
+
                 if (!res.timedOut && res.exitCode == 0) {
-                    res.stdout.trim().ifEmpty { "Available (version unknown)" }
+                    extractVersionFromOutput(res.stdout, res.stderr)
                 } else {
                     "Not available"
                 }
@@ -694,6 +722,39 @@ class JoernAnalysisService(
                 "Not available (${e.message?.take(50) ?: "unknown error"})"
             }
         }
+
+    /**
+     * Extract version information from Joern tool output
+     */
+    private fun extractVersionFromOutput(
+        stdout: String,
+        stderr: String,
+    ): String {
+        val output = "$stdout\n$stderr"
+
+        // Look for "Version: " pattern in the output
+        val versionRegex = """Version:\s*([^\s\n]+)""".toRegex()
+        val versionMatch = versionRegex.find(output)
+
+        if (versionMatch != null) {
+            return versionMatch.groupValues[1]
+        }
+
+        // Fallback: look for version patterns like "v1.2.3" or "1.2.3"
+        val fallbackVersionRegex = """(?:v)?(\d+\.\d+\.\d+(?:[+-][^\s]+)?)""".toRegex()
+        val fallbackMatch = fallbackVersionRegex.find(output)
+
+        if (fallbackMatch != null) {
+            return fallbackMatch.groupValues[1]
+        }
+
+        // If version info is found but not parseable, indicate tool is available
+        if (output.contains("joern", ignoreCase = true) || output.contains("usage", ignoreCase = true)) {
+            return "Available (version unknown)"
+        }
+
+        return "Available (version unknown)"
+    }
 
     /**
      * Execute a single Joern operation (public method for external use)

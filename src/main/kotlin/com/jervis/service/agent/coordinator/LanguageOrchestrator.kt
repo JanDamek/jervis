@@ -1,7 +1,9 @@
 package com.jervis.service.agent.coordinator
 
+import com.jervis.configuration.prompts.PromptType
 import com.jervis.domain.model.ModelType
 import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.prompts.PromptRepository
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.springframework.stereotype.Service
@@ -9,6 +11,7 @@ import org.springframework.stereotype.Service
 @Service
 class LanguageOrchestrator(
     private val llmGateway: LlmGateway,
+    private val promptRepository: PromptRepository,
 ) {
     private val json =
         Json {
@@ -16,20 +19,29 @@ class LanguageOrchestrator(
             isLenient = true
         }
 
-    suspend fun translate(text: String): DetectionResult {
+    suspend fun translate(
+        text: String,
+        quick: Boolean,
+    ): DetectionResult {
         val prompt = buildTranslationPrompt(text)
+        val systemPrompt = promptRepository.getSystemPrompt(PromptType.TRANSLATION_SYSTEM)
+        val modelParams = promptRepository.getEffectiveModelParams(PromptType.TRANSLATION_SYSTEM)
+
         val answer =
             llmGateway
                 .callLlm(
                     type = ModelType.TRANSLATION,
                     systemPrompt = systemPrompt,
                     userPrompt = prompt,
+                    outputLanguage = "en",
+                    quick = quick,
+                    modelParams = modelParams,
                 ).answer
                 .trim()
         val parsed = safeParse(answer)
         return DetectionResult(
-            englishText = parsed.englishText ?: "",
-            originalLanguage = parsed.originalLanguage ?: "",
+            englishText = parsed.englishText,
+            originalLanguage = parsed.originalLanguage,
         )
     }
 

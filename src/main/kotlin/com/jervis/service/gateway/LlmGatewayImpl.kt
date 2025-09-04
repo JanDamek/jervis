@@ -1,6 +1,7 @@
 package com.jervis.service.gateway
 
 import com.jervis.configuration.ModelsProperties
+import com.jervis.configuration.prompts.EffectiveModelParams
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProvider
 import com.jervis.domain.model.ModelType
@@ -23,9 +24,10 @@ class LlmGatewayImpl(
     override suspend fun callLlm(
         type: ModelType,
         userPrompt: String,
-        systemPrompt: String?,
-        outputLanguage: String?,
+        systemPrompt: String,
+        outputLanguage: String,
         quick: Boolean,
+        modelParams: EffectiveModelParams?,
     ): LlmResponse {
         val base = modelsProperties.models[type].orEmpty()
         val candidates = if (quick) base.filter { it.quick }.ifEmpty { base } else base
@@ -40,7 +42,7 @@ class LlmGatewayImpl(
             val startNs = System.nanoTime()
             try {
                 logger.debug {
-                    "LLM Request - type=$type, quick=$quick, userPrompt=$finalUser}, systemPrompt=$systemPrompt"
+                    "LLM Request - quick=$quick, systemPrompt=$systemPrompt, userPrompt=$finalUser"
                 }
                 val result =
                     doCall(
@@ -52,6 +54,7 @@ class LlmGatewayImpl(
                     )
                 val tookMs = (System.nanoTime() - startNs) / 1_000_000
                 logger.info { "LLM call succeeded provider=$provider model=${candidate.model} in ${tookMs}ms" }
+                logger.debug { "LLM Response - $result" }
                 if (result.answer.isNotBlank()) return result
             } catch (t: Throwable) {
                 lastError = t
@@ -193,10 +196,6 @@ class LlmGatewayImpl(
                 "stream" to false,
             )
         if (options.isNotEmpty()) body["options"] = options
-        logger.debug {
-            val opts = if (options.isEmpty()) "none" else options.keys.joinToString(",")
-            "OLLAMA_REQUEST: path=/api/chat model=$model stream=false options=$opts system=${!systemPrompt.isNullOrBlank()}"
-        }
         val resp: OllamaChatResponse =
             ollamaClient
                 .post()

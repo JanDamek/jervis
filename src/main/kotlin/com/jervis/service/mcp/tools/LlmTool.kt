@@ -26,33 +26,31 @@ class LlmTool(
         val contextFromSteps: Int = 0,
     )
 
-    private suspend fun parseTaskDescription(taskDescription: String): LlmParams {
+    private suspend fun parseTaskDescription(
+        taskDescription: String,
+        context: TaskContext,
+    ): LlmParams {
         val systemPrompt =
             """
-            You are the LLM Tool parameter resolver. Your task is to convert a natural language task description into proper parameters for the LLM Tool.
-            
+            You are the LLM Tool parameter resolver. Your task is to convert a natural language task description into proper parameters for the LLM Tool.           
             The LLM Tool provides:
             - Advanced reasoning capabilities using different specialized LLM models
             - Context-aware processing that can incorporate results from previous workflow steps
             - Flexible model selection for specific tasks (internal reasoning, translation, planning, etc.)
             - Comprehensive analysis and synthesis of complex information
-            - Actionable insights and recommendations based on provided context
-            
-            Available model types: INTERNAL, TRANSLATION, PLANNER, CHAT_INTERNAL, CHAT_EXTERNAL
-            
+            - Actionable insights and recommendations based on provided context            
+            Available model types: INTERNAL, TRANSLATION, PLANNER, CHAT_INTERNAL, CHAT_EXTERNAL            
             Return ONLY a valid JSON object with this exact structure:
             {
               "systemPrompt": "<appropriate system prompt for the task, can be null>",
               "userPrompt": "<the main user prompt>", 
               "modelType": "<most appropriate model type for the task>",
               "contextFromSteps": <number of previous steps to include as context, 0-5>
-            }
-            
+            }            
             Examples:
             - "analyze with translation model" → {"systemPrompt": "You are a translation assistant.", "userPrompt": "analyze the following", "modelType": "TRANSLATION", "contextFromSteps": 0}
             - "summarize with context from previous 3 steps" → {"systemPrompt": "Summarize the provided information clearly.", "userPrompt": "summarize the results", "modelType": "INTERNAL", "contextFromSteps": 3}
-            - "make strategic decision based on current results" → {"systemPrompt": "You are a strategic decision maker.", "userPrompt": "make a strategic decision", "modelType": "PLANNER", "contextFromSteps": 2}
-            
+            - "make strategic decision based on current results" → {"systemPrompt": "You are a strategic decision maker.", "userPrompt": "make a strategic decision", "modelType": "PLANNER", "contextFromSteps": 2}            
             Rules:
             - userPrompt is required and should contain the main request
             - systemPrompt should guide the LLM for the specific task type, use null for default
@@ -66,7 +64,9 @@ class LlmTool(
                 llmGateway.callLlm(
                     type = ModelType.INTERNAL,
                     systemPrompt = systemPrompt,
-                    userPrompt = "Task: $taskDescription",
+                    userPrompt = taskDescription,
+                    outputLanguage = "en",
+                    quick = context.quick,
                 )
 
             val cleanedResponse =
@@ -133,7 +133,7 @@ class LlmTool(
         plan: Plan,
         taskDescription: String,
     ): ToolResult {
-        val parsed = parseTaskDescription(taskDescription)
+        val parsed = parseTaskDescription(taskDescription, context)
 
         if (parsed.userPrompt.isBlank()) {
             return ToolResult.error("User prompt cannot be empty")
@@ -189,6 +189,8 @@ class LlmTool(
                         parsed.systemPrompt
                             ?: "You are a helpful AI assistant. Provide clear, accurate, and actionable responses.",
                     userPrompt = completeUserPrompt,
+                    outputLanguage = "en",
+                    quick = context.quick,
                 )
             } catch (e: Exception) {
                 return ToolResult.error("LLM call failed: ${e.message}")

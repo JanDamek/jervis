@@ -47,7 +47,7 @@ class UserInteractionTool(
         plan: Plan,
         taskDescription: String,
     ): ToolResult {
-        val userLang = plan.originalLanguage.lowercase().ifBlank { null }
+        val userLang = plan.originalLanguage.lowercase().ifBlank { "en" }
 
         val questionRephrased =
             runCatching {

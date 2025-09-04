@@ -5,21 +5,19 @@ import com.jervis.configuration.QdrantProperties
 import com.jervis.configuration.TimeoutsProperties
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.rag.RagDocument
-import com.jervis.domain.rag.RagDocumentType
-import com.jervis.domain.rag.RagSourceType
 import com.jervis.repository.vector.converter.rag.convertRagDocumentToPayload
 import io.grpc.Status
 import io.grpc.StatusRuntimeException
 import io.qdrant.client.QdrantClient
 import io.qdrant.client.QdrantGrpcClient
 import io.qdrant.client.grpc.Collections
+import io.qdrant.client.grpc.JsonWithInt
 import io.qdrant.client.grpc.Points
 import jakarta.annotation.PreDestroy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import mu.KotlinLogging
-import org.bson.types.ObjectId
 import org.springframework.stereotype.Repository
 import java.time.Duration
 import java.util.UUID
@@ -43,13 +41,13 @@ class VectorStorageRepository(
     private val isConnected = AtomicBoolean(false)
     private val qdrantClientRef = AtomicReference<QdrantClient?>(null)
 
-    // Collections cache to avoid recreating them during runtime
-    // Using @Volatile HashMap since writes only happen at startup and rest are read-only
+    // Collection cache to avoid recreating them during runtime
+    // Using @Volatile HashMap since writes only happen at startup, and the rest are read-only
     @Volatile
     private var collectionsCache = HashMap<ModelType, String>()
 
     /**
-     * Get dimension for specific embedding model type from configuration
+     * Get dimension for a specific embedding model type from configuration
      */
     private fun getDimensionForModelType(modelType: ModelType): Int {
         val modelList = modelsProperties.models[modelType] ?: emptyList()
@@ -62,7 +60,7 @@ class VectorStorageRepository(
     }
 
     /**
-     * Generate collection name using only embedding type and dimension
+     * Generate a collection name using only embedding type and dimension
      * Format: {embedding_type}_{dimension}
      */
     private fun getCollectionNameForModelType(modelType: ModelType): String {
@@ -169,7 +167,7 @@ class VectorStorageRepository(
     }
 
     /**
-     * Initialize both TEXT and CODE collections once connected and populate cache
+     * Initialize both TEXT and CODE collections once connected and populate the cache
      */
     private suspend fun initializeCollections() {
         try {
@@ -268,30 +266,28 @@ class VectorStorageRepository(
         collectionName: String,
         dimension: Int,
     ) {
-        val ok: Boolean? =
-            executeQdrantOperation("Create Collection") { client ->
-                logger.info { "Creating collection: $collectionName with dimension: $dimension" }
-                val vectorParams =
-                    Collections.VectorParams
-                        .newBuilder()
-                        .setSize(dimension.toLong())
-                        .setDistance(Collections.Distance.Cosine)
-                        .build()
-                try {
-                    client.createCollectionAsync(collectionName, vectorParams).get()
-                    true
-                } catch (e: StatusRuntimeException) {
-                    if (e.status.code == Status.Code.ALREADY_EXISTS) true else throw e
-                } catch (e: Exception) {
-                    val cause = e.cause
-                    if (cause is StatusRuntimeException && cause.status.code == Status.Code.ALREADY_EXISTS) true else throw e
-                }
+        executeQdrantOperation("Create Collection") { client ->
+            logger.info { "Creating collection: $collectionName with dimension: $dimension" }
+            val vectorParams =
+                Collections.VectorParams
+                    .newBuilder()
+                    .setSize(dimension.toLong())
+                    .setDistance(Collections.Distance.Cosine)
+                    .build()
+            try {
+                client.createCollectionAsync(collectionName, vectorParams).get()
+                true
+            } catch (e: StatusRuntimeException) {
+                if (e.status.code != Status.Code.ALREADY_EXISTS) throw e
+            } catch (e: Exception) {
+                val cause = e.cause
+                if (cause is StatusRuntimeException && cause.status.code != Status.Code.ALREADY_EXISTS) throw e
             }
-        if (ok != true) throw RuntimeException("Failed to create collection: $collectionName")
+        }
     }
 
     /**
-     * Unified store method: picks collection by type (EMBEDDING_TEXT / EMBEDDING_CODE)
+     * Unified store method: picks a collection by type (EMBEDDING_TEXT / EMBEDDING_CODE)
      */
     suspend fun store(
         collectionType: ModelType,
@@ -312,10 +308,6 @@ class VectorStorageRepository(
                 ).build()
 
         val payload = ragDocument.convertRagDocumentToPayload()
-
-        // Debug logging for vector store payload
-        logger.debug { "Vector Store Payload - collection=$collection, pointId=$pointId, payload=$payload" }
-        logger.debug { "Vector Store Payload - embedding size=${embedding.size}, ragDocument=$ragDocument" }
 
         val point =
             Points.PointStruct
@@ -339,24 +331,20 @@ class VectorStorageRepository(
     }
 
     /**
-     * Unified search method: picks collection by type (EMBEDDING_TEXT / EMBEDDING_CODE)
+     * Unified search method: picks a collection by type (EMBEDDING_TEXT / EMBEDDING_CODE)
      */
     suspend fun search(
         collectionType: ModelType,
         query: List<Float>,
         limit: Int = 5,
         filter: Map<String, Any>? = null,
-    ): List<RagDocument> {
+    ): List<Map<String, JsonWithInt.Value>> {
         val collection = getCachedCollectionName(collectionType)
         val dimension = getDimensionForModelType(collectionType)
-        val effectiveQuery = if (query.isEmpty()) List(dimension) { 0.0f } else query
+        val effectiveQuery = query.ifEmpty { List(dimension) { 0.0f } }
 
         val qdrantFilter =
-            if (filter != null && filter.isNotEmpty()) createQdrantFilter(filter) else null
-
-        // Debug logging for vector store search payload
-        logger.debug { "Vector Store Search - collection=$collection, limit=$limit, query size=${effectiveQuery.size}" }
-        logger.debug { "Vector Store Search - filter=$filter, qdrantFilter=$qdrantFilter" }
+            if (filter.isNullOrEmpty().not()) createQdrantFilter(filter) else null
 
         val searchBuilder =
             Points.SearchPoints
@@ -373,58 +361,14 @@ class VectorStorageRepository(
                     if (qdrantFilter != null) b.filter = qdrantFilter
                 }.build()
 
-        logger.debug { "Vector Store Search - complete searchBuilder payload: $searchBuilder" }
-
         val results =
             executeQdrantOperation("Search in $collection") { client ->
                 client.searchAsync(searchBuilder).get()
             }?.toList().orEmpty()
 
-        val out = mutableListOf<RagDocument>()
+        val out = mutableListOf<Map<String, JsonWithInt.Value>>()
         for (point in results) {
-            val payload = point.payloadMap.toMap()
-            val pageContent = payload["pageContent"]?.stringValue ?: ""
-            val meta = mutableMapOf<String, Any>()
-            for ((key, v) in payload) {
-                if (key != "pageContent") {
-                    when {
-                        v.hasStringValue() -> meta[key] = v.stringValue
-                        v.hasIntegerValue() -> meta[key] = v.integerValue
-                        v.hasDoubleValue() -> meta[key] = v.doubleValue
-                        v.hasBoolValue() -> meta[key] = v.boolValue
-                    }
-                }
-            }
-
-            val documentType =
-                when (meta["document_type"] as? String) {
-                    "code" -> RagDocumentType.CODE
-                    "text" -> RagDocumentType.TEXT
-                    "mcp_action" -> RagDocumentType.ACTION
-                    "meeting" -> RagDocumentType.MEETING
-                    "note" -> RagDocumentType.NOTE
-                    "git_history" -> RagDocumentType.GIT_HISTORY
-                    "dependency" -> RagDocumentType.DEPENDENCY
-                    "todo" -> RagDocumentType.UNKNOWN
-                    "class_summary" -> RagDocumentType.CLASS_SUMMARY
-                    "JOERN_ANALYSIS" -> RagDocumentType.JOERN_ANALYSIS
-                    else -> RagDocumentType.CODE
-                }
-
-            val sourceType =
-                when (meta["source_type"] as? String) {
-                    "file" -> RagSourceType.FILE
-                    "git" -> RagSourceType.GIT
-                    "agent" -> RagSourceType.AGENT
-                    else -> RagSourceType.FILE
-                }
-
-            val projectId =
-                (meta["projectId"] as? String)?.let { ObjectId(it) }
-                    ?: (meta["project"] as? String)?.let { ObjectId(it) }
-                    ?: ObjectId.get()
-
-            out += RagDocument(projectId, documentType, sourceType, pageContent)
+            out += point.payloadMap
         }
         return out
     }

@@ -63,7 +63,7 @@ class TextEmbeddingService(
                         // Create RAG document for semantic content
                         val ragDocument =
                             RagDocument(
-                                projectId = project.id!!,
+                                projectId = project.id,
                                 documentType = RagDocumentType.TEXT,
                                 ragSourceType = RagSourceType.FILE,
                                 pageContent = sentence,

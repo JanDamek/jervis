@@ -37,6 +37,7 @@ class AgentOrchestratorService(
         val scope =
             languageOrchestrator.translate(
                 text = text,
+                quick = ctx.quick,
             )
 
         val context =
