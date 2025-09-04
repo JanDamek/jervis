@@ -1,6 +1,8 @@
 package com.jervis
 
 import com.formdev.flatlaf.FlatLightLaf
+import com.jervis.configuration.YamlPropertySourceFactory
+import com.jervis.configuration.prompts.PromptsConfiguration
 import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.client.ClientProjectLinkService
@@ -12,15 +14,19 @@ import com.jervis.ui.utils.MacOSAppUtils.setDockIcon
 import mu.KotlinLogging
 import org.springframework.boot.ApplicationRunner
 import org.springframework.boot.autoconfigure.SpringBootApplication
+import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.runApplication
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.ComponentScan
+import org.springframework.context.annotation.PropertySource
 import org.springframework.data.mongodb.repository.config.EnableMongoRepositories
 import java.awt.EventQueue
 import javax.swing.UIManager
 
 @SpringBootApplication
 @EnableMongoRepositories(basePackages = ["com.jervis.repository.mongo"])
+@EnableConfigurationProperties(PromptsConfiguration::class)
+@PropertySource(value = ["classpath:prompts.yaml"], factory = YamlPropertySourceFactory::class)
 @ComponentScan(
     basePackages = [
         "com.jervis.service", "com.jervis.ui.component",
