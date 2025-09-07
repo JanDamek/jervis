@@ -8,6 +8,7 @@ import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
+import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.swing.Swing
 import kotlinx.coroutines.withContext
@@ -37,6 +38,7 @@ import javax.swing.WindowConstants
 @Service
 class UserInteractionTool(
     private val gateway: LlmGateway,
+    private val promptRepository: PromptRepository,
 ) : McpTool {
     override val name: String = "user.await"
     override val description: String =

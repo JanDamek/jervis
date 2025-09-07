@@ -103,6 +103,31 @@ class TaskContextService(
     }
 
     /**
+     * Find existing TaskContext by ID.
+     */
+    suspend fun findById(contextId: ObjectId): TaskContext? {
+        val contextDoc = taskContextRepo.findById(contextId) ?: return null
+
+        val plansList =
+            planMongoRepository
+                .findByContextId(contextDoc.id)
+                .map { planDoc ->
+                    val stepsList = planStepMongoRepository.findByPlanId(planDoc.id).toList()
+                    planDoc.toDomain(stepsList)
+                }.toList()
+
+        // Load full documents for context
+        val clientDoc = contextDoc.clientId?.let { clientService.getClientById(it) }
+        val projectDoc =
+            contextDoc.projectId?.let { projectService.getAllProjects().find { p -> p.id == contextDoc.projectId } }
+
+        return contextDoc.toDomain(plansList).copy(
+            clientDocument = clientDoc!!,
+            projectDocument = projectDoc!!,
+        )
+    }
+
+    /**
      * List contexts for a given client and optional project.
      */
     suspend fun listFor(
@@ -116,24 +141,82 @@ class TaskContextService(
                 taskContextRepo.findByClientIdAndProjectId(clientId, projectId).toList()
             }
 
-        return contextDocs.map { contextDoc ->
-            val plansList =
-                planMongoRepository
-                    .findByContextId(contextDoc.id)
-                    .map { planDoc ->
-                        val stepsList = planStepMongoRepository.findByPlanId(planDoc.id).toList()
-                        planDoc.toDomain(stepsList)
-                    }.toList()
+        return contextDocs.mapNotNull { contextDoc ->
+            try {
+                val plansList =
+                    planMongoRepository
+                        .findByContextId(contextDoc.id)
+                        .map { planDoc ->
+                            val stepsList = planStepMongoRepository.findByPlanId(planDoc.id).toList()
+                            planDoc.toDomain(stepsList)
+                        }.toList()
 
-            // Load full documents for context
-            val clientDoc = contextDoc.clientId.let { clientService.getClientById(it!!) }
-            val projectDoc =
-                contextDoc.projectId.let { projectService.getAllProjects().find { p -> p.id == contextDoc.projectId } }
+                // Load full documents for context
+                val clientDoc = contextDoc.clientId?.let { clientService.getClientById(it) }
+                val projectDoc =
+                    contextDoc.projectId?.let {
+                        projectService.getAllProjects().find { p -> p.id == contextDoc.projectId }
+                    }
 
-            contextDoc.toDomain(plansList).copy(
-                clientDocument = clientDoc!!,
-                projectDocument = projectDoc!!,
-            )
+                if (clientDoc == null) {
+                    logger.warn { "Client document not found for clientId=${contextDoc.clientId}, skipping context ${contextDoc.id}" }
+                    return@mapNotNull null
+                }
+
+                if (projectDoc == null) {
+                    logger.warn { "Project document not found for projectId=${contextDoc.projectId}, skipping context ${contextDoc.id}" }
+                    return@mapNotNull null
+                }
+
+                contextDoc.toDomain(plansList).copy(
+                    clientDocument = clientDoc,
+                    projectDocument = projectDoc,
+                )
+            } catch (e: Exception) {
+                logger.error(e) { "Error processing context document ${contextDoc.id}" }
+                null
+            }
         }
+    }
+
+    /**
+     * Update context name.
+     */
+    suspend fun updateName(
+        contextId: ObjectId,
+        newName: String,
+    ) {
+        val contextDoc = taskContextRepo.findById(contextId) ?: return
+        contextDoc.name = newName
+        contextDoc.updatedAt = Instant.now()
+        taskContextRepo.save(contextDoc)
+        logger.info { "TASK_CONTEXT_NAME_UPDATED: contextId=$contextId newName='$newName'" }
+    }
+
+    /**
+     * Delete context with cascading deletion of all associated plans and plan steps.
+     */
+    suspend fun delete(contextId: ObjectId) {
+        logger.info { "TASK_CONTEXT_DELETE_START: contextId=$contextId" }
+
+        // Find and delete all plan steps for this context
+        val plans = planMongoRepository.findByContextId(contextId).toList()
+        plans.forEach { plan ->
+            val steps = planStepMongoRepository.findByPlanId(plan.id).toList()
+            steps.forEach { step ->
+                planStepMongoRepository.delete(step)
+                logger.debug { "TASK_CONTEXT_DELETE: Deleted step ${step.id} from plan ${plan.id}" }
+            }
+        }
+
+        // Delete all plans for this context
+        plans.forEach { plan ->
+            planMongoRepository.delete(plan)
+            logger.debug { "TASK_CONTEXT_DELETE: Deleted plan ${plan.id}" }
+        }
+
+        // Finally delete the context itself
+        taskContextRepo.deleteById(contextId)
+        logger.info { "TASK_CONTEXT_DELETE_COMPLETE: contextId=$contextId deleted with ${plans.size} plans" }
     }
 }

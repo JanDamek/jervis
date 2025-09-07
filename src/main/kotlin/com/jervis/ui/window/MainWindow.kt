@@ -24,7 +24,6 @@ import javax.swing.DefaultListModel
 import javax.swing.JButton
 import javax.swing.JCheckBox
 import javax.swing.JComboBox
-import javax.swing.JDialog
 import javax.swing.JFrame
 import javax.swing.JLabel
 import javax.swing.JList
@@ -103,6 +102,7 @@ class MainWindow(
         val project: String?,
         val plans: MutableList<UiPlan> = mutableListOf(),
         var lastUpdated: java.time.Instant = java.time.Instant.now(),
+        val taskContextId: ObjectId? = null, // Link to actual TaskContext from database
     ) {
         override fun toString(): String = name
     }
@@ -151,6 +151,9 @@ class MainWindow(
                 if (defaultItem != null) {
                     projectSelector.selectedItem = defaultItem
                 }
+
+                // Load contexts after both selectors are properly initialized
+                refreshContextsFromDbForCurrentSelection(selectFirst = true)
             }
         }
         defaultCloseOperation = HIDE_ON_CLOSE
@@ -254,7 +257,6 @@ class MainWindow(
 
         // Setup context list UI and populate for current scope
         installContextListHandlers()
-        refreshContextsFromDbForCurrentSelection(selectFirst = true)
 
         // Refresh contexts whenever the window is shown
         addComponentListener(
@@ -291,12 +293,23 @@ class MainWindow(
                         throw IllegalStateException("Client and project must be selected")
                     }
 
+                    // Check if user has selected an existing context
+                    val selectedContextIndex = contextList.selectedIndex
+                    val selectedUiContext =
+                        if (selectedContextIndex >= 0) {
+                            val item = contextListModel.getElementAt(selectedContextIndex)
+                            item as? UiChatContext
+                        } else {
+                            null
+                        }
+
                     val ctx =
                         ChatRequestContext(
                             clientId = selectedClient.id,
                             projectId = selectedProject.id,
                             autoScope = false,
                             quick = quickCheckbox.isSelected,
+                            existingContextId = selectedUiContext?.taskContextId, // Pass existing context ID if selected
                         )
 
                     // Process the query using the ChatCoordinator
@@ -405,25 +418,39 @@ class MainWindow(
                 val mapped =
                     docs
                         .map { doc ->
+                            // Convert TaskContext plans to UiPlan objects
+                            val uiPlans =
+                                doc.plans
+                                    .map { plan ->
+                                        UiPlan(
+                                            userQueryOriginal = plan.originalQuestion,
+                                            englishText = plan.englishQuestion.takeIf { it != plan.originalQuestion },
+                                            finalAnswer = plan.finalAnswer ?: "Plan completed",
+                                            createdAt = plan.createdAt,
+                                        )
+                                    }.toMutableList()
+
                             UiChatContext(
                                 name =
-                                    buildString {
-                                        if (doc.quick) append("⚡ ")
-                                        append(doc.projectDocument.name)
-                                        append(" • ")
-                                        append(doc.updatedAt)
+                                    if (doc.quick) {
+                                        "⚡ Quick Context"
+                                    } else {
+                                        "Context ${
+                                            doc.id.toHexString().takeLast(6)
+                                        }"
                                     },
                                 client = clientName,
                                 project = projectName,
-                                plans = mutableListOf(),
+                                plans = uiPlans,
                                 lastUpdated = doc.updatedAt,
+                                taskContextId = doc.id, // Store TaskContext ID for later retrieval
                             )
                         }.toMutableList()
                 withContext(Dispatchers.Swing) {
                     contextsByScope[currentScopeKey()] = mapped
                     rebuildContextList(selectFirst)
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 withContext(Dispatchers.Swing) {
                     contextsByScope[currentScopeKey()] = mutableListOf()
                     rebuildContextList(selectFirst)
@@ -447,17 +474,25 @@ class MainWindow(
         contextList.addMouseListener(
             object : MouseAdapter() {
                 override fun mouseClicked(e: MouseEvent) {
-                    if (e.clickCount == 2) {
-                        val index = contextList.locationToIndex(e.point)
-                        if (index >= 0) {
-                            when (val item = contextListModel.getElementAt(index)) {
-                                is String ->
-                                    if (item == NEW_CONTEXT_LABEL) {
-                                        val created = createAndSelectNewContext()
-                                        promptRename(created)
-                                    }
+                    val index = contextList.locationToIndex(e.point)
+                    if (index >= 0) {
+                        when (val item = contextListModel.getElementAt(index)) {
+                            is String ->
+                                if (item == NEW_CONTEXT_LABEL && e.clickCount == 2) {
+                                    // Clear chat area for new context
+                                    chatArea.text = ""
+                                    val created = createAndSelectNewContext()
+                                    promptRename(created)
+                                }
 
-                                is UiChatContext -> openContextConversationDialog(item)
+                            is UiChatContext -> {
+                                if (e.clickCount == 1) {
+                                    // Single click - display conversation in chat area
+                                    displayContextInChatArea(item)
+                                } else if (e.clickCount == 2) {
+                                    // Double click - also display conversation (same behavior)
+                                    displayContextInChatArea(item)
+                                }
                             }
                         }
                     }
@@ -475,14 +510,17 @@ class MainWindow(
                             val item = contextListModel.getElementAt(index)
                             if (item is UiChatContext) {
                                 val menu = JPopupMenu()
-                                val openItem = JMenuItem("Open conversation…")
                                 val renameItem = JMenuItem("Rename…")
-                                openItem.addActionListener { openContextConversationDialog(item) }
+                                val deleteItem = JMenuItem("Delete…")
                                 renameItem.addActionListener {
                                     promptRename(item)
                                 }
-                                menu.add(openItem)
+                                deleteItem.addActionListener {
+                                    promptDelete(item)
+                                }
                                 menu.add(renameItem)
+                                menu.addSeparator()
+                                menu.add(deleteItem)
                                 menu.show(contextList, e.x, e.y)
                             }
                         }
@@ -497,7 +535,44 @@ class MainWindow(
         if (newName != null && newName.isNotBlank()) {
             ctx.name = newName.trim()
             ctx.lastUpdated = java.time.Instant.now()
+
+            // Only update UI - do not modify stored TaskContext content
             rebuildContextList()
+        }
+    }
+
+    private fun promptDelete(ctx: UiChatContext) {
+        val result =
+            JOptionPane.showConfirmDialog(
+                this,
+                "Are you sure you want to delete context '${ctx.name}'?\nThis will also delete all associated plans and steps.",
+                "Delete Context",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE,
+            )
+
+        if (result == JOptionPane.YES_OPTION) {
+            ctx.taskContextId?.let { contextId ->
+                coroutineScope.launch {
+                    try {
+                        taskContextService.delete(contextId)
+                        withContext(Dispatchers.Swing) {
+                            // Remove from local list and refresh UI
+                            contextsByScope[currentScopeKey()]?.remove(ctx)
+                            rebuildContextList()
+                        }
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Swing) {
+                            JOptionPane.showMessageDialog(
+                                this@MainWindow,
+                                "Failed to delete context: ${e.message}",
+                                "Error",
+                                JOptionPane.ERROR_MESSAGE,
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -541,35 +616,38 @@ class MainWindow(
         return if (selected is UiChatContext) selected else createAndSelectNewContext(defaultNameFromText)
     }
 
-    private fun openContextConversationDialog(ctx: UiChatContext) {
-        val dlg = JDialog(this, "Context: ${'$'}{ctx.name}", true)
-        val area = JTextArea()
-        area.isEditable = false
-        area.lineWrap = true
-        area.wrapStyleWord = true
+    private fun displayContextInChatArea(ctx: UiChatContext) {
         val sb = StringBuilder()
+
         if (ctx.plans.isEmpty()) {
-            sb.appendLine("No conversation yet.")
+            sb.appendLine("No conversation history in this context yet.")
         } else {
-            ctx.plans.sortedBy { it.createdAt }.forEachIndexed { idx, p ->
-                sb.appendLine("# Plan ${'$'}{idx + 1}")
-                sb.appendLine("- Original query: ${'$'}{p.userQueryOriginal}")
-                p.englishText?.let { sb.appendLine("- English normalized: ${'$'}it") }
-                p.finalAnswer?.let { sb.appendLine("- Final answer: ${'$'}it") }
+            ctx.plans.sortedBy { it.createdAt }.forEach { p ->
+                sb.appendLine("Me: ${p.userQueryOriginal}")
+
+                // Extract the assistant's response from finalAnswer, removing duplicate question text
+                p.finalAnswer?.let { answer ->
+                    val cleanAnswer =
+                        if (answer.startsWith("Question: ${p.userQueryOriginal}")) {
+                            // Remove the duplicate question part and "Answer:" prefix if present
+                            val withoutQuestion = answer.substringAfter("Question: ${p.userQueryOriginal}").trim()
+                            if (withoutQuestion.startsWith("Answer:")) {
+                                withoutQuestion.substringAfter("Answer:").trim()
+                            } else {
+                                withoutQuestion
+                            }
+                        } else {
+                            answer
+                        }
+                    if (cleanAnswer.isNotBlank()) {
+                        sb.appendLine("Assistant: $cleanAnswer")
+                    }
+                }
                 sb.appendLine()
             }
         }
-        area.text = sb.toString()
-        dlg.add(JScrollPane(area), BorderLayout.CENTER)
-        val close = JButton("Close")
-        close.addActionListener { dlg.dispose() }
-        val south = JPanel(BorderLayout())
-        val hint = JLabel("Double-click a context in the list to open.")
-        south.add(hint, BorderLayout.WEST)
-        south.add(close, BorderLayout.EAST)
-        dlg.add(south, BorderLayout.SOUTH)
-        dlg.setSize(640, 480)
-        dlg.setLocationRelativeTo(this)
-        dlg.isVisible = true
+
+        chatArea.text = sb.toString()
+        chatArea.caretPosition = 0 // Scroll to top
     }
 }

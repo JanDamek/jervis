@@ -10,6 +10,7 @@ data class TaskContext(
     val id: ObjectId,
     var clientDocument: ClientDocument,
     var projectDocument: ProjectDocument,
+    var name: String = "New Context",
     var plans: List<Plan> = emptyList(),
     val createdAt: Instant = Instant.now(),
     var updatedAt: Instant = Instant.now(),

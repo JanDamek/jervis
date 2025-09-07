@@ -1,19 +1,22 @@
 package com.jervis.service.mcp.tools
 
+import com.jervis.configuration.prompts.McpToolType
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.service.agent.planner.Planner
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
+import com.jervis.service.prompts.PromptRepository
 import org.springframework.stereotype.Service
 
 @Service
 class PlannerTool(
     private val planner: Planner,
+    private val promptRepository: PromptRepository,
 ) : McpTool {
     override val name: String = "planner"
-    override val description: String =
-        "Generates and continues execution plans by analyzing current context and creating additional steps needed to complete tasks. Describe planning needs: 'continue plan to implement user authentication', 'create steps for database migration', or 'plan next actions after failed deployment'."
+    override val description: String
+        get() = promptRepository.getMcpToolDescription(McpToolType.PLANNER)
 
     override suspend fun execute(
         context: TaskContext,

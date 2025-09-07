@@ -41,6 +41,20 @@ class PromptRepository(
             ?: throw IllegalArgumentException("No system prompt found for type: $promptType")
 
     /**
+     * Get system prompt for MCP tools with AGENT_TOOL_SUFFIX automatically appended
+     */
+    fun getMcpToolSystemPrompt(promptType: PromptType): String {
+        val basePrompt = getSystemPrompt(promptType)
+        val agentSuffix = promptsConfig.prompts[PromptType.AGENT_TOOL_SUFFIX]?.systemPrompt ?: ""
+
+        return if (agentSuffix.isNotBlank()) {
+            "$basePrompt\n\n$agentSuffix"
+        } else {
+            basePrompt
+        }
+    }
+
+    /**
      * Get MCP tool description directly from prompt configuration
      */
     fun getMcpToolDescription(toolType: McpToolType): String {
@@ -120,6 +134,9 @@ class PromptRepository(
             McpToolType.TERMINAL -> PromptType.TERMINAL_SYSTEM
             McpToolType.LLM -> PromptType.LLM_SYSTEM
             McpToolType.USER_INTERACTION -> PromptType.USER_INTERACTION_SYSTEM
+            McpToolType.CODE_WRITE -> PromptType.CODE_WRITE_SYSTEM
+            McpToolType.SCOPE_RESOLUTION -> PromptType.SCOPE_RESOLUTION_SYSTEM
+            McpToolType.PLANNER -> PromptType.PLANNER_SYSTEM
         }
 
     /**

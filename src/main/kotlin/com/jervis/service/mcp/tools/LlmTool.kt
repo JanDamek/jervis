@@ -1,11 +1,14 @@
 package com.jervis.service.mcp.tools
 
+import com.jervis.configuration.prompts.McpToolType
+import com.jervis.configuration.prompts.PromptType
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
+import com.jervis.service.prompts.PromptRepository
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.springframework.stereotype.Service
@@ -13,10 +16,11 @@ import org.springframework.stereotype.Service
 @Service
 class LlmTool(
     private val llmGateway: LlmGateway,
+    private val promptRepository: PromptRepository,
 ) : McpTool {
     override val name: String = "llm"
-    override val description: String =
-        "Performs complex reasoning, analysis, and decision-making using LLM models. Use for summarizing results, making decisions based on multiple data points, text analysis, and strategic planning. Specify model needs and context: 'analyze with translation model', 'summarize with context from previous 3 steps', or 'make strategic decision based on current results'."
+    override val description: String
+        get() = promptRepository.getMcpToolDescription(McpToolType.LLM)
 
     @Serializable
     data class LlmParams(
@@ -30,34 +34,7 @@ class LlmTool(
         taskDescription: String,
         context: TaskContext,
     ): LlmParams {
-        val systemPrompt =
-            """
-            You are the LLM Tool parameter resolver. Your task is to convert a natural language task description into proper parameters for the LLM Tool.           
-            The LLM Tool provides:
-            - Advanced reasoning capabilities using different specialized LLM models
-            - Context-aware processing that can incorporate results from previous workflow steps
-            - Flexible model selection for specific tasks (internal reasoning, translation, planning, etc.)
-            - Comprehensive analysis and synthesis of complex information
-            - Actionable insights and recommendations based on provided context            
-            Available model types: INTERNAL, TRANSLATION, PLANNER, CHAT_INTERNAL, CHAT_EXTERNAL            
-            Return ONLY a valid JSON object with this exact structure:
-            {
-              "systemPrompt": "<appropriate system prompt for the task, can be null>",
-              "userPrompt": "<the main user prompt>", 
-              "modelType": "<most appropriate model type for the task>",
-              "contextFromSteps": <number of previous steps to include as context, 0-5>
-            }            
-            Examples:
-            - "analyze with translation model" → {"systemPrompt": "You are a translation assistant.", "userPrompt": "analyze the following", "modelType": "TRANSLATION", "contextFromSteps": 0}
-            - "summarize with context from previous 3 steps" → {"systemPrompt": "Summarize the provided information clearly.", "userPrompt": "summarize the results", "modelType": "INTERNAL", "contextFromSteps": 3}
-            - "make strategic decision based on current results" → {"systemPrompt": "You are a strategic decision maker.", "userPrompt": "make a strategic decision", "modelType": "PLANNER", "contextFromSteps": 2}            
-            Rules:
-            - userPrompt is required and should contain the main request
-            - systemPrompt should guide the LLM for the specific task type, use null for default
-            - modelType should match the task: INTERNAL for general tasks, TRANSLATION for language tasks, PLANNER for planning tasks
-            - contextFromSteps should be 0 unless the task explicitly mentions "previous steps" or "context"
-            - Return only valid JSON, no explanations or markdown
-            """.trimIndent()
+        val systemPrompt = promptRepository.getMcpToolSystemPrompt(PromptType.LLM_SYSTEM)
 
         return try {
             val llmResponse =

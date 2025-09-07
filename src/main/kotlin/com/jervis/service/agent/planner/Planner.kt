@@ -61,8 +61,18 @@ class Planner(
                 logger.error(it) { "PLANNER_LLM_ERROR: falling back to deterministic plan" }
             }.getOrThrow()
 
-        val stepsList = parseAnswerToSteps(llmAnswer.answer, plan.id, context.id)
-        logger.info { "PLANNER_LLM_PLAN_BUILT: model=${llmAnswer.model}" }
+        val stepsList =
+            try {
+                parseAnswerToSteps(llmAnswer.answer, plan.id, context.id)
+            } catch (e: Exception) {
+                logger.error(e) { "PLANNER_STEP_PARSING_FAILED: Failed to parse steps from LLM response: '${llmAnswer.answer}'" }
+                // Return empty list to ensure plan has no steps, which will be logged in executor
+                emptyList()
+            }
+
+        logger.info { "PLANNER_LLM_PLAN_BUILT: model=${llmAnswer.model}, steps=${stepsList.size}" }
+        logger.debug { "PLANNER_FINAL_STEPS: ${stepsList.map { "Step ${it.order}: ${it.name} - ${it.taskDescription}" }}" }
+
         return plan.apply { this.steps = stepsList }
     }
 
@@ -137,6 +147,43 @@ $toolDescriptions
             appendLine("Client description: ${context.clientDocument.description}")
             appendLine("Project description: ${context.projectDocument.description}")
 
+            // Include previous conversation context if there are other plans
+            val otherPlans = context.plans.filter { it.id != plan.id }
+            if (otherPlans.isNotEmpty()) {
+                appendLine()
+                appendLine("PREVIOUS CONVERSATION CONTEXT:")
+                appendLine("This context has previous conversations that provide important background:")
+
+                otherPlans.sortedBy { it.createdAt }.forEach { previousPlan ->
+                    appendLine()
+                    appendLine("Previous Question: ${previousPlan.originalQuestion}")
+                    if (previousPlan.englishQuestion.isNotBlank() && previousPlan.englishQuestion != previousPlan.originalQuestion) {
+                        appendLine("English Translation: ${previousPlan.englishQuestion}")
+                    }
+
+                    if (previousPlan.contextSummary?.isNotBlank() == true) {
+                        appendLine("Plan Summary: ${previousPlan.contextSummary}")
+                    }
+
+                    // Show key completed steps from previous plan
+                    val completedSteps = previousPlan.steps.filter { it.status == StepStatus.DONE }
+                    if (completedSteps.isNotEmpty()) {
+                        appendLine("Key completed actions:")
+                        completedSteps.take(3).forEach { step ->
+                            // Show only first 3 to avoid overwhelming
+                            val output = step.output?.output?.take(150) ?: "No output"
+                            appendLine("  - ${step.name}: $output")
+                        }
+                        if (completedSteps.size > 3) {
+                            appendLine("  ... and ${completedSteps.size - 3} more completed actions")
+                        }
+                    }
+                }
+
+                appendLine()
+                appendLine("Use this previous context to inform your planning for the current question.")
+            }
+
             if (plan.steps.isNotEmpty()) {
                 appendLine()
                 appendLine("EXISTING PLAN HISTORY:")
@@ -203,16 +250,27 @@ $toolDescriptions
         planId: ObjectId,
         contextId: ObjectId,
     ): List<PlanStep> {
+        logger.debug { "PLANNER_PARSE_STEPS: Processing LLM response: '$inputJson'" }
+
         require(inputJson.isNotBlank()) {
+            logger.error { "PLANNER_EMPTY_INPUT: LLM response was empty or blank" }
             "Planner expected a pure JSON array of steps, but got empty output. Adjust the prompt."
         }
 
         val cleanedJson = extractJsonFromResponse(inputJson)
+        logger.debug { "PLANNER_CLEANED_JSON: Extracted JSON: '$cleanedJson'" }
+        
         val dtos = parseJsonToStepDtos(cleanedJson)
-        require(dtos.isNotEmpty()) { "Planner expected a non-empty JSON array of steps." }
+        logger.debug { "PLANNER_PARSED_DTOS: Parsed ${dtos.size} DTOs: $dtos" }
 
-        return dtos.mapIndexed { idx, dto ->
+        require(dtos.isNotEmpty()) {
+            logger.error { "PLANNER_NO_STEPS: Parsed DTO list was empty" }
+            "Planner expected a non-empty JSON array of steps."
+        }
+
+        val steps = dtos.mapIndexed { idx, dto ->
             require(dto.name.isNotBlank()) {
+                logger.error { "PLANNER_INVALID_STEP: Step at index $idx has empty name: $dto" }
                 "Invalid step at index $idx: 'name' must be non-empty."
             }
             PlanStep(
@@ -226,6 +284,9 @@ $toolDescriptions
                 output = null,
             )
         }
+
+        logger.debug { "PLANNER_CREATED_STEPS: Created ${steps.size} PlanSteps with PENDING status" }
+        return steps
     }
 
     /**

@@ -25,18 +25,27 @@ class Finalizer(
     private val logger = KotlinLogging.logger {}
 
     suspend fun finalize(context: TaskContext): ChatResponse {
+        logger.debug { "FINALIZER_START: Processing context=${context.id} with ${context.plans.size} plans" }
+
         val finalizedPlans =
             context.plans
                 .filter { it.status == PlanStatus.COMPLETED || it.status == PlanStatus.FAILED }
                 .map { plan ->
+                    logger.debug {
+                        "FINALIZER_PLAN: Processing planId=${plan.id}, status=${plan.status}, originalQuestion='${plan.originalQuestion}'"
+                    }
+                    logger.debug { "FINALIZER_PLAN_CONTEXT: contextSummary='${plan.contextSummary}', finalAnswer='${plan.finalAnswer}'" }
+
                     val userLang = plan.originalLanguage.ifBlank { "en" }
                     val userPrompt =
                         buildUserPrompt(
                             originalQuestion = plan.originalQuestion,
                             englishQuestion = plan.englishQuestion,
                             contextSummary = plan.contextSummary,
-                            failureReason = plan.failureReason,
+                            finalAnswer = plan.finalAnswer,
                         )
+
+                    logger.debug { "FINALIZER_USER_PROMPT: userPrompt='$userPrompt'" }
 
                     val systemPrompt = promptRepository.getSystemPrompt(PromptType.FINALIZER_SYSTEM)
                     val modelParams = promptRepository.getEffectiveModelParams(PromptType.FINALIZER_SYSTEM)
@@ -56,10 +65,10 @@ class Finalizer(
                         }.getOrElse {
                             logger.warn(it) { "FINALIZER_LLM_FAIL: Falling back to summary for plan=${'$'}{plan.id}" }
                             (
-                                plan.finalAnswer ?: plan.contextSummary ?: plan.failureReason
+                                plan.finalAnswer ?: plan.contextSummary
                                     ?: "No output available"
                             ).trim()
-                        }.ifBlank { plan.contextSummary ?: plan.failureReason ?: "No output available" }
+                        }.ifBlank { plan.contextSummary ?: "No output available" }
 
                     plan.finalAnswer = answer
                     plan.status = PlanStatus.FINALIZED
@@ -76,7 +85,6 @@ class Finalizer(
                     buildList {
                         title.takeIf { it.isNotBlank() }?.let { add("Question: $it") }
                         plan.finalAnswer?.let { add("Answer: $it") }
-                        plan.failureReason?.takeIf { it.isNotBlank() }?.let { add("Failure: $it") }
                     }.joinToString("\n")
                 }.ifBlank { "No plans were finalized." }
 
@@ -101,7 +109,7 @@ class Finalizer(
         originalQuestion: String,
         englishQuestion: String,
         contextSummary: String?,
-        failureReason: String?,
+        finalAnswer: String?,
     ): String =
         buildString {
             appendLine("User language (ISO-639-1): ${'$'}language")
@@ -111,7 +119,7 @@ class Finalizer(
             appendLine("originalQuestion=$originalQuestion")
             appendLine("englishQuestion=$englishQuestion")
             if (!contextSummary.isNullOrBlank()) appendLine("summary=$contextSummary")
-            if (!failureReason.isNullOrBlank()) appendLine("failure=$failureReason")
+            if (!finalAnswer.isNullOrBlank()) appendLine("answer=$finalAnswer")
             appendLine()
             appendLine("Write the final answer for the user.")
         }

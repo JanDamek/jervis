@@ -1,6 +1,8 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.TimeoutsProperties
+import com.jervis.configuration.prompts.McpToolType
+import com.jervis.configuration.prompts.PromptType
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
@@ -9,6 +11,7 @@ import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.mcp.util.McpFinalPromptProcessor
+import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
@@ -29,14 +32,15 @@ class TerminalTool(
     private val mcpFinalPromptProcessor: McpFinalPromptProcessor,
     private val timeoutsProperties: TimeoutsProperties,
     private val projectMongoRepository: ProjectMongoRepository,
+    private val promptRepository: PromptRepository,
 ) : McpTool {
     companion object {
         private val logger = KotlinLogging.logger {}
     }
 
     override val name: String = "terminal"
-    override val description: String =
-        "Executes system commands and development tools via terminal. Use for building, testing, git operations, file management, package installation, and running development tools. Specify command details: 'run mvn test in target directory', 'build project with npm', 'check git status', or 'install dependencies with timeout 300s'. Not use for joern-have s separate tool."
+    override val description: String
+        get() = promptRepository.getMcpToolDescription(McpToolType.TERMINAL)
 
     @Serializable
     data class TerminalParams(
@@ -49,35 +53,7 @@ class TerminalTool(
         taskDescription: String,
         context: TaskContext,
     ): TerminalParams {
-        val systemPrompt =
-            """
-            You are the Terminal Tool parameter resolver. Your task is to convert a natural language task description into proper parameters for the Terminal Tool.           
-            The Terminal Tool provides:
-            - Direct access to system commands and development tools
-            - Building and compiling projects (mvn compile, npm build, cargo build, etc.)
-            - Running tests and verification (npm test, mvn test, pytest, etc.)
-            - Installing dependencies and packages (npm install, pip install, apt-get, etc.)
-            - Git operations and version control (git status, git commit, git push, etc.)
-            - File system operations (ls, find, grep, mkdir, cp, etc.)
-            - Database operations, deployment commands, and development server management      
-            Return ONLY a valid JSON object with this exact structure:
-            {
-              "command": "<terminal command to execute>",
-              "timeout": <timeout in seconds, optional>,
-              "finalPrompt": "<LLM prompt to process results, optional>"
-            }          
-            Examples:
-            - "run tests" → {"command": "mvn test"}
-            - "build the project" → {"command": "mvn clean compile"}
-            - "check git status" → {"command": "git status"}            
-            Rules:
-            - not use for joern - this have separate tool
-            - command: must be a specific, executable terminal command
-            - timeout: only specify if command might take longer than default (>60s)
-            - finalPrompt: add if results need specific interpretation
-            - Never include dangerous commands like 'rm -rf', 'format', 'shutdown', 'reboot'
-            - Return only valid JSON, no explanations or markdown
-            """.trimIndent()
+        val systemPrompt = promptRepository.getMcpToolSystemPrompt(PromptType.TERMINAL_SYSTEM)
 
         return try {
             val llmResponse =

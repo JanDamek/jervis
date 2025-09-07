@@ -2,6 +2,7 @@ package com.jervis.configuration.prompts
 
 enum class PromptType {
     // Agent System
+    AGENT_TOOL_SUFFIX,
     PLANNER_SYSTEM,
     FINALIZER_SYSTEM,
 
@@ -14,6 +15,8 @@ enum class PromptType {
     TERMINAL_SYSTEM,
     LLM_SYSTEM,
     USER_INTERACTION_SYSTEM,
+    CODE_WRITE_SYSTEM,
+    SCOPE_RESOLUTION_SYSTEM,
 
     // Indexing
     CLASS_SUMMARY_SYSTEM,
