@@ -20,7 +20,6 @@ data class PlanDocument(
     var status: PlanStatus = PlanStatus.CREATED,
     var contextSummary: String? = null,
     var finalAnswer: String? = null,
-    var failureReason: String? = null,
     val createdAt: Instant = Instant.now(),
     var updatedAt: Instant = Instant.now(),
 ) {
@@ -35,7 +34,6 @@ data class PlanDocument(
             steps = steps.map { it.toDomain() },
             contextSummary = this.contextSummary,
             finalAnswer = this.finalAnswer,
-            failureReason = this.failureReason,
             createdAt = this.createdAt,
             updatedAt = this.updatedAt,
         )
@@ -51,7 +49,6 @@ data class PlanDocument(
                 status = plan.status,
                 contextSummary = plan.contextSummary,
                 finalAnswer = plan.finalAnswer,
-                failureReason = plan.failureReason,
                 createdAt = plan.createdAt,
                 updatedAt = plan.updatedAt,
             )

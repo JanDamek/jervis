@@ -336,7 +336,8 @@ class VectorStorageRepository(
     suspend fun search(
         collectionType: ModelType,
         query: List<Float>,
-        limit: Int = 5,
+        limit: Int = 10000,
+        minScore: Float = 0.0f,
         filter: Map<String, Any>? = null,
     ): List<Map<String, JsonWithInt.Value>> {
         val collection = getCachedCollectionName(collectionType)
@@ -351,7 +352,12 @@ class VectorStorageRepository(
                 .newBuilder()
                 .setCollectionName(collection)
                 .setLimit(limit.toLong())
-                .also { b ->
+                .apply {
+                    // Add score threshold if minScore > 0
+                    if (minScore > 0.0f) {
+                        scoreThreshold = minScore
+                    }
+                }.also { b ->
                     effectiveQuery.forEach { b.addVector(it) }
                     b.withPayload =
                         Points.WithPayloadSelector
@@ -368,7 +374,17 @@ class VectorStorageRepository(
 
         val out = mutableListOf<Map<String, JsonWithInt.Value>>()
         for (point in results) {
-            out += point.payloadMap
+            // Fallback score filtering (in case Qdrant scoreThreshold doesn't work perfectly)
+            if (point.score >= minScore) {
+                val payloadWithScore = point.payloadMap.toMutableMap()
+                // Add score to results for debugging
+                payloadWithScore["_score"] =
+                    JsonWithInt.Value
+                        .newBuilder()
+                        .setDoubleValue(point.score.toDouble())
+                        .build()
+                out += payloadWithScore
+            }
         }
         return out
     }

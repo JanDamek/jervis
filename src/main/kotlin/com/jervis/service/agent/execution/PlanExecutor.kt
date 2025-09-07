@@ -28,9 +28,22 @@ class PlanExecutor(
 
     suspend fun execute(context: TaskContext) {
         context.plans.filter { it.status != PlanStatus.COMPLETED }.forEach { plan ->
-            plan.status = PlanStatus.RUNNING
-            plan.updatedAt = Instant.now()
-            taskContextService.save(context)
+            logger.debug { "EXECUTOR_PLAN_START: Processing planId=${plan.id}, status=${plan.status}, steps=${plan.steps.size}" }
+            logger.debug {
+                "EXECUTOR_PLAN_STEPS: ${plan.steps.map { "stepId=${it.id}, order=${it.order}, name=${it.name}, status=${it.status}" }}"
+            }
+
+            if (plan.steps.isEmpty()) {
+                logger.error { "EXECUTOR_EMPTY_PLAN: Plan ${plan.id} has no steps - marking as FAILED instead of COMPLETED" }
+                plan.status = PlanStatus.FAILED
+                plan.finalAnswer = "Plan has no executable steps. This indicates a planner error."
+                plan.updatedAt = Instant.now()
+                taskContextService.save(context)
+            } else {
+                plan.status = PlanStatus.RUNNING
+                plan.updatedAt = Instant.now()
+                taskContextService.save(context)
+            }
 
             try {
                 plan.steps.sortedBy { it.order }.first { it.status == StepStatus.PENDING }.let { step ->
@@ -52,9 +65,9 @@ class PlanExecutor(
                                 step.output = result
                                 step.status = StepStatus.FAILED
                                 plan.status = PlanStatus.FAILED
-                                plan.failureReason = result.reason
+                                plan.finalAnswer = result.reason
                                 appendSummaryLine(plan, step.id, step.name, "STOPPED: ${result.reason}")
-                                logger.info { "EXECUTOR_STOPPED: Plan execution halted due to unresolvable error: ${result.reason}" }
+                                logger.debug { "EXECUTOR_STOPPED: Plan execution halted due to unresolvable error: ${result.reason}" }
                             }
 
                             is ToolResult.Error -> {
@@ -70,7 +83,7 @@ class PlanExecutor(
                                     }
                                 if (failedStepsWithSameTool.size >= 3) {
                                     plan.status = PlanStatus.FAILED
-                                    plan.failureReason =
+                                    plan.finalAnswer =
                                         "Cycle detected: Tool '${step.name}' failed ${failedStepsWithSameTool.size} times. Stopping to prevent infinite loop."
                                     logger.info {
                                         "EXECUTOR_CYCLE_DETECTED: Tool '${step.name}' failed ${failedStepsWithSameTool.size} times, stopping plan execution"
@@ -79,7 +92,7 @@ class PlanExecutor(
                                 }
 
                                 // Trigger replanning instead of failing
-                                logger.info { "EXECUTOR_REPLANNING: Triggering replanning due to error in step '${step.name}': $reason" }
+                                logger.debug { "EXECUTOR_REPLANNING: Triggering replanning due to error in step '${step.name}': $reason" }
                                 try {
                                     val completedSteps = plan.steps.filter { it.status == StepStatus.DONE }
                                     val failedSteps = plan.steps.filter { it.status == StepStatus.FAILED }
@@ -91,13 +104,13 @@ class PlanExecutor(
                                         }
 
                                     plan.steps = (preservedSteps + newSteps).sortedBy { it.order }
-                                    logger.info {
+                                    logger.debug {
                                         "EXECUTOR_REPLANNING_SUCCESS: Plan replanned - preserved ${completedSteps.size} completed steps, ${failedSteps.size} failed steps, added ${newSteps.size} new steps"
                                     }
                                 } catch (e: Exception) {
                                     logger.error(e) { "EXECUTOR_REPLANNING_FAILED: Falling back to marking plan as failed" }
                                     plan.status = PlanStatus.FAILED
-                                    plan.failureReason = "Original error: $reason. Replanning failed: ${e.message}"
+                                    plan.finalAnswer = "Original error: $reason. Replanning failed: ${e.message}"
                                 }
                             }
                         }
@@ -105,8 +118,26 @@ class PlanExecutor(
                         taskContextService.save(context)
                     }
                 }
-            } catch (_: NoSuchElementException) {
-                plan.status = PlanStatus.COMPLETED
+            } catch (e: NoSuchElementException) {
+                val pendingSteps = plan.steps.filter { it.status == StepStatus.PENDING }
+                val doneSteps = plan.steps.filter { it.status == StepStatus.DONE }
+                val failedSteps = plan.steps.filter { it.status == StepStatus.FAILED }
+
+                logger.debug {
+                    "EXECUTOR_NO_PENDING_STEPS: Plan ${plan.id} - pendingSteps=${pendingSteps.size}, doneSteps=${doneSteps.size}, failedSteps=${failedSteps.size}"
+                }
+
+                if (doneSteps.isNotEmpty() || failedSteps.isNotEmpty()) {
+                    logger.info { "EXECUTOR_PLAN_COMPLETED: Plan ${plan.id} completed - all steps processed" }
+                    plan.status = PlanStatus.COMPLETED
+                } else {
+                    logger.error {
+                        "EXECUTOR_NO_STEPS_PROCESSED: Plan ${plan.id} has no pending steps but also no processed steps - this should not happen"
+                    }
+                    plan.status = PlanStatus.FAILED
+                    plan.finalAnswer =
+                        "No pending steps found and no steps were processed. This indicates a planning or execution error."
+                }
             }
             plan.updatedAt = Instant.now()
         }

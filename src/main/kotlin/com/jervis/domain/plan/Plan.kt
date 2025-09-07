@@ -13,7 +13,6 @@ data class Plan(
     var steps: List<PlanStep> = emptyList(),
     var contextSummary: String? = null,
     var finalAnswer: String? = null,
-    var failureReason: String? = null,
     val createdAt: Instant = Instant.now(),
     var updatedAt: Instant = Instant.now(),
 )

@@ -6,4 +6,7 @@ enum class McpToolType {
     TERMINAL,
     LLM,
     USER_INTERACTION,
+    CODE_WRITE,
+    SCOPE_RESOLUTION,
+    PLANNER,
 }

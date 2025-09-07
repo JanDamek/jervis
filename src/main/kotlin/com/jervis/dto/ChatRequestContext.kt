@@ -17,4 +17,5 @@ data class ChatRequestContext(
     val autoScope: Boolean = false,
     val quick: Boolean = false,
     val confirmedScope: Boolean = false,
+    val existingContextId: ObjectId? = null, // ID of existing context to continue conversation
 )

@@ -1,21 +1,24 @@
 package com.jervis.service.mcp.tools
 
+import com.jervis.configuration.prompts.McpToolType
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.service.client.ClientService
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.project.ProjectService
+import com.jervis.service.prompts.PromptRepository
 import org.springframework.stereotype.Service
 
 @Service
 class ScopeResolutionTool(
     private val clientService: ClientService,
     private val projectService: ProjectService,
+    private val promptRepository: PromptRepository,
 ) : McpTool {
     override val name: String = "scope.resolve"
-    override val description: String =
-        "Resolves and validates client/project scope from task context. Use to establish working context and verify client-project relationships before performing scoped operations."
+    override val description: String
+        get() = promptRepository.getMcpToolDescription(McpToolType.SCOPE_RESOLUTION)
 
     override suspend fun execute(
         context: TaskContext,

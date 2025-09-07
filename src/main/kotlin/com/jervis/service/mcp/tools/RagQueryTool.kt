@@ -33,7 +33,7 @@ class RagQueryTool(
         private val logger = KotlinLogging.logger {}
     }
 
-    override val name: String = "rag.query"
+    override val name: String = "rag-query"
     override val description: String
         get() = promptRepository.getMcpToolDescription(McpToolType.RAG_QUERY)
 
@@ -42,6 +42,7 @@ class RagQueryTool(
         val query: String,
         val embedding: String,
         val topK: Int? = null,
+        val minScore: Float? = null,
         val finalPrompt: String? = null,
         val filters: Map<String, String>? = null,
     )
@@ -49,7 +50,8 @@ class RagQueryTool(
     @Serializable
     data class RagQueryParams(
         val queries: List<RagQueryRequest>,
-        val topK: Int = 5,
+        val topK: Int = -1,
+        val minScore: Float = 0.8f,
         val finalPrompt: String? = null,
         val globalFilters: Map<String, String>? = null,
     )
@@ -58,7 +60,7 @@ class RagQueryTool(
         taskDescription: String,
         context: TaskContext,
     ): RagQueryParams {
-        val systemPrompt = promptRepository.getSystemPrompt(PromptType.RAG_QUERY_SYSTEM)
+        val systemPrompt = promptRepository.getMcpToolSystemPrompt(PromptType.RAG_QUERY_SYSTEM)
         val modelParams = promptRepository.getEffectiveModelParams(PromptType.RAG_QUERY_SYSTEM)
 
         return try {
@@ -92,12 +94,22 @@ class RagQueryTool(
         plan: Plan,
         taskDescription: String,
     ): ToolResult {
+        logger.debug {
+            "RAG_QUERY_START: Executing RAG query for taskDescription='$taskDescription', contextId='${context.id}', planId='${plan.id}'"
+        }
+
         val queryParams =
             runCatching {
                 parseTaskDescription(taskDescription, context)
-            }.getOrElse { return ToolResult.error("Invalid RAG query parameters: ${it.message}") }
+            }.getOrElse {
+                logger.error { "RAG_QUERY_PARSE_ERROR: Failed to parse task description: ${it.message}" }
+                return ToolResult.error("Invalid RAG query parameters: ${it.message}")
+            }
+
+        logger.debug { "RAG_QUERY_PARSED: queryParams=$queryParams" }
 
         if (queryParams.queries.isEmpty()) {
+            logger.warn { "RAG_QUERY_NO_QUERIES: No query parameters provided for taskDescription='$taskDescription'" }
             return ToolResult.error("No query parameters provided")
         }
 
@@ -113,8 +125,11 @@ class RagQueryTool(
 
             val aggregatedResult = aggregateResults(queryResults, queryParams.queries.size > 1)
 
+            logger.debug { "RAG_QUERY_AGGREGATED: result=${aggregatedResult.output}" }
+
             // Apply global final prompt processing if specified
             queryParams.finalPrompt?.let { globalFinalPrompt ->
+                logger.debug { "RAG_QUERY_FINAL_PROMPT: Processing final prompt='$globalFinalPrompt'" }
                 mcpFinalPromptProcessor.processFinalPrompt(
                     finalPrompt = globalFinalPrompt,
                     systemPrompt = mcpFinalPromptProcessor.createRagSystemPrompt(),
@@ -131,26 +146,44 @@ class RagQueryTool(
         globalParams: RagQueryParams,
         queryIndex: Int,
     ): ToolResult {
+        logger.debug { "RAG_QUERY_EXECUTE: Starting query $queryIndex: '${queryRequest.query}', embedding='${queryRequest.embedding}'" }
+
         val modelType =
             when (queryRequest.embedding.lowercase()) {
                 "text" -> ModelType.EMBEDDING_TEXT
                 "code" -> ModelType.EMBEDDING_CODE
-                else -> return ToolResult.error("Unsupported embedding type: ${queryRequest.embedding}")
+                else -> {
+                    logger.error { "RAG_QUERY_UNSUPPORTED_EMBEDDING: ${queryRequest.embedding}" }
+                    return ToolResult.error("Unsupported embedding type: ${queryRequest.embedding}")
+                }
             }
+
+        logger.debug { "RAG_QUERY_MODEL_TYPE: Using modelType=$modelType for query $queryIndex" }
 
         val embedding =
             try {
                 embeddingGateway.callEmbedding(modelType, queryRequest.query)
             } catch (e: Exception) {
+                logger.error(e) { "RAG_QUERY_EMBEDDING_ERROR: Failed to generate embedding for query $queryIndex" }
                 return ToolResult.error("Embedding failed for query $queryIndex: ${e.message}")
             }
 
         if (embedding.isEmpty()) {
+            logger.warn { "RAG_QUERY_NO_EMBEDDING: No embedding produced for query $queryIndex" }
             return ToolResult.ok("No embedding produced for query $queryIndex. Skipping RAG search.")
         }
 
-        // Use query-specific topK if provided, otherwise use global topK
-        val effectiveTopK = queryRequest.topK ?: globalParams.topK
+        logger.debug { "RAG_QUERY_EMBEDDING_SUCCESS: Generated embedding with ${embedding.size} dimensions for query $queryIndex" }
+
+        // Determine effective topK and minScore
+        val effectiveTopK =
+            when {
+                queryRequest.topK != null -> queryRequest.topK
+                globalParams.topK == -1 -> 10000 // Convert unlimited (-1) to high limit
+                else -> globalParams.topK
+            }
+
+        val effectiveMinScore = queryRequest.minScore ?: globalParams.minScore
 
         // Build combined filter: mandatory projectId + global filters + query-specific filters
         val combinedFilter =
@@ -166,28 +199,41 @@ class RagQueryTool(
                 // Add query-specific filters if present (these override global filters for same keys)
                 queryRequest.filters?.forEach { (key, value) ->
                     put(key, value)
+                }
             }
+
+        logger.debug {
+            "RAG_QUERY_FILTERS: Using combinedFilter=$combinedFilter, topK=$effectiveTopK, minScore=$effectiveMinScore for query $queryIndex"
         }
 
         val results =
             try {
-                vectorStorage.search(
+                logger.debug { "RAG_QUERY_SEARCH_START: Executing vector search for query $queryIndex" }
+                val searchResults = vectorStorage.search(
                     collectionType = modelType,
                     query = embedding,
                     limit = effectiveTopK,
+                    minScore = effectiveMinScore,
                     filter = combinedFilter,
                 )
+                logger.debug { "RAG_QUERY_SEARCH_SUCCESS: Found ${searchResults.size} results for query $queryIndex" }
+                searchResults
             } catch (e: Exception) {
+                logger.error(e) { "RAG_QUERY_SEARCH_ERROR: Vector search failed for query $queryIndex" }
                 return ToolResult.error("Vector search failed for query $queryIndex: ${e.message}")
             }
 
         if (results.isEmpty()) {
+            logger.warn { "RAG_QUERY_NO_RESULTS: No relevant results found for query $queryIndex: '${queryRequest.query}'" }
             return ToolResult.ok("No relevant results found for query $queryIndex: '${queryRequest.query}'")
         }
 
         val enhancedResults = StringBuilder()
         results.forEachIndexed { index, doc ->
             enhancedResults.appendLine("Result ${index + 1}:")
+
+            // Log each document's content for debugging
+            logger.debug { "RAG_QUERY_RESULT_${index + 1}: doc=$doc" }
 
             // Iterate through all map entries and output KEY: VALUE pairs
             doc.forEach { (key, value) ->
@@ -203,6 +249,8 @@ class RagQueryTool(
                 enhancedResults.appendLine()
             }
         }
+
+        logger.debug { "RAG_QUERY_ENHANCED_RESULTS: query $queryIndex enhanced results length=${enhancedResults.length}" }
 
         val initialResult = ToolResult.ok(enhancedResults.toString())
 

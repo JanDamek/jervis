@@ -135,6 +135,18 @@
             <version>${grpc.version}</version>
         </dependency>
 
+        <!-- Native DNS resolver for macOS to fix DNS resolution issues -->
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-resolver-dns-native-macos</artifactId>
+            <classifier>osx-x86_64</classifier>
+        </dependency>
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-resolver-dns-native-macos</artifactId>
+            <classifier>osx-aarch_64</classifier>
+        </dependency>
+
         <!-- Pro podporu ListenableFuture -->
         <dependency>
             <groupId>com.google.guava</groupId>

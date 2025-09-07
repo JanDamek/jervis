@@ -7,8 +7,8 @@ import com.jervis.entity.mongo.PlanDocument
 import com.jervis.repository.mongo.PlanMongoRepository
 import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.finalizer.Finalizer
-import com.jervis.service.agent.planner.Planner
 import com.jervis.service.agent.planner.PlanningRunner
+import com.jervis.service.agent.planner.TwoPhasePlanner
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -23,7 +23,7 @@ class AgentOrchestratorService(
     private val planningRunner: PlanningRunner,
     private val finalizer: Finalizer,
     private val languageOrchestrator: LanguageOrchestrator,
-    private val planner: Planner,
+    private val twoPhasePlanner: TwoPhasePlanner,
     private val planMongoRepository: PlanMongoRepository,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -41,11 +41,18 @@ class AgentOrchestratorService(
             )
 
         val context =
-            taskContextService.create(
-                clientId = ctx.clientId,
-                projectId = ctx.projectId,
-                quick = ctx.quick,
-            )
+            if (ctx.existingContextId != null) {
+                // Use existing context if provided
+                taskContextService.findById(ctx.existingContextId)
+                    ?: throw IllegalArgumentException("Context with ID ${ctx.existingContextId} not found")
+            } else {
+                // Create new context
+                taskContextService.create(
+                    clientId = ctx.clientId,
+                    projectId = ctx.projectId,
+                    quick = ctx.quick,
+                )
+            }
 
         val plan =
             Plan(
@@ -59,7 +66,7 @@ class AgentOrchestratorService(
         context.plans += plan
 
         logger.info { "AGENT_LOOP_START: Planning loop for context: ${context.id}" }
-        planner.createPlan(context, plan)
+        twoPhasePlanner.createPlan(context, plan)
         taskContextService.save(context)
         planningRunner.run(context)
         val response = finalizer.finalize(context)
