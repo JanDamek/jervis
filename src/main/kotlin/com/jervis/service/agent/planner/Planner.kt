@@ -1,6 +1,6 @@
 package com.jervis.service.agent.planner
 
-import com.jervis.configuration.prompts.PromptType
+import com.jervis.configuration.prompts.McpToolType
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
@@ -41,10 +41,10 @@ class Planner(
     ): Plan {
         val systemPrompt =
             promptRepository
-                .getSystemPrompt(PromptType.PLANNER_SYSTEM)
+                .getSystemPrompt(McpToolType.PLANNER)
                 .replace("\$toolDescriptions", allToolDescriptions)
         val userPrompt = buildUserPrompt(context, plan)
-        val modelParams = promptRepository.getEffectiveModelParams(PromptType.PLANNER_SYSTEM)
+        val modelParams = promptRepository.getEffectiveModelParams(McpToolType.PLANNER)
 
         val llmAnswer =
             runCatching {
@@ -55,7 +55,7 @@ class Planner(
                         systemPrompt = systemPrompt,
                         outputLanguage = "en",
                         quick = context.quick,
-                        modelParams = modelParams
+                        modelParams = modelParams,
                     )
             }.onFailure {
                 logger.error(it) { "PLANNER_LLM_ERROR: falling back to deterministic plan" }
@@ -259,7 +259,7 @@ $toolDescriptions
 
         val cleanedJson = extractJsonFromResponse(inputJson)
         logger.debug { "PLANNER_CLEANED_JSON: Extracted JSON: '$cleanedJson'" }
-        
+
         val dtos = parseJsonToStepDtos(cleanedJson)
         logger.debug { "PLANNER_PARSED_DTOS: Parsed ${dtos.size} DTOs: $dtos" }
 
@@ -268,22 +268,23 @@ $toolDescriptions
             "Planner expected a non-empty JSON array of steps."
         }
 
-        val steps = dtos.mapIndexed { idx, dto ->
-            require(dto.name.isNotBlank()) {
-                logger.error { "PLANNER_INVALID_STEP: Step at index $idx has empty name: $dto" }
-                "Invalid step at index $idx: 'name' must be non-empty."
+        val steps =
+            dtos.mapIndexed { idx, dto ->
+                require(dto.name.isNotBlank()) {
+                    logger.error { "PLANNER_INVALID_STEP: Step at index $idx has empty name: $dto" }
+                    "Invalid step at index $idx: 'name' must be non-empty."
+                }
+                PlanStep(
+                    id = ObjectId.get(),
+                    name = dto.name.trim(),
+                    taskDescription = dto.taskDescription ?: "",
+                    order = idx + 1,
+                    planId = planId,
+                    contextId = contextId,
+                    status = StepStatus.PENDING,
+                    output = null,
+                )
             }
-            PlanStep(
-                id = ObjectId.get(),
-                name = dto.name.trim(),
-                taskDescription = dto.taskDescription ?: "",
-                order = idx + 1,
-                planId = planId,
-                contextId = contextId,
-                status = StepStatus.PENDING,
-                output = null,
-            )
-        }
 
         logger.debug { "PLANNER_CREATED_STEPS: Created ${steps.size} PlanSteps with PENDING status" }
         return steps

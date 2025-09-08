@@ -8,6 +8,7 @@ import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.planner.Planner
 import com.jervis.service.mcp.McpToolRegistry
 import com.jervis.service.mcp.domain.ToolResult
+import com.jervis.service.notification.StepNotificationService
 import com.jervis.service.rag.RagIngestService
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -23,6 +24,7 @@ class PlanExecutor(
     private val taskContextService: TaskContextService,
     private val ragIngestService: RagIngestService,
     private val planner: Planner,
+    private val stepNotificationService: StepNotificationService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -59,6 +61,7 @@ class PlanExecutor(
                                 step.output = result
                                 step.status = StepStatus.DONE
                                 appendSummaryLine(plan, step.id, step.name, result.output)
+                                stepNotificationService.notifyStepCompleted(context.id, plan.id, step)
                             }
 
                             is ToolResult.Stop -> {
@@ -68,6 +71,8 @@ class PlanExecutor(
                                 plan.finalAnswer = result.reason
                                 appendSummaryLine(plan, step.id, step.name, "STOPPED: ${result.reason}")
                                 logger.debug { "EXECUTOR_STOPPED: Plan execution halted due to unresolvable error: ${result.reason}" }
+                                stepNotificationService.notifyStepCompleted(context.id, plan.id, step)
+                                stepNotificationService.notifyPlanStatusChanged(context.id, plan.id, plan.status)
                             }
 
                             is ToolResult.Error -> {
@@ -75,6 +80,7 @@ class PlanExecutor(
                                 step.status = StepStatus.FAILED
                                 val reason = result.errorMessage ?: "Unknown error"
                                 appendSummaryLine(plan, step.id, step.name, "ERROR: $reason")
+                                stepNotificationService.notifyStepCompleted(context.id, plan.id, step)
 
                                 // Check for cycles - if same tool failed multiple times with similar parameters, stop
                                 val failedStepsWithSameTool =
@@ -88,6 +94,7 @@ class PlanExecutor(
                                     logger.info {
                                         "EXECUTOR_CYCLE_DETECTED: Tool '${step.name}' failed ${failedStepsWithSameTool.size} times, stopping plan execution"
                                     }
+                                    stepNotificationService.notifyPlanStatusChanged(context.id, plan.id, plan.status)
                                     return@forEach
                                 }
 
@@ -111,6 +118,7 @@ class PlanExecutor(
                                     logger.error(e) { "EXECUTOR_REPLANNING_FAILED: Falling back to marking plan as failed" }
                                     plan.status = PlanStatus.FAILED
                                     plan.finalAnswer = "Original error: $reason. Replanning failed: ${e.message}"
+                                    stepNotificationService.notifyPlanStatusChanged(context.id, plan.id, plan.status)
                                 }
                             }
                         }
@@ -130,6 +138,7 @@ class PlanExecutor(
                 if (doneSteps.isNotEmpty() || failedSteps.isNotEmpty()) {
                     logger.info { "EXECUTOR_PLAN_COMPLETED: Plan ${plan.id} completed - all steps processed" }
                     plan.status = PlanStatus.COMPLETED
+                    stepNotificationService.notifyPlanStatusChanged(context.id, plan.id, plan.status)
                 } else {
                     logger.error {
                         "EXECUTOR_NO_STEPS_PROCESSED: Plan ${plan.id} has no pending steps but also no processed steps - this should not happen"
@@ -137,6 +146,7 @@ class PlanExecutor(
                     plan.status = PlanStatus.FAILED
                     plan.finalAnswer =
                         "No pending steps found and no steps were processed. This indicates a planning or execution error."
+                    stepNotificationService.notifyPlanStatusChanged(context.id, plan.id, plan.status)
                 }
             }
             plan.updatedAt = Instant.now()

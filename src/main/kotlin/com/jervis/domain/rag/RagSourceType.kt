@@ -9,5 +9,9 @@ enum class RagSourceType {
     GIT,
     ANALYSIS,
     CLASS,
+    METHOD,
     AGENT,
+    DOCUMENTATION,
+    URL,
+    MEETING_TRANSCRIPT,
 }

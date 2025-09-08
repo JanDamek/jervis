@@ -4,8 +4,11 @@ import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.client.ClientProjectLinkService
 import com.jervis.service.client.ClientService
+import com.jervis.service.indexing.ClientIndexingService
 import com.jervis.service.indexing.IndexingService
 import com.jervis.service.project.ProjectService
+import com.jervis.service.scheduling.TaskQueryService
+import com.jervis.service.scheduling.TaskSchedulingService
 import com.jervis.ui.component.ApplicationWindowManager
 import org.springframework.stereotype.Component
 
@@ -21,6 +24,9 @@ class TrayWindowManager(
     linkService: ClientProjectLinkService,
     taskContextService: TaskContextService,
     indexingService: IndexingService,
+    clientIndexingService: ClientIndexingService,
+    taskSchedulingService: TaskSchedulingService,
+    taskQueryService: TaskQueryService,
 ) {
     private val windowManager =
         ApplicationWindowManager(
@@ -30,6 +36,9 @@ class TrayWindowManager(
             linkService,
             taskContextService,
             indexingService,
+            clientIndexingService,
+            taskSchedulingService,
+            taskQueryService,
         )
 
     /**

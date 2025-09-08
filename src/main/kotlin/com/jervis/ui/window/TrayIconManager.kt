@@ -63,6 +63,11 @@ class TrayIconManager {
             windowManager.showClientsWindow()
         }
 
+        val openSchedulerItem = MenuItem("Plánovač")
+        openSchedulerItem.addActionListener {
+            windowManager.showSchedulerWindow()
+        }
+
         val openMainItem = MenuItem("Open Main Window")
         openMainItem.addActionListener {
             windowManager.showMainWindow()
@@ -77,6 +82,7 @@ class TrayIconManager {
         popup.addSeparator()
         popup.add(openProjectSettingsItem)
         popup.add(openClientsItem)
+        popup.add(openSchedulerItem)
         popup.addSeparator()
         popup.add(exitItem)
 

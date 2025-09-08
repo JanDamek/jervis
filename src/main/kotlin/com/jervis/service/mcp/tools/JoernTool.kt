@@ -2,7 +2,6 @@ package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.TimeoutsProperties
 import com.jervis.configuration.prompts.McpToolType
-import com.jervis.configuration.prompts.PromptType
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
@@ -11,6 +10,7 @@ import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.mcp.util.McpFinalPromptProcessor
+import com.jervis.service.mcp.util.McpJson
 import com.jervis.service.prompts.PromptRepository
 import com.jervis.util.ProcessStreamingUtils
 import kotlinx.coroutines.Dispatchers
@@ -19,10 +19,8 @@ import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import org.springframework.stereotype.Service
 import java.io.File
-import kotlin.io.path.pathString
 
 @Service
 class JoernTool(
@@ -53,25 +51,19 @@ class JoernTool(
         taskDescription: String,
         context: TaskContext,
     ): JoernParams {
-        val systemPrompt = promptRepository.getMcpToolSystemPrompt(PromptType.JOERN_SYSTEM)
+        val systemPrompt = promptRepository.getMcpToolSystemPrompt(McpToolType.JOERN)
         val llmResponse =
             llmGateway.callLlm(
-                type = ModelType.INTERNAL,
+                type = ModelType.JOERN,
                 systemPrompt = systemPrompt,
                 userPrompt = taskDescription,
                 outputLanguage = "en",
                 quick = context.quick,
             )
 
-        val cleanedResponse =
-            llmResponse.answer
-                .trim()
-                .removePrefix("```json")
-                .removePrefix("```")
-                .removeSuffix("```")
-                .trim()
-
-        return Json.decodeFromString<JoernParams>(cleanedResponse)
+        return McpJson.decode<JoernParams>(llmResponse.answer).getOrElse {
+            throw IllegalArgumentException("Failed to parse Joern parameters: ${it.message}")
+        }
     }
 
     override suspend fun execute(
@@ -85,7 +77,12 @@ class JoernTool(
             return ToolResult.error("Project path does not exist or is not a directory: $projectDir")
         }
 
-        val parsed = parseTaskDescription(taskDescription, context)
+        val parsed =
+            try {
+                parseTaskDescription(taskDescription, context)
+            } catch (e: Exception) {
+                return ToolResult.error("Invalid Joern parameters: ${e.message}", "Joern parameter parsing failed")
+            }
 
         if (parsed.operations.isEmpty()) {
             return ToolResult.error("Joern operations cannot be empty")
@@ -150,18 +147,11 @@ class JoernTool(
 
                     val enhancedOutput =
                         buildString {
-                            appendLine("Joern Analysis Results")
-                            appendLine("Executed ${parsed.operations.size} operation(s)")
-                            appendLine("Working Directory: ${joernDir.pathString}")
-                            appendLine()
                             outputs.forEachIndexed { idx, output ->
-                                appendLine("Operation ${idx + 1} Output:")
-                                appendLine("```json")
-                                appendLine(formatJoernOutput(output))
-                                appendLine("```")
-                                appendLine()
+                                if (outputs.size > 1) append("Op${idx + 1}: ")
+                                append(formatJoernOutput(output))
+                                if (idx < outputs.size - 1) appendLine()
                             }
-                            appendLine("Analysis completed successfully. Results can be used for further code analysis or security review.")
                         }
 
                     ToolResult.ok(enhancedOutput)

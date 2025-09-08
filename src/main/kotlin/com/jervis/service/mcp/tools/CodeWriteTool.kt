@@ -1,7 +1,6 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.McpToolType
-import com.jervis.configuration.prompts.PromptType
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
@@ -48,7 +47,7 @@ class CodeWriteTool(
         taskDescription: String,
         context: TaskContext,
     ): CodeWriteParams {
-        val systemPrompt = promptRepository.getMcpToolSystemPrompt(PromptType.CODE_WRITE_SYSTEM)
+        val systemPrompt = promptRepository.getMcpToolSystemPrompt(McpToolType.CODE_WRITE)
 
         return try {
             val llmResponse =

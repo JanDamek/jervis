@@ -53,12 +53,12 @@ class TextEmbeddingService(
             var skippedSentences = 0
             var errorSentences = 0
 
-            // Process sentences sequentially to avoid concurrent modification issues
-            for ((index, sentence) in sentences.withIndex()) {
+            // Process chunks sequentially to avoid concurrent modification issues
+            for ((index, chunk) in sentences.withIndex()) {
                 try {
-                    if (sentence.trim().length > 20) { // Skip very short sentences
+                    if (chunk.trim().length >= 50) { // Skip very short chunks (meaningful chunks should be much larger)
                         // Generate text embedding for semantic search
-                        val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, sentence)
+                        val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, chunk)
 
                         // Create RAG document for semantic content
                         val ragDocument =
@@ -66,8 +66,8 @@ class TextEmbeddingService(
                                 projectId = project.id,
                                 documentType = RagDocumentType.TEXT,
                                 ragSourceType = RagSourceType.FILE,
-                                pageContent = sentence,
-                                source = "${filePath.pathString}#sentence-$index",
+                                pageContent = chunk,
+                                source = "${filePath.pathString}#chunk-$index",
                                 path = projectPath.relativize(filePath).pathString,
                                 module = filePath.fileName.toString(),
                             )
@@ -136,14 +136,149 @@ class TextEmbeddingService(
     suspend fun generateTextEmbedding(text: String): List<Float> = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, text)
 
     /**
-     * Split content into sentences for better semantic indexing
+     * Split content into meaningful chunks for better semantic indexing.
+     * Ensures minimum chunk size of 200 characters and intelligent sentence boundary detection.
      */
-    private fun splitIntoSentences(content: String): List<String> {
-        // Simple sentence splitting - can be enhanced with more sophisticated NLP
-        return content
-            .split(Regex("[.!?]+"))
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
+    private fun splitIntoSentences(content: String): List<String> =
+        splitIntoMeaningfulChunks(content, minChunkSize = 200, maxChunkSize = 1000)
+
+    /**
+     * Advanced text chunking that creates meaningful text segments.
+     * Combines sentences to reach minimum chunk size while respecting sentence boundaries.
+     */
+    private fun splitIntoMeaningfulChunks(
+        content: String,
+        minChunkSize: Int = 200,
+        maxChunkSize: Int = 1000,
+    ): List<String> {
+        if (content.length < minChunkSize) {
+            return listOf(content.trim()).filter { it.isNotEmpty() }
+        }
+
+        // First, split into potential sentence boundaries with more intelligent detection
+        val potentialSentences =
+            content
+                .split(Regex("(?<=[.!?])\\s+(?=[A-Z])")) // Split on sentence endings followed by whitespace and capital letter
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+
+        if (potentialSentences.isEmpty()) {
+            return emptyList()
+        }
+
+        val chunks = mutableListOf<String>()
+        var currentChunk = StringBuilder()
+
+        for (sentence in potentialSentences) {
+            val potentialLength =
+                currentChunk.length + sentence.length +
+                    (if (currentChunk.isNotEmpty()) 1 else 0) // space separator
+
+            when {
+                // If adding this sentence would exceed max size and we have content, finalize current chunk
+                potentialLength > maxChunkSize && currentChunk.isNotEmpty() -> {
+                    chunks.add(currentChunk.toString().trim())
+                    currentChunk = StringBuilder(sentence)
+                }
+                // If single sentence is longer than max size, split it by words
+                sentence.length > maxChunkSize -> {
+                    // Finalize current chunk if it has content
+                    if (currentChunk.isNotEmpty()) {
+                        chunks.add(currentChunk.toString().trim())
+                        currentChunk = StringBuilder()
+                    }
+                    // Split long sentence by words
+                    chunks.addAll(splitLongTextByWords(sentence, maxChunkSize))
+                }
+                // Normal case: add sentence to current chunk
+                else -> {
+                    if (currentChunk.isNotEmpty()) {
+                        currentChunk.append(" ")
+                    }
+                    currentChunk.append(sentence)
+                }
+            }
+        }
+
+        // Add remaining content as final chunk
+        if (currentChunk.isNotEmpty()) {
+            chunks.add(currentChunk.toString().trim())
+        }
+
+        // Post-process to combine small chunks
+        return combineSmallChunks(chunks, minChunkSize)
+    }
+
+    /**
+     * Split very long text by words when it exceeds maximum chunk size
+     */
+    private fun splitLongTextByWords(
+        text: String,
+        maxSize: Int,
+    ): List<String> {
+        val words = text.split(Regex("\\s+"))
+        val chunks = mutableListOf<String>()
+        var currentChunk = StringBuilder()
+
+        for (word in words) {
+            val potentialLength =
+                currentChunk.length + word.length +
+                    (if (currentChunk.isNotEmpty()) 1 else 0)
+
+            if (potentialLength > maxSize && currentChunk.isNotEmpty()) {
+                chunks.add(currentChunk.toString().trim())
+                currentChunk = StringBuilder(word)
+            } else {
+                if (currentChunk.isNotEmpty()) {
+                    currentChunk.append(" ")
+                }
+                currentChunk.append(word)
+            }
+        }
+
+        if (currentChunk.isNotEmpty()) {
+            chunks.add(currentChunk.toString().trim())
+        }
+
+        return chunks.filter { it.isNotEmpty() }
+    }
+
+    /**
+     * Combine chunks that are smaller than minimum size with adjacent chunks
+     */
+    private fun combineSmallChunks(
+        chunks: List<String>,
+        minSize: Int,
+    ): List<String> {
+        if (chunks.isEmpty()) return chunks
+
+        val combined = mutableListOf<String>()
+        var currentCombined = StringBuilder()
+
+        for (chunk in chunks) {
+            val potentialLength =
+                currentCombined.length + chunk.length +
+                    (if (currentCombined.isNotEmpty()) 1 else 0)
+
+            if (currentCombined.length >= minSize && potentialLength > minSize * 2) {
+                // Current combined chunk is large enough, start new one
+                combined.add(currentCombined.toString().trim())
+                currentCombined = StringBuilder(chunk)
+            } else {
+                // Combine with current chunk
+                if (currentCombined.isNotEmpty()) {
+                    currentCombined.append(" ")
+                }
+                currentCombined.append(chunk)
+            }
+        }
+
+        // Add final combined chunk
+        if (currentCombined.isNotEmpty()) {
+            combined.add(currentCombined.toString().trim())
+        }
+
+        return combined.filter { it.isNotEmpty() }
     }
 
     /**

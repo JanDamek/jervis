@@ -8,9 +8,11 @@ import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.analysis.JoernAnalysisService
+import com.jervis.service.analysis.ProjectDescriptionService
 import com.jervis.service.embedding.CodeEmbeddingService
 import com.jervis.service.embedding.TextEmbeddingService
 import com.jervis.service.gateway.EmbeddingGateway
+import com.jervis.service.rag.RagIndexingStatusService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -37,6 +39,14 @@ class IndexingService(
     private val gitHistoryIndexingService: GitHistoryIndexingService,
     private val dependencyIndexingService: DependencyIndexingService,
     private val classSummaryIndexingService: ClassSummaryIndexingService,
+    private val comprehensiveFileIndexingService: ComprehensiveFileIndexingService,
+    private val extensiveJoernAnalysisService: ExtensiveJoernAnalysisService,
+    private val projectDescriptionService: ProjectDescriptionService,
+    private val clientIndexingService: ClientIndexingService,
+    private val historicalVersioningService: HistoricalVersioningService,
+    private val ragIndexingStatusService: RagIndexingStatusService,
+    private val documentationIndexingService: DocumentationIndexingService,
+    private val meetingTranscriptIndexingService: MeetingTranscriptIndexingService,
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -66,9 +76,19 @@ class IndexingService(
             val maxFileSize = indexingRules.maxFileSizeMB * 1024 * 1024L
             var skippedFiles = 0
 
+            // Get current git commit hash for tracking
+            val gitCommitHash =
+                historicalVersioningService.getCurrentGitCommitHash(projectPath)
+                    ?: run {
+                        logger.warn { "Could not get git commit hash for project: ${project.name}" }
+                        return@withContext IndexingResult(0, 0, 1, "CODE")
+                    }
+
             try {
                 val codeContents = mutableMapOf<Path, String>()
+                val candidateFiles = mutableMapOf<Path, String>()
 
+                // First pass: collect all potential code files
                 Files
                     .walk(projectPath)
                     .filter { it.isRegularFile() }
@@ -79,7 +99,7 @@ class IndexingService(
                             try {
                                 val content = Files.readString(filePath)
                                 if (content.isNotBlank()) {
-                                    codeContents[filePath] = content
+                                    candidateFiles[filePath] = content
                                 }
                             } catch (e: Exception) {
                                 logger.warn(e) { "Error reading code file: ${filePath.pathString}" }
@@ -88,6 +108,53 @@ class IndexingService(
                             skippedFiles++
                         }
                     }
+
+                // Second pass: filter out already indexed files to prevent duplicates
+                for ((filePath, content) in candidateFiles) {
+                    try {
+                        val relativePath = projectPath.relativize(filePath).toString()
+                        val shouldIndex =
+                            ragIndexingStatusService.shouldIndexFile(
+                                projectId = project.id,
+                                filePath = relativePath,
+                                gitCommitHash = gitCommitHash,
+                                fileContent = content.toByteArray(),
+                            )
+
+                        if (shouldIndex) {
+                            codeContents[filePath] = content
+                            logger.debug { "Adding code file for indexing: $relativePath" }
+                        } else {
+                            skippedFiles++
+                            logger.debug { "Skipping already indexed code file: $relativePath" }
+                        }
+                    } catch (e: Exception) {
+                        logger.warn(e) { "Error checking duplicate status for code file: ${filePath.pathString}" }
+                        // On error, include the file to be safe
+                        codeContents[filePath] = content
+                    }
+                }
+
+                // Track indexing status for each file
+                for ((filePath, content) in codeContents) {
+                    try {
+                        val relativePath = projectPath.relativize(filePath).toString()
+                        ragIndexingStatusService.startIndexing(
+                            projectId = project.id,
+                            filePath = relativePath,
+                            gitCommitHash = gitCommitHash,
+                            ragSourceType = RagSourceType.FILE,
+                            fileContent = content.toByteArray(),
+                            language =
+                                filePath
+                                    .toString()
+                                    .substringAfterLast('.', "")
+                                    .takeIf { it.isNotEmpty() },
+                        )
+                    } catch (e: Exception) {
+                        logger.warn(e) { "Error tracking indexing status for file: ${filePath.pathString}" }
+                    }
+                }
 
                 // Process all code files using the dedicated service
                 val result = codeEmbeddingService.processCodeFiles(project, codeContents, projectPath)
@@ -119,9 +186,19 @@ class IndexingService(
             var skippedFiles = 0
             var processedFiles = 0
 
+            // Get current git commit hash for tracking
+            val gitCommitHash =
+                historicalVersioningService.getCurrentGitCommitHash(projectPath)
+                    ?: run {
+                        logger.warn { "Could not get git commit hash for project: ${project.name}" }
+                        return@withContext IndexingResult(0, 0, 1, "TEXT")
+                    }
+
             try {
                 val textContents = mutableMapOf<Path, String>()
+                val candidateFiles = mutableMapOf<Path, String>()
 
+                // First pass: collect all potential text files
                 Files
                     .walk(projectPath)
                     .filter { it.isRegularFile() }
@@ -132,8 +209,7 @@ class IndexingService(
                             try {
                                 val content = Files.readString(filePath)
                                 if (content.isNotBlank()) {
-                                    textContents[filePath] = content
-                                    processedFiles++
+                                    candidateFiles[filePath] = content
                                 }
                             } catch (e: Exception) {
                                 logger.warn(e) { "Error reading text file: ${filePath.pathString}" }
@@ -142,6 +218,55 @@ class IndexingService(
                             skippedFiles++
                         }
                     }
+
+                // Second pass: filter out already indexed files to prevent duplicates
+                for ((filePath, content) in candidateFiles) {
+                    try {
+                        val relativePath = projectPath.relativize(filePath).toString()
+                        val shouldIndex =
+                            ragIndexingStatusService.shouldIndexFile(
+                                projectId = project.id,
+                                filePath = relativePath,
+                                gitCommitHash = gitCommitHash,
+                                fileContent = content.toByteArray(),
+                            )
+
+                        if (shouldIndex) {
+                            textContents[filePath] = content
+                            processedFiles++
+                            logger.debug { "Adding text file for indexing: $relativePath" }
+                        } else {
+                            skippedFiles++
+                            logger.debug { "Skipping already indexed text file: $relativePath" }
+                        }
+                    } catch (e: Exception) {
+                        logger.warn(e) { "Error checking duplicate status for text file: ${filePath.pathString}" }
+                        // On error, include the file to be safe
+                        textContents[filePath] = content
+                        processedFiles++
+                    }
+                }
+
+                // Track indexing status for each file
+                for ((filePath, content) in textContents) {
+                    try {
+                        val relativePath = projectPath.relativize(filePath).toString()
+                        ragIndexingStatusService.startIndexing(
+                            projectId = project.id,
+                            filePath = relativePath,
+                            gitCommitHash = gitCommitHash,
+                            ragSourceType = RagSourceType.FILE,
+                            fileContent = content.toByteArray(),
+                            language =
+                                filePath
+                                    .toString()
+                                    .substringAfterLast('.', "")
+                                    .takeIf { it.isNotEmpty() },
+                        )
+                    } catch (e: Exception) {
+                        logger.warn(e) { "Error tracking indexing status for file: ${filePath.pathString}" }
+                    }
+                }
 
                 // Process all text files using the dedicated service
                 val result = textEmbeddingService.processTextContents(project, textContents, projectPath)
@@ -164,133 +289,343 @@ class IndexingService(
         }
 
     /**
-     * Index a single project with parallel execution of CODE indexing, TEXT indexing, and Joern analysis
+     * Comprehensive project indexing that includes all document types with parallel execution
      */
-    suspend fun indexProject(project: ProjectDocument) =
-        withContext(Dispatchers.IO) {
-            logger.info { "Starting parallel indexing for project: ${project.name}" }
-
-            if (project.path.isEmpty()) {
-                logger.warn { "Project has no path configured: ${project.name}" }
-                return@withContext
-            }
-
-            val pathString = project.path
-            val projectPath = Paths.get(pathString)
-            if (!Files.exists(projectPath)) {
-                logger.warn { "Project path does not exist: $pathString" }
-                return@withContext
-            }
-
-            logger.info { "Starting parallel indexing operations for project: ${project.name} at path: $pathString" }
-
+    suspend fun indexProject(project: ProjectDocument): IndexingResult =
+        withContext(Dispatchers.Default) {
             try {
-                // Create .joern directory
-                val joernDir = joernAnalysisService.setupJoernDirectory(projectPath)
+                logger.info { "Starting comprehensive parallel indexing for project: ${project.name}" }
+                val projectPath = Paths.get(project.path)
 
-                // Execute three indexing operations in parallel
-                val indexingOperations =
+                if (!Files.exists(projectPath)) {
+                    logger.error { "Project path does not exist: ${project.path}" }
+                    return@withContext IndexingResult(0, 0, 1, "COMPREHENSIVE_INDEX")
+                }
+
+                // Mark existing documents as historical to prevent duplication in RAG
+                logger.info { "Marking existing documents as historical for project: ${project.name}" }
+                try {
+                    val gitCommitHash = historicalVersioningService.getCurrentGitCommitHash(projectPath)
+                    val versioningResult =
+                        historicalVersioningService.markProjectDocumentsAsHistorical(project.id, gitCommitHash)
+                    logger.info {
+                        "Historical versioning completed for project: ${project.name} - " +
+                            "Marked historical: ${versioningResult.markedHistorical}, " +
+                            "Preserved: ${versioningResult.preserved}, " +
+                            "Errors: ${versioningResult.errors}"
+                    }
+                } catch (e: Exception) {
+                    logger.warn(e) { "Failed to mark documents as historical for project: ${project.name}, continuing with indexing" }
+                }
+
+                // Execute independent indexing operations in parallel
+                val parallelOperations =
                     listOf(
-                        async { indexCodeFiles(project, projectPath) },
-                        async { indexTextContent(project, projectPath) },
                         async {
-                            val analysisResult =
-                                joernAnalysisService.performJoernAnalysis(project, projectPath, joernDir)
-
-                            // If Joern analysis was successful, index the results into RAG system
-                            val indexingResult =
-                                if (analysisResult.isAvailable && analysisResult.operationsFailed == 0) {
-                                    try {
-                                        indexJoernAnalysisResults(project, projectPath, joernDir)
-                                    } catch (e: Exception) {
-                                        logger.warn(e) { "Failed to index Joern analysis results for project: ${project.name}" }
-                                        IndexingResult(0, 0, 1, "JOERN_INDEX")
-                                    }
-                                } else {
-                                    logger.info { "Skipping Joern result indexing due to analysis failure for project: ${project.name}" }
-                                    IndexingResult(0, 0, 0, "JOERN_INDEX")
-                                }
-
-                            // Combine analysis and indexing results
+                            logger.info { "Indexing code files for project: ${project.name}" }
+                            indexCodeFiles(project, projectPath)
+                        },
+                        async {
+                            logger.info { "Indexing text content for project: ${project.name}" }
+                            indexTextContent(project, projectPath)
+                        },
+                        async {
+                            logger.info { "Indexing comprehensive file descriptions for project: ${project.name}" }
+                            val fileResult = comprehensiveFileIndexingService.indexAllSourceFiles(project, projectPath)
                             IndexingResult(
-                                processedFiles = analysisResult.operationsCompleted + indexingResult.processedFiles,
-                                skippedFiles = indexingResult.skippedFiles,
-                                errorFiles = analysisResult.operationsFailed + indexingResult.errorFiles,
-                                operationType = "JOERN+INDEX",
+                                fileResult.processedFiles,
+                                fileResult.skippedFiles,
+                                fileResult.errorFiles,
+                                "FILE_DESCRIPTIONS",
                             )
+                        },
+                        async {
+                            logger.info { "Indexing git history for project: ${project.name}" }
+                            indexGitHistory(project, projectPath)
+                        },
+                        async {
+                            // Index documentation files and URLs
+                            logger.info { "Indexing documentation for project: ${project.name}" }
+                            try {
+                                val docResult = documentationIndexingService.indexProjectDocumentation(project)
+                                IndexingResult(
+                                    docResult.processedDocuments,
+                                    docResult.skippedDocuments,
+                                    docResult.errorDocuments,
+                                    "DOCUMENTATION_INDEX",
+                                )
+                            } catch (e: Exception) {
+                                logger.warn(e) { "Failed to index documentation for project: ${project.name}" }
+                                IndexingResult(0, 0, 1, "DOCUMENTATION_INDEX")
+                            }
+                        },
+                        async {
+                            // Index meeting transcripts if meeting path is configured
+                            if (!project.meetingPath.isNullOrBlank()) {
+                                logger.info { "Indexing meeting transcripts for project: ${project.name}" }
+                                try {
+                                    val transcriptResult =
+                                        meetingTranscriptIndexingService.indexProjectMeetingTranscripts(project)
+                                    IndexingResult(
+                                        transcriptResult.processedTranscripts,
+                                        transcriptResult.skippedTranscripts,
+                                        transcriptResult.errorTranscripts,
+                                        "MEETING_TRANSCRIPT_INDEX",
+                                    )
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to index meeting transcripts for project: ${project.name}" }
+                                    IndexingResult(0, 0, 1, "MEETING_TRANSCRIPT_INDEX")
+                                }
+                            } else {
+                                logger.debug { "No meeting path configured for project: ${project.name}" }
+                                IndexingResult(0, 0, 0, "MEETING_TRANSCRIPT_INDEX")
+                            }
+                        },
+                        async {
+                            // Index meeting audio files if meeting path is configured
+                            if (!project.meetingPath.isNullOrBlank()) {
+                                logger.info { "Indexing meeting audio files for project: ${project.name}" }
+                                try {
+                                    val meetingPath = Paths.get(project.meetingPath)
+                                    val meetingResult =
+                                        meetingIndexingService.indexMeetingAudioFiles(project, meetingPath)
+                                    IndexingResult(
+                                        meetingResult.processedMeetings,
+                                        meetingResult.skippedMeetings,
+                                        meetingResult.errorMeetings,
+                                        "MEETING_AUDIO_INDEX",
+                                    )
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to index meeting audio files for project: ${project.name}" }
+                                    IndexingResult(0, 0, 1, "MEETING_AUDIO_INDEX")
+                                }
+                            } else {
+                                logger.debug { "No meeting path configured for project: ${project.name}" }
+                                IndexingResult(0, 0, 0, "MEETING_AUDIO_INDEX")
+                            }
                         },
                     )
 
-                val results = indexingOperations.awaitAll()
+                // Execute Joern analysis operations in parallel (after setup)
+                val joernOperations =
+                    async {
+                        logger.info { "Running Joern analysis and indexing results for project: ${project.name}" }
+                        try {
+                            val joernDir = joernAnalysisService.setupJoernDirectory(projectPath)
+                            if (joernDir != null) {
+                                // Perform Joern analysis first (sequential as it's a prerequisite)
+                                joernAnalysisService.performJoernAnalysis(project, projectPath, joernDir)
 
-                val codeResult = results[0]
-                val textResult = results[1]
-                val joernResult = results[2]
+                                if (Files.exists(joernDir)) {
+                                    // Execute Joern-dependent operations in parallel
+                                    val joernDependentOps =
+                                        listOf(
+                                            async {
+                                                logger.info { "Indexing dependencies for project: ${project.name}" }
+                                                indexDependencies(project, projectPath, joernDir)
+                                            },
+                                            async {
+                                                logger.info { "Indexing class summaries for project: ${project.name}" }
+                                                indexClassSummaries(project, projectPath, joernDir)
+                                            },
+                                            async {
+                                                logger.info { "Performing extensive Joern analysis for project: ${project.name}" }
+                                                val extensiveResult =
+                                                    extensiveJoernAnalysisService.performExtensiveJoernAnalysis(
+                                                        project,
+                                                        projectPath,
+                                                        joernDir,
+                                                    )
+                                                IndexingResult(
+                                                    extensiveResult.processedAnalyses,
+                                                    extensiveResult.skippedAnalyses,
+                                                    extensiveResult.errorAnalyses,
+                                                    "EXTENSIVE_JOERN_ANALYSIS",
+                                                )
+                                            },
+                                        )
+
+                                    joernDependentOps.awaitAll()
+                                } else {
+                                    emptyList<IndexingResult>()
+                                }
+                            } else {
+                                logger.warn { "Joern analysis setup failed for project: ${project.name}" }
+                                emptyList<IndexingResult>()
+                            }
+                        } catch (e: Exception) {
+                            logger.error(e) { "Joern analysis failed for project: ${project.name}" }
+                            emptyList<IndexingResult>()
+                        }
+                    }
+
+                // Wait for all parallel operations to complete
+                val parallelResults = parallelOperations.awaitAll()
+                val joernResults = joernOperations.await()
+
+                // Combine all results
+                val allResults = parallelResults + joernResults
+                val totalProcessed = allResults.sumOf { it.processedFiles }
+                val totalSkipped = allResults.sumOf { it.skippedFiles }
+                val totalErrors = allResults.sumOf { it.errorFiles }
 
                 logger.info {
-                    "Parallel indexing completed for project: ${project.name}\n" +
-                        "CODE indexing - Processed: ${codeResult.processedFiles}, Skipped: ${codeResult.skippedFiles}, Errors: ${codeResult.errorFiles}\n" +
-                        "TEXT indexing - Processed: ${textResult.processedFiles}, Skipped: ${textResult.skippedFiles}, Errors: ${textResult.errorFiles}\n" +
-                        "Joern analysis - Status: ${if (joernResult.errorFiles == 0) "SUCCESS" else "FAILED (${joernResult.errorFiles} errors)"}"
+                    "Comprehensive parallel indexing completed for project: ${project.name} - " +
+                        "Total processed: $totalProcessed, Total skipped: $totalSkipped, Total errors: $totalErrors"
                 }
+
+                // Generate comprehensive project descriptions (sequential as it depends on all indexing results)
+                logger.info { "Generating comprehensive project descriptions for project: ${project.name}" }
+                try {
+                    val indexingDescriptions =
+                        projectDescriptionService.collectIndexingDescriptions(
+                            joernAnalysisResults =
+                                listOf(
+                                    "Comprehensive Joern static analysis completed with $totalProcessed files analyzed",
+                                ),
+                            classAnalysisResults = listOf("Class and method analysis completed with detailed summaries"),
+                            dependencyAnalysisResults = listOf("Dependency analysis completed with comprehensive insights"),
+                            fileAnalysisResults = listOf("File structure analysis completed for $totalProcessed files"),
+                            architectureAnalysisResults =
+                                listOf(
+                                    "Architecture analysis completed with extensive insights from multiple analysis types",
+                                ),
+                        )
+
+                    val projectDescriptions =
+                        projectDescriptionService.generateAndUpdateProjectDescriptions(project, indexingDescriptions)
+                    logger.info { "Successfully generated and updated project descriptions for: ${project.name}" }
+
+                    // Index project descriptions into RAG system
+                    try {
+                        val descriptionContents = mutableMapOf<Path, String>()
+                        if (projectDescriptions.shortDescription.isNotBlank()) {
+                            descriptionContents[Paths.get("project-description-short")] =
+                                projectDescriptions.shortDescription
+                        }
+                        if (projectDescriptions.fullDescription.isNotBlank()) {
+                            descriptionContents[Paths.get("project-description-full")] =
+                                projectDescriptions.fullDescription
+                        }
+
+                        if (descriptionContents.isNotEmpty()) {
+                            val descriptionResult =
+                                textEmbeddingService.processTextContents(project, descriptionContents, projectPath)
+                            logger.info {
+                                "Successfully indexed project descriptions into RAG for: ${project.name} - " +
+                                    "Processed: ${descriptionResult.processedSentences}, Errors: ${descriptionResult.errorSentences}"
+                            }
+                        }
+                    } catch (e: Exception) {
+                        logger.error(e) { "Failed to index project descriptions into RAG for: ${project.name}" }
+                    }
+                } catch (e: Exception) {
+                    logger.error(e) { "Failed to generate project descriptions for: ${project.name}" }
+                }
+
+                IndexingResult(totalProcessed, totalSkipped, totalErrors, "COMPREHENSIVE_INDEX")
             } catch (e: Exception) {
-                logger.error(e) { "Error during parallel indexing for project: ${project.name}" }
+                logger.error(e) { "Comprehensive indexing failed for project: ${project.name}" }
+                IndexingResult(0, 0, 1, "COMPREHENSIVE_INDEX")
             }
         }
 
     /**
-     * Index all projects in the system
+     * Index all projects in the system with sequential execution
+     * Projects are processed one by one to avoid resource contention and ensure stable processing
      */
-    suspend fun indexAllProjects(projects: List<ProjectDocument>) {
-        logger.info { "Starting indexing for all ${projects.size} projects" }
+    suspend fun indexAllProjects(projects: List<ProjectDocument>) =
+        withContext(Dispatchers.Default) {
+            logger.info { "Starting sequential indexing for all ${projects.size} projects" }
 
-        var successCount = 0
-        var errorCount = 0
+            val enabledProjects = projects.filter { !it.isDisabled }
+            logger.info {
+                "Processing ${enabledProjects.size} enabled projects sequentially (${projects.size - enabledProjects.size} disabled projects skipped)"
+            }
 
-        for (project in projects) {
-            try {
-                if (!project.isDisabled) {
+            var successCount = 0
+            var errorCount = 0
+
+            // Process projects sequentially, one by one
+            for (project in enabledProjects) {
+                try {
+                    logger.info { "Starting comprehensive indexing for project: ${project.name}" }
                     indexProject(project)
+
+                    // Update client descriptions after successful project indexing
+                    project.clientId?.let { clientId ->
+                        try {
+                            clientIndexingService.updateClientDescriptions(clientId)
+                            logger.info { "Updated client descriptions for project: ${project.name}" }
+                        } catch (e: Exception) {
+                            logger.warn(e) { "Failed to update client descriptions for project: ${project.name}" }
+                        }
+                    }
+
+                    logger.info { "Successfully indexed project: ${project.name}" }
                     successCount++
-                } else {
-                    logger.info { "Skipping disabled project: ${project.name}" }
+                } catch (e: Exception) {
+                    logger.error(e) { "Failed to index project: ${project.name}" }
+                    errorCount++
                 }
-            } catch (e: Exception) {
-                logger.error(e) { "Failed to index project: ${project.name}" }
-                errorCount++
+            }
+
+            logger.info {
+                "Sequential projects indexing completed. Success: $successCount, Errors: $errorCount, Skipped: ${projects.size - enabledProjects.size}"
             }
         }
 
-        logger.info { "All projects indexing completed. Success: $successCount, Errors: $errorCount" }
-    }
-
     /**
-     * Index projects for a specific client
+     * Index projects for a specific client with sequential execution
+     * Projects are processed one by one to avoid resource contention and ensure stable processing
      */
     suspend fun indexProjectsForClient(
         projects: List<ProjectDocument>,
         clientName: String,
-    ) {
-        logger.info { "Starting indexing for client '$clientName' with ${projects.size} projects" }
+    ) = withContext(Dispatchers.Default) {
+        logger.info { "Starting sequential indexing for client '$clientName' with ${projects.size} projects" }
 
+        val enabledProjects = projects.filter { !it.isDisabled }
+        logger.info {
+            "Processing ${enabledProjects.size} enabled projects sequentially for client '$clientName' (${projects.size - enabledProjects.size} disabled projects skipped)"
+        }
+
+        var clientId: org.bson.types.ObjectId? = null
         var successCount = 0
         var errorCount = 0
 
-        for (project in projects) {
+        // Process projects sequentially, one by one
+        for (project in enabledProjects) {
             try {
-                if (!project.isDisabled) {
-                    indexProject(project)
-                    successCount++
-                } else {
-                    logger.info { "Skipping disabled project: ${project.name}" }
+                logger.info { "Starting comprehensive indexing for project: ${project.name} (client: $clientName)" }
+                indexProject(project)
+
+                // Store clientId for later client description update
+                if (clientId == null) {
+                    clientId = project.clientId
                 }
+
+                logger.info { "Successfully indexed project: ${project.name} (client: $clientName)" }
+                successCount++
             } catch (e: Exception) {
-                logger.error(e) { "Failed to index project: ${project.name}" }
+                logger.error(e) { "Failed to index project: ${project.name} (client: $clientName)" }
                 errorCount++
             }
         }
 
-        logger.info { "Client '$clientName' projects indexing completed. Success: $successCount, Errors: $errorCount" }
+        // Update client descriptions once after all projects are indexed
+        clientId?.let { id ->
+            try {
+                clientIndexingService.updateClientDescriptions(id)
+                logger.info { "Updated client descriptions for client: $clientName" }
+            } catch (e: Exception) {
+                logger.warn(e) { "Failed to update client descriptions for client: $clientName" }
+            }
+        }
+
+        logger.info {
+            "Sequential client '$clientName' projects indexing completed. Success: $successCount, Errors: $errorCount, Skipped: ${projects.size - enabledProjects.size}"
+        }
     }
 
     /**
@@ -306,6 +641,14 @@ class IndexingService(
 
             var processedFiles = 0
             var errorFiles = 0
+
+            // Get current git commit hash for tracking
+            val gitCommitHash =
+                historicalVersioningService.getCurrentGitCommitHash(projectPath)
+                    ?: run {
+                        logger.warn { "Could not get git commit hash for project: ${project.name}" }
+                        return@withContext IndexingResult(0, 0, 1, "JOERN_INDEX")
+                    }
 
             try {
                 // Find all Joern analysis result files in the .joern directory
@@ -356,7 +699,7 @@ class IndexingService(
                             // Create RAG document for the analysis results
                             val ragDocument =
                                 RagDocument(
-                                    projectId = project.id!!,
+                                    projectId = project.id,
                                     documentType = RagDocumentType.JOERN_ANALYSIS,
                                     ragSourceType = RagSourceType.ANALYSIS,
                                     pageContent = summary,
@@ -364,7 +707,24 @@ class IndexingService(
                                     path = projectPath.relativize(resultFile).pathString,
                                     module = "joern-analysis",
                                     language = "analysis-report",
+                                    gitCommitHash = gitCommitHash,
                                 )
+
+                            // Track indexing status for this analysis file
+                            try {
+                                val relativePath = projectPath.relativize(resultFile).toString()
+                                ragIndexingStatusService.startIndexing(
+                                    projectId = project.id,
+                                    filePath = relativePath,
+                                    gitCommitHash = gitCommitHash,
+                                    ragSourceType = RagSourceType.ANALYSIS,
+                                    fileContent = content.toByteArray(),
+                                    language = "analysis-report",
+                                    module = "joern-analysis",
+                                )
+                            } catch (e: Exception) {
+                                logger.warn(e) { "Error tracking indexing status for analysis file: ${resultFile.fileName}" }
+                            }
 
                             // Store in TEXT vector store for semantic search
                             vectorStorage.store(ModelType.EMBEDDING_TEXT, ragDocument, embedding)
@@ -445,7 +805,16 @@ class IndexingService(
     ): IndexingResult =
         withContext(Dispatchers.Default) {
             try {
-                val result = classSummaryIndexingService.indexClassSummaries(project, projectPath, joernDir)
+                // Get current git commit hash for tracking
+                val gitCommitHash =
+                    historicalVersioningService.getCurrentGitCommitHash(projectPath)
+                        ?: run {
+                            logger.warn { "Could not get git commit hash for project: ${project.name}" }
+                            return@withContext IndexingResult(0, 0, 1, "CLASS_SUMMARY_INDEX")
+                        }
+
+                val result =
+                    classSummaryIndexingService.indexClassSummaries(project, projectPath, joernDir, gitCommitHash)
                 IndexingResult(
                     result.processedClasses,
                     result.skippedClasses,
@@ -455,114 +824,6 @@ class IndexingService(
             } catch (e: Exception) {
                 logger.error(e) { "Failed to index class summaries for project: ${project.name}" }
                 IndexingResult(0, 0, 1, "CLASS_SUMMARY_INDEX")
-            }
-        }
-
-    /**
-     * Index meeting transcript from Whisper service
-     */
-    suspend fun indexMeetingTranscript(
-        project: ProjectDocument,
-        meetingId: String,
-        transcript: String,
-        meetingTitle: String,
-        participantList: List<String> = emptyList(),
-    ): Boolean =
-        try {
-            meetingIndexingService.indexMeetingFromWhisper(
-                project,
-                meetingId,
-                transcript,
-                meetingTitle,
-                participantList,
-            )
-        } catch (e: Exception) {
-            logger.error(e) { "Failed to index meeting transcript: $meetingTitle" }
-            false
-        }
-
-    /**
-     * Index meeting notes manually
-     */
-    suspend fun indexMeetingNotes(
-        project: ProjectDocument,
-        meetingTitle: String,
-        notes: String,
-    ): Boolean =
-        try {
-            meetingIndexingService.indexMeetingNotes(project, meetingTitle, notes)
-        } catch (e: Exception) {
-            logger.error(e) { "Failed to index meeting notes: $meetingTitle" }
-            false
-        }
-
-    /**
-     * Comprehensive project indexing that includes all document types
-     */
-    suspend fun indexProjectComprehensive(project: ProjectDocument): IndexingResult =
-        withContext(Dispatchers.Default) {
-            try {
-                logger.info { "Starting comprehensive indexing for project: ${project.name}" }
-                val projectPath = Paths.get(project.path)
-
-                if (!Files.exists(projectPath)) {
-                    logger.error { "Project path does not exist: ${project.path}" }
-                    return@withContext IndexingResult(0, 0, 1, "COMPREHENSIVE_INDEX")
-                }
-
-                val results = mutableListOf<IndexingResult>()
-
-                // 1. Index code files
-                logger.info { "Indexing code files for project: ${project.name}" }
-                results.add(indexCodeFiles(project, projectPath))
-
-                // 2. Index text content
-                logger.info { "Indexing text content for project: ${project.name}" }
-                results.add(indexTextContent(project, projectPath))
-
-                // 3. Index git history
-                logger.info { "Indexing git history for project: ${project.name}" }
-                results.add(indexGitHistory(project, projectPath))
-
-                // 4. Run Joern analysis and index results
-                logger.info { "Running Joern analysis and indexing results for project: ${project.name}" }
-                try {
-                    val joernDir = joernAnalysisService.setupJoernDirectory(projectPath)
-                    if (joernDir != null) {
-                        // Perform Joern analysis
-                        joernAnalysisService.performJoernAnalysis(project, projectPath, joernDir)
-
-                        if (Files.exists(joernDir)) {
-                            // Index Joern analysis results
-                            results.add(indexJoernAnalysisResults(project, projectPath, joernDir))
-
-                            // Index dependencies from Joern
-                            results.add(indexDependencies(project, projectPath, joernDir))
-
-                            // Index class summaries
-                            results.add(indexClassSummaries(project, projectPath, joernDir))
-                        }
-                    } else {
-                        logger.warn { "Joern analysis setup failed for project: ${project.name}" }
-                    }
-                } catch (e: Exception) {
-                    logger.error(e) { "Joern analysis failed for project: ${project.name}" }
-                }
-
-                // Aggregate results
-                val totalProcessed = results.sumOf { it.processedFiles }
-                val totalSkipped = results.sumOf { it.skippedFiles }
-                val totalErrors = results.sumOf { it.errorFiles }
-
-                logger.info {
-                    "Comprehensive indexing completed for project: ${project.name} - " +
-                        "Total processed: $totalProcessed, Total skipped: $totalSkipped, Total errors: $totalErrors"
-                }
-
-                IndexingResult(totalProcessed, totalSkipped, totalErrors, "COMPREHENSIVE_INDEX")
-            } catch (e: Exception) {
-                logger.error(e) { "Comprehensive indexing failed for project: ${project.name}" }
-                IndexingResult(0, 0, 1, "COMPREHENSIVE_INDEX")
             }
         }
 

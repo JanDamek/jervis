@@ -1,5 +1,6 @@
 package com.jervis.entity.mongo
 
+import com.jervis.domain.language.Language
 import com.jervis.domain.project.IndexingRules
 import com.jervis.domain.project.ProjectOverrides
 import org.bson.types.ObjectId
@@ -20,8 +21,14 @@ data class ProjectDocument(
     val clientId: ObjectId? = null,
     val name: String,
     val description: String? = null,
+    val shortDescription: String? = null,
+    val fullDescription: String? = null,
     val path: String = "",
-    val languages: List<String> = emptyList(),
+    val meetingPath: String? = null,
+    val documentationPath: String? = null,
+    val documentationUrls: List<String> = emptyList(),
+    val languages: List<String> = emptyList(), // Programming languages used in the project
+    val communicationLanguage: Language = Language.getDefault(), // Communication language for this project
     // Repository/Git settings (optional - project doesn't have to be in Git)
     val primaryUrl: String? = null,
     val extraUrls: List<String> = emptyList(),

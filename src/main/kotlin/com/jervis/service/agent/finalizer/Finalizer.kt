@@ -1,6 +1,6 @@
 package com.jervis.service.agent.finalizer
 
-import com.jervis.configuration.prompts.PromptType
+import com.jervis.configuration.prompts.McpToolType
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.PlanStatus
@@ -43,12 +43,13 @@ class Finalizer(
                             englishQuestion = plan.englishQuestion,
                             contextSummary = plan.contextSummary,
                             finalAnswer = plan.finalAnswer,
+                            userLanguage = userLang,
                         )
 
                     logger.debug { "FINALIZER_USER_PROMPT: userPrompt='$userPrompt'" }
 
-                    val systemPrompt = promptRepository.getSystemPrompt(PromptType.FINALIZER_SYSTEM)
-                    val modelParams = promptRepository.getEffectiveModelParams(PromptType.FINALIZER_SYSTEM)
+                    val systemPrompt = promptRepository.getSystemPrompt(McpToolType.FINALIZER)
+                    val modelParams = promptRepository.getEffectiveModelParams(McpToolType.FINALIZER)
 
                     val answer =
                         runCatching {
@@ -110,9 +111,10 @@ class Finalizer(
         englishQuestion: String,
         contextSummary: String?,
         finalAnswer: String?,
+        userLanguage: String,
     ): String =
         buildString {
-            appendLine("User language (ISO-639-1): ${'$'}language")
+            appendLine("User language (ISO-639-1): $userLanguage")
             appendLine("Answer strictly in this language.")
             appendLine()
             appendLine("Context:")

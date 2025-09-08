@@ -14,4 +14,5 @@ enum class ModelType {
     CHAT_INTERNAL,
     CHAT_EXTERNAL,
     PLANNER,
+    JOERN,
 }

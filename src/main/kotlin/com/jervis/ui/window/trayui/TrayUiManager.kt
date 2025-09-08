@@ -4,8 +4,12 @@ import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.client.ClientProjectLinkService
 import com.jervis.service.client.ClientService
+import com.jervis.service.indexing.ClientIndexingService
 import com.jervis.service.indexing.IndexingService
+import com.jervis.service.mcp.McpToolRegistry
 import com.jervis.service.project.ProjectService
+import com.jervis.service.scheduling.TaskQueryService
+import com.jervis.service.scheduling.TaskSchedulingService
 import com.jervis.ui.window.TrayIconManager
 import org.springframework.stereotype.Service
 import java.awt.SystemTray
@@ -22,6 +26,10 @@ class TrayUiManager(
     private val linkService: ClientProjectLinkService,
     private val taskContextService: TaskContextService,
     private val indexingService: IndexingService,
+    private val clientIndexingService: ClientIndexingService,
+    private val taskSchedulingService: TaskSchedulingService,
+    private val taskQueryService: TaskQueryService,
+    private val mcpToolRegistry: McpToolRegistry,
 ) {
     private var trayIconManager: TrayIconManager? = null
 
@@ -56,5 +64,8 @@ class TrayUiManager(
             linkService,
             taskContextService,
             indexingService,
+            clientIndexingService,
+            taskSchedulingService,
+            taskQueryService,
         )
 }

@@ -4,7 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 
 @ConfigurationProperties(prefix = "")
 data class PromptsConfiguration(
-    var prompts: Map<PromptType, PromptConfig> = emptyMap(),
+    var prompts: Map<McpToolType, PromptConfig> = emptyMap(),
     var creativityLevels: Map<CreativityLevel, CreativityConfig> = emptyMap(),
     var timeouts: TimeoutsConfig = TimeoutsConfig(30000, 60000, 120000),
 )
