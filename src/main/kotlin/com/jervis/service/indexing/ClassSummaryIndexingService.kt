@@ -1,5 +1,6 @@
 package com.jervis.service.indexing
 
+import com.jervis.configuration.prompts.McpToolType
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagDocumentType
@@ -9,6 +10,7 @@ import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.prompts.PromptRepository
+import com.jervis.service.rag.RagIndexingStatusService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -33,6 +35,7 @@ class ClassSummaryIndexingService(
     private val embeddingGateway: EmbeddingGateway,
     private val vectorStorage: VectorStorageRepository,
     private val llmGateway: LlmGateway,
+    private val ragIndexingStatusService: RagIndexingStatusService,
     private val promptRepository: PromptRepository,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -94,13 +97,14 @@ class ClassSummaryIndexingService(
         project: ProjectDocument,
         projectPath: Path,
         joernDir: Path,
+        gitCommitHash: String,
     ): ClassSummaryIndexingResult =
         withContext(Dispatchers.Default) {
             try {
                 logger.info { "Starting class summary indexing for project: ${project.name}" }
 
                 // Extract class information from Joern analysis
-                val classes = extractClassesFromJoern(joernDir, projectPath)
+                val classes = extractClassesFromJoern(joernDir)
                 logger.info { "Found ${classes.size} classes to analyze for project: ${project.name}" }
 
                 // Enhance class information with code content
@@ -112,7 +116,7 @@ class ClassSummaryIndexingService(
 
                 for (classInfo in enhancedClasses) {
                     try {
-                        val success = generateAndIndexClassSummary(project, classInfo)
+                        val success = generateAndIndexClassSummary(project, classInfo, gitCommitHash)
                         if (success) {
                             processedClasses++
                         } else {
@@ -143,6 +147,7 @@ class ClassSummaryIndexingService(
     private suspend fun generateAndIndexClassSummary(
         project: ProjectDocument,
         classInfo: ClassInfo,
+        gitCommitHash: String,
     ): Boolean {
         try {
             logger.debug { "Generating class summary for: ${classInfo.className}" }
@@ -210,18 +215,40 @@ class ClassSummaryIndexingService(
 
             val ragDocument =
                 RagDocument(
-                    projectId = project.id!!,
+                    projectId = project.id,
                     documentType = RagDocumentType.CLASS_SUMMARY,
                     ragSourceType = RagSourceType.CLASS,
                     pageContent = classSummary,
                     source = "class://${project.name}/${classInfo.className}",
                     path = classInfo.filePath,
+                    packageName = classInfo.packageName,
+                    className = classInfo.className,
                     module = classInfo.className,
                     language = inferLanguageFromPath(classInfo.filePath),
+                    gitCommitHash = gitCommitHash,
                 )
+
+            // Track indexing status for this class summary
+            try {
+                ragIndexingStatusService.startIndexing(
+                    projectId = project.id,
+                    filePath = classInfo.filePath,
+                    gitCommitHash = gitCommitHash,
+                    ragSourceType = RagSourceType.CLASS,
+                    fileContent = classSummary.toByteArray(),
+                    language = inferLanguageFromPath(classInfo.filePath),
+                    module = classInfo.className,
+                )
+            } catch (e: Exception) {
+                logger.warn(e) { "Error tracking indexing status for class: ${classInfo.className}" }
+            }
 
             vectorStorage.store(ModelType.EMBEDDING_TEXT, ragDocument, embedding)
             logger.debug { "Successfully indexed class summary for: ${classInfo.className}" }
+
+            // Index each method separately as required by the issue
+            indexMethodsSeparately(project, classInfo, gitCommitHash)
+
             return true
         } catch (e: Exception) {
             logger.error(e) { "Failed to generate class summary for: ${classInfo.className}" }
@@ -230,11 +257,154 @@ class ClassSummaryIndexingService(
     }
 
     /**
-     * Build detailed analysis prompt for LLM
+     * Index each method separately with class context and Joern analysis
+     * This meets the requirement: "zvláš s popisem každé methody ve tříde" (separately with each method description in the class)
+     */
+    private suspend fun indexMethodsSeparately(
+        project: ProjectDocument,
+        classInfo: ClassInfo,
+        gitCommitHash: String,
+    ) {
+        logger.debug { "Indexing ${classInfo.methods.size} methods separately for class: ${classInfo.className}" }
+
+        for (method in classInfo.methods) {
+            try {
+                val methodDescription =
+                    buildString {
+                        appendLine("Method: ${method.name}")
+                        appendLine("=".repeat(60))
+                        appendLine("Class: ${classInfo.className}")
+                        appendLine("Package: ${classInfo.packageName ?: "unknown"}")
+                        appendLine("File: ${classInfo.filePath}")
+                        appendLine()
+
+                        // Method signature details
+                        appendLine("Method Signature:")
+                        val modifiers =
+                            buildList {
+                                if (method.isPublic) add("public")
+                                if (method.isStatic) add("static")
+                            }.joinToString(" ")
+
+                        val params =
+                            if (method.parameters.isNotEmpty()) {
+                                method.parameters.joinToString(", ")
+                            } else {
+                                "()"
+                            }
+
+                        appendLine("$modifiers ${method.returnType ?: "void"} ${method.name}($params)")
+
+                        if (method.annotations.isNotEmpty()) {
+                            appendLine("Annotations: ${method.annotations.joinToString(", ")}")
+                        }
+
+                        appendLine()
+                        appendLine("Class Context:")
+                        appendLine(
+                            "- Class Type: ${
+                                if (classInfo.isInterface) {
+                                    "Interface"
+                                } else if (classInfo.isAbstract) {
+                                    "Abstract Class"
+                                } else {
+                                    "Class"
+                                }
+                            }",
+                        )
+                        if (classInfo.interfaces.isNotEmpty()) {
+                            appendLine("- Class Implements: ${classInfo.interfaces.joinToString(", ")}")
+                        }
+                        if (classInfo.superClasses.isNotEmpty()) {
+                            appendLine("- Class Extends: ${classInfo.superClasses.joinToString(", ")}")
+                        }
+                        appendLine("- Total Methods in Class: ${classInfo.methods.size}")
+                        appendLine("- Total Fields in Class: ${classInfo.fields.size}")
+
+                        // Include Joern analysis context if available
+                        classInfo.joernAnalysis?.let { analysis ->
+                            appendLine()
+                            appendLine("Joern Analysis Context:")
+                            appendLine(analysis)
+                        }
+
+                        // Include relevant code context if available
+                        classInfo.codeContent?.let { code ->
+                            // Try to extract method-specific code or provide class context
+                            appendLine()
+                            appendLine("Code Context (Class Extract):")
+                            val codePreview =
+                                if (code.length > 1000) {
+                                    code.take(1000) + "\n... (code truncated)"
+                                } else {
+                                    code
+                                }
+                            appendLine("```")
+                            appendLine(codePreview)
+                            appendLine("```")
+                        }
+
+                        appendLine()
+                        appendLine("---")
+                        appendLine("Generated by: Joern Static Analysis + Method Indexing")
+                        appendLine("Indexed as: Individual Method Entry")
+                        appendLine("Project: ${project.name}")
+                        appendLine("Searchable by: method name, class context, Joern analysis results")
+                    }
+
+                val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, methodDescription)
+
+                val ragDocument =
+                    RagDocument(
+                        projectId = project.id,
+                        documentType = RagDocumentType.METHOD_DESCRIPTION,
+                        ragSourceType = RagSourceType.METHOD,
+                        pageContent = methodDescription,
+                        source = "method://${project.name}/${classInfo.className}#${method.name}",
+                        path = classInfo.filePath,
+                        packageName = classInfo.packageName,
+                        className = classInfo.className,
+                        methodName = method.name,
+                        module = "${classInfo.className}#${method.name}",
+                        language = inferLanguageFromPath(classInfo.filePath),
+                        gitCommitHash = gitCommitHash,
+                    )
+
+                // Track indexing status for this method
+                try {
+                    ragIndexingStatusService.startIndexing(
+                        projectId = project.id,
+                        filePath = "${classInfo.filePath}#${method.name}",
+                        gitCommitHash = gitCommitHash,
+                        ragSourceType = RagSourceType.METHOD,
+                        fileContent = methodDescription.toByteArray(),
+                        language = inferLanguageFromPath(classInfo.filePath),
+                        module = "${classInfo.className}#${method.name}",
+                    )
+                } catch (e: Exception) {
+                    logger.warn(e) { "Error tracking indexing status for method: ${classInfo.className}#${method.name}" }
+                }
+
+                vectorStorage.store(ModelType.EMBEDDING_TEXT, ragDocument, embedding)
+                logger.debug { "Successfully indexed method: ${classInfo.className}#${method.name}" }
+            } catch (e: Exception) {
+                logger.warn(e) { "Failed to index method: ${classInfo.className}#${method.name}" }
+            }
+        }
+
+        logger.debug { "Completed separate indexing of ${classInfo.methods.size} methods for class: ${classInfo.className}" }
+    }
+
+    /**
+     * Build detailed analysis prompt for LLM using configured CLASS_SUMMARY prompt
      */
     private fun buildClassAnalysisPrompt(classInfo: ClassInfo): String =
         buildString {
-            appendLine("Analyze this class and provide a comprehensive summary:")
+            // Get the configured system prompt for CLASS_SUMMARY
+            val systemPrompt = promptRepository.getSystemPrompt(McpToolType.CLASS_SUMMARY)
+            appendLine(systemPrompt)
+            appendLine()
+            appendLine("=== CLASS INFORMATION ===")
             appendLine()
             appendLine("Class Name: ${classInfo.className}")
             appendLine("Package: ${classInfo.packageName ?: "unknown"}")
@@ -260,30 +430,32 @@ class ClassSummaryIndexingService(
                 appendLine("Annotations: ${classInfo.annotations.joinToString(", ")}")
             }
 
-            appendLine()
-            appendLine("Methods (${classInfo.methods.size}):")
-            classInfo.methods.take(20).forEach { method ->
-                val modifiers =
-                    buildList {
-                        if (method.isPublic) add("public")
-                        if (method.isStatic) add("static")
-                    }.joinToString(" ")
+            if (classInfo.methods.isNotEmpty()) {
+                appendLine()
+                appendLine("Methods (${classInfo.methods.size}):")
+                classInfo.methods.take(20).forEach { method ->
+                    val modifiers =
+                        buildList {
+                            if (method.isPublic) add("public")
+                            if (method.isStatic) add("static")
+                        }.joinToString(" ")
 
-                val params =
-                    if (method.parameters.isNotEmpty()) {
-                        method.parameters.joinToString(", ")
-                    } else {
-                        "()"
+                    val params =
+                        if (method.parameters.isNotEmpty()) {
+                            method.parameters.joinToString(", ")
+                        } else {
+                            "()"
+                        }
+
+                    appendLine("- $modifiers ${method.returnType ?: "void"} ${method.name}($params)")
+
+                    if (method.annotations.isNotEmpty()) {
+                        appendLine("    Annotations: ${method.annotations.joinToString(", ")}")
                     }
-
-                appendLine("- $modifiers ${method.returnType ?: "void"} ${method.name}($params)")
-
-                if (method.annotations.isNotEmpty()) {
-                    appendLine("    Annotations: ${method.annotations.joinToString(", ")}")
                 }
-            }
-            if (classInfo.methods.size > 20) {
-                appendLine("... and ${classInfo.methods.size - 20} more methods")
+                if (classInfo.methods.size > 20) {
+                    appendLine("... and ${classInfo.methods.size - 20} more methods")
+                }
             }
 
             if (classInfo.fields.isNotEmpty()) {
@@ -329,10 +501,7 @@ class ClassSummaryIndexingService(
     /**
      * Extract class information from Joern analysis files
      */
-    private suspend fun extractClassesFromJoern(
-        joernDir: Path,
-        projectPath: Path,
-    ): List<ClassInfo> =
+    private suspend fun extractClassesFromJoern(joernDir: Path): List<ClassInfo> =
         withContext(Dispatchers.IO) {
             try {
                 val classes = mutableListOf<ClassInfo>()
@@ -352,7 +521,7 @@ class ClassSummaryIndexingService(
                     }.forEach { file ->
                         try {
                             val content = Files.readString(file)
-                            val parsedClasses = parseClassesFromJson(content, file.pathString, projectPath)
+                            val parsedClasses = parseClassesFromJson(content, file.pathString)
                             classes.addAll(parsedClasses)
                         } catch (e: Exception) {
                             logger.warn(e) { "Failed to parse classes from file: ${file.fileName}" }
@@ -373,7 +542,6 @@ class ClassSummaryIndexingService(
     private fun parseClassesFromJson(
         jsonContent: String,
         fileName: String,
-        projectPath: Path,
     ): List<ClassInfo> =
         try {
             val json = Json.parseToJsonElement(jsonContent)
@@ -382,7 +550,7 @@ class ClassSummaryIndexingService(
             when (json) {
                 is JsonArray -> {
                     json.forEach { element ->
-                        parseClassFromJsonElement(element, fileName, projectPath)?.let { classes.add(it) }
+                        parseClassFromJsonElement(element, fileName)?.let { classes.add(it) }
                     }
                 }
 
@@ -397,21 +565,20 @@ class ClassSummaryIndexingService(
                                         parseClassFromJsonElement(
                                             element,
                                             fileName,
-                                            projectPath,
                                         )?.let { classes.add(it) }
                                     }
                                 }
                             }
 
                             value is JsonObject -> {
-                                parseClassFromJsonElement(value, fileName, projectPath, key)?.let { classes.add(it) }
+                                parseClassFromJsonElement(value, fileName, key)?.let { classes.add(it) }
                             }
                         }
                     }
                 }
 
                 else -> {
-                    parseClassFromJsonElement(json, fileName, projectPath)?.let { classes.add(it) }
+                    parseClassFromJsonElement(json, fileName)?.let { classes.add(it) }
                 }
             }
 
@@ -427,7 +594,6 @@ class ClassSummaryIndexingService(
     private fun parseClassFromJsonElement(
         element: JsonElement,
         fileName: String,
-        projectPath: Path,
         fallbackName: String? = null,
     ): ClassInfo? {
         return try {
@@ -504,47 +670,39 @@ class ClassSummaryIndexingService(
      * Parse method information from JSON
      */
     private fun parseMethodFromJson(methodElement: JsonElement): MethodInfo? {
-        return try {
-            if (methodElement !is JsonObject) return null
+        if (methodElement !is JsonObject) return null
 
-            val name = methodElement["name"]?.jsonPrimitive?.content ?: return null
-            val returnType = methodElement["returnType"]?.jsonPrimitive?.content
-            val isPublic = methodElement["isPublic"]?.jsonPrimitive?.content?.toBoolean() ?: true
-            val isStatic = methodElement["isStatic"]?.jsonPrimitive?.content?.toBoolean() ?: false
+        val name = methodElement["name"]?.jsonPrimitive?.content ?: return null
+        val returnType = methodElement["returnType"]?.jsonPrimitive?.content
+        val isPublic = methodElement["isPublic"]?.jsonPrimitive?.content?.toBoolean() ?: true
+        val isStatic = methodElement["isStatic"]?.jsonPrimitive?.content?.toBoolean() ?: false
 
-            val parameters =
-                methodElement["parameters"]?.jsonArray?.mapNotNull {
-                    it.jsonPrimitive.content
-                } ?: emptyList()
+        val parameters =
+            methodElement["parameters"]?.jsonArray?.mapNotNull {
+                it.jsonPrimitive.content
+            } ?: emptyList()
 
-            val annotations =
-                methodElement["annotations"]?.jsonArray?.mapNotNull {
-                    it.jsonPrimitive.content
-                } ?: emptyList()
+        val annotations =
+            methodElement["annotations"]?.jsonArray?.mapNotNull {
+                it.jsonPrimitive.content
+            } ?: emptyList()
 
-            MethodInfo(name, parameters, returnType, isPublic, isStatic, annotations)
-        } catch (e: Exception) {
-            null
-        }
+        return MethodInfo(name, parameters, returnType, isPublic, isStatic, annotations)
     }
 
     /**
      * Parse field information from JSON
      */
     private fun parseFieldFromJson(fieldElement: JsonElement): FieldInfo? {
-        return try {
-            if (fieldElement !is JsonObject) return null
+        if (fieldElement !is JsonObject) return null
 
-            val name = fieldElement["name"]?.jsonPrimitive?.content ?: return null
-            val type = fieldElement["type"]?.jsonPrimitive?.content
-            val isPublic = fieldElement["isPublic"]?.jsonPrimitive?.content?.toBoolean() ?: false
-            val isStatic = fieldElement["isStatic"]?.jsonPrimitive?.content?.toBoolean() ?: false
-            val isFinal = fieldElement["isFinal"]?.jsonPrimitive?.content?.toBoolean() ?: false
+        val name = fieldElement["name"]?.jsonPrimitive?.content ?: return null
+        val type = fieldElement["type"]?.jsonPrimitive?.content
+        val isPublic = fieldElement["isPublic"]?.jsonPrimitive?.content?.toBoolean() ?: false
+        val isStatic = fieldElement["isStatic"]?.jsonPrimitive?.content?.toBoolean() ?: false
+        val isFinal = fieldElement["isFinal"]?.jsonPrimitive?.content?.toBoolean() ?: false
 
-            FieldInfo(name, type, isPublic, isStatic, isFinal)
-        } catch (e: Exception) {
-            null
-        }
+        return FieldInfo(name, type, isPublic, isStatic, isFinal)
     }
 
     /**

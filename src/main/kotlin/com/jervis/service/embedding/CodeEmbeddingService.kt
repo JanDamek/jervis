@@ -36,6 +36,12 @@ class CodeEmbeddingService(
         val errorFiles: Int,
     )
 
+    data class CodeMetadata(
+        val packageName: String?,
+        val primaryClassName: String?,
+        val language: String,
+    )
+
     /**
      * Process code file and generate embedding
      */
@@ -57,6 +63,9 @@ class CodeEmbeddingService(
                 // Generate code embedding for the entire file content
                 val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_CODE, content)
 
+                // Extract metadata from code content
+                val codeMetadata = extractCodeMetadata(content, filePath)
+
                 // Create RAG document for code content
                 val ragDocument =
                     RagDocument(
@@ -66,7 +75,10 @@ class CodeEmbeddingService(
                         pageContent = content,
                         source = filePath.pathString,
                         path = projectPath.relativize(filePath).pathString,
+                        packageName = codeMetadata.packageName,
+                        className = codeMetadata.primaryClassName,
                         module = filePath.fileName.toString(),
+                        language = codeMetadata.language,
                     )
 
                 // Store in CODE vector store
@@ -236,4 +248,132 @@ class CodeEmbeddingService(
         // - Or it has at least one strong indicator and reasonable line density
         return indicatorCount >= 2 || (indicatorCount >= 1 && nonEmptyLines > totalLines * 0.5)
     }
+
+    /**
+     * Extract package name and primary class name from code content
+     */
+    private fun extractCodeMetadata(
+        content: String,
+        filePath: Path,
+    ): CodeMetadata {
+        val language = detectLanguage(filePath)
+        var packageName: String? = null
+        var primaryClassName: String? = null
+
+        try {
+            val lines = content.lines()
+
+            when (language) {
+                "kotlin", "java" -> {
+                    // Extract package declaration
+                    val packageLine = lines.find { it.trim().startsWith("package ") }
+                    packageName =
+                        packageLine
+                            ?.trim()
+                            ?.removePrefix("package ")
+                            ?.removeSuffix(";")
+                            ?.trim()
+
+                    // Extract primary class/interface/object name
+                    val classPatterns =
+                        listOf(
+                            Regex("""^\s*(public\s+|private\s+|protected\s+)?(class|interface|object|enum)\s+([A-Z][A-Za-z0-9_]*)\b"""),
+                            Regex("""^\s*(class|interface|object|enum)\s+([A-Z][A-Za-z0-9_]*)\b"""),
+                        )
+
+                    for (line in lines) {
+                        for (pattern in classPatterns) {
+                            val match = pattern.find(line)
+                            if (match != null) {
+                                primaryClassName = match.groups.last()?.value
+                                break
+                            }
+                        }
+                        if (primaryClassName != null) break
+                    }
+                }
+
+                "javascript", "typescript" -> {
+                    // Extract ES6 module exports or class declarations
+                    val classPattern = Regex("""^\s*export\s+(default\s+)?class\s+([A-Z][A-Za-z0-9_]*)\b""")
+                    val functionPattern = Regex("""^\s*export\s+(default\s+)?function\s+([A-Za-z][A-Za-z0-9_]*)\b""")
+
+                    for (line in lines) {
+                        val classMatch = classPattern.find(line)
+                        if (classMatch != null) {
+                            primaryClassName = classMatch.groups[2]?.value
+                            break
+                        }
+
+                        val functionMatch = functionPattern.find(line)
+                        if (functionMatch != null && primaryClassName == null) {
+                            primaryClassName = functionMatch.groups[2]?.value
+                        }
+                    }
+                }
+
+                "python" -> {
+                    // Extract class definitions
+                    val classPattern = Regex("""^\s*class\s+([A-Z][A-Za-z0-9_]*)\b""")
+
+                    for (line in lines) {
+                        val match = classPattern.find(line)
+                        if (match != null) {
+                            primaryClassName = match.groups[1]?.value
+                            break
+                        }
+                    }
+                }
+
+                "csharp" -> {
+                    // Extract namespace and class
+                    val namespaceLine = lines.find { it.trim().startsWith("namespace ") }
+                    packageName = namespaceLine?.trim()?.removePrefix("namespace ")?.trim()
+
+                    val classPattern =
+                        Regex("""^\s*(public\s+|private\s+|protected\s+)?(class|interface|struct)\s+([A-Z][A-Za-z0-9_]*)\b""")
+
+                    for (line in lines) {
+                        val match = classPattern.find(line)
+                        if (match != null) {
+                            primaryClassName = match.groups[3]?.value
+                            break
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to extract metadata from code content: ${filePath.fileName}" }
+        }
+
+        return CodeMetadata(
+            packageName = packageName,
+            primaryClassName = primaryClassName,
+            language = language,
+        )
+    }
+
+    /**
+     * Detect programming language from file path
+     */
+    private fun detectLanguage(filePath: Path): String =
+        when (filePath.toString().substringAfterLast('.').lowercase()) {
+            "kt", "kts" -> "kotlin"
+            "java" -> "java"
+            "js", "mjs", "cjs" -> "javascript"
+            "ts" -> "typescript"
+            "py", "pyx", "pyi" -> "python"
+            "rb" -> "ruby"
+            "go" -> "go"
+            "rs" -> "rust"
+            "cpp", "cc", "cxx" -> "cpp"
+            "c" -> "c"
+            "h", "hpp", "hxx" -> "c-header"
+            "cs" -> "csharp"
+            "php" -> "php"
+            "swift" -> "swift"
+            "scala" -> "scala"
+            "clj", "cljs" -> "clojure"
+            else -> "unknown"
+        }
 }

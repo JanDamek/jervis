@@ -23,10 +23,10 @@ sealed interface ToolResult {
 
     fun render(): String =
         when (this) {
-            is Ok -> "OK: ${this.output}"
-            is Error -> "ERROR: ${this.errorMessage ?: "Unknown"}"
-            is Ask -> "ASK: ${this.output}"
-            is Stop -> "STOP: ${this.reason}"
+            is Ok -> this.output
+            is Error -> this.errorMessage ?: "Unknown error"
+            is Ask -> this.output
+            is Stop -> this.reason
         }
 
     companion object {

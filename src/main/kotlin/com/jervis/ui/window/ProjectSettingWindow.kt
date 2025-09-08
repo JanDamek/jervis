@@ -48,6 +48,7 @@ class ProjectSettingWindow(
     private val projectService: ProjectService,
     private val clientService: com.jervis.service.client.ClientService,
     private val indexingService: IndexingService,
+    private val clientIndexingService: com.jervis.service.indexing.ClientIndexingService,
 ) : JFrame("Project Management") {
     private val projectTableModel = ProjectTableModel(emptyList())
     private val projectTable = JTable(projectTableModel)
@@ -1470,6 +1471,16 @@ class ProjectSettingWindow(
             try {
                 withContext(Dispatchers.IO) {
                     indexingService.indexProject(project)
+
+                    // Update client descriptions after successful project indexing
+                    project.clientId?.let { clientId ->
+                        try {
+                            clientIndexingService.updateClientDescriptions(clientId)
+                        } catch (e: Exception) {
+                            // Log but don't fail the whole operation
+                            println("Warning: Failed to update client descriptions for project: ${project.name} - ${e.message}")
+                        }
+                    }
                 }
 
                 JOptionPane.showMessageDialog(

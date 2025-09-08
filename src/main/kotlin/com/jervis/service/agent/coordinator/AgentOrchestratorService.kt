@@ -66,7 +66,16 @@ class AgentOrchestratorService(
         context.plans += plan
 
         logger.info { "AGENT_LOOP_START: Planning loop for context: ${context.id}" }
-        twoPhasePlanner.createPlan(context, plan)
+        val updatedPlan = twoPhasePlanner.createPlan(context, plan)
+
+        // Update the plan in context with the steps created by TwoPhasePlanner
+        val planIndex = context.plans.indexOfFirst { it.id == plan.id }
+        if (planIndex >= 0) {
+            context.plans = context.plans.toMutableList().apply { set(planIndex, updatedPlan) }
+        }
+
+        // Save the updated plan to a repository
+        planMongoRepository.save(PlanDocument.fromDomain(updatedPlan))
         taskContextService.save(context)
         planningRunner.run(context)
         val response = finalizer.finalize(context)

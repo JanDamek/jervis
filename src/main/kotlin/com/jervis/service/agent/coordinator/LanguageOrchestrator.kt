@@ -1,6 +1,6 @@
 package com.jervis.service.agent.coordinator
 
-import com.jervis.configuration.prompts.PromptType
+import com.jervis.configuration.prompts.McpToolType
 import com.jervis.domain.model.ModelType
 import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.prompts.PromptRepository
@@ -24,8 +24,8 @@ class LanguageOrchestrator(
         quick: Boolean,
     ): DetectionResult {
         val prompt = buildTranslationPrompt(text)
-        val systemPrompt = promptRepository.getSystemPrompt(PromptType.TRANSLATION_SYSTEM)
-        val modelParams = promptRepository.getEffectiveModelParams(PromptType.TRANSLATION_SYSTEM)
+        val systemPrompt = promptRepository.getSystemPrompt(McpToolType.TRANSLATION)
+        val modelParams = promptRepository.getEffectiveModelParams(McpToolType.TRANSLATION)
 
         val answer =
             llmGateway

@@ -52,22 +52,20 @@ class UserInteractionTool(
         val userLang = plan.originalLanguage.lowercase().ifBlank { "en" }
 
         val questionRephrased =
-            runCatching {
-                gateway
-                    .callLlm(
-                        type = ModelType.INTERNAL,
-                        systemPrompt = """
-                        Reformulate the following user request clearly and politely.
-                        Return only the reformulated sentence.""",
-                        userPrompt =
-                            """
-                            Request:
-                            $taskDescription
-                            """.trimIndent(),
-                        outputLanguage = userLang,
-                        quick = context.quick,
-                    ).answer
-            }
+            gateway
+                .callLlm(
+                    type = ModelType.INTERNAL,
+                    systemPrompt = """
+                    Reformulate the following user request clearly and politely.
+                    Return only the reformulated sentence.""",
+                    userPrompt =
+                        """
+                        Request:
+                        $taskDescription
+                        """.trimIndent(),
+                    outputLanguage = userLang,
+                    quick = context.quick,
+                ).answer
 
         val proposedAnswer =
             gateway
@@ -100,11 +98,7 @@ class UserInteractionTool(
         val finalAnswerOriginal =
             when (decisionResult.decision) {
                 UserDecision.ESC -> {
-                    runCatching {
-                        "Provide the best possible short answer based on the last user request. Keep it concise and helpful."
-                    }.getOrElse {
-                        "Proceeding with the model's decision."
-                    }
+                    "Provide the best possible short answer based on the last user request. Keep it concise and helpful."
                 }
 
                 UserDecision.ENTER -> {
@@ -117,16 +111,14 @@ class UserInteractionTool(
             }
 
         val finalAnswerEn =
-            runCatching {
-                gateway
-                    .callLlm(
-                        ModelType.TRANSLATION,
-                        userPrompt = finalAnswerOriginal,
-                        systemPrompt = "Translate.",
-                        "en",
-                        quick = context.quick,
-                    ).answer
-            }.getOrElse { finalAnswerOriginal }
+            gateway
+                .callLlm(
+                    ModelType.TRANSLATION,
+                    userPrompt = finalAnswerOriginal,
+                    systemPrompt = "Translate.",
+                    "en",
+                    quick = context.quick,
+                ).answer
 
         return ToolResult.ok(finalAnswerEn)
     }

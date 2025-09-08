@@ -2,7 +2,6 @@ package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.TimeoutsProperties
 import com.jervis.configuration.prompts.McpToolType
-import com.jervis.configuration.prompts.PromptType
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
@@ -53,7 +52,7 @@ class TerminalTool(
         taskDescription: String,
         context: TaskContext,
     ): TerminalParams {
-        val systemPrompt = promptRepository.getMcpToolSystemPrompt(PromptType.TERMINAL_SYSTEM)
+        val systemPrompt = promptRepository.getMcpToolSystemPrompt(McpToolType.TERMINAL)
 
         return try {
             val llmResponse =
@@ -272,24 +271,7 @@ class TerminalTool(
         output: String,
         exitCode: Int,
     ): ToolResult {
-        val enhancedOutput =
-            buildString {
-                appendLine("Command: ${params.command}")
-                appendLine("Working Directory: ${workingDirectory.absolutePath}")
-                appendLine("Exit Code: $exitCode")
-                appendLine("Execution Time: < ${params.timeout ?: timeoutsProperties.mcp.terminalToolTimeoutSeconds}s")
-                appendLine()
-                appendLine("Output:")
-                appendLine("```")
-                append(output.trim())
-                appendLine()
-                appendLine("```")
-
-                if (output.trim().isEmpty()) {
-                    appendLine("(No output - command executed successfully)")
-                }
-            }
-
+        val enhancedOutput = output.trim().ifEmpty { "Command executed successfully" }
         return ToolResult.ok(enhancedOutput)
     }
 }

@@ -15,4 +15,6 @@ data class TaskContext(
     val createdAt: Instant = Instant.now(),
     var updatedAt: Instant = Instant.now(),
     val quick: Boolean,
-)
+) {
+    override fun toString(): String = if (quick) "⚡ $name" else name
+}

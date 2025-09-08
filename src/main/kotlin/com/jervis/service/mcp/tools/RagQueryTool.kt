@@ -1,7 +1,6 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.McpToolType
-import com.jervis.configuration.prompts.PromptType
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
@@ -60,8 +59,8 @@ class RagQueryTool(
         taskDescription: String,
         context: TaskContext,
     ): RagQueryParams {
-        val systemPrompt = promptRepository.getMcpToolSystemPrompt(PromptType.RAG_QUERY_SYSTEM)
-        val modelParams = promptRepository.getEffectiveModelParams(PromptType.RAG_QUERY_SYSTEM)
+        val systemPrompt = promptRepository.getMcpToolSystemPrompt(McpToolType.RAG_QUERY)
+        val modelParams = promptRepository.getEffectiveModelParams(McpToolType.RAG_QUERY)
 
         return try {
             val llmResponse =
@@ -209,13 +208,14 @@ class RagQueryTool(
         val results =
             try {
                 logger.debug { "RAG_QUERY_SEARCH_START: Executing vector search for query $queryIndex" }
-                val searchResults = vectorStorage.search(
-                    collectionType = modelType,
-                    query = embedding,
-                    limit = effectiveTopK,
-                    minScore = effectiveMinScore,
-                    filter = combinedFilter,
-                )
+                val searchResults =
+                    vectorStorage.search(
+                        collectionType = modelType,
+                        query = embedding,
+                        limit = effectiveTopK,
+                        minScore = effectiveMinScore,
+                        filter = combinedFilter,
+                    )
                 logger.debug { "RAG_QUERY_SEARCH_SUCCESS: Found ${searchResults.size} results for query $queryIndex" }
                 searchResults
             } catch (e: Exception) {
