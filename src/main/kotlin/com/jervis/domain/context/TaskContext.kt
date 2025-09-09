@@ -15,6 +15,8 @@ data class TaskContext(
     val createdAt: Instant = Instant.now(),
     var updatedAt: Instant = Instant.now(),
     val quick: Boolean,
+    var projectContextInfo: ProjectContextInfo? = null,
+    var contextSummary: String = "",
 ) {
     override fun toString(): String = if (quick) "⚡ $name" else name
 }
