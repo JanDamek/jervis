@@ -22,4 +22,5 @@ enum class McpToolType {
     TRANSLATION,
     CLASS_SUMMARY,
     DEPENDENCY_ANALYSIS,
+    FILE_LISTING,
 }
