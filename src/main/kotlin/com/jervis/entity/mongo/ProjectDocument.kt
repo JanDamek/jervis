@@ -19,6 +19,7 @@ data class ProjectDocument(
     val id: ObjectId = ObjectId.get(),
     @Indexed
     val clientId: ObjectId? = null,
+    @Indexed(unique = true)
     val name: String,
     val description: String? = null,
     val shortDescription: String? = null,

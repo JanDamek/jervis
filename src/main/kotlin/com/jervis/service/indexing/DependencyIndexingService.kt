@@ -299,7 +299,7 @@ class DependencyIndexingService(
                             }
 
                             value is JsonObject -> {
-                                parseDependencyFromJsonElement(value, fileName, key)?.let { dependencies.add(it) }
+                                parseDependencyFromJsonElement(value, fileName)?.let { dependencies.add(it) }
                             }
                         }
                     }
@@ -323,7 +323,6 @@ class DependencyIndexingService(
     private fun parseDependencyFromJsonElement(
         element: JsonElement,
         fileName: String,
-        fallbackName: String? = null,
     ): DependencyInfo? {
         return try {
             if (element !is JsonObject) return null
@@ -333,8 +332,7 @@ class DependencyIndexingService(
                     ?: element["package"]?.jsonPrimitive?.content
                     ?: element["module"]?.jsonPrimitive?.content
                     ?: element["library"]?.jsonPrimitive?.content
-                    ?: fallbackName
-                    ?: return null
+                    ?: throw IllegalArgumentException("Cannot extract dependency name from JSON element in file: $fileName")
 
             val version =
                 element["version"]?.jsonPrimitive?.content

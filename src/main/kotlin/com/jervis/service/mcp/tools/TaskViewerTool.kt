@@ -194,73 +194,23 @@ class TaskViewerTool(
     ): BrowseParams {
         val systemPrompt = promptRepository.getMcpToolSystemPrompt(McpToolType.TASK_VIEWER)
 
-        return try {
-            val llmResponse =
-                llmGateway.callLlm(
-                    type = ModelType.INTERNAL,
-                    systemPrompt = systemPrompt,
-                    userPrompt = taskDescription,
-                    outputLanguage = "en",
-                    quick = context.quick,
-                )
-
-            val cleanedResponse =
-                llmResponse.answer
-                    .trim()
-                    .removePrefix("```json")
-                    .removePrefix("```")
-                    .removeSuffix("```")
-                    .trim()
-
-            Json.decodeFromString<BrowseParams>(cleanedResponse)
-        } catch (e: Exception) {
-            logger.warn(e) { "LLM parsing failed for task description: $taskDescription, falling back to manual parsing" }
-
-            // Enhanced fallback logic based on keywords
-            val description = taskDescription.lowercase()
-
-            // Parse status
-            val status =
-                when {
-                    description.contains("pending") -> "PENDING"
-                    description.contains("running") -> "RUNNING"
-                    description.contains("completed") -> "COMPLETED"
-                    description.contains("failed") -> "FAILED"
-                    description.contains("cancelled") -> "CANCELLED"
-                    else -> null
-                }
-
-            // Parse project ID - use current project if mentioned
-            val projectId =
-                when {
-                    description.contains("current project") || description.contains("this project") ->
-                        context.projectDocument.id.toString()
-
-                    else -> null
-                }
-
-            // Parse task type (deprecated field, always null as per prompts)
-            val taskType: String? = null
-
-            // Parse limit
-            val limit =
-                Regex("(last|latest|first)\\s+(\\d+)")
-                    .find(description)
-                    ?.groupValues
-                    ?.get(2)
-                    ?.toIntOrNull() ?: 50
-
-            // Check for statistics request
-            val showStatistics =
-                description.contains("statistics") || description.contains("stats") || description.contains("summary")
-
-            BrowseParams(
-                status = status,
-                projectId = projectId,
-                taskType = taskType,
-                limit = limit,
-                showStatistics = showStatistics,
+        val llmResponse =
+            llmGateway.callLlm(
+                type = ModelType.INTERNAL,
+                systemPrompt = systemPrompt,
+                userPrompt = taskDescription,
+                outputLanguage = "en",
+                quick = context.quick,
             )
-        }
+
+        val cleanedResponse =
+            llmResponse.answer
+                .trim()
+                .removePrefix("```json")
+                .removePrefix("```")
+                .removeSuffix("```")
+                .trim()
+
+        return Json.decodeFromString<BrowseParams>(cleanedResponse)
     }
 }

@@ -54,48 +54,24 @@ class TerminalTool(
     ): TerminalParams {
         val systemPrompt = promptRepository.getMcpToolSystemPrompt(McpToolType.TERMINAL)
 
-        return try {
-            val llmResponse =
-                llmGateway.callLlm(
-                    type = ModelType.INTERNAL,
-                    systemPrompt = systemPrompt,
-                    userPrompt = taskDescription,
-                    outputLanguage = "en",
-                    quick = context.quick,
-                )
-
-            val cleanedResponse =
-                llmResponse.answer
-                    .trim()
-                    .removePrefix("```json")
-                    .removePrefix("```")
-                    .removeSuffix("```")
-                    .trim()
-
-            Json.decodeFromString<TerminalParams>(cleanedResponse)
-        } catch (e: Exception) {
-            logger.warn { "Failed to parse task description via LLM: ${e.message}. Using fallback parsing." }
-            // Fallback: create simple command from task description
-            val fallbackCommand =
-                when {
-                    taskDescription.contains("test", ignoreCase = true) -> "mvn test"
-                    taskDescription.contains("build", ignoreCase = true) -> "mvn clean compile"
-                    taskDescription.contains("git", ignoreCase = true) -> "git status"
-                    taskDescription.contains("install", ignoreCase = true) &&
-                        taskDescription.contains("npm", ignoreCase = true) -> "npm install"
-
-                    taskDescription.contains("install", ignoreCase = true) &&
-                        taskDescription.contains("maven", ignoreCase = true) -> "mvn clean install"
-
-                    else -> taskDescription.trim()
-                }
-
-            TerminalParams(
-                command = fallbackCommand,
-                timeout = null,
-                finalPrompt = null,
+        val llmResponse =
+            llmGateway.callLlm(
+                type = ModelType.INTERNAL,
+                systemPrompt = systemPrompt,
+                userPrompt = taskDescription,
+                outputLanguage = "en",
+                quick = context.quick,
             )
-        }
+
+        val cleanedResponse =
+            llmResponse.answer
+                .trim()
+                .removePrefix("```json")
+                .removePrefix("```")
+                .removeSuffix("```")
+                .trim()
+
+        return Json.decodeFromString<TerminalParams>(cleanedResponse)
     }
 
     override suspend fun execute(

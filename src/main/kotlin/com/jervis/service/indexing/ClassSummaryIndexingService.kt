@@ -152,24 +152,7 @@ class ClassSummaryIndexingService(
         try {
             logger.debug { "Generating class summary for: ${classInfo.className}" }
 
-            val systemPrompt =
-                """
-                You are a senior software architect and documentation expert. Analyze the provided class information 
-                and create a comprehensive, human-readable summary.
-                
-                Focus on:
-                - Class purpose and responsibility
-                - Key methods and their functionality
-                - Design patterns used
-                - Relationships with other classes
-                - Usage examples and best practices
-                - Architecture role within the project
-                - Notable implementation details
-                - Potential improvements or concerns
-                
-                Write in clear, professional English that would help other developers understand and work with this class.
-                Make the summary searchable and informative for code navigation and architecture understanding.
-                """.trimIndent()
+            val systemPrompt = promptRepository.getSystemPrompt(McpToolType.CLASS_SUMMARY_ANALYSIS)
 
             val userPrompt = buildClassAnalysisPrompt(classInfo)
 
@@ -571,7 +554,7 @@ class ClassSummaryIndexingService(
                             }
 
                             value is JsonObject -> {
-                                parseClassFromJsonElement(value, fileName, key)?.let { classes.add(it) }
+                                parseClassFromJsonElement(value, fileName)?.let { classes.add(it) }
                             }
                         }
                     }
@@ -594,7 +577,6 @@ class ClassSummaryIndexingService(
     private fun parseClassFromJsonElement(
         element: JsonElement,
         fileName: String,
-        fallbackName: String? = null,
     ): ClassInfo? {
         return try {
             if (element !is JsonObject) return null
@@ -603,8 +585,7 @@ class ClassSummaryIndexingService(
                 element["name"]?.jsonPrimitive?.content
                     ?: element["className"]?.jsonPrimitive?.content
                     ?: element["fullName"]?.jsonPrimitive?.content?.substringAfterLast(".")
-                    ?: fallbackName
-                    ?: return null
+                    ?: throw IllegalArgumentException("Cannot extract class name from JSON element in file: $fileName")
 
             val packageName =
                 element["package"]?.jsonPrimitive?.content

@@ -152,59 +152,16 @@ class LlmGatewayImpl(
         if (!systemPrompt.isNullOrBlank()) body["system"] = systemPrompt
         if (options.isNotEmpty()) body["options"] = options
 
-        try {
-            val resp: OllamaGenerateResponse =
-                ollamaClient
-                    .post()
-                    .uri("/api/generate")
-                    .bodyValue(body)
-                    .retrieve()
-                    .awaitBody()
-            val answer = resp.response.orEmpty()
-            val rModel = resp.model ?: model
-            val finish = resp.done_reason ?: "stop"
-            val p = resp.prompt_eval_count ?: 0
-            val cTok = resp.eval_count ?: 0
-            val t = p + cTok
-            return LlmResponse(
-                answer = answer,
-                model = rModel,
-                promptTokens = p,
-                completionTokens = cTok,
-                totalTokens = t,
-                finishReason = finish,
-            )
-        } catch (e: org.springframework.web.reactive.function.client.WebClientResponseException) {
-            logger.info { "OLLAMA_FALLBACK: /api/generate failed (${e.statusCode.value()}), retrying via /api/chat" }
-            return callOllamaChat(model, systemPrompt, userPrompt, options)
-        }
-    }
-
-    private suspend fun callOllamaChat(
-        model: String,
-        systemPrompt: String?,
-        userPrompt: String,
-        options: Map<String, Any>,
-    ): LlmResponse {
-        val messages = mutableListOf<Map<String, Any>>()
-        if (!systemPrompt.isNullOrBlank()) messages += mapOf("role" to "system", "content" to systemPrompt)
-        messages += mapOf("role" to "user", "content" to userPrompt)
-        val body =
-            mutableMapOf<String, Any>(
-                "model" to model,
-                "messages" to messages,
-                "stream" to false,
-            )
-        if (options.isNotEmpty()) body["options"] = options
-        val resp: OllamaChatResponse =
+        val resp: OllamaGenerateResponse =
             ollamaClient
                 .post()
-                .uri("/api/chat")
+                .uri("/api/generate")
                 .bodyValue(body)
                 .retrieve()
                 .awaitBody()
-        val answer = resp.message?.content.orEmpty()
+        val answer = resp.response.orEmpty()
         val rModel = resp.model ?: model
+        val finish = resp.done_reason ?: "stop"
         val p = resp.prompt_eval_count ?: 0
         val cTok = resp.eval_count ?: 0
         val t = p + cTok
@@ -214,9 +171,10 @@ class LlmGatewayImpl(
             promptTokens = p,
             completionTokens = cTok,
             totalTokens = t,
-            finishReason = "stop",
+            finishReason = finish,
         )
     }
+
 
     private suspend fun callOpenAi(
         model: String,

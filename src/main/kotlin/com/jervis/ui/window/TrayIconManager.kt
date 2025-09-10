@@ -11,7 +11,7 @@ import java.awt.TrayIcon
 import javax.imageio.ImageIO
 
 /**
- * Třída pro správu ikony aplikace v systémové liště
+ * Class for managing the application icon in the system tray
  */
 class TrayIconManager {
     private val logger = KotlinLogging.logger {}
@@ -25,33 +25,41 @@ class TrayIconManager {
     }
 
     /**
-     * Inicializuje systémovou ikonu v liště
+     * Initializes the system tray icon
      */
     private fun initTrayIcon() {
         if (!SystemTray.isSupported()) {
-            logger.warn { "Systémová lišta není podporována na této platformě!" }
+            logger.warn { "System tray is not supported on this platform!" }
             return
         }
 
         val tray = SystemTray.getSystemTray()
         systemTray = tray
 
-        // Správné načtení ikony z classpath
-        val iconInputStream = JervisApplication::class.java.classLoader.getResourceAsStream("icons/jervis_icon.png")
+        // Load icon from classpath - fail if not available
+        val iconInputStream =
+            JervisApplication::class.java.classLoader.getResourceAsStream("icons/jervis_icon.png")
+                ?: throw IllegalStateException("Icon file 'icons/jervis_icon.png' was not found on classpath")
+
         val image =
-            if (iconInputStream != null) {
-                try {
-                    ImageIO.read(iconInputStream)
-                } catch (e: Exception) {
-                    logger.error(e) { "Nelze načíst ikonu: ${e.message}" }
-                    WindowUtils.createFallbackImage()
-                }
-            } else {
-                logger.warn { "Soubor ikony nebyl nalezen na classpath" }
-                WindowUtils.createFallbackImage()
-            }
+            try {
+                ImageIO.read(iconInputStream)
+            } catch (e: Exception) {
+                throw IllegalStateException("Cannot load icon from classpath: ${e.message}", e)
+            } ?: throw IllegalStateException("Failed to read icon image from input stream")
 
         val popup = PopupMenu()
+
+        val openMainItem = MenuItem("Open Main Window")
+        openMainItem.addActionListener {
+            windowManager.showMainWindow()
+        }
+
+        // Management items
+        val promptManagementItem = MenuItem("Prompt Management")
+        promptManagementItem.addActionListener {
+            windowManager.showPromptManagement()
+        }
 
         val openProjectSettingsItem = MenuItem("Project Settings")
         openProjectSettingsItem.addActionListener {
@@ -63,14 +71,9 @@ class TrayIconManager {
             windowManager.showClientsWindow()
         }
 
-        val openSchedulerItem = MenuItem("Plánovač")
+        val openSchedulerItem = MenuItem("Scheduler")
         openSchedulerItem.addActionListener {
             windowManager.showSchedulerWindow()
-        }
-
-        val openMainItem = MenuItem("Open Main Window")
-        openMainItem.addActionListener {
-            windowManager.showMainWindow()
         }
 
         val exitItem = MenuItem("Exit")
@@ -79,6 +82,8 @@ class TrayIconManager {
         }
 
         popup.add(openMainItem)
+        popup.addSeparator()
+        popup.add(promptManagementItem)
         popup.addSeparator()
         popup.add(openProjectSettingsItem)
         popup.add(openClientsItem)
@@ -91,7 +96,7 @@ class TrayIconManager {
         icon.isImageAutoSize = true
         icon.toolTip = "JERVIS Assistant"
 
-        // Přidání posluchače dvojkliku na ikonu - otevře hlavní okno
+        // Add double-click listener to icon - opens main window
         icon.addActionListener {
             windowManager.showMainWindow()
         }
@@ -104,7 +109,7 @@ class TrayIconManager {
     }
 
     /**
-     * Odstraní ikonu z lišty
+     * Removes the icon from the tray
      */
     fun dispose() {
         trayIcon?.let { systemTray?.remove(it) }

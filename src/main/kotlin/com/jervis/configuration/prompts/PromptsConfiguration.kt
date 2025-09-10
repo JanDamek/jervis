@@ -11,6 +11,7 @@ data class PromptsConfiguration(
 
 data class PromptConfig(
     var systemPrompt: String? = null,
+    var userPrompt: String? = null,
     var description: String? = null,
     var finalProcessing: FinalProcessingConfig? = null,
     var prompts: UserInteractionPrompts? = null,

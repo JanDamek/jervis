@@ -30,7 +30,6 @@ enum class CommunicationPlatform {
 data class PlatformLanguageSettings(
     val platform: CommunicationPlatform,
     val language: Language,
-    val fallbackLanguage: Language = Language.ENGLISH,
     val useAutoDetection: Boolean = false,
     val customSettings: Map<String, String> = emptyMap(),
 )
@@ -45,8 +44,6 @@ data class PlatformLanguageConfiguration(
 ) {
     fun getLanguageForPlatform(platform: CommunicationPlatform): Language = platformSettings[platform]?.language ?: defaultLanguage
 
-    fun getFallbackLanguageForPlatform(platform: CommunicationPlatform): Language =
-        platformSettings[platform]?.fallbackLanguage ?: Language.ENGLISH
 
     fun isAutoDetectionEnabled(platform: CommunicationPlatform): Boolean = platformSettings[platform]?.useAutoDetection ?: false
 
@@ -59,7 +56,6 @@ data class PlatformLanguageConfiguration(
             PlatformLanguageSettings(
                 platform = platform,
                 language = language,
-                fallbackLanguage = platformSettings[platform]?.fallbackLanguage ?: Language.ENGLISH,
                 useAutoDetection = platformSettings[platform]?.useAutoDetection ?: false,
                 customSettings = platformSettings[platform]?.customSettings ?: emptyMap(),
             )

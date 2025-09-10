@@ -1,11 +1,13 @@
 package com.jervis.service.indexing
 
+import com.jervis.configuration.prompts.McpToolType
 import com.jervis.domain.model.ModelType
 import com.jervis.entity.mongo.ClientDocument
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.mongo.ClientMongoRepository
 import com.jervis.repository.mongo.ProjectMongoRepository
 import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withContext
@@ -26,6 +28,7 @@ class ClientIndexingService(
     private val clientRepository: ClientMongoRepository,
     private val projectRepository: ProjectMongoRepository,
     private val llmGateway: LlmGateway,
+    private val promptRepository: PromptRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -136,29 +139,7 @@ class ClientIndexingService(
         projects: List<ProjectDocument>,
         projectDescriptions: List<String>,
     ): String {
-        val systemPrompt =
-            """
-            You are a senior business analyst and technical writer. Create a concise, high-level description 
-            of a client organization based on their software projects.
-            
-            The description should be:
-            - Maximum 2-3 sentences (under 200 words)
-            - Clear and professional
-            - Focused on the client's main business domain and technical capabilities
-            - Understandable by both technical and business stakeholders
-            - Suitable for use in client overviews and business contexts
-            
-            Focus on:
-            - What the client organization does (business domain)
-            - Their technical capabilities and focus areas
-            - Key technologies and approaches they use
-            - Scale and complexity of their operations
-            
-            Avoid:
-            - Specific implementation details
-            - Individual project specifics
-            - Technical jargon that business users wouldn't understand
-            """.trimIndent()
+        val systemPrompt = promptRepository.getSystemPrompt(McpToolType.CLIENT_DESCRIPTION_SHORT)
 
         val userPrompt =
             buildString {
@@ -215,31 +196,7 @@ class ClientIndexingService(
         projectDescriptions: List<String>,
         shortDescription: String,
     ): String {
-        val systemPrompt =
-            """
-            You are a senior business analyst and technical documentation expert. Create a comprehensive, 
-            detailed description of a client organization based on their complete software project portfolio.
-            
-            The description should be:
-            - Comprehensive and detailed (1000-3000 words)
-            - Well-structured with clear sections
-            - Business-focused but technically informed
-            - Suitable for business development, technical partnerships, and strategic planning
-            - Rich in insights about client capabilities and focus areas
-            
-            Include these sections:
-            1. **Client Overview** - Expand on the short description with business context
-            2. **Business Domain & Focus** - What industry/domain the client operates in
-            3. **Technical Capabilities** - Core technologies, platforms, and expertise areas
-            4. **Project Portfolio Analysis** - Overview of project types, complexity, and scope
-            5. **Technology Stack** - Detailed analysis of languages, frameworks, and tools used
-            6. **Development Practices** - Insights into their development approach and quality
-            7. **Scale & Complexity** - Size of operations, system complexity, integration needs
-            8. **Strategic Insights** - Business value, competitive advantages, growth areas
-            9. **Partnership Opportunities** - Areas for collaboration, support, or enhancement
-            
-            Base the analysis ONLY on the provided project information. Never invent details not present in the data.
-            """.trimIndent()
+        val systemPrompt = promptRepository.getSystemPrompt(McpToolType.CLIENT_DESCRIPTION_FULL)
 
         val userPrompt =
             buildString {

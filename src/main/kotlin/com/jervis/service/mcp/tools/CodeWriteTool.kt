@@ -69,7 +69,7 @@ class CodeWriteTool(
 
             Json.decodeFromString<CodeWriteParams>(cleanedResponse)
         } catch (e: Exception) {
-            logger.error(e) { "Failed to parse CodeWrite parameters, using fallback: ${e.message}" }
+            logger.error(e) { "Failed to parse CodeWrite parameters: ${e.message}" }
             throw e
         }
     }

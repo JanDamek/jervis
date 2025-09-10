@@ -1,9 +1,11 @@
 package com.jervis.service.analysis
 
+import com.jervis.configuration.prompts.McpToolType
 import com.jervis.domain.model.ModelType
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.mongo.ProjectMongoRepository
 import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -18,6 +20,7 @@ import org.springframework.stereotype.Service
 class ProjectDescriptionService(
     private val llmGateway: LlmGateway,
     private val projectRepository: ProjectMongoRepository,
+    private val promptRepository: PromptRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -86,30 +89,7 @@ class ProjectDescriptionService(
         project: ProjectDocument,
         indexingDescriptions: List<String>,
     ): String {
-        val systemPrompt =
-            """
-            You are a senior software architect and technical writer. Create a concise, high-level description 
-            of a software project that can be used as a quick overview for developers, managers, and stakeholders.
-            
-            The description should be:
-            - Maximum 2-3 sentences (under 200 words)
-            - Clear and professional
-            - Focused on the main purpose and value proposition
-            - Understandable by both technical and non-technical audiences
-            - Suitable for use in scopes, summaries, and quick references
-            
-            Focus on:
-            - What the project does (main functionality)
-            - Who it serves (target users/systems)
-            - Key technology stack or approach
-            - Primary business value or purpose
-            
-            Avoid:
-            - Technical implementation details
-            - Specific code examples
-            - Internal architecture specifics
-            - Development history or processes
-            """.trimIndent()
+        val systemPrompt = promptRepository.getSystemPrompt(McpToolType.PROJECT_DESCRIPTION_SHORT)
 
         val userPrompt =
             buildString {
@@ -161,32 +141,7 @@ class ProjectDescriptionService(
         indexingDescriptions: List<String>,
         shortDescription: String,
     ): String {
-        val systemPrompt =
-            """
-            You are a senior software architect and technical documentation expert. Create a comprehensive, 
-            detailed description of a software project that provides deep insights for developers, 
-            architects, and technical stakeholders.
-            
-            The description should be:
-            - Comprehensive and detailed (1000-3000 words)
-            - Well-structured with clear sections
-            - Technical but accessible
-            - Suitable for architectural reviews and development planning
-            - Rich in actionable insights and recommendations
-            
-            Include these sections:
-            1. **Project Overview** - Expand on the short description with context
-            2. **Architecture & Design** - System architecture, design patterns, key components
-            3. **Technology Stack** - Languages, frameworks, libraries, tools used
-            4. **Core Functionality** - Main features, capabilities, and business logic
-            5. **Code Quality & Structure** - Code organization, quality metrics, maintainability
-            6. **Security & Performance** - Security measures, performance characteristics
-            7. **Integration & Dependencies** - External systems, APIs, third-party libraries
-            8. **Development & Deployment** - Build process, testing, deployment considerations
-            9. **Recommendations** - Improvement suggestions, technical debt, next steps
-            
-            Base the analysis ONLY on the provided information. Never invent or assume details not present in the data.
-            """.trimIndent()
+        val systemPrompt = promptRepository.getSystemPrompt(McpToolType.PROJECT_DESCRIPTION_FULL)
 
         val userPrompt =
             buildString {

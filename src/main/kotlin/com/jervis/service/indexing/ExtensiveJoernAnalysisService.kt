@@ -1,5 +1,6 @@
 package com.jervis.service.indexing
 
+import com.jervis.configuration.prompts.McpToolType
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagDocumentType
@@ -8,6 +9,7 @@ import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -24,6 +26,7 @@ class ExtensiveJoernAnalysisService(
     private val embeddingGateway: EmbeddingGateway,
     private val vectorStorage: VectorStorageRepository,
     private val llmGateway: LlmGateway,
+    private val promptRepository: PromptRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -244,32 +247,7 @@ class ExtensiveJoernAnalysisService(
         analysisConfig: JoernAnalysisConfig,
         results: String,
     ): String {
-        val systemPrompt =
-            """
-            You are a senior software architect and security analyst. Analyze the provided Joern static analysis results 
-            and create a comprehensive, human-readable description.
-            
-            Focus on:
-            - Key findings and their significance
-            - Security implications and risks
-            - Code quality observations
-            - Architectural insights
-            - Recommendations for improvements
-            - Impact on maintainability and performance
-            - Compliance and best practice considerations
-            - Integration with overall system design
-            
-            Write in clear, professional English that would help developers and architects understand 
-            the analysis results and take appropriate actions. Make it searchable and informative 
-            for code reviews, security assessments, and architectural decisions.
-            
-            Always include:
-            1. Executive summary of key findings
-            2. Detailed analysis breakdown
-            3. Risk assessment and prioritization
-            4. Specific recommendations with rationale
-            5. Context within the larger system architecture
-            """.trimIndent()
+        val systemPrompt = promptRepository.getSystemPrompt(McpToolType.EXTENSIVE_JOERN_ANALYSIS)
 
         val userPrompt =
             buildString {

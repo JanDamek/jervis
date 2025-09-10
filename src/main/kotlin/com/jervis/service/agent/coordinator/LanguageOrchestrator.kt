@@ -45,15 +45,6 @@ class LanguageOrchestrator(
         )
     }
 
-    val systemPrompt = """ 
-You are a English translator.
-Respond ONLY with compact JSON with keys: englishText, originalLanguage, reason. No comments or extra text.
-Response:
-{
-  "englishText": "<translated text of user request>"
-  "originalLanguage": "<detected language of user request>"
-}
-        """
 
     private fun buildTranslationPrompt(text: String): String {
         val instruction =
