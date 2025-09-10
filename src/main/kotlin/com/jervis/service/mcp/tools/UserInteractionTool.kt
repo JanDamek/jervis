@@ -55,9 +55,7 @@ class UserInteractionTool(
             gateway
                 .callLlm(
                     type = ModelType.INTERNAL,
-                    systemPrompt = """
-                    Reformulate the following user request clearly and politely.
-                    Return only the reformulated sentence.""",
+                    systemPrompt = promptRepository.getSystemPrompt(com.jervis.configuration.prompts.McpToolType.USER_INTERACTION),
                     userPrompt =
                         """
                         Request:
@@ -71,7 +69,7 @@ class UserInteractionTool(
             gateway
                 .callLlm(
                     type = ModelType.INTERNAL,
-                    systemPrompt = "Provide a concise, helpful answer to the following request. Keep it short and actionable.",
+                    systemPrompt = promptRepository.getSystemPrompt(com.jervis.configuration.prompts.McpToolType.USER_INTERACTION),
                     userPrompt =
                         """
                         Request:
@@ -115,7 +113,7 @@ class UserInteractionTool(
                 .callLlm(
                     ModelType.TRANSLATION,
                     userPrompt = finalAnswerOriginal,
-                    systemPrompt = "Translate.",
+                    systemPrompt = promptRepository.getSystemPrompt(com.jervis.configuration.prompts.McpToolType.TRANSLATION),
                     "en",
                     quick = context.quick,
                 ).answer

@@ -67,7 +67,6 @@ class LanguageConfigurationService(
         clientId: ObjectId,
         platform: CommunicationPlatform,
         language: Language,
-        fallbackLanguage: Language = Language.ENGLISH,
         useAutoDetection: Boolean = false,
         customSettings: Map<String, String> = emptyMap(),
     ): Boolean =
@@ -79,7 +78,6 @@ class LanguageConfigurationService(
                     PlatformLanguageSettings(
                         platform = platform,
                         language = language,
-                        fallbackLanguage = fallbackLanguage,
                         useAutoDetection = useAutoDetection,
                         customSettings = customSettings,
                     )
@@ -174,7 +172,6 @@ class LanguageConfigurationService(
                             PlatformLanguageSettings(
                                 platform = platform,
                                 language = defaultLanguage,
-                                fallbackLanguage = Language.ENGLISH,
                                 useAutoDetection = false,
                             )
                     }

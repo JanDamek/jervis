@@ -1,5 +1,6 @@
 package com.jervis.service.indexing
 
+import com.jervis.configuration.prompts.McpToolType
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagDocumentType
@@ -8,6 +9,7 @@ import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -29,6 +31,7 @@ class ComprehensiveFileIndexingService(
     private val embeddingGateway: EmbeddingGateway,
     private val vectorStorage: VectorStorageRepository,
     private val llmGateway: LlmGateway,
+    private val promptRepository: PromptRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -155,34 +158,7 @@ class ComprehensiveFileIndexingService(
         projectPath: Path,
         project: ProjectDocument,
     ): String {
-        val systemPrompt =
-            """
-            You are a senior software architect and code analyst. Analyze the provided source code file 
-            and create a comprehensive, human-readable description.
-            
-            Focus on:
-            - File purpose and overall functionality
-            - Main classes, interfaces, or components defined
-            - Key methods and their responsibilities
-            - Design patterns and architectural approaches used
-            - Dependencies and relationships with other parts of the system
-            - Data structures and algorithms implemented
-            - Configuration, constants, or important data definitions
-            - Notable implementation details or techniques
-            - Potential usage scenarios and integration points
-            - Code quality observations and architectural insights
-            
-            Write in clear, professional English that would help developers understand the file's role
-            in the project and find relevant code quickly. Make it searchable and informative for
-            code navigation, architecture understanding, and development planning.
-            
-            Always include:
-            1. A brief summary of what this file does
-            2. Main components/classes/functions it contains
-            3. How it fits into the larger system architecture
-            4. Key functionality it provides
-            5. Important implementation details worth noting
-            """.trimIndent()
+        val systemPrompt = promptRepository.getSystemPrompt(McpToolType.COMPREHENSIVE_FILE_ANALYSIS)
 
         val userPrompt =
             buildString {

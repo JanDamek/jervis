@@ -170,79 +170,15 @@ class CodeExtractorTool(
         }
 
     private fun parseTaskDescription(taskDescription: String): CodeExtractorParams {
-        return try {
-            // Try to parse as JSON first
-            val cleanedInput =
-                taskDescription
-                    .trim()
-                    .removePrefix("```json")
-                    .removePrefix("```")
-                    .removeSuffix("```")
-                    .trim()
+        val cleanedInput =
+            taskDescription
+                .trim()
+                .removePrefix("```json")
+                .removePrefix("```")
+                .removeSuffix("```")
+                .trim()
 
-            Json.decodeFromString<CodeExtractorParams>(cleanedInput)
-        } catch (e: Exception) {
-            // Check if this is a language detection request
-            val isLanguageDetection =
-                taskDescription.contains("programming language", ignoreCase = true) ||
-                    taskDescription.contains("language used", ignoreCase = true) ||
-                    taskDescription.contains("identify.*language", ignoreCase = true) ||
-                    taskDescription.contains("what language", ignoreCase = true) ||
-                    taskDescription.contains("written in", ignoreCase = true)
-
-            // Fallback to simple parsing
-            val extractedParams =
-                CodeExtractorParams(
-                    filePath = extractValue(taskDescription, "filePath") ?: extractValue(taskDescription, "file"),
-                    className = extractValue(taskDescription, "className") ?: extractValue(taskDescription, "class"),
-                    methodName = extractValue(taskDescription, "methodName") ?: extractValue(taskDescription, "method"),
-                    searchPattern =
-                        extractValue(taskDescription, "searchPattern") ?: extractValue(
-                            taskDescription,
-                            "pattern",
-                        ),
-                    includeComments = !taskDescription.contains("excludeComments", ignoreCase = true),
-                    includeImports = !taskDescription.contains("excludeImports", ignoreCase = true),
-                    signatureOnly = taskDescription.contains("signatureOnly", ignoreCase = true),
-                    languageHint =
-                        extractValue(taskDescription, "languageHint") ?: extractValue(
-                            taskDescription,
-                            "language",
-                        ),
-                )
-
-            // If it's a language detection request and no specific parameters were found, use a wildcard search pattern
-            if (isLanguageDetection &&
-                extractedParams.filePath == null &&
-                extractedParams.className == null &&
-                extractedParams.methodName == null &&
-                extractedParams.searchPattern == null
-            ) {
-                return extractedParams.copy(searchPattern = "*")
-            }
-
-            extractedParams
-        }
-    }
-
-    private fun extractValue(
-        text: String,
-        key: String,
-    ): String? {
-        val patterns =
-            listOf(
-                """$key\s*[:=]\s*"([^"]+)"""",
-                """$key\s*[:=]\s*'([^']+)'""",
-                """$key\s*[:=]\s*([^\s,}]+)""",
-            )
-
-        for (pattern in patterns) {
-            val match = Regex(pattern, RegexOption.IGNORE_CASE).find(text)
-            if (match != null) {
-                return match.groupValues[1]
-            }
-        }
-        return null
+        return Json.decodeFromString<CodeExtractorParams>(cleanedInput)
     }
 
     private fun resolveFilePath(

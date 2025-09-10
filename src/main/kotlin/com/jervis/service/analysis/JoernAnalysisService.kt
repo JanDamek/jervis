@@ -736,24 +736,8 @@ class JoernAnalysisService(
         val versionRegex = """Version:\s*([^\s\n]+)""".toRegex()
         val versionMatch = versionRegex.find(output)
 
-        if (versionMatch != null) {
-            return versionMatch.groupValues[1]
-        }
-
-        // Fallback: look for version patterns like "v1.2.3" or "1.2.3"
-        val fallbackVersionRegex = """(?:v)?(\d+\.\d+\.\d+(?:[+-][^\s]+)?)""".toRegex()
-        val fallbackMatch = fallbackVersionRegex.find(output)
-
-        if (fallbackMatch != null) {
-            return fallbackMatch.groupValues[1]
-        }
-
-        // If version info is found but not parseable, indicate tool is available
-        if (output.contains("joern", ignoreCase = true) || output.contains("usage", ignoreCase = true)) {
-            return "Available (version unknown)"
-        }
-
-        return "Available (version unknown)"
+        return versionMatch?.groupValues?.get(1)
+            ?: throw IllegalStateException("Unable to extract version information from tool output: $output")
     }
 
     /**

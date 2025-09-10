@@ -1,13 +1,17 @@
 package com.jervis.ui.window.trayui
 
+import com.jervis.service.admin.PromptManagementService
 import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.client.ClientProjectLinkService
 import com.jervis.service.client.ClientService
+import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.indexing.ClientIndexingService
 import com.jervis.service.indexing.IndexingService
 import com.jervis.service.mcp.McpToolRegistry
 import com.jervis.service.project.ProjectService
+import com.jervis.service.prompts.PromptRepository
+import com.jervis.service.prompts.PromptTemplateService
 import com.jervis.service.scheduling.TaskQueryService
 import com.jervis.service.scheduling.TaskSchedulingService
 import com.jervis.ui.window.TrayIconManager
@@ -30,6 +34,10 @@ class TrayUiManager(
     private val taskSchedulingService: TaskSchedulingService,
     private val taskQueryService: TaskQueryService,
     private val mcpToolRegistry: McpToolRegistry,
+    private val promptManagementService: PromptManagementService,
+    private val promptRepository: PromptRepository,
+    private val promptTemplateService: PromptTemplateService,
+    private val llmGateway: LlmGateway,
 ) {
     private var trayIconManager: TrayIconManager? = null
 
@@ -67,5 +75,9 @@ class TrayUiManager(
             clientIndexingService,
             taskSchedulingService,
             taskQueryService,
+            promptManagementService,
+            promptRepository,
+            promptTemplateService,
+            llmGateway,
         )
 }

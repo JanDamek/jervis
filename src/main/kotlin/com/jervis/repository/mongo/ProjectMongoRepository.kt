@@ -19,4 +19,6 @@ interface ProjectMongoRepository : CoroutineCrudRepository<ProjectDocument, Obje
      * Finds all projects belonging to a specific client.
      */
     suspend fun findByClientId(clientId: ObjectId): List<ProjectDocument>
+
+    suspend fun findByName(name: String): ProjectDocument?
 }

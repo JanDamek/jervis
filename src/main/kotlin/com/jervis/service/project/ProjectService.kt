@@ -3,7 +3,6 @@ package com.jervis.service.project
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.mongo.ProjectMongoRepository
 import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.runBlocking
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.time.Instant
@@ -30,7 +29,6 @@ class ProjectService(
      * Sets a project as active
      */
     suspend fun setActiveProject(project: ProjectDocument) {
-        // Active project is aligned with a default project
         setDefaultProject(project)
     }
 
@@ -101,18 +99,14 @@ class ProjectService(
     }
 
     // Blocking wrapper methods for compatibility
-    fun getAllProjectsBlocking(): List<ProjectDocument> =
-        runBlocking {
-            getAllProjects()
-        }
+    suspend fun getAllProjectsBlocking(): List<ProjectDocument> = getAllProjects()
 
-    fun getDefaultProjectBlocking(): ProjectDocument? =
-        runBlocking {
-            getDefaultProject()
-        }
+    suspend fun getDefaultProjectBlocking(): ProjectDocument? = getDefaultProject()
 
-    fun setDefaultProjectBlocking(project: ProjectDocument) =
-        runBlocking {
-            setDefaultProject(project)
-        }
+    suspend fun setDefaultProjectBlocking(project: ProjectDocument) = setDefaultProject(project)
+
+    suspend fun getProjectByName(model: String?): ProjectDocument =
+        model?.let {
+            projectRepository.findByName(it)!!
+        }!!
 }

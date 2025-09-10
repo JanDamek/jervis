@@ -3,15 +3,19 @@ package com.jervis.ui.window
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.plan.PlanStep
 import com.jervis.dto.ChatRequestContext
+import com.jervis.service.admin.PromptManagementService
 import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
+import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.notification.PlanStatusChangeEvent
 import com.jervis.service.notification.StepCompletionEvent
 import com.jervis.service.project.ProjectService
+import com.jervis.service.prompts.PromptRepository
+import com.jervis.service.prompts.PromptTemplateService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.swing.Swing
 import kotlinx.coroutines.withContext
 import org.bson.types.ObjectId
@@ -21,6 +25,7 @@ import java.awt.Dimension
 import java.awt.EventQueue
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
+import java.awt.event.InputEvent
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
 import java.awt.event.MouseAdapter
@@ -33,6 +38,8 @@ import javax.swing.JDialog
 import javax.swing.JFrame
 import javax.swing.JLabel
 import javax.swing.JList
+import javax.swing.JMenu
+import javax.swing.JMenuBar
 import javax.swing.JMenuItem
 import javax.swing.JOptionPane
 import javax.swing.JPanel
@@ -41,6 +48,7 @@ import javax.swing.JScrollPane
 import javax.swing.JSplitPane
 import javax.swing.JTextArea
 import javax.swing.JTextField
+import javax.swing.KeyStroke
 import javax.swing.ListSelectionModel
 import javax.swing.border.EmptyBorder
 
@@ -50,7 +58,13 @@ class MainWindow(
     private val clientService: com.jervis.service.client.ClientService,
     private val linkService: com.jervis.service.client.ClientProjectLinkService,
     private val taskContextService: TaskContextService,
+    private val promptManagementService: PromptManagementService,
+    private val llmGateway: LlmGateway,
+    private val promptRepository: PromptRepository,
+    private val promptTemplateService: PromptTemplateService,
 ) : JFrame("JERVIS Assistant") {
+    private val windowScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
     private val clientSelector = JComboBox<SelectorItem>(arrayOf())
     private val projectSelector = JComboBox<SelectorItem>(arrayOf())
     private val quickCheckbox = JCheckBox("Quick response", false)
@@ -88,7 +102,12 @@ class MainWindow(
     // Project change blocking state
     private var isProjectLoading = false
 
+    // Prompt management window
+    private var promptManagementWindow: PromptManagementWindow? = null
+
     init {
+        // Setup menu bar
+        setupMenuBar()
         // initialize context list defaults
         contextList.selectionMode = ListSelectionModel.SINGLE_SELECTION
         contextList.visibleRowCount = -1
@@ -112,8 +131,8 @@ class MainWindow(
     }
 
     init {
-        // Load clients and projects in a blocking way during initialization
-        runBlocking {
+        // Load clients and projects asynchronously during initialization
+        windowScope.launch {
             val clients = clientService.list()
             EventQueue.invokeLater {
                 clientSelector.removeAllItems()
@@ -972,6 +991,85 @@ class MainWindow(
                 }
             }
         }
+    }
+
+    private fun setupMenuBar() {
+        val menuBar = JMenuBar()
+
+        // File menu
+        val fileMenu = JMenu("File")
+        val exitItem = JMenuItem("Exit")
+        exitItem.accelerator = KeyStroke.getKeyStroke(KeyEvent.VK_Q, InputEvent.META_DOWN_MASK)
+        exitItem.addActionListener { System.exit(0) }
+        fileMenu.add(exitItem)
+
+        // Edit menu
+        val editMenu = JMenu("Edit")
+        // Standard edit menu items can be added here if needed
+
+        // Tools menu
+        val toolsMenu = JMenu("Tools")
+
+        val promptManagementItem = JMenuItem("Prompt Management")
+        promptManagementItem.accelerator =
+            KeyStroke.getKeyStroke(
+                KeyEvent.VK_P,
+                InputEvent.META_DOWN_MASK or InputEvent.SHIFT_DOWN_MASK,
+            )
+        promptManagementItem.addActionListener { openPromptManagement() }
+        toolsMenu.add(promptManagementItem)
+
+        toolsMenu.addSeparator()
+
+        // Additional tools can be added here as needed
+
+        // Window menu
+        val windowMenu = JMenu("Window")
+        val minimizeItem = JMenuItem("Minimize")
+        minimizeItem.accelerator = KeyStroke.getKeyStroke(KeyEvent.VK_M, InputEvent.META_DOWN_MASK)
+        minimizeItem.addActionListener { extendedState = ICONIFIED }
+        windowMenu.add(minimizeItem)
+
+        // Help menu
+        val helpMenu = JMenu("Help")
+        val aboutItem = JMenuItem("About JERVIS")
+        aboutItem.addActionListener { showAboutDialog() }
+        helpMenu.add(aboutItem)
+
+        menuBar.add(fileMenu)
+        menuBar.add(editMenu)
+        menuBar.add(toolsMenu)
+        menuBar.add(windowMenu)
+        menuBar.add(helpMenu)
+
+        jMenuBar = menuBar
+    }
+
+    private fun openPromptManagement() {
+        if (promptManagementWindow == null) {
+            promptManagementWindow =
+                PromptManagementWindow(
+                    promptManagementService,
+                    llmGateway,
+                    promptRepository,
+                    promptTemplateService,
+                    null,
+                )
+        }
+        promptManagementWindow?.apply {
+            isVisible = true
+            toFront()
+            requestFocus()
+        }
+    }
+
+    private fun showAboutDialog() {
+        JOptionPane.showMessageDialog(
+            this,
+            "JERVIS Assistant\nVersion 1.0\nAI-Powered Development Assistant",
+            "About JERVIS",
+            JOptionPane.INFORMATION_MESSAGE,
+        )
     }
 
     @EventListener

@@ -63,6 +63,13 @@ class PromptRepository(
             ?: throw IllegalArgumentException("No description found for tool type: $toolType")
 
     /**
+     * Get user prompt by McpToolType - direct map lookup
+     */
+    fun getMcpToolUserPrompt(toolType: McpToolType): String =
+        promptsConfig.prompts[toolType]?.userPrompt
+            ?: throw IllegalArgumentException("No user prompt found for tool type: $toolType")
+
+    /**
      * Get model parameters by McpToolType
      */
     fun getModelParams(toolType: McpToolType): ModelParams =

@@ -1,17 +1,22 @@
 package com.jervis.ui.component
 
+import com.jervis.service.admin.PromptManagementService
 import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.client.ClientProjectLinkService
 import com.jervis.service.client.ClientService
+import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.indexing.ClientIndexingService
 import com.jervis.service.indexing.IndexingService
 import com.jervis.service.project.ProjectService
+import com.jervis.service.prompts.PromptRepository
+import com.jervis.service.prompts.PromptTemplateService
 import com.jervis.service.scheduling.TaskQueryService
 import com.jervis.service.scheduling.TaskSchedulingService
 import com.jervis.ui.window.ClientsWindow
 import com.jervis.ui.window.MainWindow
 import com.jervis.ui.window.ProjectSettingWindow
+import com.jervis.ui.window.PromptManagementWindow
 import com.jervis.ui.window.SchedulerWindow
 import com.jervis.ui.window.TrayIconManager
 import javax.swing.UIManager
@@ -26,9 +31,23 @@ class ApplicationWindowManager(
     private val clientIndexingService: ClientIndexingService,
     private val taskSchedulingService: TaskSchedulingService,
     private val taskQueryService: TaskQueryService,
+    private val promptManagementService: PromptManagementService,
+    private val promptRepository: PromptRepository,
+    private val promptTemplateService: PromptTemplateService,
+    private val llmGateway: LlmGateway,
 ) {
     private val mainWindow: MainWindow by lazy {
-        MainWindow(projectService, chatCoordinator, clientService, linkService, taskContextService)
+        MainWindow(
+            projectService,
+            chatCoordinator,
+            clientService,
+            linkService,
+            taskContextService,
+            promptManagementService,
+            llmGateway,
+            promptRepository,
+            promptTemplateService,
+        )
     }
 
     private val projectSettingsWindow: ProjectSettingWindow by lazy {
@@ -41,6 +60,10 @@ class ApplicationWindowManager(
 
     private val schedulerWindow: SchedulerWindow by lazy {
         SchedulerWindow(taskSchedulingService, taskQueryService, clientService, projectService, chatCoordinator)
+    }
+
+    private val promptManagementWindow: PromptManagementWindow by lazy {
+        PromptManagementWindow(promptManagementService, llmGateway, promptRepository, promptTemplateService, this)
     }
 
     private val trayIconManager: TrayIconManager by lazy {
@@ -86,5 +109,9 @@ class ApplicationWindowManager(
 
     fun showSchedulerWindow() {
         schedulerWindow.isVisible = true
+    }
+
+    fun showPromptManagement() {
+        promptManagementWindow.isVisible = true
     }
 }

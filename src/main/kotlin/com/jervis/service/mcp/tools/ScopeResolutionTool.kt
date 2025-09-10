@@ -1,27 +1,22 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.McpToolType
-import com.jervis.domain.context.CodingGuidelines
-import com.jervis.domain.context.Guidelines
-import com.jervis.domain.context.ProgrammingStyle
 import com.jervis.domain.context.ProjectContextInfo
 import com.jervis.domain.context.TaskContext
-import com.jervis.domain.context.TechStackInfo
+import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
-import com.jervis.service.client.ClientService
+import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.mcp.ContextAwareMcpTool
 import com.jervis.service.mcp.buildStandardContextAwarePrompt
 import com.jervis.service.mcp.domain.ToolResult
-import com.jervis.service.project.ProjectService
 import com.jervis.service.prompts.PromptRepository
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
 @Service
 class ScopeResolutionTool(
-    private val clientService: ClientService,
-    private val projectService: ProjectService,
     private val promptRepository: PromptRepository,
+    private val llmGateway: LlmGateway,
 ) : ContextAwareMcpTool {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -36,23 +31,24 @@ class ScopeResolutionTool(
         context: TaskContext,
         plan: Plan,
     ): ToolResult {
-        logger.debug { "SCOPE_RESOLUTION_ENHANCED: Executing enhanced scope resolution for context=${context.id}" }
+        logger.debug { "SCOPE_RESOLUTION: Adding contextual project and client information to context=${context.id}" }
 
         val client = context.clientDocument
         val project = context.projectDocument
 
-        // Detect or use existing technology stack
-        val techStack = context.projectContextInfo?.techStack ?: detectTechnologyStack(context)
+        // Use LLM to determine what level of detail to include
+        val contextRequirements = determineContextRequirements(taskDescription, client.name, project.name)
 
-        // Create or enhance project context info
-        val projectContextInfo = context.projectContextInfo ?: createProjectContextInfo(context, techStack)
+        val summary =
+            buildAdaptiveSummary(
+                client,
+                project,
+                context.projectContextInfo,
+                contextRequirements,
+                taskDescription,
+            )
 
-        // Update context with detected information
-        context.projectContextInfo = projectContextInfo
-
-        val summary = buildEnhancedSummary(client, project, techStack, projectContextInfo)
-
-        logger.debug { "SCOPE_RESOLUTION_TECH_STACK: Detected technology stack: $techStack" }
+        logger.debug { "SCOPE_RESOLUTION: Successfully added adaptive context information based on task requirements" }
 
         return ToolResult.ok(summary)
     }
@@ -62,231 +58,179 @@ class ScopeResolutionTool(
         projectInfo: ProjectContextInfo?,
     ): String = buildStandardContextAwarePrompt(basePrompt, projectInfo)
 
-    private suspend fun detectTechnologyStack(context: TaskContext): TechStackInfo {
-        logger.debug { "SCOPE_RESOLUTION_DETECT_TECH: Detecting technology stack for project: ${context.projectDocument.name}" }
+    data class ContextRequirements(
+        val includeClientDetails: Boolean = true,
+        val includeProjectDetails: Boolean = true,
+        val includeFullClientDescription: Boolean = false,
+        val includeFullProjectDescription: Boolean = false,
+        val includeTechStack: Boolean = false,
+        val includeDependencies: Boolean = false,
+        val detailLevel: DetailLevel = DetailLevel.BASIC
+    )
 
-        val projectDescription = context.projectDocument.description?.lowercase() ?: ""
-        val clientDescription = context.clientDocument.description?.lowercase() ?: ""
-        val combinedContext = "$projectDescription $clientDescription"
+    enum class DetailLevel { MINIMAL, BASIC, DETAILED, COMPREHENSIVE }
 
-        return TechStackInfo(
-            framework = detectFramework(combinedContext),
-            language = detectLanguage(combinedContext),
-            version = detectVersion(combinedContext),
-            securityFramework = detectSecurityFramework(combinedContext),
-            databaseType = detectDatabaseType(combinedContext),
-            buildTool = detectBuildTool(combinedContext),
-        )
-    }
+    private suspend fun determineContextRequirements(
+        taskDescription: String,
+        clientName: String,
+        projectName: String
+    ): ContextRequirements {
+        val systemPrompt = promptRepository.getMcpToolSystemPrompt(McpToolType.SCOPE_RESOLUTION)
 
-    private fun detectFramework(context: String): String =
-        when {
-            context.contains("spring boot") && context.contains("webflux") -> "Spring Boot WebFlux"
-            context.contains("spring boot") && context.contains("reactive") -> "Spring Boot WebFlux"
-            context.contains("spring boot") -> "Spring Boot"
-            context.contains("spring webflux") -> "Spring Boot WebFlux"
-            context.contains("spring") -> "Spring Framework"
-            context.contains("webflux") -> "Spring Boot WebFlux"
-            context.contains("reactive") && context.contains("spring") -> "Spring Boot WebFlux"
-            else -> "Spring Boot" // Default assumption for Kotlin projects
-        }
+        val userPrompt = promptRepository.getMcpToolUserPrompt(McpToolType.SCOPE_RESOLUTION)
+            .replace("{taskDescription}", taskDescription)
+            .replace("{clientName}", clientName)
+            .replace("{projectName}", projectName)
 
-    private fun detectLanguage(context: String): String =
-        when {
-            context.contains("kotlin") -> "Kotlin"
-            context.contains("java") -> "Java"
-            context.contains("spring boot") -> "Kotlin" // Modern Spring Boot projects often use Kotlin
-            else -> "Kotlin" // Default assumption
-        }
-
-    private fun detectVersion(context: String): String? {
-        // In real implementation, this would parse pom.xml or build.gradle.kts
-        return when {
-            context.contains("spring boot 3") -> "3.x"
-            context.contains("spring boot 2") -> "2.x"
-            else -> null
-        }
-    }
-
-    private fun detectSecurityFramework(context: String): String? =
-        when {
-            context.contains("spring security") -> "Spring Security"
-            context.contains("security") && context.contains("spring") -> "Spring Security"
-            context.contains("jwt") || context.contains("token") -> "Custom JWT Security"
-            else -> "None"
-        }
-
-    private fun detectDatabaseType(context: String): String? =
-        when {
-            context.contains("mongodb") || context.contains("mongo") -> "MongoDB"
-            context.contains("postgresql") || context.contains("postgres") -> "PostgreSQL"
-            context.contains("mysql") -> "MySQL"
-            context.contains("h2") -> "H2"
-            context.contains("reactive") -> "MongoDB" // Reactive often uses MongoDB
-            else -> null
-        }
-
-    private fun detectBuildTool(context: String): String? =
-        when {
-            context.contains("gradle") -> "Gradle"
-            context.contains("maven") -> "Maven"
-            context.contains("kotlin") -> "Gradle" // Kotlin projects often use Gradle
-            else -> "Maven" // Default assumption
-        }
-
-    private suspend fun createProjectContextInfo(
-        context: TaskContext,
-        techStack: TechStackInfo,
-    ): ProjectContextInfo {
-        val codingGuidelines = createDefaultCodingGuidelines(techStack)
-        val dependencies = extractDependencies(context)
-
-        return ProjectContextInfo(
-            projectDescription = context.projectDocument.description,
-            techStack = techStack,
-            codingGuidelines = codingGuidelines,
-            dependencyInfo = dependencies,
-        )
-    }
-
-    private fun createDefaultCodingGuidelines(techStack: TechStackInfo): CodingGuidelines {
-        val programmingStyle =
-            ProgrammingStyle(
-                language = techStack.language,
-                framework = techStack.framework,
-                architecturalPatterns =
-                    when (techStack.framework) {
-                        "Spring Boot WebFlux" -> listOf("Reactive", "SOLID", "Clean Architecture", "Non-blocking")
-                        "Spring Boot" -> listOf("MVC", "SOLID", "Clean Architecture", "Dependency Injection")
-                        else -> listOf("SOLID", "Clean Architecture")
-                    },
-                codingConventions =
-                    mapOf(
-                        "naming" to "camelCase for variables, PascalCase for classes",
-                        "testing" to "Unit tests for all public methods",
-                        "documentation" to "KDoc for public APIs",
-                        "coroutines" to if (techStack.framework.contains("WebFlux")) "Use suspend functions" else "Optional",
-                    ),
-                testingApproach = "Unit + Integration Testing",
-                documentationLevel = "Standard",
+        return try {
+            val response = llmGateway.callLlm(
+                type = ModelType.INTERNAL,
+                systemPrompt = systemPrompt,
+                userPrompt = userPrompt,
+                outputLanguage = "en",
+                quick = true
             )
 
-        val effectiveGuidelines =
-            Guidelines(
-                rules =
-                    listOf(
-                        "Use ${techStack.language} idioms and conventions",
-                        "Follow ${techStack.framework} best practices",
-                        "Implement proper error handling",
-                        "Write testable code",
-                    ),
-                patterns =
-                    when (techStack.framework) {
-                        "Spring Boot WebFlux" ->
-                            listOf(
-                                "Use Mono for 0-1 elements",
-                                "Use Flux for 0-N elements",
-                                "Avoid blocking operations",
-                                "Use reactive repositories",
-                            )
-
-                        "Spring Boot" ->
-                            listOf(
-                                "Use @RestController for REST APIs",
-                                "Use @Service for business logic",
-                                "Use @Repository for data access",
-                                "Implement proper dependency injection",
-                            )
-
-                        else -> emptyList()
-                    },
-                conventions =
-                    mapOf(
-                        "fileNaming" to "PascalCase.kt",
-                        "packageNaming" to "lowercase.separated.by.dots",
-                        "constantNaming" to "UPPER_SNAKE_CASE",
-                    ),
+            // Parse JSON response - simplified parsing
+            val answer = response.answer.lowercase()
+            ContextRequirements(
+                includeClientDetails = true,
+                includeProjectDetails = true,
+                includeFullClientDescription = answer.contains("\"includefullclientdescription\": true"),
+                includeFullProjectDescription = answer.contains("\"includefullprojectdescription\": true"),
+                includeTechStack = answer.contains("\"includetechstack\": true"),
+                includeDependencies = answer.contains("\"includedependencies\": true"),
+                detailLevel = when {
+                    answer.contains("comprehensive") -> DetailLevel.COMPREHENSIVE
+                    answer.contains("detailed") -> DetailLevel.DETAILED
+                    answer.contains("minimal") -> DetailLevel.MINIMAL
+                    else -> DetailLevel.BASIC
+                }
             )
-
-        return CodingGuidelines(
-            clientStandards = null, // Would be loaded from client settings
-            projectStandards = null, // Would be loaded from project settings
-            effectiveGuidelines = effectiveGuidelines,
-            programmingStyle = programmingStyle,
-        )
-    }
-
-    private fun extractDependencies(context: TaskContext): List<String> {
-        // In real implementation, this would parse pom.xml or build.gradle.kts
-        val techStack = context.projectContextInfo?.techStack
-        return when (techStack?.framework) {
-            "Spring Boot WebFlux" ->
-                listOf(
-                    "spring-boot-starter-webflux",
-                    "spring-boot-starter-data-mongodb-reactive",
-                    "kotlinx-coroutines-reactor",
-                    "reactor-kotlin-extensions",
-                )
-
-            "Spring Boot" ->
-                listOf(
-                    "spring-boot-starter-web",
-                    "spring-boot-starter-data-jpa",
-                    "spring-boot-starter-validation",
-                )
-
-            else -> emptyList()
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to determine context requirements, using basic defaults" }
+            ContextRequirements() // Default to basic level
         }
     }
 
-    private fun buildEnhancedSummary(
+    private fun buildAdaptiveSummary(
         client: com.jervis.entity.mongo.ClientDocument,
         project: com.jervis.entity.mongo.ProjectDocument,
-        techStack: TechStackInfo,
-        projectContextInfo: ProjectContextInfo,
+        projectContextInfo: ProjectContextInfo?,
+        requirements: ContextRequirements,
+        taskDescription: String
     ): String =
         buildString {
-            append("=== ENHANCED SCOPE RESOLUTION ===\n\n")
+            appendLine("ℹ️ **Context Information Added Based on Task Requirements**")
+            appendLine()
+            appendLine("**Task:** $taskDescription")
+            appendLine("**Detail Level:** ${requirements.detailLevel}")
+            appendLine()
 
-            append("CLIENT INFORMATION:\n")
-            append("- Name: ${client.name}\n")
-            client.description?.let { append("- Description: $it\n") }
-            append("\n")
+            if (requirements.includeClientDetails) {
+                appendLine("**Client Information:**")
+                appendLine("• Name: ${client.name}")
 
-            append("PROJECT INFORMATION:\n")
-            append("- Name: ${project.name}\n")
-            project.description?.let { append("- Description: $it\n") }
-            append("\n")
-
-            append("DETECTED TECHNOLOGY STACK:\n")
-            append("- Framework: ${techStack.framework}\n")
-            append("- Language: ${techStack.language}\n")
-            techStack.version?.let { append("- Version: $it\n") }
-            techStack.securityFramework?.let { append("- Security: $it\n") }
-            techStack.databaseType?.let { append("- Database: $it\n") }
-            techStack.buildTool?.let { append("- Build Tool: $it\n") }
-            append("\n")
-
-            append("CODING GUIDELINES:\n")
-            append(
-                "- Programming Style: ${
-                    projectContextInfo.codingGuidelines.programmingStyle.architecturalPatterns.joinToString(
-                        ", ",
-                    )
-                }\n",
-            )
-            append("- Testing Approach: ${projectContextInfo.codingGuidelines.programmingStyle.testingApproach}\n")
-            append("- Documentation Level: ${projectContextInfo.codingGuidelines.programmingStyle.documentationLevel}\n")
-            append("\n")
-
-            if (projectContextInfo.dependencyInfo.isNotEmpty()) {
-                append("KEY DEPENDENCIES:\n")
-                projectContextInfo.dependencyInfo.forEach { dependency ->
-                    append("- $dependency\n")
+                if (requirements.detailLevel >= DetailLevel.BASIC) {
+                    client.shortDescription?.let { appendLine("• Short Description: $it") }
                 }
-                append("\n")
+
+                if (requirements.includeFullClientDescription && !client.fullDescription.isNullOrBlank()) {
+                    appendLine("• Full Description: ${client.fullDescription}")
+                }
+
+                if (requirements.detailLevel >= DetailLevel.DETAILED) {
+                    client.description?.let { appendLine("• Description: $it") }
+                    appendLine("• Default Language: ${client.defaultLanguage}")
+                }
+                appendLine()
             }
 
-            append("CONTEXT READY FOR ENHANCED PLANNING")
+            if (requirements.includeProjectDetails) {
+                appendLine("**Project Information:**")
+                appendLine("• Name: ${project.name}")
+
+                if (requirements.detailLevel >= DetailLevel.BASIC) {
+                    project.shortDescription?.let { appendLine("• Short Description: $it") }
+                }
+
+                if (requirements.includeFullProjectDescription && !project.fullDescription.isNullOrBlank()) {
+                    appendLine("• Full Description: ${project.fullDescription}")
+                }
+
+                if (requirements.detailLevel >= DetailLevel.DETAILED) {
+                    project.description?.let { appendLine("• Description: $it") }
+                    project.path.takeIf { it.isNotEmpty() }?.let { appendLine("• Path: $it") }
+                    if (project.languages.isNotEmpty()) {
+                        appendLine("• Languages: ${project.languages.joinToString(", ")}")
+                    }
+                }
+                appendLine()
+            }
+
+            if (projectContextInfo != null && (requirements.includeTechStack || requirements.includeDependencies || requirements.detailLevel >= DetailLevel.DETAILED)) {
+                appendLine("**Additional Indexed Context:**")
+
+                if (requirements.detailLevel >= DetailLevel.BASIC) {
+                    projectContextInfo.projectDescription?.let { appendLine("• Project Description: $it") }
+                }
+
+                if (requirements.includeTechStack || requirements.detailLevel >= DetailLevel.DETAILED) {
+                    projectContextInfo.techStack?.let { stack ->
+                        appendLine("• Technology Stack: ${stack.framework} with ${stack.language}")
+                    }
+                }
+
+                if (requirements.includeDependencies || requirements.detailLevel >= DetailLevel.COMPREHENSIVE) {
+                    if (projectContextInfo.dependencyInfo.isNotEmpty()) {
+                        appendLine("• Dependencies: ${projectContextInfo.dependencyInfo.joinToString(", ")}")
+                    }
+                }
+                appendLine()
+            }
+
+            appendLine("**Context Information Successfully Added** ✅")
+            appendLine("Selective project and client information has been inserted based on task analysis.")
+            when (requirements.detailLevel) {
+                DetailLevel.MINIMAL -> appendLine("• Level: Minimal context (names and essential info only)")
+                DetailLevel.BASIC -> appendLine("• Level: Basic context (standard information)")
+                DetailLevel.DETAILED -> appendLine("• Level: Detailed context (comprehensive information)")
+                DetailLevel.COMPREHENSIVE -> appendLine("• Level: Comprehensive context (all available information)")
+            }
+        }
+
+    private fun buildBasicSummary(
+        client: com.jervis.entity.mongo.ClientDocument,
+        project: com.jervis.entity.mongo.ProjectDocument,
+        projectContextInfo: ProjectContextInfo?,
+    ): String =
+        buildString {
+            appendLine("ℹ️ **Basic Project and Client Information Added to Context**")
+            appendLine()
+            appendLine("**Client Information:**")
+            appendLine("• Name: ${client.name}")
+            client.description?.let { appendLine("• Description: $it") }
+            client.shortDescription?.let { appendLine("• Short Description: $it") }
+            client.fullDescription?.let { appendLine("• Full Description: $it") }
+            appendLine("• Default Language: ${client.defaultLanguage}")
+            appendLine()
+            appendLine("**Project Information:**")
+            appendLine("• Name: ${project.name}")
+            project.description?.let { appendLine("• Description: $it") }
+            project.path.takeIf { it.isNotEmpty() }?.let { appendLine("• Path: $it") }
+            appendLine()
+            if (projectContextInfo != null) {
+                appendLine("**Additional Indexed Context:**")
+                projectContextInfo.projectDescription?.let { appendLine("• Project Description: $it") }
+                projectContextInfo.techStack?.let { stack ->
+                    appendLine("• Technology Stack: ${stack.framework} with ${stack.language}")
+                }
+                if (projectContextInfo.dependencyInfo.isNotEmpty()) {
+                    appendLine("• Dependencies: ${projectContextInfo.dependencyInfo.joinToString(", ")}")
+                }
+                appendLine()
+            }
+            appendLine("**Context Information Successfully Added** ✅")
+            appendLine("Basic project and client information has been inserted into the context from indexed data.")
         }
 }

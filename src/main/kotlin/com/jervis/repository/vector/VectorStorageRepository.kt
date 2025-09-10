@@ -372,21 +372,16 @@ class VectorStorageRepository(
                 client.searchAsync(searchBuilder).get()
             }?.toList().orEmpty()
 
-        val out = mutableListOf<Map<String, JsonWithInt.Value>>()
-        for (point in results) {
-            // Fallback score filtering (in case Qdrant scoreThreshold doesn't work perfectly)
-            if (point.score >= minScore) {
-                val payloadWithScore = point.payloadMap.toMutableMap()
-                // Add score to results for debugging
-                payloadWithScore["_score"] =
-                    JsonWithInt.Value
-                        .newBuilder()
-                        .setDoubleValue(point.score.toDouble())
-                        .build()
-                out += payloadWithScore
-            }
+        return results.map { point ->
+            val payloadWithScore = point.payloadMap.toMutableMap()
+            // Add score to results for debugging
+            payloadWithScore["_score"] =
+                JsonWithInt.Value
+                    .newBuilder()
+                    .setDoubleValue(point.score.toDouble())
+                    .build()
+            payloadWithScore
         }
-        return out
     }
 
     /**

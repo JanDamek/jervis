@@ -38,7 +38,7 @@ class LMStudioController(
         val models =
             projectService.getAllProjects().map { project ->
                 mapOf(
-                    "id" to (project.name ?: project.id.toString()),
+                    "id" to project.name,
                     "object" to "model",
                     "type" to "llm",
                     "publisher" to "jervis-local",
@@ -62,18 +62,17 @@ class LMStudioController(
         @RequestBody request: CompletionRequest,
     ): CompletionResponse {
         val userPrompt = request.prompt
-        val defaultProject =
-            projectService.getDefaultProject()
-                ?: throw IllegalStateException("Default project not found")
+        val project =
+            projectService.getProjectByName(request.model)
         val response =
             agentOrchestrator.handle(
                 text = userPrompt,
                 ctx =
                     ChatRequestContext(
                         clientId =
-                            defaultProject.clientId
+                            project.clientId
                                 ?: throw IllegalStateException("Default project has no client"),
-                        projectId = defaultProject.id,
+                        projectId = project.id,
                         autoScope = false,
                     ),
             )
@@ -105,8 +104,7 @@ class LMStudioController(
     ): ChatCompletionResponse {
         val userPrompt = chatRequest.messages.lastOrNull()?.content ?: ""
         val defaultProject =
-            projectService.getDefaultProject()
-                ?: throw IllegalStateException("Default project not found")
+            projectService.getProjectByName(chatRequest.model)
         val response =
             agentOrchestrator.handle(
                 text = userPrompt,
