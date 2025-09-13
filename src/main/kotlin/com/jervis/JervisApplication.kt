@@ -17,6 +17,7 @@ import com.jervis.service.prompts.PromptTemplateService
 import com.jervis.service.scheduling.TaskQueryService
 import com.jervis.service.scheduling.TaskSchedulingService
 import com.jervis.ui.component.ApplicationWindowManager
+import com.jervis.ui.utils.MacOSAppUtils.configureMacOSSettings
 import com.jervis.ui.utils.MacOSAppUtils.setDockIcon
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -113,6 +114,9 @@ class JervisApplication(
 fun main(args: Array<String>) {
     System.setProperty("java.awt.headless", "false")
     System.setProperty("apple.awt.application.name", "JERVIS Assistant")
+
+    // Configure macOS-specific settings before UI initialization
+    configureMacOSSettings()
 
     try {
         UIManager.setLookAndFeel(FlatLightLaf())

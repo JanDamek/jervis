@@ -13,12 +13,14 @@ import com.jervis.service.prompts.PromptRepository
 import com.jervis.service.prompts.PromptTemplateService
 import com.jervis.service.scheduling.TaskQueryService
 import com.jervis.service.scheduling.TaskSchedulingService
+import com.jervis.ui.utils.MacOSAppUtils
 import com.jervis.ui.window.ClientsWindow
 import com.jervis.ui.window.MainWindow
 import com.jervis.ui.window.ProjectSettingWindow
 import com.jervis.ui.window.PromptManagementWindow
 import com.jervis.ui.window.SchedulerWindow
 import com.jervis.ui.window.TrayIconManager
+import org.springframework.beans.factory.annotation.Autowired
 import javax.swing.UIManager
 
 class ApplicationWindowManager(
@@ -31,7 +33,7 @@ class ApplicationWindowManager(
     private val clientIndexingService: ClientIndexingService,
     private val taskSchedulingService: TaskSchedulingService,
     private val taskQueryService: TaskQueryService,
-    private val promptManagementService: PromptManagementService,
+    @Autowired(required = false) private val promptManagementService: PromptManagementService?,
     private val promptRepository: PromptRepository,
     private val promptTemplateService: PromptTemplateService,
     private val llmGateway: LlmGateway,
@@ -62,8 +64,10 @@ class ApplicationWindowManager(
         SchedulerWindow(taskSchedulingService, taskQueryService, clientService, projectService, chatCoordinator)
     }
 
-    private val promptManagementWindow: PromptManagementWindow by lazy {
-        PromptManagementWindow(promptManagementService, llmGateway, promptRepository, promptTemplateService, this)
+    private val promptManagementWindow: PromptManagementWindow? by lazy {
+        promptManagementService?.let { service ->
+            PromptManagementWindow(service, llmGateway, promptRepository, promptTemplateService, this)
+        }
     }
 
     private val trayIconManager: TrayIconManager by lazy {
@@ -71,9 +75,31 @@ class ApplicationWindowManager(
     }
 
     fun initialize() {
+        // Configure macOS-specific settings first
+        MacOSAppUtils.configureMacOSSettings()
+
         // Configure UI Manager properties to prevent text overlap issues
         configureUIRendering()
+
+        // Setup macOS native menu bar and dock context menu
+        setupMacOSMenus()
+
+        // Initialize tray icon (only if not on macOS or as fallback)
         trayIconManager
+    }
+
+    /**
+     * Sets up macOS-specific menu functionality
+     */
+    private fun setupMacOSMenus() {
+        // Setup native macOS menu bar and apply it to the main window
+        val nativeMenuBar = MacOSAppUtils.setupNativeMenuBar(this)
+        if (nativeMenuBar != null) {
+            mainWindow.jMenuBar = nativeMenuBar
+        }
+
+        // Setup dock context menu
+        MacOSAppUtils.setupDockContextMenu(this)
     }
 
     /**
@@ -112,6 +138,6 @@ class ApplicationWindowManager(
     }
 
     fun showPromptManagement() {
-        promptManagementWindow.isVisible = true
+        promptManagementWindow?.isVisible = true
     }
 }
