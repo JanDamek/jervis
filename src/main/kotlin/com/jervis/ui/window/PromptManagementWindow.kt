@@ -42,6 +42,7 @@ import javax.swing.JCheckBox
 import javax.swing.JComboBox
 import javax.swing.JComponent
 import javax.swing.JDialog
+import javax.swing.JFileChooser
 import javax.swing.JFrame
 import javax.swing.JLabel
 import javax.swing.JList
@@ -61,6 +62,7 @@ import javax.swing.SpinnerNumberModel
 import javax.swing.SwingConstants
 import javax.swing.border.EmptyBorder
 import javax.swing.border.TitledBorder
+import javax.swing.filechooser.FileNameExtensionFilter
 
 class PromptManagementWindow(
     private val promptManagementService: PromptManagementService,
@@ -1048,8 +1050,46 @@ class PromptManagementWindow(
     }
 
     private fun exportPrompts() {
-        // Placeholder for export functionality
-        showInfoDialog("Export functionality would be implemented here")
+        val fileChooser =
+            JFileChooser().apply {
+                dialogTitle = "Export Prompts to YAML"
+                fileFilter = FileNameExtensionFilter("YAML files (*.yaml, *.yml)", "yaml", "yml")
+                selectedFile = java.io.File("prompts-export.yaml")
+            }
+
+        if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+            val selectedFile = fileChooser.selectedFile
+            val filePath =
+                if (selectedFile.extension.lowercase() in listOf("yaml", "yml")) {
+                    selectedFile.absolutePath
+                } else {
+                    "${selectedFile.absolutePath}.yaml"
+                }
+
+            coroutineScope.launch {
+                try {
+                    testStatusLabel.text = "Exporting prompts..."
+
+                    val success = promptManagementService.exportPromptsToYaml(filePath)
+
+                    withContext(Dispatchers.Swing) {
+                        if (success) {
+                            testStatusLabel.text = "Prompts exported successfully"
+                            showInfoDialog("Prompts have been exported successfully to:\n$filePath")
+                        } else {
+                            testStatusLabel.text = "Export failed"
+                            showErrorDialog("Failed to export prompts. Please check the logs for details.")
+                        }
+                    }
+                } catch (e: Exception) {
+                    logger.error(e) { "Failed to export prompts" }
+                    withContext(Dispatchers.Swing) {
+                        testStatusLabel.text = "Export failed: ${e.message}"
+                        showErrorDialog("Export failed: ${e.message}")
+                    }
+                }
+            }
+        }
     }
 
     private fun importPrompts() {

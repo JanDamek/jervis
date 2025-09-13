@@ -58,7 +58,7 @@ class MainWindow(
     private val clientService: com.jervis.service.client.ClientService,
     private val linkService: com.jervis.service.client.ClientProjectLinkService,
     private val taskContextService: TaskContextService,
-    private val promptManagementService: PromptManagementService,
+    private val promptManagementService: PromptManagementService?,
     private val llmGateway: LlmGateway,
     private val promptRepository: PromptRepository,
     private val promptTemplateService: PromptTemplateService,
@@ -106,8 +106,10 @@ class MainWindow(
     private var promptManagementWindow: PromptManagementWindow? = null
 
     init {
-        // Setup menu bar
-        setupMenuBar()
+        // Setup menu bar only on non-macOS systems (macOS uses native menu bar)
+        if (!WindowUtils.isMacOS) {
+            setupMenuBar()
+        }
         // initialize context list defaults
         contextList.selectionMode = ListSelectionModel.SINGLE_SELECTION
         contextList.visibleRowCount = -1
@@ -1046,6 +1048,16 @@ class MainWindow(
     }
 
     private fun openPromptManagement() {
+        if (promptManagementService == null) {
+            JOptionPane.showMessageDialog(
+                this,
+                "Prompt Management is not available in production mode.",
+                "Feature Unavailable",
+                JOptionPane.INFORMATION_MESSAGE,
+            )
+            return
+        }
+
         if (promptManagementWindow == null) {
             promptManagementWindow =
                 PromptManagementWindow(

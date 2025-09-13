@@ -1,5 +1,8 @@
 package com.jervis.service.admin
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import com.jervis.configuration.prompts.McpToolType
 import com.jervis.domain.model.ModelType
 import com.jervis.entity.mongo.CreatePromptRequest
@@ -12,10 +15,13 @@ import kotlinx.coroutines.reactor.awaitSingleOrNull
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.context.ApplicationEventPublisher
+import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Service
+import java.io.File
 import java.time.Instant
 
 @Service
+@Profile("!production")
 class PromptManagementService(
     private val promptRepository: PromptMongoRepository,
     private val eventPublisher: ApplicationEventPublisher,
@@ -238,6 +244,68 @@ class PromptManagementService(
             "1.0.1"
         }
     }
+
+    suspend fun exportPromptsToYaml(filePath: String): Boolean =
+        try {
+            val prompts = getAllPrompts()
+            val yamlMapper = ObjectMapper(YAMLFactory()).registerKotlinModule()
+
+            // Convert prompts to YAML structure similar to existing prompts.yaml
+            val exportData =
+                mapOf(
+                    "prompts" to
+                        prompts.associate { prompt ->
+                            val key =
+                                buildString {
+                                    append(prompt.toolType.name)
+                                    if (prompt.modelType != null) {
+                                        append("_${prompt.modelType!!.name}")
+                                    }
+                                }
+
+                            key to
+                                mapOf(
+                                    "systemPrompt" to prompt.systemPrompt,
+                                    "userPrompt" to prompt.userPrompt?.takeIf { !it.isNullOrBlank() },
+                                    "description" to prompt.description?.takeIf { !it.isNullOrBlank() },
+                                    "finalProcessing" to prompt.finalProcessing,
+                                    "userInteractionPrompts" to prompt.userInteractionPrompts,
+                                    "modelParams" to
+                                        mapOf(
+                                            "creativityLevel" to prompt.modelParams.creativityLevel.name,
+                                            "presencePenalty" to prompt.modelParams.presencePenalty,
+                                            "frequencyPenalty" to prompt.modelParams.frequencyPenalty,
+                                            "repeatPenalty" to prompt.modelParams.repeatPenalty,
+                                            "systemPromptWeight" to prompt.modelParams.systemPromptWeight,
+                                            "stopSequences" to prompt.modelParams.stopSequences.takeIf { it.isNotEmpty() },
+                                            "logitBias" to prompt.modelParams.logitBias.takeIf { it.isNotEmpty() },
+                                            "seed" to prompt.modelParams.seed,
+                                            "jsonMode" to prompt.modelParams.jsonMode,
+                                        ).filterValues { it != null && it != false && it != 0.0 },
+                                    "metadata" to
+                                        mapOf(
+                                            "version" to prompt.version,
+                                            "priority" to prompt.priority,
+                                            "tags" to prompt.metadata.tags.takeIf { it.isNotEmpty() },
+                                            "notes" to prompt.metadata.notes?.takeIf { it.isNotBlank() },
+                                            "createdBy" to prompt.createdBy,
+                                            "createdAt" to prompt.createdAt.toString(),
+                                            "updatedAt" to prompt.updatedAt.toString(),
+                                        ).filterValues { it != null },
+                                    "status" to prompt.status.name,
+                                ).filterValues { it != null }
+                        },
+                )
+
+            val file = File(filePath)
+            yamlMapper.writeValue(file, exportData)
+
+            logger.info { "Successfully exported ${prompts.size} prompts to YAML file: $filePath" }
+            true
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to export prompts to YAML file: $filePath" }
+            false
+        }
 }
 
 data class PromptChangedEvent(

@@ -28,6 +28,13 @@ class TrayIconManager {
      * Initializes the system tray icon
      */
     private fun initTrayIcon() {
+        // Skip tray icon on macOS - use native dock and menu bar instead
+        val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
+        if (isMacOS) {
+            logger.info { "Skipping system tray initialization on macOS - using native dock and menu bar instead" }
+            return
+        }
+
         if (!SystemTray.isSupported()) {
             logger.warn { "System tray is not supported on this platform!" }
             return
