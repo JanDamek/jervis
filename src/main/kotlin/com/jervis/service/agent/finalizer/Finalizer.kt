@@ -1,8 +1,7 @@
 package com.jervis.service.agent.finalizer
 
-import com.jervis.configuration.prompts.McpToolType
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
-import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.PlanStatus
 import com.jervis.dto.ChatResponse
 import com.jervis.service.gateway.LlmGateway
@@ -36,7 +35,7 @@ class Finalizer(
                     }
                     logger.debug { "FINALIZER_PLAN_CONTEXT: contextSummary='${plan.contextSummary}', finalAnswer='${plan.finalAnswer}'" }
 
-                    val userLang = plan.originalLanguage.ifBlank { "en" }
+                    val userLang = plan.originalLanguage.ifBlank { "EN" }
                     val userPrompt =
                         buildUserPrompt(
                             originalQuestion = plan.originalQuestion,
@@ -48,21 +47,17 @@ class Finalizer(
 
                     logger.debug { "FINALIZER_USER_PROMPT: userPrompt='$userPrompt'" }
 
-                    val systemPrompt = promptRepository.getSystemPrompt(McpToolType.FINALIZER)
-                    val modelParams = promptRepository.getEffectiveModelParams(McpToolType.FINALIZER)
-
                     val answer =
                         runCatching {
                             gateway
                                 .callLlm(
-                                    type = ModelType.INTERNAL,
+                                    type = PromptTypeEnum.FINALIZER,
                                     userPrompt = userPrompt,
-                                    systemPrompt = systemPrompt,
-                                    outputLanguage = userLang,
                                     quick = context.quick,
-                                    modelParams = modelParams,
-                                ).answer
-                                .trim()
+                                    "",
+                                    outputLanguage = userLang,
+                                    mappingValue = emptyMap(),
+                                )
                         }.getOrElse {
                             logger.warn(it) { "FINALIZER_LLM_FAIL: Falling back to summary for plan=${'$'}{plan.id}" }
                             (

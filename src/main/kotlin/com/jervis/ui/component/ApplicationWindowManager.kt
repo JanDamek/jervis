@@ -1,6 +1,5 @@
 package com.jervis.ui.component
 
-import com.jervis.service.admin.PromptManagementService
 import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.client.ClientProjectLinkService
@@ -17,10 +16,8 @@ import com.jervis.ui.utils.MacOSAppUtils
 import com.jervis.ui.window.ClientsWindow
 import com.jervis.ui.window.MainWindow
 import com.jervis.ui.window.ProjectSettingWindow
-import com.jervis.ui.window.PromptManagementWindow
 import com.jervis.ui.window.SchedulerWindow
 import com.jervis.ui.window.TrayIconManager
-import org.springframework.beans.factory.annotation.Autowired
 import javax.swing.UIManager
 
 class ApplicationWindowManager(
@@ -33,7 +30,6 @@ class ApplicationWindowManager(
     private val clientIndexingService: ClientIndexingService,
     private val taskSchedulingService: TaskSchedulingService,
     private val taskQueryService: TaskQueryService,
-    @Autowired(required = false) private val promptManagementService: PromptManagementService?,
     private val promptRepository: PromptRepository,
     private val promptTemplateService: PromptTemplateService,
     private val llmGateway: LlmGateway,
@@ -45,7 +41,6 @@ class ApplicationWindowManager(
             clientService,
             linkService,
             taskContextService,
-            promptManagementService,
             llmGateway,
             promptRepository,
             promptTemplateService,
@@ -62,12 +57,6 @@ class ApplicationWindowManager(
 
     private val schedulerWindow: SchedulerWindow by lazy {
         SchedulerWindow(taskSchedulingService, taskQueryService, clientService, projectService, chatCoordinator)
-    }
-
-    private val promptManagementWindow: PromptManagementWindow? by lazy {
-        promptManagementService?.let { service ->
-            PromptManagementWindow(service, llmGateway, promptRepository, promptTemplateService, this)
-        }
     }
 
     private val trayIconManager: TrayIconManager by lazy {
@@ -135,9 +124,5 @@ class ApplicationWindowManager(
 
     fun showSchedulerWindow() {
         schedulerWindow.isVisible = true
-    }
-
-    fun showPromptManagement() {
-        promptManagementWindow?.isVisible = true
     }
 }

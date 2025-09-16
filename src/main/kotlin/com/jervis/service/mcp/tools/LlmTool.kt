@@ -1,13 +1,11 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.McpToolType
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
-import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
-import com.jervis.service.mcp.util.McpJson
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.serialization.Serializable
 import org.springframework.stereotype.Service
@@ -19,13 +17,12 @@ class LlmTool(
 ) : McpTool {
     override val name: String = "llm"
     override val description: String
-        get() = promptRepository.getMcpToolDescription(McpToolType.LLM)
+        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.LLM)
 
     @Serializable
     data class LlmParams(
         val systemPrompt: String? = null,
-        val userPrompt: String,
-        val modelType: String = "INTERNAL",
+        val userPrompt: String = "",
         val contextFromSteps: Int = 0,
     )
 
@@ -33,20 +30,18 @@ class LlmTool(
         taskDescription: String,
         context: TaskContext,
     ): LlmParams {
-        val systemPrompt = promptRepository.getMcpToolSystemPrompt(McpToolType.LLM)
-
+        val userPrompt = promptRepository.getMcpToolUserPrompt(PromptTypeEnum.LLM)
         val llmResponse =
             llmGateway.callLlm(
-                type = ModelType.INTERNAL,
-                systemPrompt = systemPrompt,
-                userPrompt = taskDescription,
+                type = PromptTypeEnum.LLM,
+                userPrompt = userPrompt.replace("{userPrompt}", taskDescription),
                 outputLanguage = "en",
                 quick = context.quick,
+                mappingValue = emptyMap(),
+                exampleInstance = LlmParams(),
             )
 
-        return McpJson.decode<LlmParams>(llmResponse.answer).getOrElse {
-            throw IllegalArgumentException("Failed to parse LLM parameters: ${it.message}")
-        }
+        return llmResponse
     }
 
     override suspend fun execute(
@@ -59,21 +54,11 @@ class LlmTool(
                 parseTaskDescription(taskDescription, context)
             } catch (e: Exception) {
                 return ToolResult.error("Invalid LLM parameters: ${e.message}", "LLM parameter parsing failed")
-        }
+            }
 
         if (parsed.userPrompt.isBlank()) {
             return ToolResult.error("User prompt cannot be empty")
         }
-
-        // Validate and map model type
-        val modelType =
-            try {
-                ModelType.valueOf(parsed.modelType.uppercase())
-            } catch (e: IllegalArgumentException) {
-                return ToolResult.error(
-                    "Invalid model type: ${parsed.modelType}. Available types: INTERNAL, TRANSLATION, PLANNER, CHAT_INTERNAL, CHAT_EXTERNAL, JOERN",
-                )
-            }
 
         // Collect context from previous steps if requested
         val stepContext =
@@ -104,19 +89,18 @@ class LlmTool(
         val llmResult =
             try {
                 llmGateway.callLlm(
-                    type = modelType,
-                    systemPrompt =
-                        parsed.systemPrompt
-                            ?: "You are a helpful AI assistant. Provide clear, accurate, and actionable responses.",
+                    type = PromptTypeEnum.LLM,
                     userPrompt = completeUserPrompt,
                     outputLanguage = "en",
                     quick = context.quick,
+                    mappingValue = parsed.systemPrompt?.let { mapOf("systemPrompt" to it) } ?: emptyMap(),
+                    exampleInstance = "",
                 )
             } catch (e: Exception) {
                 return ToolResult.error("LLM call failed: ${e.message}")
             }
 
-        val enhancedOutput = llmResult.answer.trim().ifEmpty { "Empty LLM response" }
+        val enhancedOutput = llmResult.trim().ifEmpty { "Empty LLM response" }
 
         return ToolResult.ok(enhancedOutput)
     }

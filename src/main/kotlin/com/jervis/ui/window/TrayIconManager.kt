@@ -63,11 +63,6 @@ class TrayIconManager {
         }
 
         // Management items
-        val promptManagementItem = MenuItem("Prompt Management")
-        promptManagementItem.addActionListener {
-            windowManager.showPromptManagement()
-        }
-
         val openProjectSettingsItem = MenuItem("Project Settings")
         openProjectSettingsItem.addActionListener {
             windowManager.showProjectSettingWindow()
@@ -89,8 +84,6 @@ class TrayIconManager {
         }
 
         popup.add(openMainItem)
-        popup.addSeparator()
-        popup.add(promptManagementItem)
         popup.addSeparator()
         popup.add(openProjectSettingsItem)
         popup.add(openClientsItem)

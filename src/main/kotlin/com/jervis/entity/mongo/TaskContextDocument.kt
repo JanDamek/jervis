@@ -27,8 +27,14 @@ data class TaskContextDocument(
         TaskContext(
             id = this.id,
             plans = plans,
-            clientDocument = ClientDocument(name = ""),
-            projectDocument = ProjectDocument(name = ""),
+            clientDocument = ClientDocument(
+                id = this.clientId ?: ObjectId.get(),
+                name = this.clientName ?: ""
+            ),
+            projectDocument = ProjectDocument(
+                id = this.projectId ?: ObjectId.get(),
+                name = this.projectName ?: ""
+            ),
             name = this.name,
             createdAt = this.createdAt,
             updatedAt = this.updatedAt,
@@ -41,6 +47,8 @@ data class TaskContextDocument(
                 id = taskContext.id,
                 clientId = taskContext.clientDocument.id,
                 projectId = taskContext.projectDocument.id,
+                clientName = taskContext.clientDocument.name,
+                projectName = taskContext.projectDocument.name,
                 name = taskContext.name,
                 createdAt = taskContext.createdAt,
                 updatedAt = taskContext.updatedAt,

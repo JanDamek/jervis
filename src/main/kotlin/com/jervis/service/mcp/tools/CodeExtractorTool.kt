@@ -1,6 +1,6 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.McpToolType
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.service.mcp.McpTool
@@ -22,7 +22,7 @@ class CodeExtractorTool(
     override val name: String = "code.extractor"
 
     override val description: String
-        get() = promptRepository.getMcpToolDescription(McpToolType.CODE_EXTRACTOR)
+        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.CODE_EXTRACTOR)
 
     @Serializable
     data class CodeExtractorParams(

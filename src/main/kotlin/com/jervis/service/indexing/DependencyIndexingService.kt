@@ -1,6 +1,6 @@
 package com.jervis.service.indexing
 
-import com.jervis.configuration.prompts.McpToolType
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagDocumentType
@@ -167,7 +167,7 @@ class DependencyIndexingService(
             logger.debug { "Generating LLM description for dependency: ${dependency.name}" }
 
             // Get the configured system prompt for DEPENDENCY_ANALYSIS
-            val systemPrompt = promptRepository.getSystemPrompt(McpToolType.DEPENDENCY_ANALYSIS)
+            promptRepository.getSystemPrompt(PromptTypeEnum.DEPENDENCY_ANALYSIS)
 
             val userPrompt =
                 buildString {
@@ -195,24 +195,23 @@ class DependencyIndexingService(
 
             val llmResponse =
                 llmGateway.callLlm(
-                    type = ModelType.INTERNAL,
-                    systemPrompt = systemPrompt,
+                    type = PromptTypeEnum.DEPENDENCY_ANALYSIS,
                     userPrompt = userPrompt,
-                    outputLanguage = "en",
                     quick = false,
+                    "",
                 )
 
             val enhancedDescription =
                 buildString {
                     append("${dependency.name}: ")
-                    append(llmResponse.answer)
+                    append(llmResponse)
                 }
 
             val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, enhancedDescription)
 
             val ragDocument =
                 RagDocument(
-                    projectId = project.id!!,
+                    projectId = project.id,
                     documentType = RagDocumentType.DEPENDENCY_DESCRIPTION,
                     ragSourceType = RagSourceType.LLM,
                     pageContent = enhancedDescription,

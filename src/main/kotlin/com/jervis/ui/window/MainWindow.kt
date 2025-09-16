@@ -3,7 +3,6 @@ package com.jervis.ui.window
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.plan.PlanStep
 import com.jervis.dto.ChatRequestContext
-import com.jervis.service.admin.PromptManagementService
 import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.gateway.LlmGateway
@@ -18,6 +17,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.swing.Swing
 import kotlinx.coroutines.withContext
+import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.context.event.EventListener
 import java.awt.BorderLayout
@@ -47,7 +47,6 @@ import javax.swing.JPopupMenu
 import javax.swing.JScrollPane
 import javax.swing.JSplitPane
 import javax.swing.JTextArea
-import javax.swing.JTextField
 import javax.swing.KeyStroke
 import javax.swing.ListSelectionModel
 import javax.swing.border.EmptyBorder
@@ -58,7 +57,6 @@ class MainWindow(
     private val clientService: com.jervis.service.client.ClientService,
     private val linkService: com.jervis.service.client.ClientProjectLinkService,
     private val taskContextService: TaskContextService,
-    private val promptManagementService: PromptManagementService?,
     private val llmGateway: LlmGateway,
     private val promptRepository: PromptRepository,
     private val promptTemplateService: PromptTemplateService,
@@ -72,8 +70,11 @@ class MainWindow(
 
     // Chat UI (right side)
     private val chatArea = JTextArea()
-    private val inputField = JTextField()
+    private val inputField = JTextArea()
     private val sendButton = JButton("Send")
+
+    // Text persistence for different contexts
+    private val contextDrafts = mutableMapOf<String, String>()
 
     // Context list UI (left side)
     private val contextListModel = DefaultListModel<Any>()
@@ -102,8 +103,9 @@ class MainWindow(
     // Project change blocking state
     private var isProjectLoading = false
 
-    // Prompt management window
-    private var promptManagementWindow: PromptManagementWindow? = null
+    companion object {
+        private val logger = KotlinLogging.logger {}
+    }
 
     init {
         // Setup menu bar only on non-macOS systems (macOS uses native menu bar)
@@ -114,12 +116,44 @@ class MainWindow(
         contextList.selectionMode = ListSelectionModel.SINGLE_SELECTION
         contextList.visibleRowCount = -1
 
-        // Set opaque cell renderer to prevent text overlap issues
+        // Set opaque cell renderer to prevent text overlap issues and add status icons
         contextList.cellRenderer =
             object : javax.swing.DefaultListCellRenderer() {
                 init {
                     // Ensure renderer is opaque to prevent background from painting over text
                     isOpaque = true
+                }
+
+                override fun getListCellRendererComponent(
+                    list: JList<*>?,
+                    value: Any?,
+                    index: Int,
+                    isSelected: Boolean,
+                    cellHasFocus: Boolean,
+                ) = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus).apply {
+                    when (value) {
+                        is com.jervis.domain.context.TaskContext -> {
+                            val hasRunningPlans =
+                                value.plans.any { it.status == com.jervis.domain.plan.PlanStatus.RUNNING }
+                            val hasCompletedPlans =
+                                value.plans.any {
+                                    it.status == com.jervis.domain.plan.PlanStatus.COMPLETED ||
+                                        it.status == com.jervis.domain.plan.PlanStatus.FINALIZED
+                                }
+                            val icon =
+                                when {
+                                    hasRunningPlans -> "⚡ "
+                                    hasCompletedPlans -> "✅ "
+                                    else -> ""
+                                }
+                            text = "$icon${value.name}"
+                        }
+
+                        else -> {
+                            // Handle "New context" label and other items
+                            text = value?.toString() ?: ""
+                        }
+                    }
                 }
             }
     }
@@ -275,22 +309,59 @@ class MainWindow(
         split.resizeWeight = 0.0
         split.dividerLocation = 200
 
-        // Bottom panel with input
+        // Configure input field as multi-line text area
+        inputField.lineWrap = true
+        inputField.wrapStyleWord = true
+        inputField.rows = 3
+        inputField.border = EmptyBorder(5, 5, 5, 5)
+
+        // Bottom panel with input wrapped in scroll pane for dynamic resizing
         val bottomPanel = JPanel(BorderLayout())
         bottomPanel.border = EmptyBorder(10, 10, 10, 10)
-        bottomPanel.add(inputField, BorderLayout.CENTER)
 
-        // Add key listener to handle Enter and Shift+Enter
+        val inputScrollPane = JScrollPane(inputField)
+        inputScrollPane.verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
+        inputScrollPane.horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
+        inputScrollPane.preferredSize = Dimension(0, 80)
+        bottomPanel.add(inputScrollPane, BorderLayout.CENTER)
+
+        // Add document listener for dynamic resizing
+        inputField.document.addDocumentListener(
+            object : javax.swing.event.DocumentListener {
+                override fun insertUpdate(e: javax.swing.event.DocumentEvent) = adjustInputHeight()
+
+                override fun removeUpdate(e: javax.swing.event.DocumentEvent) = adjustInputHeight()
+
+                override fun changedUpdate(e: javax.swing.event.DocumentEvent) = adjustInputHeight()
+
+                private fun adjustInputHeight() {
+                    EventQueue.invokeLater {
+                        val lines = inputField.text.count { it == '\n' } + 1
+                        val minLines = 3
+                        val maxLines = 10
+                        val actualLines = minLines.coerceAtLeast(lines.coerceAtMost(maxLines))
+                        val lineHeight = inputField.getFontMetrics(inputField.font).height
+                        val newHeight = actualLines * lineHeight + 20 // padding
+
+                        if (inputScrollPane.preferredSize.height != newHeight) {
+                            inputScrollPane.preferredSize = Dimension(inputScrollPane.preferredSize.width, newHeight)
+                            inputScrollPane.revalidate()
+                            bottomPanel.revalidate()
+                            this@MainWindow.revalidate()
+                        }
+                    }
+                }
+            },
+        )
+
+        // Add key listener to handle Enter and Shift+Enter for multi-line support
         inputField.addKeyListener(
             object : KeyAdapter() {
                 override fun keyPressed(e: KeyEvent) {
                     if (e.keyCode == KeyEvent.VK_ENTER) {
                         if (e.isShiftDown) {
-                            // Shift+Enter: add a new line
-                            inputField.text += "\n"
-                            // Set caret position to the end of text
-                            inputField.caretPosition = inputField.text.length
-                            e.consume()
+                            // Shift+Enter: allow default behavior (new line)
+                            // Don't consume the event - let JTextArea handle it
                         } else {
                             // Enter: send message
                             e.consume()
@@ -304,11 +375,6 @@ class MainWindow(
         // Add action listener to send button
         sendButton.addActionListener {
             sendMessage()
-        }
-
-        // Make sure the send button is disabled when the input is disabled
-        inputField.addPropertyChangeListener("enabled") { event ->
-            sendButton.isEnabled = event.newValue as Boolean
         }
 
         bottomPanel.add(sendButton, BorderLayout.EAST)
@@ -328,7 +394,7 @@ class MainWindow(
             isProjectLoading = true
             contextList.isEnabled = false
             sendButton.isEnabled = false
-            inputField.isEnabled = false
+            // Note: inputField is never disabled per requirements
 
             refreshContextsFromDbForCurrentSelection(selectFirst = true)
         }
@@ -371,7 +437,7 @@ class MainWindow(
     private fun sendMessage() {
         val text = inputField.text.trim()
         if (text.isNotEmpty()) {
-            // Check if selected context already has plans (single-send restriction)
+            // Check if selected context has running plans (should only block running plans)
             val selectedContextIndex = contextList.selectedIndex
             val selectedTaskContext =
                 if (selectedContextIndex >= 0) {
@@ -381,17 +447,24 @@ class MainWindow(
                     null
                 }
 
-            // If context has existing plans, prevent sending
-            if (selectedTaskContext != null && selectedTaskContext.plans.isNotEmpty()) {
-                chatArea.append("System: Cannot send to context with existing process plan. Please select a new context or create one.\n\n")
+            // If context has running plans, prevent sending
+            if (selectedTaskContext != null && selectedTaskContext.plans.any { it.status == com.jervis.domain.plan.PlanStatus.RUNNING }) {
+                chatArea.append(
+                    "System: Cannot send to context with running plan. Please wait for completion or select another context.\n\n",
+                )
                 return
             }
 
             chatArea.append("Me: $text\n")
             inputField.text = ""
 
-            // Disable input while processing
-            inputField.isEnabled = false
+            // Clear draft text after sending
+            val selectedContext = contextList.selectedValue as? com.jervis.domain.context.TaskContext
+            val key = contextDraftKey(selectedContext)
+            contextDrafts.remove(key)
+
+            // Disable send button while processing (input field stays enabled)
+            sendButton.isEnabled = false
 
             chatArea.append("Assistant: Processing...\n")
 
@@ -436,19 +509,31 @@ class MainWindow(
 
                         // Reset Quick response checkbox as one-time setting
                         quickCheckbox.isSelected = false
-                    }
 
-                    // Ensure a UI context exists (name from the first message if needed)
-                    withContext(Dispatchers.Swing) { ensureSelectedContextForCurrentScope(text) }
-                    withContext(Dispatchers.Swing) {
                         // Display only final assistant message; scope decisions happen in services
                         chatArea.append("Assistant: ${response.message}\n\n")
 
-                        // Refresh contexts from database to get updated plans
-                        refreshContextsFromDbForCurrentSelection(selectFirst = false)
+                        // Refresh contexts from database to get updated plans and newly created contexts
+                        refreshContextsFromDbForCurrentSelection(selectFirst = false) {
+                            // If no context was selected (new context created), select the most recent one
+                            if (selectedTaskContext == null) {
+                                if (contextListModel.size() > 1) {
+                                    // Select the first actual context (index 1, after "New context" item)
+                                    contextList.selectedIndex = 1
+                                    val selectedContext = contextListModel.getElementAt(1)
+                                    if (selectedContext is com.jervis.domain.context.TaskContext) {
+                                        displayContextInChatArea(selectedContext)
+                                        updateSendButtonState()
+                                    }
+                                }
+                            } else {
+                                // Update send button state for existing context
+                                updateSendButtonState()
+                            }
+                        }
 
-                        // Re-enable input
-                        inputField.isEnabled = true
+                        // Update send button state and focus input
+                        updateSendButtonState()
                         inputField.requestFocus()
                     }
                 } catch (e: Exception) {
@@ -461,8 +546,8 @@ class MainWindow(
                         // Add the error message
                         chatArea.append("Assistant: Sorry, an error occurred: ${e.message}\n\n")
 
-                        // Re-enable input
-                        inputField.isEnabled = true
+                        // Update send button state and focus input
+                        updateSendButtonState()
                         inputField.requestFocus()
                     }
                 }
@@ -508,10 +593,18 @@ class MainWindow(
     }
 
     private fun refreshContextsFromDbForCurrentSelection(selectFirst: Boolean = false) {
+        refreshContextsFromDbForCurrentSelection(selectFirst) { }
+    }
+
+    private fun refreshContextsFromDbForCurrentSelection(
+        selectFirst: Boolean = false,
+        onComplete: () -> Unit,
+    ) {
         val selectedClient =
             clientSelector.selectedItem as? SelectorItem ?: run {
                 contextsByScope[currentScopeKey()] = mutableListOf()
                 rebuildContextList(selectFirst)
+                onComplete()
                 return
             }
         selectedClient.name
@@ -531,8 +624,11 @@ class MainWindow(
                     // Unblock UI after loading completes
                     isProjectLoading = false
                     contextList.isEnabled = true
-                    inputField.isEnabled = true
-                    sendButton.isEnabled = true
+                    // Note: inputField stays always enabled per requirements
+                    updateSendButtonState()
+
+                    // Call completion callback
+                    onComplete()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Swing) {
@@ -542,8 +638,11 @@ class MainWindow(
                     // Unblock UI even if loading fails
                     isProjectLoading = false
                     contextList.isEnabled = true
-                    inputField.isEnabled = true
-                    sendButton.isEnabled = true
+                    // Note: inputField stays always enabled per requirements
+                    updateSendButtonState()
+
+                    // Call completion callback even on error
+                    onComplete()
                 }
             }
         }
@@ -561,25 +660,66 @@ class MainWindow(
     private fun contextsForCurrentScope(): MutableList<com.jervis.domain.context.TaskContext> =
         contextsByScope.getOrPut(currentScopeKey()) { mutableListOf() }
 
+    /**
+     * Generate a unique key for draft text storage
+     */
+    private fun contextDraftKey(context: com.jervis.domain.context.TaskContext?): String =
+        if (context != null) {
+            "${context.clientDocument.name}:${context.projectDocument.name}:${context.id}"
+        } else {
+            "${currentScopeKey().first}:${currentScopeKey().second}:NEW"
+        }
+
+    /**
+     * Save current input text as draft for the currently selected context
+     */
+    private fun saveDraftText() {
+        val selectedContext = contextList.selectedValue as? com.jervis.domain.context.TaskContext
+        val key = contextDraftKey(selectedContext)
+        val currentText = inputField.text
+        if (currentText.isNotBlank()) {
+            contextDrafts[key] = currentText
+        } else {
+            contextDrafts.remove(key)
+        }
+    }
+
+    /**
+     * Restore draft text for the specified context
+     */
+    private fun restoreDraftText(context: com.jervis.domain.context.TaskContext?) {
+        val key = contextDraftKey(context)
+        val draftText = contextDrafts[key] ?: ""
+        inputField.text = draftText
+    }
+
     private fun installContextListHandlers() {
         contextList.addMouseListener(
             object : MouseAdapter() {
                 override fun mouseClicked(e: MouseEvent) {
                     val index = contextList.locationToIndex(e.point)
                     if (index >= 0) {
+                        // Save current draft text before switching contexts
+                        saveDraftText()
+
                         when (val item = contextListModel.getElementAt(index)) {
                             is String ->
-                                if (item == NEW_CONTEXT_LABEL && e.clickCount == 2) {
-                                    // Clear chat area for new context
+                                if (item == NEW_CONTEXT_LABEL && e.clickCount == 1) {
+                                    // Clear chat area for new context - context will be created on send
                                     chatArea.text = ""
-                                    val created = createAndSelectNewContext()
-                                    promptRename(created)
+                                    // Clear selection to indicate new context mode
+                                    contextList.clearSelection()
+                                    // Restore draft text for new context
+                                    restoreDraftText(null)
                                 }
 
                             is com.jervis.domain.context.TaskContext -> {
                                 if (e.clickCount == 1) {
                                     // Single click - display conversation in chat area
                                     displayContextInChatArea(item)
+                                    updateSendButtonState()
+                                    // Restore draft text for selected context
+                                    restoreDraftText(item)
                                     // Update plan list if plans are shown
                                     if (showPlansCheckbox.isSelected) {
                                         updatePlanList()
@@ -587,6 +727,9 @@ class MainWindow(
                                 } else if (e.clickCount == 2) {
                                     // Double click - also display conversation (same behavior)
                                     displayContextInChatArea(item)
+                                    updateSendButtonState()
+                                    // Restore draft text for selected context
+                                    restoreDraftText(item)
                                     if (showPlansCheckbox.isSelected) {
                                         updatePlanList()
                                     }
@@ -787,6 +930,17 @@ class MainWindow(
 
         chatArea.text = sb.toString()
         chatArea.caretPosition = 0 // Scroll to top
+    }
+
+    private fun updateSendButtonState() {
+        val selectedContext = contextList.selectedValue as? com.jervis.domain.context.TaskContext
+        val hasRunningPlans =
+            selectedContext?.plans?.any { it.status == com.jervis.domain.plan.PlanStatus.RUNNING } == true
+
+        // Enable send button if:
+        // 1. No context is selected (New context mode) - always allow new context creation
+        // 2. Context is selected but has no running plans
+        sendButton.isEnabled = selectedContext == null || !hasRunningPlans
     }
 
     private fun togglePlanDisplay() {
@@ -1012,15 +1166,6 @@ class MainWindow(
         // Tools menu
         val toolsMenu = JMenu("Tools")
 
-        val promptManagementItem = JMenuItem("Prompt Management")
-        promptManagementItem.accelerator =
-            KeyStroke.getKeyStroke(
-                KeyEvent.VK_P,
-                InputEvent.META_DOWN_MASK or InputEvent.SHIFT_DOWN_MASK,
-            )
-        promptManagementItem.addActionListener { openPromptManagement() }
-        toolsMenu.add(promptManagementItem)
-
         toolsMenu.addSeparator()
 
         // Additional tools can be added here as needed
@@ -1047,33 +1192,6 @@ class MainWindow(
         jMenuBar = menuBar
     }
 
-    private fun openPromptManagement() {
-        if (promptManagementService == null) {
-            JOptionPane.showMessageDialog(
-                this,
-                "Prompt Management is not available in production mode.",
-                "Feature Unavailable",
-                JOptionPane.INFORMATION_MESSAGE,
-            )
-            return
-        }
-
-        if (promptManagementWindow == null) {
-            promptManagementWindow =
-                PromptManagementWindow(
-                    promptManagementService,
-                    llmGateway,
-                    promptRepository,
-                    promptTemplateService,
-                    null,
-                )
-        }
-        promptManagementWindow?.apply {
-            isVisible = true
-            toFront()
-            requestFocus()
-        }
-    }
 
     private fun showAboutDialog() {
         JOptionPane.showMessageDialog(
@@ -1086,28 +1204,32 @@ class MainWindow(
 
     @EventListener
     fun handlePlanStatusChange(event: PlanStatusChangeEvent) {
-        // Update plan display if it's currently shown and the event is for the selected context
-        val selectedContext = contextList.selectedValue as? com.jervis.domain.context.TaskContext
-        if (selectedContext != null && selectedContext.id == event.contextId && showPlansCheckbox.isSelected) {
-            coroutineScope.launch {
-                // Refresh context from database to get updated data
-                try {
-                    val updatedContext = taskContextService.findById(event.contextId)
-                    if (updatedContext != null) {
-                        withContext(Dispatchers.Swing) {
-                            // Update the context in our local storage
-                            val currentScope = currentScopeKey()
-                            val contextList = contextsByScope[currentScope]
-                            val index = contextList?.indexOfFirst { it.id == updatedContext.id }
-                            if (index != null && index >= 0) {
-                                contextList[index] = updatedContext
+        // Update context display and UI state whenever plan status changes
+        coroutineScope.launch {
+            // Refresh context from database to get updated data
+            try {
+                val updatedContext = taskContextService.findById(event.contextId)
+                if (updatedContext != null) {
+                    withContext(Dispatchers.Swing) {
+                        // Update the context in our local storage
+                        val currentScope = currentScopeKey()
+                        val contextList = contextsByScope[currentScope]
+                        val index = contextList?.indexOfFirst { it.id == updatedContext.id }
+                        if (index != null && index >= 0) {
+                            contextList[index] = updatedContext
+                            // Rebuild context list to update status icons
+                            rebuildContextList()
+                            // Update send button state
+                            updateSendButtonState()
+                            // Update plan list if it's currently shown
+                            if (showPlansCheckbox.isSelected) {
                                 updatePlanList()
                             }
                         }
                     }
-                } catch (e: Exception) {
-                    // Handle error silently or log
                 }
+            } catch (e: Exception) {
+                logger.error(e) { "Error in handlePlanStatusChange" }
             }
         }
     }

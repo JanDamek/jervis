@@ -92,12 +92,6 @@ object MacOSAppUtils {
             // Tools menu
             val toolsMenu = JMenu("Tools")
 
-            val promptManagementItem = JMenuItem("Prompt Management")
-            promptManagementItem.addActionListener { applicationWindowManager.showPromptManagement() }
-            toolsMenu.add(promptManagementItem)
-
-            toolsMenu.addSeparator()
-
             val projectSettingsItem = JMenuItem("Project Settings")
             projectSettingsItem.addActionListener { applicationWindowManager.showProjectSettingWindow() }
             toolsMenu.add(projectSettingsItem)
@@ -151,10 +145,6 @@ object MacOSAppUtils {
                     dockMenu.add(openMainItem)
 
                     dockMenu.addSeparator()
-
-                    val promptManagementItem = java.awt.MenuItem("Prompt Management")
-                    promptManagementItem.addActionListener { applicationWindowManager.showPromptManagement() }
-                    dockMenu.add(promptManagementItem)
 
                     val projectSettingsItem = java.awt.MenuItem("Project Settings")
                     projectSettingsItem.addActionListener { applicationWindowManager.showProjectSettingWindow() }

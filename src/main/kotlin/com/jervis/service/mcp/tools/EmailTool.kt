@@ -1,14 +1,11 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.McpToolType
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
-import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
-import com.jervis.service.mcp.util.McpFinalPromptProcessor
-import com.jervis.service.mcp.util.McpJson
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -19,14 +16,13 @@ import org.springframework.stereotype.Service
 @Service
 class EmailTool(
     private val llmGateway: LlmGateway,
-    private val mcpFinalPromptProcessor: McpFinalPromptProcessor,
     private val promptRepository: PromptRepository,
 ) : McpTool {
     private val logger = KotlinLogging.logger {}
 
     override val name: String = "email"
     override val description: String
-        get() = promptRepository.getMcpToolDescription(McpToolType.EMAIL)
+        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.EMAIL)
 
     @Serializable
     data class EmailParams(
@@ -44,19 +40,18 @@ class EmailTool(
         taskDescription: String,
         context: TaskContext,
     ): EmailParams {
-        val systemPrompt = promptRepository.getMcpToolSystemPrompt(McpToolType.EMAIL)
+        val userPrompt = promptRepository.getMcpToolUserPrompt(PromptTypeEnum.EMAIL)
         val llmResponse =
             llmGateway.callLlm(
-                type = ModelType.INTERNAL,
-                systemPrompt = systemPrompt,
-                userPrompt = taskDescription,
+                type = PromptTypeEnum.EMAIL,
+                userPrompt = userPrompt.replace("{userPrompt}", taskDescription),
                 outputLanguage = "en",
                 quick = context.quick,
+                mappingValue = emptyMap(),
+                exampleInstance = EmailParams("", emptyList(), emptyList(), emptyList(), "", ""),
             )
 
-        return McpJson.decode<EmailParams>(llmResponse.answer).getOrElse {
-            throw IllegalArgumentException("Failed to parse Email parameters: ${it.message}")
-        }
+        return llmResponse
     }
 
     override suspend fun execute(
@@ -83,25 +78,14 @@ class EmailTool(
             return ToolResult.error("Email subject cannot be empty")
         }
 
-        val result =
-            withContext(Dispatchers.IO) {
-                try {
-                    executeEmailOperation(parsed)
-                } catch (e: Exception) {
-                    logger.error(e) { "Email operation failed: ${parsed.action}" }
-                    ToolResult.error("Email operation failed: ${e.message}")
-                }
+        return withContext(Dispatchers.IO) {
+            try {
+                executeEmailOperation(parsed)
+            } catch (e: Exception) {
+                logger.error(e) { "Email operation failed: ${parsed.action}" }
+                ToolResult.error("Email operation failed: ${e.message}")
             }
-
-        // Process through LLM if finalPrompt is provided and result is successful
-        return mcpFinalPromptProcessor.processFinalPrompt(
-            finalPrompt = parsed.finalPrompt,
-            systemPrompt =
-                promptRepository.getMcpToolFinalProcessingSystemPrompt(McpToolType.EMAIL)
-                    ?: "You are an email communication expert. Analyze the email operation results and provide actionable insights.",
-            originalResult = result,
-            context = context,
-        )
+        }
     }
 
     private suspend fun executeEmailOperation(params: EmailParams): ToolResult {

@@ -1,6 +1,6 @@
 package com.jervis.configuration.prompts
 
-enum class McpToolType {
+enum class PromptTypeEnum {
     RAG_QUERY,
     JOERN,
     TERMINAL,
@@ -32,5 +32,5 @@ enum class McpToolType {
     CLASS_SUMMARY_ANALYSIS,
     COMPREHENSIVE_FILE_ANALYSIS,
     EXTENSIVE_JOERN_ANALYSIS,
-    LANGUAGE_TRANSLATION_FALLBACK,
+    TASK_RESOLUTION_CHECKER,
 }

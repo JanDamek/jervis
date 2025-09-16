@@ -1,6 +1,6 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.McpToolType
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.service.agent.planner.Planner
@@ -16,7 +16,7 @@ class PlannerTool(
 ) : McpTool {
     override val name: String = "planner"
     override val description: String
-        get() = promptRepository.getMcpToolDescription(McpToolType.PLANNER)
+        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.PLANNER)
 
     override suspend fun execute(
         context: TaskContext,

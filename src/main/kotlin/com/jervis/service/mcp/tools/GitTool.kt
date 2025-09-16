@@ -1,15 +1,12 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.TimeoutsProperties
-import com.jervis.configuration.prompts.McpToolType
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
-import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
-import com.jervis.service.mcp.util.McpFinalPromptProcessor
-import com.jervis.service.mcp.util.McpJson
 import com.jervis.service.prompts.PromptRepository
 import com.jervis.util.ProcessStreamingUtils
 import kotlinx.coroutines.Dispatchers
@@ -22,7 +19,6 @@ import java.io.File
 @Service
 class GitTool(
     private val llmGateway: LlmGateway,
-    private val mcpFinalPromptProcessor: McpFinalPromptProcessor,
     private val timeoutsProperties: TimeoutsProperties,
     private val promptRepository: PromptRepository,
 ) : McpTool {
@@ -44,7 +40,7 @@ class GitTool(
 
     override val name: String = "git"
     override val description: String
-        get() = promptRepository.getMcpToolDescription(McpToolType.GIT)
+        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.GIT)
 
     @Serializable
     data class GitParams(
@@ -57,19 +53,18 @@ class GitTool(
         taskDescription: String,
         context: TaskContext,
     ): GitParams {
-        val systemPrompt = promptRepository.getMcpToolSystemPrompt(McpToolType.GIT)
+        val userPrompt = promptRepository.getMcpToolUserPrompt(PromptTypeEnum.GIT)
         val llmResponse =
             llmGateway.callLlm(
-                type = ModelType.INTERNAL,
-                systemPrompt = systemPrompt,
-                userPrompt = taskDescription,
+                type = PromptTypeEnum.GIT,
+                userPrompt = userPrompt.replace("{userPrompt}", taskDescription),
                 outputLanguage = "en",
                 quick = context.quick,
+                mappingValue = emptyMap(),
+                exampleInstance = GitParams("", emptyMap()),
             )
 
-        return McpJson.decode<GitParams>(llmResponse.answer).getOrElse {
-            throw IllegalArgumentException("Failed to parse Git parameters: ${it.message}")
-        }
+        return llmResponse
     }
 
     override suspend fun execute(
@@ -94,25 +89,14 @@ class GitTool(
             return ToolResult.error("Git operation cannot be empty")
         }
 
-        val result =
-            withContext(Dispatchers.IO) {
-                try {
-                    executeGitOperation(parsed, projectDir)
-                } catch (e: Exception) {
-                    logger.error(e) { "Git operation failed: ${parsed.operation}" }
-                    ToolResult.error("Git operation failed: ${e.message}")
-                }
+        return withContext(Dispatchers.IO) {
+            try {
+                executeGitOperation(parsed, projectDir)
+            } catch (e: Exception) {
+                logger.error(e) { "Git operation failed: ${parsed.operation}" }
+                ToolResult.error("Git operation failed: ${e.message}")
             }
-
-        // Process through LLM if finalPrompt is provided and result is successful
-        return mcpFinalPromptProcessor.processFinalPrompt(
-            finalPrompt = parsed.finalPrompt,
-            systemPrompt =
-                promptRepository.getMcpToolFinalProcessingSystemPrompt(McpToolType.GIT)
-                    ?: "You are a Git expert. Analyze the Git command results and provide actionable insights.",
-            originalResult = result,
-            context = context,
-        )
+        }
     }
 
     private suspend fun executeGitOperation(

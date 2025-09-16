@@ -1,13 +1,11 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.McpToolType
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.ProjectContextInfo
 import com.jervis.domain.context.TaskContext
-import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.LlmGateway
-import com.jervis.service.mcp.ContextAwareMcpTool
-import com.jervis.service.mcp.buildStandardContextAwarePrompt
+import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
 import mu.KotlinLogging
@@ -17,19 +15,19 @@ import org.springframework.stereotype.Service
 class ScopeResolutionTool(
     private val promptRepository: PromptRepository,
     private val llmGateway: LlmGateway,
-) : ContextAwareMcpTool {
+) : McpTool {
     companion object {
         private val logger = KotlinLogging.logger {}
     }
 
     override val name: String = "scope.resolve"
     override val description: String
-        get() = promptRepository.getMcpToolDescription(McpToolType.SCOPE_RESOLUTION)
+        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.SCOPE_RESOLUTION)
 
-    override suspend fun executeWithProjectContext(
-        taskDescription: String,
+    override suspend fun execute(
         context: TaskContext,
         plan: Plan,
+        taskDescription: String,
     ): ToolResult {
         logger.debug { "SCOPE_RESOLUTION: Adding contextual project and client information to context=${context.id}" }
 
@@ -53,11 +51,6 @@ class ScopeResolutionTool(
         return ToolResult.ok(summary)
     }
 
-    override fun buildContextAwarePrompt(
-        basePrompt: String,
-        projectInfo: ProjectContextInfo?,
-    ): String = buildStandardContextAwarePrompt(basePrompt, projectInfo)
-
     data class ContextRequirements(
         val includeClientDetails: Boolean = true,
         val includeProjectDetails: Boolean = true,
@@ -65,7 +58,7 @@ class ScopeResolutionTool(
         val includeFullProjectDescription: Boolean = false,
         val includeTechStack: Boolean = false,
         val includeDependencies: Boolean = false,
-        val detailLevel: DetailLevel = DetailLevel.BASIC
+        val detailLevel: DetailLevel = DetailLevel.BASIC,
     )
 
     enum class DetailLevel { MINIMAL, BASIC, DETAILED, COMPREHENSIVE }
@@ -73,26 +66,28 @@ class ScopeResolutionTool(
     private suspend fun determineContextRequirements(
         taskDescription: String,
         clientName: String,
-        projectName: String
+        projectName: String,
     ): ContextRequirements {
-        val systemPrompt = promptRepository.getMcpToolSystemPrompt(McpToolType.SCOPE_RESOLUTION)
+        promptRepository.getMcpToolSystemPrompt(PromptTypeEnum.SCOPE_RESOLUTION)
 
-        val userPrompt = promptRepository.getMcpToolUserPrompt(McpToolType.SCOPE_RESOLUTION)
-            .replace("{taskDescription}", taskDescription)
-            .replace("{clientName}", clientName)
-            .replace("{projectName}", projectName)
+        val userPrompt =
+            promptRepository
+                .getMcpToolUserPrompt(PromptTypeEnum.SCOPE_RESOLUTION)
+                .replace("{taskDescription}", taskDescription)
+                .replace("{clientName}", clientName)
+                .replace("{projectName}", projectName)
 
         return try {
-            val response = llmGateway.callLlm(
-                type = ModelType.INTERNAL,
-                systemPrompt = systemPrompt,
-                userPrompt = userPrompt,
-                outputLanguage = "en",
-                quick = true
-            )
+            val response =
+                llmGateway.callLlm(
+                    type = PromptTypeEnum.SCOPE_RESOLUTION,
+                    userPrompt = userPrompt,
+                    quick = true,
+                    "",
+                )
 
             // Parse JSON response - simplified parsing
-            val answer = response.answer.lowercase()
+            val answer = response.lowercase()
             ContextRequirements(
                 includeClientDetails = true,
                 includeProjectDetails = true,
@@ -100,12 +95,13 @@ class ScopeResolutionTool(
                 includeFullProjectDescription = answer.contains("\"includefullprojectdescription\": true"),
                 includeTechStack = answer.contains("\"includetechstack\": true"),
                 includeDependencies = answer.contains("\"includedependencies\": true"),
-                detailLevel = when {
-                    answer.contains("comprehensive") -> DetailLevel.COMPREHENSIVE
-                    answer.contains("detailed") -> DetailLevel.DETAILED
-                    answer.contains("minimal") -> DetailLevel.MINIMAL
-                    else -> DetailLevel.BASIC
-                }
+                detailLevel =
+                    when {
+                        answer.contains("comprehensive") -> DetailLevel.COMPREHENSIVE
+                        answer.contains("detailed") -> DetailLevel.DETAILED
+                        answer.contains("minimal") -> DetailLevel.MINIMAL
+                        else -> DetailLevel.BASIC
+                    },
             )
         } catch (e: Exception) {
             logger.warn(e) { "Failed to determine context requirements, using basic defaults" }
@@ -118,7 +114,7 @@ class ScopeResolutionTool(
         project: com.jervis.entity.mongo.ProjectDocument,
         projectContextInfo: ProjectContextInfo?,
         requirements: ContextRequirements,
-        taskDescription: String
+        taskDescription: String,
     ): String =
         buildString {
             appendLine("ℹ️ **Context Information Added Based on Task Requirements**")
@@ -168,7 +164,9 @@ class ScopeResolutionTool(
                 appendLine()
             }
 
-            if (projectContextInfo != null && (requirements.includeTechStack || requirements.includeDependencies || requirements.detailLevel >= DetailLevel.DETAILED)) {
+            if (projectContextInfo != null &&
+                (requirements.includeTechStack || requirements.includeDependencies || requirements.detailLevel >= DetailLevel.DETAILED)
+            ) {
                 appendLine("**Additional Indexed Context:**")
 
                 if (requirements.detailLevel >= DetailLevel.BASIC) {
@@ -176,7 +174,7 @@ class ScopeResolutionTool(
                 }
 
                 if (requirements.includeTechStack || requirements.detailLevel >= DetailLevel.DETAILED) {
-                    projectContextInfo.techStack?.let { stack ->
+                    projectContextInfo.techStack.let { stack ->
                         appendLine("• Technology Stack: ${stack.framework} with ${stack.language}")
                     }
                 }
@@ -197,40 +195,5 @@ class ScopeResolutionTool(
                 DetailLevel.DETAILED -> appendLine("• Level: Detailed context (comprehensive information)")
                 DetailLevel.COMPREHENSIVE -> appendLine("• Level: Comprehensive context (all available information)")
             }
-        }
-
-    private fun buildBasicSummary(
-        client: com.jervis.entity.mongo.ClientDocument,
-        project: com.jervis.entity.mongo.ProjectDocument,
-        projectContextInfo: ProjectContextInfo?,
-    ): String =
-        buildString {
-            appendLine("ℹ️ **Basic Project and Client Information Added to Context**")
-            appendLine()
-            appendLine("**Client Information:**")
-            appendLine("• Name: ${client.name}")
-            client.description?.let { appendLine("• Description: $it") }
-            client.shortDescription?.let { appendLine("• Short Description: $it") }
-            client.fullDescription?.let { appendLine("• Full Description: $it") }
-            appendLine("• Default Language: ${client.defaultLanguage}")
-            appendLine()
-            appendLine("**Project Information:**")
-            appendLine("• Name: ${project.name}")
-            project.description?.let { appendLine("• Description: $it") }
-            project.path.takeIf { it.isNotEmpty() }?.let { appendLine("• Path: $it") }
-            appendLine()
-            if (projectContextInfo != null) {
-                appendLine("**Additional Indexed Context:**")
-                projectContextInfo.projectDescription?.let { appendLine("• Project Description: $it") }
-                projectContextInfo.techStack?.let { stack ->
-                    appendLine("• Technology Stack: ${stack.framework} with ${stack.language}")
-                }
-                if (projectContextInfo.dependencyInfo.isNotEmpty()) {
-                    appendLine("• Dependencies: ${projectContextInfo.dependencyInfo.joinToString(", ")}")
-                }
-                appendLine()
-            }
-            appendLine("**Context Information Successfully Added** ✅")
-            appendLine("Basic project and client information has been inserted into the context from indexed data.")
         }
 }

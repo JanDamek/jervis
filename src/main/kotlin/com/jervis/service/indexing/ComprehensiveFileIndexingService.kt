@@ -1,6 +1,6 @@
 package com.jervis.service.indexing
 
-import com.jervis.configuration.prompts.McpToolType
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagDocumentType
@@ -158,7 +158,7 @@ class ComprehensiveFileIndexingService(
         projectPath: Path,
         project: ProjectDocument,
     ): String {
-        val systemPrompt = promptRepository.getSystemPrompt(McpToolType.COMPREHENSIVE_FILE_ANALYSIS)
+        promptRepository.getSystemPrompt(PromptTypeEnum.COMPREHENSIVE_FILE_ANALYSIS)
 
         val userPrompt =
             buildString {
@@ -177,11 +177,10 @@ class ComprehensiveFileIndexingService(
 
         val llmResponse =
             llmGateway.callLlm(
-                type = ModelType.INTERNAL,
-                systemPrompt = systemPrompt,
+                type = PromptTypeEnum.COMPREHENSIVE_FILE_ANALYSIS,
                 userPrompt = userPrompt,
-                outputLanguage = "en",
                 quick = false,
+                "",
             )
 
         return buildString {
@@ -192,7 +191,7 @@ class ComprehensiveFileIndexingService(
             appendLine("Size: ${fileContent.length} characters")
             appendLine()
             appendLine("Description:")
-            appendLine(llmResponse.answer)
+            appendLine(llmResponse)
             appendLine()
             appendLine("Technical Details:")
             appendLine("- File Extension: ${filePath.extension}")

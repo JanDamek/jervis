@@ -1,8 +1,7 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.McpToolType
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
-import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.mcp.McpTool
@@ -10,7 +9,6 @@ import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
 import com.jervis.service.scheduling.TaskManagementService
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -37,11 +35,11 @@ class TaskSchedulerTool(
 
     override val name: String = "task_scheduler"
     override val description: String
-        get() = promptRepository.getMcpToolDescription(McpToolType.TASK_SCHEDULER)
+        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.TASK_SCHEDULER)
 
     @Serializable
     data class ScheduleParams(
-        val taskInstruction: String,
+        val taskInstruction: String = "",
         val projectId: String? = null,
         val scheduledDateTime: String? = null,
         val taskName: String? = null,
@@ -261,31 +259,11 @@ class TaskSchedulerTool(
     private suspend fun parseTaskDescription(
         taskDescription: String,
         context: TaskContext,
-    ): ScheduleParams {
-        val systemPrompt = promptRepository.getMcpToolSystemPrompt(McpToolType.TASK_SCHEDULER)
-
-        return try {
-            val llmResponse =
-                llmGateway.callLlm(
-                    type = ModelType.INTERNAL,
-                    systemPrompt = systemPrompt,
-                    userPrompt = taskDescription,
-                    outputLanguage = "en",
-                    quick = context.quick,
-                )
-
-            val cleanedResponse =
-                llmResponse.answer
-                    .trim()
-                    .removePrefix("```json")
-                    .removePrefix("```")
-                    .removeSuffix("```")
-                    .trim()
-
-            Json.decodeFromString<ScheduleParams>(cleanedResponse)
-        } catch (e: Exception) {
-            logger.error(e) { "LLM parsing failed for task description: $taskDescription, falling back to manual parsing" }
-            throw e
-        }
-    }
+    ): ScheduleParams =
+        llmGateway.callLlm(
+            type = PromptTypeEnum.TASK_SCHEDULER,
+            userPrompt = taskDescription,
+            quick = context.quick,
+            ScheduleParams(),
+        )
 }

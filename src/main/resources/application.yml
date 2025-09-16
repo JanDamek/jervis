@@ -42,7 +42,6 @@ models: # embedding dimensions configured per model
     - provider: LM_STUDIO
       model: text-embedding-nomic-embed-text-v2-moe
       maxTokens: 512
-      maxInputTokens: 512
       maxRequests: 12
       dimension: 768
   #    - provider: OLLAMA
@@ -55,7 +54,6 @@ models: # embedding dimensions configured per model
     - provider: LM_STUDIO
       model: text-embedding-nomic-embed-code
       maxTokens: 4096
-      maxInputTokens: 4096
       maxRequests: 4
       dimension: 3584
   #    - provider: OLLAMA

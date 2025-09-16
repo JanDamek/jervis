@@ -1,17 +1,13 @@
 package com.jervis.service.mcp.tools
 
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.context.TechStackInfo
 import com.jervis.domain.plan.Plan
-import com.jervis.repository.vector.VectorStorageRepository
-import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
-import com.jervis.service.mcp.util.McpFinalPromptProcessor
 import com.jervis.service.prompts.PromptRepository
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
@@ -19,12 +15,9 @@ import org.springframework.stereotype.Service
 
 @Service
 class EnhancedRagQueryTool(
-    private val embeddingGateway: EmbeddingGateway,
-    private val vectorStorage: VectorStorageRepository,
-    private val llmGateway: LlmGateway,
-    private val mcpFinalPromptProcessor: McpFinalPromptProcessor,
-    private val promptRepository: PromptRepository,
     private val ragQueryTool: RagQueryTool,
+    private val llmGateway: LlmGateway,
+    private val promptRepository: PromptRepository,
 ) : McpTool {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -41,9 +34,37 @@ class EnhancedRagQueryTool(
         val topK: Int? = null,
         val minScore: Float? = null,
         val finalPrompt: String? = null,
-        val filters: Map<String, String>? = null,
+        val filters: Map<String, List<String>>? = null,
         val techStackContext: String? = null,
     )
+
+    @Serializable
+    data class EnhancedRagQueryParams(
+        val queries: List<EnhancedRagQueryRequest>,
+        val topK: Int = -1,
+        val minScore: Float = 0.8f,
+        val finalPrompt: String? = null,
+        val globalFilters: Map<String, List<String>>? = null,
+        val techStackFiltering: Boolean = true,
+    )
+
+    private suspend fun parseTaskDescription(
+        taskDescription: String,
+        context: TaskContext,
+    ): EnhancedRagQueryParams {
+        val userPrompt = promptRepository.getMcpToolUserPrompt(PromptTypeEnum.RAG_QUERY)
+        val llmResponse =
+            llmGateway.callLlm(
+                type = PromptTypeEnum.RAG_QUERY,
+                userPrompt = userPrompt.replace("{userPrompt}", taskDescription),
+                outputLanguage = "en",
+                quick = context.quick,
+                mappingValue = emptyMap(),
+                exampleInstance = EnhancedRagQueryParams(emptyList()),
+            )
+
+        return llmResponse
+    }
 
     override suspend fun execute(
         context: TaskContext,
@@ -51,20 +72,30 @@ class EnhancedRagQueryTool(
         taskDescription: String,
     ): ToolResult {
         logger.debug {
-            "ENHANCED_RAG_QUERY_START: Executing enhanced RAG query for taskDescription='$taskDescription', contextId='${context.id}'"
+            "ENHANCED_RAG_QUERY_START: Executing enhanced RAG query for taskDescription='$taskDescription', contextId='${context.id}', planId='${plan.id}'"
+        }
+
+        val queryParams =
+            runCatching {
+                parseTaskDescription(taskDescription, context)
+            }.getOrElse {
+                logger.error { "ENHANCED_RAG_QUERY_PARSE_ERROR: Failed to parse task description: ${it.message}" }
+                return ToolResult.error("Invalid enhanced RAG query parameters: ${it.message}")
+            }
+
+        logger.debug { "ENHANCED_RAG_QUERY_PARSED: queryParams=$queryParams" }
+
+        if (queryParams.queries.isEmpty()) {
+            logger.warn { "ENHANCED_RAG_QUERY_NO_QUERIES: No query parameters provided for taskDescription='$taskDescription'" }
+            return ToolResult.error("No query parameters provided")
         }
 
         // Get or detect technology stack information
         val techStack = context.projectContextInfo?.techStack ?: detectTechStack(context)
-        val enhancedPrompt = buildTechStackAwarePrompt(taskDescription, techStack, context)
-
-        // Generate technology-specific queries
-        val queries = generateTechStackQueries(taskDescription, techStack)
-
         logger.debug { "ENHANCED_RAG_QUERY_TECH_STACK: Detected tech stack: $techStack" }
-        logger.debug { "ENHANCED_RAG_QUERY_ENHANCED_PROMPT: $enhancedPrompt" }
 
-        return executeWithEnhancedContext(enhancedPrompt, queries, context, plan)
+        // Convert EnhancedRagQueryParams to RagQueryTool format and execute
+        return executeWithEnhancedContext(queryParams, techStack, context, plan)
     }
 
     private suspend fun detectTechStack(context: TaskContext): TechStackInfo {
@@ -129,109 +160,83 @@ class EnhancedRagQueryTool(
         return "Maven" // Default assumption
     }
 
-    private fun buildTechStackAwarePrompt(
-        taskDescription: String,
-        techStack: TechStackInfo?,
-        context: TaskContext,
-    ): String =
-        buildString {
-            append("ENHANCED RAG QUERY WITH TECHNOLOGY CONTEXT:\n\n")
-
-            // Project context
-            append("PROJECT CONTEXT:\n")
-            append("- Client: ${context.clientDocument.name}\n")
-            append("- Project: ${context.projectDocument.name}\n")
-            if (context.projectDocument.description?.isNotBlank() == true) {
-                append("- Description: ${context.projectDocument.description}\n")
-            }
-            append("\n")
-
-            // Technology stack context
-            if (techStack != null) {
-                append("TECHNOLOGY STACK:\n")
-                append("- Framework: ${techStack.framework}\n")
-                append("- Language: ${techStack.language}\n")
-                techStack.version?.let { append("- Version: $it\n") }
-                techStack.securityFramework?.let { append("- Security: $it\n") }
-                techStack.databaseType?.let { append("- Database: $it\n") }
-                techStack.buildTool?.let { append("- Build Tool: $it\n") }
-                append("\n")
-            }
-
-            // Context summary
-            if (context.contextSummary.isNotBlank()) {
-                append("CONTEXT SUMMARY:\n")
-                append(context.contextSummary)
-                append("\n")
-            }
-
-            append("USER QUERY:\n")
-            append(taskDescription)
-        }
-
-    private fun generateTechStackQueries(
-        taskDescription: String,
-        techStack: TechStackInfo?,
-    ): List<String> {
-        val baseQueries = listOf(taskDescription)
-
-        return when (techStack?.framework) {
-            "Spring Boot WebFlux" -> baseQueries + springWebFluxSpecificQueries(taskDescription)
-            "Spring Boot" -> baseQueries + springBootSpecificQueries(taskDescription)
-            else -> baseQueries
-        }
-    }
-
-    private fun springWebFluxSpecificQueries(taskDescription: String): List<String> =
-        listOf(
-            "$taskDescription Spring WebFlux reactive",
-            "$taskDescription WebFlux Mono Flux reactive programming",
-            "$taskDescription Spring Boot WebFlux controllers",
-            "$taskDescription reactive repositories MongoDB WebFlux",
-        )
-
-    private fun springBootSpecificQueries(taskDescription: String): List<String> =
-        listOf(
-            "$taskDescription Spring Boot",
-            "$taskDescription Spring Boot controllers services",
-            "$taskDescription Spring Boot security configuration",
-            "$taskDescription Spring Boot data repositories",
-        )
-
     private suspend fun executeWithEnhancedContext(
-        enhancedPrompt: String,
-        queries: List<String>,
+        queryParams: EnhancedRagQueryParams,
+        techStack: TechStackInfo,
         context: TaskContext,
         plan: Plan,
     ): ToolResult {
-        logger.debug { "ENHANCED_RAG_QUERY_EXECUTE: Executing with ${queries.size} queries" }
+        logger.debug { "ENHANCED_RAG_QUERY_EXECUTE: Executing with enhanced context and tech stack: $techStack" }
 
         return coroutineScope {
-            val queryResults =
-                queries
-                    .map { query ->
-                        async {
-                            ragQueryTool.execute(context, plan, query)
-                        }
-                    }.awaitAll()
+            // Convert EnhancedRagQueryParams to RagQueryTool format
+            val enhancedQueries =
+                queryParams.queries
+                    .map { enhancedQuery ->
+                        val techStackAwareQuery = buildTechStackAwareQuery(enhancedQuery.query, techStack, context)
 
-            // Aggregate results with enhanced context
+                        // Build enhanced filters that include tech stack context
+                        val enhancedFilters =
+                            buildMap<String, List<String>> {
+                                // Add original filters
+                                enhancedQuery.filters?.let { putAll(it) }
+
+                                // Add tech stack filters if enabled
+                                if (queryParams.techStackFiltering) {
+                                    put("framework", listOf(techStack.framework))
+                                    put("language", listOf(techStack.language))
+                                    techStack.version?.let { put("version", listOf(it)) }
+                                    techStack.securityFramework?.let { put("securityFramework", listOf(it)) }
+                                    techStack.databaseType?.let { put("databaseType", listOf(it)) }
+                                }
+                            }
+
+                        "query: $techStackAwareQuery\nembedding: ${enhancedQuery.embedding}\ntopK: ${enhancedQuery.topK ?: queryParams.topK}\nminScore: ${enhancedQuery.minScore ?: queryParams.minScore}\nfilters: $enhancedFilters"
+                    }.joinToString("\n\n---\n\n")
+
+            // Execute with RagQueryTool
+            val queryResults = ragQueryTool.execute(context, plan, enhancedQueries)
+
+            // Enhance results with technology stack context
             val aggregatedContent =
                 buildString {
                     append("ENHANCED RAG QUERY RESULTS:\n\n")
-
-                    queryResults.forEachIndexed { index, result ->
-                        append("Query ${index + 1} Results:\n")
-                        append(result.output)
-                        append("\n\n")
-                    }
-
-                    append("TECHNOLOGY STACK CONTEXT APPLIED:\n")
-                    append("Framework: ${context.projectContextInfo?.techStack?.framework ?: "Detected framework"}\n")
-                    append("Language: ${context.projectContextInfo?.techStack?.language ?: "Kotlin"}\n")
+                    append("TECHNOLOGY STACK CONTEXT:\n")
+                    append("- Framework: ${techStack.framework}\n")
+                    append("- Language: ${techStack.language}\n")
+                    techStack.version?.let { append("- Version: $it\n") }
+                    techStack.securityFramework?.let { append("- Security: $it\n") }
+                    techStack.databaseType?.let { append("- Database: $it\n") }
+                    append("\n")
+                    append(queryResults.output)
                 }
 
             ToolResult.ok(aggregatedContent)
         }
     }
+
+    private fun buildTechStackAwareQuery(
+        originalQuery: String,
+        techStack: TechStackInfo,
+        context: TaskContext,
+    ): String =
+        buildString {
+            append("ENHANCED QUERY WITH TECHNOLOGY CONTEXT:\n\n")
+
+            // Project context
+            append("PROJECT: ${context.projectDocument.name}\n")
+            if (context.projectDocument.description?.isNotBlank() == true) {
+                append("DESCRIPTION: ${context.projectDocument.description}\n")
+            }
+
+            // Technology stack context
+            append("FRAMEWORK: ${techStack.framework}\n")
+            append("LANGUAGE: ${techStack.language}\n")
+            techStack.version?.let { append("VERSION: $it\n") }
+            techStack.securityFramework?.let { append("SECURITY: $it\n") }
+            techStack.databaseType?.let { append("DATABASE: $it\n") }
+            append("\n")
+
+            append("USER QUERY: $originalQuery")
+        }
 }

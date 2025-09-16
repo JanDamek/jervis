@@ -1,6 +1,6 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.McpToolType
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.service.mcp.McpTool
@@ -28,7 +28,7 @@ class FileListingTool(
 
     override val name: String = "file-listing"
     override val description: String
-        get() = promptRepository.getMcpToolDescription(McpToolType.FILE_LISTING)
+        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.FILE_LISTING)
 
     @Serializable
     data class FileListingParams(
