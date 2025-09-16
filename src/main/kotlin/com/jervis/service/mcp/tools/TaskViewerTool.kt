@@ -1,8 +1,7 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.McpToolType
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
-import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
 import com.jervis.entity.mongo.ScheduledTaskStatus
 import com.jervis.service.gateway.LlmGateway
@@ -11,7 +10,6 @@ import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
 import com.jervis.service.scheduling.TaskQueryService
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.time.format.DateTimeFormatter
@@ -33,7 +31,7 @@ class TaskViewerTool(
 
     override val name: String = "task_viewer"
     override val description: String
-        get() = promptRepository.getMcpToolDescription(McpToolType.TASK_VIEWER)
+        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.TASK_VIEWER)
 
     @Serializable
     data class BrowseParams(
@@ -191,26 +189,11 @@ class TaskViewerTool(
     private suspend fun parseTaskDescription(
         taskDescription: String,
         context: TaskContext,
-    ): BrowseParams {
-        val systemPrompt = promptRepository.getMcpToolSystemPrompt(McpToolType.TASK_VIEWER)
-
-        val llmResponse =
-            llmGateway.callLlm(
-                type = ModelType.INTERNAL,
-                systemPrompt = systemPrompt,
-                userPrompt = taskDescription,
-                outputLanguage = "en",
-                quick = context.quick,
-            )
-
-        val cleanedResponse =
-            llmResponse.answer
-                .trim()
-                .removePrefix("```json")
-                .removePrefix("```")
-                .removeSuffix("```")
-                .trim()
-
-        return Json.decodeFromString<BrowseParams>(cleanedResponse)
-    }
+    ): BrowseParams =
+        llmGateway.callLlm(
+            type = PromptTypeEnum.TASK_VIEWER,
+            userPrompt = taskDescription,
+            quick = context.quick,
+            BrowseParams(),
+        )
 }

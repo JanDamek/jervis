@@ -1,18 +1,15 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.McpToolType
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
-import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
-import com.jervis.service.mcp.util.McpFinalPromptProcessor
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.nio.file.Files
@@ -23,7 +20,6 @@ import kotlin.io.path.writeText
 @Service
 class CodeWriteTool(
     private val llmGateway: LlmGateway,
-    private val mcpFinalPromptProcessor: McpFinalPromptProcessor,
     private val promptRepository: PromptRepository,
 ) : McpTool {
     companion object {
@@ -32,7 +28,7 @@ class CodeWriteTool(
 
     override val name: String = "code.write"
     override val description: String
-        get() = promptRepository.getMcpToolDescription(McpToolType.CODE_WRITE)
+        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.CODE_WRITE)
 
     @Serializable
     data class CodeWriteParams(
@@ -47,31 +43,18 @@ class CodeWriteTool(
         taskDescription: String,
         context: TaskContext,
     ): CodeWriteParams {
-        val systemPrompt = promptRepository.getMcpToolSystemPrompt(McpToolType.CODE_WRITE)
+        val userPrompt = promptRepository.getMcpToolUserPrompt(PromptTypeEnum.CODE_WRITE)
+        val llmResponse =
+            llmGateway.callLlm(
+                type = PromptTypeEnum.CODE_WRITE,
+                userPrompt = userPrompt.replace("{userPrompt}", taskDescription),
+                outputLanguage = "en",
+                quick = context.quick,
+                mappingValue = emptyMap(),
+                exampleInstance = CodeWriteParams("", "unified", "", "", false),
+            )
 
-        return try {
-            val llmResponse =
-                llmGateway.callLlm(
-                    type = ModelType.INTERNAL,
-                    systemPrompt = systemPrompt,
-                    userPrompt = taskDescription,
-                    outputLanguage = "en",
-                    quick = context.quick,
-                )
-
-            val cleanedResponse =
-                llmResponse.answer
-                    .trim()
-                    .removePrefix("```json")
-                    .removePrefix("```")
-                    .removeSuffix("```")
-                    .trim()
-
-            Json.decodeFromString<CodeWriteParams>(cleanedResponse)
-        } catch (e: Exception) {
-            logger.error(e) { "Failed to parse CodeWrite parameters: ${e.message}" }
-            throw e
-        }
+        return llmResponse
     }
 
     override suspend fun execute(
@@ -84,14 +67,7 @@ class CodeWriteTool(
 
             val params = parseTaskDescription(taskDescription, context)
 
-            val result = performCodeWrite(params, context)
-
-            return mcpFinalPromptProcessor.processFinalPrompt(
-                finalPrompt = null,
-                systemPrompt = mcpFinalPromptProcessor.createTerminalSystemPrompt(),
-                originalResult = result,
-                context = context,
-            )
+            return performCodeWrite(params, context)
         } catch (e: Exception) {
             logger.error("CodeWrite tool execution failed: ${e.message}", e)
             ToolResult.error(

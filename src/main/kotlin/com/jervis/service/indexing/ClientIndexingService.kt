@@ -1,7 +1,6 @@
 package com.jervis.service.indexing
 
-import com.jervis.configuration.prompts.McpToolType
-import com.jervis.domain.model.ModelType
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.entity.mongo.ClientDocument
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.mongo.ClientMongoRepository
@@ -139,7 +138,7 @@ class ClientIndexingService(
         projects: List<ProjectDocument>,
         projectDescriptions: List<String>,
     ): String {
-        val systemPrompt = promptRepository.getSystemPrompt(McpToolType.CLIENT_DESCRIPTION_SHORT)
+        promptRepository.getSystemPrompt(PromptTypeEnum.CLIENT_DESCRIPTION_SHORT)
 
         val userPrompt =
             buildString {
@@ -177,14 +176,13 @@ class ClientIndexingService(
 
         val llmResponse =
             llmGateway.callLlm(
-                type = ModelType.INTERNAL,
-                systemPrompt = systemPrompt,
+                type = PromptTypeEnum.CLIENT_DESCRIPTION_SHORT,
                 userPrompt = userPrompt,
-                outputLanguage = "en",
                 quick = false,
+                "",
             )
 
-        return llmResponse.answer.trim()
+        return llmResponse.trim()
     }
 
     /**
@@ -196,7 +194,7 @@ class ClientIndexingService(
         projectDescriptions: List<String>,
         shortDescription: String,
     ): String {
-        val systemPrompt = promptRepository.getSystemPrompt(McpToolType.CLIENT_DESCRIPTION_FULL)
+        promptRepository.getSystemPrompt(PromptTypeEnum.CLIENT_DESCRIPTION_FULL)
 
         val userPrompt =
             buildString {
@@ -236,11 +234,10 @@ class ClientIndexingService(
 
         val llmResponse =
             llmGateway.callLlm(
-                type = ModelType.INTERNAL,
-                systemPrompt = systemPrompt,
+                type = PromptTypeEnum.CLIENT_DESCRIPTION_FULL,
                 userPrompt = userPrompt,
-                outputLanguage = "en",
                 quick = false,
+                "",
             )
 
         return buildString {
@@ -253,7 +250,7 @@ class ClientIndexingService(
             appendLine()
             appendLine("---")
             appendLine()
-            appendLine(llmResponse.answer)
+            appendLine(llmResponse)
             appendLine()
             appendLine("---")
             appendLine(

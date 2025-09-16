@@ -1,13 +1,12 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.McpToolType
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
-import com.jervis.service.mcp.util.McpFinalPromptProcessor
 import com.jervis.service.mcp.util.McpJson
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
@@ -19,14 +18,13 @@ import org.springframework.stereotype.Service
 @Service
 class TeamsTool(
     private val llmGateway: LlmGateway,
-    private val mcpFinalPromptProcessor: McpFinalPromptProcessor,
     private val promptRepository: PromptRepository,
 ) : McpTool {
     private val logger = KotlinLogging.logger {}
 
     override val name: String = "teams"
     override val description: String
-        get() = promptRepository.getMcpToolDescription(McpToolType.TEAMS)
+        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.TEAMS)
 
     @Serializable
     data class TeamsParams(
@@ -37,26 +35,24 @@ class TeamsTool(
         val thread_id: String? = null,
         val mentions: List<String> = emptyList(),
         val priority: String = "normal",
-        val finalPrompt: String? = null,
     )
 
     private suspend fun parseTaskDescription(
         taskDescription: String,
         context: TaskContext,
     ): TeamsParams {
-        val systemPrompt = promptRepository.getMcpToolSystemPrompt(McpToolType.TEAMS)
+        val userPrompt = promptRepository.getMcpToolUserPrompt(PromptTypeEnum.TEAMS)
         val llmResponse =
             llmGateway.callLlm(
-                type = ModelType.INTERNAL,
-                systemPrompt = systemPrompt,
-                userPrompt = taskDescription,
+                type = PromptTypeEnum.TEAMS,
+                userPrompt = userPrompt.replace("{userPrompt}", taskDescription),
                 outputLanguage = "en",
                 quick = context.quick,
+                mappingValue = emptyMap(),
+                exampleInstance = TeamsParams("", "", "", "", null, emptyList(), "normal"),
             )
 
-        return McpJson.decode<TeamsParams>(llmResponse.answer).getOrElse {
-            throw IllegalArgumentException("Failed to parse Teams parameters: ${it.message}")
-        }
+        return llmResponse
     }
 
     override suspend fun execute(
@@ -102,15 +98,7 @@ class TeamsTool(
                 }
             }
 
-        // Process through LLM if finalPrompt is provided and result is successful
-        return mcpFinalPromptProcessor.processFinalPrompt(
-            finalPrompt = parsed.finalPrompt,
-            systemPrompt =
-                promptRepository.getMcpToolFinalProcessingSystemPrompt(McpToolType.TEAMS)
-                    ?: "You are a Microsoft Teams communication expert. Analyze the Teams operation results and provide actionable insights.",
-            originalResult = result,
-            context = context,
-        )
+        return result
     }
 
     private suspend fun executeTeamsOperation(params: TeamsParams): ToolResult {

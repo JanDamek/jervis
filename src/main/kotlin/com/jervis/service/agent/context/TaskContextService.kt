@@ -37,11 +37,9 @@ class TaskContextService(
         clientId: ObjectId,
         projectId: ObjectId,
         quick: Boolean = false,
+        contextName: String = "New Context",
     ): TaskContext {
-        // Resolve Client by name or slug (case-insensitive)
         val client = clientMongoRepository.findById(clientId)
-
-        // Resolve Project within the chosen client (by name) if provided
         val project = projectMongoRepository.findById(projectId)
 
         val toSave =
@@ -50,6 +48,7 @@ class TaskContextService(
                 projectId = project!!.id,
                 clientName = client.name,
                 projectName = project.name,
+                name = contextName,
                 quick = quick,
             )
         val saved = taskContextRepo.save(toSave)

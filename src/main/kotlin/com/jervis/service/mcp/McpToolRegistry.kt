@@ -21,7 +21,11 @@ class McpToolRegistry(
     fun initialize() {
         planner.allToolDescriptions =
             tools.joinToString(separator = "\n") { tool ->
-                "${tool.name} : ${tool.description}"
+                """ 
+                ${tool.name}:
+                ${tool.description}
+                 
+                """.trimIndent()
             }
     }
 }

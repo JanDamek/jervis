@@ -1,6 +1,6 @@
 package com.jervis.service.indexing
 
-import com.jervis.configuration.prompts.McpToolType
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagDocumentType
@@ -152,17 +152,16 @@ class ClassSummaryIndexingService(
         try {
             logger.debug { "Generating class summary for: ${classInfo.className}" }
 
-            val systemPrompt = promptRepository.getSystemPrompt(McpToolType.CLASS_SUMMARY_ANALYSIS)
+            promptRepository.getSystemPrompt(PromptTypeEnum.CLASS_SUMMARY_ANALYSIS)
 
             val userPrompt = buildClassAnalysisPrompt(classInfo)
 
             val llmResponse =
                 llmGateway.callLlm(
-                    type = ModelType.INTERNAL,
-                    systemPrompt = systemPrompt,
+                    type = PromptTypeEnum.CLASS_SUMMARY,
                     userPrompt = userPrompt,
-                    outputLanguage = "en",
                     quick = false,
+                    "",
                 )
 
             val classSummary =
@@ -173,7 +172,7 @@ class ClassSummaryIndexingService(
                     appendLine("File: ${classInfo.filePath}")
                     appendLine()
                     appendLine("Analysis:")
-                    appendLine(llmResponse.answer)
+                    appendLine(llmResponse)
                     appendLine()
                     appendLine("Technical Details:")
                     appendLine("- Methods: ${classInfo.methods.size}")
@@ -384,7 +383,7 @@ class ClassSummaryIndexingService(
     private fun buildClassAnalysisPrompt(classInfo: ClassInfo): String =
         buildString {
             // Get the configured system prompt for CLASS_SUMMARY
-            val systemPrompt = promptRepository.getSystemPrompt(McpToolType.CLASS_SUMMARY)
+            val systemPrompt = promptRepository.getSystemPrompt(PromptTypeEnum.CLASS_SUMMARY)
             appendLine(systemPrompt)
             appendLine()
             appendLine("=== CLASS INFORMATION ===")

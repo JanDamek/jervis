@@ -1,7 +1,7 @@
 package com.jervis.service.mcp.tools
 
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
-import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
 import com.jervis.entity.mongo.ClientDocument
 import com.jervis.entity.mongo.ProjectDocument
@@ -38,11 +38,10 @@ import javax.swing.WindowConstants
 @Service
 class UserInteractionTool(
     private val gateway: LlmGateway,
-    private val promptRepository: PromptRepository,
+    promptRepository: PromptRepository,
 ) : McpTool {
     override val name: String = "user.await"
-    override val description: String =
-        "Display a blocking user dialog, show request details and collect user’s answer."
+    override val description: String = promptRepository.getMcpToolDescription(PromptTypeEnum.USER_INTERACTION)
 
     override suspend fun execute(
         context: TaskContext,
@@ -51,33 +50,15 @@ class UserInteractionTool(
     ): ToolResult {
         val userLang = plan.originalLanguage.lowercase().ifBlank { "en" }
 
-        val questionRephrased =
-            gateway
-                .callLlm(
-                    type = ModelType.INTERNAL,
-                    systemPrompt = promptRepository.getSystemPrompt(com.jervis.configuration.prompts.McpToolType.USER_INTERACTION),
-                    userPrompt =
-                        """
-                        Request:
-                        $taskDescription
-                        """.trimIndent(),
-                    outputLanguage = userLang,
-                    quick = context.quick,
-                ).answer
-
         val proposedAnswer =
             gateway
                 .callLlm(
-                    type = ModelType.INTERNAL,
-                    systemPrompt = promptRepository.getSystemPrompt(com.jervis.configuration.prompts.McpToolType.USER_INTERACTION),
-                    userPrompt =
-                        """
-                        Request:
-                        $questionRephrased
-                        """.trimIndent(),
-                    outputLanguage = userLang,
+                    type = PromptTypeEnum.USER_INTERACTION,
+                    userPrompt = taskDescription,
                     quick = context.quick,
-                ).answer
+                    "",
+                    outputLanguage = userLang,
+                )
 
         val previousOutput = plan.finalAnswer ?: plan.contextSummary
         val decisionResult =
@@ -111,12 +92,11 @@ class UserInteractionTool(
         val finalAnswerEn =
             gateway
                 .callLlm(
-                    ModelType.TRANSLATION,
+                    PromptTypeEnum.TRANSLATION,
                     userPrompt = finalAnswerOriginal,
-                    systemPrompt = promptRepository.getSystemPrompt(com.jervis.configuration.prompts.McpToolType.TRANSLATION),
-                    "en",
                     quick = context.quick,
-                ).answer
+                    "",
+                )
 
         return ToolResult.ok(finalAnswerEn)
     }

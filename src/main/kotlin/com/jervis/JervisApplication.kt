@@ -3,7 +3,6 @@ package com.jervis
 import com.formdev.flatlaf.FlatLightLaf
 import com.jervis.configuration.YamlPropertySourceFactory
 import com.jervis.configuration.prompts.PromptsConfiguration
-import com.jervis.service.admin.PromptManagementService
 import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.client.ClientProjectLinkService
@@ -55,7 +54,6 @@ class JervisApplication(
     private val clientIndexingService: ClientIndexingService,
     private val taskSchedulingService: TaskSchedulingService,
     private val taskQueryService: TaskQueryService,
-    private val promptManagementService: PromptManagementService,
     private val promptRepository: PromptRepository,
     private val promptTemplateService: PromptTemplateService,
     private val llmGateway: LlmGateway,
@@ -80,7 +78,6 @@ class JervisApplication(
                     clientIndexingService,
                     taskSchedulingService,
                     taskQueryService,
-                    promptManagementService,
                     promptRepository,
                     promptTemplateService,
                     llmGateway,

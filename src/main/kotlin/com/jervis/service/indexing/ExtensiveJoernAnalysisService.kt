@@ -1,6 +1,6 @@
 package com.jervis.service.indexing
 
-import com.jervis.configuration.prompts.McpToolType
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagDocumentType
@@ -247,7 +247,7 @@ class ExtensiveJoernAnalysisService(
         analysisConfig: JoernAnalysisConfig,
         results: String,
     ): String {
-        val systemPrompt = promptRepository.getSystemPrompt(McpToolType.EXTENSIVE_JOERN_ANALYSIS)
+        promptRepository.getSystemPrompt(PromptTypeEnum.EXTENSIVE_JOERN_ANALYSIS)
 
         val userPrompt =
             buildString {
@@ -265,11 +265,10 @@ class ExtensiveJoernAnalysisService(
 
         val llmResponse =
             llmGateway.callLlm(
-                type = ModelType.INTERNAL,
-                systemPrompt = systemPrompt,
+                type = PromptTypeEnum.EXTENSIVE_JOERN_ANALYSIS,
                 userPrompt = userPrompt,
-                outputLanguage = "en",
                 quick = false,
+                "",
             )
 
         return buildString {
@@ -283,7 +282,7 @@ class ExtensiveJoernAnalysisService(
             appendLine(analysisConfig.description)
             appendLine()
             appendLine("Comprehensive Analysis:")
-            appendLine(llmResponse.answer)
+            appendLine(llmResponse)
             appendLine()
             appendLine("Raw Analysis Results:")
             appendLine("```json")

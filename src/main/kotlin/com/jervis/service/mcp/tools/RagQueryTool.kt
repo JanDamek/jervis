@@ -1,6 +1,6 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.McpToolType
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
@@ -9,14 +9,12 @@ import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
-import com.jervis.service.mcp.util.McpFinalPromptProcessor
 import com.jervis.service.prompts.PromptRepository
 import io.qdrant.client.grpc.JsonWithInt
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
@@ -25,7 +23,6 @@ class RagQueryTool(
     private val embeddingGateway: EmbeddingGateway,
     private val vectorStorage: VectorStorageRepository,
     private val llmGateway: LlmGateway,
-    private val mcpFinalPromptProcessor: McpFinalPromptProcessor,
     private val promptRepository: PromptRepository,
 ) : McpTool {
     companion object {
@@ -34,58 +31,43 @@ class RagQueryTool(
 
     override val name: String = "rag-query"
     override val description: String
-        get() = promptRepository.getMcpToolDescription(McpToolType.RAG_QUERY)
+        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.RAG_QUERY)
 
     @Serializable
     data class RagQueryRequest(
-        val query: String,
-        val embedding: String,
+        val query: String = "",
+        val embedding: String = "",
         val topK: Int? = null,
         val minScore: Float? = null,
         val finalPrompt: String? = null,
-        val filters: Map<String, String>? = null,
+        val filters: Map<String, List<String>>? = null,
     )
 
     @Serializable
     data class RagQueryParams(
-        val queries: List<RagQueryRequest>,
+        val queries: List<RagQueryRequest> = listOf(RagQueryRequest()),
         val topK: Int = -1,
         val minScore: Float = 0.8f,
         val finalPrompt: String? = null,
-        val globalFilters: Map<String, String>? = null,
+        val globalFilters: Map<String, List<String>>? = null,
     )
 
     private suspend fun parseTaskDescription(
         taskDescription: String,
         context: TaskContext,
     ): RagQueryParams {
-        val systemPrompt = promptRepository.getMcpToolSystemPrompt(McpToolType.RAG_QUERY)
-        val modelParams = promptRepository.getEffectiveModelParams(McpToolType.RAG_QUERY)
+        val userPrompt = promptRepository.getMcpToolUserPrompt(PromptTypeEnum.RAG_QUERY)
+        val llmResponse =
+            llmGateway.callLlm(
+                type = PromptTypeEnum.RAG_QUERY,
+                userPrompt = userPrompt.replace("{userPrompt}", taskDescription),
+                outputLanguage = "en",
+                quick = context.quick,
+                mappingValue = emptyMap(),
+                exampleInstance = RagQueryParams(),
+            )
 
-        return try {
-            val llmResponse =
-                llmGateway.callLlm(
-                    type = ModelType.INTERNAL,
-                    systemPrompt = systemPrompt,
-                    userPrompt = taskDescription,
-                    outputLanguage = "en",
-                    quick = context.quick,
-                    modelParams = modelParams,
-                )
-
-            val cleanedResponse =
-                llmResponse.answer
-                    .trim()
-                    .removePrefix("```json")
-                    .removePrefix("```")
-                    .removeSuffix("```")
-                    .trim()
-
-            Json.decodeFromString<RagQueryParams>(cleanedResponse)
-        } catch (e: Exception) {
-            logger.error(e) { "Error while calling RagQueryTool" }
-            throw e
-        }
+        return llmResponse
     }
 
     override suspend fun execute(
@@ -126,16 +108,7 @@ class RagQueryTool(
 
             logger.debug { "RAG_QUERY_AGGREGATED: result=${aggregatedResult.output}" }
 
-            // Apply global final prompt processing if specified
-            queryParams.finalPrompt?.let { globalFinalPrompt ->
-                logger.debug { "RAG_QUERY_FINAL_PROMPT: Processing final prompt='$globalFinalPrompt'" }
-                mcpFinalPromptProcessor.processFinalPrompt(
-                    finalPrompt = globalFinalPrompt,
-                    systemPrompt = mcpFinalPromptProcessor.createRagSystemPrompt(),
-                    originalResult = aggregatedResult,
-                    context = context,
-                )
-            } ?: aggregatedResult
+            aggregatedResult
         }
     }
 
@@ -254,14 +227,7 @@ class RagQueryTool(
 
         val initialResult = ToolResult.ok(enhancedResults.toString())
 
-        return queryRequest.finalPrompt?.let { queryFinalPrompt ->
-            mcpFinalPromptProcessor.processFinalPrompt(
-                finalPrompt = queryFinalPrompt,
-                systemPrompt = mcpFinalPromptProcessor.createRagSystemPrompt(),
-                originalResult = initialResult,
-                context = context,
-            )
-        } ?: initialResult
+        return initialResult
     }
 
     private fun aggregateResults(

@@ -14,17 +14,9 @@ class ModelsProperties {
         var provider: ModelProvider? = null,
         var model: String = "",
         var maxTokens: Int? = null,
-        var maxInputTokens: Int? = null,
         var maxRequests: Int? = null,
-        // Optional runtime parameters purely from properties
         var concurrency: Int? = null,
-        var temperature: Double? = null,
-        var topP: Double? = null,
-        var timeoutMs: Long? = null,
-        var backoffSeconds: Long? = null,
-        /** When true, this model is considered a quick (fast) candidate for prompt routing. */
         var quick: Boolean = false,
-        /** Dimension of vectors produced by this model (required for embedding models). */
         var dimension: Int? = null,
     )
 }

@@ -1,13 +1,12 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.McpToolType
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
-import com.jervis.service.mcp.util.McpFinalPromptProcessor
 import com.jervis.service.mcp.util.McpJson
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
@@ -20,14 +19,13 @@ import org.springframework.stereotype.Service
 @Service
 class SlackTool(
     private val llmGateway: LlmGateway,
-    private val mcpFinalPromptProcessor: McpFinalPromptProcessor,
     private val promptRepository: PromptRepository,
 ) : McpTool {
     private val logger = KotlinLogging.logger {}
 
     override val name: String = "slack"
     override val description: String
-        get() = promptRepository.getMcpToolDescription(McpToolType.SLACK)
+        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.SLACK)
 
     @Serializable
     data class SlackParams(
@@ -38,26 +36,24 @@ class SlackTool(
         val thread_ts: String? = null,
         val mentions: List<String> = emptyList(),
         val blocks: JsonArray = JsonArray(emptyList()),
-        val finalPrompt: String? = null,
     )
 
     private suspend fun parseTaskDescription(
         taskDescription: String,
         context: TaskContext,
     ): SlackParams {
-        val systemPrompt = promptRepository.getMcpToolSystemPrompt(McpToolType.SLACK)
+        val userPrompt = promptRepository.getMcpToolUserPrompt(PromptTypeEnum.SLACK)
         val llmResponse =
             llmGateway.callLlm(
-                type = ModelType.INTERNAL,
-                systemPrompt = systemPrompt,
-                userPrompt = taskDescription,
+                type = PromptTypeEnum.SLACK,
+                userPrompt = userPrompt.replace("{userPrompt}", taskDescription),
                 outputLanguage = "en",
                 quick = context.quick,
+                mappingValue = emptyMap(),
+                exampleInstance = SlackParams("", "", "", "", null, emptyList(), JsonArray(emptyList())),
             )
 
-        return McpJson.decode<SlackParams>(llmResponse.answer).getOrElse {
-            throw IllegalArgumentException("Failed to parse Slack parameters: ${it.message}")
-        }
+        return llmResponse
     }
 
     override suspend fun execute(
@@ -103,15 +99,7 @@ class SlackTool(
                 }
             }
 
-        // Process through LLM if finalPrompt is provided and result is successful
-        return mcpFinalPromptProcessor.processFinalPrompt(
-            finalPrompt = parsed.finalPrompt,
-            systemPrompt =
-                promptRepository.getMcpToolFinalProcessingSystemPrompt(McpToolType.SLACK)
-                    ?: "You are a Slack communication expert. Analyze the Slack operation results and provide actionable insights.",
-            originalResult = result,
-            context = context,
-        )
+        return result
     }
 
     private suspend fun executeSlackOperation(params: SlackParams): ToolResult {

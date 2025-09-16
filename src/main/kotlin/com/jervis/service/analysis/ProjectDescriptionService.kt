@@ -1,7 +1,6 @@
 package com.jervis.service.analysis
 
-import com.jervis.configuration.prompts.McpToolType
-import com.jervis.domain.model.ModelType
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.mongo.ProjectMongoRepository
 import com.jervis.service.gateway.LlmGateway
@@ -89,7 +88,7 @@ class ProjectDescriptionService(
         project: ProjectDocument,
         indexingDescriptions: List<String>,
     ): String {
-        val systemPrompt = promptRepository.getSystemPrompt(McpToolType.PROJECT_DESCRIPTION_SHORT)
+        promptRepository.getSystemPrompt(PromptTypeEnum.PROJECT_DESCRIPTION_SHORT)
 
         val userPrompt =
             buildString {
@@ -123,14 +122,13 @@ class ProjectDescriptionService(
 
         val llmResponse =
             llmGateway.callLlm(
-                type = ModelType.INTERNAL,
-                systemPrompt = systemPrompt,
+                type = PromptTypeEnum.PROJECT_DESCRIPTION_SHORT,
                 userPrompt = userPrompt,
-                outputLanguage = "en",
                 quick = false,
+                "",
             )
 
-        return llmResponse.answer.trim()
+        return llmResponse.trim()
     }
 
     /**
@@ -141,7 +139,7 @@ class ProjectDescriptionService(
         indexingDescriptions: List<String>,
         shortDescription: String,
     ): String {
-        val systemPrompt = promptRepository.getSystemPrompt(McpToolType.PROJECT_DESCRIPTION_FULL)
+        promptRepository.getSystemPrompt(PromptTypeEnum.PROJECT_DESCRIPTION_FULL)
 
         val userPrompt =
             buildString {
@@ -176,11 +174,10 @@ class ProjectDescriptionService(
 
         val llmResponse =
             llmGateway.callLlm(
-                type = ModelType.INTERNAL,
-                systemPrompt = systemPrompt,
+                type = PromptTypeEnum.PROJECT_DESCRIPTION_FULL,
                 userPrompt = userPrompt,
-                outputLanguage = "en",
                 quick = false,
+                "",
             )
 
         return buildString {
@@ -192,7 +189,7 @@ class ProjectDescriptionService(
             appendLine()
             appendLine("---")
             appendLine()
-            appendLine(llmResponse.answer)
+            appendLine(llmResponse)
             appendLine()
             appendLine("---")
             appendLine(

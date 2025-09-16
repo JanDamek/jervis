@@ -7,8 +7,8 @@ import com.jervis.entity.mongo.PlanDocument
 import com.jervis.repository.mongo.PlanMongoRepository
 import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.finalizer.Finalizer
+import com.jervis.service.agent.planner.Planner
 import com.jervis.service.agent.planner.PlanningRunner
-import com.jervis.service.agent.planner.TwoPhasePlanner
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -23,7 +23,7 @@ class AgentOrchestratorService(
     private val planningRunner: PlanningRunner,
     private val finalizer: Finalizer,
     private val languageOrchestrator: LanguageOrchestrator,
-    private val twoPhasePlanner: TwoPhasePlanner,
+    private val planner: Planner,
     private val planMongoRepository: PlanMongoRepository,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -34,7 +34,7 @@ class AgentOrchestratorService(
     ): ChatResponse {
         logger.info { "AGENT_START: Handling query for client='${ctx.clientId}', project='${ctx.projectId}'" }
 
-        val scope =
+        val detectionResult =
             languageOrchestrator.translate(
                 text = text,
                 quick = ctx.quick,
@@ -42,15 +42,18 @@ class AgentOrchestratorService(
 
         val context =
             if (ctx.existingContextId != null) {
-                // Use existing context if provided
-                taskContextService.findById(ctx.existingContextId)
+                taskContextService.findById(ctx.existingContextId)?.apply {
+                    if (this.name == "New Context") {
+                        this.name = detectionResult.contextName
+                    }
+                }
                     ?: throw IllegalArgumentException("Context with ID ${ctx.existingContextId} not found")
             } else {
-                // Create new context
                 taskContextService.create(
                     clientId = ctx.clientId,
                     projectId = ctx.projectId,
                     quick = ctx.quick,
+                    contextName = detectionResult.contextName,
                 )
             }
 
@@ -59,25 +62,26 @@ class AgentOrchestratorService(
                 id = ObjectId.get(),
                 contextId = context.id,
                 originalQuestion = text,
-                originalLanguage = scope.originalLanguage,
-                englishQuestion = scope.englishText,
+                originalLanguage = detectionResult.originalLanguage,
+                englishQuestion = detectionResult.englishText,
             )
         planMongoRepository.save(PlanDocument.fromDomain(plan))
         context.plans += plan
 
         logger.info { "AGENT_LOOP_START: Planning loop for context: ${context.id}" }
-        val updatedPlan = twoPhasePlanner.createPlan(context, plan)
+        do {
+            val updatedPlan = planner.createPlan(context, plan)
 
-        // Update the plan in context with the steps created by TwoPhasePlanner
-        val planIndex = context.plans.indexOfFirst { it.id == plan.id }
-        if (planIndex >= 0) {
-            context.plans = context.plans.toMutableList().apply { set(planIndex, updatedPlan) }
-        }
+            // Update the plan in context with the steps created by TwoPhasePlanner
+            val planIndex = context.plans.indexOfFirst { it.id == plan.id }
+            if (planIndex >= 0) {
+                context.plans = context.plans.toMutableList().apply { set(planIndex, updatedPlan) }
+            }
 
-        // Save the updated plan to a repository
-        planMongoRepository.save(PlanDocument.fromDomain(updatedPlan))
-        taskContextService.save(context)
-        planningRunner.run(context)
+            // Save the updated plan to a repository
+            planMongoRepository.save(PlanDocument.fromDomain(updatedPlan))
+            taskContextService.save(context)
+        } while (planningRunner.run(context))
         val response = finalizer.finalize(context)
         taskContextService.save(context)
         logger.info { "AGENT_END: Final response generated." }

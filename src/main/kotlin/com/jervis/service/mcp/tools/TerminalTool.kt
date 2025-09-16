@@ -1,15 +1,13 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.TimeoutsProperties
-import com.jervis.configuration.prompts.McpToolType
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
-import com.jervis.repository.mongo.ProjectMongoRepository
 import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
-import com.jervis.service.mcp.util.McpFinalPromptProcessor
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -28,9 +26,7 @@ import kotlin.time.Duration.Companion.seconds
 @Service
 class TerminalTool(
     private val llmGateway: LlmGateway,
-    private val mcpFinalPromptProcessor: McpFinalPromptProcessor,
     private val timeoutsProperties: TimeoutsProperties,
-    private val projectMongoRepository: ProjectMongoRepository,
     private val promptRepository: PromptRepository,
 ) : McpTool {
     companion object {
@@ -39,39 +35,30 @@ class TerminalTool(
 
     override val name: String = "terminal"
     override val description: String
-        get() = promptRepository.getMcpToolDescription(McpToolType.TERMINAL)
+        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.TERMINAL)
 
     @Serializable
     data class TerminalParams(
         val command: String,
         val timeout: Int? = null,
-        val finalPrompt: String? = null,
     )
 
     private suspend fun parseTaskDescription(
         taskDescription: String,
         context: TaskContext,
     ): TerminalParams {
-        val systemPrompt = promptRepository.getMcpToolSystemPrompt(McpToolType.TERMINAL)
-
+        val userPrompt = promptRepository.getMcpToolUserPrompt(PromptTypeEnum.TERMINAL)
         val llmResponse =
             llmGateway.callLlm(
-                type = ModelType.INTERNAL,
-                systemPrompt = systemPrompt,
-                userPrompt = taskDescription,
+                type = PromptTypeEnum.TERMINAL,
+                userPrompt = userPrompt.replace("{userPrompt}", taskDescription),
                 outputLanguage = "en",
                 quick = context.quick,
+                mappingValue = emptyMap(),
+                exampleInstance = TerminalParams("", null),
             )
 
-        val cleanedResponse =
-            llmResponse.answer
-                .trim()
-                .removePrefix("```json")
-                .removePrefix("```")
-                .removeSuffix("```")
-                .trim()
-
-        return Json.decodeFromString<TerminalParams>(cleanedResponse)
+        return llmResponse
     }
 
     override suspend fun execute(
@@ -86,12 +73,7 @@ class TerminalTool(
 
         val executionResult = executeCommand(parsed, context)
 
-        return mcpFinalPromptProcessor.processFinalPrompt(
-            finalPrompt = parsed.finalPrompt,
-            systemPrompt = mcpFinalPromptProcessor.createTerminalSystemPrompt(),
-            originalResult = executionResult,
-            context = context,
-        )
+        return executionResult
     }
 
     private fun validateCommand(params: TerminalParams): ToolResult? =
