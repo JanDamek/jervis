@@ -75,13 +75,7 @@ class EnhancedRagQueryTool(
             "ENHANCED_RAG_QUERY_START: Executing enhanced RAG query for taskDescription='$taskDescription', contextId='${context.id}', planId='${plan.id}'"
         }
 
-        val queryParams =
-            runCatching {
-                parseTaskDescription(taskDescription, context)
-            }.getOrElse {
-                logger.error { "ENHANCED_RAG_QUERY_PARSE_ERROR: Failed to parse task description: ${it.message}" }
-                return ToolResult.error("Invalid enhanced RAG query parameters: ${it.message}")
-            }
+        val queryParams = parseTaskDescription(taskDescription, context)
 
         logger.debug { "ENHANCED_RAG_QUERY_PARSED: queryParams=$queryParams" }
 

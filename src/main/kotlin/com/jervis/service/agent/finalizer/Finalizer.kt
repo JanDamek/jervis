@@ -48,24 +48,15 @@ class Finalizer(
                     logger.debug { "FINALIZER_USER_PROMPT: userPrompt='$userPrompt'" }
 
                     val answer =
-                        runCatching {
-                            gateway
-                                .callLlm(
-                                    type = PromptTypeEnum.FINALIZER,
-                                    userPrompt = userPrompt,
-                                    quick = context.quick,
-                                    "",
-                                    outputLanguage = userLang,
-                                    mappingValue = emptyMap(),
-                                )
-                        }.getOrElse {
-                            logger.warn(it) { "FINALIZER_LLM_FAIL: Falling back to summary for plan=${'$'}{plan.id}" }
-                            (
-                                plan.finalAnswer ?: plan.contextSummary
-                                    ?: "No output available"
-                            ).trim()
-                        }.ifBlank { plan.contextSummary ?: "No output available" }
-
+                        gateway
+                            .callLlm(
+                                type = PromptTypeEnum.FINALIZER,
+                                userPrompt = userPrompt,
+                                quick = context.quick,
+                                "",
+                                outputLanguage = userLang,
+                                mappingValue = emptyMap(),
+                            )
                     plan.finalAnswer = answer
                     plan.status = PlanStatus.FINALIZED
                     plan.updatedAt = Instant.now()

@@ -211,7 +211,7 @@ prompts:
         * "TEXT": Documentation, README files, markdown docs, configuration files - indexed with text embeddings
         * "MEETING": Meeting transcripts from Whisper service and manual meeting notes - discussions, decisions, requirements
         * "NOTE": General notes and observations - insights, tips, reminders, manual annotations
-        * "GIT_HISTORY": Git commit messages and change history - code evolution, development timeline, change context
+        * "GIT_HISTORY": Git commit messages and change history - code evolution, development timeline, change context (NOTE: Uses specialized text-based search without embeddings)
         * "DEPENDENCY": Raw dependency information from Joern analysis - library usage, versions, direct dependency data
         * "DEPENDENCY_DESCRIPTION": LLM-enhanced dependency descriptions - comprehensive explanations of what libraries do
         * "CLASS_SUMMARY": LLM-generated class and method summaries from Joern + code analysis - architectural insights
