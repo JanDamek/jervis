@@ -72,7 +72,7 @@ class JoernAnalysisService(
         }
 
         val process = pb.start()
-        val pid = runCatching { process.pid() }.getOrNull()
+        val pid = process.pid()
         val stdoutBuf = StringBuilder()
         val stderrBuf = StringBuilder()
 
@@ -125,42 +125,6 @@ class JoernAnalysisService(
     }
 
     /**
-     * Check if Joern is installed and accessible in system PATH
-     */
-    suspend fun isJoernAvailable(): Boolean =
-        withContext(Dispatchers.IO) {
-            try {
-                val joernRes =
-                    runProcessStreaming(
-                        displayName = "joern --help",
-                        command = listOf("joern", "--help"),
-                        workingDir = null,
-                        timeout = timeoutsProperties.joern.helpCommandTimeoutMinutes,
-                        unit = TimeUnit.MINUTES,
-                    )
-                val scanRes =
-                    runProcessStreaming(
-                        displayName = "joern-scan --help",
-                        command = listOf("joern-scan", "--help"),
-                        workingDir = null,
-                        timeout = timeoutsProperties.joern.helpCommandTimeoutMinutes,
-                        unit = TimeUnit.MINUTES,
-                    )
-
-                val joernAvailable = !joernRes.timedOut && joernRes.exitCode == 0
-                val scanAvailable = !scanRes.timedOut && scanRes.exitCode == 0
-
-                if (!joernAvailable) logger.warn { "joern is not available in system PATH" }
-                if (!scanAvailable) logger.warn { "joern-scan is not available in system PATH" }
-
-                joernAvailable || scanAvailable
-            } catch (e: Exception) {
-                logger.debug(e) { "Joern availability check failed: ${e.message}" }
-                false
-            }
-        }
-
-    /**
      * Setup .joern directory for storing Joern analysis results
      */
     suspend fun setupJoernDirectory(projectPath: Path): Path =
@@ -190,12 +154,6 @@ class JoernAnalysisService(
     ): JoernAnalysisResult =
         withContext(Dispatchers.IO) {
             logger.info { "Starting Joern analysis for project: ${project.name}" }
-
-            if (!isJoernAvailable()) {
-                val errorMsg = "Joern is not installed or not accessible in system PATH"
-                logger.warn { "$errorMsg. Skipping Joern analysis." }
-                return@withContext JoernAnalysisResult(0, 0, false, errorMsg)
-            }
 
             var errorFiles = 0
             val analysisOperations =
@@ -682,19 +640,16 @@ class JoernAnalysisService(
                     when (toolName) {
                         "joern" -> listOf(toolName, "--help")
                         "joern-scan" -> {
-                            // Try --version first for joern-scan, fallback to --help
                             val versionRes =
-                                runCatching {
-                                    runProcessStreaming(
-                                        displayName = "$toolName --version",
-                                        command = listOf(toolName, "--version"),
-                                        workingDir = null,
-                                        timeout = timeoutsProperties.joern.versionTimeoutMinutes,
-                                        unit = TimeUnit.MINUTES,
-                                    )
-                                }.getOrNull()
+                                runProcessStreaming(
+                                    displayName = "$toolName --version",
+                                    command = listOf(toolName, "--version"),
+                                    workingDir = null,
+                                    timeout = timeoutsProperties.joern.versionTimeoutMinutes,
+                                    unit = TimeUnit.MINUTES,
+                                )
 
-                            if (versionRes != null && !versionRes.timedOut && versionRes.exitCode == 0) {
+                            if (!versionRes.timedOut && versionRes.exitCode == 0) {
                                 return@withContext extractVersionFromOutput(versionRes.stdout, versionRes.stderr)
                             }
 
@@ -739,14 +694,4 @@ class JoernAnalysisService(
         return versionMatch?.groupValues?.get(1)
             ?: throw IllegalStateException("Unable to extract version information from tool output: $output")
     }
-
-    /**
-     * Execute a single Joern operation (public method for external use)
-     */
-    suspend fun executeSingleOperation(
-        operation: String,
-        query: String,
-        projectPath: Path,
-        joernDir: Path,
-    ): Boolean = executeJoernOperation(operation, query, projectPath, joernDir)
 }

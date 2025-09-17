@@ -79,13 +79,7 @@ class RagQueryTool(
             "RAG_QUERY_START: Executing RAG query for taskDescription='$taskDescription', contextId='${context.id}', planId='${plan.id}'"
         }
 
-        val queryParams =
-            runCatching {
-                parseTaskDescription(taskDescription, context)
-            }.getOrElse {
-                logger.error { "RAG_QUERY_PARSE_ERROR: Failed to parse task description: ${it.message}" }
-                return ToolResult.error("Invalid RAG query parameters: ${it.message}")
-            }
+        val queryParams = parseTaskDescription(taskDescription, context)
 
         logger.debug { "RAG_QUERY_PARSED: queryParams=$queryParams" }
 
@@ -119,6 +113,13 @@ class RagQueryTool(
         queryIndex: Int,
     ): ToolResult {
         logger.debug { "RAG_QUERY_EXECUTE: Starting query $queryIndex: '${queryRequest.query}', embedding='${queryRequest.embedding}'" }
+
+        // Check for GIT_HISTORY document type early to avoid unnecessary embedding generation
+        val isGitHistoryQuery = isGitHistoryDocumentType(queryRequest, globalParams)
+        if (isGitHistoryQuery) {
+            logger.debug { "RAG_QUERY_GIT_HISTORY: Detected GIT_HISTORY query, using text-based search without embeddings" }
+            return executeGitHistoryQuery(context, queryRequest, globalParams, queryIndex)
+        }
 
         val modelType =
             when (queryRequest.embedding.lowercase()) {
@@ -228,6 +229,133 @@ class RagQueryTool(
         val initialResult = ToolResult.ok(enhancedResults.toString())
 
         return initialResult
+    }
+
+    private fun isGitHistoryDocumentType(
+        queryRequest: RagQueryRequest,
+        globalParams: RagQueryParams,
+    ): Boolean {
+        // Check global filters first
+        globalParams.globalFilters?.get("documentType")?.let { docType ->
+            if (docType.contains("GIT_HISTORY")) return true
+        }
+
+        // Check query-specific filters
+        queryRequest.filters?.get("documentType")?.let { docType ->
+            if (docType.contains("GIT_HISTORY")) return true
+        }
+
+        return false
+    }
+
+    private suspend fun executeGitHistoryQuery(
+        context: TaskContext,
+        queryRequest: RagQueryRequest,
+        globalParams: RagQueryParams,
+        queryIndex: Int,
+    ): ToolResult {
+        logger.debug { "RAG_QUERY_GIT_HISTORY_EXECUTE: Starting GIT_HISTORY query $queryIndex: '${queryRequest.query}'" }
+
+        // Determine effective topK
+        val effectiveTopK =
+            when {
+                queryRequest.topK != null -> queryRequest.topK
+                globalParams.topK == -1 -> 10000 // Convert unlimited (-1) to high limit
+                else -> globalParams.topK
+            }
+
+        // Build combined filter for GIT_HISTORY queries
+        val combinedFilter =
+            buildMap<String, Any> {
+                // Always include projectId for security
+                put("projectId", context.projectDocument.id.toHexString())
+
+                // Add global filters if present
+                globalParams.globalFilters?.forEach { (key, value) ->
+                    put(key, value)
+                }
+
+                // Add query-specific filters if present (these override global filters for same keys)
+                queryRequest.filters?.forEach { (key, value) ->
+                    put(key, value)
+                }
+            }
+
+        logger.debug {
+            "RAG_QUERY_GIT_HISTORY_FILTERS: Using combinedFilter=$combinedFilter, topK=$effectiveTopK for git history query $queryIndex"
+        }
+
+        // For GIT_HISTORY, use text-based search without embeddings by providing empty embedding vector
+        val results =
+            try {
+                logger.debug { "RAG_QUERY_GIT_HISTORY_SEARCH_START: Executing text-based search for git history query $queryIndex" }
+                val searchResults =
+                    vectorStorage.search(
+                        collectionType = ModelType.EMBEDDING_TEXT, // Use TEXT collection for git history
+                        query = listOf(), // Empty embedding vector for text-based filtering
+                        limit = effectiveTopK,
+                        minScore = 0.0f, // No similarity threshold for text-based search
+                        filter = combinedFilter,
+                    )
+                logger.debug {
+                    "RAG_QUERY_GIT_HISTORY_SEARCH_SUCCESS: Found ${searchResults.size} git history results for query $queryIndex"
+                }
+                searchResults
+            } catch (e: Exception) {
+                logger.error(e) { "RAG_QUERY_GIT_HISTORY_SEARCH_ERROR: Git history search failed for query $queryIndex" }
+                return ToolResult.error("Git history search failed for query $queryIndex: ${e.message}")
+            }
+
+        if (results.isEmpty()) {
+            logger.warn { "RAG_QUERY_GIT_HISTORY_NO_RESULTS: No git history results found for query $queryIndex: '${queryRequest.query}'" }
+            return ToolResult.ok("No git history results found for query $queryIndex: '${queryRequest.query}'")
+        }
+
+        // Filter results by query text if needed (simple text matching for git commits)
+        val filteredResults =
+            if (queryRequest.query.isNotBlank()) {
+                val queryWords =
+                    queryRequest.query
+                        .lowercase()
+                        .split("\\s+".toRegex())
+                        .filter { it.length > 2 }
+                results.filter { doc ->
+                    val pageContent = getStringValue(doc["pageContent"])?.lowercase() ?: ""
+                    queryWords.any { word -> pageContent.contains(word) }
+                }
+            } else {
+                results
+            }
+
+        logger.debug { "RAG_QUERY_GIT_HISTORY_FILTERED: Filtered to ${filteredResults.size} relevant git history results" }
+
+        val enhancedResults = StringBuilder()
+        filteredResults.forEachIndexed { index, doc ->
+            enhancedResults.appendLine("Git History Result ${index + 1}:")
+
+            // Log each document's content for debugging
+            logger.debug { "RAG_QUERY_GIT_HISTORY_RESULT_${index + 1}: doc=$doc" }
+
+            // Iterate through all map entries and output KEY: VALUE pairs
+            doc.forEach { (key, value) ->
+                val stringValue = getStringValue(value)
+                if (stringValue.isNotEmpty()) {
+                    enhancedResults.appendLine("$key: $stringValue")
+                }
+            }
+
+            if (index < filteredResults.size - 1) {
+                enhancedResults.appendLine()
+                enhancedResults.appendLine("---")
+                enhancedResults.appendLine()
+            }
+        }
+
+        logger.debug {
+            "RAG_QUERY_GIT_HISTORY_ENHANCED_RESULTS: git history query $queryIndex enhanced results length=${enhancedResults.length}"
+        }
+
+        return ToolResult.ok(enhancedResults.toString())
     }
 
     private fun aggregateResults(
