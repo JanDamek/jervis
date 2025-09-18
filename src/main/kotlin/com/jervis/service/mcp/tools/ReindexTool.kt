@@ -19,18 +19,17 @@ import org.springframework.stereotype.Service
 @Service
 class ReindexTool(
     private val indexingService: IndexingService,
-    private val promptRepository: PromptRepository,
+    override val promptRepository: PromptRepository,
 ) : McpTool {
     private val logger = KotlinLogging.logger {}
 
-    override val name = "reindex"
-    override val description: String
-        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.REINDEX)
+    override val name: PromptTypeEnum = PromptTypeEnum.REINDEX
 
     override suspend fun execute(
         context: TaskContext,
         plan: Plan,
         taskDescription: String,
+        stepContext: String,
     ): ToolResult =
         withContext(Dispatchers.IO) {
             try {

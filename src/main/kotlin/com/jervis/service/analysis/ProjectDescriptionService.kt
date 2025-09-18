@@ -3,7 +3,7 @@ package com.jervis.service.analysis
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.mongo.ProjectMongoRepository
-import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -88,8 +88,6 @@ class ProjectDescriptionService(
         project: ProjectDocument,
         indexingDescriptions: List<String>,
     ): String {
-        promptRepository.getSystemPrompt(PromptTypeEnum.PROJECT_DESCRIPTION_SHORT)
-
         val userPrompt =
             buildString {
                 appendLine("Create a short description for this software project:")
@@ -139,8 +137,6 @@ class ProjectDescriptionService(
         indexingDescriptions: List<String>,
         shortDescription: String,
     ): String {
-        promptRepository.getSystemPrompt(PromptTypeEnum.PROJECT_DESCRIPTION_FULL)
-
         val userPrompt =
             buildString {
                 appendLine("Create a comprehensive technical description for this software project:")

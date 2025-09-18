@@ -5,7 +5,7 @@ import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.plan.PlanStep
 import com.jervis.domain.plan.StepStatus
-import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.domain.ToolResult
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
@@ -25,8 +25,9 @@ class Planner(
 
     @Serializable
     private data class PlannerStepDto(
-        val name: String = "",
+        val tool: String = "",
         val taskDescription: String? = null,
+        val stepBack: Int = 0,
     )
 
     suspend fun createPlan(
@@ -50,7 +51,7 @@ class Planner(
                 userPrompt = "",
                 quick = context.quick,
                 mappingValue = mappingValue,
-                exampleInstance = listOf(PlannerStepDto()),
+                responseSchema = listOf(PlannerStepDto()),
             )
 
         val stepsList =
@@ -89,7 +90,7 @@ class Planner(
                 if (completedSteps.isNotEmpty()) {
                     appendLine("Key completed actions:")
                     completedSteps.forEach { step ->
-                        step.output?.output?.take(500)?.let {
+                        step.output?.output?.let {
                             appendLine("  - ${step.name}: $it")
                         }
                     }
@@ -180,14 +181,15 @@ class Planner(
 
         val steps =
             inputSteps.mapIndexed { idx, dto ->
-                require(dto.name.isNotBlank()) {
-                    logger.error { "PLANNER_INVALID_STEP: Step at index $idx has empty name: $dto" }
-                    "Invalid step at index $idx: 'name' must be non-empty."
+                require(dto.tool.isNotBlank()) {
+                    logger.error { "PLANNER_INVALID_STEP: Step at index $idx has empty tool: $dto" }
+                    "Invalid step at index $idx: 'tool' must be non-empty."
                 }
                 PlanStep(
                     id = ObjectId.get(),
-                    name = dto.name.trim(),
+                    name = dto.tool.trim(),
                     taskDescription = dto.taskDescription ?: "",
+                    stepBack = dto.stepBack,
                     order = idx + 1,
                     planId = planId,
                     contextId = contextId,

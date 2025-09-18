@@ -3,9 +3,8 @@ package com.jervis.service.mcp.tools
 import com.jervis.configuration.TimeoutsProperties
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
-import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
-import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -14,7 +13,6 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.io.File
@@ -27,35 +25,32 @@ import kotlin.time.Duration.Companion.seconds
 class TerminalTool(
     private val llmGateway: LlmGateway,
     private val timeoutsProperties: TimeoutsProperties,
-    private val promptRepository: PromptRepository,
+    override val promptRepository: PromptRepository,
 ) : McpTool {
     companion object {
         private val logger = KotlinLogging.logger {}
     }
 
-    override val name: String = "terminal"
-    override val description: String
-        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.TERMINAL)
+    override val name = PromptTypeEnum.TERMINAL
 
     @Serializable
     data class TerminalParams(
-        val command: String,
+        val command: String = "",
         val timeout: Int? = null,
     )
 
     private suspend fun parseTaskDescription(
         taskDescription: String,
         context: TaskContext,
+        stepContext: String = "",
     ): TerminalParams {
-        val userPrompt = promptRepository.getMcpToolUserPrompt(PromptTypeEnum.TERMINAL)
         val llmResponse =
             llmGateway.callLlm(
                 type = PromptTypeEnum.TERMINAL,
-                userPrompt = userPrompt.replace("{userPrompt}", taskDescription),
-                outputLanguage = "en",
+                userPrompt = taskDescription,
                 quick = context.quick,
-                mappingValue = emptyMap(),
-                exampleInstance = TerminalParams("", null),
+                responseSchema = TerminalParams(),
+                stepContext = stepContext,
             )
 
         return llmResponse
@@ -65,8 +60,9 @@ class TerminalTool(
         context: TaskContext,
         plan: Plan,
         taskDescription: String,
+        stepContext: String,
     ): ToolResult {
-        val parsed = parseTaskDescription(taskDescription, context)
+        val parsed = parseTaskDescription(taskDescription, context, stepContext)
 
         val validationResult = validateCommand(parsed)
         validationResult?.let { return it }
@@ -206,7 +202,7 @@ class TerminalTool(
             logger.debug { "[DEBUG_LOG] Terminal process output: $output" }
 
             return when (exitCode) {
-                0 -> createSuccessResult(params, workingDirectory, output, exitCode)
+                0 -> createSuccessResult(output)
                 else -> ToolResult.error("Command failed with exit code $exitCode:\n$output")
             }
         } catch (e: IOException) {
@@ -223,12 +219,7 @@ class TerminalTool(
             throw IOException("Failed to read process output stream", e)
         }
 
-    private fun createSuccessResult(
-        params: TerminalParams,
-        workingDirectory: File,
-        output: String,
-        exitCode: Int,
-    ): ToolResult {
+    private fun createSuccessResult(output: String): ToolResult {
         val enhancedOutput = output.trim().ifEmpty { "Command executed successfully" }
         return ToolResult.ok(enhancedOutput)
     }

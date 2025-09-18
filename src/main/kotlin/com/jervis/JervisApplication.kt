@@ -7,12 +7,9 @@ import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.client.ClientProjectLinkService
 import com.jervis.service.client.ClientService
-import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.indexing.ClientIndexingService
 import com.jervis.service.indexing.IndexingService
 import com.jervis.service.project.ProjectService
-import com.jervis.service.prompts.PromptRepository
-import com.jervis.service.prompts.PromptTemplateService
 import com.jervis.service.scheduling.TaskQueryService
 import com.jervis.service.scheduling.TaskSchedulingService
 import com.jervis.ui.component.ApplicationWindowManager
@@ -41,7 +38,7 @@ import javax.swing.UIManager
     basePackages = [
         "com.jervis.service", "com.jervis.ui.component",
         "com.jervis.repository", "com.jervis.configuration", "com.jervis.controller",
-        "com.jervis.util", "com.jervis.migration",
+        "com.jervis.util",
     ],
 )
 class JervisApplication(
@@ -54,9 +51,6 @@ class JervisApplication(
     private val clientIndexingService: ClientIndexingService,
     private val taskSchedulingService: TaskSchedulingService,
     private val taskQueryService: TaskQueryService,
-    private val promptRepository: PromptRepository,
-    private val promptTemplateService: PromptTemplateService,
-    private val llmGateway: LlmGateway,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -78,9 +72,6 @@ class JervisApplication(
                     clientIndexingService,
                     taskSchedulingService,
                     taskQueryService,
-                    promptRepository,
-                    promptTemplateService,
-                    llmGateway,
                 )
 
             EventQueue.invokeLater {
@@ -120,7 +111,7 @@ fun main(args: Array<String>) {
     } catch (_: Exception) {
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName())
-        } catch (ex: Exception) {
+        } catch (_: Exception) {
             // If system L&F also fails, use default cross-platform L&F
             println("Warning: Could not set Look and Feel - using default")
         }

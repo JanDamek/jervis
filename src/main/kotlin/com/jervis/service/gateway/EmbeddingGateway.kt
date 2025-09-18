@@ -4,6 +4,7 @@ import com.jervis.configuration.ConnectionPoolProperties
 import com.jervis.configuration.ModelsProperties
 import com.jervis.domain.model.ModelProvider
 import com.jervis.domain.model.ModelType
+import com.jervis.service.gateway.clients.EmbeddingProviderClient
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.util.concurrent.ConcurrentHashMap
@@ -111,7 +112,6 @@ class EmbeddingGateway(
         return client.call(model, text)
     }
 
-
     private fun l2Normalize(vec: List<Float>): List<Float> {
         var sum = 0.0
         for (v in vec) sum += (v * v)
@@ -119,5 +119,4 @@ class EmbeddingGateway(
         val inv = (1.0 / norm).toFloat()
         return vec.map { it * inv }
     }
-
 }

@@ -10,6 +10,7 @@ data class PlanStep(
     var contextId: ObjectId,
     val name: String,
     val taskDescription: String,
+    val stepBack: Int = 0, // Number of previous steps to include as context
     var status: StepStatus = StepStatus.PENDING,
     var output: ToolResult? = null,
 )

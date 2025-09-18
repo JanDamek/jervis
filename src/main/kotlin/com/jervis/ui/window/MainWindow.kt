@@ -5,12 +5,9 @@ import com.jervis.domain.plan.PlanStep
 import com.jervis.dto.ChatRequestContext
 import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
-import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.notification.PlanStatusChangeEvent
 import com.jervis.service.notification.StepCompletionEvent
 import com.jervis.service.project.ProjectService
-import com.jervis.service.prompts.PromptRepository
-import com.jervis.service.prompts.PromptTemplateService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -57,9 +54,6 @@ class MainWindow(
     private val clientService: com.jervis.service.client.ClientService,
     private val linkService: com.jervis.service.client.ClientProjectLinkService,
     private val taskContextService: TaskContextService,
-    private val llmGateway: LlmGateway,
-    private val promptRepository: PromptRepository,
-    private val promptTemplateService: PromptTemplateService,
 ) : JFrame("JERVIS Assistant") {
     private val windowScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
@@ -1191,7 +1185,6 @@ class MainWindow(
 
         jMenuBar = menuBar
     }
-
 
     private fun showAboutDialog() {
         JOptionPane.showMessageDialog(

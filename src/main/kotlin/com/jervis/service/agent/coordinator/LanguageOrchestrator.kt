@@ -1,7 +1,7 @@
 package com.jervis.service.agent.coordinator
 
 import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.gateway.core.LlmGateway
 import kotlinx.serialization.Serializable
 import org.springframework.stereotype.Service
 
@@ -17,10 +17,8 @@ class LanguageOrchestrator(
             .callLlm(
                 type = PromptTypeEnum.TRANSLATION,
                 userPrompt = text,
-                outputLanguage = "en",
                 quick = quick,
-                mappingValue = emptyMap(),
-                exampleInstance = DetectionResult(),
+                responseSchema = DetectionResult(),
             )
 
     @Serializable

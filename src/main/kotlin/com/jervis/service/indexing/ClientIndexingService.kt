@@ -5,7 +5,7 @@ import com.jervis.entity.mongo.ClientDocument
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.mongo.ClientMongoRepository
 import com.jervis.repository.mongo.ProjectMongoRepository
-import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.toList
@@ -138,8 +138,6 @@ class ClientIndexingService(
         projects: List<ProjectDocument>,
         projectDescriptions: List<String>,
     ): String {
-        promptRepository.getSystemPrompt(PromptTypeEnum.CLIENT_DESCRIPTION_SHORT)
-
         val userPrompt =
             buildString {
                 appendLine("Create a short description for this client organization:")
@@ -194,8 +192,6 @@ class ClientIndexingService(
         projectDescriptions: List<String>,
         shortDescription: String,
     ): String {
-        promptRepository.getSystemPrompt(PromptTypeEnum.CLIENT_DESCRIPTION_FULL)
-
         val userPrompt =
             buildString {
                 appendLine("Create a comprehensive business and technical description for this client organization:")

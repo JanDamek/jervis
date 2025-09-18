@@ -5,7 +5,7 @@ import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.service.analysis.JoernAnalysisService
-import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -24,11 +24,9 @@ class JoernTool(
     private val llmGateway: LlmGateway,
     private val joernAnalysisService: JoernAnalysisService,
     private val timeoutsProperties: TimeoutsProperties,
-    private val promptRepository: PromptRepository,
+    override val promptRepository: PromptRepository,
 ) : McpTool {
-    override val name: String = "joern"
-    override val description: String
-        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.JOERN)
+    override val name: PromptTypeEnum = PromptTypeEnum.JOERN
 
     @Serializable
     data class JoernParams(
@@ -46,16 +44,15 @@ class JoernTool(
     private suspend fun parseTaskDescription(
         taskDescription: String,
         context: TaskContext,
+        stepContext: String = "",
     ): JoernParams {
-        val userPrompt = promptRepository.getMcpToolUserPrompt(PromptTypeEnum.JOERN)
         val llmResponse =
             llmGateway.callLlm(
                 type = PromptTypeEnum.JOERN,
-                userPrompt = userPrompt.replace("{userPrompt}", taskDescription),
-                outputLanguage = "en",
+                userPrompt = taskDescription,
                 quick = context.quick,
-                mappingValue = emptyMap(),
-                exampleInstance = JoernParams(),
+                responseSchema = JoernParams(),
+                stepContext = stepContext,
             )
 
         return llmResponse
@@ -65,6 +62,7 @@ class JoernTool(
         context: TaskContext,
         plan: Plan,
         taskDescription: String,
+        stepContext: String,
     ): ToolResult {
         val projectDir = File(context.projectDocument.path)
 
@@ -74,7 +72,7 @@ class JoernTool(
 
         val parsed =
             try {
-                parseTaskDescription(taskDescription, context)
+                parseTaskDescription(taskDescription, context, stepContext)
             } catch (e: Exception) {
                 return ToolResult.error("Invalid Joern parameters: ${e.message}", "Joern parameter parsing failed")
             }
@@ -85,13 +83,6 @@ class JoernTool(
 
         return withContext(Dispatchers.IO) {
             try {
-                // Check if Joern is available using the service
-                if (!joernAnalysisService.isJoernAvailable()) {
-                    return@withContext ToolResult.error(
-                        "Joern is not installed or not accessible in system PATH. Please install Joern first.",
-                    )
-                }
-
                 // Setup .joern directory
                 val projectPathObj = projectDir.toPath()
                 val joernDir = joernAnalysisService.setupJoernDirectory(projectPathObj)

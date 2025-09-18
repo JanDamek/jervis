@@ -18,6 +18,7 @@ data class PlanStepDocument(
     var contextId: ObjectId? = null,
     val name: String,
     val taskDescription: String,
+    val stepBack: Int = 0,
     var status: StepStatus = StepStatus.PENDING,
     var output: ToolResult? = null,
 ) {
@@ -29,6 +30,7 @@ data class PlanStepDocument(
             contextId = this.contextId!!,
             name = this.name,
             taskDescription = this.taskDescription,
+            stepBack = this.stepBack,
             status = this.status,
             output = this.output,
         )
@@ -42,6 +44,7 @@ data class PlanStepDocument(
                 contextId = planStep.contextId,
                 name = planStep.name,
                 taskDescription = planStep.taskDescription,
+                stepBack = planStep.stepBack,
                 status = planStep.status,
                 output = planStep.output,
             )

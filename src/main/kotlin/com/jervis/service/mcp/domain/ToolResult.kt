@@ -37,7 +37,9 @@ sealed interface ToolResult {
             message: String? = null,
         ): ToolResult = Error(output, message)
 
-        fun ask(output: String): ToolResult = Ask(output)
+        fun ask(
+            output: String
+        ): ToolResult = Ask(output)
 
         fun stop(
             output: String,

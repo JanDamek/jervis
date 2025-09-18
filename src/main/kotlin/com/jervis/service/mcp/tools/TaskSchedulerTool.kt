@@ -3,7 +3,7 @@ package com.jervis.service.mcp.tools
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
-import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -26,16 +26,14 @@ import java.time.format.DateTimeParseException
 class TaskSchedulerTool(
     private val taskManagementService: TaskManagementService,
     private val llmGateway: LlmGateway,
-    private val promptRepository: PromptRepository,
+    override val promptRepository: PromptRepository,
 ) : McpTool {
     companion object {
         private val logger = KotlinLogging.logger {}
         private val dateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
     }
 
-    override val name: String = "task_scheduler"
-    override val description: String
-        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.TASK_SCHEDULER)
+    override val name: PromptTypeEnum = PromptTypeEnum.TASK_SCHEDULER
 
     @Serializable
     data class ScheduleParams(
@@ -54,11 +52,12 @@ class TaskSchedulerTool(
         context: TaskContext,
         plan: Plan,
         taskDescription: String,
+        stepContext: String,
     ): ToolResult =
         try {
             logger.info { "Executing scheduler management with description: $taskDescription" }
 
-            val params = parseTaskDescription(taskDescription, context)
+            val params = parseTaskDescription(taskDescription, context, stepContext)
             logger.debug { "Parsed schedule parameters: $params" }
 
             when (params.action) {
@@ -259,11 +258,13 @@ class TaskSchedulerTool(
     private suspend fun parseTaskDescription(
         taskDescription: String,
         context: TaskContext,
+        stepContext: String = "",
     ): ScheduleParams =
         llmGateway.callLlm(
             type = PromptTypeEnum.TASK_SCHEDULER,
             userPrompt = taskDescription,
             quick = context.quick,
             ScheduleParams(),
+            stepContext = stepContext,
         )
 }

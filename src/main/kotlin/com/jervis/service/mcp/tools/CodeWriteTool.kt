@@ -3,7 +3,7 @@ package com.jervis.service.mcp.tools
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
-import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -20,38 +20,35 @@ import kotlin.io.path.writeText
 @Service
 class CodeWriteTool(
     private val llmGateway: LlmGateway,
-    private val promptRepository: PromptRepository,
+    override val promptRepository: PromptRepository,
 ) : McpTool {
     companion object {
         private val logger = KotlinLogging.logger {}
     }
 
-    override val name: String = "code.write"
-    override val description: String
-        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.CODE_WRITE)
+    override val name: PromptTypeEnum = PromptTypeEnum.CODE_WRITE
 
     @Serializable
     data class CodeWriteParams(
-        val targetPath: String,
+        val targetPath: String = "",
         val patchType: String = "unified",
-        val patch: String,
-        val description: String,
+        val patch: String = "",
+        val description: String = "",
         val createNewFile: Boolean = false,
     )
 
     private suspend fun parseTaskDescription(
         taskDescription: String,
         context: TaskContext,
+        stepContext: String = "",
     ): CodeWriteParams {
-        val userPrompt = promptRepository.getMcpToolUserPrompt(PromptTypeEnum.CODE_WRITE)
         val llmResponse =
             llmGateway.callLlm(
                 type = PromptTypeEnum.CODE_WRITE,
-                userPrompt = userPrompt.replace("{userPrompt}", taskDescription),
-                outputLanguage = "en",
+                userPrompt = taskDescription,
                 quick = context.quick,
-                mappingValue = emptyMap(),
-                exampleInstance = CodeWriteParams("", "unified", "", "", false),
+                responseSchema = CodeWriteParams(),
+                stepContext = stepContext,
             )
 
         return llmResponse
@@ -61,11 +58,12 @@ class CodeWriteTool(
         context: TaskContext,
         plan: Plan,
         taskDescription: String,
+        stepContext: String,
     ): ToolResult {
         return try {
             logger.info("Executing CodeWrite tool with task: $taskDescription")
 
-            val params = parseTaskDescription(taskDescription, context)
+            val params = parseTaskDescription(taskDescription, context, stepContext)
 
             return performCodeWrite(params, context)
         } catch (e: Exception) {

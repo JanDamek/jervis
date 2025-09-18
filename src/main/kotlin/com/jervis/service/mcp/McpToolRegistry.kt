@@ -1,5 +1,6 @@
 package com.jervis.service.mcp
 
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.service.agent.planner.Planner
 import jakarta.annotation.PostConstruct
 import org.springframework.context.annotation.DependsOn
@@ -15,7 +16,7 @@ class McpToolRegistry(
     private val tools: List<McpTool>,
     private val planner: Planner,
 ) {
-    fun byName(name: String): McpTool = tools.first { it.name == name }
+    fun byName(name: PromptTypeEnum): McpTool = tools.first { it.name == name }
 
     @PostConstruct
     fun initialize() {

@@ -4,7 +4,7 @@ import com.jervis.configuration.TimeoutsProperties
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
-import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -20,7 +20,7 @@ import java.io.File
 class GitTool(
     private val llmGateway: LlmGateway,
     private val timeoutsProperties: TimeoutsProperties,
-    private val promptRepository: PromptRepository,
+    override val promptRepository: PromptRepository,
 ) : McpTool {
     private val logger = KotlinLogging.logger {}
 
@@ -38,13 +38,11 @@ class GitTool(
         private fun sanitizeCommitMessage(message: String): String = message.replace("\"", "\\\"").replace("\n", " ").replace("\r", " ")
     }
 
-    override val name: String = "git"
-    override val description: String
-        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.GIT)
+    override val name: PromptTypeEnum = PromptTypeEnum.GIT
 
     @Serializable
     data class GitParams(
-        val operation: String,
+        val operation: String = "",
         val parameters: Map<String, String> = emptyMap(),
         val finalPrompt: String? = null,
     )
@@ -52,16 +50,15 @@ class GitTool(
     private suspend fun parseTaskDescription(
         taskDescription: String,
         context: TaskContext,
+        stepContext: String = "",
     ): GitParams {
-        val userPrompt = promptRepository.getMcpToolUserPrompt(PromptTypeEnum.GIT)
         val llmResponse =
             llmGateway.callLlm(
                 type = PromptTypeEnum.GIT,
-                userPrompt = userPrompt.replace("{userPrompt}", taskDescription),
-                outputLanguage = "en",
+                userPrompt = taskDescription,
                 quick = context.quick,
-                mappingValue = emptyMap(),
-                exampleInstance = GitParams("", emptyMap()),
+                responseSchema = GitParams(),
+                stepContext = stepContext,
             )
 
         return llmResponse
@@ -71,6 +68,7 @@ class GitTool(
         context: TaskContext,
         plan: Plan,
         taskDescription: String,
+        stepContext: String,
     ): ToolResult {
         val projectDir = File(context.projectDocument.path)
 
@@ -80,7 +78,7 @@ class GitTool(
 
         val parsed =
             try {
-                parseTaskDescription(taskDescription, context)
+                parseTaskDescription(taskDescription, context, stepContext)
             } catch (e: Exception) {
                 return ToolResult.error("Invalid Git parameters: ${e.message}", "Git parameter parsing failed")
             }

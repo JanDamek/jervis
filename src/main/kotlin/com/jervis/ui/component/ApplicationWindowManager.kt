@@ -4,12 +4,9 @@ import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.client.ClientProjectLinkService
 import com.jervis.service.client.ClientService
-import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.indexing.ClientIndexingService
 import com.jervis.service.indexing.IndexingService
 import com.jervis.service.project.ProjectService
-import com.jervis.service.prompts.PromptRepository
-import com.jervis.service.prompts.PromptTemplateService
 import com.jervis.service.scheduling.TaskQueryService
 import com.jervis.service.scheduling.TaskSchedulingService
 import com.jervis.ui.utils.MacOSAppUtils
@@ -30,9 +27,6 @@ class ApplicationWindowManager(
     private val clientIndexingService: ClientIndexingService,
     private val taskSchedulingService: TaskSchedulingService,
     private val taskQueryService: TaskQueryService,
-    private val promptRepository: PromptRepository,
-    private val promptTemplateService: PromptTemplateService,
-    private val llmGateway: LlmGateway,
 ) {
     private val mainWindow: MainWindow by lazy {
         MainWindow(
@@ -41,9 +35,6 @@ class ApplicationWindowManager(
             clientService,
             linkService,
             taskContextService,
-            llmGateway,
-            promptRepository,
-            promptTemplateService,
         )
     }
 

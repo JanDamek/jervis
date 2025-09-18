@@ -58,37 +58,22 @@ data class RagIndexingStatusDocument(
     val id: ObjectId = ObjectId.get(),
     @Indexed
     val projectId: ObjectId,
-    /** Path to the indexed file relative to project root */
     @Indexed
     val filePath: String,
-    /** Git commit hash when this file was indexed */
     @Indexed
     val gitCommitHash: String,
-    /** Current indexing status */
     @Indexed
     val status: IndexingStatus,
-    /** Source type of the RAG content */
     val ragSourceType: RagSourceType,
-    /** List of all content pieces extracted from this file */
     val indexedContent: List<IndexedContentInfo> = emptyList(),
-    /** File size in bytes when indexed */
     val fileSize: Long,
-    /** File hash for content change detection */
     val fileHash: String,
-    /** Programming language if detected */
     val language: String? = null,
-    /** Module/package name if applicable */
     val module: String? = null,
-    /** Error message if indexing failed */
     val errorMessage: String? = null,
-    /** Number of indexing attempts */
     val attemptCount: Int = 1,
-    /** When this file was first indexed */
     val firstIndexedAt: Instant = Instant.now(),
-    /** When this status was last updated */
     val lastUpdatedAt: Instant = Instant.now(),
-    /** When indexing started (for tracking duration) */
     val indexingStartedAt: Instant? = null,
-    /** When indexing completed */
     val indexingCompletedAt: Instant? = null,
 )

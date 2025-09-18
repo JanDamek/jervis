@@ -63,14 +63,14 @@ models: # embedding dimensions configured per model
   #      maxRequests: 8
 
   TRANSLATION:
-    - provider: LM_STUDIO
-      model: deepseek-coder-v2-lite-instruct
-      maxTokens: 9196
-      maxRequests: 2
+    #    - provider: LM_STUDIO
+    #      model: deepseek-coder-v2-lite-instruct
+    #      maxTokens: 9196
+    #      maxRequests: 2
     - provider: OLLAMA
       model: deepseek-coder-v2:latest
-      maxTokens: 4096
-      maxRequests: 2
+      maxTokens: 64535
+      maxRequests: 8
     - provider: OPENAI
       model: gpt-4o
       maxTokens: 8196
@@ -83,14 +83,14 @@ models: # embedding dimensions configured per model
       quick: true
 
   RAG:
-    - provider: LM_STUDIO
-      model: deepseek-coder-v2-lite-instruct
-      maxTokens: 9196
-      maxRequests: 2
+    #    - provider: LM_STUDIO
+    #      model: deepseek-coder-v2-lite-instruct
+    #      maxTokens: 9196
+    #      maxRequests: 2
     - provider: OLLAMA
       model: deepseek-coder-v2:latest
-      maxTokens: 4096
-      maxRequests: 2
+      maxTokens: 65535
+      maxRequests: 8
     - provider: OPENAI
       model: gpt-4o
       maxTokens: 8196
@@ -103,18 +103,14 @@ models: # embedding dimensions configured per model
       quick: true
 
   INTERNAL:
-    - provider: LM_STUDIO
-      model: deepseek-coder-v2-lite-instruct
-      maxTokens: 9196
-      maxRequests: 2
+    #    - provider: LM_STUDIO
+    #      model: deepseek-coder-v2-lite-instruct
+    #      maxTokens: 9196
+    #      maxRequests: 2
     - provider: OLLAMA
       model: deepseek-coder-v2:latest
-      maxTokens: 163986
-      maxRequests: 1
-    - provider: OLLAMA
-      model: llama3.1:8b-instruct-q4_K_M
-      maxTokens: 4096
-      maxRequests: 2
+      maxTokens: 65535
+      maxRequests: 8
     - provider: OPENAI
       model: gpt-4o
       maxTokens: 8196
@@ -127,18 +123,14 @@ models: # embedding dimensions configured per model
       quick: true
 
   SPEECH:
-    - provider: LM_STUDIO
-      model: deepseek-coder-v2-lite-instruct
-      maxTokens: 9196
-      maxRequests: 2
+    #    - provider: LM_STUDIO
+    #      model: deepseek-coder-v2-lite-instruct
+    #      maxTokens: 9196
+    #      maxRequests: 2
     - provider: OLLAMA
       model: deepseek-coder-v2:latest
-      maxTokens: 163986
-      maxRequests: 1
-    - provider: OLLAMA
-      model: llama3.1:8b-instruct-q4_K_M
-      maxTokens: 4096
-      maxRequests: 2
+      maxTokens: 65535
+      maxRequests: 8
     - provider: OPENAI
       model: gpt-4o
       maxTokens: 8196
@@ -151,18 +143,14 @@ models: # embedding dimensions configured per model
       quick: true
 
   CHAT_INTERNAL:
-    - provider: LM_STUDIO
-      model: deepseek-coder-v2-lite-instruct
-      maxTokens: 9196
-      maxRequests: 2
+    #    - provider: LM_STUDIO
+    #      model: deepseek-coder-v2-lite-instruct
+    #      maxTokens: 9196
+    #      maxRequests: 2
     - provider: OLLAMA
       model: deepseek-coder-v2:latest
-      maxTokens: 163986
-      maxRequests: 1
-    - provider: OLLAMA
-      model: llama3.1:8b-instruct-q4_K_M
-      maxTokens: 4096
-      maxRequests: 2
+      maxTokens: 65535
+      maxRequests: 8
     - provider: OPENAI
       model: gpt-4o
       maxTokens: 8196
@@ -175,6 +163,14 @@ models: # embedding dimensions configured per model
       quick: true
 
   CHAT_EXTERNAL:
+    #    - provider: LM_STUDIO
+    #      model: deepseek-coder-v2-lite-instruct
+    #      maxTokens: 9196
+    #      maxRequests: 2
+    - provider: OLLAMA
+      model: deepseek-coder-v2:latest
+      maxTokens: 65535
+      maxRequests: 8
     - provider: OPENAI
       model: gpt-4o
       maxTokens: 8196
@@ -187,14 +183,14 @@ models: # embedding dimensions configured per model
       quick: true
 
   PLANNER:
-    - provider: LM_STUDIO
-      model: deepseek-coder-v2-lite-instruct
-      maxTokens: 9196
-      maxRequests: 2
+    #    - provider: LM_STUDIO
+    #      model: deepseek-coder-v2-lite-instruct
+    #      maxTokens: 9196
+    #      maxRequests: 2
     - provider: OLLAMA
       model: deepseek-coder-v2:latest
-      maxTokens: 4096
-      maxRequests: 2
+      maxTokens: 65535
+      maxRequests: 8
     - provider: OPENAI
       model: gpt-4o
       maxTokens: 8196
@@ -207,14 +203,14 @@ models: # embedding dimensions configured per model
       quick: true
 
   JOERN:
-    - provider: LM_STUDIO
-      model: deepseek-coder-v2-lite-instruct
-      maxTokens: 9196
-      maxRequests: 2
+    #    - provider: LM_STUDIO
+    #      model: deepseek-coder-v2-lite-instruct
+    #      maxTokens: 9196
+    #      maxRequests: 2
     - provider: OLLAMA
       model: deepseek-coder-v2:latest
-      maxTokens: 4096
-      maxRequests: 2
+      maxTokens: 65535
+      maxRequests: 8
     - provider: OPENAI
       model: gpt-4o
       maxTokens: 8196
@@ -273,38 +269,6 @@ timeouts:
   mcp:
     joernToolTimeoutSeconds: 1800
     terminalToolTimeoutSeconds: 1800
-
-# Service-specific retry configurations
-retrys:
-  embedding:
-    retryCount: 3
-    backoffDurationSeconds: 2
-    maxBackoffDurationSeconds: 30
-    providers:
-      lm_studio:
-        retryCount: 5
-        backoffDurationSeconds: 3
-        maxBackoffDurationSeconds: 60
-      ollama:
-        retryCount: 3
-        backoffDurationSeconds: 2
-        maxBackoffDurationSeconds: 30
-      openai:
-        retryCount: 4
-        backoffDurationSeconds: 1
-        maxBackoffDurationSeconds: 20
-
-  llm:
-    retryCount: 3
-    backoffDurationSeconds: 1
-    maxBackoffDurationSeconds: 10
-    providers: { }
-
-  qdrant:
-    connectionRetryCount: 3
-    connectionBackoffDurationSeconds: 5
-    operationRetryCount: 2
-    operationBackoffDurationSeconds: 2
 
 # Service-specific connection pool configurations
 connection-pools:

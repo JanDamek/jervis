@@ -5,7 +5,8 @@ import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.entity.mongo.ClientDocument
 import com.jervis.entity.mongo.ProjectDocument
-import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.gateway.core.LlmGateway
+import com.jervis.service.gateway.processing.LlmResponseWrapper
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -38,26 +39,24 @@ import javax.swing.WindowConstants
 @Service
 class UserInteractionTool(
     private val gateway: LlmGateway,
-    promptRepository: PromptRepository,
+    override val promptRepository: PromptRepository,
 ) : McpTool {
-    override val name: String = "user.await"
-    override val description: String = promptRepository.getMcpToolDescription(PromptTypeEnum.USER_INTERACTION)
+    override val name = PromptTypeEnum.USER_INTERACTION
 
     override suspend fun execute(
         context: TaskContext,
         plan: Plan,
         taskDescription: String,
+        stepContext: String,
     ): ToolResult {
-        val userLang = plan.originalLanguage.lowercase().ifBlank { "en" }
-
         val proposedAnswer =
             gateway
                 .callLlm(
                     type = PromptTypeEnum.USER_INTERACTION,
                     userPrompt = taskDescription,
                     quick = context.quick,
-                    "",
-                    outputLanguage = userLang,
+                    LlmResponseWrapper(""),
+                    outputLanguage = plan.originalLanguage.lowercase().ifBlank { "en" },
                 )
 
         val previousOutput = plan.finalAnswer ?: plan.contextSummary
@@ -70,7 +69,7 @@ class UserInteractionTool(
                     previousOutput = previousOutput,
                     questionOriginal = taskDescription,
                     questionTranslated = taskDescription,
-                    proposedAnswer = proposedAnswer,
+                    proposedAnswer = proposedAnswer.response,
                 )
             }
 
@@ -81,11 +80,11 @@ class UserInteractionTool(
                 }
 
                 UserDecision.ENTER -> {
-                    decisionResult.answerText.ifBlank { proposedAnswer }
+                    decisionResult.answerText.ifBlank { proposedAnswer.response }
                 }
 
                 UserDecision.EDIT -> {
-                    decisionResult.answerText.ifBlank { proposedAnswer }
+                    decisionResult.answerText.ifBlank { proposedAnswer.response }
                 }
             }
 
@@ -95,10 +94,10 @@ class UserInteractionTool(
                     PromptTypeEnum.TRANSLATION,
                     userPrompt = finalAnswerOriginal,
                     quick = context.quick,
-                    "",
+                    LlmResponseWrapper(""),
                 )
 
-        return ToolResult.ok(finalAnswerEn)
+        return ToolResult.ok(finalAnswerEn.response)
     }
 
     data class UserDecisionResult(
