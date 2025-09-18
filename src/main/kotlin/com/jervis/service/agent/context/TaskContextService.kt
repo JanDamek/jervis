@@ -179,20 +179,6 @@ class TaskContextService(
     }
 
     /**
-     * Update context name.
-     */
-    suspend fun updateName(
-        contextId: ObjectId,
-        newName: String,
-    ) {
-        val contextDoc = taskContextRepo.findById(contextId) ?: return
-        contextDoc.name = newName
-        contextDoc.updatedAt = Instant.now()
-        taskContextRepo.save(contextDoc)
-        logger.info { "TASK_CONTEXT_NAME_UPDATED: contextId=$contextId newName='$newName'" }
-    }
-
-    /**
      * Delete context with cascading deletion of all associated plans and plan steps.
      */
     suspend fun delete(contextId: ObjectId) {

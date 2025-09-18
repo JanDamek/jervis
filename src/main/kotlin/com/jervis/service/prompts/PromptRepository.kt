@@ -10,39 +10,11 @@ class PromptRepository(
     private val promptsConfig: PromptsConfiguration,
 ) {
     /**
-     * Get system prompt by McpToolType - direct map lookup
-     */
-    fun getSystemPrompt(toolType: PromptTypeEnum): String =
-        promptsConfig.prompts[toolType]?.systemPrompt
-            ?: throw IllegalArgumentException("No system prompt found for tool type: $toolType")
-
-    /**
-     * Get system prompt for MCP tools with AGENT_TOOL_SUFFIX automatically appended
-     */
-    fun getMcpToolSystemPrompt(toolType: PromptTypeEnum): String {
-        val basePrompt = getSystemPrompt(toolType)
-        val agentSuffix = promptsConfig.prompts[PromptTypeEnum.AGENT_TOOL_SUFFIX]?.systemPrompt ?: ""
-
-        return if (agentSuffix.isNotBlank()) {
-            "$basePrompt\n\n$agentSuffix"
-        } else {
-            basePrompt
-        }
-    }
-
-    /**
      * Get MCP tool description directly from the prompt configuration
      */
     fun getMcpToolDescription(toolType: PromptTypeEnum): String =
         promptsConfig.prompts[toolType]?.description
             ?: throw IllegalArgumentException("No description found for tool type: $toolType")
-
-    /**
-     * Get user prompt by McpToolType - direct map lookup
-     */
-    fun getMcpToolUserPrompt(toolType: PromptTypeEnum): String =
-        promptsConfig.prompts[toolType]?.userPrompt
-            ?: throw IllegalArgumentException("No user prompt found for tool type: $toolType")
 
     /**
      * Retrieves the prompt configuration for the specified prompt type.

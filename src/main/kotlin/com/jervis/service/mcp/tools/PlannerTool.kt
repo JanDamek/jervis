@@ -12,16 +12,15 @@ import org.springframework.stereotype.Service
 @Service
 class PlannerTool(
     private val planner: Planner,
-    private val promptRepository: PromptRepository,
+    override val promptRepository: PromptRepository,
 ) : McpTool {
-    override val name: String = "planner"
-    override val description: String
-        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.PLANNER)
+    override val name: PromptTypeEnum = PromptTypeEnum.PLANNER
 
     override suspend fun execute(
         context: TaskContext,
         plan: Plan,
         taskDescription: String,
+        stepContext: String,
     ): ToolResult {
         if (taskDescription.isBlank()) {
             return ToolResult.error("Task description cannot be empty")

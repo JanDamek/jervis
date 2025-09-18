@@ -8,7 +8,7 @@ import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
-import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -165,9 +165,6 @@ class DependencyIndexingService(
     ) {
         try {
             logger.debug { "Generating LLM description for dependency: ${dependency.name}" }
-
-            // Get the configured system prompt for DEPENDENCY_ANALYSIS
-            promptRepository.getSystemPrompt(PromptTypeEnum.DEPENDENCY_ANALYSIS)
 
             val userPrompt =
                 buildString {

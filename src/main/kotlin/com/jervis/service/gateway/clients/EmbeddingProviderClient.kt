@@ -1,4 +1,4 @@
-package com.jervis.service.gateway
+package com.jervis.service.gateway.clients
 
 import com.jervis.domain.model.ModelProvider
 

@@ -3,7 +3,7 @@ package com.jervis.service.mcp.tools
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
-import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -16,22 +16,20 @@ import org.springframework.stereotype.Service
 @Service
 class EmailTool(
     private val llmGateway: LlmGateway,
-    private val promptRepository: PromptRepository,
+    override val promptRepository: PromptRepository,
 ) : McpTool {
     private val logger = KotlinLogging.logger {}
 
-    override val name: String = "email"
-    override val description: String
-        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.EMAIL)
+    override val name: PromptTypeEnum = PromptTypeEnum.EMAIL
 
     @Serializable
     data class EmailParams(
-        val action: String,
-        val to: List<String>,
+        val action: String = "",
+        val to: List<String> = emptyList(),
         val cc: List<String> = emptyList(),
         val bcc: List<String> = emptyList(),
-        val subject: String,
-        val body: String,
+        val subject: String = "",
+        val body: String = "",
         val priority: String = "normal",
         val finalPrompt: String? = null,
     )
@@ -39,16 +37,15 @@ class EmailTool(
     private suspend fun parseTaskDescription(
         taskDescription: String,
         context: TaskContext,
+        stepContext: String = "",
     ): EmailParams {
-        val userPrompt = promptRepository.getMcpToolUserPrompt(PromptTypeEnum.EMAIL)
         val llmResponse =
             llmGateway.callLlm(
                 type = PromptTypeEnum.EMAIL,
-                userPrompt = userPrompt.replace("{userPrompt}", taskDescription),
-                outputLanguage = "en",
+                userPrompt = taskDescription,
                 quick = context.quick,
-                mappingValue = emptyMap(),
-                exampleInstance = EmailParams("", emptyList(), emptyList(), emptyList(), "", ""),
+                responseSchema = EmailParams(),
+                stepContext = stepContext,
             )
 
         return llmResponse
@@ -58,10 +55,11 @@ class EmailTool(
         context: TaskContext,
         plan: Plan,
         taskDescription: String,
+        stepContext: String,
     ): ToolResult {
         val parsed =
             try {
-                parseTaskDescription(taskDescription, context)
+                parseTaskDescription(taskDescription, context, stepContext)
             } catch (e: Exception) {
                 return ToolResult.error("Invalid Email parameters: ${e.message}", "Email parameter parsing failed")
             }

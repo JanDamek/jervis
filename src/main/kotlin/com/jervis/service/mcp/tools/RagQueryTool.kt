@@ -6,7 +6,7 @@ import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
-import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -23,15 +23,13 @@ class RagQueryTool(
     private val embeddingGateway: EmbeddingGateway,
     private val vectorStorage: VectorStorageRepository,
     private val llmGateway: LlmGateway,
-    private val promptRepository: PromptRepository,
+    override val promptRepository: PromptRepository,
 ) : McpTool {
     companion object {
         private val logger = KotlinLogging.logger {}
     }
 
-    override val name: String = "rag-query"
-    override val description: String
-        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.RAG_QUERY)
+    override val name: PromptTypeEnum = PromptTypeEnum.RAG_QUERY
 
     @Serializable
     data class RagQueryRequest(
@@ -55,16 +53,15 @@ class RagQueryTool(
     private suspend fun parseTaskDescription(
         taskDescription: String,
         context: TaskContext,
+        stepContext: String = "",
     ): RagQueryParams {
-        val userPrompt = promptRepository.getMcpToolUserPrompt(PromptTypeEnum.RAG_QUERY)
         val llmResponse =
             llmGateway.callLlm(
                 type = PromptTypeEnum.RAG_QUERY,
-                userPrompt = userPrompt.replace("{userPrompt}", taskDescription),
-                outputLanguage = "en",
+                userPrompt = taskDescription,
                 quick = context.quick,
-                mappingValue = emptyMap(),
-                exampleInstance = RagQueryParams(),
+                responseSchema = RagQueryParams(),
+                stepContext = stepContext,
             )
 
         return llmResponse
@@ -74,12 +71,13 @@ class RagQueryTool(
         context: TaskContext,
         plan: Plan,
         taskDescription: String,
+        stepContext: String,
     ): ToolResult {
         logger.debug {
             "RAG_QUERY_START: Executing RAG query for taskDescription='$taskDescription', contextId='${context.id}', planId='${plan.id}'"
         }
 
-        val queryParams = parseTaskDescription(taskDescription, context)
+        val queryParams = parseTaskDescription(taskDescription, context, stepContext)
 
         logger.debug { "RAG_QUERY_PARSED: queryParams=$queryParams" }
 
@@ -158,22 +156,37 @@ class RagQueryTool(
 
         val effectiveMinScore = queryRequest.minScore ?: globalParams.minScore
 
-        // Build combined filter: mandatory projectId + global filters + query-specific filters
+        // Build simplified filter: only client and project filters with dynamic removal
         val combinedFilter =
             buildMap<String, Any> {
-                // Always include projectId for security
-                put("projectId", context.projectDocument.id.toHexString())
+                // Check if query mentions cross-client or cross-project search
+                val queryText = queryRequest.query.lowercase()
+                val shouldSkipClientFilter =
+                    queryText.contains("napříč klientem") ||
+                        queryText.contains("across client") ||
+                        queryText.contains("cross client") ||
+                        queryText.contains("napříč vším") ||
+                        queryText.contains("across everything") ||
+                        queryText.contains("everywhere")
 
-                // Add global filters if present
-                globalParams.globalFilters?.forEach { (key, value) ->
-                    put(key, value)
+                val shouldSkipProjectFilter =
+                    queryText.contains("napříč projekty") ||
+                        queryText.contains("across projects") ||
+                        queryText.contains("cross project") ||
+                        queryText.contains("napříč vším") ||
+                        queryText.contains("across everything") ||
+                        queryText.contains("everywhere")
+
+                // Add project filter unless explicitly excluded
+            if (!shouldSkipProjectFilter) {
+                    put("projectId", context.projectDocument.id.toHexString())
                 }
 
-                // Add query-specific filters if present (these override global filters for same keys)
-                queryRequest.filters?.forEach { (key, value) ->
-                    put(key, value)
-                }
+                // Add client filter unless explicitly excluded
+                if (!shouldSkipClientFilter) {
+                put("clientId", context.clientDocument.id.toHexString())
             }
+        }
 
         logger.debug {
             "RAG_QUERY_FILTERS: Using combinedFilter=$combinedFilter, topK=$effectiveTopK, minScore=$effectiveMinScore for query $queryIndex"

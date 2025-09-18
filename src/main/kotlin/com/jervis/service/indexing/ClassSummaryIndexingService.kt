@@ -8,7 +8,7 @@ import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
-import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.prompts.PromptRepository
 import com.jervis.service.rag.RagIndexingStatusService
 import kotlinx.coroutines.Dispatchers
@@ -151,8 +151,6 @@ class ClassSummaryIndexingService(
     ): Boolean {
         try {
             logger.debug { "Generating class summary for: ${classInfo.className}" }
-
-            promptRepository.getSystemPrompt(PromptTypeEnum.CLASS_SUMMARY_ANALYSIS)
 
             val userPrompt = buildClassAnalysisPrompt(classInfo)
 
@@ -382,10 +380,6 @@ class ClassSummaryIndexingService(
      */
     private fun buildClassAnalysisPrompt(classInfo: ClassInfo): String =
         buildString {
-            // Get the configured system prompt for CLASS_SUMMARY
-            val systemPrompt = promptRepository.getSystemPrompt(PromptTypeEnum.CLASS_SUMMARY)
-            appendLine(systemPrompt)
-            appendLine()
             appendLine("=== CLASS INFORMATION ===")
             appendLine()
             appendLine("Class Name: ${classInfo.className}")

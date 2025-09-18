@@ -2,12 +2,10 @@ package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
-import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
-import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
-import com.jervis.service.mcp.util.McpJson
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -19,20 +17,18 @@ import org.springframework.stereotype.Service
 @Service
 class SlackTool(
     private val llmGateway: LlmGateway,
-    private val promptRepository: PromptRepository,
+    override val promptRepository: PromptRepository,
 ) : McpTool {
     private val logger = KotlinLogging.logger {}
 
-    override val name: String = "slack"
-    override val description: String
-        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.SLACK)
+    override val name: PromptTypeEnum = PromptTypeEnum.SLACK
 
     @Serializable
     data class SlackParams(
-        val action: String,
-        val target_type: String,
-        val target: String,
-        val message: String,
+        val action: String = "",
+        val target_type: String = "",
+        val target: String = "",
+        val message: String = "",
         val thread_ts: String? = null,
         val mentions: List<String> = emptyList(),
         val blocks: JsonArray = JsonArray(emptyList()),
@@ -41,16 +37,15 @@ class SlackTool(
     private suspend fun parseTaskDescription(
         taskDescription: String,
         context: TaskContext,
+        stepContext: String = "",
     ): SlackParams {
-        val userPrompt = promptRepository.getMcpToolUserPrompt(PromptTypeEnum.SLACK)
         val llmResponse =
             llmGateway.callLlm(
                 type = PromptTypeEnum.SLACK,
-                userPrompt = userPrompt.replace("{userPrompt}", taskDescription),
-                outputLanguage = "en",
+                userPrompt = taskDescription,
                 quick = context.quick,
-                mappingValue = emptyMap(),
-                exampleInstance = SlackParams("", "", "", "", null, emptyList(), JsonArray(emptyList())),
+                responseSchema = SlackParams(),
+                stepContext = stepContext,
             )
 
         return llmResponse
@@ -60,10 +55,11 @@ class SlackTool(
         context: TaskContext,
         plan: Plan,
         taskDescription: String,
+        stepContext: String,
     ): ToolResult {
         val parsed =
             try {
-                parseTaskDescription(taskDescription, context)
+                parseTaskDescription(taskDescription, context, stepContext)
             } catch (e: Exception) {
                 return ToolResult.error("Invalid Slack parameters: ${e.message}", "Slack parameter parsing failed")
             }

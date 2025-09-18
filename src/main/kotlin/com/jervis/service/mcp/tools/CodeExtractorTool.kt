@@ -3,6 +3,7 @@ package com.jervis.service.mcp.tools
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
+import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -17,12 +18,10 @@ import kotlin.io.path.extension
 
 @Service
 class CodeExtractorTool(
-    private val promptRepository: PromptRepository,
+    private val llmGateway: LlmGateway,
+    override val promptRepository: PromptRepository,
 ) : McpTool {
-    override val name: String = "code.extractor"
-
-    override val description: String
-        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.CODE_EXTRACTOR)
+    override val name: PromptTypeEnum = PromptTypeEnum.CODE_EXTRACTOR
 
     @Serializable
     data class CodeExtractorParams(
@@ -34,6 +33,8 @@ class CodeExtractorTool(
         val includeComments: Boolean = true,
         val signatureOnly: Boolean = false,
         val languageHint: String? = null,
+        val contextFromSteps: Int = 3, // Number of previous steps to include in context
+        val smartFiltering: Boolean = true, // Enable smart content filtering based on context
     )
 
     @Serializable
@@ -55,10 +56,11 @@ class CodeExtractorTool(
         context: TaskContext,
         plan: Plan,
         taskDescription: String,
+        stepContext: String,
     ): ToolResult =
         withContext(Dispatchers.IO) {
             try {
-                val params = parseTaskDescription(taskDescription)
+                val params = parseTaskDescription(taskDescription, context, plan, stepContext)
                 val projectPath = Path.of(context.projectDocument.path)
 
                 if (!Files.exists(projectPath)) {
@@ -73,42 +75,87 @@ class CodeExtractorTool(
                             if (!Files.exists(filePath)) {
                                 return@withContext ToolResult.error("File does not exist: ${params.filePath}")
                             }
-                            extractFromFile(filePath, params)
+                            val extracted = extractFromFile(filePath, params)
+                            if (params.smartFiltering) {
+                                applySmartFiltering(extracted, context, plan, params)
+                            } else {
+                                extracted
+                            }
                         }
 
                         params.className != null && params.methodName != null -> {
                             // Search for specific method in specific class
-                            searchMethodInClass(projectPath, params.className, params.methodName, params)
+                            val extracted =
+                                searchMethodInClass(projectPath, params.className, params.methodName, params)
+                            if (params.smartFiltering) {
+                                applySmartFiltering(extracted, context, plan, params)
+                            } else {
+                                extracted
+                            }
                         }
 
                         params.className != null -> {
                             // Search for class by name
-                            searchClassByName(projectPath, params.className, params)
+                            val extracted = searchClassByName(projectPath, params.className, params)
+                            if (params.smartFiltering) {
+                                applySmartFiltering(extracted, context, plan, params)
+                            } else {
+                                extracted
+                            }
                         }
 
                         params.methodName != null -> {
                             // Search for method by name
-                            searchMethodByName(projectPath, params.methodName, params)
+                            val extracted = searchMethodByName(projectPath, params.methodName, params)
+                            if (params.smartFiltering) {
+                                applySmartFiltering(extracted, context, plan, params)
+                            } else {
+                                extracted
+                            }
                         }
 
                         params.searchPattern != null -> {
                             // Search by pattern
-                            searchByPattern(projectPath, params.searchPattern, params)
+                            val extracted = searchByPattern(projectPath, params.searchPattern, params)
+                            if (params.smartFiltering) {
+                                applySmartFiltering(extracted, context, plan, params)
+                            } else {
+                                extracted
+                            }
                         }
 
                         else -> {
-                            return@withContext ToolResult.error("Must specify either filePath, className, methodName, or searchPattern")
+                            // Intelligent file discovery - if no specific criteria provided, try to extract from context
+                            val discoveredFiles = discoverRelevantFiles(projectPath, context, plan, params)
+                            if (discoveredFiles.isNotEmpty()) {
+                                val extracted =
+                                    discoveredFiles.flatMap { file ->
+                                        try {
+                                            extractFromFile(file, params)
+                                        } catch (e: Exception) {
+                                            emptyList()
+                                        }
+                                    }
+                                if (params.smartFiltering) {
+                                    applySmartFiltering(extracted, context, plan, params)
+                                } else {
+                                    extracted
+                                }
+                            } else {
+                                return@withContext ToolResult.error(
+                                    "Must specify either filePath, className, methodName, or searchPattern. No relevant files could be automatically discovered.",
+                                )
+                            }
                         }
                     }
 
                 if (results.isEmpty()) {
                     ToolResult.ok("No code fragments found matching the criteria")
                 } else {
-                    val jsonResults =
-                        Json.encodeToString(
-                            kotlinx.serialization.serializer<List<CodeFragmentResult>>(),
-                            results,
-                        )
+                    Json.encodeToString(
+                        kotlinx.serialization.serializer<List<CodeFragmentResult>>(),
+                        results,
+                    )
                     val output =
                         buildString {
                             appendLine("Found ${results.size} code fragment(s):")
@@ -135,10 +182,7 @@ class CodeExtractorTool(
                                 appendLine("Tags: ${result.tags.joinToString(", ")}")
                                 appendLine("=".repeat(80))
                                 appendLine(result.content)
-                                appendLine()
                             }
-                            appendLine("JSON Data:")
-                            appendLine(jsonResults)
                         }
                     ToolResult.ok(output)
                 }
@@ -155,30 +199,344 @@ class CodeExtractorTool(
             } catch (e: java.io.IOException) {
                 ToolResult.error("CODE_EXTRACTOR_IO_ERROR: File system error occurred: ${e.message}. Check if file is locked or corrupted.")
             } catch (e: kotlinx.serialization.SerializationException) {
-                ToolResult.error(
-                    "CODE_EXTRACTOR_PARSING_ERROR: Failed to parse task parameters. Expected JSON format with fields: filePath, className, methodName, searchPattern, includeImports, includeComments, signatureOnly, languageHint. Error: ${e.message}",
-                )
+                val recoveryAdvice =
+                    buildString {
+                        appendLine("CODE_EXTRACTOR_PARSING_ERROR: Failed to parse task parameters.")
+                        appendLine("Expected JSON format with fields:")
+                        appendLine("- filePath, className, methodName, searchPattern (at least one required)")
+                        appendLine("- includeImports, includeComments, signatureOnly, languageHint (optional)")
+                        appendLine("- contextFromSteps, smartFiltering (optional)")
+                        appendLine()
+                        appendLine("RECOVERY SUGGESTIONS:")
+                        appendLine("1. Use plain text description (e.g., 'Extract UserService class')")
+                        appendLine("2. Provide valid JSON: {\"className\":\"UserService\"}")
+                        appendLine("3. Check for syntax errors in JSON format")
+                        appendLine()
+                        appendLine("Error details: ${e.message}")
+                    }
+                ToolResult.error(recoveryAdvice)
             } catch (e: IllegalArgumentException) {
-                ToolResult.error(
-                    "CODE_EXTRACTOR_INVALID_PARAMS: Invalid parameter values provided: ${e.message}. Please check parameter format and values.",
-                )
+                val recoveryAdvice =
+                    buildString {
+                        appendLine("CODE_EXTRACTOR_INVALID_PARAMS: Invalid parameter values provided.")
+                        appendLine("Error: ${e.message}")
+                        appendLine()
+                        appendLine("RECOVERY SUGGESTIONS:")
+                        if (e.message?.contains("JSON") == true) {
+                            appendLine("1. Try using a simpler description in plain text")
+                            appendLine("2. Verify JSON syntax and field names")
+                            appendLine("3. Use FILE_LISTING tool to discover available files first")
+                        } else {
+                            appendLine("1. Check file paths are relative to project root")
+                            appendLine("2. Verify class/method names exist in the project")
+                            appendLine("3. Use wildcard patterns like '*Service*' for broader search")
+                        }
+                    }
+                ToolResult.error(recoveryAdvice)
             } catch (e: Exception) {
-                ToolResult.error(
-                    "CODE_EXTRACTOR_UNKNOWN_ERROR: Unexpected error during code extraction: ${e.javaClass.simpleName} - ${e.message}. Please report this error with the task parameters used.",
-                )
+                val recoveryAdvice =
+                    buildString {
+                        appendLine("CODE_EXTRACTOR_UNKNOWN_ERROR: Unexpected error during code extraction.")
+                        appendLine("Error: ${e.javaClass.simpleName} - ${e.message}")
+                        appendLine()
+                        appendLine("RECOVERY SUGGESTIONS:")
+                        appendLine("1. Try using FILE_LISTING tool first to understand project structure")
+                        appendLine("2. Use simpler search criteria (single class or method name)")
+                        appendLine("3. Check if project path is accessible and contains supported files")
+                        appendLine("4. Try with smartFiltering disabled: {\"smartFiltering\": false}")
+                        appendLine()
+                        appendLine("If the error persists, please report with the exact task parameters used.")
+                    }
+                ToolResult.error(recoveryAdvice)
             }
         }
 
-    private fun parseTaskDescription(taskDescription: String): CodeExtractorParams {
-        val cleanedInput =
-            taskDescription
-                .trim()
-                .removePrefix("```json")
-                .removePrefix("```")
-                .removeSuffix("```")
-                .trim()
+    private suspend fun parseTaskDescription(
+        taskDescription: String,
+        context: TaskContext,
+        plan: Plan,
+        stepContext: String = "",
+    ): CodeExtractorParams {
+        try {
+            return Json.decodeFromString<CodeExtractorParams>(
+                taskDescription
+                    .trim()
+                    .removePrefix("```json")
+                    .removePrefix("```")
+                    .removeSuffix("```")
+                    .trim(),
+            )
+        } catch (e: Exception) {
+            // If direct JSON parsing fails, use LLM to convert plain text to JSON
+            return generateJsonFromPlainText(taskDescription, context, plan, stepContext)
+        }
+    }
 
-        return Json.decodeFromString<CodeExtractorParams>(cleanedInput)
+    private suspend fun generateJsonFromPlainText(
+        taskDescription: String,
+        context: TaskContext,
+        plan: Plan,
+        stepContext: String = "",
+    ): CodeExtractorParams =
+        llmGateway.callLlm(
+            type = PromptTypeEnum.CODE_EXTRACTOR,
+            userPrompt = taskDescription,
+            quick = context.quick,
+            responseSchema = CodeExtractorParams(),
+            stepContext = stepContext,
+        )
+
+    private suspend fun applySmartFiltering(
+        fragments: List<CodeFragmentResult>,
+        context: TaskContext,
+        plan: Plan,
+        params: CodeExtractorParams,
+    ): List<CodeFragmentResult> {
+        if (fragments.isEmpty() || !params.smartFiltering) {
+            return fragments
+        }
+
+        // Get context from recent steps
+        val recentSteps = plan.steps.takeLast(params.contextFromSteps)
+        val contextKeywords = mutableSetOf<String>()
+
+        // Extract keywords from step names and outputs
+        recentSteps.forEach { step ->
+            // Add step names as keywords
+            step.name.split("_", " ").forEach { keyword ->
+                if (keyword.length > 2) {
+                    contextKeywords.add(keyword.lowercase())
+                }
+            }
+
+            // Extract keywords from step outputs
+            step.output?.let { output ->
+                val outputText = output.render()
+                // Extract class names, method names, and other relevant terms
+                val relevantTerms = extractRelevantTerms(outputText)
+                contextKeywords.addAll(relevantTerms)
+            }
+        }
+
+        // Add keywords from current task if available
+        if (context.contextSummary.isNotEmpty()) {
+            val taskKeywords = extractRelevantTerms(context.contextSummary)
+            contextKeywords.addAll(taskKeywords)
+        }
+
+        // If no context keywords found, return all fragments
+        if (contextKeywords.isEmpty()) {
+            return fragments
+        }
+
+        // Score and filter fragments based on relevance
+        return fragments
+            .map { fragment -> fragment to calculateRelevanceScore(fragment, contextKeywords) }
+            .filter { (_, score) -> score > 0 } // Only include fragments with some relevance
+            .sortedByDescending { (_, score) -> score } // Sort by relevance
+            .take(10) // Limit to top 10 most relevant fragments
+            .map { (fragment, _) -> fragment }
+    }
+
+    private fun extractRelevantTerms(text: String): Set<String> {
+        val terms = mutableSetOf<String>()
+
+        // Extract capitalized words (likely class names)
+        val capitalizedWords = Regex("[A-Z][a-zA-Z0-9]*").findAll(text)
+        capitalizedWords.forEach { match ->
+            terms.add(match.value.lowercase())
+        }
+
+        // Extract camelCase identifiers
+        val camelCaseWords = Regex("[a-z]+[A-Z][a-zA-Z0-9]*").findAll(text)
+        camelCaseWords.forEach { match ->
+            terms.add(match.value.lowercase())
+            // Split camelCase into individual words
+            val splitWords = match.value.split(Regex("(?=[A-Z])"))
+            splitWords.forEach { word ->
+                if (word.length > 2) {
+                    terms.add(word.lowercase())
+                }
+            }
+        }
+
+        // Extract quoted strings (potential file names, method names)
+        val quotedStrings = Regex("\"([^\"]+)\"").findAll(text)
+        quotedStrings.forEach { match ->
+            val content = match.groupValues[1]
+            if (content.length > 2) {
+                terms.add(content.lowercase())
+                // Also add without file extensions
+                val withoutExt = content.substringBeforeLast(".")
+                if (withoutExt != content) {
+                    terms.add(withoutExt.lowercase())
+                }
+            }
+        }
+
+        return terms.filter { it.length > 2 }.toSet()
+    }
+
+    private fun calculateRelevanceScore(
+        fragment: CodeFragmentResult,
+        contextKeywords: Set<String>,
+    ): Int {
+        var score = 0
+
+        // Check fragment title
+        contextKeywords.forEach { keyword ->
+            if (fragment.title.lowercase().contains(keyword)) {
+                score += 5
+            }
+        }
+
+        // Check class name
+        fragment.className?.let { className ->
+            contextKeywords.forEach { keyword ->
+                if (className.lowercase().contains(keyword)) {
+                    score += 4
+                }
+            }
+        }
+
+        // Check method name
+        fragment.methodName?.let { methodName ->
+            contextKeywords.forEach { keyword ->
+                if (methodName.lowercase().contains(keyword)) {
+                    score += 4
+                }
+            }
+        }
+
+        // Check tags
+        fragment.tags.forEach { tag ->
+            contextKeywords.forEach { keyword ->
+                if (tag.contains(keyword)) {
+                    score += 2
+                }
+            }
+        }
+
+        // Check content (less weight to avoid noise)
+        val contentLower = fragment.content.lowercase()
+        contextKeywords.forEach { keyword ->
+            if (contentLower.contains(keyword)) {
+                score += 1
+            }
+        }
+
+        // Check file path for relevant directories/files
+        val fileLower = fragment.file.lowercase()
+        contextKeywords.forEach { keyword ->
+            if (fileLower.contains(keyword)) {
+                score += 2
+            }
+        }
+
+        return score
+    }
+
+    private suspend fun discoverRelevantFiles(
+        projectPath: Path,
+        context: TaskContext,
+        plan: Plan,
+        params: CodeExtractorParams,
+    ): List<Path> {
+        // Get context from recent steps to identify relevant files
+        val recentSteps = plan.steps.takeLast(params.contextFromSteps)
+        val fileHints = mutableSetOf<String>()
+
+        // Extract file names and patterns from step outputs
+        recentSteps.forEach { step ->
+            step.output?.let { output ->
+                val outputText = output.render()
+
+                // Look for file paths in outputs
+                val filePaths = Regex("\\b[\\w/.-]+\\.(kt|java|js|ts|py)\\b").findAll(outputText)
+                filePaths.forEach { match ->
+                    fileHints.add(match.value)
+                }
+
+                // Look for class names that might correspond to files
+                val classNames = Regex("\\b[A-Z][a-zA-Z0-9]*\\b").findAll(outputText)
+                classNames.forEach { match ->
+                    fileHints.add("${match.value}.kt")
+                    fileHints.add("${match.value}.java")
+                }
+
+                // Look for quoted strings that might be file names
+                val quotedStrings = Regex("\"([^\"]*\\.(kt|java|js|ts|py))\"").findAll(outputText)
+                quotedStrings.forEach { match ->
+                    fileHints.add(match.groupValues[1])
+                }
+            }
+        }
+
+        // Also check context summary for file hints
+        if (context.contextSummary.isNotEmpty()) {
+            val summaryHints = extractFileHintsFromText(context.contextSummary)
+            fileHints.addAll(summaryHints)
+        }
+
+        // Find actual files based on hints
+        val discoveredFiles = mutableListOf<Path>()
+
+        Files
+            .walk(projectPath)
+            .filter { it.toFile().isFile && isSupportedFile(it) }
+            .forEach { file ->
+                val fileName = file.fileName.toString()
+                val relativePath = projectPath.relativize(file).toString()
+
+                // Check if file matches any of the hints
+                fileHints.forEach { hint ->
+                    when {
+                        fileName.equals(hint, ignoreCase = true) -> discoveredFiles.add(file)
+                        relativePath.endsWith(hint, ignoreCase = true) -> discoveredFiles.add(file)
+                        fileName.contains(hint.substringBeforeLast("."), ignoreCase = true) -> {
+                            if (discoveredFiles.size < 5) discoveredFiles.add(file) // Limit fuzzy matches
+                        }
+                    }
+                }
+            }
+
+        // If no specific files found, return main application files
+        if (discoveredFiles.isEmpty()) {
+            Files
+                .walk(projectPath)
+                .filter { it.toFile().isFile && isSupportedFile(it) }
+                .filter { file ->
+                    val fileName = file.fileName.toString().lowercase()
+                    fileName.contains("main") ||
+                        fileName.contains("application") ||
+                        fileName.contains("app") ||
+                        fileName.contains("service") ||
+                        file.toString().contains("src/main/kotlin") ||
+                        file.toString().contains("src/main/java")
+                }.limit(10) // Limit to prevent overwhelming output
+                .forEach { discoveredFiles.add(it) }
+        }
+
+        return discoveredFiles.distinct()
+    }
+
+    private fun extractFileHintsFromText(text: String): Set<String> {
+        val hints = mutableSetOf<String>()
+
+        // Extract file paths
+        val filePaths = Regex("\\b[\\w/.-]+\\.(kt|java|js|ts|py)\\b").findAll(text)
+        filePaths.forEach { match ->
+            hints.add(match.value)
+        }
+
+        // Extract class names
+        val classNames = Regex("\\b[A-Z][a-zA-Z0-9]*\\b").findAll(text)
+        classNames.forEach { match ->
+            hints.add("${match.value}.kt")
+            hints.add("${match.value}.java")
+        }
+
+        return hints
     }
 
     private fun resolveFilePath(
@@ -538,25 +896,79 @@ class CodeExtractorTool(
         params: CodeExtractorParams,
     ): List<CodeFragmentResult> {
         val results = mutableListOf<CodeFragmentResult>()
+        val processedFiles = mutableSetOf<Path>()
+
+        // Enhanced pattern matching with multiple strategies
+        val wildcard = pattern.contains("*")
+        val regex =
+            if (wildcard) {
+                try {
+                    Regex(pattern.replace("*", ".*"), RegexOption.IGNORE_CASE)
+                } catch (e: Exception) {
+                    Regex(Regex.escape(pattern), RegexOption.IGNORE_CASE)
+                }
+            } else {
+                Regex(Regex.escape(pattern), RegexOption.IGNORE_CASE)
+            }
+
         Files
             .walk(projectPath)
             .filter { it.toFile().isFile && isSupportedFile(it) }
             .forEach { file ->
-                try {
-                    val fragments = extractFromFile(file, params)
-                    results.addAll(
-                        fragments.filter { fragment ->
-                            fragment.content.contains(pattern, ignoreCase = true) ||
-                                fragment.className?.contains(pattern, ignoreCase = true) == true ||
-                                fragment.methodName?.contains(pattern, ignoreCase = true) == true ||
-                                fragment.tags.any { it.contains(pattern, ignoreCase = true) }
-                        },
-                    )
-                } catch (e: Exception) {
-                    // Skip files that can't be processed
+                if (processedFiles.add(file)) {
+                    try {
+                        val fragments = extractFromFile(file, params)
+                        results.addAll(
+                            fragments.filter { fragment ->
+                                matchesPattern(fragment, pattern, regex)
+                            },
+                        )
+                    } catch (e: Exception) {
+                        // Log but continue processing other files
+                    }
                 }
             }
-        return results
+
+        // If no results found, try broader search with individual pattern terms
+        if (results.isEmpty() && pattern.contains(" ")) {
+            val terms = pattern.split(" ").filter { it.length > 2 }
+            terms.forEach { term ->
+                results.addAll(searchByPattern(projectPath, term, params))
+            }
+        }
+
+        return results.distinct()
+    }
+
+    private fun matchesPattern(
+        fragment: CodeFragmentResult,
+        pattern: String,
+        regex: Regex,
+    ): Boolean {
+        // Direct string matching (most common case)
+        if (fragment.content.contains(pattern, ignoreCase = true)) return true
+        if (fragment.className?.contains(pattern, ignoreCase = true) == true) return true
+        if (fragment.methodName?.contains(pattern, ignoreCase = true) == true) return true
+        if (fragment.tags.any { it.contains(pattern, ignoreCase = true) }) return true
+
+        // Regex matching for wildcards
+        if (pattern.contains("*")) {
+            if (regex.containsMatchIn(fragment.content)) return true
+            if (fragment.className?.let { regex.containsMatchIn(it) } == true) return true
+            if (fragment.methodName?.let { regex.containsMatchIn(it) } == true) return true
+            if (fragment.tags.any { regex.containsMatchIn(it) }) return true
+        }
+
+        // File path matching
+        if (fragment.file.contains(pattern, ignoreCase = true)) return true
+
+        // Package name matching
+        if (fragment.packageName?.contains(pattern, ignoreCase = true) == true) return true
+
+        // Comment matching
+        if (fragment.comment?.contains(pattern, ignoreCase = true) == true) return true
+
+        return false
     }
 
     private fun isSupportedFile(path: Path): Boolean {

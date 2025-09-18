@@ -11,7 +11,7 @@ data class PromptsConfiguration(
 
 data class PromptConfig(
     var systemPrompt: String,
-    var userPrompt: String,
+    var userPrompt: String?,
     var description: String,
     var modelParams: ModelParams = ModelParams(),
 )
@@ -19,7 +19,6 @@ data class PromptConfig(
 data class ModelParams(
     var modelType: ModelType = ModelType.INTERNAL,
     var creativityLevel: CreativityLevel = CreativityLevel.MEDIUM,
-    var jsonMode: Boolean = false,
 )
 
 data class CreativityConfig(

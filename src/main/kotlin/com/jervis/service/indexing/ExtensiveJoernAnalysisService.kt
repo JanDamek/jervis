@@ -8,7 +8,7 @@ import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
-import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -247,8 +247,6 @@ class ExtensiveJoernAnalysisService(
         analysisConfig: JoernAnalysisConfig,
         results: String,
     ): String {
-        promptRepository.getSystemPrompt(PromptTypeEnum.EXTENSIVE_JOERN_ANALYSIS)
-
         val userPrompt =
             buildString {
                 appendLine("Analyze these Joern static analysis results and provide a comprehensive description:")

@@ -4,7 +4,8 @@ import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.PlanStatus
 import com.jervis.dto.ChatResponse
-import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.gateway.core.LlmGateway
+import com.jervis.service.gateway.processing.LlmResponseWrapper
 import com.jervis.service.prompts.PromptRepository
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -53,11 +54,11 @@ class Finalizer(
                                 type = PromptTypeEnum.FINALIZER,
                                 userPrompt = userPrompt,
                                 quick = context.quick,
-                                "",
+                                LlmResponseWrapper(""),
                                 outputLanguage = userLang,
                                 mappingValue = emptyMap(),
                             )
-                    plan.finalAnswer = answer
+                    plan.finalAnswer = answer.response
                     plan.status = PlanStatus.FINALIZED
                     plan.updatedAt = Instant.now()
                     plan

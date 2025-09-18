@@ -4,7 +4,7 @@ import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.ProjectContextInfo
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
-import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -13,21 +13,20 @@ import org.springframework.stereotype.Service
 
 @Service
 class ScopeResolutionTool(
-    private val promptRepository: PromptRepository,
+    override val promptRepository: PromptRepository,
     private val llmGateway: LlmGateway,
 ) : McpTool {
     companion object {
         private val logger = KotlinLogging.logger {}
     }
 
-    override val name: String = "scope.resolve"
-    override val description: String
-        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.SCOPE_RESOLUTION)
+    override val name: PromptTypeEnum = PromptTypeEnum.SCOPE_RESOLUTION
 
     override suspend fun execute(
         context: TaskContext,
         plan: Plan,
         taskDescription: String,
+        stepContext: String,
     ): ToolResult {
         logger.debug { "SCOPE_RESOLUTION: Adding contextual project and client information to context=${context.id}" }
 
@@ -35,7 +34,7 @@ class ScopeResolutionTool(
         val project = context.projectDocument
 
         // Use LLM to determine what level of detail to include
-        val contextRequirements = determineContextRequirements(taskDescription, client.name, project.name)
+        val contextRequirements = determineContextRequirements(taskDescription, client.name, project.name, stepContext)
 
         val summary =
             buildAdaptiveSummary(
@@ -67,23 +66,22 @@ class ScopeResolutionTool(
         taskDescription: String,
         clientName: String,
         projectName: String,
-    ): ContextRequirements {
-        promptRepository.getMcpToolSystemPrompt(PromptTypeEnum.SCOPE_RESOLUTION)
-
-        val userPrompt =
-            promptRepository
-                .getMcpToolUserPrompt(PromptTypeEnum.SCOPE_RESOLUTION)
-                .replace("{taskDescription}", taskDescription)
-                .replace("{clientName}", clientName)
-                .replace("{projectName}", projectName)
-
-        return try {
+        stepContext: String = "",
+    ): ContextRequirements =
+        try {
             val response =
                 llmGateway.callLlm(
                     type = PromptTypeEnum.SCOPE_RESOLUTION,
-                    userPrompt = userPrompt,
+                    userPrompt = taskDescription,
                     quick = true,
                     "",
+                    mappingValue =
+                        mapOf(
+                            "taskDescription" to taskDescription,
+                            "clientName" to clientName,
+                            "projectName" to projectName,
+                        ),
+                    stepContext = stepContext,
                 )
 
             // Parse JSON response - simplified parsing
@@ -107,7 +105,6 @@ class ScopeResolutionTool(
             logger.warn(e) { "Failed to determine context requirements, using basic defaults" }
             ContextRequirements() // Default to basic level
         }
-    }
 
     private fun buildAdaptiveSummary(
         client: com.jervis.entity.mongo.ClientDocument,

@@ -4,7 +4,7 @@ import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.entity.mongo.ScheduledTaskStatus
-import com.jervis.service.gateway.LlmGateway
+import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -22,16 +22,14 @@ import java.time.format.DateTimeFormatter
 class TaskViewerTool(
     private val taskQueryService: TaskQueryService,
     private val llmGateway: LlmGateway,
-    private val promptRepository: PromptRepository,
+    override val promptRepository: PromptRepository,
 ) : McpTool {
     companion object {
         private val logger = KotlinLogging.logger {}
         private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
     }
 
-    override val name: String = "task_viewer"
-    override val description: String
-        get() = promptRepository.getMcpToolDescription(PromptTypeEnum.TASK_VIEWER)
+    override val name: PromptTypeEnum = PromptTypeEnum.TASK_VIEWER
 
     @Serializable
     data class BrowseParams(
@@ -46,11 +44,12 @@ class TaskViewerTool(
         context: TaskContext,
         plan: Plan,
         taskDescription: String,
+        stepContext: String,
     ): ToolResult {
         return try {
             logger.info { "Executing scheduler browsing with description: $taskDescription" }
 
-            val params = parseTaskDescription(taskDescription, context)
+            val params = parseTaskDescription(taskDescription, context, stepContext)
             logger.debug { "Parsed browse parameters: $params" }
 
             if (params.showStatistics) {
@@ -189,11 +188,13 @@ class TaskViewerTool(
     private suspend fun parseTaskDescription(
         taskDescription: String,
         context: TaskContext,
+        stepContext: String = "",
     ): BrowseParams =
         llmGateway.callLlm(
             type = PromptTypeEnum.TASK_VIEWER,
             userPrompt = taskDescription,
             quick = context.quick,
             BrowseParams(),
+            stepContext = stepContext,
         )
 }
