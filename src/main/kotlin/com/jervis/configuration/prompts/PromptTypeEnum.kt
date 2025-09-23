@@ -2,7 +2,9 @@ package com.jervis.configuration.prompts
 
 enum class PromptTypeEnum {
     RAG_QUERY,
+    RAG_INSERT,
     JOERN,
+    JOERN_CALLGRAPH,
     TERMINAL,
     LLM,
     USER_INTERACTION,
@@ -19,10 +21,15 @@ enum class PromptTypeEnum {
     REINDEX,
     AGENT_TOOL_SUFFIX,
     FINALIZER,
-    TRANSLATION,
+    QUESTION_INTERPRETER,
     CLASS_SUMMARY,
+    METHOD_SUMMARY,
     DEPENDENCY_ANALYSIS,
     FILE_LISTING,
+    INTERNET_SEARCH,
+    WEB_PAGE_OPEN,
+    TIKA_TOOL,
+    CONTEXT_MERGE,
 
     // Additional prompts for services
     PROJECT_DESCRIPTION_SHORT,
@@ -33,4 +40,10 @@ enum class PromptTypeEnum {
     COMPREHENSIVE_FILE_ANALYSIS,
     EXTENSIVE_JOERN_ANALYSIS,
     TASK_RESOLUTION_CHECKER,
+
+    // Meeting processing and sentence splitting prompts
+    MEETING_TRANSCRIPT_PROCESSING,
+    CONTENT_SENTENCE_SPLITTING,
+    GIT_COMMIT_PROCESSING,
+    DOCUMENTATION_PROCESSING,
 }

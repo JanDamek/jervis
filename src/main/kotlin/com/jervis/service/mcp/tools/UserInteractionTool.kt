@@ -9,6 +9,7 @@ import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.gateway.processing.LlmResponseWrapper
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
+import com.jervis.service.mcp.util.ToolResponseBuilder
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.swing.Swing
@@ -55,7 +56,7 @@ class UserInteractionTool(
                     type = PromptTypeEnum.USER_INTERACTION,
                     userPrompt = taskDescription,
                     quick = context.quick,
-                    LlmResponseWrapper(""),
+                    LlmResponseWrapper(),
                     outputLanguage = plan.originalLanguage.lowercase().ifBlank { "en" },
                 )
 
@@ -91,13 +92,23 @@ class UserInteractionTool(
         val finalAnswerEn =
             gateway
                 .callLlm(
-                    PromptTypeEnum.TRANSLATION,
+                    PromptTypeEnum.QUESTION_INTERPRETER,
                     userPrompt = finalAnswerOriginal,
                     quick = context.quick,
-                    LlmResponseWrapper(""),
+                    LlmResponseWrapper(),
                 )
 
-        return ToolResult.ok(finalAnswerEn.response)
+        val summary = when (decisionResult.decision) {
+            UserDecision.ESC -> "User cancelled interaction"
+            UserDecision.ENTER -> "User accepted proposed answer"
+            UserDecision.EDIT -> "User provided custom answer"
+        }
+        
+        return ToolResult.success(
+            "USER_INTERACTION",
+            summary,
+            finalAnswerEn.response
+        )
     }
 
     data class UserDecisionResult(

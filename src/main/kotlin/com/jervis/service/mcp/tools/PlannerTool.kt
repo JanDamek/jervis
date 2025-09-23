@@ -32,6 +32,10 @@ class PlannerTool(
             return ToolResult.error("Planning failed: ${e.message}. Please check the task description and context.")
         }
 
-        return ToolResult.ok("Plann is added.")
+        return ToolResult.success(
+            toolName = "PLANNER",
+            summary = "Plan created successfully",
+            content = "New plan has been added to the task context and is ready for execution."
+        )
     }
 }

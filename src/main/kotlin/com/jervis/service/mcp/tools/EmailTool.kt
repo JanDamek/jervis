@@ -31,7 +31,6 @@ class EmailTool(
         val subject: String = "",
         val body: String = "",
         val priority: String = "normal",
-        val finalPrompt: String? = null,
     )
 
     private suspend fun parseTaskDescription(

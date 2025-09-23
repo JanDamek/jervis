@@ -1,5 +1,6 @@
 package com.jervis.ui.window
 
+import com.jervis.common.Constants.GLOBAL_ID
 import com.jervis.dto.ChatRequestContext
 import com.jervis.entity.mongo.ScheduledTaskDocument
 import com.jervis.entity.mongo.ScheduledTaskStatus
@@ -367,12 +368,15 @@ class SchedulerWindow(
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // TODO: Implement LLM validation to check if task can be executed with available MCP tools
-                // Access tools directly from the registry - it's a private field, so this is a placeholder
-                // In real implementation, we'd need a public getter or validate through LLM service
-
+                // Basic task validation - check if description is meaningful
+                val isValidTask = description.length >= 10 && description.contains(" ")
+                
                 withContext(Dispatchers.Main) {
-                    statusLabel.text = "Úkol byl ověřen - validace bude implementována"
+                    if (isValidTask) {
+                        statusLabel.text = "Úkol byl ověřen a je připraven k naplánování"
+                    } else {
+                        statusLabel.text = "Úkol je příliš krátký nebo nejasný - zadejte detailnější popis"
+                    }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -621,7 +625,7 @@ class SchedulerWindow(
                 }
 
                 val clientId = project.clientId
-                if (clientId == null) {
+                if (clientId == GLOBAL_ID) {
                     withContext(Dispatchers.Main) {
                         statusLabel.text = "Projekt nemá přiřazeného klienta"
                     }

@@ -41,10 +41,6 @@ class VectorStorageRepository(
     private val isConnected = AtomicBoolean(false)
     private val qdrantClientRef = AtomicReference<QdrantClient?>(null)
 
-    // Collection cache to avoid recreating them during runtime
-    // Using @Volatile HashMap since writes only happen at startup, and the rest are read-only
-    @Volatile
-    private var collectionsCache = HashMap<ModelType, String>()
 
     /**
      * Get dimension for a specific embedding model type from configuration
@@ -76,14 +72,6 @@ class VectorStorageRepository(
         return "${typePrefix}_$dimension"
     }
 
-    /**
-     * Get collection name from cache, fallback to generation if not cached
-     */
-    private fun getCachedCollectionName(modelType: ModelType): String =
-        collectionsCache[modelType] ?: run {
-            logger.warn { "Collection not found in cache for $modelType, generating dynamically" }
-            getCollectionNameForModelType(modelType)
-        }
 
     /**
      * Validate that all embedding models of the same type have consistent dimensions
@@ -167,7 +155,7 @@ class VectorStorageRepository(
     }
 
     /**
-     * Initialize both TEXT and CODE collections once connected and populate the cache
+     * Initialize both TEXT and CODE collections once connected
      */
     private suspend fun initializeCollections() {
         try {
@@ -179,12 +167,8 @@ class VectorStorageRepository(
             createCollectionIfNotExists(codeCollectionName, codeDimension)
             createCollectionIfNotExists(textCollectionName, textDimension)
 
-            // Cache the collection names to avoid recreation during runtime
-            collectionsCache[ModelType.EMBEDDING_CODE] = codeCollectionName
-            collectionsCache[ModelType.EMBEDDING_TEXT] = textCollectionName
-
             logger.info {
-                "Collections initialized and cached: text=$textCollectionName (dim=$textDimension), code=$codeCollectionName (dim=$codeDimension)"
+                "Collections initialized: text=$textCollectionName (dim=$textDimension), code=$codeCollectionName (dim=$codeDimension)"
             }
         } catch (e: Exception) {
             logger.error(e) { "Failed to initialize collections: ${e.message}" }
@@ -294,7 +278,7 @@ class VectorStorageRepository(
         ragDocument: RagDocument,
         embedding: List<Float>,
     ): String {
-        val collection = getCachedCollectionName(collectionType)
+        val collection = getCollectionNameForModelType(collectionType)
         val pointId = UUID.randomUUID().toString()
 
         val vectors =
@@ -340,7 +324,7 @@ class VectorStorageRepository(
         minScore: Float = 0.0f,
         filter: Map<String, Any>? = null,
     ): List<Map<String, JsonWithInt.Value>> {
-        val collection = getCachedCollectionName(collectionType)
+        val collection = getCollectionNameForModelType(collectionType)
         val dimension = getDimensionForModelType(collectionType)
         val effectiveQuery = query.ifEmpty { List(dimension) { 0.0f } }
 
@@ -430,5 +414,110 @@ class VectorStorageRepository(
             }
         }
         return filterBuilder.build()
+    }
+
+    /**
+     * Health check result for vector storage
+     */
+    data class HealthCheckResult(
+        val isHealthy: Boolean,
+        val details: Map<String, Any>,
+        val error: String? = null,
+        val responseTimeMs: Long = 0
+    )
+
+    /**
+     * Perform health check on vector storage connectivity and collections
+     */
+    suspend fun healthCheck(): HealthCheckResult {
+        val startTime = System.currentTimeMillis()
+        val details = mutableMapOf<String, Any>()
+        
+        return try {
+            logger.debug { "Performing vector storage health check" }
+            
+            // Check basic connectivity by performing simple search operations on both collections
+            val textCollection = getCollectionNameForModelType(ModelType.EMBEDDING_TEXT)
+            val codeCollection = getCollectionNameForModelType(ModelType.EMBEDDING_CODE)
+            
+            var textCollectionHealthy = false
+            var codeCollectionHealthy = false
+            
+            // Test text collection with empty search
+            try {
+                val textResults = search(
+                    collectionType = ModelType.EMBEDDING_TEXT,
+                    query = emptyList(), // Empty query for health check
+                    limit = 1,
+                    minScore = 0.0f
+                )
+                textCollectionHealthy = true
+                details["textCollection"] = mapOf(
+                    "name" to textCollection,
+                    "accessible" to true,
+                    "testSearchResults" to textResults.size
+                )
+            } catch (e: Exception) {
+                logger.warn(e) { "Text collection health check failed" }
+                details["textCollection"] = mapOf(
+                    "name" to textCollection,
+                    "accessible" to false,
+                    "error" to (e.message ?: "Unknown error")
+                )
+            }
+            
+            // Test code collection with empty search
+            try {
+                val codeResults = search(
+                    collectionType = ModelType.EMBEDDING_CODE,
+                    query = emptyList(), // Empty query for health check
+                    limit = 1,
+                    minScore = 0.0f
+                )
+                codeCollectionHealthy = true
+                details["codeCollection"] = mapOf(
+                    "name" to codeCollection,
+                    "accessible" to true,
+                    "testSearchResults" to codeResults.size
+                )
+            } catch (e: Exception) {
+                logger.warn(e) { "Code collection health check failed" }
+                details["codeCollection"] = mapOf(
+                    "name" to codeCollection,
+                    "accessible" to false,
+                    "error" to (e.message ?: "Unknown error")
+                )
+            }
+            
+            val responseTime = System.currentTimeMillis() - startTime
+            val isHealthy = textCollectionHealthy && codeCollectionHealthy
+            
+            details["connectionStatus"] = if (isHealthy) "HEALTHY" else "DEGRADED"
+            details["responseTime"] = responseTime
+            details["collectionsChecked"] = 2
+            details["collectionsHealthy"] = listOf(textCollectionHealthy, codeCollectionHealthy).count { it }
+            
+            logger.debug { "Vector storage health check completed: healthy=$isHealthy, responseTime=${responseTime}ms" }
+            
+            HealthCheckResult(
+                isHealthy = isHealthy,
+                details = details.toMap(),
+                responseTimeMs = responseTime
+            )
+        } catch (e: Exception) {
+            val responseTime = System.currentTimeMillis() - startTime
+            details["connectionStatus"] = "ERROR"
+            details["responseTime"] = responseTime
+            details["errorType"] = e::class.simpleName ?: "UnknownException"
+            
+            logger.error(e) { "Vector storage health check failed with exception" }
+            
+            HealthCheckResult(
+                isHealthy = false,
+                details = details.toMap(),
+                error = e.message ?: "Unknown error during health check",
+                responseTimeMs = responseTime
+            )
+        }
     }
 }

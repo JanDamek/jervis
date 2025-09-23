@@ -8,6 +8,7 @@ import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
+import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
@@ -50,6 +51,17 @@ class ScopeResolutionTool(
         return ToolResult.ok(summary)
     }
 
+    @Serializable
+    data class ContextRequirementsResponse(
+        val includeClientDetails: Boolean = true,
+        val includeProjectDetails: Boolean = true,
+        val includeFullClientDescription: Boolean = false,
+        val includeFullProjectDescription: Boolean = false,
+        val includeTechStack: Boolean = false,
+        val includeDependencies: Boolean = false,
+        val detailLevel: String = "BASIC", // Will be converted to enum
+    )
+
     data class ContextRequirements(
         val includeClientDetails: Boolean = true,
         val includeProjectDetails: Boolean = true,
@@ -74,7 +86,7 @@ class ScopeResolutionTool(
                     type = PromptTypeEnum.SCOPE_RESOLUTION,
                     userPrompt = taskDescription,
                     quick = true,
-                    "",
+                    ContextRequirementsResponse(),
                     mappingValue =
                         mapOf(
                             "taskDescription" to taskDescription,
@@ -84,22 +96,20 @@ class ScopeResolutionTool(
                     stepContext = stepContext,
                 )
 
-            // Parse JSON response - simplified parsing
-            val answer = response.lowercase()
+            // Convert structured response to ContextRequirements
             ContextRequirements(
-                includeClientDetails = true,
-                includeProjectDetails = true,
-                includeFullClientDescription = answer.contains("\"includefullclientdescription\": true"),
-                includeFullProjectDescription = answer.contains("\"includefullprojectdescription\": true"),
-                includeTechStack = answer.contains("\"includetechstack\": true"),
-                includeDependencies = answer.contains("\"includedependencies\": true"),
-                detailLevel =
-                    when {
-                        answer.contains("comprehensive") -> DetailLevel.COMPREHENSIVE
-                        answer.contains("detailed") -> DetailLevel.DETAILED
-                        answer.contains("minimal") -> DetailLevel.MINIMAL
-                        else -> DetailLevel.BASIC
-                    },
+                includeClientDetails = response.includeClientDetails,
+                includeProjectDetails = response.includeProjectDetails,
+                includeFullClientDescription = response.includeFullClientDescription,
+                includeFullProjectDescription = response.includeFullProjectDescription,
+                includeTechStack = response.includeTechStack,
+                includeDependencies = response.includeDependencies,
+                detailLevel = when (response.detailLevel.uppercase()) {
+                    "COMPREHENSIVE" -> DetailLevel.COMPREHENSIVE
+                    "DETAILED" -> DetailLevel.DETAILED
+                    "MINIMAL" -> DetailLevel.MINIMAL
+                    else -> DetailLevel.BASIC
+                },
             )
         } catch (e: Exception) {
             logger.warn(e) { "Failed to determine context requirements, using basic defaults" }

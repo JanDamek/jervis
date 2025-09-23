@@ -8,6 +8,7 @@ enum class RagSourceType {
     FILE,
     GIT,
     ANALYSIS,
+    JOERN,
     CLASS,
     METHOD,
     AGENT,

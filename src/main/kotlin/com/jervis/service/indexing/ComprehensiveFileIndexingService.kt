@@ -7,10 +7,12 @@ import com.jervis.domain.rag.RagDocumentType
 import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.vector.VectorStorageRepository
+import com.jervis.service.embedding.TextEmbeddingService
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.gateway.core.LlmGateway
-import com.jervis.service.prompts.PromptRepository
+import com.jervis.service.indexing.dto.ComprehensiveFileAnalysisResponse
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -31,7 +33,6 @@ class ComprehensiveFileIndexingService(
     private val embeddingGateway: EmbeddingGateway,
     private val vectorStorage: VectorStorageRepository,
     private val llmGateway: LlmGateway,
-    private val promptRepository: PromptRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -39,11 +40,6 @@ class ComprehensiveFileIndexingService(
         val processedFiles: Int,
         val skippedFiles: Int,
         val errorFiles: Int,
-    )
-
-    data class FileMetadata(
-        val packageName: String?,
-        val primaryClassName: String?,
     )
 
     /**
@@ -58,32 +54,25 @@ class ComprehensiveFileIndexingService(
                 logger.info { "Starting comprehensive file indexing for project: ${project.name}" }
 
                 var processedFiles = 0
-                var skippedFiles = 0
+                val skippedFiles = 0
                 var errorFiles = 0
 
                 // Find all source code files
-                val sourceFiles =
-                    Files
-                        .walk(projectPath)
-                        .filter { it.isRegularFile() }
-                        .filter { isSourceCodeFile(it) }
-                        .filter { shouldProcessFile(it, projectPath) }
-                        .toList()
-
-                // Process files sequentially to handle suspend functions properly
-                for (filePath in sourceFiles) {
-                    try {
-                        val success = indexSourceFile(project, filePath, projectPath)
-                        if (success) {
-                            processedFiles++
-                        } else {
-                            errorFiles++
+                Files
+                    .walk(projectPath)
+                    .filter { it.isRegularFile() }
+                    .filter { isSourceCodeFile(it) }
+                    .filter { shouldProcessFile(it, projectPath) }
+                    .map { filePath ->
+                        async {
+                            try {
+                                if (indexSourceFile(project, filePath, projectPath)) processedFiles++ else errorFiles++
+                            } catch (e: Exception) {
+                                logger.warn(e) { "Failed to index file: ${filePath.pathString}" }
+                                errorFiles++
+                            }
                         }
-                    } catch (e: Exception) {
-                        logger.warn(e) { "Failed to index file: ${filePath.pathString}" }
-                        errorFiles++
                     }
-                }
 
                 val result = FileIndexingResult(processedFiles, skippedFiles, errorFiles)
                 logger.info {
@@ -106,65 +95,96 @@ class ComprehensiveFileIndexingService(
         filePath: Path,
         projectPath: Path,
     ): Boolean {
-        try {
-            logger.debug { "Indexing source file: ${filePath.pathString}" }
+        val relativePath = projectPath.relativize(filePath).pathString
 
-            val fileContent = Files.readString(filePath)
-            if (fileContent.isBlank()) {
-                logger.debug { "Skipping empty file: ${filePath.pathString}" }
+        try {
+            logger.debug { "Indexing source file: $relativePath" }
+
+            // Check if file should be processed (path filtering)
+            if (!shouldProcessFile(filePath, projectPath)) {
+                logger.debug { "Skipping excluded file: $relativePath" }
                 return false
             }
 
-            // Generate comprehensive file description using LLM
-            val fileDescription = generateFileDescription(filePath, fileContent, projectPath, project)
+            // Check if file is a supported source code file
+            if (!isSourceCodeFile(filePath)) {
+                logger.debug { "Skipping non-source file: $relativePath" }
+                return false
+            }
 
-            // Create embedding for the file description
-            val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, fileDescription)
+            // Check if file is binary
+            if (isBinaryFile(filePath)) {
+                logger.debug { "Skipping binary file: $relativePath" }
+                return false
+            }
 
-            // Create RAG document for the file
-            val relativePath = projectPath.relativize(filePath).pathString
-            val fileMetadata = extractFileMetadata(fileContent, detectLanguage(filePath))
-            val ragDocument =
-                RagDocument(
-                    projectId = project.id!!,
-                    documentType = RagDocumentType.TEXT,
-                    ragSourceType = RagSourceType.FILE,
-                    pageContent = fileDescription,
-                    source = "file://${project.name}/$relativePath",
-                    path = relativePath,
-                    packageName = fileMetadata.packageName,
-                    className = fileMetadata.primaryClassName,
-                    module = extractModuleName(relativePath),
-                    language = detectLanguage(filePath),
+            val fileContent = Files.readString(filePath)
+            if (fileContent.isBlank()) {
+                logger.debug { "Skipping empty file: $relativePath" }
+                return false
+            }
+
+            // Check file size to avoid processing extremely large files
+            if (fileContent.length > 1_000_000) { // 1MB limit
+                logger.debug { "Skipping large file (${fileContent.length} chars): $relativePath" }
+                return false
+            }
+
+            // Generate comprehensive file analysis as sentence array using LLM
+            val sentences = generateFileSentences(filePath, fileContent, projectPath, project)
+
+            // Create individual embeddings for each sentence with proper metadata
+            val embeddingResult =
+                processSentenceEmbeddings(
+                    project = project,
+                    sentences = sentences,
+                    filePath = filePath,
+                    projectPath = projectPath,
                 )
 
-            // Store in TEXT vector store for semantic search
-            vectorStorage.store(ModelType.EMBEDDING_TEXT, ragDocument, embedding)
+            logger.debug {
+                "Created ${embeddingResult.processedSentences} sentence embeddings " +
+                    "for file: $relativePath"
+            }
 
-            logger.debug { "Successfully indexed source file: ${filePath.pathString}" }
+            logger.debug { "Successfully indexed source file: $relativePath" }
             return true
+        } catch (e: IllegalArgumentException) {
+            logger.error { "Configuration error while indexing file $relativePath: ${e.message}" }
+            throw e // Re-throw configuration errors as they need to be fixed
+        } catch (e: java.nio.file.NoSuchFileException) {
+            logger.warn { "File not found during indexing: $relativePath" }
+            return false
+        } catch (e: java.nio.file.AccessDeniedException) {
+            logger.warn { "Access denied while reading file: $relativePath" }
+            return false
+        } catch (e: java.nio.charset.MalformedInputException) {
+            logger.warn { "File contains invalid characters, skipping: $relativePath" }
+            return false
+        } catch (e: OutOfMemoryError) {
+            logger.error { "Out of memory while processing file: $relativePath" }
+            return false
         } catch (e: Exception) {
-            logger.error(e) { "Failed to index source file: ${filePath.pathString}" }
+            logger.error(e) { "Unexpected error while indexing file $relativePath: ${e.message}" }
             return false
         }
     }
 
     /**
-     * Generate comprehensive LLM-based description for a source file
+     * Generate short, independently searchable sentences for a source file using LLM
      */
-    private suspend fun generateFileDescription(
+    private suspend fun generateFileSentences(
         filePath: Path,
         fileContent: String,
         projectPath: Path,
         project: ProjectDocument,
-    ): String {
+    ): List<String> {
         val userPrompt =
             buildString {
-                appendLine("Analyze this source code file and provide a comprehensive description:")
+                appendLine("Analyze this source code file:")
                 appendLine()
                 appendLine("File: ${filePath.name}")
                 appendLine("Path: ${projectPath.relativize(filePath)}")
-                appendLine("Language: ${detectLanguage(filePath)}")
                 appendLine("Size: ${fileContent.length} characters")
                 appendLine()
                 appendLine("Source Code:")
@@ -178,42 +198,66 @@ class ComprehensiveFileIndexingService(
                 type = PromptTypeEnum.COMPREHENSIVE_FILE_ANALYSIS,
                 userPrompt = userPrompt,
                 quick = false,
-                "",
+                responseSchema = ComprehensiveFileAnalysisResponse(emptyList()),
             )
 
-        return buildString {
-            appendLine("File Analysis: ${filePath.name}")
-            appendLine("=".repeat(80))
-            appendLine("Path: ${projectPath.relativize(filePath)}")
-            appendLine("Language: ${detectLanguage(filePath)}")
-            appendLine("Size: ${fileContent.length} characters")
-            appendLine()
-            appendLine("Description:")
-            appendLine(llmResponse)
-            appendLine()
-            appendLine("Technical Details:")
-            appendLine("- File Extension: ${filePath.extension}")
-            appendLine("- Content Length: ${fileContent.length} characters")
-            appendLine("- Lines of Code: ${fileContent.lines().size}")
-            appendLine("- Module: ${extractModuleName(projectPath.relativize(filePath).pathString)}")
-            appendLine()
-            appendLine("Source Code Preview:")
-            val preview =
-                if (fileContent.length > 2000) {
-                    fileContent.take(2000) + "\n... (content truncated, full analysis above)"
+        // Extract sentences from the typed response
+        return llmResponse.sentences
+    }
+
+    /**
+     * Process individual sentence embeddings with proper metadata
+     */
+    private suspend fun processSentenceEmbeddings(
+        project: ProjectDocument,
+        sentences: List<String>,
+        filePath: Path,
+        projectPath: Path,
+    ): TextEmbeddingService.TextEmbeddingResult {
+        var processedSentences = 0
+        var skippedSentences = 0
+        var errorSentences = 0
+
+        val relativePath = projectPath.relativize(filePath).pathString
+
+        for ((index, sentence) in sentences.withIndex()) {
+            try {
+                if (sentence.trim().length >= 10) { // Skip very short sentences
+                    // Generate text embedding for the sentence
+                    val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, sentence.trim())
+
+                    // Create RAG document with proper metadata for each sentence
+                    val ragDocument =
+                        RagDocument(
+                            projectId = project.id,
+                            clientId = project.clientId,
+                            documentType = RagDocumentType.TEXT,
+                            ragSourceType = RagSourceType.FILE,
+                            pageContent = sentence.trim(),
+                            source = "file://${filePath.pathString}#sentence-$index",
+                            path = relativePath,
+                            module = filePath.fileName.toString(),
+                            chunkId = "sentence-$index",
+                        )
+
+                    // Store in TEXT vector store
+                    vectorStorage.store(ModelType.EMBEDDING_TEXT, ragDocument, embedding)
+                    processedSentences++
                 } else {
-                    fileContent
+                    skippedSentences++
                 }
-            appendLine("```")
-            appendLine(preview)
-            appendLine("```")
-            appendLine()
-            appendLine("---")
-            appendLine("Generated by: LLM File Analysis")
-            appendLine("Analysis Type: Comprehensive File Description")
-            appendLine("Project: ${project.name}")
-            appendLine("Indexed for: RAG Text Search and Code Discovery")
+            } catch (e: Exception) {
+                logger.warn(e) { "Failed to process sentence from ${filePath.fileName}: $sentence" }
+                errorSentences++
+            }
         }
+
+        logger.debug {
+            "Sentence processing completed for ${filePath.fileName}: " +
+                "processed=$processedSentences, skipped=$skippedSentences, errors=$errorSentences"
+        }
+
+        return TextEmbeddingService.TextEmbeddingResult(processedSentences, skippedSentences, errorSentences)
     }
 
     /**
@@ -277,29 +321,212 @@ class ComprehensiveFileIndexingService(
     ): Boolean {
         val relativePath = projectPath.relativize(filePath).pathString.replace('\\', '/')
 
-        // Exclude common build/dependency directories
+        // Exclude common build/dependency directories and third-party libraries
         val excludePatterns =
             listOf(
+                // Build and output directories
                 "target/",
                 "build/",
-                "node_modules/",
-                ".git/",
-                ".gradle/",
-                ".idea/",
                 "bin/",
                 "out/",
                 "dist/",
-                "coverage/",
-                ".nyc_output/",
+                "release/",
+                "debug/",
+                // Dependency directories
+                "node_modules/",
                 "vendor/",
+                "packages/",
+                ".bundle/",
+                "bower_components/",
+                // Version control
+                ".git/",
+                ".svn/",
+                ".hg/",
+                ".bzr/",
+                // IDE and editor files
+                ".gradle/",
+                ".idea/",
                 ".vscode/",
                 ".settings/",
+                ".eclipse/",
+                ".metadata/",
+                "*.iml",
+                "*.ipr",
+                "*.iws",
+                // Temporary directories
                 "logs/",
                 "tmp/",
                 "temp/",
+                ".tmp/",
+                // Test coverage and reports
+                "coverage/",
+                ".nyc_output/",
+                "htmlcov/",
+                "test-results/",
+                "reports/",
+                // Language-specific directories
+                "*.egg-info/",
+                ".tox/",
+                ".venv/",
+                "venv/",
+                ".env/",
+                "env/",
+                ".cargo/",
+                "Cargo.lock",
+                "go.sum",
+                ".stack-work/",
+                ".cabal-sandbox/",
+                "cabal.sandbox.config",
+                ".nuget/",
+                "packages.config",
+                ".gems/",
+                "Gemfile.lock",
+                ".next/",
+                ".nuxt/",
+                "elm-stuff/",
+                // OS-specific files
+                ".DS_Store",
+                "Thumbs.db",
+                "desktop.ini",
+                "*.swp",
+                "*.swo",
+                "*~",
             )
 
-        return excludePatterns.none { relativePath.contains(it) }
+        return excludePatterns.none { pattern ->
+            when {
+                pattern.endsWith("/") -> relativePath.contains(pattern)
+                pattern.contains("*") -> {
+                    val regex = pattern.replace("*", ".*").toRegex()
+                    regex.containsMatchIn(relativePath)
+                }
+
+                else -> relativePath.contains(pattern) || relativePath.endsWith("/$pattern")
+            }
+        }
+    }
+
+    /**
+     * Check if file is a binary file that should not be indexed
+     */
+    private fun isBinaryFile(filePath: Path): Boolean {
+        val extension = filePath.extension.lowercase()
+
+        // Known binary file extensions
+        val binaryExtensions =
+            setOf(
+                // Images
+                "jpg",
+                "jpeg",
+                "png",
+                "gif",
+                "bmp",
+                "tiff",
+                "tif",
+                "webp",
+                "ico",
+                "svg",
+                // Videos
+                "mp4",
+                "avi",
+                "mkv",
+                "mov",
+                "wmv",
+                "flv",
+                "webm",
+                "m4v",
+                "3gp",
+                // Audio
+                "mp3",
+                "wav",
+                "flac",
+                "aac",
+                "ogg",
+                "wma",
+                "m4a",
+                // Archives and compressed files
+                "zip",
+                "rar",
+                "tar",
+                "gz",
+                "bz2",
+                "xz",
+                "7z",
+                "dmg",
+                "iso",
+                // Executables and libraries
+                "exe",
+                "dll",
+                "so",
+                "dylib",
+                "lib",
+                "a",
+                "jar",
+                "war",
+                "ear",
+                // Documents (binary formats)
+                "pdf",
+                "doc",
+                "docx",
+                "xls",
+                "xlsx",
+                "ppt",
+                "pptx",
+                "odt",
+                "ods",
+                "odp",
+                // Fonts
+                "ttf",
+                "otf",
+                "woff",
+                "woff2",
+                "eot",
+                // Other binary formats
+                "bin",
+                "dat",
+                "db",
+                "sqlite",
+                "sqlite3",
+                "class",
+                "pyc",
+                "pyo",
+                "elc",
+            )
+
+        if (extension in binaryExtensions) {
+            return true
+        }
+
+        return if (!filePath.isRegularFile() || Files.size(filePath) == 0L) {
+            false
+        } else {
+            val bytes = Files.readAllBytes(filePath).take(512).toByteArray()
+            detectBinaryContent(bytes)
+        }
+    }
+
+    /**
+     * Detect if content appears to be binary based on byte analysis
+     */
+    private fun detectBinaryContent(bytes: ByteArray): Boolean {
+        if (bytes.isEmpty()) return false
+
+        var nullBytes = 0
+        var controlChars = 0
+        val totalBytes = bytes.size
+
+        for (byte in bytes) {
+            when (byte.toInt()) {
+                0 -> nullBytes++
+                in 1..8, in 14..31 -> controlChars++
+            }
+        }
+
+        // If more than 1% null bytes or more than 30% control characters, likely binary
+        val nullRatio = nullBytes.toDouble() / totalBytes
+        val controlRatio = controlChars.toDouble() / totalBytes
+
+        return nullRatio > 0.01 || controlRatio > 0.30
     }
 
     /**
@@ -365,107 +592,5 @@ class ComprehensiveFileIndexingService(
             pathParts.size > 1 -> pathParts.dropLast(1).joinToString(".")
             else -> "root"
         }
-    }
-
-    /**
-     * Extract package name and primary class name from file content
-     */
-    private fun extractFileMetadata(
-        fileContent: String,
-        language: String,
-    ): FileMetadata {
-        var packageName: String? = null
-        var primaryClassName: String? = null
-
-        try {
-            val lines = fileContent.lines()
-
-            when (language) {
-                "kotlin", "java" -> {
-                    // Extract package declaration
-                    val packageLine = lines.find { it.trim().startsWith("package ") }
-                    packageName =
-                        packageLine
-                            ?.trim()
-                            ?.removePrefix("package ")
-                            ?.removeSuffix(";")
-                            ?.trim()
-
-                    // Extract primary class/interface/object name
-                    val classPatterns =
-                        listOf(
-                            Regex("""^\s*(public\s+|private\s+|protected\s+)?(class|interface|object|enum)\s+([A-Z][A-Za-z0-9_]*)\b"""),
-                            Regex("""^\s*(class|interface|object|enum)\s+([A-Z][A-Za-z0-9_]*)\b"""),
-                        )
-
-                    for (line in lines) {
-                        for (pattern in classPatterns) {
-                            val match = pattern.find(line)
-                            if (match != null) {
-                                primaryClassName = match.groups.last()?.value
-                                break
-                            }
-                        }
-                        if (primaryClassName != null) break
-                    }
-                }
-
-                "javascript", "typescript" -> {
-                    // Extract ES6 module exports or class declarations
-                    val classPattern = Regex("""^\s*export\s+(default\s+)?class\s+([A-Z][A-Za-z0-9_]*)\b""")
-                    val functionPattern = Regex("""^\s*export\s+(default\s+)?function\s+([A-Za-z][A-Za-z0-9_]*)\b""")
-
-                    for (line in lines) {
-                        val classMatch = classPattern.find(line)
-                        if (classMatch != null) {
-                            primaryClassName = classMatch.groups[2]?.value
-                            break
-                        }
-
-                        val functionMatch = functionPattern.find(line)
-                        if (functionMatch != null && primaryClassName == null) {
-                            primaryClassName = functionMatch.groups[2]?.value
-                        }
-                    }
-                }
-
-                "python" -> {
-                    // Extract class definitions
-                    val classPattern = Regex("""^\s*class\s+([A-Z][A-Za-z0-9_]*)\b""")
-
-                    for (line in lines) {
-                        val match = classPattern.find(line)
-                        if (match != null) {
-                            primaryClassName = match.groups[1]?.value
-                            break
-                        }
-                    }
-                }
-
-                "csharp" -> {
-                    // Extract namespace and class
-                    val namespaceLine = lines.find { it.trim().startsWith("namespace ") }
-                    packageName = namespaceLine?.trim()?.removePrefix("namespace ")?.trim()
-
-                    val classPattern =
-                        Regex("""^\s*(public\s+|private\s+|protected\s+)?(class|interface|struct)\s+([A-Z][A-Za-z0-9_]*)\b""")
-
-                    for (line in lines) {
-                        val match = classPattern.find(line)
-                        if (match != null) {
-                            primaryClassName = match.groups[3]?.value
-                            break
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to extract metadata from file content" }
-        }
-
-        return FileMetadata(
-            packageName = packageName,
-            primaryClassName = primaryClassName,
-        )
     }
 }

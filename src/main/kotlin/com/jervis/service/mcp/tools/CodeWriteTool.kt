@@ -6,6 +6,7 @@ import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
+import com.jervis.service.mcp.util.ToolResponseBuilder
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -113,16 +114,18 @@ class CodeWriteTool(
 
             targetFile.writeText(params.patch)
 
-            ToolResult.ok(
-                """
-                |File operation completed successfully!
-                |
-                |**Target**: ${params.targetPath}
-                |**Operation**: ${if (params.createNewFile) "Created new file" else "Replaced file content"}
-                |**Description**: ${params.description}
-                |
-                |The file has been ${if (params.createNewFile) "created" else "updated"} with the new content.
-                """.trimMargin(),
+            val action = if (params.createNewFile) "Created" else "Updated"
+            val details = buildString {
+                appendLine("Operation: ${if (params.createNewFile) "Created new file" else "Replaced file content"}")
+                if (params.description.isNotBlank()) {
+                    appendLine("Description: ${params.description}")
+                }
+            }
+            ToolResult.fileOperation(
+                toolName = "CODE_WRITE",
+                fileName = params.targetPath,
+                action = action,
+                details = details
             )
         } catch (e: Exception) {
             ToolResult.error(
@@ -149,18 +152,19 @@ class CodeWriteTool(
             // In a full implementation, you would parse the unified diff and apply it
             targetFile.writeText(params.patch)
 
-            ToolResult.ok(
-                """
-                |Unified diff applied successfully!
-                |
-                |**Target**: ${params.targetPath}
-                |**Operation**: Applied patch
-                |**Description**: ${params.description}
-                |
-                |The patch has been applied to the target file.
-                |
-                |**Note**: For production use, implement proper unified diff parsing and application.
-                """.trimMargin(),
+            val details = buildString {
+                appendLine("Operation: Applied patch")
+                if (params.description.isNotBlank()) {
+                    appendLine("Description: ${params.description}")
+                }
+                appendLine()
+                appendLine("Note: For production use, implement proper unified diff parsing and application.")
+            }
+            ToolResult.fileOperation(
+                toolName = "CODE_WRITE",
+                fileName = params.targetPath,
+                action = "Patched",
+                details = details
             )
         } catch (e: Exception) {
             ToolResult.error(
@@ -186,18 +190,19 @@ class CodeWriteTool(
             // In a full implementation, you would parse inline modification instructions
             targetFile.writeText(params.patch)
 
-            ToolResult.ok(
-                """
-                |Inline modification completed successfully!
-                |
-                |**Target**: ${params.targetPath}
-                |**Operation**: Inline modification
-                |**Description**: ${params.description}
-                |
-                |The inline modifications have been applied to the target file.
-                |
-                |**Note**: For production use, implement proper inline modification parsing.
-                """.trimMargin(),
+            val details = buildString {
+                appendLine("Operation: Inline modification")
+                if (params.description.isNotBlank()) {
+                    appendLine("Description: ${params.description}")
+                }
+                appendLine()
+                appendLine("Note: For production use, implement proper inline modification parsing.")
+            }
+            ToolResult.fileOperation(
+                toolName = "CODE_WRITE",
+                fileName = params.targetPath,
+                action = "Modified",
+                details = details
             )
         } catch (e: Exception) {
             ToolResult.error(

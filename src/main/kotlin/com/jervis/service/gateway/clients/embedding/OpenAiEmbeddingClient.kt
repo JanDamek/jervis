@@ -2,7 +2,7 @@ package com.jervis.service.gateway.clients
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.jervis.domain.model.ModelProvider
-import kotlinx.coroutines.reactive.awaitSingle
+import org.springframework.web.reactive.function.client.awaitBody
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
@@ -32,32 +32,33 @@ class OpenAiEmbeddingClient(
     ): List<Float> {
         val body = mapOf("model" to model, "input" to text)
 
-        return client
-            .post()
-            .uri("/embeddings")
-            .bodyValue(body)
-            .retrieve()
-            .bodyToMono(OpenAiEmbeddingResponse::class.java)
-            .onErrorMap { error ->
-                when (error) {
-                    is WebClientRequestException ->
-                        RuntimeException(
-                            "Connection error to OpenAI: ${error.message}",
-                            error,
-                        )
+        return try {
+            val response = client
+                .post()
+                .uri("/embeddings")
+                .bodyValue(body)
+                .retrieve()
+                .awaitBody<OpenAiEmbeddingResponse>()
 
-                    is WebClientResponseException ->
-                        RuntimeException(
-                            "OpenAI API error: ${error.statusCode} - ${error.responseBodyAsString}",
-                            error,
-                        )
+            response.data
+                .firstOrNull()
+                ?.embedding ?: emptyList()
+        } catch (error: Exception) {
+            throw when (error) {
+                is WebClientRequestException ->
+                    RuntimeException(
+                        "Connection error to OpenAI: ${error.message}",
+                        error,
+                    )
 
-                    else -> error
-                }
-            }.map { response ->
-                response.data
-                    .firstOrNull()
-                    ?.embedding ?: emptyList()
-            }.awaitSingle()
+                is WebClientResponseException ->
+                    RuntimeException(
+                        "OpenAI API error: ${error.statusCode} - ${error.responseBodyAsString}",
+                        error,
+                    )
+
+                else -> error
+            }
+        }
     }
 }

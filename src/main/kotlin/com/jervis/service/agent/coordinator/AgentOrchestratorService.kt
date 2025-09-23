@@ -64,6 +64,7 @@ class AgentOrchestratorService(
                 originalQuestion = text,
                 originalLanguage = detectionResult.originalLanguage,
                 englishQuestion = detectionResult.englishText,
+                questionChecklist = detectionResult.questionChecklist,
             )
         planMongoRepository.save(PlanDocument.fromDomain(plan))
         context.plans += plan
@@ -81,7 +82,7 @@ class AgentOrchestratorService(
             // Save the updated plan to a repository
             planMongoRepository.save(PlanDocument.fromDomain(updatedPlan))
             taskContextService.save(context)
-        } while (planningRunner.run(context))
+        } while (planningRunner.run(context).not())
         val response = finalizer.finalize(context)
         taskContextService.save(context)
         logger.info { "AGENT_END: Final response generated." }

@@ -4,6 +4,7 @@ import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.mongo.ProjectMongoRepository
 import com.jervis.service.gateway.core.LlmGateway
+import com.jervis.service.gateway.processing.LlmResponseWrapper
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -88,45 +89,42 @@ class ProjectDescriptionService(
         project: ProjectDocument,
         indexingDescriptions: List<String>,
     ): String {
-        val userPrompt =
+        val currentDescription = project.description?.let { "Current Description: $it\n" } ?: ""
+        
+        val indexingSummary = if (indexingDescriptions.isNotEmpty()) {
             buildString {
-                appendLine("Create a short description for this software project:")
-                appendLine()
-                appendLine("Project Name: ${project.name}")
-                appendLine("Path: ${project.path}")
-                appendLine("Languages: ${project.languages.joinToString(", ")}")
-
-                project.description?.let {
-                    appendLine("Current Description: $it")
-                    appendLine()
-                }
-
-                if (indexingDescriptions.isNotEmpty()) {
-                    appendLine("Analysis Summary from Project Indexing:")
-                    indexingDescriptions.take(5).forEach { desc ->
-                        val summary =
-                            if (desc.length > 300) {
-                                desc.take(300) + "..."
-                            } else {
-                                desc
-                            }
-                        appendLine("• $summary")
+                appendLine("Analysis Summary from Project Indexing:")
+                indexingDescriptions.take(5).forEach { desc ->
+                    val summary = if (desc.length > 300) {
+                        desc.take(300) + "..."
+                    } else {
+                        desc
                     }
-                    appendLine()
+                    appendLine("• $summary")
                 }
-
-                appendLine("Generate a concise, professional short description that captures the essence of this project.")
             }
+        } else {
+            ""
+        }
+
+        val mappingValues = mapOf(
+            "projectName" to project.name,
+            "projectPath" to project.path,
+            "languages" to project.languages.joinToString(", "),
+            "currentDescription" to currentDescription,
+            "indexingSummary" to indexingSummary
+        )
 
         val llmResponse =
             llmGateway.callLlm(
                 type = PromptTypeEnum.PROJECT_DESCRIPTION_SHORT,
-                userPrompt = userPrompt,
+                userPrompt = "",
                 quick = false,
-                "",
+                LlmResponseWrapper(),
+                mappingValue = mappingValues
             )
 
-        return llmResponse.trim()
+        return llmResponse.response.trim()
     }
 
     /**
@@ -137,43 +135,39 @@ class ProjectDescriptionService(
         indexingDescriptions: List<String>,
         shortDescription: String,
     ): String {
-        val userPrompt =
+        val currentDescription = project.description?.let { "Current Description: $it\n" } ?: ""
+        
+        val detailedIndexingAnalysis = if (indexingDescriptions.isNotEmpty()) {
             buildString {
-                appendLine("Create a comprehensive technical description for this software project:")
-                appendLine()
-                appendLine("Project Name: ${project.name}")
-                appendLine("Path: ${project.path}")
-                appendLine("Languages: ${project.languages.joinToString(", ")}")
-                appendLine("Short Description: $shortDescription")
-                appendLine()
-
-                project.description?.let {
-                    appendLine("Current Description: $it")
+                appendLine("Detailed Analysis from Project Indexing:")
+                appendLine("=".repeat(60))
+                indexingDescriptions.forEachIndexed { index, desc ->
+                    appendLine("Analysis ${index + 1}:")
+                    appendLine(desc)
                     appendLine()
+                    appendLine("-".repeat(40))
                 }
-
-                if (indexingDescriptions.isNotEmpty()) {
-                    appendLine("Detailed Analysis from Project Indexing:")
-                    appendLine("=".repeat(60))
-                    indexingDescriptions.forEachIndexed { index, desc ->
-                        appendLine("Analysis ${index + 1}:")
-                        appendLine(desc)
-                        appendLine()
-                        appendLine("-".repeat(40))
-                    }
-                }
-
-                appendLine()
-                appendLine("Generate a comprehensive technical description with the sections outlined above.")
-                appendLine("Focus on insights that would help developers understand and work with this project.")
             }
+        } else {
+            ""
+        }
+
+        val mappingValues = mapOf(
+            "projectName" to project.name,
+            "projectPath" to project.path,
+            "languages" to project.languages.joinToString(", "),
+            "shortDescription" to shortDescription,
+            "currentDescription" to currentDescription,
+            "detailedIndexingAnalysis" to detailedIndexingAnalysis
+        )
 
         val llmResponse =
             llmGateway.callLlm(
                 type = PromptTypeEnum.PROJECT_DESCRIPTION_FULL,
-                userPrompt = userPrompt,
+                userPrompt = "",
                 quick = false,
-                "",
+                LlmResponseWrapper(),
+                mappingValue = mappingValues
             )
 
         return buildString {
@@ -185,7 +179,7 @@ class ProjectDescriptionService(
             appendLine()
             appendLine("---")
             appendLine()
-            appendLine(llmResponse)
+            appendLine(llmResponse.response)
             appendLine()
             appendLine("---")
             appendLine(

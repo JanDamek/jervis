@@ -5,6 +5,7 @@ import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
+import com.jervis.service.mcp.util.ToolResponseBuilder
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -37,6 +38,11 @@ class FileListingTool(
         val maxDepth: Int = 10,
         val includeHidden: Boolean = false,
     )
+    
+    private data class FileTreeResult(
+        val content: String,
+        val itemCount: Int
+    )
 
     override suspend fun execute(
         context: TaskContext,
@@ -53,11 +59,17 @@ class FileListingTool(
             logger.debug { "FILE_LISTING_PROJECT_PATH: Using project path: $projectPath" }
 
             try {
-                val fileTree = buildFileTree(projectPath, params)
+                val fileTreeResult = buildFileTree(projectPath, params)
 
                 logger.debug { "FILE_LISTING_SUCCESS: Generated file tree for project" }
 
-                ToolResult.ok(fileTree)
+                ToolResult.listingResult(
+                    toolName = "FILE_LISTING",
+                    itemCount = fileTreeResult.itemCount,
+                    itemType = "files and directories",
+                    rootInfo = "Root: $projectPath",
+                    listing = fileTreeResult.content
+                )
             } catch (e: Exception) {
                 logger.error(e) { "FILE_LISTING_ERROR: Failed to generate file tree" }
                 ToolResult.error("Failed to generate file tree: ${e.message}")
@@ -107,72 +119,70 @@ class FileListingTool(
     private suspend fun buildFileTree(
         projectPath: Path,
         params: FileListingParams,
-    ): String {
-        val output = StringBuilder()
+    ): FileTreeResult {
+        val treeContent = StringBuilder()
+        var itemCount = 0
+        
+        fun buildTreeRecursiveWithCount(
+            currentPath: Path,
+            rootPath: Path,
+            prefix: String,
+            params: FileListingParams,
+            currentDepth: Int,
+            output: StringBuilder,
+        ): Int {
+            if (currentDepth > params.maxDepth) return 0
+            var count = 0
 
-        output.appendLine("PROJECT FILE TREE")
-        output.appendLine("Root: $projectPath")
-        output.appendLine()
+            try {
+                val entries =
+                    Files.list(currentPath).use { stream ->
+                        stream
+                            .filter { path ->
+                                when {
+                                    !params.includeHidden && path.isHidden() -> false
+                                    path.name.startsWith(".git") -> false // Always exclude .git
+                                    path.name == "target" && path.isDirectory() -> false // Exclude build artifacts
+                                    path.name == "node_modules" && path.isDirectory() -> false // Exclude node_modules
+                                    path.name == ".idea" && path.isDirectory() -> false // Exclude IDE files
+                                    else -> true
+                                }
+                            }.sorted { path1, path2 ->
+                                // Directories first, then files, both alphabetically
+                                when {
+                                    path1.isDirectory() && !path2.isDirectory() -> -1
+                                    !path1.isDirectory() && path2.isDirectory() -> 1
+                                    else -> path1.name.compareTo(path2.name, ignoreCase = true)
+                                }
+                            }.toList()
+                    }
 
-        buildTreeRecursive(projectPath, projectPath, "", params, 0, output)
+                entries.forEachIndexed { index, path ->
+                    val isLast = index == entries.size - 1
+                    val connector = if (isLast) "└── " else "├── "
+                    val nextPrefix = if (isLast) "$prefix    " else "$prefix│   "
+                    count++
 
-        output.appendLine()
-        output.appendLine("File listing complete. Use full paths for navigation and reference.")
-
-        return output.toString()
-    }
-
-    private fun buildTreeRecursive(
-        currentPath: Path,
-        rootPath: Path,
-        prefix: String,
-        params: FileListingParams,
-        currentDepth: Int,
-        output: StringBuilder,
-    ) {
-        if (currentDepth > params.maxDepth) return
-
-        try {
-            val entries =
-                Files.list(currentPath).use { stream ->
-                    stream
-                        .filter { path ->
-                            when {
-                                !params.includeHidden && path.isHidden() -> false
-                                path.name.startsWith(".git") -> false // Always exclude .git
-                                path.name == "target" && path.isDirectory() -> false // Exclude build artifacts
-                                path.name == "node_modules" && path.isDirectory() -> false // Exclude node_modules
-                                path.name == ".idea" && path.isDirectory() -> false // Exclude IDE files
-                                else -> true
-                            }
-                        }.sorted { path1, path2 ->
-                            // Directories first, then files, both alphabetically
-                            when {
-                                path1.isDirectory() && !path2.isDirectory() -> -1
-                                !path1.isDirectory() && path2.isDirectory() -> 1
-                                else -> path1.name.compareTo(path2.name, ignoreCase = true)
-                            }
-                        }.toList()
+                    if (path.isDirectory()) {
+                        output.appendLine("$prefix$connector${path.name}/")
+                        count += buildTreeRecursiveWithCount(path, rootPath, nextPrefix, params, currentDepth + 1, output)
+                    } else {
+                        output.appendLine("$prefix$connector${path.name}")
+                    }
                 }
-
-            entries.forEachIndexed { index, path ->
-                val isLast = index == entries.size - 1
-                val connector = if (isLast) "└── " else "├── "
-                val nextPrefix = if (isLast) "$prefix    " else "$prefix│   "
-
-                rootPath.relativeTo(path).toString()
-                path.toString()
-
-                if (path.isDirectory()) {
-                    output.appendLine("$prefix$connector${path.name}/")
-                    buildTreeRecursive(path, rootPath, nextPrefix, params, currentDepth + 1, output)
-                } else {
-                    output.appendLine("$prefix$connector${path.name}")
-                }
+            } catch (e: Exception) {
+                logger.warn(e) { "FILE_LISTING_DIR_ERROR: Error reading directory $currentPath" }
+                output.appendLine("$prefix└── [Error reading directory: ${e.message}]")
             }
-        } catch (e: Exception) {
-            logger.warn(e) { "FILE_LISTING_DIR_ERROR: Error reading directory $currentPath" }
-            output.appendLine("$prefix└── [Error reading directory: ${e.message}]")
+            return count
         }
+
+        itemCount = buildTreeRecursiveWithCount(projectPath, projectPath, "", params, 0, treeContent)
+
+        return FileTreeResult(
+            content = treeContent.toString().trimEnd(),
+            itemCount = itemCount
+        )
     }
+
 }

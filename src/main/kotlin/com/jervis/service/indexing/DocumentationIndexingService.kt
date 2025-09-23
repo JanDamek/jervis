@@ -7,6 +7,9 @@ import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
+import com.jervis.service.gateway.core.LlmGateway
+import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.service.indexing.dto.DocumentationProcessingResponse
 import com.jervis.service.rag.RagIndexingStatusService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -35,6 +38,9 @@ class DocumentationIndexingService(
     private val vectorStorage: VectorStorageRepository,
     private val ragIndexingStatusService: RagIndexingStatusService,
     private val historicalVersioningService: HistoricalVersioningService,
+    private val indexingMonitorService: com.jervis.service.indexing.monitoring.IndexingMonitorService,
+    private val tikaDocumentProcessor: TikaDocumentProcessor,
+    private val llmGateway: LlmGateway,
 ) {
     private val logger = KotlinLogging.logger {}
     private val httpClient =
@@ -136,16 +142,32 @@ class DocumentationIndexingService(
                     .forEach { documentationFiles.add(it) }
 
                 logger.info { "Found ${documentationFiles.size} documentation files to process" }
+                indexingMonitorService.addStepLog(
+                    project.id,
+                    "documentation",
+                    "Found ${documentationFiles.size} documentation files to process",
+                )
 
-                for (docFile in documentationFiles) {
+                for ((index, docFile) in documentationFiles.withIndex()) {
                     try {
-                        val content = Files.readString(docFile)
-                        if (content.isBlank()) {
+                        val relativePath = docPath.relativize(docFile).toString()
+                        indexingMonitorService.addStepLog(
+                            project.id,
+                            "documentation",
+                            "Processing documentation file (${index + 1}/${documentationFiles.size}): $relativePath",
+                        )
+
+                        val processingResult = tikaDocumentProcessor.processDocument(docFile)
+
+                        if (!processingResult.success || processingResult.plainText.isBlank()) {
                             skippedDocs++
+                            indexingMonitorService.addStepLog(
+                                project.id,
+                                "documentation",
+                                "⚠ Skipped file (extraction failed): $relativePath - ${processingResult.errorMessage ?: "Empty content"}",
+                            )
                             continue
                         }
-
-                        val relativePath = docPath.relativize(docFile).toString()
 
                         // Check if already indexed to prevent duplicates
                         val shouldIndex =
@@ -153,11 +175,16 @@ class DocumentationIndexingService(
                                 projectId = project.id,
                                 filePath = "docs/$relativePath",
                                 gitCommitHash = gitCommitHash,
-                                fileContent = content.toByteArray(),
+                                fileContent = processingResult.plainText.toByteArray(),
                             )
 
                         if (!shouldIndex) {
                             skippedDocs++
+                            indexingMonitorService.addStepLog(
+                                project.id,
+                                "documentation",
+                                "⚠ Skipped already indexed file: $relativePath",
+                            )
                             logger.debug { "Skipping already indexed documentation file: $relativePath" }
                             continue
                         }
@@ -168,33 +195,63 @@ class DocumentationIndexingService(
                             filePath = "docs/$relativePath",
                             gitCommitHash = gitCommitHash,
                             ragSourceType = RagSourceType.DOCUMENTATION,
-                            fileContent = content.toByteArray(),
-                            language = inferDocumentationType(docFile),
+                            fileContent = processingResult.plainText.toByteArray(),
+                            language = processingResult.metadata.language ?: inferDocumentationType(docFile),
                             module = "documentation",
                         )
 
-                        // Create RAG document
-                        val ragDocument =
-                            RagDocument(
-                                projectId = project.id,
-                                documentType = RagDocumentType.DOCUMENTATION,
-                                ragSourceType = RagSourceType.DOCUMENTATION,
-                                pageContent = buildDocumentationContent(docFile, content),
-                                source = "file://${project.name}/docs/$relativePath",
-                                path = relativePath,
-                                module = "documentation",
-                                language = inferDocumentationType(docFile),
-                                gitCommitHash = gitCommitHash,
+                        // Split content into atomic sentences with location tracking
+                        val sentencesWithLocation =
+                            tikaDocumentProcessor.splitIntoSentencesWithLocation(
+                                processingResult.plainText,
+                                processingResult.metadata,
                             )
 
-                        // Generate embedding and store
-                        val embedding =
-                            embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, ragDocument.pageContent)
-                        vectorStorage.store(ModelType.EMBEDDING_TEXT, ragDocument, embedding)
+                        logger.debug { "Split document $relativePath into ${sentencesWithLocation.size} atomic sentences" }
+
+                        // Create individual RAG documents for each sentence
+                        for ((index, sentenceWithLocation) in sentencesWithLocation.withIndex()) {
+                            val ragDocument =
+                                RagDocument(
+                                    projectId = project.id,
+                                    documentType = RagDocumentType.DOCUMENTATION,
+                                    ragSourceType = RagSourceType.DOCUMENTATION,
+                                    pageContent =
+                                        buildDocumentationSentenceContent(
+                                            docFile,
+                                            sentenceWithLocation,
+                                            processingResult.metadata,
+                                        ),
+                                    clientId = project.clientId,
+                                    source = "file://${project.name}/docs/$relativePath#sentence-$index",
+                                    path = relativePath,
+                                    module = "documentation",
+                                    language = processingResult.metadata.language ?: inferDocumentationType(docFile),
+                                    gitCommitHash = gitCommitHash,
+                                    chunkId = "sentence-$index",
+                                    symbolName = "doc-${docFile.fileName}",
+                                )
+
+                            // Generate embedding and store
+                            val embedding =
+                                embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, ragDocument.pageContent)
+                            vectorStorage.store(ModelType.EMBEDDING_TEXT, ragDocument, embedding)
+                        }
 
                         processedDocs++
+                        indexingMonitorService.addStepLog(
+                            project.id,
+                            "documentation",
+                            "✓ Successfully indexed documentation file: $relativePath",
+                        )
                         logger.debug { "Successfully indexed documentation file: $relativePath" }
                     } catch (e: Exception) {
+                        val relativePath = docPath.relativize(docFile).toString()
+                        indexingMonitorService.addStepLog(
+                            project.id,
+                            "documentation",
+                            "✗ Failed to index documentation file: $relativePath - ${e.message}",
+                        )
                         logger.warn(e) { "Failed to index documentation file: ${docFile.pathString}" }
                         errorDocs++
                     }
@@ -277,6 +334,7 @@ class DocumentationIndexingService(
                             documentType = RagDocumentType.DOCUMENTATION,
                             ragSourceType = RagSourceType.DOCUMENTATION,
                             pageContent = buildUrlDocumentationContent(url, content),
+                            clientId = project.clientId,
                             source = url,
                             path = urlPath,
                             module = "documentation-urls",
@@ -441,5 +499,59 @@ class DocumentationIndexingService(
             appendLine("Source: External Documentation URL")
             appendLine("Platform: ${inferUrlDocumentationType(url)}")
             appendLine("Indexed as: Documentation Content")
+        }
+
+    /**
+     * Build formatted content for individual documentation sentences with metadata and location tracking
+     */
+    private fun buildDocumentationSentenceContent(
+        docFile: Path,
+        sentenceWithLocation: TikaDocumentProcessor.SentenceWithLocation,
+        metadata: TikaDocumentProcessor.DocumentMetadata,
+    ): String =
+        buildString {
+            appendLine("Documentation Sentence: ${metadata.title ?: docFile.fileName}")
+            appendLine("=".repeat(60))
+            appendLine("File: ${docFile.pathString}")
+            appendLine("Document Type: ${metadata.contentType ?: inferDocumentationType(docFile)}")
+            if (metadata.author != null) {
+                appendLine("Author: ${metadata.author}")
+            }
+            if (metadata.language != null) {
+                appendLine("Language: ${metadata.language}")
+            }
+
+            // Location tracking information
+            appendLine("Location:")
+            if (sentenceWithLocation.location.pageNumber != null) {
+                appendLine("- Page: ${sentenceWithLocation.location.pageNumber}")
+            }
+            if (sentenceWithLocation.location.paragraphIndex != null) {
+                appendLine("- Paragraph: ${sentenceWithLocation.location.paragraphIndex + 1}")
+            }
+            if (sentenceWithLocation.location.sectionTitle != null) {
+                appendLine("- Section: ${sentenceWithLocation.location.sectionTitle}")
+            }
+            if (sentenceWithLocation.location.characterOffset != null && sentenceWithLocation.location.characterOffset > 0) {
+                appendLine("- Character Offset: ${sentenceWithLocation.location.characterOffset}")
+            }
+
+            appendLine()
+            appendLine("Content:")
+            appendLine(sentenceWithLocation.text)
+            appendLine()
+
+            // Additional metadata if available
+            if (metadata.keywords.isNotEmpty()) {
+                appendLine("Keywords: ${metadata.keywords.joinToString(", ")}")
+            }
+            if (metadata.pageCount != null) {
+                appendLine("Total Pages: ${metadata.pageCount}")
+            }
+
+            appendLine("---")
+            appendLine("Source: Local Documentation File (Tika Processed)")
+            appendLine("Indexed as: Atomic Documentation Sentence")
+            appendLine("Searchable Location: ${sentenceWithLocation.location.documentPath}")
         }
 }

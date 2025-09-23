@@ -6,11 +6,13 @@ import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
+import com.jervis.service.mcp.util.ToolResponseBuilder
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.nio.file.Files
 import java.nio.file.Path
@@ -21,6 +23,7 @@ class CodeExtractorTool(
     private val llmGateway: LlmGateway,
     override val promptRepository: PromptRepository,
 ) : McpTool {
+    private val logger = KotlinLogging.logger {}
     override val name: PromptTypeEnum = PromptTypeEnum.CODE_EXTRACTOR
 
     @Serializable
@@ -35,6 +38,12 @@ class CodeExtractorTool(
         val languageHint: String? = null,
         val contextFromSteps: Int = 3, // Number of previous steps to include in context
         val smartFiltering: Boolean = true, // Enable smart content filtering based on context
+    )
+
+    @Serializable
+    data class SimpleCodeParams(
+        val target: String, // File path, class name, method name, or search pattern
+        val type: String = "file" // "file", "class", "method", or "pattern"
     )
 
     @Serializable
@@ -59,24 +68,47 @@ class CodeExtractorTool(
         stepContext: String,
     ): ToolResult =
         withContext(Dispatchers.IO) {
+            logger.info { "CODE_EXTRACTOR_START: Starting code extraction for project: ${context.projectDocument.path}" }
+            logger.debug { "CODE_EXTRACTOR_TASK: Task description: $taskDescription" }
+            logger.debug { "CODE_EXTRACTOR_CONTEXT: Step context length: ${stepContext.length}" }
+            
             try {
+                // Validate stepBack context when stepBack > 0
+                val contextValidation = validateStepBackContext(stepContext, taskDescription)
+                if (contextValidation != null) {
+                    logger.warn { "CODE_EXTRACTOR_VALIDATION_FAILED: Step context validation failed" }
+                    return@withContext contextValidation
+                }
+
+                logger.debug { "CODE_EXTRACTOR_PARSING: Parsing task description into parameters" }
                 val params = parseTaskDescription(taskDescription, context, plan, stepContext)
+                logger.info { "CODE_EXTRACTOR_PARAMS: Parsed parameters - filePath=${params.filePath}, className=${params.className}, methodName=${params.methodName}, searchPattern=${params.searchPattern}, smartFiltering=${params.smartFiltering}" }
+                
                 val projectPath = Path.of(context.projectDocument.path)
+                logger.debug { "CODE_EXTRACTOR_PROJECT: Project path resolved to: $projectPath" }
 
                 if (!Files.exists(projectPath)) {
+                    logger.error { "CODE_EXTRACTOR_PROJECT_NOT_FOUND: Project path does not exist: ${context.projectDocument.path}" }
                     return@withContext ToolResult.error("Project path does not exist: ${context.projectDocument.path}")
                 }
+                logger.debug { "CODE_EXTRACTOR_PROJECT_VALID: Project path exists and is accessible" }
 
                 val results =
                     when {
                         params.filePath != null -> {
+                            logger.info { "CODE_EXTRACTOR_MODE: Specific file extraction - ${params.filePath}" }
                             // Parse specific file
                             val filePath = resolveFilePath(projectPath, params.filePath)
+                            logger.debug { "CODE_EXTRACTOR_FILE_PATH: Resolved file path to: $filePath" }
                             if (!Files.exists(filePath)) {
+                                logger.error { "CODE_EXTRACTOR_FILE_NOT_FOUND: File does not exist: ${params.filePath} (resolved to: $filePath)" }
                                 return@withContext ToolResult.error("File does not exist: ${params.filePath}")
                             }
+                            logger.debug { "CODE_EXTRACTOR_FILE_VALID: File exists, starting extraction" }
                             val extracted = extractFromFile(filePath, params)
+                            logger.info { "CODE_EXTRACTOR_FILE_EXTRACTED: Extracted ${extracted.size} fragments from file" }
                             if (params.smartFiltering) {
+                                logger.debug { "CODE_EXTRACTOR_SMART_FILTERING: Applying smart filtering" }
                                 applySmartFiltering(extracted, context, plan, params)
                             } else {
                                 extracted
@@ -84,10 +116,13 @@ class CodeExtractorTool(
                         }
 
                         params.className != null && params.methodName != null -> {
+                            logger.info { "CODE_EXTRACTOR_MODE: Method in class search - class: ${params.className}, method: ${params.methodName}" }
                             // Search for specific method in specific class
                             val extracted =
                                 searchMethodInClass(projectPath, params.className, params.methodName, params)
+                            logger.info { "CODE_EXTRACTOR_METHOD_CLASS_EXTRACTED: Found ${extracted.size} fragments for method ${params.methodName} in class ${params.className}" }
                             if (params.smartFiltering) {
+                                logger.debug { "CODE_EXTRACTOR_SMART_FILTERING: Applying smart filtering" }
                                 applySmartFiltering(extracted, context, plan, params)
                             } else {
                                 extracted
@@ -95,9 +130,12 @@ class CodeExtractorTool(
                         }
 
                         params.className != null -> {
+                            logger.info { "CODE_EXTRACTOR_MODE: Class search - ${params.className}" }
                             // Search for class by name
                             val extracted = searchClassByName(projectPath, params.className, params)
+                            logger.info { "CODE_EXTRACTOR_CLASS_EXTRACTED: Found ${extracted.size} fragments for class ${params.className}" }
                             if (params.smartFiltering) {
+                                logger.debug { "CODE_EXTRACTOR_SMART_FILTERING: Applying smart filtering" }
                                 applySmartFiltering(extracted, context, plan, params)
                             } else {
                                 extracted
@@ -105,9 +143,12 @@ class CodeExtractorTool(
                         }
 
                         params.methodName != null -> {
+                            logger.info { "CODE_EXTRACTOR_MODE: Method search - ${params.methodName}" }
                             // Search for method by name
                             val extracted = searchMethodByName(projectPath, params.methodName, params)
+                            logger.info { "CODE_EXTRACTOR_METHOD_EXTRACTED: Found ${extracted.size} fragments for method ${params.methodName}" }
                             if (params.smartFiltering) {
+                                logger.debug { "CODE_EXTRACTOR_SMART_FILTERING: Applying smart filtering" }
                                 applySmartFiltering(extracted, context, plan, params)
                             } else {
                                 extracted
@@ -115,9 +156,12 @@ class CodeExtractorTool(
                         }
 
                         params.searchPattern != null -> {
+                            logger.info { "CODE_EXTRACTOR_MODE: Pattern search - ${params.searchPattern}" }
                             // Search by pattern
                             val extracted = searchByPattern(projectPath, params.searchPattern, params)
+                            logger.info { "CODE_EXTRACTOR_PATTERN_EXTRACTED: Found ${extracted.size} fragments for pattern ${params.searchPattern}" }
                             if (params.smartFiltering) {
+                                logger.debug { "CODE_EXTRACTOR_SMART_FILTERING: Applying smart filtering" }
                                 applySmartFiltering(extracted, context, plan, params)
                             } else {
                                 extracted
@@ -125,23 +169,31 @@ class CodeExtractorTool(
                         }
 
                         else -> {
+                            logger.info { "CODE_EXTRACTOR_MODE: Intelligent file discovery" }
                             // Intelligent file discovery - if no specific criteria provided, try to extract from context
                             val discoveredFiles = discoverRelevantFiles(projectPath, context, plan, params)
+                            logger.info { "CODE_EXTRACTOR_DISCOVERY: Discovered ${discoveredFiles.size} potentially relevant files" }
                             if (discoveredFiles.isNotEmpty()) {
+                                logger.debug { "CODE_EXTRACTOR_DISCOVERY_FILES: ${discoveredFiles.map { it.fileName }}" }
                                 val extracted =
                                     discoveredFiles.flatMap { file ->
                                         try {
+                                            logger.debug { "CODE_EXTRACTOR_DISCOVERY_EXTRACTING: Processing file ${file.fileName}" }
                                             extractFromFile(file, params)
                                         } catch (e: Exception) {
+                                            logger.warn { "CODE_EXTRACTOR_DISCOVERY_ERROR: Failed to extract from ${file.fileName}: ${e.message}" }
                                             emptyList()
                                         }
                                     }
+                                logger.info { "CODE_EXTRACTOR_DISCOVERY_EXTRACTED: Extracted ${extracted.size} fragments from discovered files" }
                                 if (params.smartFiltering) {
+                                    logger.debug { "CODE_EXTRACTOR_SMART_FILTERING: Applying smart filtering" }
                                     applySmartFiltering(extracted, context, plan, params)
                                 } else {
                                     extracted
                                 }
                             } else {
+                                logger.error { "CODE_EXTRACTOR_DISCOVERY_FAILED: No relevant files could be automatically discovered and no specific criteria provided" }
                                 return@withContext ToolResult.error(
                                     "Must specify either filePath, className, methodName, or searchPattern. No relevant files could be automatically discovered.",
                                 )
@@ -149,105 +201,67 @@ class CodeExtractorTool(
                         }
                     }
 
+                logger.info { "CODE_EXTRACTOR_RESULTS: Extraction completed with ${results.size} total fragments" }
                 if (results.isEmpty()) {
-                    ToolResult.ok("No code fragments found matching the criteria")
+                    logger.error { "CODE_EXTRACTOR_NO_RESULTS: No code fragments found matching the criteria. Parameters: filePath=${params.filePath}, className=${params.className}, methodName=${params.methodName}, searchPattern=${params.searchPattern}" }
+                    ToolResult.error("CODE_EXTRACTOR_FAILED")
                 } else {
-                    Json.encodeToString(
-                        kotlinx.serialization.serializer<List<CodeFragmentResult>>(),
-                        results,
-                    )
-                    val output =
-                        buildString {
-                            appendLine("Found ${results.size} code fragment(s):")
+                    val resultsContent = buildString {
+                        results.forEachIndexed { index, result ->
+                            appendLine("Fragment ${index + 1}: ${result.title}")
+                            appendLine("File: ${result.file}")
+                            appendLine("Language: ${result.language}")
+                            if (result.className != null) appendLine("Class: ${result.className}")
+                            if (result.methodName != null) appendLine("Method: ${result.methodName}")
+                            if (result.packageName != null) appendLine("Package: ${result.packageName}")
+                            if (result.returnType != null) appendLine("Return Type: ${result.returnType}")
+                            if (result.parameters.isNotEmpty()) {
+                                appendLine("Parameters: ${result.parameters.joinToString(", ")}")
+                            }
+                            if (result.comment != null) appendLine("Comment: ${result.comment}")
+                            appendLine("Tags: ${result.tags.joinToString(", ")}")
                             appendLine()
-                            results.forEachIndexed { index, result ->
-                                appendLine("=".repeat(80))
-                                appendLine("Fragment ${index + 1}: ${result.title}")
-                                appendLine("File: ${result.file}")
-                                appendLine("Language: ${result.language}")
-                                if (result.className != null) appendLine("Class: ${result.className}")
-                                if (result.methodName != null) appendLine("Method: ${result.methodName}")
-                                if (result.packageName != null) appendLine("Package: ${result.packageName}")
-                                if (result.returnType != null) appendLine("Return Type: ${result.returnType}")
-                                if (result.parameters.isNotEmpty()) {
-                                    appendLine(
-                                        "Parameters: ${
-                                            result.parameters.joinToString(
-                                                ", ",
-                                            )
-                                        }",
-                                    )
-                                }
-                                if (result.comment != null) appendLine("Comment: ${result.comment}")
-                                appendLine("Tags: ${result.tags.joinToString(", ")}")
-                                appendLine("=".repeat(80))
-                                appendLine(result.content)
+                            appendLine(result.content)
+                            if (index < results.size - 1) {
+                                appendLine()
+                                appendLine("---")
+                                appendLine()
                             }
                         }
-                    ToolResult.ok(output)
+                    }
+                    ToolResult.analysisResult(
+                        "CODE_EXTRACTOR",
+                        "code extraction",
+                        results.size,
+                        "fragment${if (results.size != 1) "s" else ""}",
+                        results = resultsContent
+                    )
                 }
             } catch (e: SecurityException) {
+                logger.error(e) { "CODE_EXTRACTOR_SECURITY_ERROR: Security exception during extraction - cannot access file or directory" }
                 ToolResult.error(
                     "CODE_EXTRACTOR_ACCESS_DENIED: Cannot access file or directory. Check file permissions and project path configuration. Error: ${e.message}",
                 )
             } catch (e: java.nio.file.NoSuchFileException) {
+                logger.error(e) { "CODE_EXTRACTOR_FILE_NOT_FOUND_ERROR: File not found during extraction - ${e.file}" }
                 ToolResult.error(
                     "CODE_EXTRACTOR_FILE_NOT_FOUND: Specified file does not exist: ${e.file}. Please verify the file path relative to project root or use searchPattern to find files.",
                 )
             } catch (e: java.nio.file.AccessDeniedException) {
+                logger.error(e) { "CODE_EXTRACTOR_ACCESS_DENIED_ERROR: Access denied to file - ${e.file}" }
                 ToolResult.error("CODE_EXTRACTOR_ACCESS_DENIED: Permission denied accessing file: ${e.file}. Check file permissions.")
             } catch (e: java.io.IOException) {
+                logger.error(e) { "CODE_EXTRACTOR_IO_ERROR: I/O error during file operations" }
                 ToolResult.error("CODE_EXTRACTOR_IO_ERROR: File system error occurred: ${e.message}. Check if file is locked or corrupted.")
             } catch (e: kotlinx.serialization.SerializationException) {
-                val recoveryAdvice =
-                    buildString {
-                        appendLine("CODE_EXTRACTOR_PARSING_ERROR: Failed to parse task parameters.")
-                        appendLine("Expected JSON format with fields:")
-                        appendLine("- filePath, className, methodName, searchPattern (at least one required)")
-                        appendLine("- includeImports, includeComments, signatureOnly, languageHint (optional)")
-                        appendLine("- contextFromSteps, smartFiltering (optional)")
-                        appendLine()
-                        appendLine("RECOVERY SUGGESTIONS:")
-                        appendLine("1. Use plain text description (e.g., 'Extract UserService class')")
-                        appendLine("2. Provide valid JSON: {\"className\":\"UserService\"}")
-                        appendLine("3. Check for syntax errors in JSON format")
-                        appendLine()
-                        appendLine("Error details: ${e.message}")
-                    }
-                ToolResult.error(recoveryAdvice)
+                logger.error(e) { "CODE_EXTRACTOR_SERIALIZATION_ERROR: JSON parsing failed for task description" }
+                ToolResult.error("CODE_EXTRACTOR_PARSING_ERROR: ${e.message}")
             } catch (e: IllegalArgumentException) {
-                val recoveryAdvice =
-                    buildString {
-                        appendLine("CODE_EXTRACTOR_INVALID_PARAMS: Invalid parameter values provided.")
-                        appendLine("Error: ${e.message}")
-                        appendLine()
-                        appendLine("RECOVERY SUGGESTIONS:")
-                        if (e.message?.contains("JSON") == true) {
-                            appendLine("1. Try using a simpler description in plain text")
-                            appendLine("2. Verify JSON syntax and field names")
-                            appendLine("3. Use FILE_LISTING tool to discover available files first")
-                        } else {
-                            appendLine("1. Check file paths are relative to project root")
-                            appendLine("2. Verify class/method names exist in the project")
-                            appendLine("3. Use wildcard patterns like '*Service*' for broader search")
-                        }
-                    }
-                ToolResult.error(recoveryAdvice)
+                logger.error(e) { "CODE_EXTRACTOR_INVALID_ARGS_ERROR: Invalid argument provided" }
+                ToolResult.error("CODE_EXTRACTOR_INVALID_PARAMS: ${e.message}")
             } catch (e: Exception) {
-                val recoveryAdvice =
-                    buildString {
-                        appendLine("CODE_EXTRACTOR_UNKNOWN_ERROR: Unexpected error during code extraction.")
-                        appendLine("Error: ${e.javaClass.simpleName} - ${e.message}")
-                        appendLine()
-                        appendLine("RECOVERY SUGGESTIONS:")
-                        appendLine("1. Try using FILE_LISTING tool first to understand project structure")
-                        appendLine("2. Use simpler search criteria (single class or method name)")
-                        appendLine("3. Check if project path is accessible and contains supported files")
-                        appendLine("4. Try with smartFiltering disabled: {\"smartFiltering\": false}")
-                        appendLine()
-                        appendLine("If the error persists, please report with the exact task parameters used.")
-                    }
-                ToolResult.error(recoveryAdvice)
+                logger.error(e) { "CODE_EXTRACTOR_UNEXPECTED_ERROR: Unexpected error of type ${e.javaClass.simpleName}" }
+                ToolResult.error("CODE_EXTRACTOR_UNKNOWN_ERROR: ${e.javaClass.simpleName} - ${e.message}")
             }
         }
 
@@ -257,34 +271,73 @@ class CodeExtractorTool(
         plan: Plan,
         stepContext: String = "",
     ): CodeExtractorParams {
+        logger.debug { "CODE_EXTRACTOR_PARSE_START: Attempting to parse task description (${taskDescription.length} chars)" }
         try {
-            return Json.decodeFromString<CodeExtractorParams>(
-                taskDescription
-                    .trim()
-                    .removePrefix("```json")
-                    .removePrefix("```")
-                    .removeSuffix("```")
-                    .trim(),
-            )
+            val cleanedJson = taskDescription
+                .trim()
+                .removePrefix("```json")
+                .removePrefix("```")
+                .removeSuffix("```")
+                .trim()
+            logger.debug { "CODE_EXTRACTOR_PARSE_JSON: Trying direct JSON parsing of cleaned description" }
+            val params = Json.decodeFromString<CodeExtractorParams>(cleanedJson)
+            logger.debug { "CODE_EXTRACTOR_PARSE_SUCCESS: Successfully parsed JSON parameters directly" }
+            return params
         } catch (e: Exception) {
-            // If direct JSON parsing fails, use LLM to convert plain text to JSON
-            return generateJsonFromPlainText(taskDescription, context, plan, stepContext)
+            logger.debug { "CODE_EXTRACTOR_PARSE_JSON_FAILED: Direct JSON parsing failed, falling back to simplified parsing: ${e.message}" }
+            // If direct JSON parsing fails, use simplified approach
+            val simpleParams = generateSimpleCodeParams(taskDescription, context, plan, stepContext)
+            logger.debug { "CODE_EXTRACTOR_PARSE_SIMPLE_SUCCESS: Successfully parsed using simplified approach" }
+            
+            // Convert SimpleCodeParams to CodeExtractorParams for backward compatibility
+            return CodeExtractorParams(
+                filePath = if (simpleParams.type == "file") simpleParams.target else null,
+                className = if (simpleParams.type == "class") simpleParams.target else null,
+                methodName = if (simpleParams.type == "method") simpleParams.target else null,
+                searchPattern = if (simpleParams.type == "pattern") simpleParams.target else null,
+                includeImports = true,
+                includeComments = true,
+                signatureOnly = false,
+                languageHint = null,
+                contextFromSteps = 3,
+                smartFiltering = true
+            )
         }
     }
 
-    private suspend fun generateJsonFromPlainText(
+    private suspend fun generateSimpleCodeParams(
         taskDescription: String,
         context: TaskContext,
         plan: Plan,
         stepContext: String = "",
-    ): CodeExtractorParams =
-        llmGateway.callLlm(
+    ): SimpleCodeParams {
+        // Simple string-based parsing instead of complex JSON generation
+        val parsePrompt = """
+        Extract target from: "$taskDescription"
+        Context: ${stepContext.take(200)}
+        
+        What to extract? Respond with target name only.
+        Examples: "UserService", "authenticate", "config.yaml", "*.java"
+        """.trimIndent()
+        
+        val target = llmGateway.callLlm(
             type = PromptTypeEnum.CODE_EXTRACTOR,
-            userPrompt = taskDescription,
+            userPrompt = parsePrompt,
             quick = context.quick,
-            responseSchema = CodeExtractorParams(),
+            responseSchema = "",
             stepContext = stepContext,
         )
+        
+        // Determine type based on target content
+        val type = when {
+            target.contains(".") && !target.contains("*") -> "file"
+            target.lowercase().contains("method") || target.lowercase().contains("function") -> "method"
+            target.contains("*") || target.lowercase().contains("pattern") -> "pattern"
+            else -> "class"
+        }
+        
+        return SimpleCodeParams(target = target.trim(), type = type)
+    }
 
     private suspend fun applySmartFiltering(
         fragments: List<CodeFragmentResult>,
@@ -311,7 +364,7 @@ class CodeExtractorTool(
 
             // Extract keywords from step outputs
             step.output?.let { output ->
-                val outputText = output.render()
+                val outputText = output.output
                 // Extract class names, method names, and other relevant terms
                 val relevantTerms = extractRelevantTerms(outputText)
                 contextKeywords.addAll(relevantTerms)
@@ -449,7 +502,7 @@ class CodeExtractorTool(
         // Extract file names and patterns from step outputs
         recentSteps.forEach { step ->
             step.output?.let { output ->
-                val outputText = output.render()
+                val outputText = output.output
 
                 // Look for file paths in outputs
                 val filePaths = Regex("\\b[\\w/.-]+\\.(kt|java|js|ts|py)\\b").findAll(outputText)
@@ -895,49 +948,93 @@ class CodeExtractorTool(
         pattern: String,
         params: CodeExtractorParams,
     ): List<CodeFragmentResult> {
+        logger.debug { "CODE_EXTRACTOR_PATTERN_SEARCH_START: Starting pattern search for: '$pattern'" }
         val results = mutableListOf<CodeFragmentResult>()
         val processedFiles = mutableSetOf<Path>()
 
         // Enhanced pattern matching with multiple strategies
-        val wildcard = pattern.contains("*")
-        val regex =
+        val regex = try {
+            // First try to use pattern as-is (it might already be a valid regex like ".*Authorization.*")
+            val regex = Regex(pattern, RegexOption.IGNORE_CASE)
+            logger.debug { "CODE_EXTRACTOR_REGEX_SUCCESS: Pattern '$pattern' used as-is as valid regex" }
+            regex
+        } catch (e: Exception) {
+            logger.debug { "CODE_EXTRACTOR_REGEX_FALLBACK: Pattern '$pattern' is not valid regex, trying fallback strategies: ${e.message}" }
+            // If pattern is not a valid regex, check if it contains wildcards for simple substitution
+            val wildcard = pattern.contains("*")
             if (wildcard) {
                 try {
-                    Regex(pattern.replace("*", ".*"), RegexOption.IGNORE_CASE)
-                } catch (e: Exception) {
-                    Regex(Regex.escape(pattern), RegexOption.IGNORE_CASE)
+                    // Only apply wildcard replacement if pattern is not already a valid regex
+                    val wildcardPattern = pattern.replace("*", ".*")
+                    val regex = Regex(wildcardPattern, RegexOption.IGNORE_CASE)
+                    logger.debug { "CODE_EXTRACTOR_REGEX_WILDCARD: Applied wildcard replacement: '$pattern' -> '$wildcardPattern'" }
+                    regex
+                } catch (e2: Exception) {
+                    // Fallback to escaped literal pattern
+                    val escapedPattern = Regex.escape(pattern)
+                    val regex = Regex(escapedPattern, RegexOption.IGNORE_CASE)
+                    logger.debug { "CODE_EXTRACTOR_REGEX_ESCAPED: Used escaped literal pattern: '$pattern' -> '$escapedPattern'" }
+                    regex
                 }
             } else {
-                Regex(Regex.escape(pattern), RegexOption.IGNORE_CASE)
+                // No wildcards, treat as literal string
+                val escapedPattern = Regex.escape(pattern)
+                val regex = Regex(escapedPattern, RegexOption.IGNORE_CASE)
+                logger.debug { "CODE_EXTRACTOR_REGEX_LITERAL: Used escaped literal pattern (no wildcards): '$pattern' -> '$escapedPattern'" }
+                regex
             }
+        }
+
+        logger.debug { "CODE_EXTRACTOR_FILE_WALK: Starting to walk project directory for supported files" }
+        var totalFiles = 0
+        var processedFilesCount = 0
+        var failedFiles = 0
+        var totalFragments = 0
+        var matchingFragments = 0
 
         Files
             .walk(projectPath)
             .filter { it.toFile().isFile && isSupportedFile(it) }
             .forEach { file ->
+                totalFiles++
                 if (processedFiles.add(file)) {
+                    processedFilesCount++
                     try {
+                        logger.debug { "CODE_EXTRACTOR_FILE_PROCESSING: Processing file ${file.fileName}" }
                         val fragments = extractFromFile(file, params)
-                        results.addAll(
-                            fragments.filter { fragment ->
-                                matchesPattern(fragment, pattern, regex)
-                            },
-                        )
+                        totalFragments += fragments.size
+                        val matchingInFile = fragments.filter { fragment ->
+                            matchesPattern(fragment, pattern, regex)
+                        }
+                        matchingFragments += matchingInFile.size
+                        if (matchingInFile.isNotEmpty()) {
+                            logger.debug { "CODE_EXTRACTOR_FILE_MATCHES: Found ${matchingInFile.size} matching fragments in ${file.fileName}" }
+                        }
+                        results.addAll(matchingInFile)
                     } catch (e: Exception) {
-                        // Log but continue processing other files
+                        failedFiles++
+                        logger.warn { "CODE_EXTRACTOR_FILE_ERROR: Failed to process file ${file.fileName}: ${e.message}" }
                     }
                 }
             }
 
+        logger.info { "CODE_EXTRACTOR_PATTERN_STATS: Pattern '$pattern' - processed $processedFilesCount/$totalFiles files, extracted $totalFragments total fragments, found $matchingFragments matches, $failedFiles failures" }
+
         // If no results found, try broader search with individual pattern terms
         if (results.isEmpty() && pattern.contains(" ")) {
+            logger.debug { "CODE_EXTRACTOR_PATTERN_FALLBACK: No results for full pattern '$pattern', trying individual terms" }
             val terms = pattern.split(" ").filter { it.length > 2 }
+            logger.debug { "CODE_EXTRACTOR_PATTERN_TERMS: Searching for individual terms: ${terms.joinToString(", ")}" }
             terms.forEach { term ->
-                results.addAll(searchByPattern(projectPath, term, params))
+                val termResults = searchByPattern(projectPath, term, params)
+                logger.debug { "CODE_EXTRACTOR_PATTERN_TERM_RESULTS: Term '$term' found ${termResults.size} results" }
+                results.addAll(termResults)
             }
         }
 
-        return results.distinct()
+        val distinctResults = results.distinct()
+        logger.info { "CODE_EXTRACTOR_PATTERN_COMPLETE: Pattern search for '$pattern' completed with ${distinctResults.size} unique results (${results.size} total before deduplication)" }
+        return distinctResults
     }
 
     private fun matchesPattern(
@@ -1267,4 +1364,68 @@ class CodeExtractorTool(
     }
 
     private fun extractPythonParameters(line: String): List<String> = extractParameters(line)
+
+    /**
+     * Validates stepBack context to ensure previous steps provided usable information.
+     * Returns error ToolResult with alternative suggestions when context is insufficient.
+     * Returns null when context is valid and extraction can proceed.
+     */
+    private fun validateStepBackContext(stepContext: String, taskDescription: String): ToolResult? {
+        if (stepContext.isBlank()) {
+            // No stepContext provided - this is fine for stepBack=0 steps
+            return null
+        }
+
+        val contextLower = stepContext.lowercase()
+        
+        // Check for indicators of failed or empty previous steps
+        val failureIndicators = listOf(
+            "no relevant results",
+            "no results found", 
+            "no matching",
+            "not found",
+            "failed to",
+            "error:",
+            "exception:",
+            "empty result"
+        )
+
+        val hasFailureIndicators = failureIndicators.any { indicator -> 
+            contextLower.contains(indicator)
+        }
+
+        if (hasFailureIndicators) {
+            return ToolResult.error("CODE_EXTRACTOR_INSUFFICIENT_CONTEXT")
+        }
+
+        // Check if stepContext contains actionable information (file paths, class names, method names)
+        val actionablePatterns = listOf(
+            Regex("\\w+\\.\\w+"),  // file.extension
+            Regex("class\\s+\\w+", RegexOption.IGNORE_CASE),
+            Regex("method\\s+\\w+", RegexOption.IGNORE_CASE),
+            Regex("function\\s+\\w+", RegexOption.IGNORE_CASE),
+            Regex("/\\w+"),  // file paths
+            Regex("\\w+Controller", RegexOption.IGNORE_CASE),
+            Regex("\\w+Service", RegexOption.IGNORE_CASE),
+            Regex("\\w+Repository", RegexOption.IGNORE_CASE),
+            Regex("├──|└──"),  // file tree structure from FILE_LISTING
+            Regex("PROJECT FILE TREE", RegexOption.IGNORE_CASE),
+            Regex("Root:"),  // file listing root indicator
+            Regex("\\w+/\\w+"),  // directory paths
+            Regex("\\.\\w{2,4}\\s"),  // file extensions followed by space
+            Regex("\\w+\\.kt|\\w+\\.java|\\w+\\.js|\\w+\\.py", RegexOption.IGNORE_CASE)  // common source files
+        )
+
+        val hasActionableContent = actionablePatterns.any { pattern ->
+            pattern.containsMatchIn(stepContext)
+        }
+
+        // Only reject if context is very short AND has no actionable content AND appears to be an error message
+        if (!hasActionableContent && stepContext.length < 20 && contextLower.contains("error")) {
+            return ToolResult.error("CODE_EXTRACTOR_INSUFFICIENT_CONTEXT")
+        }
+
+        // Context validation passed
+        return null
+    }
 }

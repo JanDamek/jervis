@@ -9,16 +9,11 @@ import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.gateway.core.LlmGateway
+import com.jervis.service.indexing.dto.ClassSummaryResponse
 import com.jervis.service.prompts.PromptRepository
 import com.jervis.service.rag.RagIndexingStatusService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonPrimitive
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.nio.file.Files
@@ -152,14 +147,28 @@ class ClassSummaryIndexingService(
         try {
             logger.debug { "Generating class summary for: ${classInfo.className}" }
 
-            val userPrompt = buildClassAnalysisPrompt(classInfo)
-
             val llmResponse =
                 llmGateway.callLlm(
                     type = PromptTypeEnum.CLASS_SUMMARY,
-                    userPrompt = userPrompt,
+                    userPrompt = "",
                     quick = false,
-                    "",
+                    responseSchema = ClassSummaryResponse(),
+                    mappingValue = mapOf(
+                        "className" to classInfo.className,
+                        "filePath" to classInfo.filePath,
+                        "code" to (classInfo.fields.joinToString("\n") + "\n\n" + classInfo.methods.joinToString("\n") { "${it.name}(${it.parameters.joinToString(", ")})" }),
+                        "relations" to buildString {
+                            if (classInfo.superClasses.isNotEmpty()) {
+                                append("Extends: ${classInfo.superClasses.joinToString(", ")}. ")
+                            }
+                            if (classInfo.interfaces.isNotEmpty()) {
+                                append("Implements: ${classInfo.interfaces.joinToString(", ")}. ")
+                            }
+                            if (classInfo.annotations.isNotEmpty()) {
+                                append("Annotations: ${classInfo.annotations.joinToString(", ")}")
+                            }
+                        }
+                    )
                 )
 
             val classSummary =
@@ -170,7 +179,7 @@ class ClassSummaryIndexingService(
                     appendLine("File: ${classInfo.filePath}")
                     appendLine()
                     appendLine("Analysis:")
-                    appendLine(llmResponse)
+                    appendLine(llmResponse.summary)
                     appendLine()
                     appendLine("Technical Details:")
                     appendLine("- Methods: ${classInfo.methods.size}")
@@ -199,6 +208,7 @@ class ClassSummaryIndexingService(
                     documentType = RagDocumentType.CLASS_SUMMARY,
                     ragSourceType = RagSourceType.CLASS,
                     pageContent = classSummary,
+                    clientId = project.clientId,
                     source = "class://${project.name}/${classInfo.className}",
                     path = classInfo.filePath,
                     packageName = classInfo.packageName,
@@ -237,7 +247,7 @@ class ClassSummaryIndexingService(
     }
 
     /**
-     * Index each method separately with class context and Joern analysis
+     * Index each method separately with class context
      * This meets the requirement: "zvláš s popisem každé methody ve tříde" (separately with each method description in the class)
      */
     private suspend fun indexMethodsSeparately(
@@ -245,110 +255,31 @@ class ClassSummaryIndexingService(
         classInfo: ClassInfo,
         gitCommitHash: String,
     ) {
-        logger.debug { "Indexing ${classInfo.methods.size} methods separately for class: ${classInfo.className}" }
+        if (classInfo.methods.isEmpty()) {
+            logger.debug { "No methods to index for class: ${classInfo.className}" }
+            return
+        }
 
         for (method in classInfo.methods) {
             try {
-                val methodDescription =
-                    buildString {
-                        appendLine("Method: ${method.name}")
-                        appendLine("=".repeat(60))
-                        appendLine("Class: ${classInfo.className}")
-                        appendLine("Package: ${classInfo.packageName ?: "unknown"}")
-                        appendLine("File: ${classInfo.filePath}")
-                        appendLine()
-
-                        // Method signature details
-                        appendLine("Method Signature:")
-                        val modifiers =
-                            buildList {
-                                if (method.isPublic) add("public")
-                                if (method.isStatic) add("static")
-                            }.joinToString(" ")
-
-                        val params =
-                            if (method.parameters.isNotEmpty()) {
-                                method.parameters.joinToString(", ")
-                            } else {
-                                "()"
-                            }
-
-                        appendLine("$modifiers ${method.returnType ?: "void"} ${method.name}($params)")
-
-                        if (method.annotations.isNotEmpty()) {
-                            appendLine("Annotations: ${method.annotations.joinToString(", ")}")
-                        }
-
-                        appendLine()
-                        appendLine("Class Context:")
-                        appendLine(
-                            "- Class Type: ${
-                                if (classInfo.isInterface) {
-                                    "Interface"
-                                } else if (classInfo.isAbstract) {
-                                    "Abstract Class"
-                                } else {
-                                    "Class"
-                                }
-                            }",
-                        )
-                        if (classInfo.interfaces.isNotEmpty()) {
-                            appendLine("- Class Implements: ${classInfo.interfaces.joinToString(", ")}")
-                        }
-                        if (classInfo.superClasses.isNotEmpty()) {
-                            appendLine("- Class Extends: ${classInfo.superClasses.joinToString(", ")}")
-                        }
-                        appendLine("- Total Methods in Class: ${classInfo.methods.size}")
-                        appendLine("- Total Fields in Class: ${classInfo.fields.size}")
-
-                        // Include Joern analysis context if available
-                        classInfo.joernAnalysis?.let { analysis ->
-                            appendLine()
-                            appendLine("Joern Analysis Context:")
-                            appendLine(analysis)
-                        }
-
-                        // Include relevant code context if available
-                        classInfo.codeContent?.let { code ->
-                            // Try to extract method-specific code or provide class context
-                            appendLine()
-                            appendLine("Code Context (Class Extract):")
-                            val codePreview =
-                                if (code.length > 1000) {
-                                    code.take(1000) + "\n... (code truncated)"
-                                } else {
-                                    code
-                                }
-                            appendLine("```")
-                            appendLine(codePreview)
-                            appendLine("```")
-                        }
-
-                        appendLine()
-                        appendLine("---")
-                        appendLine("Generated by: Joern Static Analysis + Method Indexing")
-                        appendLine("Indexed as: Individual Method Entry")
-                        appendLine("Project: ${project.name}")
-                        appendLine("Searchable by: method name, class context, Joern analysis results")
-                    }
-
+                val methodDescription = buildMethodDescription(method, classInfo, project)
                 val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, methodDescription)
 
-                val ragDocument =
-                    RagDocument(
-                        projectId = project.id,
-                        documentType = RagDocumentType.METHOD_DESCRIPTION,
-                        ragSourceType = RagSourceType.METHOD,
-                        pageContent = methodDescription,
-                        source = "method://${project.name}/${classInfo.className}#${method.name}",
-                        path = classInfo.filePath,
-                        packageName = classInfo.packageName,
-                        className = classInfo.className,
-                        methodName = method.name,
-                        module = "${classInfo.className}#${method.name}",
-                        language = inferLanguageFromPath(classInfo.filePath),
-                        gitCommitHash = gitCommitHash,
-                    )
+                val ragDocument = RagDocument(
+                    projectId = project.id,
+                    documentType = RagDocumentType.METHOD_DESCRIPTION,
+                    ragSourceType = RagSourceType.METHOD,
+                    pageContent = methodDescription,
+                    clientId = project.clientId,
+                    source = "method://${project.name}/${classInfo.className}#${method.name}",
+                    path = classInfo.filePath,
+                    packageName = classInfo.packageName,
+                    className = classInfo.className,
+                    methodName = method.name,
+                    module = "${classInfo.className}#${method.name}",
+                    language = inferLanguageFromPath(classInfo.filePath),
+                    gitCommitHash = gitCommitHash,
+                )
 
                 // Track indexing status for this method
                 try {
@@ -372,8 +303,86 @@ class ClassSummaryIndexingService(
             }
         }
 
-        logger.debug { "Completed separate indexing of ${classInfo.methods.size} methods for class: ${classInfo.className}" }
+        logger.debug { "Completed indexing of ${classInfo.methods.size} methods for class: ${classInfo.className}" }
     }
+
+    /**
+     * Build method description for embedding
+     */
+    private fun buildMethodDescription(method: MethodInfo, classInfo: ClassInfo, project: ProjectDocument): String {
+        return buildString {
+            appendLine("Method: ${method.name}")
+            appendLine("=".repeat(60))
+            appendLine("Class: ${classInfo.className}")
+            appendLine("Package: ${classInfo.packageName ?: "unknown"}")
+            appendLine("File: ${classInfo.filePath}")
+            appendLine()
+
+            // Method signature details
+            appendLine("Method Signature:")
+            val modifiers = buildList {
+                if (method.isPublic) add("public")
+                if (method.isStatic) add("static")
+            }.joinToString(" ")
+
+            val params = if (method.parameters.isNotEmpty()) {
+                method.parameters.joinToString(", ")
+            } else {
+                "()"
+            }
+
+            appendLine("$modifiers ${method.returnType ?: "void"} ${method.name}($params)")
+
+            if (method.annotations.isNotEmpty()) {
+                appendLine("Annotations: ${method.annotations.joinToString(", ")}")
+            }
+
+            appendLine()
+            appendLine("Class Context:")
+            appendLine("- Class Type: ${
+                if (classInfo.isInterface) "Interface" 
+                else if (classInfo.isAbstract) "Abstract Class" 
+                else "Class"
+            }")
+            if (classInfo.interfaces.isNotEmpty()) {
+                appendLine("- Class Implements: ${classInfo.interfaces.joinToString(", ")}")
+            }
+            if (classInfo.superClasses.isNotEmpty()) {
+                appendLine("- Class Extends: ${classInfo.superClasses.joinToString(", ")}")
+            }
+            appendLine("- Total Methods in Class: ${classInfo.methods.size}")
+            appendLine("- Total Fields in Class: ${classInfo.fields.size}")
+
+            // Include Joern analysis context if available
+            classInfo.joernAnalysis?.let { analysis ->
+                appendLine()
+                appendLine("Joern Analysis Context:")
+                appendLine(analysis)
+            }
+
+            // Include relevant code context if available
+            classInfo.codeContent?.let { code ->
+                appendLine()
+                appendLine("Code Context (Class Extract):")
+                val codePreview = if (code.length > 1000) {
+                    code.take(1000) + "\n... (code truncated)"
+                } else {
+                    code
+                }
+                appendLine("```")
+                appendLine(codePreview)
+                appendLine("```")
+            }
+
+            appendLine()
+            appendLine("---")
+            appendLine("Generated by: Joern Static Analysis + Method Indexing (Batch Optimized)")
+            appendLine("Indexed as: Individual Method Entry")
+            appendLine("Project: ${project.name}")
+            appendLine("Searchable by: method name, class context, Joern analysis results")
+        }
+    }
+
 
     /**
      * Build detailed analysis prompt for LLM using configured CLASS_SUMMARY prompt
@@ -497,10 +506,26 @@ class ClassSummaryIndexingService(
                     }.forEach { file ->
                         try {
                             val content = Files.readString(file)
-                            val parsedClasses = parseClassesFromJson(content, file.pathString)
-                            classes.addAll(parsedClasses)
+                            val descriptions = extractClassDescriptionsFromText(content, file.pathString)
+                            // Create basic class info from text descriptions for RAG indexing
+                            descriptions.forEach { description ->
+                                val classInfo = ClassInfo(
+                                    className = extractNameFromDescription(description),
+                                    packageName = null,
+                                    filePath = file.pathString,
+                                    methods = emptyList(),
+                                    fields = emptyList(),
+                                    interfaces = emptyList(),
+                                    superClasses = emptyList(),
+                                    annotations = emptyList(),
+                                    isAbstract = false,
+                                    isInterface = false,
+                                    joernAnalysis = description
+                                )
+                                classes.add(classInfo)
+                            }
                         } catch (e: Exception) {
-                            logger.warn(e) { "Failed to parse classes from file: ${file.fileName}" }
+                            logger.warn(e) { "Failed to extract class descriptions from file: ${file.fileName}" }
                         }
                     }
 
@@ -513,170 +538,66 @@ class ClassSummaryIndexingService(
         }
 
     /**
-     * Parse classes from JSON content
+     * Extract textual class descriptions from Joern output for RAG indexing
      */
-    private fun parseClassesFromJson(
-        jsonContent: String,
+    private fun extractClassDescriptionsFromText(
+        content: String,
         fileName: String,
-    ): List<ClassInfo> =
-        try {
-            val json = Json.parseToJsonElement(jsonContent)
-            val classes = mutableListOf<ClassInfo>()
-
-            when (json) {
-                is JsonArray -> {
-                    json.forEach { element ->
-                        parseClassFromJsonElement(element, fileName)?.let { classes.add(it) }
-                    }
+    ): List<String> {
+        return try {
+            val descriptions = mutableListOf<String>()
+            val lines = content.lines()
+            
+            // Extract meaningful textual information from Joern output
+            for (line in lines) {
+                val trimmedLine = line.trim()
+                
+                // Skip empty lines and pure log lines
+                if (trimmedLine.isEmpty() || 
+                    trimmedLine.startsWith("[") || 
+                    trimmedLine.startsWith("WARNING:") ||
+                    trimmedLine.startsWith("executing") ||
+                    trimmedLine.startsWith("--")) {
+                    continue
                 }
-
-                is JsonObject -> {
-                    // Look for class-like structures
-                    json.entries.forEach { (key, value) ->
-                        when {
-                            key.contains("classes", ignoreCase = true) ||
-                                key.contains("types", ignoreCase = true) -> {
-                                if (value is JsonArray) {
-                                    value.forEach { element ->
-                                        parseClassFromJsonElement(
-                                            element,
-                                            fileName,
-                                        )?.let { classes.add(it) }
-                                    }
-                                }
-                            }
-
-                            value is JsonObject -> {
-                                parseClassFromJsonElement(value, fileName)?.let { classes.add(it) }
-                            }
-                        }
-                    }
-                }
-
-                else -> {
-                    parseClassFromJsonElement(json, fileName)?.let { classes.add(it) }
+                
+                // Look for class-related information
+                if (trimmedLine.contains("class", ignoreCase = true) ||
+                    trimmedLine.contains("method", ignoreCase = true) ||
+                    trimmedLine.contains("function", ignoreCase = true) ||
+                    trimmedLine.contains("interface", ignoreCase = true) ||
+                    trimmedLine.contains("type", ignoreCase = true)) {
+                    descriptions.add(trimmedLine)
                 }
             }
-
-            classes
+            
+            descriptions
         } catch (e: Exception) {
-            logger.debug(e) { "Failed to parse JSON classes from file: $fileName" }
+            logger.debug(e) { "Failed to extract class descriptions from file: $fileName" }
             emptyList()
         }
+    }
 
     /**
-     * Parse single class from JSON element
+     * Extract a simple name from description for class identification
      */
-    private fun parseClassFromJsonElement(
-        element: JsonElement,
-        fileName: String,
-    ): ClassInfo? {
-        return try {
-            if (element !is JsonObject) return null
-
-            val className =
-                element["name"]?.jsonPrimitive?.content
-                    ?: element["className"]?.jsonPrimitive?.content
-                    ?: element["fullName"]?.jsonPrimitive?.content?.substringAfterLast(".")
-                    ?: throw IllegalArgumentException("Cannot extract class name from JSON element in file: $fileName")
-
-            val packageName =
-                element["package"]?.jsonPrimitive?.content
-                    ?: element["namespace"]?.jsonPrimitive?.content
-
-            val filePath =
-                element["filename"]?.jsonPrimitive?.content
-                    ?: element["file"]?.jsonPrimitive?.content
-                    ?: element["source"]?.jsonPrimitive?.content
-                    ?: "unknown"
-
-            // Parse methods
-            val methods = mutableListOf<MethodInfo>()
-            element["methods"]?.jsonArray?.forEach { methodElement ->
-                parseMethodFromJson(methodElement)?.let { methods.add(it) }
+    private fun extractNameFromDescription(description: String): String {
+        // Try to extract a meaningful name from the description
+        val words = description.split("\\s+".toRegex())
+        
+        // Look for class-like names (containing dots or CamelCase)
+        for (word in words) {
+            if (word.contains(".") && !word.startsWith(".") && !word.endsWith(".")) {
+                return word.substringAfterLast(".")
             }
-
-            // Parse fields
-            val fields = mutableListOf<FieldInfo>()
-            element["fields"]?.jsonArray?.forEach { fieldElement ->
-                parseFieldFromJson(fieldElement)?.let { fields.add(it) }
+            if (word.matches("[A-Z][a-zA-Z0-9]*".toRegex()) && word.length > 2) {
+                return word
             }
-
-            // Parse inheritance information
-            val interfaces =
-                element["interfaces"]?.jsonArray?.mapNotNull {
-                    it.jsonPrimitive.content
-                } ?: emptyList()
-
-            val superClasses =
-                element["extends"]?.jsonArray?.mapNotNull {
-                    it.jsonPrimitive.content
-                } ?: emptyList()
-
-            val annotations =
-                element["annotations"]?.jsonArray?.mapNotNull {
-                    it.jsonPrimitive.content
-                } ?: emptyList()
-
-            val isAbstract = element["isAbstract"]?.jsonPrimitive?.content?.toBoolean() ?: false
-            val isInterface = element["isInterface"]?.jsonPrimitive?.content?.toBoolean() ?: false
-
-            ClassInfo(
-                className = className,
-                packageName = packageName,
-                filePath = filePath,
-                methods = methods,
-                fields = fields,
-                interfaces = interfaces,
-                superClasses = superClasses,
-                annotations = annotations,
-                isAbstract = isAbstract,
-                isInterface = isInterface,
-                joernAnalysis = element.toString(), // Store raw Joern data for context
-            )
-        } catch (e: Exception) {
-            logger.debug(e) { "Failed to parse class from JSON element in file: $fileName" }
-            null
         }
-    }
-
-    /**
-     * Parse method information from JSON
-     */
-    private fun parseMethodFromJson(methodElement: JsonElement): MethodInfo? {
-        if (methodElement !is JsonObject) return null
-
-        val name = methodElement["name"]?.jsonPrimitive?.content ?: return null
-        val returnType = methodElement["returnType"]?.jsonPrimitive?.content
-        val isPublic = methodElement["isPublic"]?.jsonPrimitive?.content?.toBoolean() ?: true
-        val isStatic = methodElement["isStatic"]?.jsonPrimitive?.content?.toBoolean() ?: false
-
-        val parameters =
-            methodElement["parameters"]?.jsonArray?.mapNotNull {
-                it.jsonPrimitive.content
-            } ?: emptyList()
-
-        val annotations =
-            methodElement["annotations"]?.jsonArray?.mapNotNull {
-                it.jsonPrimitive.content
-            } ?: emptyList()
-
-        return MethodInfo(name, parameters, returnType, isPublic, isStatic, annotations)
-    }
-
-    /**
-     * Parse field information from JSON
-     */
-    private fun parseFieldFromJson(fieldElement: JsonElement): FieldInfo? {
-        if (fieldElement !is JsonObject) return null
-
-        val name = fieldElement["name"]?.jsonPrimitive?.content ?: return null
-        val type = fieldElement["type"]?.jsonPrimitive?.content
-        val isPublic = fieldElement["isPublic"]?.jsonPrimitive?.content?.toBoolean() ?: false
-        val isStatic = fieldElement["isStatic"]?.jsonPrimitive?.content?.toBoolean() ?: false
-        val isFinal = fieldElement["isFinal"]?.jsonPrimitive?.content?.toBoolean() ?: false
-
-        return FieldInfo(name, type, isPublic, isStatic, isFinal)
+        
+        // Fallback to first meaningful word
+        return words.firstOrNull { it.length > 2 && it.matches("[a-zA-Z].*".toRegex()) } 
+            ?: "unknown-class"
     }
 
     /**

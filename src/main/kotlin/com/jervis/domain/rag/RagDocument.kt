@@ -4,6 +4,48 @@ import org.bson.types.ObjectId
 import java.time.Instant
 
 /**
+ * Range of lines in a source file for precise location tracking
+ */
+data class LineRange(
+    val start: Int,
+    val end: Int
+)
+
+/**
+ * Type of embedding used for the document content
+ */
+enum class EmbeddingType {
+    /** Text embeddings with 768 dimensions for semantic text search */
+    EMBEDDING_TEXT,
+    /** Code embeddings with 3584 dimensions for code-specific search */
+    EMBEDDING_CODE
+}
+
+/**
+ * Relations to other symbols in the codebase (call graph, inheritance, imports)
+ */
+data class SymbolRelation(
+    val type: RelationType,
+    val targetSymbol: String,
+    val targetPath: String? = null,
+    val targetLineRange: LineRange? = null
+)
+
+/**
+ * Types of relations between symbols
+ */
+enum class RelationType {
+    CALLS,
+    CALLED_BY,
+    INHERITS_FROM,
+    INHERITED_BY,
+    IMPORTS,
+    IMPORTED_BY,
+    DEPENDS_ON,
+    DEPENDENCY_OF
+}
+
+/**
  * Status of a document in the RAG system for historical versioning
  */
 enum class DocumentStatus {
@@ -26,8 +68,7 @@ data class RagDocument(
     val documentType: RagDocumentType,
     val ragSourceType: RagSourceType,
     val pageContent: String,
-    // Optional payload metadata (to align with advanced docs/Qdrant payload requirements)
-    val clientId: ObjectId? = null,
+    val clientId: ObjectId,
     val source: String? = null,
     val language: String? = null,
     val module: String? = null,
@@ -39,10 +80,23 @@ data class RagDocument(
     val isDefaultBranch: Boolean = true,
     val inspirationOnly: Boolean = false,
     val createdAt: Instant = Instant.now(),
-    // Historical versioning and Git tracking fields
     val documentStatus: DocumentStatus = DocumentStatus.CURRENT,
     val gitCommitHash: String? = null,
     val version: Int = 1,
     val archivedAt: Instant? = null,
     val lastModified: Instant = Instant.now(),
+    
+    // Enhanced metadata fields for Joern-based indexing
+    /** Precise line range in source file (from Joern analysis) */
+    val lineRange: LineRange? = null,
+    /** Symbol name (method/class name from Joern) */
+    val symbolName: String? = null,
+    /** Chunk ID for methods split into multiple parts */
+    val chunkId: String? = null,
+    /** Type of embedding used for this document */
+    val embeddingType: EmbeddingType? = null,
+    /** Joern CPG node ID for traceability */
+    val joernNodeId: String? = null,
+    /** Relations to other symbols (call graph, inheritance, imports) */
+    val relations: List<SymbolRelation> = emptyList()
 )

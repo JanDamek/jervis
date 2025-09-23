@@ -1,6 +1,5 @@
 package com.jervis.service.analysis
 
-import com.jervis.configuration.TimeoutsProperties
 import com.jervis.entity.mongo.ProjectDocument
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -9,7 +8,10 @@ import org.springframework.stereotype.Service
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import kotlin.io.path.pathString
 
 /**
@@ -18,7 +20,7 @@ import kotlin.io.path.pathString
  */
 @Service
 class JoernAnalysisService(
-    private val timeoutsProperties: TimeoutsProperties,
+    private val indexingMonitorService: com.jervis.service.indexing.monitoring.IndexingMonitorService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -52,7 +54,7 @@ class JoernAnalysisService(
         displayName: String,
         command: List<String>,
         workingDir: Path?,
-        timeout: Long,
+        timeout: Long? = null,
         unit: TimeUnit = TimeUnit.SECONDS,
         redirectErrorStream: Boolean = false,
     ): ProcessRunResult {
@@ -68,7 +70,7 @@ class JoernAnalysisService(
                 command.joinToString(
                     " ",
                 )
-            } | dir=${workingDir?.pathString ?: "(default)"} | timeout=$timeout ${unit.name.lowercase()}"
+            } | dir=${workingDir?.pathString ?: "(default)"}${if (timeout != null) " | timeout=$timeout ${unit.name.lowercase()}" else " | no timeout"}"
         }
 
         val process = pb.start()
@@ -103,7 +105,13 @@ class JoernAnalysisService(
         stdoutThread.start()
         stderrThread?.start()
 
-        val completed = process.waitFor(timeout, unit)
+        val completed = if (timeout != null) {
+            process.waitFor(timeout, unit)
+        } else {
+            process.waitFor()
+            true // waitFor() without timeout always returns when process completes
+        }
+        
         if (!completed) {
             logger.error { "[PROC] Timeout: $displayName (PID=${pid ?: "n/a"}) after $timeout ${unit.name.lowercase()}. Killing..." }
             process.destroyForcibly()
@@ -164,17 +172,37 @@ class JoernAnalysisService(
                 )
 
             try {
-                for ((operation, query) in analysisOperations) {
+                for ((index, operationPair) in analysisOperations.withIndex()) {
+                    val (operation, query) = operationPair
                     try {
+                        indexingMonitorService.addStepLog(
+                            project.id, "joern_analysis", 
+                            "Starting ${operation} operation (${index + 1}/${analysisOperations.size})"
+                        )
+                        
                         logger.info { "Executing Joern $operation for project: ${project.name}" }
 
                         val success = executeJoernOperation(operation, query, projectPath, joernDir)
-                        if (!success) {
+                        
+                        if (success) {
+                            indexingMonitorService.addStepLog(
+                                project.id, "joern_analysis", 
+                                "✓ Completed ${operation} operation"
+                            )
+                        } else {
                             errorFiles++
+                            indexingMonitorService.addStepLog(
+                                project.id, "joern_analysis", 
+                                "✗ Failed ${operation} operation"
+                            )
                         }
                     } catch (e: Exception) {
                         logger.warn(e) { "Error during Joern $operation for project: ${project.name}" }
                         errorFiles++
+                        indexingMonitorService.addStepLog(
+                            project.id, "joern_analysis", 
+                            "✗ Error in ${operation} operation: ${e.message}"
+                        )
                     }
                 }
 
@@ -230,11 +258,9 @@ class JoernAnalysisService(
                     displayName = "joern-scan",
                     command = listOf("joern-scan", "--format", "json", "--path", projectPath.pathString),
                     workingDir = joernDir,
-                    timeout = timeoutsProperties.joern.scanTimeoutMinutes,
-                    unit = TimeUnit.MINUTES,
                 )
 
-            if (!res.timedOut && res.exitCode == 0) {
+            if (res.exitCode == 0) {
                 Files.writeString(outputFile, res.stdout)
                 logger.info { "Joern scan results saved to: ${outputFile.pathString}" }
                 true
@@ -242,9 +268,9 @@ class JoernAnalysisService(
                 val errorFile = joernDir.resolve("scan_error.txt")
                 Files.writeString(
                     errorFile,
-                    "Exit code: ${res.exitCode}\nTimedOut: ${res.timedOut}\nStderr:\n${res.stderr}\n\nStdout:\n${res.stdout}",
+                    "Exit code: ${res.exitCode}\nStderr:\n${res.stderr}\n\nStdout:\n${res.stdout}",
                 )
-                logger.warn { "Joern scan failed (exit=${res.exitCode}, timedOut=${res.timedOut}), details: ${errorFile.pathString}" }
+                logger.warn { "Joern scan failed (exit=${res.exitCode}), details: ${errorFile.pathString}" }
                 false
             }
         }
@@ -279,12 +305,10 @@ class JoernAnalysisService(
                     displayName = "joern --script ${scriptFile.fileName}",
                     command = listOf("joern", "--script", scriptFile.pathString),
                     workingDir = joernDir,
-                    timeout = timeoutsProperties.joern.scriptTimeoutMinutes,
-                    unit = TimeUnit.MINUTES,
                 )
 
             return@withContext runCatching {
-                if (!res.timedOut && res.exitCode == 0) {
+                if (res.exitCode == 0) {
                     val outputFile = joernDir.resolve("${operation}_results.json")
                     Files.writeString(outputFile, res.stdout)
                     logger.info { "Joern $operation results saved to: ${outputFile.pathString}" }
@@ -293,10 +317,10 @@ class JoernAnalysisService(
                     val errorFile = joernDir.resolve("${operation}_error.txt")
                     Files.writeString(
                         errorFile,
-                        "Exit code: ${res.exitCode}\nTimedOut: ${res.timedOut}\nStderr:\n${res.stderr}\n\nStdout:\n${res.stdout}",
+                        "Exit code: ${res.exitCode}\nStderr:\n${res.stderr}\n\nStdout:\n${res.stdout}",
                     )
                     logger.warn {
-                        "Joern $operation failed (exit=${res.exitCode}, timedOut=${res.timedOut}), details: ${errorFile.pathString}"
+                        "Joern $operation failed (exit=${res.exitCode}), details: ${errorFile.pathString}"
                     }
                     false
                 }
@@ -365,7 +389,7 @@ class JoernAnalysisService(
     /**
      * Ensure CPG exists and is up to date
      */
-    private suspend fun ensureCpgExists(
+    suspend fun ensureCpgExists(
         projectPath: Path,
         cpgPath: Path,
     ): Boolean =
@@ -373,13 +397,21 @@ class JoernAnalysisService(
             try {
                 // Check if CPG already exists and is reasonably fresh
                 if (Files.exists(cpgPath)) {
-                    val cpgModified = Files.getLastModifiedTime(cpgPath).toMillis()
-                    val projectModified = getLastModifiedTimeRecursiveSourceOnly(projectPath)
+                    // First validate CPG integrity
+                    if (!validateCpgIntegrity(cpgPath)) {
+                        logger.info { "Existing CPG is corrupted, will recreate: ${cpgPath.pathString}" }
+                        Files.deleteIfExists(cpgPath)
+                    } else {
+                        val cpgModified = Files.getLastModifiedTime(cpgPath).toMillis()
+                        val projectModified = getLastModifiedTimeRecursiveSourceOnly(projectPath)
 
-                    // If CPG is newer than project files, reuse it
-                    if (cpgModified > projectModified) {
-                        logger.debug { "CPG is up to date, reusing existing: ${cpgPath.pathString}" }
-                        return@withContext true
+                        // If CPG is newer than project files, reuse it
+                        if (cpgModified > projectModified) {
+                            logger.debug { "CPG is up to date, reusing existing: ${cpgPath.pathString}" }
+                            return@withContext true
+                        } else {
+                            logger.info { "CPG is outdated, will recreate: ${cpgPath.pathString}" }
+                        }
                     }
                 }
 
@@ -399,21 +431,27 @@ class JoernAnalysisService(
                             displayName = "joern-parse",
                             command = listOf("joern-parse", tempSourceDir.pathString, "-o", cpgPath.pathString),
                             workingDir = projectPath.parent ?: projectPath,
-                            timeout = timeoutsProperties.joern.parseTimeoutMinutes,
-                            unit = TimeUnit.MINUTES,
                         )
 
-                    if (!res.timedOut && res.exitCode == 0 && Files.exists(cpgPath)) {
-                        logger.info { "CPG created successfully: ${cpgPath.pathString}" }
-                        true
+                    if (res.exitCode == 0 && Files.exists(cpgPath)) {
+                        // Validate CPG integrity by checking if it's a valid binary file
+                        val isValidCpg = validateCpgIntegrity(cpgPath)
+                        if (isValidCpg) {
+                            logger.info { "CPG created successfully: ${cpgPath.pathString}" }
+                            true
+                        } else {
+                            logger.warn { "CPG file appears to be corrupted, deleting: ${cpgPath.pathString}" }
+                            Files.deleteIfExists(cpgPath)
+                            false
+                        }
                     } else {
                         val errorFile = cpgPath.parent.resolve("parse_error.txt")
                         Files.writeString(
                             errorFile,
-                            "Exit code: ${res.exitCode}\nTimedOut: ${res.timedOut}\nStderr:\n${res.stderr}\n\nStdout:\n${res.stdout}",
+                            "Exit code: ${res.exitCode}\nStderr:\n${res.stderr}\n\nStdout:\n${res.stdout}",
                         )
                         logger.warn {
-                            "CPG creation failed (exit=${res.exitCode}, timedOut=${res.timedOut}), details: ${errorFile.pathString}"
+                            "CPG creation failed (exit=${res.exitCode}), details: ${errorFile.pathString}"
                         }
                         false
                     }
@@ -431,6 +469,50 @@ class JoernAnalysisService(
                 false
             }
         }
+
+    /**
+     * Validate CPG file integrity by checking basic file properties and structure
+     */
+    private fun validateCpgIntegrity(cpgPath: Path): Boolean {
+        return try {
+            if (!Files.exists(cpgPath)) {
+                logger.debug { "CPG file does not exist: ${cpgPath.pathString}" }
+                return false
+            }
+            
+            val fileSize = Files.size(cpgPath)
+            if (fileSize < 1024) { // CPG files should be at least 1KB
+                logger.debug { "CPG file is too small (${fileSize} bytes): ${cpgPath.pathString}" }
+                return false
+            }
+            
+            // Try to read the first few bytes to check if it's a binary file
+            Files.newInputStream(cpgPath).use { inputStream ->
+                val buffer = ByteArray(16)
+                val bytesRead = inputStream.read(buffer)
+                if (bytesRead < 4) {
+                    logger.debug { "CPG file is too small to be valid: ${cpgPath.pathString}" }
+                    return false
+                }
+                
+                // Check if it looks like a valid binary file (not all zeros or all text)
+                val hasNonAscii = buffer.take(bytesRead).any { byte -> 
+                    byte < 0 || (byte > 127) || (byte in 1..8) || (byte in 14..31)
+                }
+                
+                if (!hasNonAscii) {
+                    logger.debug { "CPG file appears to be text-only, not binary: ${cpgPath.pathString}" }
+                    return false
+                }
+            }
+            
+            logger.debug { "CPG file validation passed: ${cpgPath.pathString} (size: $fileSize bytes)" }
+            true
+        } catch (e: Exception) {
+            logger.debug(e) { "CPG file validation failed: ${cpgPath.pathString}" }
+            false
+        }
+    }
 
     /**
      * Get the last modified time of the most recent file in the project tree
@@ -516,6 +598,14 @@ class JoernAnalysisService(
     }
 
     companion object {
+        // Project-specific locks to prevent concurrent joern-parse execution on same project
+        private val projectLocks = ConcurrentHashMap<String, ReentrantLock>()
+        
+        fun getLockForProject(projectPath: Path): ReentrantLock {
+            val normalizedPath = projectPath.toAbsolutePath().normalize().toString()
+            return projectLocks.computeIfAbsent(normalizedPath) { ReentrantLock() }
+        }
+        
         private val SOURCE_FILE_EXTENSIONS =
             setOf(
                 ".kt",
@@ -645,11 +735,9 @@ class JoernAnalysisService(
                                     displayName = "$toolName --version",
                                     command = listOf(toolName, "--version"),
                                     workingDir = null,
-                                    timeout = timeoutsProperties.joern.versionTimeoutMinutes,
-                                    unit = TimeUnit.MINUTES,
                                 )
 
-                            if (!versionRes.timedOut && versionRes.exitCode == 0) {
+                            if (versionRes.exitCode == 0) {
                                 return@withContext extractVersionFromOutput(versionRes.stdout, versionRes.stderr)
                             }
 
@@ -664,11 +752,9 @@ class JoernAnalysisService(
                         displayName = "$toolName version check",
                         command = command,
                         workingDir = null,
-                        timeout = timeoutsProperties.joern.versionTimeoutMinutes,
-                        unit = TimeUnit.MINUTES,
                     )
 
-                if (!res.timedOut && res.exitCode == 0) {
+                if (res.exitCode == 0) {
                     extractVersionFromOutput(res.stdout, res.stderr)
                 } else {
                     "Not available"

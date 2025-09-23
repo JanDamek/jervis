@@ -65,13 +65,53 @@ class TaskResolutionChecker(
             contextInfo.append("Status: ${plan.status}\n")
             contextInfo.append("Context Summary: ${plan.contextSummary ?: "None"}\n")
             contextInfo.append("Final Answer: ${plan.finalAnswer ?: "None"}\n")
+            
+            // Include questionChecklist for validation
+            if (plan.questionChecklist.isNotEmpty()) {
+                contextInfo.append("Question Checklist (MUST be verified as completed):\n")
+                plan.questionChecklist.forEachIndexed { index, checklistItem ->
+                    contextInfo.append("  ${index + 1}. $checklistItem\n")
+                }
+            }
+            
             contextInfo.append("Steps (${plan.steps.size}):\n")
 
             plan.steps.forEach { step ->
                 contextInfo.append("  - Step ${step.order}: ${step.name}\n")
                 contextInfo.append("    Description: ${step.taskDescription}\n")
                 contextInfo.append("    Status: ${step.status}\n")
-                contextInfo.append("    Output: ${step.output?.let { "Present" } ?: "None"}\n")
+                
+                // Include actual step content for better model understanding
+                when (val output = step.output) {
+                    is com.jervis.service.mcp.domain.ToolResult.Ok -> {
+                        contextInfo.append("    Output: SUCCESS - ${output.output.lineSequence().firstOrNull()?.take(300) ?: ""}\n")
+                    }
+                    is com.jervis.service.mcp.domain.ToolResult.Error -> {
+                        val errorMsg = output.errorMessage ?: "Unknown error"
+                        contextInfo.append("    Output: FAILED - $errorMsg\n")
+                        if (output.output.isNotBlank()) {
+                            contextInfo.append("    Error Details: ${output.output.take(500)}\n")
+                        }
+                    }
+                    is com.jervis.service.mcp.domain.ToolResult.Ask -> {
+                        contextInfo.append("    Output: ASK - ${output.output.lineSequence().firstOrNull()?.take(300) ?: ""}\n")
+                    }
+                    is com.jervis.service.mcp.domain.ToolResult.Stop -> {
+                        contextInfo.append("    Output: STOPPED - ${output.reason}\n")
+                        if (output.output.isNotBlank()) {
+                            contextInfo.append("    Stop Details: ${output.output.take(300)}\n")
+                        }
+                    }
+                    is com.jervis.service.mcp.domain.ToolResult.InsertStep -> {
+                        contextInfo.append("    Output: INSERT_STEP - ${output.stepToInsert.name}\n")
+                        if (output.output.isNotBlank()) {
+                            contextInfo.append("    Insert Details: ${output.output.take(300)}\n")
+                        }
+                    }
+                    null -> {
+                        contextInfo.append("    Output: None\n")
+                    }
+                }
             }
             contextInfo.append("\n")
         }

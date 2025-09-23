@@ -82,6 +82,20 @@ class WebClientConfig(
             .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
             .build()
 
+    @Bean
+    @Qualifier("searxngWebClient")
+    fun searxngWebClient(
+        builder: WebClient.Builder,
+        endpoints: EndpointProperties,
+    ): WebClient =
+        builder
+            .baseUrl(endpoints.searxng.baseUrl?.trimEnd('/') ?: DEFAULT_SEARXNG_URL)
+            .defaultHeaders { headers ->
+                headers.accept = listOf(MediaType.APPLICATION_JSON, MediaType.TEXT_HTML)
+            }.exchangeStrategies(defaultExchangeStrategies())
+            .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
+            .build()
+
     private fun defaultExchangeStrategies(): ExchangeStrategies =
         ExchangeStrategies
             .builder()
@@ -104,9 +118,10 @@ class WebClientConfig(
             .create(connectionProvider)
             .option(
                 ChannelOption.CONNECT_TIMEOUT_MILLIS,
-                (timeoutsProperties.webclient.connectTimeoutMinutes * 60 * 1000).toInt(),
-            ).responseTimeout(Duration.ofMinutes(timeoutsProperties.webclient.responseTimeoutMinutes))
-        // Removed ReadTimeoutHandler and WriteTimeoutHandler to eliminate timeouts
+                (timeoutsProperties.webclient.connectTimeoutSeconds * 1000).toInt(),
+            )
+        // Removed ReadTimeoutHandler and WriteTimeoutHandler to eliminate timeouts for long-running LLM operations
+        // Removed responseTimeout to allow unlimited response time for heavy model processing
     }
 
     companion object {
@@ -115,6 +130,7 @@ class WebClientConfig(
         private const val DEFAULT_LM_STUDIO_URL = "http://localhost:1234"
         private const val DEFAULT_OPENAI_API = "https://api.openai.com/v1"
         private const val DEFAULT_ANTHROPIC_API = "https://api.anthropic.com"
+        private const val DEFAULT_SEARXNG_URL = "http://192.168.100.117:30053"
         private const val ANTHROPIC_VERSION = "2023-06-01"
     }
 }

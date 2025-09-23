@@ -12,12 +12,6 @@ import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonPrimitive
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.nio.file.Files
@@ -35,6 +29,7 @@ class DependencyIndexingService(
     private val vectorStorage: VectorStorageRepository,
     private val llmGateway: LlmGateway,
     private val promptRepository: PromptRepository,
+    private val indexingMonitorService: com.jervis.service.indexing.monitoring.IndexingMonitorService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -74,22 +69,43 @@ class DependencyIndexingService(
 
                 val dependencies = extractDependenciesFromJoern(joernDir)
                 logger.info { "Found ${dependencies.size} dependencies to index for project: ${project.name}" }
+                indexingMonitorService.addStepLog(
+                    project.id, "dependencies", 
+                    "Found ${dependencies.size} dependencies to index from Joern analysis"
+                )
 
                 var processedDependencies = 0
                 var errorDependencies = 0
 
-                for (dependency in dependencies) {
+                for ((index, dependency) in dependencies.withIndex()) {
                     try {
+                        indexingMonitorService.addStepLog(
+                            project.id, "dependencies", 
+                            "Processing dependency (${index + 1}/${dependencies.size}): ${dependency.name}${dependency.version?.let { ":$it" } ?: ""}"
+                        )
+                        
                         val success = indexDependency(project, dependency)
                         if (success) {
                             processedDependencies++
+                            indexingMonitorService.addStepLog(
+                                project.id, "dependencies", 
+                                "✓ Successfully indexed dependency: ${dependency.name} (${dependency.type})"
+                            )
 
                             // Also create LLM-enhanced description
                             indexDependencyDescription(project, dependency)
                         } else {
                             errorDependencies++
+                            indexingMonitorService.addStepLog(
+                                project.id, "dependencies", 
+                                "✗ Failed to index dependency: ${dependency.name}"
+                            )
                         }
                     } catch (e: Exception) {
+                        indexingMonitorService.addStepLog(
+                            project.id, "dependencies", 
+                            "✗ Error indexing dependency: ${dependency.name} - ${e.message}"
+                        )
                         logger.warn(e) { "Failed to index dependency: ${dependency.name}" }
                         errorDependencies++
                     }
@@ -138,7 +154,8 @@ class DependencyIndexingService(
 
             val ragDocument =
                 RagDocument(
-                    projectId = project.id!!,
+                    projectId = project.id,
+                    clientId = project.clientId,
                     documentType = RagDocumentType.DEPENDENCY,
                     ragSourceType = RagSourceType.ANALYSIS,
                     pageContent = dependencySummary,
@@ -209,6 +226,7 @@ class DependencyIndexingService(
             val ragDocument =
                 RagDocument(
                     projectId = project.id,
+                    clientId = project.clientId,
                     documentType = RagDocumentType.DEPENDENCY_DESCRIPTION,
                     ragSourceType = RagSourceType.LLM,
                     pageContent = enhancedDescription,
@@ -248,10 +266,23 @@ class DependencyIndexingService(
                     }.forEach { file ->
                         try {
                             val content = Files.readString(file)
-                            val parsedDependencies = parseDependenciesFromJson(content, file.pathString)
-                            dependencies.addAll(parsedDependencies)
+                            val descriptions = extractDependencyDescriptionsFromText(content, file.pathString)
+                            // Create basic dependency info from text descriptions for RAG indexing
+                            descriptions.forEach { description ->
+                                val dependencyInfo =
+                                    DependencyInfo(
+                                        name = extractNameFromDescription(description),
+                                        version = null,
+                                        type = "Analysis Output",
+                                        scope = null,
+                                        description = description,
+                                        usageContext = listOf("Extracted from Joern analysis: ${file.fileName}"),
+                                        securityIssues = emptyList(),
+                                    )
+                                dependencies.add(dependencyInfo)
+                            }
                         } catch (e: Exception) {
-                            logger.warn(e) { "Failed to parse dependencies from file: ${file.fileName}" }
+                            logger.warn(e) { "Failed to extract dependency descriptions from file: ${file.fileName}" }
                         }
                     }
 
@@ -264,134 +295,63 @@ class DependencyIndexingService(
         }
 
     /**
-     * Parse dependencies from JSON content
+     * Extract textual dependency descriptions from Joern output for RAG indexing
      */
-    private fun parseDependenciesFromJson(
-        jsonContent: String,
+    private fun extractDependencyDescriptionsFromText(
+        content: String,
         fileName: String,
-    ): List<DependencyInfo> =
+    ): List<String> =
         try {
-            val json = Json.parseToJsonElement(jsonContent)
-            val dependencies = mutableListOf<DependencyInfo>()
+            val descriptions = mutableListOf<String>()
+            val lines = content.lines()
 
-            when (json) {
-                is JsonArray -> {
-                    json.forEach { element ->
-                        parseDependencyFromJsonElement(element, fileName)?.let { dependencies.add(it) }
-                    }
+            // Extract meaningful textual information from Joern output
+            for (line in lines) {
+                val trimmedLine = line.trim()
+
+                // Skip empty lines and pure log lines
+                if (trimmedLine.isEmpty() ||
+                    trimmedLine.startsWith("[") ||
+                    trimmedLine.startsWith("WARNING:") ||
+                    trimmedLine.startsWith("executing") ||
+                    trimmedLine.startsWith("--")
+                ) {
+                    continue
                 }
 
-                is JsonObject -> {
-                    // Look for dependency-like structures
-                    json.entries.forEach { (key, value) ->
-                        when {
-                            key.contains("dependencies", ignoreCase = true) ||
-                                key.contains("imports", ignoreCase = true) -> {
-                                if (value is JsonArray) {
-                                    value.forEach { element ->
-                                        parseDependencyFromJsonElement(element, fileName)?.let { dependencies.add(it) }
-                                    }
-                                }
-                            }
-
-                            value is JsonObject -> {
-                                parseDependencyFromJsonElement(value, fileName)?.let { dependencies.add(it) }
-                            }
-                        }
-                    }
-                }
-
-                else -> {
-                    // Try to parse as single dependency
-                    parseDependencyFromJsonElement(json, fileName)?.let { dependencies.add(it) }
+                // Look for dependency-related information
+                if (trimmedLine.contains("import", ignoreCase = true) ||
+                    trimmedLine.contains("dependency", ignoreCase = true) ||
+                    trimmedLine.contains("package", ignoreCase = true) ||
+                    trimmedLine.contains("library", ignoreCase = true) ||
+                    trimmedLine.contains("module", ignoreCase = true)
+                ) {
+                    descriptions.add(trimmedLine)
                 }
             }
 
-            dependencies
+            descriptions
         } catch (e: Exception) {
-            logger.debug(e) { "Failed to parse JSON dependencies from file: $fileName" }
+            logger.debug(e) { "Failed to extract dependency descriptions from file: $fileName" }
             emptyList()
         }
 
     /**
-     * Parse single dependency from JSON element
+     * Extract a simple name from description for dependency identification
      */
-    private fun parseDependencyFromJsonElement(
-        element: JsonElement,
-        fileName: String,
-    ): DependencyInfo? {
-        return try {
-            if (element !is JsonObject) return null
+    private fun extractNameFromDescription(description: String): String {
+        // Try to extract a meaningful name from the description
+        val words = description.split("\\s+".toRegex())
 
-            val name =
-                element["name"]?.jsonPrimitive?.content
-                    ?: element["package"]?.jsonPrimitive?.content
-                    ?: element["module"]?.jsonPrimitive?.content
-                    ?: element["library"]?.jsonPrimitive?.content
-                    ?: throw IllegalArgumentException("Cannot extract dependency name from JSON element in file: $fileName")
-
-            val version =
-                element["version"]?.jsonPrimitive?.content
-                    ?: element["versionId"]?.jsonPrimitive?.content
-
-            val type =
-                element["type"]?.jsonPrimitive?.content
-                    ?: element["kind"]?.jsonPrimitive?.content
-                    ?: inferTypeFromName(name)
-
-            val scope = element["scope"]?.jsonPrimitive?.content
-
-            val description =
-                element["description"]?.jsonPrimitive?.content
-                    ?: element["summary"]?.jsonPrimitive?.content
-
-            // Extract usage context
-            val usageContext = mutableListOf<String>()
-            element["usage"]?.jsonArray?.forEach { usage ->
-                usage.jsonPrimitive.content.let { usageContext.add(it) }
+        // Look for package-like names (containing dots)
+        for (word in words) {
+            if (word.contains(".") && !word.startsWith(".") && !word.endsWith(".")) {
+                return word
             }
-            element["methods"]?.jsonArray?.forEach { method ->
-                method.jsonPrimitive.content.let { usageContext.add("Method: $it") }
-            }
-
-            // Extract security issues
-            val securityIssues = mutableListOf<String>()
-            element["vulnerabilities"]?.jsonArray?.forEach { vuln ->
-                vuln.jsonPrimitive.content.let { securityIssues.add(it) }
-            }
-            element["security"]?.jsonArray?.forEach { security ->
-                security.jsonPrimitive.content.let { securityIssues.add(it) }
-            }
-
-            DependencyInfo(
-                name = name,
-                version = version,
-                type = type,
-                scope = scope,
-                description = description,
-                usageContext = usageContext,
-                securityIssues = securityIssues,
-            )
-        } catch (e: Exception) {
-            logger.debug(e) { "Failed to parse dependency from JSON element in file: $fileName" }
-            null
         }
+
+        // Fallback to first meaningful word
+        return words.firstOrNull { it.length > 2 && it.matches("[a-zA-Z].*".toRegex()) }
+            ?: "unknown-dependency"
     }
-
-    /**
-     * Infer dependency type from name
-     */
-    private fun inferTypeFromName(name: String): String =
-        when {
-            name.contains("org.springframework") -> "Spring Framework"
-            name.contains("com.fasterxml.jackson") -> "JSON Processing"
-            name.contains("junit") -> "Testing Framework"
-            name.contains("org.slf4j") || name.contains("logback") -> "Logging"
-            name.contains("kotlin") -> "Kotlin Library"
-            name.contains("java") || name.contains("javax") -> "Java Library"
-            name.contains("org.apache") -> "Apache Library"
-            name.contains("com.google") -> "Google Library"
-            name.endsWith(".jar") -> "JAR Library"
-            else -> "Library"
-        }
 }

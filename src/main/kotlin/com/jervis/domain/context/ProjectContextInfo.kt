@@ -9,9 +9,3 @@ data class ProjectContextInfo(
     val codingGuidelines: CodingGuidelines,
     val dependencyInfo: List<String>,
 )
-
-@Serializable
-data class TaskContextInfo(
-    val projectInfo: ProjectContextInfo?,
-    val contextSummary: String = "",
-)
