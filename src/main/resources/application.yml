@@ -2,11 +2,9 @@
 logging:
   level:
     root: INFO
-    com.jervis: DEBUG
-    com.jervis.service.agent: DEBUG
+    com.jervis: INFO
+    com.jervis.service: DEBUG
     org.springframework.web: INFO
-    org.springframework.web.filter.CommonsRequestLoggingFilter: INFO
-    com.jervis.config.RequestLoggingFilterConfig: INFO
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
     file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
@@ -42,185 +40,98 @@ models: # embedding dimensions configured per model
     - provider: LM_STUDIO
       model: text-embedding-nomic-embed-text-v2-moe
       maxTokens: 512
-      maxRequests: 12
       dimension: 768
   #    - provider: OLLAMA
   #      model: text-embedding-nomic-embed-text-v2-moe
   #      maxTokens: 512
   #      maxInputTokens: 512
-  #      maxRequests: 8
 
   EMBEDDING_CODE:
     - provider: LM_STUDIO
       model: text-embedding-nomic-embed-code
       maxTokens: 4096
-      maxRequests: 4
       dimension: 3584
   #    - provider: OLLAMA
   #      model: nomic-embed-code
   #      maxTokens: 4096
   #      maxInputTokens: 4096
-  #      maxRequests: 8
 
-  TRANSLATION:
-    #    - provider: LM_STUDIO
-    #      model: deepseek-coder-v2-lite-instruct
-    #      maxTokens: 9196
-    #      maxRequests: 2
+  QUESTION_INTERPRETER:
     - provider: OLLAMA
-      model: deepseek-coder-v2:latest
-      maxTokens: 64535
-      maxRequests: 8
-    - provider: OPENAI
-      model: gpt-4o
-      maxTokens: 8196
-      maxRequests: 24
-      quick: true
-    - provider: ANTHROPIC
-      model: claude-3-5-sonnet
-      maxTokens: 8196
-      maxRequests: 30
-      quick: true
+      model: qwen2.5:7b-instruct-q4_K_M
+      maxTokens: 163840
 
   RAG:
-    #    - provider: LM_STUDIO
-    #      model: deepseek-coder-v2-lite-instruct
-    #      maxTokens: 9196
-    #      maxRequests: 2
     - provider: OLLAMA
-      model: deepseek-coder-v2:latest
-      maxTokens: 65535
-      maxRequests: 8
-    - provider: OPENAI
-      model: gpt-4o
-      maxTokens: 8196
-      maxRequests: 24
-      quick: true
-    - provider: ANTHROPIC
-      model: claude-3-5-sonnet
-      maxTokens: 8196
-      maxRequests: 30
-      quick: true
+      model: qwen2.5:7b-instruct-q4_K_M
+      maxTokens: 163840
 
-  INTERNAL:
-    #    - provider: LM_STUDIO
-    #      model: deepseek-coder-v2-lite-instruct
-    #      maxTokens: 9196
-    #      maxRequests: 2
+  CODER:
     - provider: OLLAMA
-      model: deepseek-coder-v2:latest
-      maxTokens: 65535
-      maxRequests: 8
-    - provider: OPENAI
-      model: gpt-4o
-      maxTokens: 8196
-      maxRequests: 24
-      quick: true
+      model: qwen2.5-coder:14b-instruct-q4_K_M
+      maxTokens: 163840
+      quick: false
     - provider: ANTHROPIC
-      model: claude-3-5-sonnet
-      maxTokens: 8196
-      maxRequests: 30
-      quick: true
-
-  SPEECH:
-    #    - provider: LM_STUDIO
-    #      model: deepseek-coder-v2-lite-instruct
-    #      maxTokens: 9196
-    #      maxRequests: 2
-    - provider: OLLAMA
-      model: deepseek-coder-v2:latest
-      maxTokens: 65535
-      maxRequests: 8
-    - provider: OPENAI
-      model: gpt-4o
-      maxTokens: 8196
-      maxRequests: 24
-      quick: true
-    - provider: ANTHROPIC
-      model: claude-3-5-sonnet
-      maxTokens: 8196
-      maxRequests: 30
-      quick: true
-
-  CHAT_INTERNAL:
-    #    - provider: LM_STUDIO
-    #      model: deepseek-coder-v2-lite-instruct
-    #      maxTokens: 9196
-    #      maxRequests: 2
-    - provider: OLLAMA
-      model: deepseek-coder-v2:latest
-      maxTokens: 65535
-      maxRequests: 8
-    - provider: OPENAI
-      model: gpt-4o
-      maxTokens: 8196
-      maxRequests: 24
-      quick: true
-    - provider: ANTHROPIC
-      model: claude-3-5-sonnet
-      maxTokens: 8196
-      maxRequests: 30
-      quick: true
-
-  CHAT_EXTERNAL:
-    #    - provider: LM_STUDIO
-    #      model: deepseek-coder-v2-lite-instruct
-    #      maxTokens: 9196
-    #      maxRequests: 2
-    - provider: OLLAMA
-      model: deepseek-coder-v2:latest
-      maxTokens: 65535
-      maxRequests: 8
-    - provider: OPENAI
-      model: gpt-4o
-      maxTokens: 8196
-      maxRequests: 24
-      quick: true
-    - provider: ANTHROPIC
-      model: claude-3-5-sonnet
-      maxTokens: 8196
-      maxRequests: 30
-      quick: true
+      model: claude-3-5-sonnet-20241022
+      maxTokens: 16384
+      quick: false
 
   PLANNER:
-    #    - provider: LM_STUDIO
-    #      model: deepseek-coder-v2-lite-instruct
-    #      maxTokens: 9196
-    #      maxRequests: 2
     - provider: OLLAMA
-      model: deepseek-coder-v2:latest
-      maxTokens: 65535
-      maxRequests: 8
-    - provider: OPENAI
-      model: gpt-4o
-      maxTokens: 8196
-      maxRequests: 24
-      quick: true
-    - provider: ANTHROPIC
-      model: claude-3-5-sonnet
-      maxTokens: 8196
-      maxRequests: 30
-      quick: true
+      model: qwen2.5:14b-instruct-q4_K_M
+      maxTokens: 163840
 
   JOERN:
-    #    - provider: LM_STUDIO
-    #      model: deepseek-coder-v2-lite-instruct
-    #      maxTokens: 9196
-    #      maxRequests: 2
     - provider: OLLAMA
-      model: deepseek-coder-v2:latest
-      maxTokens: 65535
-      maxRequests: 8
+      model: qwen2.5:7b-instruct-q4_K_M
+      maxTokens: 163840
+
+  # Nové obecné modely pro většinu interních operací
+  GENERIC_TEXT_MODEL:
+    - provider: OLLAMA
+      model: qwen2.5:7b-instruct-q4_K_M
+      maxTokens: 163840
+    - provider: OPENAI
+      model: gpt-4o-mini
+      maxTokens: 8192
+      quick: true
+
+  GENERIC_CODE_MODEL:
+    - provider: OLLAMA
+      model: qwen2.5:7b-instruct-q4_K_M
+      maxTokens: 163840
+    - provider: ANTHROPIC
+      model: claude-3-5-haiku-20241022
+      maxTokens: 8192
+      quick: true
+
+  HEAVY_TEXT_MODEL:
+    - provider: OLLAMA
+      model: qwen2.5:32b-instruct-q4_K_M
+      maxTokens: 163840
+      quick: false
     - provider: OPENAI
       model: gpt-4o
-      maxTokens: 8196
-      maxRequests: 24
-      quick: true
+      maxTokens: 16384
+      quick: false
+
+  HEAVY_CODE_MODEL:
+    - provider: OLLAMA
+      model: qwen2.5:32b-instruct-q4_K_M
+      maxTokens: 163840
+      quick: false
     - provider: ANTHROPIC
-      model: claude-3-5-sonnet
-      maxTokens: 8196
-      maxRequests: 30
-      quick: true
+      model: claude-3-5-sonnet-20241022
+      maxTokens: 32768
+      quick: false
+#    - provider: OPENAI
+#      model: gpt-4o
+#      maxTokens: 8196
+#      quick: true
+#    - provider: ANTHROPIC
+#      model: claude-3-5-sonnet
+#      maxTokens: 8196
+#      quick: true
 
 endpoints:
   openai:
@@ -231,25 +142,11 @@ endpoints:
     base-url: ${OLLAMA_BASE_URL:http://192.168.100.117:11434/}
   lmStudio:
     base-url: ${LMSTUDIO_BASE_URL:http://192.168.101.249:1234/}
-
-# JARVIS workspace now uses project paths directly from active project
+  searxng:
+    base-url: ${SEARXNG_BASE_URL:http://192.168.100.117:30053/}
 
 # Service-specific timeout configurations
 timeouts:
-  embedding:
-    requestTimeoutMinutes: 10
-    connectionTimeoutMinutes: 5
-    providers:
-      lm_studio:
-        requestTimeoutMinutes: 15
-        connectionTimeoutMinutes: 10
-      ollama:
-        requestTimeoutMinutes: 10
-        connectionTimeoutMinutes: 5
-      openai:
-        requestTimeoutMinutes: 8
-        connectionTimeoutMinutes: 3
-
   joern:
     processTimeoutMinutes: 30
     helpCommandTimeoutMinutes: 30
@@ -280,18 +177,3 @@ connection-pools:
     evictInBackgroundMinutes: 60
     pendingAcquireMaxCount: 1000
 
-  qdrant:
-    maxConnections: 50
-    keepAliveTimeoutMinutes: 30
-    connectionTimeoutMinutes: 5
-
-  embedding:
-    enableRateLimiting: true
-    defaultMaxConcurrentRequests: 10
-    providers:
-      lm_studio:
-        maxConcurrentRequests: 4  # Conservative limit for LM Studio
-      ollama:
-        maxConcurrentRequests: 8
-      openai:
-        maxConcurrentRequests: 20

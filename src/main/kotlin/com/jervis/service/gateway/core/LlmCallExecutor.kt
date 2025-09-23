@@ -4,10 +4,8 @@ import com.jervis.configuration.ModelsProperties
 import com.jervis.configuration.prompts.PromptConfig
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.llm.LlmResponse
-import kotlinx.coroutines.reactor.mono
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
-import reactor.core.publisher.Mono
 
 /**
  * Service responsible for executing LLM calls with proper reactive patterns and error handling.
@@ -54,19 +52,6 @@ class LlmCallExecutor(
         }
     }
 
-    /**
-     * Creates a reactive Mono for LLM call execution.
-     */
-    fun executeCallReactive(
-        candidate: ModelsProperties.ModelDetail,
-        systemPrompt: String,
-        userPrompt: String,
-        prompt: PromptConfig,
-        promptType: PromptTypeEnum,
-    ): Mono<LlmResponse> =
-        mono {
-            executeCall(candidate, systemPrompt, userPrompt, prompt, promptType)
-        }
 
     /**
      * Finds the appropriate client for the given provider.

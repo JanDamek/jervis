@@ -104,6 +104,12 @@ object MacOSAppUtils {
             schedulerItem.addActionListener { applicationWindowManager.showSchedulerWindow() }
             toolsMenu.add(schedulerItem)
 
+            toolsMenu.addSeparator()
+
+            val indexingMonitorItem = JMenuItem("Indexing Monitor")
+            indexingMonitorItem.addActionListener { applicationWindowManager.showIndexingMonitor() }
+            toolsMenu.add(indexingMonitorItem)
+
             // Window menu - handled automatically by macOS but we can add custom items
             val windowMenu = JMenu("Window")
             // macOS will automatically add minimize, zoom, etc.
@@ -157,6 +163,10 @@ object MacOSAppUtils {
                     val schedulerItem = java.awt.MenuItem("Scheduler")
                     schedulerItem.addActionListener { applicationWindowManager.showSchedulerWindow() }
                     dockMenu.add(schedulerItem)
+
+                    val indexingMonitorItem = java.awt.MenuItem("Indexing Monitor")
+                    indexingMonitorItem.addActionListener { applicationWindowManager.showIndexingMonitor() }
+                    dockMenu.add(indexingMonitorItem)
 
                     dockMenu.addSeparator()
 

@@ -7,6 +7,7 @@ import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.gateway.processing.LlmResponseWrapper
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
+import com.jervis.service.mcp.util.ToolResponseBuilder
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.serialization.Serializable
 import org.springframework.stereotype.Service
@@ -60,7 +61,7 @@ class LlmTool(
                     appendLine("RECENT STEP RESULTS:")
                     recentSteps.forEachIndexed { index, step ->
                         append("${step.name}(${step.status})")
-                        step.output?.let { append(": ${it.render()}") }
+                        step.output?.let { append(": ${it.output}") }
                         if (index < recentSteps.size - 1) append(" | ")
                     }
                     appendLine()
@@ -89,7 +90,7 @@ class LlmTool(
                     userPrompt = parsed.userPrompt,
                     quick = context.quick,
                     mappingValue = parsed.systemPrompt?.let { mapOf("systemPrompt" to it) } ?: emptyMap(),
-                    responseSchema = LlmResponseWrapper(""),
+                    responseSchema = LlmResponseWrapper(),
                     stepContext = combinedContext
                 )
             } catch (e: Exception) {
@@ -97,7 +98,16 @@ class LlmTool(
             }
 
         val enhancedOutput = llmResult.response.trim().ifEmpty { "Empty LLM response" }
+        val summary = if (parsed.systemPrompt != null) {
+            "Processed prompt with custom system prompt"
+        } else {
+            "Processed user prompt"
+        }
 
-        return ToolResult.ok(enhancedOutput)
+        return ToolResult.success(
+            "LLM",
+            summary,
+            enhancedOutput
+        )
     }
 }

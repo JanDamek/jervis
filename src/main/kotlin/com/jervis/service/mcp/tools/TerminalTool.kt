@@ -7,6 +7,7 @@ import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
+import com.jervis.service.mcp.util.ToolResponseBuilder
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -202,7 +203,7 @@ class TerminalTool(
             logger.debug { "[DEBUG_LOG] Terminal process output: $output" }
 
             return when (exitCode) {
-                0 -> createSuccessResult(output)
+                0 -> createSuccessResult(params.command, output)
                 else -> ToolResult.error("Command failed with exit code $exitCode:\n$output")
             }
         } catch (e: IOException) {
@@ -219,8 +220,16 @@ class TerminalTool(
             throw IOException("Failed to read process output stream", e)
         }
 
-    private fun createSuccessResult(output: String): ToolResult {
-        val enhancedOutput = output.trim().ifEmpty { "Command executed successfully" }
-        return ToolResult.ok(enhancedOutput)
+    private fun createSuccessResult(command: String, output: String): ToolResult {
+        val summary = "Executed command successfully"
+        val content = buildString {
+            appendLine("Command: $command")
+            val trimmedOutput = output.trim()
+            if (trimmedOutput.isNotEmpty()) {
+                appendLine()
+                append(trimmedOutput)
+            }
+        }
+        return ToolResult.success("TERMINAL", summary, content)
     }
 }

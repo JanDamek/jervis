@@ -9,3 +9,10 @@
 /logs/
 /.junie/
 /logs/
+
+# Joern analysis artifacts
+/.joern/
+.joernignore
+
+# Workspace and temporary analysis files
+/workspace/

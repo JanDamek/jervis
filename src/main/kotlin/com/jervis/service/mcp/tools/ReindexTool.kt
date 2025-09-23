@@ -45,8 +45,10 @@ class ReindexTool(
 
                 logger.info { "Successfully completed comprehensive reindex operation for project: ${project.name}" }
 
-                ToolResult.ok(
-                    buildString {
+                ToolResult.success(
+                    toolName = "REINDEX",
+                    summary = "Project reindexing completed: ${result.processedFiles} files processed, ${result.errorFiles} errors",
+                    content = buildString {
                         appendLine("✅ Comprehensive Project Reindexing Completed")
                         appendLine()
                         appendLine("Project: ${project.name}")
@@ -73,7 +75,7 @@ class ReindexTool(
                         appendLine("The RAG system has been comprehensively updated with all project information.")
                         appendLine()
                         appendLine("Task description processed: $taskDescription")
-                    },
+                    }
                 )
             } catch (e: Exception) {
                 logger.error(e) { "Failed to reindex project: ${context.projectDocument.name}" }

@@ -14,6 +14,7 @@ class EndpointProperties {
     var anthropic: Api = Api()
     var ollama: Host = Host()
     var lmStudio: Host = Host()
+    var searxng: Host = Host()
 
     class Api {
         var apiKey: String? = null

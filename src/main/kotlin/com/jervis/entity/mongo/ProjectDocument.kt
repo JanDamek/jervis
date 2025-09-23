@@ -18,7 +18,7 @@ data class ProjectDocument(
     @Id
     val id: ObjectId = ObjectId.get(),
     @Indexed
-    val clientId: ObjectId? = null,
+    val clientId: ObjectId,
     @Indexed(unique = true)
     val name: String,
     val description: String? = null,
@@ -51,5 +51,3 @@ data class ProjectDocument(
     val createdAt: Instant = Instant.now(),
     val updatedAt: Instant = Instant.now(),
 )
-
-// --- Supporting data classes ---

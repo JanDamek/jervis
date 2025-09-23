@@ -1,5 +1,6 @@
 package com.jervis.ui.window
 
+import com.jervis.common.Constants.GLOBAL_ID
 import com.jervis.entity.mongo.ClientDocument
 import com.jervis.entity.mongo.ClientProjectLinkDocument
 import com.jervis.entity.mongo.ProjectDocument
@@ -631,7 +632,7 @@ class ClientsWindow(
         CoroutineScope(Dispatchers.Main).launch {
             try {
                 // Unassign project from client
-                val updatedProject = project.copy(clientId = null)
+                val updatedProject = project.copy(clientId = GLOBAL_ID)
                 withContext(Dispatchers.IO) {
                     projectService.saveProject(updatedProject, false)
                     // Delete link settings for this client-project pair

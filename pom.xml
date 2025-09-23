@@ -26,6 +26,7 @@
         <springdoc-openapi-starter-webflux-ui.version>2.8.9</springdoc-openapi-starter-webflux-ui.version>
         <javaparser.version>3.25.8</javaparser.version>
         <jsoup.version>1.17.2</jsoup.version>
+        <tika.version>2.9.1</tika.version>
         <kotlin-compiler-embeddable.version>2.1.21</kotlin-compiler-embeddable.version>
         <java-diff-utils.version>4.12</java-diff-utils.version>
         <grpc.version>1.68.1</grpc.version>
@@ -35,7 +36,6 @@
         <guava.version>33.3.1-jre</guava.version>
         <slf4j-api.version>2.0.17</slf4j-api.version>
         <jakarta.annotation-api.version>3.0.0</jakarta.annotation-api.version>
-        <mockito-kotlin.version>5.4.0</mockito-kotlin.version>
         <flatlaf.version>3.6.1</flatlaf.version>
     </properties>
 
@@ -201,6 +201,18 @@
             <version>${jsoup.version}</version>
         </dependency>
 
+        <!-- Apache Tika for text extraction from various document formats -->
+        <dependency>
+            <groupId>org.apache.tika</groupId>
+            <artifactId>tika-core</artifactId>
+            <version>${tika.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.tika</groupId>
+            <artifactId>tika-parsers-standard-package</artifactId>
+            <version>${tika.version}</version>
+        </dependency>
+
         <!-- Kotlin Compiler Embeddable for Kotlin code analysis -->
         <dependency>
             <groupId>org.jetbrains.kotlin</groupId>
@@ -221,28 +233,10 @@
             <version>${flatlaf.version}</version>
         </dependency>
 
-        <!-- Test dependencies -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.mockito.kotlin</groupId>
-            <artifactId>mockito-kotlin</artifactId>
-            <version>${mockito-kotlin.version}</version>
-            <scope>test</scope>
-        </dependency>
     </dependencies>
 
     <build>
         <sourceDirectory>${project.basedir}/src/main/kotlin</sourceDirectory>
-        <testSourceDirectory>${project.basedir}/src/test/kotlin</testSourceDirectory>
 
         <plugins>
             <plugin>

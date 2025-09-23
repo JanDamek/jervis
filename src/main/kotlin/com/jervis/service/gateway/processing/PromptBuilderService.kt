@@ -22,7 +22,7 @@ class PromptBuilderService {
         }
 
     /**
-     * Builds the complete user prompt by applying template replacement, mapping values, and language instructions.
+     * Builds the complete user prompt by applying template replacement, mapping values, language instructions, and JSON instructions.
      * Automatically appends {userPrompt} placeholder if missing from the template.
      * Automatically prepends {stepContext} placeholder if missing from the template.
      */
@@ -31,6 +31,7 @@ class PromptBuilderService {
         mappingValues: Map<String, String>,
         userPrompt: String,
         outputLanguage: String?,
+        responseSchema: Any?,
     ): String {
         val userPromptTemplate: String =
             prompt.userPrompt?.let { template ->
@@ -39,33 +40,32 @@ class PromptBuilderService {
                     if (STEP_CONTEXT_ in template) {
                         template
                     } else {
-                        "{stepContext}\n\n$template"
+                        "=== PREVIOUS STEP CONTEXT ===\n$STEP_CONTEXT_\n=== END CONTEXT ===\n\n$template"
                     }
 
                 // Then handle userPrompt - append if missing
                 if (USER_PROMPT_ in templateWithStepContext) {
                     templateWithStepContext
                 } else {
-                    "$templateWithStepContext\n{userPrompt}".trimStart()
+                    "$templateWithStepContext\n\n=== USER REQUEST ===\n$USER_PROMPT_\n=== END REQUEST ===".trim()
                 }
-            } ?: "{stepContext}\n\n{userPrompt}"
+            }
+                ?: "=== PREVIOUS STEP CONTEXT ===\n$STEP_CONTEXT_\n=== END CONTEXT ===\n\n=== USER REQUEST ===\n$USER_PROMPT_\n=== END REQUEST ==="
 
         val templatedPrompt = userPromptTemplate.replace(USER_PROMPT_, userPrompt)
         val mappedPrompt = applyMappingValues(templatedPrompt, mappingValues)
-        return appendLanguageInstruction(mappedPrompt, outputLanguage)
+        val languagePrompt = appendLanguageInstruction(mappedPrompt, outputLanguage)
+        return appendJsonModeInstructions(languagePrompt, responseSchema)
     }
 
     /**
-     * Builds the complete system prompt by applying mapping values and JSON mode formatting if required.
+     * Builds the complete system prompt by applying mapping values only.
+     * JSON mode instructions are now handled in userPrompt.
      */
     fun buildSystemPrompt(
         prompt: PromptConfig,
         mappingValues: Map<String, String>,
-        responseSchema: Any?,
-    ): String {
-        val mappedPrompt = applyMappingValues(prompt.systemPrompt, mappingValues)
-        return appendJsonModeInstructions(mappedPrompt, prompt, responseSchema)
-    }
+    ): String = applyMappingValues(prompt.systemPrompt, mappingValues)
 
     /**
      * Applies mapping value replacements to the prompt template.
@@ -96,7 +96,6 @@ class PromptBuilderService {
      */
     private fun appendJsonModeInstructions(
         systemPrompt: String,
-        prompt: PromptConfig,
         responseSchema: Any?,
     ): String =
         when (responseSchema) {
@@ -125,35 +124,8 @@ class PromptBuilderService {
         }
 
     /**
-     * Builds ultra-strict JSON mode instruction text with pretty-formatted example.
-     * Eliminates all fallback mechanisms - either perfect JSON or immediate failure.
-     * Uses improved formatting for better LLM understanding.
+     * Builds ultra-simplified JSON mode instruction - optimized for minimal token usage.
      */
     private fun buildStrictJsonModeInstruction(exampleJson: String): String =
-        """        
-        CRITICAL JSON FORMAT REQUIREMENTS - NO FALLBACKS ALLOWED:
-        - Return ONLY valid JSON in this EXACT structure
-        - NO markdown formatting (```json, ```, etc.)
-        - NO explanations, comments, or wrapper text
-        - NO code blocks or additional formatting
-        - Response must be syntactically perfect JSON
-        - Any deviation will cause IMMEDIATE FAILURE
-             
-        VALIDATION RULES (ALL REQUIRED):
-        ✓ Response starts with { or [
-        ✓ Response ends with } or ]
-        ✓ All strings properly quoted with double quotes
-        ✓ Valid JSON syntax throughout
-        ✓ No extra text or formatting
-        ✓ Extra fields not allowed - causes immediate error
-        ✓ Missing fields allowed if they can be null
-        
-        REQUIRED JSON STRUCTURE:
-        $exampleJson
-        
-        FAILURE CONSEQUENCES:
-        - Invalid JSON responses terminate the request immediately
-        - No cleanup or retry attempts will be made
-        - Error will be reported with full context for debugging
-        """.trimIndent()
+        "\nJSON: $exampleJson"
 }

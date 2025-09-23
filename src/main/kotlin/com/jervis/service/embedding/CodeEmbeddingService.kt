@@ -7,6 +7,7 @@ import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
+import com.jervis.service.indexing.JoernChunkingService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -24,6 +25,7 @@ import kotlin.io.path.pathString
 class CodeEmbeddingService(
     private val embeddingGateway: EmbeddingGateway,
     private val vectorStorage: VectorStorageRepository,
+    private val joernChunkingService: JoernChunkingService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -43,7 +45,7 @@ class CodeEmbeddingService(
     )
 
     /**
-     * Process code file and generate embedding
+     * Process code file using Joern-based method chunking instead of full file embedding
      */
     suspend fun processCodeFile(
         project: ProjectDocument,
@@ -53,41 +55,47 @@ class CodeEmbeddingService(
     ): Boolean =
         withContext(Dispatchers.IO) {
             try {
-                logger.debug { "Processing code file: ${filePath.fileName}" }
+                logger.debug { "Processing code file with Joern chunking: ${filePath.fileName}" }
 
                 if (content.isBlank()) {
                     logger.debug { "Skipping empty file: ${filePath.fileName}" }
                     return@withContext false
                 }
 
-                // Generate code embedding for the entire file content
-                val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_CODE, content)
-
-                // Extract metadata from code content
-                val codeMetadata = extractCodeMetadata(content, filePath)
-
-                // Create RAG document for code content
-                val ragDocument =
-                    RagDocument(
-                        projectId = project.id!!,
-                        documentType = RagDocumentType.CODE,
-                        ragSourceType = RagSourceType.FILE,
-                        pageContent = content,
-                        source = filePath.pathString,
-                        path = projectPath.relativize(filePath).pathString,
-                        packageName = codeMetadata.packageName,
-                        className = codeMetadata.primaryClassName,
-                        module = filePath.fileName.toString(),
-                        language = codeMetadata.language,
-                    )
-
-                // Store in CODE vector store
-                vectorStorage.store(ModelType.EMBEDDING_CODE, ragDocument, embedding)
-
-                logger.debug { "Successfully processed code file: ${filePath.fileName}" }
-                return@withContext true
+                // Create temporary directory structure for Joern analysis
+                val tempProjectDir = kotlin.io.path.createTempDirectory("jervis_joern_")
+                val tempCodeFile = tempProjectDir.resolve(filePath.fileName.toString())
+                val joernDir = tempProjectDir.resolve(".joern")
+                
+                try {
+                    // Write content to temporary file maintaining original structure
+                    java.nio.file.Files.createDirectories(tempCodeFile.parent)
+                    java.nio.file.Files.writeString(tempCodeFile, content)
+                    java.nio.file.Files.createDirectories(joernDir)
+                    
+                    // Use JoernChunkingService to process with method-level chunking
+                    val result = joernChunkingService.performJoernChunking(project, tempProjectDir, joernDir)
+                    
+                    if (result.generatedChunks > 0) {
+                        logger.debug { 
+                            "Successfully processed code file with Joern chunking: ${filePath.fileName}, " +
+                            "generated ${result.generatedChunks} chunks, processed ${result.processedMethods} methods, ${result.processedClasses} classes" 
+                        }
+                        return@withContext true
+                    } else {
+                        logger.warn { "No chunks generated from Joern analysis for file: ${filePath.fileName}" }
+                        return@withContext false
+                    }
+                } finally {
+                    // Clean up temporary directory
+                    try {
+                        tempProjectDir.toFile().deleteRecursively()
+                    } catch (e: Exception) {
+                        logger.warn(e) { "Failed to delete temporary directory: $tempProjectDir" }
+                    }
+                }
             } catch (e: Exception) {
-                logger.warn(e) { "Failed to process code file: ${filePath.fileName}" }
+                logger.warn(e) { "Failed to process code file with Joern chunking: ${filePath.fileName}" }
                 return@withContext false
             }
         }

@@ -28,13 +28,6 @@ class TrayIconManager {
      * Initializes the system tray icon
      */
     private fun initTrayIcon() {
-        // Skip tray icon on macOS - use native dock and menu bar instead
-        val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
-        if (isMacOS) {
-            logger.info { "Skipping system tray initialization on macOS - using native dock and menu bar instead" }
-            return
-        }
-
         if (!SystemTray.isSupported()) {
             logger.warn { "System tray is not supported on this platform!" }
             return
@@ -78,6 +71,11 @@ class TrayIconManager {
             windowManager.showSchedulerWindow()
         }
 
+        val indexingMonitorItem = MenuItem("Indexing Monitor")
+        indexingMonitorItem.addActionListener {
+            windowManager.showIndexingMonitor()
+        }
+
         val exitItem = MenuItem("Exit")
         exitItem.addActionListener {
             System.exit(0)
@@ -88,6 +86,7 @@ class TrayIconManager {
         popup.add(openProjectSettingsItem)
         popup.add(openClientsItem)
         popup.add(openSchedulerItem)
+        popup.add(indexingMonitorItem)
         popup.addSeparator()
         popup.add(exitItem)
 
@@ -103,8 +102,10 @@ class TrayIconManager {
 
         try {
             tray.add(icon)
+            logger.info { "Tray icon successfully added to system tray" }
         } catch (e: AWTException) {
             logger.error(e) { "TrayIcon could not be added: ${e.message}" }
+            throw IllegalStateException("Failed to add tray icon to system tray", e)
         }
     }
 

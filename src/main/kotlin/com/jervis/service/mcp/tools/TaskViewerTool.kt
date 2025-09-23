@@ -90,7 +90,12 @@ class TaskViewerTool(
                     ).take(params.limit)
 
             val output = buildTaskListOutput(filteredTasks, params)
-            ToolResult.ok(output)
+            ToolResult.listingResult(
+                toolName = "TASK_VIEWER",
+                itemCount = filteredTasks.size,
+                itemType = "tasks",
+                listing = output
+            )
         } catch (e: Exception) {
             logger.error(e) { "Error browsing scheduled tasks" }
             ToolResult.error("Failed to browse scheduled tasks: ${e.message}")
@@ -113,7 +118,11 @@ class TaskViewerTool(
                     appendLine("Total Tasks: ${statistics.values.sum()}")
                 }
 
-            ToolResult.ok(output)
+            ToolResult.success(
+                toolName = "TASK_VIEWER",
+                summary = "Task statistics retrieved",
+                content = output
+            )
         } catch (e: Exception) {
             logger.error(e) { "Error getting task statistics" }
             ToolResult.error("Failed to get task statistics: ${e.message}")

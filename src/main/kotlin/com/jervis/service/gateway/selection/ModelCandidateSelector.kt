@@ -2,8 +2,10 @@ package com.jervis.service.gateway.selection
 
 import com.jervis.configuration.ModelsProperties
 import com.jervis.domain.model.ModelType
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.emptyFlow
 import org.springframework.stereotype.Service
-import reactor.core.publisher.Flux
 
 /**
  * Service responsible for selecting appropriate LLM model candidates based on various criteria.
@@ -15,22 +17,41 @@ class ModelCandidateSelector(
 ) {
     /**
      * Selects model candidates based on model type, quick mode preference, and estimated token requirements.
+     * Always returns at least one model (the one with highest token capacity) to ensure processing can proceed.
      */
     fun selectCandidates(
         modelType: ModelType,
         quickModeOnly: Boolean,
         estimatedTokens: Int,
-    ): Flux<ModelsProperties.ModelDetail> {
+    ): Flow<ModelsProperties.ModelDetail> {
         val baseModels = modelsProperties.models[modelType] ?: emptyList()
 
-        val filteredModels =
-            baseModels
-                .asSequence()
-                .filter { candidate -> !quickModeOnly || candidate.quick }
-                .filter { candidate -> hasCapacityForTokens(candidate, estimatedTokens) }
-                .toList()
+        if (baseModels.isEmpty()) {
+            return emptyFlow()
+        }
 
-        return Flux.fromIterable(filteredModels)
+        // Apply quick mode filter first
+        val quickFilteredModels =
+            baseModels.filter { candidate ->
+                !quickModeOnly || candidate.quick
+            }
+
+        if (quickFilteredModels.isEmpty()) {
+            return emptyFlow()
+        }
+
+        // Try to find models that can handle the estimated tokens
+        val capacityFilteredModels =
+            quickFilteredModels.filter { candidate ->
+                hasCapacityForTokens(candidate, estimatedTokens)
+            }
+
+        val selectedModels =
+            capacityFilteredModels.ifEmpty {
+                listOf(quickFilteredModels.maxByOrNull { it.maxTokens ?: 0 }!!)
+            }
+
+        return selectedModels.asFlow()
     }
 
     /**

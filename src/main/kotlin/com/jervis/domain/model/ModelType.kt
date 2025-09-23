@@ -7,12 +7,13 @@ package com.jervis.domain.model
 enum class ModelType {
     EMBEDDING_TEXT,
     EMBEDDING_CODE,
-    TRANSLATION,
+    QUESTION_INTERPRETER,
     RAG,
-    INTERNAL,
-    SPEECH,
-    CHAT_INTERNAL,
-    CHAT_EXTERNAL,
+    CODER,
     PLANNER,
     JOERN,
+    GENERIC_TEXT_MODEL,
+    HEAVY_TEXT_MODEL,
+    GENERIC_CODE_MODEL,
+    HEAVY_CODE_MODEL,
 }

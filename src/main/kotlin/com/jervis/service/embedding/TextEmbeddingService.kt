@@ -61,14 +61,22 @@ class TextEmbeddingService(
                         val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, chunk)
 
                         // Create RAG document for semantic content
+                        val relativePath =
+                            try {
+                                projectPath.relativize(filePath).pathString
+                            } catch (e: IllegalArgumentException) {
+                                // Fallback when paths are different types (e.g., synthetic vs file paths)
+                                filePath.pathString
+                            }
                         val ragDocument =
                             RagDocument(
                                 projectId = project.id,
+                                clientId = project.clientId,
                                 documentType = RagDocumentType.TEXT,
                                 ragSourceType = RagSourceType.FILE,
                                 pageContent = chunk,
                                 source = "${filePath.pathString}#chunk-$index",
-                                path = projectPath.relativize(filePath).pathString,
+                                path = relativePath,
                                 module = filePath.fileName.toString(),
                             )
 
@@ -288,27 +296,74 @@ class TextEmbeddingService(
         val fileName = filePath.fileName.toString().lowercase()
         val textExtensions =
             setOf(
+                // Documentation and markup files
                 "txt",
                 "md",
                 "rst",
                 "adoc",
                 "tex",
                 "rtf",
+                // Data files
                 "csv",
                 "tsv",
                 "json",
                 "xml",
                 "yaml",
                 "yml",
+                // Configuration files
                 "properties",
                 "conf",
                 "ini",
                 "cfg",
+                // Source code files - these should be indexed for semantic text analysis
+                "kt",
+                "kts", // Kotlin
+                "java", // Java
+                "py",
+                "pyx", // Python
+                "js",
+                "jsx",
+                "ts",
+                "tsx", // JavaScript/TypeScript
+                "go", // Go
+                "rs", // Rust
+                "cpp",
+                "cc",
+                "cxx",
+                "c",
+                "h",
+                "hpp",
+                "hxx", // C/C++
+                "cs", // C#
+                "php", // PHP
+                "rb", // Ruby
+                "swift", // Swift
+                "scala", // Scala
+                "clj",
+                "cljs", // Clojure
+                "dart", // Dart
+                "r", // R
+                "m", // Objective-C
+                "sh",
+                "bash",
+                "zsh", // Shell scripts
+                "sql", // SQL
+                "gradle", // Gradle
+                "groovy", // Groovy
+                "pl",
+                "pm", // Perl
+                "lua", // Lua
+                "vim", // Vim script
+                "ps1", // PowerShell
+                "dockerfile", // Docker
+                "makefile", // Make
             )
 
         return textExtensions.any { fileName.endsWith(".$it") } ||
             fileName.contains("readme") ||
             fileName.contains("changelog") ||
-            fileName.contains("license")
+            fileName.contains("license") ||
+            fileName == "dockerfile" ||
+            fileName == "makefile"
     }
 }

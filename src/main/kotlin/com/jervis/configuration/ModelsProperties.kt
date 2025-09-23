@@ -14,7 +14,6 @@ class ModelsProperties {
         var provider: ModelProvider? = null,
         var model: String = "",
         var maxTokens: Int? = null,
-        var maxRequests: Int? = null,
         var concurrency: Int? = null,
         var quick: Boolean = false,
         var dimension: Int? = null,

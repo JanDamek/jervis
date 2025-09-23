@@ -6,6 +6,7 @@ import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.mongo.ClientMongoRepository
 import com.jervis.repository.mongo.ProjectMongoRepository
 import com.jervis.service.gateway.core.LlmGateway
+import com.jervis.service.gateway.processing.LlmResponseWrapper
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.toList
@@ -177,10 +178,10 @@ class ClientIndexingService(
                 type = PromptTypeEnum.CLIENT_DESCRIPTION_SHORT,
                 userPrompt = userPrompt,
                 quick = false,
-                "",
+                LlmResponseWrapper(),
             )
 
-        return llmResponse.trim()
+        return llmResponse.response.trim()
     }
 
     /**
@@ -233,7 +234,7 @@ class ClientIndexingService(
                 type = PromptTypeEnum.CLIENT_DESCRIPTION_FULL,
                 userPrompt = userPrompt,
                 quick = false,
-                "",
+                LlmResponseWrapper(),
             )
 
         return buildString {
@@ -246,7 +247,7 @@ class ClientIndexingService(
             appendLine()
             appendLine("---")
             appendLine()
-            appendLine(llmResponse)
+            appendLine(llmResponse.response)
             appendLine()
             appendLine("---")
             appendLine(

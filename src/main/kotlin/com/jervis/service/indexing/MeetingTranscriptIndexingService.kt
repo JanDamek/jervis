@@ -1,5 +1,6 @@
 package com.jervis.service.indexing
 
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagDocumentType
@@ -7,6 +8,8 @@ import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
+import com.jervis.service.gateway.core.LlmGateway
+import com.jervis.service.indexing.dto.MeetingTranscriptProcessingResponse
 import com.jervis.service.rag.RagIndexingStatusService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -18,7 +21,10 @@ import java.nio.file.Paths
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
+import java.time.Instant
+import kotlin.io.path.extension
 import kotlin.io.path.isRegularFile
+import kotlin.io.path.name
 import kotlin.io.path.pathString
 
 /**
@@ -31,6 +37,8 @@ class MeetingTranscriptIndexingService(
     private val vectorStorage: VectorStorageRepository,
     private val ragIndexingStatusService: RagIndexingStatusService,
     private val historicalVersioningService: HistoricalVersioningService,
+    private val indexingMonitorService: com.jervis.service.indexing.monitoring.IndexingMonitorService,
+    private val llmGateway: LlmGateway,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -41,6 +49,15 @@ class MeetingTranscriptIndexingService(
         val processedTranscripts: Int,
         val skippedTranscripts: Int,
         val errorTranscripts: Int,
+    )
+
+    /**
+     * Result of meeting indexing operation (for compatibility with MeetingIndexingService)
+     */
+    data class MeetingIndexingResult(
+        val processedMeetings: Int,
+        val skippedMeetings: Int,
+        val errorMeetings: Int,
     )
 
     /**
@@ -92,16 +109,28 @@ class MeetingTranscriptIndexingService(
                     .forEach { meetingFiles.add(it) }
 
                 logger.info { "Found ${meetingFiles.size} meeting files to process" }
+                indexingMonitorService.addStepLog(
+                    project.id, "meeting_transcripts", 
+                    "Found ${meetingFiles.size} meeting files to process"
+                )
 
-                for (meetingFile in meetingFiles) {
+                for ((index, meetingFile) in meetingFiles.withIndex()) {
                     try {
+                        val relativePath = meetingDir.relativize(meetingFile).toString()
+                        indexingMonitorService.addStepLog(
+                            project.id, "meeting_transcripts", 
+                            "Processing meeting file (${index + 1}/${meetingFiles.size}): $relativePath"
+                        )
+                        
                         val content = Files.readString(meetingFile)
                         if (content.isBlank()) {
                             skippedTranscripts++
+                            indexingMonitorService.addStepLog(
+                                project.id, "meeting_transcripts", 
+                                "⚠ Skipped empty meeting file: $relativePath"
+                            )
                             continue
                         }
-
-                        val relativePath = meetingDir.relativize(meetingFile).toString()
 
                         // Check if already indexed to prevent duplicates
                         val shouldIndex =
@@ -114,6 +143,10 @@ class MeetingTranscriptIndexingService(
 
                         if (!shouldIndex) {
                             skippedTranscripts++
+                            indexingMonitorService.addStepLog(
+                                project.id, "meeting_transcripts", 
+                                "⚠ Skipped already indexed meeting file: $relativePath"
+                            )
                             logger.debug { "Skipping already indexed meeting file: $relativePath" }
                             continue
                         }
@@ -132,28 +165,59 @@ class MeetingTranscriptIndexingService(
                         // Extract meeting metadata
                         val metadata = extractMeetingMetadata(meetingFile, content)
 
-                        // Create RAG document
-                        val ragDocument =
-                            RagDocument(
-                                projectId = project.id,
-                                documentType = RagDocumentType.MEETING,
-                                ragSourceType = RagSourceType.FILE,
-                                pageContent = buildMeetingContent(meetingFile, content, metadata),
-                                source = "meeting://${project.name}/$relativePath",
-                                path = relativePath,
-                                module = "meetings",
-                                language = inferMeetingFormat(meetingFile),
-                                gitCommitHash = gitCommitHash,
-                            )
+                        // Build meeting content for splitting
+                        val meetingContent = buildMeetingContent(meetingFile, content, metadata)
 
-                        // Generate embedding and store
-                        val embedding =
-                            embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, ragDocument.pageContent)
-                        vectorStorage.store(ModelType.EMBEDDING_TEXT, ragDocument, embedding)
+                        // Create atomic sentences for RAG embedding following requirement #5
+                        val sentences = createMeetingSentences(metadata, meetingContent)
+
+                        logger.debug { "Split meeting $relativePath into ${sentences.size} atomic sentences" }
+
+                        // Create individual embeddings for each sentence
+                        var successfulSentences = 0
+                        for (index in sentences.indices) {
+                            try {
+                                val sentence = sentences[index]
+                                val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, sentence)
+
+                                val ragDocument = RagDocument(
+                                    projectId = project.id,
+                                    clientId = project.clientId,
+                                    documentType = RagDocumentType.MEETING,
+                                    ragSourceType = RagSourceType.FILE,
+                                    pageContent = sentence,
+                                    source = "meeting://${project.name}/$relativePath#sentence-$index",
+                                    path = relativePath,
+                                    module = "meetings",
+                                    language = inferMeetingFormat(meetingFile),
+                                    gitCommitHash = gitCommitHash,
+                                    chunkId = "sentence-$index",
+                                    symbolName = "meeting-${meetingFile.fileName}",
+                                )
+
+                                vectorStorage.store(ModelType.EMBEDDING_TEXT, ragDocument, embedding)
+                                successfulSentences++
+                            } catch (e: Exception) {
+                                logger.error(e) { "Error storing sentence $index for meeting $relativePath" }
+                            }
+                        }
+
+                        logger.debug { "Successfully processed $successfulSentences/${sentences.size} sentences for $relativePath" }
+
+                        logger.debug { "Successfully indexed meeting $relativePath as ${sentences.size} atomic sentences" }
 
                         processedTranscripts++
+                        indexingMonitorService.addStepLog(
+                            project.id, "meeting_transcripts", 
+                            "✓ Successfully indexed meeting file: $relativePath (${sentences.size} sentences)"
+                        )
                         logger.debug { "Successfully indexed meeting file: $relativePath" }
                     } catch (e: Exception) {
+                        val relativePath = meetingDir.relativize(meetingFile).toString()
+                        indexingMonitorService.addStepLog(
+                            project.id, "meeting_transcripts", 
+                            "✗ Failed to index meeting file: $relativePath - ${e.message}"
+                        )
                         logger.warn(e) { "Failed to index meeting file: ${meetingFile.pathString}" }
                         errorTranscripts++
                     }
@@ -409,6 +473,56 @@ class MeetingTranscriptIndexingService(
     }
 
     /**
+     * Create atomic sentences for RAG embedding from meeting data using LLM processing.
+     * Following requirement #5: "MeetingIndexing a MeetingTranscript je jedná indexační třída"
+     * Replaces manual regex splitting with intelligent LLM-based sentence processing.
+     */
+    private suspend fun createMeetingSentences(metadata: MeetingMetadata, meetingContent: String): List<String> {
+        return try {
+            val response = llmGateway.callLlm(
+                type = PromptTypeEnum.MEETING_TRANSCRIPT_PROCESSING,
+                userPrompt = "",
+                quick = false,
+                responseSchema = MeetingTranscriptProcessingResponse(),
+                mappingValue = mapOf(
+                    "meetingTitle" to metadata.title,
+                    "meetingDate" to (metadata.date?.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")) ?: "Unknown"),
+                    "participants" to metadata.participants.joinToString(", ").ifEmpty { "Unknown" },
+                    "meetingType" to metadata.meetingType,
+                    "meetingContent" to meetingContent
+                )
+            )
+            
+            // Filter out any empty or too short sentences
+            response.sentences.filter { it.trim().isNotEmpty() && it.length >= 10 }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to process meeting content with LLM, falling back to basic processing" }
+            
+            // Fallback to basic processing if LLM fails
+            val basicSentences = mutableListOf<String>()
+            basicSentences.add("Meeting titled '${metadata.title}' of type ${metadata.meetingType}")
+            
+            metadata.date?.let { date ->
+                basicSentences.add("Meeting held on ${date.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))}")
+            }
+            
+            if (metadata.participants.isNotEmpty()) {
+                basicSentences.add("Meeting participants included: ${metadata.participants.joinToString(", ")}")
+            }
+            
+            // Basic content splitting as fallback
+            val contentSentences = meetingContent
+                .split(Regex("[.!?\\n]+"))
+                .map { it.trim() }
+                .filter { it.length > 15 }
+                .filter { !it.startsWith("=") && !it.startsWith("-") }
+            
+            basicSentences.addAll(contentSentences)
+            basicSentences.filter { it.trim().isNotEmpty() && it.length >= 10 }
+        }
+    }
+
+    /**
      * Build formatted content for meeting documents
      */
     private fun buildMeetingContent(
@@ -444,4 +558,158 @@ class MeetingTranscriptIndexingService(
             appendLine("Indexed as: Meeting Content")
             appendLine("Searchable by: meeting type, participants, date, content")
         }
+
+    /**
+     * Index meeting transcript from Whisper service with proper atomic sentence splitting.
+     * Integrates Whisper transcription into unified meeting indexing system.
+     */
+    suspend fun indexMeetingFromWhisper(
+        project: ProjectDocument,
+        meetingId: String,
+        transcript: String,
+        meetingTitle: String,
+        participantList: List<String> = emptyList(),
+        timestamp: Instant = Instant.now(),
+    ): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                logger.info { "Indexing Whisper meeting transcript: $meetingTitle for project: ${project.name}" }
+
+                if (transcript.isBlank()) {
+                    logger.warn { "Empty transcript for meeting: $meetingTitle" }
+                    return@withContext false
+                }
+
+                // Create meeting metadata from Whisper data
+                val metadata = MeetingMetadata(
+                    title = meetingTitle,
+                    date = LocalDateTime.ofInstant(timestamp, java.time.ZoneId.systemDefault()),
+                    participants = participantList,
+                    meetingType = "whisper-transcript"
+                )
+
+                // Build formatted meeting content
+                val meetingContent = buildString {
+                    appendLine("Meeting: $meetingTitle")
+                    appendLine("=".repeat(60))
+                    appendLine("Source: Whisper Transcription")
+                    appendLine("Meeting ID: $meetingId")
+                    appendLine("Date: ${timestamp}")
+                    if (participantList.isNotEmpty()) {
+                        appendLine("Participants: ${participantList.joinToString(", ")}")
+                    }
+                    appendLine()
+                    appendLine("Transcript:")
+                    appendLine(transcript)
+                }
+
+                // Create atomic sentences for RAG embedding following requirement #5
+                val sentences = createMeetingSentences(metadata, meetingContent)
+                
+                logger.debug { "Split Whisper transcript $meetingTitle into ${sentences.size} atomic sentences" }
+
+                // Create individual embeddings for each sentence
+                for (index in sentences.indices) {
+                    val sentence = sentences[index]
+                    val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, sentence)
+
+                    val ragDocument = RagDocument(
+                        projectId = project.id,
+                        clientId = project.clientId,
+                        documentType = RagDocumentType.MEETING,
+                        ragSourceType = RagSourceType.LLM, // From Whisper transcription
+                        pageContent = sentence,
+                        source = "whisper://${project.name}/$meetingId#sentence-$index",
+                        path = "meetings/whisper/$meetingTitle",
+                        module = "whisper-transcript",
+                        language = "transcript",
+                        timestamp = timestamp.toEpochMilli(),
+                        chunkId = "sentence-$index",
+                        symbolName = "whisper-$meetingId",
+                    )
+
+                    vectorStorage.store(ModelType.EMBEDDING_TEXT, ragDocument, embedding)
+                }
+
+                logger.info { "Successfully indexed Whisper meeting: $meetingTitle with ${sentences.size} atomic sentences" }
+                return@withContext true
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to index Whisper meeting: $meetingTitle" }
+                return@withContext false
+            }
+        }
+
+    /**
+     * Index meeting notes manually with proper atomic sentence splitting.
+     * For meetings without Whisper transcription.
+     */
+    suspend fun indexMeetingNotes(
+        project: ProjectDocument,
+        meetingTitle: String,
+        notes: String,
+        timestamp: Instant = Instant.now(),
+    ): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                logger.info { "Indexing manual meeting notes: $meetingTitle for project: ${project.name}" }
+
+                if (notes.isBlank()) {
+                    logger.warn { "Empty notes for meeting: $meetingTitle" }
+                    return@withContext false
+                }
+
+                // Create meeting metadata from manual notes
+                val metadata = MeetingMetadata(
+                    title = meetingTitle,
+                    date = LocalDateTime.ofInstant(timestamp, java.time.ZoneId.systemDefault()),
+                    meetingType = "manual-notes"
+                )
+
+                // Build formatted meeting content
+                val meetingContent = buildString {
+                    appendLine("Meeting: $meetingTitle")
+                    appendLine("=".repeat(60))
+                    appendLine("Source: Manual Notes")
+                    appendLine("Date: ${timestamp}")
+                    appendLine()
+                    appendLine("Notes:")
+                    appendLine(notes)
+                }
+
+                // Create atomic sentences for RAG embedding
+                val sentences = createMeetingSentences(metadata, meetingContent)
+                
+                logger.debug { "Split manual notes $meetingTitle into ${sentences.size} atomic sentences" }
+
+                // Create individual embeddings for each sentence
+                for (index in sentences.indices) {
+                    val sentence = sentences[index]
+                    val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, sentence)
+
+                    val ragDocument = RagDocument(
+                        projectId = project.id!!,
+                        clientId = project.clientId,
+                        documentType = RagDocumentType.MEETING,
+                        ragSourceType = RagSourceType.FILE, // From manual notes
+                        pageContent = sentence,
+                        source = "manual://${project.name}/meeting-notes/$meetingTitle#sentence-$index",
+                        path = "meetings/manual/$meetingTitle",
+                        module = "meeting-notes",
+                        language = "notes",
+                        timestamp = timestamp.toEpochMilli(),
+                        chunkId = "sentence-$index",
+                        symbolName = "manual-notes-${meetingTitle.hashCode()}",
+                    )
+
+                    vectorStorage.store(ModelType.EMBEDDING_TEXT, ragDocument, embedding)
+                }
+
+                logger.info { "Successfully indexed manual meeting notes: $meetingTitle with ${sentences.size} atomic sentences" }
+                return@withContext true
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to index meeting notes: $meetingTitle" }
+                return@withContext false
+            }
+        }
+
 }

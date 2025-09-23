@@ -1,5 +1,6 @@
 package com.jervis.ui.window
 
+import com.jervis.common.Constants.GLOBAL_ID
 import com.jervis.entity.mongo.ClientDocument
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.service.indexing.IndexingService
@@ -245,6 +246,7 @@ class ProjectSettingWindow(
         if (result != null) {
             val newProject =
                 ProjectDocument(
+                    clientId = GLOBAL_ID,
                     name = result.name,
                     path = result.path,
                     description = result.description,

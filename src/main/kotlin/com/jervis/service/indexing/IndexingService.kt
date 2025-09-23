@@ -1,5 +1,6 @@
 package com.jervis.service.indexing
 
+import com.jervis.common.Constants.GLOBAL_ID
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.project.IndexingRules
 import com.jervis.domain.rag.RagDocument
@@ -12,6 +13,9 @@ import com.jervis.service.analysis.ProjectDescriptionService
 import com.jervis.service.embedding.CodeEmbeddingService
 import com.jervis.service.embedding.TextEmbeddingService
 import com.jervis.service.gateway.EmbeddingGateway
+import com.jervis.service.indexing.JoernChunkingService
+import com.jervis.service.indexing.monitoring.IndexingMonitorService
+import com.jervis.service.indexing.pipeline.IndexingPipelineService
 import com.jervis.service.rag.RagIndexingStatusService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -35,7 +39,6 @@ class IndexingService(
     private val textEmbeddingService: TextEmbeddingService,
     private val vectorStorage: VectorStorageRepository,
     private val embeddingGateway: EmbeddingGateway,
-    private val meetingIndexingService: MeetingIndexingService,
     private val gitHistoryIndexingService: GitHistoryIndexingService,
     private val dependencyIndexingService: DependencyIndexingService,
     private val classSummaryIndexingService: ClassSummaryIndexingService,
@@ -47,6 +50,9 @@ class IndexingService(
     private val ragIndexingStatusService: RagIndexingStatusService,
     private val documentationIndexingService: DocumentationIndexingService,
     private val meetingTranscriptIndexingService: MeetingTranscriptIndexingService,
+    private val joernChunkingService: JoernChunkingService,
+    private val indexingMonitorService: IndexingMonitorService,
+    private val indexingPipelineService: IndexingPipelineService,
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -289,17 +295,22 @@ class IndexingService(
         }
 
     /**
-     * Comprehensive project indexing that includes all document types with parallel execution
+     * Comprehensive project indexing using streaming pipeline architecture
      */
     suspend fun indexProject(project: ProjectDocument): IndexingResult =
         withContext(Dispatchers.Default) {
             try {
-                logger.info { "Starting comprehensive parallel indexing for project: ${project.name}" }
+                logger.info { "Starting PIPELINE indexing for project: ${project.name}" }
+                
+                // Start project indexing monitoring
+                indexingMonitorService.startProjectIndexing(project.id, project.name)
+                
                 val projectPath = Paths.get(project.path)
 
                 if (!Files.exists(projectPath)) {
                     logger.error { "Project path does not exist: ${project.path}" }
-                    return@withContext IndexingResult(0, 0, 1, "COMPREHENSIVE_INDEX")
+                    indexingMonitorService.failProjectIndexing(project.id, "Project path does not exist: ${project.path}")
+                    return@withContext IndexingResult(0, 0, 1, "PIPELINE_COMPREHENSIVE")
                 }
 
                 // Mark existing documents as historical to prevent duplication in RAG
@@ -318,215 +329,36 @@ class IndexingService(
                     logger.warn(e) { "Failed to mark documents as historical for project: ${project.name}, continuing with indexing" }
                 }
 
-                // Execute independent indexing operations in parallel
-                val parallelOperations =
-                    listOf(
-                        async {
-                            logger.info { "Indexing code files for project: ${project.name}" }
-                            indexCodeFiles(project, projectPath)
-                        },
-                        async {
-                            logger.info { "Indexing text content for project: ${project.name}" }
-                            indexTextContent(project, projectPath)
-                        },
-                        async {
-                            logger.info { "Indexing comprehensive file descriptions for project: ${project.name}" }
-                            val fileResult = comprehensiveFileIndexingService.indexAllSourceFiles(project, projectPath)
-                            IndexingResult(
-                                fileResult.processedFiles,
-                                fileResult.skippedFiles,
-                                fileResult.errorFiles,
-                                "FILE_DESCRIPTIONS",
-                            )
-                        },
-                        async {
-                            logger.info { "Indexing git history for project: ${project.name}" }
-                            indexGitHistory(project, projectPath)
-                        },
-                        async {
-                            // Index documentation files and URLs
-                            logger.info { "Indexing documentation for project: ${project.name}" }
-                            try {
-                                val docResult = documentationIndexingService.indexProjectDocumentation(project)
-                                IndexingResult(
-                                    docResult.processedDocuments,
-                                    docResult.skippedDocuments,
-                                    docResult.errorDocuments,
-                                    "DOCUMENTATION_INDEX",
-                                )
-                            } catch (e: Exception) {
-                                logger.warn(e) { "Failed to index documentation for project: ${project.name}" }
-                                IndexingResult(0, 0, 1, "DOCUMENTATION_INDEX")
-                            }
-                        },
-                        async {
-                            // Index meeting transcripts if meeting path is configured
-                            if (!project.meetingPath.isNullOrBlank()) {
-                                logger.info { "Indexing meeting transcripts for project: ${project.name}" }
-                                try {
-                                    val transcriptResult =
-                                        meetingTranscriptIndexingService.indexProjectMeetingTranscripts(project)
-                                    IndexingResult(
-                                        transcriptResult.processedTranscripts,
-                                        transcriptResult.skippedTranscripts,
-                                        transcriptResult.errorTranscripts,
-                                        "MEETING_TRANSCRIPT_INDEX",
-                                    )
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to index meeting transcripts for project: ${project.name}" }
-                                    IndexingResult(0, 0, 1, "MEETING_TRANSCRIPT_INDEX")
-                                }
-                            } else {
-                                logger.debug { "No meeting path configured for project: ${project.name}" }
-                                IndexingResult(0, 0, 0, "MEETING_TRANSCRIPT_INDEX")
-                            }
-                        },
-                        async {
-                            // Index meeting audio files if meeting path is configured
-                            if (!project.meetingPath.isNullOrBlank()) {
-                                logger.info { "Indexing meeting audio files for project: ${project.name}" }
-                                try {
-                                    val meetingPath = Paths.get(project.meetingPath)
-                                    val meetingResult =
-                                        meetingIndexingService.indexMeetingAudioFiles(project, meetingPath)
-                                    IndexingResult(
-                                        meetingResult.processedMeetings,
-                                        meetingResult.skippedMeetings,
-                                        meetingResult.errorMeetings,
-                                        "MEETING_AUDIO_INDEX",
-                                    )
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to index meeting audio files for project: ${project.name}" }
-                                    IndexingResult(0, 0, 1, "MEETING_AUDIO_INDEX")
-                                }
-                            } else {
-                                logger.debug { "No meeting path configured for project: ${project.name}" }
-                                IndexingResult(0, 0, 0, "MEETING_AUDIO_INDEX")
-                            }
-                        },
-                    )
-
-                // Execute Joern analysis operations in parallel (after setup)
-                val joernOperations =
-                    async {
-                        logger.info { "Running Joern analysis and indexing results for project: ${project.name}" }
-                        try {
-                            val joernDir = joernAnalysisService.setupJoernDirectory(projectPath)
-                            if (joernDir != null) {
-                                // Perform Joern analysis first (sequential as it's a prerequisite)
-                                joernAnalysisService.performJoernAnalysis(project, projectPath, joernDir)
-
-                                if (Files.exists(joernDir)) {
-                                    // Execute Joern-dependent operations in parallel
-                                    val joernDependentOps =
-                                        listOf(
-                                            async {
-                                                logger.info { "Indexing dependencies for project: ${project.name}" }
-                                                indexDependencies(project, projectPath, joernDir)
-                                            },
-                                            async {
-                                                logger.info { "Indexing class summaries for project: ${project.name}" }
-                                                indexClassSummaries(project, projectPath, joernDir)
-                                            },
-                                            async {
-                                                logger.info { "Performing extensive Joern analysis for project: ${project.name}" }
-                                                val extensiveResult =
-                                                    extensiveJoernAnalysisService.performExtensiveJoernAnalysis(
-                                                        project,
-                                                        projectPath,
-                                                        joernDir,
-                                                    )
-                                                IndexingResult(
-                                                    extensiveResult.processedAnalyses,
-                                                    extensiveResult.skippedAnalyses,
-                                                    extensiveResult.errorAnalyses,
-                                                    "EXTENSIVE_JOERN_ANALYSIS",
-                                                )
-                                            },
-                                        )
-
-                                    joernDependentOps.awaitAll()
-                                } else {
-                                    emptyList<IndexingResult>()
-                                }
-                            } else {
-                                logger.warn { "Joern analysis setup failed for project: ${project.name}" }
-                                emptyList<IndexingResult>()
-                            }
-                        } catch (e: Exception) {
-                            logger.error(e) { "Joern analysis failed for project: ${project.name}" }
-                            emptyList<IndexingResult>()
-                        }
-                    }
-
-                // Wait for all parallel operations to complete
-                val parallelResults = parallelOperations.awaitAll()
-                val joernResults = joernOperations.await()
-
-                // Combine all results
-                val allResults = parallelResults + joernResults
-                val totalProcessed = allResults.sumOf { it.processedFiles }
-                val totalSkipped = allResults.sumOf { it.skippedFiles }
-                val totalErrors = allResults.sumOf { it.errorFiles }
-
+                // USE PIPELINE INSTEAD OF PARALLEL OPERATIONS
+                logger.info { "Starting pipeline-based comprehensive indexing for project: ${project.name}" }
+                val pipelineResult = indexingPipelineService.indexProjectWithPipeline(project, projectPath)
+                
                 logger.info {
-                    "Comprehensive parallel indexing completed for project: ${project.name} - " +
-                        "Total processed: $totalProcessed, Total skipped: $totalSkipped, Total errors: $totalErrors"
+                    "Pipeline indexing completed for project: ${project.name} - " +
+                        "Processed: ${pipelineResult.totalProcessed}, " +
+                        "Errors: ${pipelineResult.totalErrors}, " +
+                        "Time: ${pipelineResult.processingTimeMs}ms, " +
+                        "Throughput: ${"%.2f".format(pipelineResult.throughput)} items/sec"
                 }
 
-                // Generate comprehensive project descriptions (sequential as it depends on all indexing results)
-                logger.info { "Generating comprehensive project descriptions for project: ${project.name}" }
-                try {
-                    val indexingDescriptions =
-                        projectDescriptionService.collectIndexingDescriptions(
-                            joernAnalysisResults =
-                                listOf(
-                                    "Comprehensive Joern static analysis completed with $totalProcessed files analyzed",
-                                ),
-                            classAnalysisResults = listOf("Class and method analysis completed with detailed summaries"),
-                            dependencyAnalysisResults = listOf("Dependency analysis completed with comprehensive insights"),
-                            fileAnalysisResults = listOf("File structure analysis completed for $totalProcessed files"),
-                            architectureAnalysisResults =
-                                listOf(
-                                    "Architecture analysis completed with extensive insights from multiple analysis types",
-                                ),
-                        )
+                // Complete project indexing monitoring
+                indexingMonitorService.completeProjectIndexing(project.id)
 
-                    val projectDescriptions =
-                        projectDescriptionService.generateAndUpdateProjectDescriptions(project, indexingDescriptions)
-                    logger.info { "Successfully generated and updated project descriptions for: ${project.name}" }
-
-                    // Index project descriptions into RAG system
-                    try {
-                        val descriptionContents = mutableMapOf<Path, String>()
-                        if (projectDescriptions.shortDescription.isNotBlank()) {
-                            descriptionContents[Paths.get("project-description-short")] =
-                                projectDescriptions.shortDescription
-                        }
-                        if (projectDescriptions.fullDescription.isNotBlank()) {
-                            descriptionContents[Paths.get("project-description-full")] =
-                                projectDescriptions.fullDescription
-                        }
-
-                        if (descriptionContents.isNotEmpty()) {
-                            val descriptionResult =
-                                textEmbeddingService.processTextContents(project, descriptionContents, projectPath)
-                            logger.info {
-                                "Successfully indexed project descriptions into RAG for: ${project.name} - " +
-                                    "Processed: ${descriptionResult.processedSentences}, Errors: ${descriptionResult.errorSentences}"
-                            }
-                        }
-                    } catch (e: Exception) {
-                        logger.error(e) { "Failed to index project descriptions into RAG for: ${project.name}" }
-                    }
-                } catch (e: Exception) {
-                    logger.error(e) { "Failed to generate project descriptions for: ${project.name}" }
-                }
-
-                IndexingResult(totalProcessed, totalSkipped, totalErrors, "COMPREHENSIVE_INDEX")
+                // Convert pipeline result to IndexingResult
+                IndexingResult(
+                    processedFiles = pipelineResult.totalProcessed,
+                    skippedFiles = 0,
+                    errorFiles = pipelineResult.totalErrors,
+                    operationType = "PIPELINE_COMPREHENSIVE"
+                )
+                
             } catch (e: Exception) {
-                logger.error(e) { "Comprehensive indexing failed for project: ${project.name}" }
-                IndexingResult(0, 0, 1, "COMPREHENSIVE_INDEX")
+                logger.error(e) { "Pipeline indexing failed for project: ${project.name}" }
+                
+                // Fail project indexing monitoring
+                indexingMonitorService.failProjectIndexing(project.id, "Pipeline indexing failed: ${e.message}")
+                
+                IndexingResult(0, 0, 1, "PIPELINE_COMPREHENSIVE")
             }
         }
 
@@ -545,6 +377,7 @@ class IndexingService(
 
             var successCount = 0
             var errorCount = 0
+            val processedClientIds = mutableSetOf<org.bson.types.ObjectId>()
 
             // Process projects sequentially, one by one
             for (project in enabledProjects) {
@@ -552,14 +385,9 @@ class IndexingService(
                     logger.info { "Starting comprehensive indexing for project: ${project.name}" }
                     indexProject(project)
 
-                    // Update client descriptions after successful project indexing
+                    // Collect client IDs for later batch update (don't update individually)
                     project.clientId?.let { clientId ->
-                        try {
-                            clientIndexingService.updateClientDescriptions(clientId)
-                            logger.info { "Updated client descriptions for project: ${project.name}" }
-                        } catch (e: Exception) {
-                            logger.warn(e) { "Failed to update client descriptions for project: ${project.name}" }
-                        }
+                        processedClientIds.add(clientId)
                     }
 
                     logger.info { "Successfully indexed project: ${project.name}" }
@@ -567,6 +395,53 @@ class IndexingService(
                 } catch (e: Exception) {
                     logger.error(e) { "Failed to index project: ${project.name}" }
                     errorCount++
+                }
+            }
+
+            // Update client descriptions once after all projects are indexed
+            for (clientId in processedClientIds) {
+                try {
+                    // Find a project from this client to get project context for monitoring
+                    val clientProject = enabledProjects.find { it.clientId == clientId }
+                    if (clientProject != null) {
+                        indexingMonitorService.updateStepProgress(
+                            clientProject.id, "client_update",
+                            com.jervis.service.indexing.monitoring.IndexingStepStatus.RUNNING,
+                            message = "Updating client descriptions for client ID: $clientId",
+                            logs = listOf("Starting client description update for client ID: $clientId")
+                        )
+                    }
+                    
+                    val result = clientIndexingService.updateClientDescriptions(clientId)
+                    
+                    if (clientProject != null) {
+                        indexingMonitorService.updateStepProgress(
+                            clientProject.id, "client_update",
+                            com.jervis.service.indexing.monitoring.IndexingStepStatus.COMPLETED,
+                            message = "Updated client descriptions (${result.projectCount} projects processed)",
+                            logs = listOf(
+                                "Successfully updated client descriptions",
+                                "Projects processed: ${result.projectCount}",
+                                "Generated short description: ${result.shortDescription.take(100)}...",
+                                "Generated full description length: ${result.fullDescription.length} characters"
+                            )
+                        )
+                    }
+                    
+                    logger.info { "Updated client descriptions for clientId: $clientId" }
+                } catch (e: Exception) {
+                    // Find a project from this client to report the failure
+                    val clientProject = enabledProjects.find { it.clientId == clientId }
+                    if (clientProject != null) {
+                        indexingMonitorService.updateStepProgress(
+                            clientProject.id, "client_update",
+                            com.jervis.service.indexing.monitoring.IndexingStepStatus.FAILED,
+                            errorMessage = "Failed to update client descriptions: ${e.message}",
+                            logs = listOf("Error updating client descriptions: ${e.message}")
+                        )
+                    }
+                    
+                    logger.warn(e) { "Failed to update client descriptions for clientId: $clientId" }
                 }
             }
 
@@ -601,7 +476,7 @@ class IndexingService(
                 indexProject(project)
 
                 // Store clientId for later client description update
-                if (clientId == null) {
+                if (clientId == null && project.clientId != GLOBAL_ID) {
                     clientId = project.clientId
                 }
 
@@ -616,9 +491,46 @@ class IndexingService(
         // Update client descriptions once after all projects are indexed
         clientId?.let { id ->
             try {
-                clientIndexingService.updateClientDescriptions(id)
+                // Find a representative project from this client for monitoring context
+                val clientProject = enabledProjects.find { it.clientId == id }
+                if (clientProject != null) {
+                    indexingMonitorService.updateStepProgress(
+                        clientProject.id, "client_update",
+                        com.jervis.service.indexing.monitoring.IndexingStepStatus.RUNNING,
+                        message = "Updating client descriptions for '$clientName'",
+                        logs = listOf("Starting client description update for client: $clientName")
+                    )
+                }
+                
+                val result = clientIndexingService.updateClientDescriptions(id)
+                
+                if (clientProject != null) {
+                    indexingMonitorService.updateStepProgress(
+                        clientProject.id, "client_update",
+                        com.jervis.service.indexing.monitoring.IndexingStepStatus.COMPLETED,
+                        message = "Updated descriptions for '$clientName' (${result.projectCount} projects)",
+                        logs = listOf(
+                            "Successfully updated client descriptions for: $clientName",
+                            "Projects processed: ${result.projectCount}",
+                            "Generated short description: ${result.shortDescription.take(100)}...",
+                            "Generated full description length: ${result.fullDescription.length} characters"
+                        )
+                    )
+                }
+                
                 logger.info { "Updated client descriptions for client: $clientName" }
             } catch (e: Exception) {
+                // Find a representative project from this client to report the failure
+                val clientProject = enabledProjects.find { it.clientId == id }
+                if (clientProject != null) {
+                    indexingMonitorService.updateStepProgress(
+                        clientProject.id, "client_update",
+                        com.jervis.service.indexing.monitoring.IndexingStepStatus.FAILED,
+                        errorMessage = "Failed to update client descriptions for '$clientName': ${e.message}",
+                        logs = listOf("Error updating client descriptions for $clientName: ${e.message}")
+                    )
+                }
+                
                 logger.warn(e) { "Failed to update client descriptions for client: $clientName" }
             }
         }
@@ -700,6 +612,7 @@ class IndexingService(
                             val ragDocument =
                                 RagDocument(
                                     projectId = project.id,
+                                    clientId = project.clientId,
                                     documentType = RagDocumentType.JOERN_ANALYSIS,
                                     ragSourceType = RagSourceType.ANALYSIS,
                                     pageContent = summary,

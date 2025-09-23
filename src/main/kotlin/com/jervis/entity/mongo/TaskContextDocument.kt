@@ -1,5 +1,6 @@
 package com.jervis.entity.mongo
 
+import com.jervis.common.Constants.GLOBAL_ID
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import org.bson.types.ObjectId
@@ -27,14 +28,17 @@ data class TaskContextDocument(
         TaskContext(
             id = this.id,
             plans = plans,
-            clientDocument = ClientDocument(
-                id = this.clientId ?: ObjectId.get(),
-                name = this.clientName ?: ""
-            ),
-            projectDocument = ProjectDocument(
-                id = this.projectId ?: ObjectId.get(),
-                name = this.projectName ?: ""
-            ),
+            clientDocument =
+                ClientDocument(
+                    id = this.clientId ?: GLOBAL_ID,
+                    name = this.clientName ?: "",
+                ),
+            projectDocument =
+                ProjectDocument(
+                    id = this.projectId ?: ObjectId.get(),
+                    clientId = this.clientId ?: GLOBAL_ID,
+                    name = this.projectName ?: "",
+                ),
             name = this.name,
             createdAt = this.createdAt,
             updatedAt = this.updatedAt,

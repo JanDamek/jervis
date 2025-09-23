@@ -26,6 +26,7 @@ class JsonParser {
     /**
      * Cleans LLM response by removing markdown code blocks and other formatting.
      * Handles common formatting issues where LLMs wrap JSON in ```json...``` blocks.
+     * Validates that the response appears to be JSON format.
      */
     private fun cleanJsonResponse(response: String): String {
         var cleaned = response.trim()
@@ -46,6 +47,14 @@ class JsonParser {
 
         // Additional cleanup for common formatting issues
         cleaned = cleaned.trim()
+
+        // Validate that the cleaned response looks like JSON
+        if (!cleaned.startsWith("{") && !cleaned.startsWith("[")) {
+            throw IllegalStateException(
+                "LLM returned non-JSON response. Expected JSON format but got plain text starting with: " +
+                "${cleaned.take(100)}..."
+            )
+        }
 
         return cleaned
     }

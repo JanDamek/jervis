@@ -10,7 +10,8 @@ data class PlanStep(
     var contextId: ObjectId,
     val name: String,
     val taskDescription: String,
-    val stepBack: Int = 0, // Number of previous steps to include as context
+    val stepBack: Int = 0, // Dependency level for tree-structured execution
+    val stepGroup: String? = null, // Optional group/stage identifier for better organization
     var status: StepStatus = StepStatus.PENDING,
     var output: ToolResult? = null,
 )

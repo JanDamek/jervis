@@ -9,12 +9,14 @@ import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.gateway.core.LlmGateway
-import com.jervis.service.prompts.PromptRepository
+import com.jervis.service.indexing.dto.JoernAnalysisResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
+import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.io.path.pathString
 
 /**
  * Service for performing extensive Joern analysis and indexing all possible analysis results.
@@ -26,9 +28,88 @@ class ExtensiveJoernAnalysisService(
     private val embeddingGateway: EmbeddingGateway,
     private val vectorStorage: VectorStorageRepository,
     private val llmGateway: LlmGateway,
-    private val promptRepository: PromptRepository,
+    private val indexingMonitorService: com.jervis.service.indexing.monitoring.IndexingMonitorService,
 ) {
     private val logger = KotlinLogging.logger {}
+
+    /**
+     * Result of process execution including outputs and timeout status
+     */
+    data class ProcessRunResult(
+        val exitCode: Int,
+        val stdout: String,
+        val stderr: String,
+    )
+
+    /**
+     * Run a process with streaming output and timeout handling
+     */
+    private suspend fun runProcessStreaming(
+        displayName: String,
+        command: List<String>,
+        workingDir: Path?,
+        redirectErrorStream: Boolean = false,
+    ): ProcessRunResult =
+        withContext(Dispatchers.IO) {
+            val pb = ProcessBuilder(command)
+            workingDir?.let { pb.directory(it.toFile()) }
+            pb.redirectErrorStream(redirectErrorStream)
+
+            logger.debug {
+                "[PROC] Starting: $displayName | cmd=${
+                    command.joinToString(
+                        " ",
+                    )
+                } | dir=${workingDir?.pathString ?: "(default)"}"
+            }
+
+            val process = pb.start()
+            process.pid()
+            val stdoutBuf = StringBuilder()
+            val stderrBuf = StringBuilder()
+
+            val stdoutThread =
+                Thread({
+                    process.inputStream.bufferedReader().useLines { lines ->
+                        lines.forEach { line ->
+                            stdoutBuf.appendLine(line)
+                            logger.debug { "[$displayName][stdout] $line" }
+                        }
+                    }
+                }, "$displayName-stdout").apply { isDaemon = true }
+
+            val stderrThread =
+                if (!redirectErrorStream) {
+                    Thread({
+                        process.errorStream.bufferedReader().useLines { lines ->
+                            lines.forEach { line ->
+                                stderrBuf.appendLine(line)
+                                logger.error { "[$displayName][stderr] $line" }
+                            }
+                        }
+                    }, "$displayName-stderr").apply { isDaemon = true }
+                } else {
+                    null
+                }
+
+            stdoutThread.start()
+            stderrThread?.start()
+
+            process.waitFor()
+
+            // wait for streams to be read (short join)
+            runCatching { stdoutThread.join(1000) }
+            runCatching { stderrThread?.join(1000) }
+
+            val exit = process.exitValue()
+            logger.debug { "[PROC] Finished: $displayName | exit=$exit" }
+
+            return@withContext ProcessRunResult(
+                exitCode = exit,
+                stdout = stdoutBuf.toString(),
+                stderr = stderrBuf.toString(),
+            )
+        }
 
     data class JoernAnalysisResult(
         val processedAnalyses: Int,
@@ -118,17 +199,39 @@ class ExtensiveJoernAnalysisService(
                     )
 
                 // Execute each analysis
-                for (analysisConfig in analyses) {
+                for ((index, analysisConfig) in analyses.withIndex()) {
                     try {
+                        indexingMonitorService.addStepLog(
+                            project.id,
+                            "joern_analysis",
+                            "Starting ${analysisConfig.displayName} (${index + 1}/${analyses.size})",
+                        )
+
                         val success = performJoernAnalysis(project, projectPath, joernDir, analysisConfig)
+
                         if (success) {
                             processedAnalyses++
+                            indexingMonitorService.addStepLog(
+                                project.id,
+                                "joern_analysis",
+                                "✓ Completed ${analysisConfig.displayName}",
+                            )
                         } else {
                             errorAnalyses++
+                            indexingMonitorService.addStepLog(
+                                project.id,
+                                "joern_analysis",
+                                "✗ Failed ${analysisConfig.displayName}",
+                            )
                         }
                     } catch (e: Exception) {
                         logger.warn(e) { "Failed to perform Joern analysis: ${analysisConfig.name}" }
                         errorAnalyses++
+                        indexingMonitorService.addStepLog(
+                            project.id,
+                            "joern_analysis",
+                            "✗ Error in ${analysisConfig.displayName}: ${e.message}",
+                        )
                     }
                 }
 
@@ -157,43 +260,67 @@ class ExtensiveJoernAnalysisService(
         try {
             logger.debug { "Performing Joern analysis: ${analysisConfig.displayName}" }
 
-            // Create analysis script file
-            val scriptFile = joernDir.resolve("${analysisConfig.name}.sc").toFile()
-            scriptFile.writeText(analysisConfig.scriptContent)
+            // Ensure CPG exists before creating script
+            val cpgPath = joernDir.resolve("cpg.bin")
+            if (!Files
+                    .exists(cpgPath)
+            ) {
+                logger.warn { "CPG file does not exist at: $cpgPath for analysis: ${analysisConfig.name}" }
+                return false
+            }
 
-            // Create output file path
-            val outputFile = joernDir.resolve("${analysisConfig.name}-results.json").toFile()
-
-            // Execute Joern analysis
-            val processBuilder =
-                ProcessBuilder(
-                    "joern",
-                    "--script",
-                    scriptFile.absolutePath,
-                    "--param",
-                    "outFile=\"${outputFile.absolutePath}\"",
-                ).apply {
-                    directory(projectPath.toFile())
-                    redirectErrorStream(true)
+            // Create analysis script file with proper CPG loading
+            val scriptFile = joernDir.resolve("${analysisConfig.name}.sc")
+            val fullScriptContent =
+                buildString {
+                    appendLine("// Load the CPG first")
+                    appendLine("importCpg(\"${cpgPath.pathString}\")")
+                    appendLine()
+                    appendLine("// Wait for CPG to be fully loaded")
+                    appendLine("Thread.sleep(1000)")
+                    appendLine()
+                    appendLine("// Execute the analysis")
+                    appendLine(analysisConfig.scriptContent)
                 }
+            Files.writeString(scriptFile, fullScriptContent)
 
-            val process = processBuilder.start()
-            val exitCode = process.waitFor()
+            // Execute Joern analysis using robust process execution
+            val res =
+                runProcessStreaming(
+                    displayName = "joern --script ${scriptFile.fileName}",
+                    command = listOf("joern", "--script", scriptFile.pathString),
+                    workingDir = joernDir,
+                )
 
-            if (exitCode != 0) {
-                val errorOutput = process.inputStream.bufferedReader().use { it.readText() }
-                logger.warn { "Joern analysis '${analysisConfig.name}' failed with exit code $exitCode: $errorOutput" }
-                return false
-            }
+            return runCatching {
+                if (res.exitCode == 0) {
+                    // Process results from stdout
+                    if (res.stdout.isNotBlank()) {
+                        // Save results to file for reference
+                        val outputFile = joernDir.resolve("${analysisConfig.name}-results.json")
+                        Files.writeString(outputFile, res.stdout)
 
-            // Read and process results
-            if (outputFile.exists() && outputFile.length() > 0) {
-                val results = outputFile.readText()
-                return indexJoernAnalysisResults(project, analysisConfig, results)
-            } else {
-                logger.debug { "No results generated for analysis: ${analysisConfig.name}" }
-                return false
-            }
+                        logger.debug { "Joern analysis '${analysisConfig.name}' completed successfully" }
+                        indexJoernAnalysisResults(project, analysisConfig, res.stdout.trim())
+                    } else {
+                        logger.debug { "No results generated for analysis: ${analysisConfig.name}" }
+                        false
+                    }
+                } else {
+                    val errorFile = joernDir.resolve("${analysisConfig.name}_error.txt")
+                    Files.writeString(
+                        errorFile,
+                        "Exit code: ${res.exitCode}\nStderr:\n${res.stderr}\n\nStdout:\n${res.stdout}",
+                    )
+                    logger.warn {
+                        "Joern analysis '${analysisConfig.name}' failed (exit=${res.exitCode}, details: ${errorFile.pathString}"
+                    }
+                    false
+                }
+            }.also {
+                // Clean up script file after execution
+                runCatching { Files.deleteIfExists(scriptFile) }
+            }.getOrDefault(false)
         } catch (e: Exception) {
             logger.error(e) { "Failed to perform Joern analysis: ${analysisConfig.name}" }
             return false
@@ -218,7 +345,8 @@ class ExtensiveJoernAnalysisService(
             // Create RAG document for the analysis
             val ragDocument =
                 RagDocument(
-                    projectId = project.id!!,
+                    projectId = project.id,
+                    clientId = project.clientId,
                     documentType = RagDocumentType.JOERN_ANALYSIS,
                     ragSourceType = RagSourceType.ANALYSIS,
                     pageContent = analysisDescription,
@@ -266,7 +394,7 @@ class ExtensiveJoernAnalysisService(
                 type = PromptTypeEnum.EXTENSIVE_JOERN_ANALYSIS,
                 userPrompt = userPrompt,
                 quick = false,
-                "",
+                responseSchema = JoernAnalysisResponse(""),
             )
 
         return buildString {
@@ -280,7 +408,7 @@ class ExtensiveJoernAnalysisService(
             appendLine(analysisConfig.description)
             appendLine()
             appendLine("Comprehensive Analysis:")
-            appendLine(llmResponse)
+            appendLine(llmResponse.response)
             appendLine()
             appendLine("Raw Analysis Results:")
             appendLine("```json")
@@ -306,24 +434,19 @@ class ExtensiveJoernAnalysisService(
     private fun createSecurityAnalysisScript(): String =
         """
         import io.shiftleft.codepropertygraph.generated._
-        import io.joern.suites.findings._
         
-        val findings = List(
-            // SQL Injection vulnerabilities
-            cpg.method(".*exec.*|.*query.*|.*prepare.*").where(_.parameter.evalType(".*String.*")).l,
-            // XSS vulnerabilities  
-            cpg.method(".*write.*|.*print.*|.*send.*").where(_.parameter.evalType(".*String.*")).l,
-            // Path traversal vulnerabilities
-            cpg.method(".*File.*|.*Path.*|.*open.*").where(_.parameter.evalType(".*String.*")).l,
-            // Hardcoded credentials
-            cpg.literal.code(".*password.*|.*secret.*|.*key.*|.*token.*").l,
-            // Insecure random usage
-            cpg.method(".*Random.*|.*Math.random.*").l,
-            // Insecure cryptography
-            cpg.method(".*MD5.*|.*SHA1.*|.*DES.*").l
-        ).flatten
+        val securityAnalysis = Map(
+            "sqlInjectionRisk" -> cpg.method.name(".*exec.*|.*query.*|.*prepare.*").l.map(_.fullName),
+            "xssRisk" -> cpg.method.name(".*write.*|.*print.*|.*send.*").l.map(_.fullName),
+            "pathTraversalRisk" -> cpg.method.name(".*File.*|.*Path.*|.*open.*").l.map(_.fullName),
+            "hardcodedCredentials" -> cpg.literal.code(".*password.*|.*secret.*|.*key.*|.*token.*").l,
+            "insecureRandom" -> cpg.method.name(".*Random.*|.*random.*").l.map(_.fullName),
+            "weakCryptography" -> cpg.method.name(".*MD5.*|.*SHA1.*|.*DES.*").l.map(_.fullName),
+            "totalMethods" -> cpg.method.l.size,
+            "totalLiterals" -> cpg.literal.l.size
+        )
         
-        findings.toJson
+        securityAnalysis.toJson
         """.trimIndent()
 
     private fun createCodeQualityScript(): String =
@@ -333,14 +456,15 @@ class ExtensiveJoernAnalysisService(
         val qualityMetrics = Map(
             "totalMethods" -> cpg.method.l.size,
             "totalClasses" -> cpg.typeDecl.l.size,
-            "complexMethods" -> cpg.method.where(_.controlStructure.l.size > 10).l.size,
-            "largeMethods" -> cpg.method.where(_.ast.l.size > 100).l.size,
+            "methodsWithManyControlStructures" -> cpg.method.l.filter(_.ast.isControlStructure.l.size > 10).size,
+            "methodsWithManyAstNodes" -> cpg.method.l.filter(_.ast.l.size > 100).size,
             "publicMethods" -> cpg.method.isPublic.l.size,
             "privateMethods" -> cpg.method.isPrivate.l.size,
-            "methodsWithoutDocs" -> cpg.method.where(_.comment.isEmpty).l.size,
-            "duplicatedCodeBlocks" -> cpg.method.groupBy(_.signature).filter(_._2.size > 1).size,
-            "unusedImports" -> cpg.imports.where(_.importedEntity.referencingIdentifiers.isEmpty).l.size,
-            "longParameterLists" -> cpg.method.where(_.parameter.l.size > 5).l.size
+            "totalComments" -> cpg.comment.l.size,
+            "methodsBySignature" -> cpg.method.groupBy(_.signature).mapValues(_.size),
+            "totalImports" -> cpg.imports.l.size,
+            "methodsWithManyParameters" -> cpg.method.l.filter(_.parameter.l.size > 5).size,
+            "totalNamespaces" -> cpg.namespace.l.size
         )
         
         qualityMetrics.toJson
@@ -351,13 +475,16 @@ class ExtensiveJoernAnalysisService(
         import io.shiftleft.codepropertygraph.generated._
         
         val dependencyInfo = Map(
-            "externalDependencies" -> cpg.dependency.l.map(_.name),
+            "totalDependencies" -> cpg.dependency.l.size,
+            "dependencyNames" -> cpg.dependency.l.map(_.name),
             "imports" -> cpg.imports.l.map(_.importedEntity),
             "internalTypes" -> cpg.typeDecl.internal.l.map(_.fullName),
             "externalTypes" -> cpg.typeDecl.external.l.map(_.fullName),
-            "libraryUsage" -> cpg.call.where(_.typeDecl.external).groupBy(_.typeDecl.fullName).mapValues(_.size),
+            "totalCalls" -> cpg.call.l.size,
+            "callsByName" -> cpg.call.groupBy(_.name).mapValues(_.size),
             "packageStructure" -> cpg.namespace.l.map(_.name).distinct,
-            "crossPackageReferences" -> cpg.call.where(_.typeDecl.namespace.name != _.method.typeDecl.namespace.name).l.size
+            "totalNamespaces" -> cpg.namespace.l.size,
+            "fileCount" -> cpg.file.l.size
         )
         
         dependencyInfo.toJson
@@ -368,19 +495,20 @@ class ExtensiveJoernAnalysisService(
         import io.shiftleft.codepropertygraph.generated._
         
         val architectureAnalysis = Map(
-            "layerStructure" -> cpg.namespace.l.map(_.name).groupBy(_.split("\\.").take(3).mkString(".")),
+            "namespaces" -> cpg.namespace.l.map(_.name),
+            "packageStructure" -> cpg.namespace.l.map(_.name).groupBy(_.split("\\.").headOption.getOrElse("default")),
             "designPatterns" -> Map(
-                "singletons" -> cpg.typeDecl.where(_.method.name("getInstance")).l.map(_.fullName),
-                "factories" -> cpg.typeDecl.where(_.method.name(".*create.*|.*build.*")).l.map(_.fullName),
-                "builders" -> cpg.typeDecl.where(_.method.name("build").typeDecl.fullName.endsWith("Builder")).l.map(_.fullName),
-                "observers" -> cpg.typeDecl.where(_.method.name(".*notify.*|.*update.*|.*observe.*")).l.map(_.fullName)
+                "singletonCandidates" -> cpg.method.name("getInstance").l.map(_.fullName),
+                "factoryCandidates" -> cpg.method.name(".*create.*|.*build.*").l.map(_.fullName),
+                "builderCandidates" -> cpg.typeDecl.fullName(".*Builder.*").l.map(_.fullName),
+                "observerCandidates" -> cpg.method.name(".*notify.*|.*update.*|.*observe.*").l.map(_.fullName)
             ),
-            "componentCoupling" -> cpg.typeDecl.l.map(t => 
-                t.fullName -> t.referencingIdentifiers.typeDecl.fullName.l.distinct.size
+            "typeDeclarations" -> cpg.typeDecl.l.map(_.fullName),
+            "methodDistribution" -> cpg.typeDecl.l.map(t => 
+                t.fullName -> t.method.l.size
             ).toMap,
-            "interfaceImplementations" -> cpg.typeDecl.where(_.isInterface).l.map(i =>
-                i.fullName -> i.derivedTypeDecl.fullName.l
-            ).toMap
+            "totalTypes" -> cpg.typeDecl.l.size,
+            "totalMethods" -> cpg.method.l.size
         )
         
         architectureAnalysis.toJson
@@ -389,16 +517,17 @@ class ExtensiveJoernAnalysisService(
     private fun createDataFlowAnalysisScript(): String =
         """
         import io.shiftleft.codepropertygraph.generated._
-        import io.shiftleft.dataflowengineoss.language._
         
         val dataFlowAnalysis = Map(
-            "userInputSources" -> cpg.method.where(_.parameter.evalType(".*String.*")).l.map(_.fullName),
-            "databaseSinks" -> cpg.method(".*execute.*|.*query.*|.*update.*").l.map(_.fullName),
-            "fileSinks" -> cpg.method(".*write.*|.*save.*|.*store.*").l.map(_.fullName),
-            "networkSinks" -> cpg.method(".*send.*|.*post.*|.*get.*|.*request.*").l.map(_.fullName),
-            "sensitiveDataFlow" -> cpg.identifier.name(".*password.*|.*secret.*|.*token.*|.*key.*").l.map(_.code),
-            "validationMethods" -> cpg.method.where(_.name(".*valid.*|.*check.*|.*verify.*")).l.map(_.fullName),
-            "sanitizationMethods" -> cpg.method.where(_.name(".*clean.*|.*sanitize.*|.*escape.*")).l.map(_.fullName)
+            "methodsWithStringParams" -> cpg.method.l.filter(_.parameter.typeFullName(".*String.*").nonEmpty).map(_.fullName),
+            "databaseMethods" -> cpg.method.name(".*execute.*|.*query.*|.*update.*").l.map(_.fullName),
+            "fileMethods" -> cpg.method.name(".*write.*|.*save.*|.*store.*").l.map(_.fullName),
+            "networkMethods" -> cpg.method.name(".*send.*|.*post.*|.*get.*|.*request.*").l.map(_.fullName),
+            "sensitiveIdentifiers" -> cpg.identifier.name(".*password.*|.*secret.*|.*token.*|.*key.*").l.map(_.code),
+            "validationMethods" -> cpg.method.name(".*valid.*|.*check.*|.*verify.*").l.map(_.fullName),
+            "sanitizationMethods" -> cpg.method.name(".*clean.*|.*sanitize.*|.*escape.*").l.map(_.fullName),
+            "totalIdentifiers" -> cpg.identifier.l.size,
+            "totalParameters" -> cpg.parameter.l.size
         )
         
         dataFlowAnalysis.toJson
@@ -411,24 +540,22 @@ class ExtensiveJoernAnalysisService(
         val apiAnalysis = Map(
             "publicMethods" -> cpg.method.isPublic.l.map(m => Map(
                 "name" -> m.fullName,
-                "parameters" -> m.parameter.l.map(_.typeFullName),
+                "parameterCount" -> m.parameter.l.size,
                 "returnType" -> m.methodReturn.typeFullName
             )),
-            "restEndpoints" -> cpg.annotation.where(_.name(".*Mapping|.*Path")).l.map(a => Map(
-                "annotation" -> a.name,
-                "value" -> a.argumentValue.l.mkString(","),
-                "method" -> a.method.fullName
-            )),
-            "publicInterfaces" -> cpg.typeDecl.isInterface.isPublic.l.map(_.fullName),
-            "exposedFields" -> cpg.member.isPublic.l.map(m => Map(
-                "name" -> m.name,
-                "type" -> m.typeFullName,
-                "class" -> m.typeDecl.fullName
-            )),
-            "annotatedMethods" -> cpg.method.where(_.annotation).l.map(m => Map(
+            "annotatedMethods" -> cpg.method.l.filter(_.ast.isAnnotation.nonEmpty).map(m => Map(
                 "method" -> m.fullName,
-                "annotations" -> m.annotation.name.l
-            ))
+                "annotationCount" -> m.ast.isAnnotation.l.size
+            )),
+            "totalAnnotations" -> cpg.annotation.l.size,
+            "annotationNames" -> cpg.annotation.l.map(_.name).distinct,
+            "publicTypeDecls" -> cpg.typeDecl.isPublic.l.map(_.fullName),
+            "publicMembers" -> cpg.member.isPublic.l.map(m => Map(
+                "name" -> m.name,
+                "type" -> m.typeFullName
+            )),
+            "totalPublicMethods" -> cpg.method.isPublic.l.size,
+            "totalPublicTypes" -> cpg.typeDecl.isPublic.l.size
         )
         
         apiAnalysis.toJson
@@ -439,13 +566,16 @@ class ExtensiveJoernAnalysisService(
         import io.shiftleft.codepropertygraph.generated._
         
         val performanceAnalysis = Map(
-            "loopComplexity" -> cpg.controlStructure.where(_.controlStructureType("FOR|WHILE|DO")).groupBy(_.method.fullName).mapValues(_.size),
-            "recursiveMethods" -> cpg.method.where(_.ast.isCall.name(_.method.name)).l.map(_.fullName),
-            "databaseOperations" -> cpg.call.where(_.name(".*query.*|.*execute.*|.*find.*")).groupBy(_.method.fullName).mapValues(_.size),
-            "fileOperations" -> cpg.call.where(_.name(".*read.*|.*write.*|.*open.*")).groupBy(_.method.fullName).mapValues(_.size),
-            "networkOperations" -> cpg.call.where(_.name(".*connect.*|.*send.*|.*receive.*")).groupBy(_.method.fullName).mapValues(_.size),
-            "memoryIntensiveOperations" -> cpg.call.where(_.name(".*new.*|.*create.*|.*allocate.*")).groupBy(_.method.fullName).mapValues(_.size),
-            "synchronizationPoints" -> cpg.call.where(_.name(".*synchronized.*|.*lock.*|.*wait.*")).l.map(_.code)
+            "totalControlStructures" -> cpg.controlStructure.l.size,
+            "controlStructuresByType" -> cpg.controlStructure.groupBy(_.controlStructureType).mapValues(_.size),
+            "methodsWithLoops" -> cpg.method.l.filter(_.ast.isControlStructure.nonEmpty).map(_.fullName),
+            "databaseOperations" -> cpg.call.name(".*query.*|.*execute.*|.*find.*").l.map(_.name),
+            "fileOperations" -> cpg.call.name(".*read.*|.*write.*|.*open.*").l.map(_.name),
+            "networkOperations" -> cpg.call.name(".*connect.*|.*send.*|.*receive.*").l.map(_.name),
+            "memoryOperations" -> cpg.call.name(".*new.*|.*create.*|.*allocate.*").l.map(_.name),
+            "synchronizationCalls" -> cpg.call.name(".*synchronized.*|.*lock.*|.*wait.*").l.map(_.code),
+            "totalCalls" -> cpg.call.l.size,
+            "callsByMethod" -> cpg.method.l.map(m => m.fullName -> m.ast.isCall.l.size).toMap
         )
         
         performanceAnalysis.toJson
@@ -456,19 +586,20 @@ class ExtensiveJoernAnalysisService(
         import io.shiftleft.codepropertygraph.generated._
         
         val configAnalysis = Map(
-            "configurationFiles" -> cpg.file.where(_.name(".*\\.properties|.*\\.yml|.*\\.yaml|.*\\.conf|.*\\.ini")).l.map(_.name),
-            "environmentVariables" -> cpg.call.where(_.name(".*getenv.*|.*getProperty.*")).l.map(_.argument.code.l),
-            "hardcodedValues" -> cpg.literal.where(_.typeFullName("java.lang.String")).code.l.filter(_.length > 10),
-            "configurationClasses" -> cpg.typeDecl.where(_.annotation.name(".*Configuration.*|.*Component.*")).l.map(_.fullName),
-            "profileSpecificCode" -> cpg.method.where(_.annotation.name(".*Profile.*")).l.map(m => Map(
+            "configurationFiles" -> cpg.file.name(".*\\.properties|.*\\.yml|.*\\.yaml|.*\\.conf|.*\\.ini").l.map(_.name),
+            "environmentCalls" -> cpg.call.name(".*getenv.*|.*getProperty.*").l.map(_.name),
+            "stringLiterals" -> cpg.literal.typeFullName("java.lang.String").l.filter(_.code.length > 10).map(_.code),
+            "annotatedTypes" -> cpg.typeDecl.l.filter(_.ast.isAnnotation.name(".*Configuration.*|.*Component.*").nonEmpty).map(_.fullName),
+            "profileMethods" -> cpg.method.l.filter(_.ast.isAnnotation.name(".*Profile.*").nonEmpty).map(m => Map(
                 "method" -> m.fullName,
-                "profiles" -> m.annotation.where(_.name(".*Profile.*")).argumentValue.l
+                "annotationCount" -> m.ast.isAnnotation.l.size
             )),
-            "externalizableProperties" -> cpg.member.where(_.annotation.name(".*Value.*|.*ConfigurationProperties.*")).l.map(m => Map(
+            "annotatedMembers" -> cpg.member.l.filter(_.ast.isAnnotation.name(".*Value.*|.*ConfigurationProperties.*").nonEmpty).map(m => Map(
                 "field" -> m.name,
-                "annotation" -> m.annotation.name.l,
-                "defaultValue" -> m.annotation.argumentValue.l
-            ))
+                "annotationCount" -> m.ast.isAnnotation.l.size
+            )),
+            "totalFiles" -> cpg.file.l.size,
+            "totalLiterals" -> cpg.literal.l.size
         )
         
         configAnalysis.toJson
@@ -479,16 +610,18 @@ class ExtensiveJoernAnalysisService(
         import io.shiftleft.codepropertygraph.generated._
         
         val testAnalysis = Map(
-            "testMethods" -> cpg.method.where(_.annotation.name(".*Test.*")).l.map(_.fullName),
-            "testClasses" -> cpg.typeDecl.where(_.method.annotation.name(".*Test.*")).l.map(_.fullName),
-            "mockUsage" -> cpg.call.where(_.name(".*mock.*|.*spy.*|.*stub.*")).groupBy(_.method.fullName).mapValues(_.size),
-            "assertionUsage" -> cpg.call.where(_.name(".*assert.*|.*verify.*|.*expect.*")).groupBy(_.method.fullName).mapValues(_.size),
+            "testMethods" -> cpg.method.l.filter(_.ast.isAnnotation.name(".*Test.*").nonEmpty).map(_.fullName),
+            "testClasses" -> cpg.typeDecl.l.filter(_.method.ast.isAnnotation.name(".*Test.*").nonEmpty).map(_.fullName),
+            "mockCalls" -> cpg.call.name(".*mock.*|.*spy.*|.*stub.*").l.map(_.name),
+            "assertionCalls" -> cpg.call.name(".*assert.*|.*verify.*|.*expect.*").l.map(_.name),
             "testCoverage" -> Map(
                 "totalMethods" -> cpg.method.l.size,
-                "testedMethods" -> cpg.method.where(_.name.l.exists(cpg.method.where(_.annotation.name(".*Test.*")).ast.isCall.name(_))).l.size
+                "methodsWithTestAnnotations" -> cpg.method.l.filter(_.ast.isAnnotation.name(".*Test.*").nonEmpty).size
             ),
-            "integrationTests" -> cpg.typeDecl.where(_.annotation.name(".*IntegrationTest.*|.*SpringBootTest.*")).l.map(_.fullName),
-            "testDataSetup" -> cpg.method.where(_.annotation.name(".*Before.*|.*Setup.*")).l.map(_.fullName)
+            "integrationTestClasses" -> cpg.typeDecl.l.filter(_.ast.isAnnotation.name(".*IntegrationTest.*|.*SpringBootTest.*").nonEmpty).map(_.fullName),
+            "setupMethods" -> cpg.method.l.filter(_.ast.isAnnotation.name(".*Before.*|.*Setup.*").nonEmpty).map(_.fullName),
+            "totalAnnotations" -> cpg.annotation.l.size,
+            "testAnnotations" -> cpg.annotation.name(".*Test.*|.*Before.*|.*After.*").l.size
         )
         
         testAnalysis.toJson
@@ -499,18 +632,20 @@ class ExtensiveJoernAnalysisService(
         import io.shiftleft.codepropertygraph.generated._
         
         val businessLogicAnalysis = Map(
-            "serviceClasses" -> cpg.typeDecl.where(_.annotation.name(".*Service.*")).l.map(_.fullName),
-            "repositoryClasses" -> cpg.typeDecl.where(_.annotation.name(".*Repository.*")).l.map(_.fullName),
-            "controllerClasses" -> cpg.typeDecl.where(_.annotation.name(".*Controller.*|.*RestController.*")).l.map(_.fullName),
-            "entityClasses" -> cpg.typeDecl.where(_.annotation.name(".*Entity.*|.*Document.*")).l.map(_.fullName),
-            "businessMethods" -> cpg.method.where(_.annotation.name(".*Transactional.*|.*Service.*")).l.map(m => Map(
+            "serviceClasses" -> cpg.typeDecl.l.filter(_.ast.isAnnotation.name(".*Service.*").nonEmpty).map(_.fullName),
+            "repositoryClasses" -> cpg.typeDecl.l.filter(_.ast.isAnnotation.name(".*Repository.*").nonEmpty).map(_.fullName),
+            "controllerClasses" -> cpg.typeDecl.l.filter(_.ast.isAnnotation.name(".*Controller.*|.*RestController.*").nonEmpty).map(_.fullName),
+            "entityClasses" -> cpg.typeDecl.l.filter(_.ast.isAnnotation.name(".*Entity.*|.*Document.*").nonEmpty).map(_.fullName),
+            "transactionalMethods" -> cpg.method.l.filter(_.ast.isAnnotation.name(".*Transactional.*").nonEmpty).map(m => Map(
                 "method" -> m.fullName,
-                "complexity" -> m.controlStructure.l.size,
-                "parameters" -> m.parameter.l.size
+                "controlStructureCount" -> m.ast.isControlStructure.l.size,
+                "parameterCount" -> m.parameter.l.size
             )),
-            "validationLogic" -> cpg.method.where(_.name(".*valid.*|.*check.*|.*verify.*")).l.map(_.fullName),
-            "businessExceptions" -> cpg.typeDecl.where(_.inheritsFromTypeFullName(".*Exception")).l.map(_.fullName),
-            "domainEvents" -> cpg.call.where(_.name(".*publish.*|.*emit.*|.*send.*")).groupBy(_.method.fullName).mapValues(_.size)
+            "validationMethods" -> cpg.method.name(".*valid.*|.*check.*|.*verify.*").l.map(_.fullName),
+            "exceptionTypes" -> cpg.typeDecl.fullName(".*Exception.*").l.map(_.fullName),
+            "domainEventCalls" -> cpg.call.name(".*publish.*|.*emit.*|.*send.*").l.map(_.name),
+            "totalBusinessAnnotations" -> cpg.annotation.name(".*Service.*|.*Repository.*|.*Controller.*|.*Entity.*").l.size,
+            "methodComplexityDistribution" -> cpg.method.l.map(m => m.fullName -> m.ast.l.size).toMap
         )
         
         businessLogicAnalysis.toJson

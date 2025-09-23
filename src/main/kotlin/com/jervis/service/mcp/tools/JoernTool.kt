@@ -31,7 +31,6 @@ class JoernTool(
     @Serializable
     data class JoernParams(
         val operations: List<JoernQuery> = emptyList(),
-        val finalPrompt: String? = null,
     )
 
     @Serializable
@@ -139,7 +138,13 @@ class JoernTool(
                         }
                     }
 
-                ToolResult.ok(enhancedOutput)
+                ToolResult.analysisResult(
+                    toolName = "JOERN",
+                    analysisType = "Code Analysis",
+                    count = parsed.operations.size,
+                    unit = "operations",
+                    results = enhancedOutput
+                )
             } catch (e: Exception) {
                 ToolResult.error("Joern execution failed: ${e.message}")
             }

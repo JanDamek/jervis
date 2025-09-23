@@ -7,6 +7,7 @@ import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
+import com.jervis.service.mcp.util.ToolResponseBuilder
 import com.jervis.service.prompts.PromptRepository
 import com.jervis.util.ProcessStreamingUtils
 import kotlinx.coroutines.Dispatchers
@@ -44,7 +45,6 @@ class GitTool(
     data class GitParams(
         val operation: String = "",
         val parameters: Map<String, String> = emptyMap(),
-        val finalPrompt: String? = null,
     )
 
     private suspend fun parseTaskDescription(
@@ -112,30 +112,28 @@ class GitTool(
                 ),
             )
 
-        val output =
-            buildString {
-                appendLine("Git Operation: ${params.operation}")
+        return if (processResult.isSuccess) {
+            val summary = "${params.operation} completed successfully"
+            val content = buildString {
                 appendLine("Command: $command")
                 appendLine("Working Directory: ${projectDir.absolutePath}")
-                appendLine()
-
-                if (processResult.isSuccess) {
-                    appendLine("✅ Git operation completed successfully")
+                if (processResult.output.isNotBlank()) {
                     appendLine()
-                    appendLine("Output:")
-                    appendLine(processResult.output)
-                } else {
-                    appendLine("❌ Git operation failed with exit code ${processResult.exitCode}")
-                    appendLine()
-                    appendLine("Error Output:")
-                    appendLine(processResult.output)
+                    append(processResult.output)
                 }
             }
-
-        return if (processResult.isSuccess) {
-            ToolResult.ok(output)
+            ToolResult.success("GIT", summary, content)
         } else {
-            ToolResult.error(output, "Git operation failed")
+            val summary = "${params.operation} failed with exit code ${processResult.exitCode}"
+            val content = buildString {
+                appendLine("Command: $command")
+                appendLine("Working Directory: ${projectDir.absolutePath}")
+                if (processResult.output.isNotBlank()) {
+                    appendLine()
+                    append(processResult.output)
+                }
+            }
+            ToolResult.error("$summary\n\n$content", "Git operation failed")
         }
     }
 

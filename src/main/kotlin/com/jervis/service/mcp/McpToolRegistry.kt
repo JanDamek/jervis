@@ -20,6 +20,16 @@ class McpToolRegistry(
 
     @PostConstruct
     fun initialize() {
+        // Validate that all tools have proper descriptions
+        tools.forEach { tool ->
+            try {
+                val description = tool.description
+                check(!description.isBlank()) { "Description for tool '${tool.name}' is required but found empty or blank" }
+            } catch (e: IllegalArgumentException) {
+                throw IllegalStateException("Description for tool '${tool.name}' is required but not found", e)
+            }
+        }
+
         planner.allToolDescriptions =
             tools.joinToString(separator = "\n") { tool ->
                 """ 
@@ -28,5 +38,10 @@ class McpToolRegistry(
                  
                 """.trimIndent()
             }
+
+        // Generate available tool names from enum for dynamic substitution
+        planner.availableToolNames = PromptTypeEnum.values()
+            .filter { enumValue -> tools.any { tool -> tool.name == enumValue } }
+            .joinToString { it.name }
     }
 }

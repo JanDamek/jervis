@@ -21,11 +21,19 @@ import java.time.Instant
 class Finalizer(
     private val gateway: LlmGateway,
     private val promptRepository: PromptRepository,
+    private val taskResolutionChecker: TaskResolutionChecker,
 ) {
     private val logger = KotlinLogging.logger {}
 
     suspend fun finalize(context: TaskContext): ChatResponse {
         logger.debug { "FINALIZER_START: Processing context=${context.id} with ${context.plans.size} plans" }
+        
+        // Validate questionChecklist coverage using TaskResolutionChecker
+        val resolutionResult = taskResolutionChecker.performLlmAnalysis(context)
+        logger.debug { 
+            "FINALIZER_CHECKLIST_VALIDATION: complete=${resolutionResult.complete}, " +
+            "missingRequirements=${resolutionResult.missingRequirements.size}"
+        }
 
         val finalizedPlans =
             context.plans
@@ -54,7 +62,7 @@ class Finalizer(
                                 type = PromptTypeEnum.FINALIZER,
                                 userPrompt = userPrompt,
                                 quick = context.quick,
-                                LlmResponseWrapper(""),
+                                LlmResponseWrapper(),
                                 outputLanguage = userLang,
                                 mappingValue = emptyMap(),
                             )
@@ -64,17 +72,35 @@ class Finalizer(
                     plan
                 }
 
-        val aggregatedMessage =
-            finalizedPlans
-                .filter { it.status == PlanStatus.FINALIZED }
-                .toList()
-                .joinToString(separator = "\n\n") { plan ->
-                    val title = plan.originalQuestion.ifBlank { plan.englishQuestion }
-                    buildList {
-                        title.takeIf { it.isNotBlank() }?.let { add("Question: $it") }
-                        plan.finalAnswer?.let { add("Answer: $it") }
-                    }.joinToString("\n")
-                }.ifBlank { "No plans were finalized." }
+        val planAnswers = finalizedPlans
+            .filter { it.status == PlanStatus.FINALIZED }
+            .toList()
+            .joinToString(separator = "\n\n") { plan ->
+                val title = plan.originalQuestion.ifBlank { plan.englishQuestion }
+                buildList {
+                    title.takeIf { it.isNotBlank() }?.let { add("Question: $it") }
+                    plan.finalAnswer?.let { add("Answer: $it") }
+                }.joinToString("\n")
+            }.ifBlank { "No plans were finalized." }
+
+        // Include missing requirements if checklist validation shows incomplete coverage
+        val aggregatedMessage = buildString {
+            append(planAnswers)
+            
+            if (!resolutionResult.complete && resolutionResult.missingRequirements.isNotEmpty()) {
+                append("\n\n--- INCOMPLETE CHECKLIST COVERAGE ---\n")
+                append("The following requirements from the original question checklist need additional attention:\n")
+                resolutionResult.missingRequirements.forEachIndexed { index, requirement ->
+                    append("${index + 1}. $requirement\n")
+                }
+                if (resolutionResult.recommendations.isNotEmpty()) {
+                    append("\nRecommendations:\n")
+                    resolutionResult.recommendations.forEach { recommendation ->
+                        append("• $recommendation\n")
+                    }
+                }
+            }
+        }
 
         return ChatResponse(
             message = aggregatedMessage,

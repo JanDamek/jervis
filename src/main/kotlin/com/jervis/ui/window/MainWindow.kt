@@ -1,13 +1,16 @@
 package com.jervis.ui.window
 
+import com.jervis.common.Constants.GLOBAL_ID
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.plan.PlanStep
 import com.jervis.dto.ChatRequestContext
 import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
+import com.jervis.service.indexing.monitoring.IndexingMonitorService
 import com.jervis.service.notification.PlanStatusChangeEvent
 import com.jervis.service.notification.StepCompletionEvent
 import com.jervis.service.project.ProjectService
+import com.jervis.ui.window.IndexingMonitorWindow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -54,6 +57,8 @@ class MainWindow(
     private val clientService: com.jervis.service.client.ClientService,
     private val linkService: com.jervis.service.client.ClientProjectLinkService,
     private val taskContextService: TaskContextService,
+    private val indexingMonitorService: IndexingMonitorService,
+    private val applicationWindowManager: com.jervis.ui.component.ApplicationWindowManager,
 ) : JFrame("JERVIS Assistant") {
     private val windowScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
@@ -210,7 +215,7 @@ class MainWindow(
             }
         }
         defaultCloseOperation = HIDE_ON_CLOSE
-        size = Dimension(900, 650)
+        size = Dimension(1200, 800)
         setLocationRelativeTo(null)
         layout = BorderLayout()
 
@@ -397,6 +402,9 @@ class MainWindow(
         showPlansCheckbox.addActionListener {
             togglePlanDisplay()
         }
+
+        // Add context menu to project selector with same options as tray icon
+        setupProjectContextMenu()
 
         // Add ESC key handling - ESC hides the window
         addKeyListener(
@@ -855,6 +863,7 @@ class MainWindow(
                         id =
                             selectedProject?.id ?: ObjectId
                                 .get(),
+                        clientId = GLOBAL_ID,
                         name = key.second ?: "Unknown Project",
                     ),
                 name = name,
@@ -1159,6 +1168,12 @@ class MainWindow(
 
         // Tools menu
         val toolsMenu = JMenu("Tools")
+        
+        // Indexing Monitor
+        val indexingMonitorItem = JMenuItem("Indexing Monitor")
+        indexingMonitorItem.accelerator = KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.META_DOWN_MASK or InputEvent.SHIFT_DOWN_MASK)
+        indexingMonitorItem.addActionListener { showIndexingMonitor() }
+        toolsMenu.add(indexingMonitorItem)
 
         toolsMenu.addSeparator()
 
@@ -1195,6 +1210,21 @@ class MainWindow(
         )
     }
 
+    fun showIndexingMonitor() {
+        try {
+            val monitorWindow = IndexingMonitorWindow(indexingMonitorService, this)
+            monitorWindow.isVisible = true
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to open indexing monitor window" }
+            JOptionPane.showMessageDialog(
+                this,
+                "Failed to open indexing monitor: ${e.message}",
+                "Error",
+                JOptionPane.ERROR_MESSAGE
+            )
+        }
+    }
+
     @EventListener
     fun handlePlanStatusChange(event: PlanStatusChangeEvent) {
         // Update context display and UI state whenever plan status changes
@@ -1225,5 +1255,54 @@ class MainWindow(
                 logger.error(e) { "Error in handlePlanStatusChange" }
             }
         }
+    }
+
+    /**
+     * Sets up the context menu for the project selector with the same options as tray icon
+     */
+    private fun setupProjectContextMenu() {
+        val contextMenu = JPopupMenu()
+
+        val projectSettingsItem = JMenuItem("Project Settings")
+        projectSettingsItem.addActionListener {
+            applicationWindowManager.showProjectSettingWindow()
+        }
+
+        val clientManagementItem = JMenuItem("Client Management")
+        clientManagementItem.addActionListener {
+            applicationWindowManager.showClientsWindow()
+        }
+
+        val schedulerItem = JMenuItem("Scheduler")
+        schedulerItem.addActionListener {
+            applicationWindowManager.showSchedulerWindow()
+        }
+
+        val indexingMonitorItem = JMenuItem("Indexing Monitor")
+        indexingMonitorItem.addActionListener {
+            applicationWindowManager.showIndexingMonitor()
+        }
+
+        contextMenu.add(projectSettingsItem)
+        contextMenu.add(clientManagementItem)
+        contextMenu.add(schedulerItem)
+        contextMenu.add(indexingMonitorItem)
+
+        // Add mouse listener to project selector for right-click context menu
+        projectSelector.addMouseListener(
+            object : MouseAdapter() {
+                override fun mousePressed(e: MouseEvent) {
+                    if (e.isPopupTrigger) {
+                        contextMenu.show(e.component, e.x, e.y)
+                    }
+                }
+
+                override fun mouseReleased(e: MouseEvent) {
+                    if (e.isPopupTrigger) {
+                        contextMenu.show(e.component, e.x, e.y)
+                    }
+                }
+            }
+        )
     }
 }
