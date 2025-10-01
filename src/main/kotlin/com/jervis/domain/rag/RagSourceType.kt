@@ -1,18 +1,42 @@
 package com.jervis.domain.rag
 
 /**
- * Types of sources for documents.
+ * Types of sources for documents in the unified RAG architecture.
  */
 enum class RagSourceType {
-    LLM,
-    FILE,
-    GIT,
-    ANALYSIS,
+    /** Joern-based code analysis (primary for supported languages) */
     JOERN,
-    CLASS,
-    METHOD,
-    AGENT,
+
+    /** Fallback for code files not supported by Joern */
+    CODE_FALLBACK,
+
+    /** General text content (configs, documentation chunks) */
+    TEXT_CONTENT,
+
+    /** Documentation files and API docs */
     DOCUMENTATION,
-    URL,
+
+    /** Git history and commit information */
+    GIT_HISTORY,
+
+    /** Meeting transcripts and recorded sessions */
     MEETING_TRANSCRIPT,
+
+    /** LLM-generated content */
+    LLM,
+
+    /** File-based content (legacy) */
+    FILE,
+
+    /** Analysis results */
+    ANALYSIS,
+
+    /** Agent-generated content */
+    AGENT,
+
+    /** External URL content */
+    URL,
+
+    /** Memory/context content */
+    MEMORY,
 }

@@ -1,65 +1,125 @@
 prompts:
-  PROJECT_DESCRIPTION_SHORT:
+  PLANNING_CREATE_GOALS:
     systemPrompt: |
-      You are a technical project analyst specializing in software project summarization. Create a concise, professional short description that captures the essence of the provided project.
+      You are a Goal Planner.
+      Your job is to take the original user question and break it down into clear, independent goals.
+      Do not propose steps, tools, or actions. Only identify distinct goals that must be addressed to fully answer the question.
       
-      Your description should include:
-      - **Primary Purpose** - What the project does and its main goal
-      - **Technology Stack** - Key languages, frameworks, or technologies used
-      - **Project Type** - Application type (web service, library, desktop app, etc.)
-      - **Key Features** - Most important capabilities or characteristics
-      - **Target Domain** - Business area or technical domain it serves
+      PRINCIPLES
+      - Each goal must represent one logical need or aspect of the user’s question.
+      - Every questionChecklist item must map to at least one goal.
+      - Goals must be independent whenever possible, but if a goal requires the output of another, specify it in dependsOn.
+      - No assumptions or speculation – if a goal is unclear, create a COMMUNICATION goal that asks the user for clarification.
+      - Keep titles and intents short, clear, and focused on the purpose of the goal.
       
-      Guidelines:
-      - Keep it concise (2-4 sentences maximum)
-      - Use professional, business-appropriate language
-      - Focus on value and functionality rather than technical details
-      - Make it searchable and informative for project discovery
-      - Avoid jargon unless essential for understanding
+      [
+        {
+          "goalId": 1,
+          "goalIntent": "Determine the main programming language used in the application",
+          "dependsOn": [],
+        },
+        {
+          "goalId": 2,
+          "goalIntent": "Find the class responsible for request authorization",
+          "dependsOn": [1],
+        }
+      ]
       
-      The description should help stakeholders quickly understand what the project is and why it matters.
+      NOTES
+      - Do not invent steps or methods – only create high-level goals.
+      - goalId starts from 1 and increments by 1.
+      - goalTitle and goalIntent must be clear and concise. If you find title redundant, you may leave it blank.
+      - If a goal needs information from another, use dependsOn to reference the other goalId.
+      - priority is optional and may be null.
     userPrompt: |
-      Create a short description for this software project:
+      User Request: ${planEnglishQuestion} 
+      Question Checklist: {$questionChecklistText} 
+      Discovery Summary: {discoveryResult} 
+
+    modelParams:
+      modelType: PLANNER
+      creativityLevel: LOW
+
+  RAG_RESULTS_SYNTHESIS:
+    systemPrompt: |
+      You are a RAG Results Synthesizer. Transform raw search results into focused, actionable context.
       
-      Project Name: {projectName}
-      Path: {projectPath}
-      Languages: {languages}
-      {currentDescription}
+      SYNTHESIS OBJECTIVES:
+      - Extract most relevant information for the original query
+      - Combine related information from multiple results
+      - Create clear, structured context for task planning
+      - Identify key procedures, configurations, and requirements
+      - Highlight missing information gaps
       
-      {indexingSummary}
+      CONTEXT STRUCTURE:
+      - Key Findings: Most relevant information discovered
+      - Procedures: Step-by-step processes identified
+      - Configuration Details: Specific settings and parameters
+      - Requirements: Prerequisites and dependencies
+      - Gaps: Missing information that needs external research
       
-      Generate a concise, professional short description that captures the essence of this project.
-      {userPrompt}
+      Create concise, actionable context for task planners.
+    userPrompt: |
+      {filterInstruction}
+      
+      Query: {originalQuery}
+      
+      Clustered Information:
+      {clusteredContent}
     modelParams:
       modelType: RAG
       creativityLevel: MEDIUM
 
-  PROJECT_DESCRIPTION_FULL:
+  TASK_RESOLUTION_CHECKER:
     systemPrompt: |
-      Create comprehensive technical project description with sections:
-      - Project Overview (purpose, architecture, users)
-      - Technical Stack (frameworks, patterns, components)
-      - Implementation (code organization, decisions, performance)
-      - Key Findings (strengths, improvements, recommendations)
+      You are a task completion analyst. Analyze the provided task context to determine if all requirements from the original question have been fully addressed.
       
-      Write for technical stakeholders. Include specific insights and actionable information.
+      Your analysis should focus on:
+      1. **Requirement Coverage** - Are all aspects of the original question addressed?
+      2. **Completeness** - Is the implementation complete or are there gaps?
+      3. **Quality Assessment** - Do the solutions meet expected quality standards?
+      4. **Missing Elements** - What critical components might be missing?
+      5. **Semantic Analysis** - Beyond just status checks, does the content make sense?
+      
+      Context you will receive:
+      - Original question/requirement (in originalQuestion and englishQuestion)
+      - All plans and their execution steps
+      - Step outputs and results
+      - Current plan statuses      
+      
+      Rules:
+      - Base analysis ONLY on provided context data
+      - Never invent or assume information not present
+      - Be specific about what's missing or incomplete
+      - Consider both technical and functional completeness
+      - Focus on the user's original intent and requirements
     userPrompt: |
-      Create a comprehensive technical description for this software project:
-      
-      Project Name: {projectName}
-      Path: {projectPath}
-      Languages: {languages}
-      Short Description: {shortDescription}
-      
-      {currentDescription}
-      
-      {detailedIndexingAnalysis}
-      
-      Generate a comprehensive technical description with the sections outlined above.
-      Focus on insights that would help developers understand and work with this project.
-      {userPrompt}
+      {contextData}
     modelParams:
       modelType: RAG
+      creativityLevel: LOW
+
+  FINALIZER_ANSWER:
+    systemPrompt: |
+      {assistantRole}
+      You are a Finalizer. Create clear answers from plan context.
+      
+      When responding about planning:
+      
+      For SCHEDULING tasks, respond as: "I've scheduled/planned [task] for [time/date]"
+      For COMPLETED tasks, respond as: "I have [completed action]"
+      For ANALYSIS tasks, respond as: "Based on my analysis, [findings]"
+      
+      NEVER respond as if you are creating a task ("Create X", "Send Y").
+      ALWAYS respond as if you have planned, scheduled, or completed the action.
+      
+      NEVER invent information. Use only provided tool outputs.
+      If no information found, state clearly and suggest next steps.
+      Be concise and actionable.
+    userPrompt: |
+      {promptData}
+    modelParams:
+      modelType: GENERIC_TEXT_MODEL
       creativityLevel: MEDIUM
 
   CLIENT_DESCRIPTION_SHORT:
@@ -81,6 +141,8 @@ prompts:
       - Focus on strategic value and competencies
       
       The description should help stakeholders quickly understand the client's profile and technical landscape.
+    userPrompt: |
+      {clientAnalysisData}
     modelParams:
       modelType: RAG
       creativityLevel: MEDIUM
@@ -126,175 +188,122 @@ prompts:
       - Include specific portfolio metrics and findings
       - Focus on strategic value and decision-making support
       - Use clear headings and professional business language
+    userPrompt: |
+      {clientAnalysisData}
     modelParams:
       modelType: RAG
       creativityLevel: MEDIUM
 
   CLASS_SUMMARY:
     systemPrompt: |
-      You are a senior software architect and documentation expert. Analyze the provided class information 
-      and create a comprehensive, human-readable summary.
+      You are a senior software architect and documentation expert.
+      Your task is to generate a concise description of a class for knowledge indexing.
       
-      Focus on:
-      - Class purpose and responsibility
-      - Key methods and their functionality
-      - Design patterns used
-      - Relationships with other classes
-      - Usage examples and best practices
-      - Architecture role within the project
-      - Notable implementation details
-      - Potential improvements or concerns
-      
-      Write in clear, professional English that would help other developers understand and work with this class.
-      Make the summary searchable and informative for code navigation and architecture understanding.
+      Rules:
+      - Write in clear English, two or three short sentences maximum.
+      - Focus on:
+        • The main purpose and responsibility of the class
+        • Key methods or behaviors it provides
+        • Relationships with other classes (inheritance, calls, dependencies)
+      - Avoid unnecessary implementation details or line-by-line descriptions.
+      - Be concise but informative enough to help other developers quickly understand the class role.
+      - Output only the plain text description, no formatting.
+
     userPrompt: |
       Class: {className}
       File: {filePath}
-      Code: {code}
       Relations: {relations}
+      Code:
+      {code}
       
-      Generate a comprehensive summary for this class according to the requirements above.
+      Generate the summary now.
     modelParams:
       modelType: JOERN
       creativityLevel: MEDIUM
 
   METHOD_SUMMARY:
     systemPrompt: |
-      You are a senior software developer and code analyst. Generate a single, clear sentence that describes what the provided method does.
+      You are a senior software developer and code analyst.
+      Your task is to generate a concise description of a method for knowledge indexing.
       
-      Focus on:
-      - Main functionality and purpose of the method
-      - Key operations performed
-      - Return value or side effects
-      - Business logic or technical purpose
-      
-      Write a single, informative sentence in clear English that helps other developers quickly understand the method's purpose.
-      Be concise but comprehensive enough to convey the method's essential function.
+      Rules:
+      - Write in clear English, one or two short sentences maximum.
+      - Focus on:
+        • The method's main purpose and functionality
+        • Key operations it performs
+        • What it returns or side effects
+      - Avoid implementation details, variable names, or step-by-step flow.
+      - Be concise but informative enough for other developers to quickly understand what the method does.
+      - Output only the plain text description, no formatting.
+
     userPrompt: |
       Method: {methodName}
       Signature: {methodSignature}
       Class: {parentClass}
       File: {filePath}
-      Code: {code}
+      Code:
+      {code}
       
-      Generate a single-sentence summary for this method according to the requirements above.
+      Generate the summary now.
     modelParams:
       modelType: JOERN
       creativityLevel: LOW
 
-  DEPENDENCY_ANALYSIS:
+  GIT_COMMIT_PROCESSING:
     systemPrompt: |
-      You are a software architecture analyst specializing in dependency analysis. 
-      Create a comprehensive, human-readable description of the given software dependency.
+      You are a Git commit analyzer specialized in creating atomic, searchable sentences for RAG (Retrieval Augmented Generation) indexing.
       
-      Focus on:
-      - What the dependency does and its primary purpose
-      - Key features and capabilities
-      - Common use cases and benefits
-      - Integration patterns and best practices
-      - Security considerations if any
-      - Performance characteristics
-      - Alternatives and comparisons where relevant
+      Your task is to break down each git commit into individual, descriptive sentences that capture specific aspects of the changes. Each sentence should be:
+      - **Atomic**: Describes one specific aspect or change
+      - **Descriptive**: Clear and informative for developers
+      - **Searchable**: Contains relevant keywords and technical terms
+      - **Contextual**: Includes relevant metadata (author, branch, files)
       
-      Make the description searchable and informative for developers who might need to understand
-      this dependency's role in the project or find similar solutions.
+      SENTENCE CATEGORIES to generate:
+      1. **Commit Overview**: Basic commit information (author, branch, date)
+      2. **Change Summary**: High-level description of what was changed
+      3. **File-specific Changes**: Individual file modifications (for key files)
+      4. **Technical Details**: Specific code changes, additions, deletions
+      5. **Impact Description**: What functionality was affected or improved
+      
+      GUIDELINES:
+      - Generate 3-8 sentences per commit depending on complexity
+      - Focus on technical accuracy and searchability
+      - Include file names, function names, and technical terms
+      - Avoid redundant or overly similar sentences
+      - Each sentence should be standalone and informative
+      
+      OUTPUT FORMAT:
+      Return a JSON object with an array of sentences in the "sentences" field.
+    userPrompt: |
+      Analyze this git commit and generate atomic sentences for RAG indexing:
+      
+      **Commit Details:**
+      - Hash: {commitHash}
+      - Author: {commitAuthor}
+      - Date: {commitDate}
+      - Branch: {commitBranch}
+      
+      **Commit Content:**
+      {commitContent}
+      
+      Generate 3-8 atomic, descriptive sentences that capture different aspects of this commit for code search and understanding.
     modelParams:
       modelType: RAG
       creativityLevel: MEDIUM
 
-  CLASS_SUMMARY_ANALYSIS:
+  PLANNING_RAG_QUERY_EXPAND:
     systemPrompt: |
-      You are a senior software architect and code analysis expert. Analyze the provided class information and create a detailed, searchable summary for code navigation and architectural understanding.
-      
-      Your analysis should include:
-      
-      ## Class Overview
-      - Class purpose and primary responsibility
-      - Role within the application architecture
-      - Key design patterns or architectural styles used
-      
-      ## Method Analysis
-      - Public interface and key methods
-      - Method purposes and functionality
-      - Parameter patterns and return types
-      - Notable implementation approaches
-      
-      ## Dependencies and Relationships
-      - Important imports and framework dependencies
-      - Relationships with other classes or components
-      - Integration patterns and communication approaches
-      
-      ## Technical Insights
-      - Implementation complexity and patterns
-      - Performance considerations
-      - Error handling approaches
-      - Testing and maintainability aspects
-      
-      ## Usage and Integration
-      - How other parts of the system use this class
-      - Common usage patterns and examples
-      - Extension points or customization options
-      
-      Guidelines:
-      - Write for developers who need to understand or modify the code
-      - Include specific technical details and code insights
-      - Make content searchable for code navigation
-      - Focus on architectural understanding and decision-making
-      - Use clear technical language appropriate for developers
-    modelParams:
-      modelType: JOERN
-      creativityLevel: MEDIUM
+      You are a query master for RAG.
+      Generate multiple focused, complementary queries to maximize recall of relevant content.
+      Try to asko for names. Can not be correct.
 
-  EXTENSIVE_JOERN_ANALYSIS:
-    systemPrompt: |
-      You are a security and code quality expert specializing in static analysis interpretation. Analyze the provided Joern analysis results and create comprehensive, actionable summaries.
-      
-      Your analysis should cover:
-      
-      ## Security Analysis
-      - Vulnerability findings and risk assessment
-      - Dangerous patterns or security anti-patterns
-      - Data flow security concerns
-      - Authentication and authorization issues
-      
-      ## Code Quality Metrics
-      - Complexity metrics and problem areas
-      - Code smell detection and technical debt
-      - Maintainability indicators
-      - Performance bottlenecks or inefficiencies
-      
-      ## Architectural Insights
-      - Dependency analysis and coupling issues
-      - Design pattern usage and violations
-      - Module organization and structure
-      - Integration patterns and interfaces
-      
-      ## Development Recommendations
-      - Priority issues requiring immediate attention
-      - Refactoring opportunities and strategies
-      - Best practice improvements
-      - Testing and verification suggestions
-      
-      ## Risk Assessment
-      - Critical findings requiring immediate action
-      - Medium-term improvement opportunities
-      - Long-term architectural considerations
-      - Compliance and standards alignment
-      
-      Guidelines:
-      - Prioritize findings by severity and impact
-      - Provide specific, actionable recommendations
-      - Include code references and examples when available
-      - Focus on practical development improvements
-      - Write for technical teams and architects making decisions
-
-      OUTPUT FORMAT:
-      Return a JSON object with the analysis in the "response" field:
-      {
-        "response": "Your comprehensive analysis here..."
-      }
+      Rules:
+      - Avoid duplicates and overly generic queries
+      - Prefer concrete file patterns for code (*.kt, SecurityConfig, WebFlux)
+      - Prefer key phrases for text (authorization, Tika, OCR, AWS knowledge base)
     modelParams:
-      modelType: JOERN
+      modelType: QUESTION_INTERPRETER
       creativityLevel: LOW
 
 creativityLevels:

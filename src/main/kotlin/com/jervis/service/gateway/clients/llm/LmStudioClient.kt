@@ -1,10 +1,13 @@
-package com.jervis.service.gateway.clients
+package com.jervis.service.gateway.clients.llm
 
 import com.jervis.configuration.ModelsProperties
-import com.jervis.configuration.prompts.PromptConfig
+import com.jervis.configuration.prompts.CreativityConfig
+import com.jervis.configuration.prompts.PromptConfigBase
 import com.jervis.configuration.prompts.PromptsConfiguration
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProvider
+import com.jervis.service.gateway.clients.OpenAiClient
+import com.jervis.service.gateway.clients.ProviderClient
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
@@ -22,13 +25,13 @@ class LmStudioClient(
         systemPrompt: String?,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
-        prompt: PromptConfig,
+        prompt: PromptConfigBase,
     ): LlmResponse {
         val creativityConfig = getCreativityConfig(prompt)
         val messages = buildMessagesList(systemPrompt, userPrompt)
         val requestBody = buildRequestBody(model, messages, creativityConfig, config)
 
-        val response: OpenAiStyleResponse =
+        val response: OpenAiClient.OpenAiStyleResponse =
             webClient
                 .post()
                 .uri("/v1/chat/completions")
@@ -57,7 +60,7 @@ class LmStudioClient(
     private fun buildRequestBody(
         model: String,
         messages: List<Map<String, Any>>,
-        creativityConfig: com.jervis.configuration.prompts.CreativityConfig,
+        creativityConfig: CreativityConfig,
         config: ModelsProperties.ModelDetail,
     ): Map<String, Any> {
         val baseBody =
@@ -74,7 +77,7 @@ class LmStudioClient(
     }
 
     private fun parseResponse(
-        response: OpenAiStyleResponse,
+        response: OpenAiClient.OpenAiStyleResponse,
         fallbackModel: String,
     ): LlmResponse {
         val firstChoice = response.choices.firstOrNull()
@@ -89,9 +92,9 @@ class LmStudioClient(
         )
     }
 
-    private fun calculateTotalTokens(usage: OpenAiUsage?): Int = (usage?.prompt_tokens ?: 0) + (usage?.completion_tokens ?: 0)
+    private fun calculateTotalTokens(usage: OpenAiClient.OpenAiUsage?): Int = (usage?.prompt_tokens ?: 0) + (usage?.completion_tokens ?: 0)
 
-    private fun getCreativityConfig(prompt: PromptConfig) =
+    private fun getCreativityConfig(prompt: PromptConfigBase) =
         promptsConfiguration.creativityLevels[prompt.modelParams.creativityLevel]
             ?: throw IllegalStateException("No creativity level configuration found for ${prompt.modelParams.creativityLevel}")
 }

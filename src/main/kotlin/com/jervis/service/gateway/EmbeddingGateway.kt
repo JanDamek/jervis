@@ -24,17 +24,18 @@ class EmbeddingGateway(
         val candidates = modelsProperties.models[type].orEmpty()
         check(candidates.isNotEmpty()) { "No embedding model candidates configured for $type" }
 
-        val trimmed = text.trim()
+        // Universal text sanitization for all embedding providers
+        val sanitizedText = sanitizeTextForEmbedding(text.trim())
 
         // Debug logging for embedding request details
-        logger.debug { "Embedding Request - type=$type, text length=${trimmed.length}, text preview=$trimmed" }
+        logger.debug { "Embedding Request - type=$type, text length=${sanitizedText.length}" }
 
         var lastError: Throwable? = null
 
         for ((index, candidate) in candidates.withIndex()) {
             val provider = candidate.provider ?: continue
             try {
-                return doCallEmbedding(provider, candidate.model, trimmed)
+                return doCallEmbedding(provider, candidate.model, sanitizedText)
             } catch (t: Throwable) {
                 lastError = t
                 logger.warn(t) { "Embedding candidate $index ($provider:${candidate.model}) failed, trying next if available" }
@@ -47,9 +48,7 @@ class EmbeddingGateway(
         provider: ModelProvider,
         model: String,
         text: String,
-    ): List<Float> {
-        return executeProviderCall(provider, model, text)
-    }
+    ): List<Float> = executeProviderCall(provider, model, text)
 
     private suspend fun executeProviderCall(
         provider: ModelProvider,
@@ -70,25 +69,40 @@ class EmbeddingGateway(
         if (embedding.isEmpty()) {
             return embedding
         }
-        
+
         // Calculate L2 norm (Euclidean length)
         val l2Norm = sqrt(embedding.sumOf { (it * it).toDouble() }).toFloat()
-        
+
         // Avoid division by zero
         if (l2Norm == 0.0f) {
             logger.warn { "L2_NORMALIZATION_WARNING: Zero vector encountered, returning original embedding" }
             return embedding
         }
-        
+
         // Normalize each component by dividing by L2 norm
         val normalizedEmbedding = embedding.map { it / l2Norm }
-        
-        logger.debug { 
+
+        logger.debug {
             "L2_NORMALIZATION_APPLIED: Original norm=$l2Norm, normalized norm=${
                 sqrt(normalizedEmbedding.sumOf { (it * it).toDouble() }).toFloat()
-            }, dimensions=${embedding.size}" 
+            }, dimensions=${embedding.size}"
         }
-        
+
         return normalizedEmbedding
+    }
+
+    /**
+     * Universal text sanitization for all embedding providers
+     * Fixes issues with \n characters in LM Studio, OpenAI, and Ollama
+     */
+    private fun sanitizeTextForEmbedding(text: String): String {
+        return text
+            .replace(Regex("\\s"), " ") // Replace all whitespace characters (including \n, \r, \t) with spaces
+            .replace("\"", "'") // Replace quotes with apostrophes for JSON safety
+            .replace(Regex("\\\\[nrt]"), " ") // Replace escaped characters \\n, \\r, \\t
+            .replace(Regex("\\s+"), " ") // Replace multiple spaces with single space
+            .replace(Regex("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]"), " ") // Remove control chars
+            .trim() // Remove leading/trailing spaces
+            .take(8192) // Limit length to reasonable maximum
     }
 }

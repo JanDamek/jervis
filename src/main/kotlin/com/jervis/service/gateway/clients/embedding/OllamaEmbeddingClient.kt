@@ -1,18 +1,14 @@
-package com.jervis.service.gateway.clients
+package com.jervis.service.gateway.clients.embedding
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.jervis.domain.model.ModelProvider
-import org.springframework.web.reactive.function.client.awaitBody
+import com.jervis.service.gateway.clients.EmbeddingProviderClient
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.WebClientRequestException
 import org.springframework.web.reactive.function.client.WebClientResponseException
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-data class OllamaEmbeddingResponse(
-    val embedding: List<Float> = emptyList(),
-)
+import org.springframework.web.reactive.function.client.awaitBody
 
 @Service
 class OllamaEmbeddingClient(
@@ -27,12 +23,13 @@ class OllamaEmbeddingClient(
         val body = mapOf("model" to model, "prompt" to text)
 
         return try {
-            val response = client
-                .post()
-                .uri("/embeddings")
-                .bodyValue(body)
-                .retrieve()
-                .awaitBody<OllamaEmbeddingResponse>()
+            val response =
+                client
+                    .post()
+                    .uri("/embeddings")
+                    .bodyValue(body)
+                    .retrieve()
+                    .awaitBody<OllamaEmbeddingResponse>()
 
             response.embedding
         } catch (error: Exception) {
@@ -53,4 +50,9 @@ class OllamaEmbeddingClient(
             }
         }
     }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class OllamaEmbeddingResponse(
+        val embedding: List<Float> = emptyList(),
+    )
 }

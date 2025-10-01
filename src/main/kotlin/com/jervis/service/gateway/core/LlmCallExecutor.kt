@@ -1,7 +1,7 @@
 package com.jervis.service.gateway.core
 
 import com.jervis.configuration.ModelsProperties
-import com.jervis.configuration.prompts.PromptConfig
+import com.jervis.configuration.prompts.PromptConfigBase
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.llm.LlmResponse
 import mu.KotlinLogging
@@ -24,7 +24,7 @@ class LlmCallExecutor(
         candidate: ModelsProperties.ModelDetail,
         systemPrompt: String,
         userPrompt: String,
-        prompt: PromptConfig,
+        prompt: PromptConfigBase,
         promptType: PromptTypeEnum,
     ): LlmResponse {
         val provider =
@@ -51,7 +51,6 @@ class LlmCallExecutor(
             throw IllegalStateException("LLM call failed for $provider: $errorDetail", throwable)
         }
     }
-
 
     /**
      * Finds the appropriate client for the given provider.
@@ -82,7 +81,7 @@ class LlmCallExecutor(
         }
 
     /**
-     * Logs successful LLM call with timing information.
+     * Logs a successful LLM call with timing information.
      */
     private fun logSuccessfulCall(
         provider: com.jervis.domain.model.ModelProvider,

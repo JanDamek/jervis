@@ -8,7 +8,7 @@ import java.io.IOException
 
 /**
  * Custom property source factory for loading YAML files.
- * This enables Spring Boot to load custom YAML files like prompts.yaml.
+ * This enables Spring Boot to load custom YAML files like prompts-tools.yaml and prompts-services.yaml.
  */
 class YamlPropertySourceFactory : PropertySourceFactory {
     @Throws(IOException::class)

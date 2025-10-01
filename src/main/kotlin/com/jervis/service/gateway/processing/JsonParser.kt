@@ -26,6 +26,7 @@ class JsonParser {
     /**
      * Cleans LLM response by removing markdown code blocks and other formatting.
      * Handles common formatting issues where LLMs wrap JSON in ```json...``` blocks.
+     * Sanitizes control characters that cause Jackson parsing errors.
      * Validates that the response appears to be JSON format.
      */
     private fun cleanJsonResponse(response: String): String {
@@ -48,6 +49,10 @@ class JsonParser {
         // Additional cleanup for common formatting issues
         cleaned = cleaned.trim()
 
+        // Sanitize control characters that cause Jackson parsing errors
+        // This fixes the "Illegal unquoted character (CTRL-CHAR, code 10)" error
+        cleaned = sanitizeControlCharacters(cleaned)
+
         // Validate that the cleaned response looks like JSON
         if (!cleaned.startsWith("{") && !cleaned.startsWith("[")) {
             throw IllegalStateException(
@@ -57,6 +62,68 @@ class JsonParser {
         }
 
         return cleaned
+    }
+
+    /**
+     * Sanitizes control characters in JSON strings to prevent Jackson parsing errors.
+     * Escapes newlines, carriage returns, tabs and other control characters within JSON string values.
+     */
+    private fun sanitizeControlCharacters(json: String): String {
+        val result = StringBuilder()
+        var i = 0
+        var insideString = false
+        var escapeNext = false
+
+        while (i < json.length) {
+            val char = json[i]
+
+            when {
+                escapeNext -> {
+                    // Previous character was backslash, don't modify this character
+                    result.append(char)
+                    escapeNext = false
+                }
+
+                char == '\\' && insideString -> {
+                    // Backslash inside string - next character should be preserved
+                    result.append(char)
+                    escapeNext = true
+                }
+
+                char == '"' -> {
+                    // Quote - toggle string mode
+                    result.append(char)
+                    insideString = !insideString
+                }
+
+                insideString -> {
+                    // Inside string value - escape control characters
+                    when (char) {
+                        '\n' -> result.append("\\n")
+                        '\r' -> result.append("\\r")
+                        '\t' -> result.append("\\t")
+                        '\b' -> result.append("\\b")
+                        '\u000C' -> result.append("\\f") // form feed
+                        else -> {
+                            if (char.code < 32) {
+                                // Other control characters - escape as unicode
+                                result.append("\\u").append(String.format("%04x", char.code))
+                            } else {
+                                result.append(char)
+                            }
+                        }
+                    }
+                }
+
+                else -> {
+                    // Outside string - preserve as-is
+                    result.append(char)
+                }
+            }
+            i++
+        }
+
+        return result.toString()
     }
 
     /**

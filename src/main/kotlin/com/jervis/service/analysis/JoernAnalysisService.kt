@@ -1,17 +1,20 @@
 package com.jervis.service.analysis
 
-import com.jervis.entity.mongo.ProjectDocument
+import com.jervis.service.indexing.pipeline.JoernSymbol
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.nio.file.Files
 import java.nio.file.Path
-import java.time.Instant
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
+import kotlin.io.path.extension
 import kotlin.io.path.pathString
 
 /**
@@ -20,19 +23,9 @@ import kotlin.io.path.pathString
  */
 @Service
 class JoernAnalysisService(
-    private val indexingMonitorService: com.jervis.service.indexing.monitoring.IndexingMonitorService,
+    private val joernResultParser: JoernResultParser,
 ) {
     private val logger = KotlinLogging.logger {}
-
-    /**
-     * Result of Joern analysis operation
-     */
-    data class JoernAnalysisResult(
-        val operationsCompleted: Int,
-        val operationsFailed: Int,
-        val isAvailable: Boolean,
-        val errorMessage: String? = null,
-    )
 
     /**
      * Internal result of process execution including outputs and timeout status
@@ -105,15 +98,16 @@ class JoernAnalysisService(
         stdoutThread.start()
         stderrThread?.start()
 
-        val completed = if (timeout != null) {
-            process.waitFor(timeout, unit)
-        } else {
-            process.waitFor()
-            true // waitFor() without timeout always returns when process completes
-        }
-        
+        val completed =
+            if (timeout != null) {
+                process.waitFor(timeout, unit)
+            } else {
+                process.waitFor()
+                true // waitFor() without timeout always returns when process completes
+            }
+
         if (!completed) {
-            logger.error { "[PROC] Timeout: $displayName (PID=${pid ?: "n/a"}) after $timeout ${unit.name.lowercase()}. Killing..." }
+            logger.error { "[PROC] Timeout: $displayName (PID=$pid) after $timeout ${unit.name.lowercase()}. Killing..." }
             process.destroyForcibly()
         }
 
@@ -153,324 +147,6 @@ class JoernAnalysisService(
         }
 
     /**
-     * Perform comprehensive Joern analysis and store results in .joern directory
-     */
-    suspend fun performJoernAnalysis(
-        project: ProjectDocument,
-        projectPath: Path,
-        joernDir: Path,
-    ): JoernAnalysisResult =
-        withContext(Dispatchers.IO) {
-            logger.info { "Starting Joern analysis for project: ${project.name}" }
-
-            var errorFiles = 0
-            val analysisOperations =
-                listOf(
-                    "analyze" to "cpg.method.name.toJson",
-                    "scan" to "cpg.finding.toJson",
-                    "cpg-info" to "cpg.metaData.toJson",
-                )
-
-            try {
-                for ((index, operationPair) in analysisOperations.withIndex()) {
-                    val (operation, query) = operationPair
-                    try {
-                        indexingMonitorService.addStepLog(
-                            project.id, "joern_analysis", 
-                            "Starting ${operation} operation (${index + 1}/${analysisOperations.size})"
-                        )
-                        
-                        logger.info { "Executing Joern $operation for project: ${project.name}" }
-
-                        val success = executeJoernOperation(operation, query, projectPath, joernDir)
-                        
-                        if (success) {
-                            indexingMonitorService.addStepLog(
-                                project.id, "joern_analysis", 
-                                "✓ Completed ${operation} operation"
-                            )
-                        } else {
-                            errorFiles++
-                            indexingMonitorService.addStepLog(
-                                project.id, "joern_analysis", 
-                                "✗ Failed ${operation} operation"
-                            )
-                        }
-                    } catch (e: Exception) {
-                        logger.warn(e) { "Error during Joern $operation for project: ${project.name}" }
-                        errorFiles++
-                        indexingMonitorService.addStepLog(
-                            project.id, "joern_analysis", 
-                            "✗ Error in ${operation} operation: ${e.message}"
-                        )
-                    }
-                }
-
-                createAnalysisSummary(project, projectPath, joernDir, analysisOperations.size, errorFiles)
-            } catch (e: Exception) {
-                logger.error(e) { "Critical error during Joern analysis for project: ${project.name}" }
-                errorFiles = analysisOperations.size
-            }
-
-            val operationsCompleted = analysisOperations.size - errorFiles
-            logger.info { "Joern analysis completed - Completed: $operationsCompleted, Errors: $errorFiles" }
-
-            JoernAnalysisResult(operationsCompleted, errorFiles, true)
-        }
-
-    /**
-     * Execute a single Joern operation following proper Joern usage patterns
-     */
-    private suspend fun executeJoernOperation(
-        operation: String,
-        query: String,
-        projectPath: Path,
-        joernDir: Path,
-    ): Boolean =
-        withContext(Dispatchers.IO) {
-            try {
-                when (operation) {
-                    "scan" -> executeScanOperation(projectPath, joernDir)
-                    "analyze", "query", "cpg-info" -> executeQueryOperation(operation, query, projectPath, joernDir)
-                    else -> {
-                        logger.warn { "Unknown operation: $operation" }
-                        false
-                    }
-                }
-            } catch (e: Exception) {
-                logger.error(e) { "Failed to execute Joern $operation: ${e.message}" }
-                false
-            }
-        }
-
-    /**
-     * Execute Joern scan operation using joern-scan
-     */
-    private suspend fun executeScanOperation(
-        projectPath: Path,
-        joernDir: Path,
-    ): Boolean =
-        withContext(Dispatchers.IO) {
-            val outputFile = joernDir.resolve("scan.json")
-
-            val res =
-                runProcessStreaming(
-                    displayName = "joern-scan",
-                    command = listOf("joern-scan", "--format", "json", "--path", projectPath.pathString),
-                    workingDir = joernDir,
-                )
-
-            if (res.exitCode == 0) {
-                Files.writeString(outputFile, res.stdout)
-                logger.info { "Joern scan results saved to: ${outputFile.pathString}" }
-                true
-            } else {
-                val errorFile = joernDir.resolve("scan_error.txt")
-                Files.writeString(
-                    errorFile,
-                    "Exit code: ${res.exitCode}\nStderr:\n${res.stderr}\n\nStdout:\n${res.stdout}",
-                )
-                logger.warn { "Joern scan failed (exit=${res.exitCode}), details: ${errorFile.pathString}" }
-                false
-            }
-        }
-
-    /**
-     * Execute Joern query operation using proper CPG and script approach
-     */
-    private suspend fun executeQueryOperation(
-        operation: String,
-        query: String,
-        projectPath: Path,
-        joernDir: Path,
-    ): Boolean =
-        withContext(Dispatchers.IO) {
-            val cpgPath = joernDir.resolve("cpg.bin")
-            if (!ensureCpgExists(projectPath, cpgPath)) {
-                logger.warn { "Failed to create or find CPG for project: ${projectPath.pathString}" }
-                return@withContext false
-            }
-
-            val scriptFile = joernDir.resolve("query_${System.currentTimeMillis()}.sc")
-            val scriptContent =
-                buildString {
-                    appendLine("importCpg(\"${cpgPath.pathString}\")")
-                    appendLine("val res = $query")
-                    appendLine("println(res)")
-                }
-            Files.writeString(scriptFile, scriptContent)
-
-            val res =
-                runProcessStreaming(
-                    displayName = "joern --script ${scriptFile.fileName}",
-                    command = listOf("joern", "--script", scriptFile.pathString),
-                    workingDir = joernDir,
-                )
-
-            return@withContext runCatching {
-                if (res.exitCode == 0) {
-                    val outputFile = joernDir.resolve("${operation}_results.json")
-                    Files.writeString(outputFile, res.stdout)
-                    logger.info { "Joern $operation results saved to: ${outputFile.pathString}" }
-                    true
-                } else {
-                    val errorFile = joernDir.resolve("${operation}_error.txt")
-                    Files.writeString(
-                        errorFile,
-                        "Exit code: ${res.exitCode}\nStderr:\n${res.stderr}\n\nStdout:\n${res.stdout}",
-                    )
-                    logger.warn {
-                        "Joern $operation failed (exit=${res.exitCode}), details: ${errorFile.pathString}"
-                    }
-                    false
-                }
-            }.also {
-                runCatching { Files.deleteIfExists(scriptFile) }
-            }.getOrDefault(false)
-        }
-
-    /**
-     * Ensure .joernignore file exists with required patterns
-     */
-    private fun ensureJoernIgnoreExists(projectPath: Path) {
-        val joernIgnoreFile = projectPath.resolve(".joernignore")
-        val requiredPatterns =
-            listOf(
-                "**/*.class",
-                "**/*.jar",
-                "**/target/**",
-                "**/build/**",
-                "**/.idea/**",
-                "**/out/**",
-                "**/node_modules/**",
-            )
-
-        try {
-            val existingContent =
-                if (Files.exists(joernIgnoreFile)) {
-                    Files.readAllLines(joernIgnoreFile).toMutableSet()
-                } else {
-                    mutableSetOf()
-                }
-
-            val missingPatterns =
-                requiredPatterns.filterNot { pattern ->
-                    existingContent.any { it.trim() == pattern }
-                }
-
-            if (missingPatterns.isNotEmpty() || !Files.exists(joernIgnoreFile)) {
-                val allContent = mutableListOf<String>()
-
-                if (existingContent.isNotEmpty()) {
-                    allContent.addAll(existingContent)
-                    allContent.add("") // Empty line separator
-                }
-
-                if (missingPatterns.isNotEmpty()) {
-                    allContent.add("# Required patterns for Joern analysis")
-                    allContent.addAll(missingPatterns)
-                }
-
-                Files.write(joernIgnoreFile, allContent)
-
-                if (!Files.exists(joernIgnoreFile)) {
-                    logger.info { "Created .joernignore file with required patterns: ${joernIgnoreFile.pathString}" }
-                } else {
-                    logger.info { "Updated .joernignore file with missing patterns: ${missingPatterns.joinToString(", ")}" }
-                }
-            } else {
-                logger.debug { ".joernignore file already contains all required patterns: ${joernIgnoreFile.pathString}" }
-            }
-        } catch (e: Exception) {
-            logger.error(e) { "Error ensuring .joernignore file exists: ${e.message}" }
-        }
-    }
-
-    /**
-     * Ensure CPG exists and is up to date
-     */
-    suspend fun ensureCpgExists(
-        projectPath: Path,
-        cpgPath: Path,
-    ): Boolean =
-        withContext(Dispatchers.IO) {
-            try {
-                // Check if CPG already exists and is reasonably fresh
-                if (Files.exists(cpgPath)) {
-                    // First validate CPG integrity
-                    if (!validateCpgIntegrity(cpgPath)) {
-                        logger.info { "Existing CPG is corrupted, will recreate: ${cpgPath.pathString}" }
-                        Files.deleteIfExists(cpgPath)
-                    } else {
-                        val cpgModified = Files.getLastModifiedTime(cpgPath).toMillis()
-                        val projectModified = getLastModifiedTimeRecursiveSourceOnly(projectPath)
-
-                        // If CPG is newer than project files, reuse it
-                        if (cpgModified > projectModified) {
-                            logger.debug { "CPG is up to date, reusing existing: ${cpgPath.pathString}" }
-                            return@withContext true
-                        } else {
-                            logger.info { "CPG is outdated, will recreate: ${cpgPath.pathString}" }
-                        }
-                    }
-                }
-
-                logger.info { "Creating CPG for project: ${projectPath.pathString}" }
-
-                // Ensure .joernignore file exists with required patterns
-                ensureJoernIgnoreExists(projectPath)
-
-                // Create temporary directory with only source files to avoid Java 20 bytecode issues
-                val tempSourceDir = Files.createTempDirectory("joern-source-")
-                try {
-                    copySourceFilesOnly(projectPath, tempSourceDir)
-                    logger.debug { "Created filtered source directory: ${tempSourceDir.pathString}" }
-
-                    val res =
-                        runProcessStreaming(
-                            displayName = "joern-parse",
-                            command = listOf("joern-parse", tempSourceDir.pathString, "-o", cpgPath.pathString),
-                            workingDir = projectPath.parent ?: projectPath,
-                        )
-
-                    if (res.exitCode == 0 && Files.exists(cpgPath)) {
-                        // Validate CPG integrity by checking if it's a valid binary file
-                        val isValidCpg = validateCpgIntegrity(cpgPath)
-                        if (isValidCpg) {
-                            logger.info { "CPG created successfully: ${cpgPath.pathString}" }
-                            true
-                        } else {
-                            logger.warn { "CPG file appears to be corrupted, deleting: ${cpgPath.pathString}" }
-                            Files.deleteIfExists(cpgPath)
-                            false
-                        }
-                    } else {
-                        val errorFile = cpgPath.parent.resolve("parse_error.txt")
-                        Files.writeString(
-                            errorFile,
-                            "Exit code: ${res.exitCode}\nStderr:\n${res.stderr}\n\nStdout:\n${res.stdout}",
-                        )
-                        logger.warn {
-                            "CPG creation failed (exit=${res.exitCode}), details: ${errorFile.pathString}"
-                        }
-                        false
-                    }
-                } finally {
-                    // Clean up temporary directory
-                    runCatching {
-                        Files
-                            .walk(tempSourceDir)
-                            .sorted { a, b -> b.compareTo(a) } // Delete files before directories
-                            .forEach { Files.deleteIfExists(it) }
-                    }
-                }
-            } catch (e: Exception) {
-                logger.error(e) { "Error ensuring CPG exists: ${e.message}" }
-                false
-            }
-        }
-
-    /**
      * Validate CPG file integrity by checking basic file properties and structure
      */
     private fun validateCpgIntegrity(cpgPath: Path): Boolean {
@@ -479,13 +155,13 @@ class JoernAnalysisService(
                 logger.debug { "CPG file does not exist: ${cpgPath.pathString}" }
                 return false
             }
-            
+
             val fileSize = Files.size(cpgPath)
             if (fileSize < 1024) { // CPG files should be at least 1KB
-                logger.debug { "CPG file is too small (${fileSize} bytes): ${cpgPath.pathString}" }
+                logger.debug { "CPG file is too small ($fileSize bytes): ${cpgPath.pathString}" }
                 return false
             }
-            
+
             // Try to read the first few bytes to check if it's a binary file
             Files.newInputStream(cpgPath).use { inputStream ->
                 val buffer = ByteArray(16)
@@ -494,85 +170,24 @@ class JoernAnalysisService(
                     logger.debug { "CPG file is too small to be valid: ${cpgPath.pathString}" }
                     return false
                 }
-                
+
                 // Check if it looks like a valid binary file (not all zeros or all text)
-                val hasNonAscii = buffer.take(bytesRead).any { byte -> 
-                    byte < 0 || (byte > 127) || (byte in 1..8) || (byte in 14..31)
-                }
-                
+                val hasNonAscii =
+                    buffer.take(bytesRead).any { byte ->
+                        byte < 0 || (byte in 1..8) || (byte in 14..31)
+                    }
+
                 if (!hasNonAscii) {
                     logger.debug { "CPG file appears to be text-only, not binary: ${cpgPath.pathString}" }
                     return false
                 }
             }
-            
+
             logger.debug { "CPG file validation passed: ${cpgPath.pathString} (size: $fileSize bytes)" }
             true
         } catch (e: Exception) {
             logger.debug(e) { "CPG file validation failed: ${cpgPath.pathString}" }
             false
-        }
-    }
-
-    /**
-     * Get the last modified time of the most recent file in the project tree
-     */
-    private fun getLastModifiedTimeRecursive(path: Path): Long =
-        try {
-            Files
-                .walk(path)
-                .filter { Files.isRegularFile(it) }
-                .mapToLong { Files.getLastModifiedTime(it).toMillis() }
-                .max()
-                .orElse(0L)
-        } catch (e: Exception) {
-            logger.debug(e) { "Error getting last modified time for: ${path.pathString}" }
-            0L
-        }
-
-    /**
-     * Get the last modified time of the most recent source file only
-     */
-    private fun getLastModifiedTimeRecursiveSourceOnly(path: Path): Long =
-        try {
-            Files
-                .walk(path)
-                .filter { Files.isRegularFile(it) }
-                .filter { isSourceFile(it) }
-                .filter { !isInExcludedDirectory(path, it) }
-                .mapToLong { Files.getLastModifiedTime(it).toMillis() }
-                .max()
-                .orElse(0L)
-        } catch (e: Exception) {
-            logger.debug(e) { "Error getting last modified time for source files in: ${path.pathString}" }
-            0L
-        }
-
-    /**
-     * Copy only source files to target directory, preserving structure but excluding build directories
-     */
-    private fun copySourceFilesOnly(
-        sourceRoot: Path,
-        targetRoot: Path,
-    ) {
-        try {
-            Files
-                .walk(sourceRoot)
-                .filter { Files.isRegularFile(it) }
-                .filter { isSourceFile(it) }
-                .filter { !isInExcludedDirectory(sourceRoot, it) }
-                .forEach { sourceFile ->
-                    val relativePath = sourceRoot.relativize(sourceFile)
-                    val targetFile = targetRoot.resolve(relativePath)
-
-                    // Create parent directories if they don't exist
-                    Files.createDirectories(targetFile.parent)
-                    Files.copy(sourceFile, targetFile)
-                }
-            logger.debug { "Copied source files from ${sourceRoot.pathString} to ${targetRoot.pathString}" }
-        } catch (e: Exception) {
-            logger.error(e) { "Error copying source files: ${e.message}" }
-            throw e
         }
     }
 
@@ -597,15 +212,324 @@ class JoernAnalysisService(
         }
     }
 
-    companion object {
-        // Project-specific locks to prevent concurrent joern-parse execution on same project
-        private val projectLocks = ConcurrentHashMap<String, ReentrantLock>()
-        
-        fun getLockForProject(projectPath: Path): ReentrantLock {
-            val normalizedPath = projectPath.toAbsolutePath().normalize().toString()
-            return projectLocks.computeIfAbsent(normalizedPath) { ReentrantLock() }
+    /**
+     * Detects language buckets by scanning project files and grouping them by programming language
+     */
+    suspend fun detectLanguageBuckets(projectPath: Path): Map<String, List<Path>> =
+        withContext(Dispatchers.IO) {
+            val languageBuckets = mutableMapOf<String, MutableList<Path>>()
+
+            try {
+                Files
+                    .walk(projectPath)
+                    .filter { Files.isRegularFile(it) }
+                    .filter { isSourceFile(it) }
+                    .filter { !isInExcludedDirectory(projectPath, it) }
+                    .forEach { file ->
+                        val language = detectLanguageFromFile(file)
+                        if (language != null) {
+                            languageBuckets.getOrPut(language) { mutableListOf() }.add(file)
+                        }
+                    }
+
+                logger.info { "Detected language buckets: ${languageBuckets.mapValues { it.value.size }}" }
+                languageBuckets.mapValues { it.value.toList() }
+            } catch (e: Exception) {
+                logger.error(e) { "Error detecting language buckets: ${e.message}" }
+                emptyMap()
+            }
         }
-        
+
+    /**
+     * Detects programming language from file extension
+     */
+    private fun detectLanguageFromFile(file: Path): String? =
+        when (file.extension.lowercase()) {
+            "kt" -> "kotlin"
+            "java" -> "java"
+            "js" -> "javascript"
+            "ts" -> "typescript"
+            "py" -> "python"
+            "rb" -> "ruby"
+            "php" -> "php"
+            "cpp", "cc", "cxx" -> "cpp"
+            "c" -> "c"
+            "cs" -> "csharp"
+            "go" -> "go"
+            "rs" -> "rust"
+            "swift" -> "swift"
+            "scala" -> "scala"
+            "groovy" -> "groovy"
+            else -> null
+        }
+
+    /**
+     * Ensures per-language CPG files exist and are up to date
+     */
+    suspend fun ensurePerLanguageCpg(
+        projectPath: Path,
+        languageBuckets: Map<String, List<Path>>,
+    ): Map<String, Path> =
+        withContext(Dispatchers.IO) {
+            val joernDir = setupJoernDirectory(projectPath)
+
+            try {
+                // Process all languages in parallel
+                coroutineScope {
+                    val cpgTasks =
+                        languageBuckets.map { (language, files) ->
+                            async {
+                                if (files.isEmpty()) return@async null
+
+                                val cpgPath = joernDir.resolve("cpg_$language.bin")
+
+                                // Check if CPG exists and is up to date with source files
+                                val needsRegeneration =
+                                    if (Files.exists(cpgPath)) {
+                                        val cpgLastModified = cpgPath.toFile().lastModified()
+                                        val hasNewerFiles =
+                                            files.any { sourceFile ->
+                                                sourceFile.toFile().lastModified() > cpgLastModified
+                                            }
+
+                                        if (hasNewerFiles) {
+                                            logger.info {
+                                                "CPG for $language is outdated - source files have been modified since CPG creation"
+                                            }
+                                            true
+                                        } else {
+                                            logger.debug { "CPG for $language is up to date, skipping regeneration" }
+                                            false
+                                        }
+                                    } else {
+                                        logger.debug { "CPG for $language does not exist, creating new one" }
+                                        true
+                                    }
+
+                                // Skip CPG generation if not needed
+                                if (!needsRegeneration) {
+                                    return@async language to cpgPath
+                                }
+
+                                // Create temporary directory with only files for this language
+                                val tempLanguageDir = Files.createTempDirectory("joern-$language-")
+                                try {
+                                    // Copy files for this language to temp directory
+                                    files.forEach { sourceFile ->
+                                        val relativePath = projectPath.relativize(sourceFile)
+                                        val targetFile = tempLanguageDir.resolve(relativePath)
+                                        Files.createDirectories(targetFile.parent)
+                                        Files.copy(sourceFile, targetFile)
+                                    }
+
+                                    logger.info { "Creating CPG for language: $language with ${files.size} files" }
+
+                                    val res =
+                                        runProcessStreaming(
+                                            displayName = "joern-parse-$language",
+                                            command =
+                                                listOf(
+                                                    "joern-parse",
+                                                    tempLanguageDir.pathString,
+                                                    "-o",
+                                                    cpgPath.pathString,
+                                                ),
+                                            workingDir = projectPath.parent ?: projectPath,
+                                        )
+
+                                    if (res.exitCode == 0 && Files.exists(cpgPath) && validateCpgIntegrity(cpgPath)) {
+                                        val cpgCreationTime =
+                                            java.time.Instant.ofEpochMilli(cpgPath.toFile().lastModified())
+                                        logger.info {
+                                            "CPG created successfully for $language: ${cpgPath.pathString} at $cpgCreationTime"
+                                        }
+                                        language to cpgPath
+                                    } else {
+                                        logger.warn { "Failed to create CPG for language $language (exit=${res.exitCode})" }
+                                        null
+                                    }
+                                } finally {
+                                    // Clean up temporary directory
+                                    runCatching {
+                                        Files
+                                            .walk(tempLanguageDir)
+                                            .sorted { a, b -> b.compareTo(a) }
+                                            .forEach { Files.deleteIfExists(it) }
+                                    }
+                                }
+                            }
+                        }
+
+                    // Collect successful results
+                    cpgTasks.awaitAll().filterNotNull().toMap()
+                }
+            } catch (e: Exception) {
+                logger.error(e) { "Error ensuring per-language CPGs: ${e.message}" }
+                emptyMap()
+            }
+        }
+
+    /**
+     * Returns existing per-language CPG files from .joern directory without creating new ones
+     * Used by MCP tools that should only work with already generated CPGs
+     */
+    suspend fun ensurePerLanguageCpgs(projectPath: Path): List<Path> =
+        withContext(Dispatchers.IO) {
+            try {
+                val joernDir = setupJoernDirectory(projectPath)
+                val cpgFiles = mutableListOf<Path>()
+
+                if (Files.exists(joernDir)) {
+                    Files.list(joernDir).use { stream ->
+                        stream
+                            .filter { Files.isRegularFile(it) }
+                            .filter {
+                                it.fileName.toString().startsWith("cpg_") && it.fileName.toString().endsWith(".bin")
+                            }.filter { validateCpgIntegrity(it) }
+                            .forEach { cpgFiles.add(it) }
+                    }
+
+                    logger.info { "Found ${cpgFiles.size} existing CPG files: ${cpgFiles.map { it.fileName }}" }
+                } else {
+                    logger.warn { "No .joern directory found at: ${joernDir.pathString}" }
+                }
+
+                cpgFiles.toList()
+            } catch (e: Exception) {
+                logger.error(e) { "Error scanning for existing CPG files: ${e.message}" }
+                emptyList()
+            }
+        }
+
+    /**
+     * Extracts all symbols from language-specific CPGs with parallel processing
+     */
+    fun extractAllSymbolsFromCpGs(
+        projectPath: Path,
+        cpgPaths: Map<String, Path>,
+    ): Flow<JoernSymbol> =
+        flow {
+            // Process all languages in parallel
+            coroutineScope {
+                val flows =
+                    cpgPaths.map { (language, cpgPath) ->
+                        async {
+                            try {
+                                logger.info { "Extracting symbols from $language CPG: ${cpgPath.pathString}" }
+
+                                val script = createUniversalSymbolExtractionScript(cpgPath, language)
+                                val joernDir = cpgPath.parent
+                                val scriptFile = joernDir.resolve("extract_symbols_$language.sc")
+
+                                withContext(Dispatchers.IO) {
+                                    Files.writeString(scriptFile, script)
+                                }
+
+                                val result = executeJoernScript(joernDir, scriptFile)
+                                val symbolFlow =
+                                    joernResultParser.parseJoernSymbolResults(result, projectPath, language)
+
+                                // Clean up script file
+                                withContext(Dispatchers.IO) {
+                                    Files.deleteIfExists(scriptFile)
+                                }
+
+                                symbolFlow
+                            } catch (e: Exception) {
+                                logger.error(e) { "Error extracting symbols from $language CPG: ${e.message}" }
+                                flow<JoernSymbol> { /* empty flow for failed language */ }
+                            }
+                        }
+                    }
+
+                // Collect results from all parallel flows
+                flows.awaitAll().forEach { symbolFlow ->
+                    emitAll(symbolFlow)
+                }
+            }
+        }
+
+    /**
+     * Creates universal symbol extraction script without file filtering
+     */
+    private fun createUniversalSymbolExtractionScript(
+        cpgPath: Path,
+        language: String,
+    ): String =
+        try {
+            // Read template from resources
+            val templateResource =
+                this::class.java.getResourceAsStream("/joern/universal_symbol_extraction.sc")
+                    ?: throw RuntimeException("Universal symbol extraction template not found in resources")
+
+            val template = templateResource.bufferedReader().use { it.readText() }
+
+            // Replace placeholders
+            template
+                .replace("{{CPG_PATH}}", cpgPath.pathString)
+                .replace("{{LANGUAGE}}", language)
+        } catch (e: Exception) {
+            logger.error(e) { "Error reading universal symbol extraction template: ${e.message}" }
+            throw RuntimeException("Failed to create universal symbol extraction script", e)
+        }
+
+    /**
+     * Main orchestrator for Joern-based project indexing using language-grouped CPGs
+     */
+    fun indexProjectWithJoern(projectPath: Path): Flow<JoernSymbol> =
+        flow {
+            try {
+                logger.info { "Starting Joern analysis for project: ${projectPath.pathString}" }
+
+                // Step 1: Detect language buckets
+                val languageBuckets = detectLanguageBuckets(projectPath)
+                if (languageBuckets.isEmpty()) {
+                    logger.warn { "No supported source files found in project: ${projectPath.pathString}" }
+                    return@flow
+                }
+
+                // Step 2: Ensure per-language CPGs exist
+                val cpgPaths = ensurePerLanguageCpg(projectPath, languageBuckets)
+                if (cpgPaths.isEmpty()) {
+                    logger.error { "Failed to create any CPG files for project: ${projectPath.pathString}" }
+                    return@flow
+                }
+
+                // Step 3: Extract all symbols from CPGs
+                emitAll(extractAllSymbolsFromCpGs(projectPath, cpgPaths))
+
+                logger.info { "Completed Joern analysis for project: ${projectPath.pathString}" }
+            } catch (e: Exception) {
+                logger.error(e) { "Error in Joern project indexing: ${e.message}" }
+            }
+        }
+
+    /**
+     * Execute Joern script and return output
+     */
+    private suspend fun executeJoernScript(
+        joernDir: Path,
+        scriptFile: Path,
+    ): String =
+        withContext(Dispatchers.IO) {
+            val res =
+                runProcessStreaming(
+                    displayName = "joern-script",
+                    command = listOf("joern", "--script", scriptFile.pathString),
+                    workingDir = joernDir,
+                    timeout = 300,
+                    unit = TimeUnit.SECONDS,
+                )
+
+            if (res.exitCode != 0) {
+                logger.error { "Joern script execution failed (exit=${res.exitCode}): ${res.stderr}" }
+                throw RuntimeException("Joern script execution failed: ${res.stderr}")
+            }
+
+            res.stdout
+        }
+
+    companion object {
         private val SOURCE_FILE_EXTENSIONS =
             setOf(
                 ".kt",
@@ -651,133 +575,5 @@ class JoernAnalysisService(
                 "compiled",
                 ".class",
             )
-    }
-
-    /**
-     * Create analysis summary file with version information and execution details
-     */
-    private suspend fun createAnalysisSummary(
-        project: ProjectDocument,
-        projectPath: Path,
-        joernDir: Path,
-        totalOperations: Int,
-        errorFiles: Int,
-    ) = withContext(Dispatchers.IO) {
-        val summaryFile = joernDir.resolve("analysis_summary.txt")
-        val summary =
-            buildString {
-                appendLine("Joern Analysis Summary")
-                appendLine("=".repeat(50))
-                appendLine("Project: ${project.name}")
-                appendLine("Path: ${projectPath.pathString}")
-                appendLine("Analysis Date: ${Instant.now()}")
-                appendLine("Operations Completed: ${totalOperations - errorFiles}")
-                appendLine("Errors: $errorFiles")
-                appendLine()
-
-                // Add tool version information
-                appendLine("Tool Versions:")
-                val joernVersion = getToolVersion("joern")
-                val scanVersion = getToolVersion("joern-scan")
-                appendLine("- joern: $joernVersion")
-                appendLine("- joern-scan: $scanVersion")
-                appendLine()
-
-                // List generated artifacts with their paths
-                appendLine("Generated Artifacts:")
-                try {
-                    Files
-                        .list(joernDir)
-                        .filter {
-                            !it.fileName.toString().startsWith("query_") || !it.fileName.toString().endsWith(".sc")
-                        }.sorted()
-                        .forEach { file ->
-                            val size = Files.size(file)
-                            val sizeStr =
-                                when {
-                                    size > 1024 * 1024 -> "${size / (1024 * 1024)} MB"
-                                    size > 1024 -> "${size / 1024} KB"
-                                    else -> "$size B"
-                                }
-                            appendLine("- ${file.fileName} ($sizeStr)")
-                            appendLine("  Full path: ${file.pathString}")
-                        }
-                } catch (e: Exception) {
-                    appendLine("Error listing files: ${e.message}")
-                }
-
-                appendLine()
-                appendLine("Working Directory: ${joernDir.pathString}")
-
-                if (Files.exists(joernDir.resolve("cpg.bin"))) {
-                    appendLine("CPG Status: Available at ${joernDir.resolve("cpg.bin").pathString}")
-                } else {
-                    appendLine("CPG Status: Not created")
-                }
-            }
-        Files.writeString(summaryFile, summary)
-        logger.info { "Analysis summary created: ${summaryFile.pathString}" }
-    }
-
-    /**
-     * Get version information for Joern tools
-     */
-    private suspend fun getToolVersion(toolName: String): String =
-        withContext(Dispatchers.IO) {
-            try {
-                // Joern doesn't support --version flag, use --help instead
-                val command =
-                    when (toolName) {
-                        "joern" -> listOf(toolName, "--help")
-                        "joern-scan" -> {
-                            val versionRes =
-                                runProcessStreaming(
-                                    displayName = "$toolName --version",
-                                    command = listOf(toolName, "--version"),
-                                    workingDir = null,
-                                )
-
-                            if (versionRes.exitCode == 0) {
-                                return@withContext extractVersionFromOutput(versionRes.stdout, versionRes.stderr)
-                            }
-
-                            listOf(toolName, "--help")
-                        }
-
-                        else -> listOf(toolName, "--version")
-                    }
-
-                val res =
-                    runProcessStreaming(
-                        displayName = "$toolName version check",
-                        command = command,
-                        workingDir = null,
-                    )
-
-                if (res.exitCode == 0) {
-                    extractVersionFromOutput(res.stdout, res.stderr)
-                } else {
-                    "Not available"
-                }
-            } catch (e: Exception) {
-                "Not available (${e.message?.take(50) ?: "unknown error"})"
-            }
-        }
-
-    /**
-     * Extract version information from Joern tool output
-     */
-    private fun extractVersionFromOutput(
-        stdout: String,
-        stderr: String,
-    ): String {
-        val output = "$stdout\n$stderr"
-
-        // Look for "Version: " pattern in the output
-        val versionRegex = """Version:\s*([^\s\n]+)""".toRegex()
-        val versionMatch = versionRegex.find(output)
-
-        return versionMatch?.groupValues?.get(1)
-            ?: throw IllegalStateException("Unable to extract version information from tool output: $output")
     }
 }

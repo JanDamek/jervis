@@ -1,24 +1,14 @@
-package com.jervis.service.gateway.clients
+package com.jervis.service.gateway.clients.embedding
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.jervis.domain.model.ModelProvider
-import org.springframework.web.reactive.function.client.awaitBody
+import com.jervis.service.gateway.clients.EmbeddingProviderClient
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.WebClientRequestException
 import org.springframework.web.reactive.function.client.WebClientResponseException
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-data class LmStudioEmbeddingResponse(
-    val data: List<LmStudioEmbeddingData> = emptyList(),
-)
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-data class LmStudioEmbeddingData(
-    val embedding: List<Float> = emptyList(),
-    val index: Int = 0,
-)
+import org.springframework.web.reactive.function.client.awaitBody
 
 @Service
 class LmStudioEmbeddingClient(
@@ -33,12 +23,13 @@ class LmStudioEmbeddingClient(
         val body = mapOf("model" to model, "input" to text)
 
         return try {
-            val response = client
-                .post()
-                .uri("/v1/embeddings")
-                .bodyValue(body)
-                .retrieve()
-                .awaitBody<LmStudioEmbeddingResponse>()
+            val response =
+                client
+                    .post()
+                    .uri("/v1/embeddings")
+                    .bodyValue(body)
+                    .retrieve()
+                    .awaitBody<LmStudioEmbeddingResponse>()
 
             response.data
                 .firstOrNull()
@@ -61,4 +52,15 @@ class LmStudioEmbeddingClient(
             }
         }
     }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class LmStudioEmbeddingResponse(
+        val data: List<LmStudioEmbeddingData> = emptyList(),
+    )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class LmStudioEmbeddingData(
+        val embedding: List<Float> = emptyList(),
+        val index: Int = 0,
+    )
 }

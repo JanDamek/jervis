@@ -6,10 +6,8 @@ import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.mongo.ClientMongoRepository
 import com.jervis.repository.mongo.ProjectMongoRepository
 import com.jervis.service.gateway.core.LlmGateway
-import com.jervis.service.gateway.processing.LlmResponseWrapper
-import com.jervis.service.prompts.PromptRepository
+import com.jervis.service.gateway.processing.dto.LlmResponseWrapper
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -28,7 +26,6 @@ class ClientIndexingService(
     private val clientRepository: ClientMongoRepository,
     private val projectRepository: ProjectMongoRepository,
     private val llmGateway: LlmGateway,
-    private val promptRepository: PromptRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -65,7 +62,7 @@ class ClientIndexingService(
                 // Generate client descriptions based on project descriptions
                 val clientDescriptions = generateClientDescriptions(client, projects)
 
-                // Update client document with new descriptions
+                // Update the client document with new descriptions
                 val updatedClient =
                     client.copy(
                         shortDescription = clientDescriptions.shortDescription,
@@ -98,7 +95,7 @@ class ClientIndexingService(
 
             // Collect all project descriptions
             val projectDescriptions =
-                projects.mapNotNull { project ->
+                projects.map { project ->
                     when {
                         !project.fullDescription.isNullOrBlank() -> {
                             "**${project.name}**: ${project.fullDescription}"
@@ -176,9 +173,9 @@ class ClientIndexingService(
         val llmResponse =
             llmGateway.callLlm(
                 type = PromptTypeEnum.CLIENT_DESCRIPTION_SHORT,
-                userPrompt = userPrompt,
+                responseSchema = LlmResponseWrapper(),
                 quick = false,
-                LlmResponseWrapper(),
+                mappingValue = mapOf("clientAnalysisData" to userPrompt),
             )
 
         return llmResponse.response.trim()
@@ -232,9 +229,9 @@ class ClientIndexingService(
         val llmResponse =
             llmGateway.callLlm(
                 type = PromptTypeEnum.CLIENT_DESCRIPTION_FULL,
-                userPrompt = userPrompt,
+                responseSchema = LlmResponseWrapper(),
                 quick = false,
-                LlmResponseWrapper(),
+                mappingValue = mapOf("clientAnalysisData" to userPrompt),
             )
 
         return buildString {
@@ -255,35 +252,4 @@ class ClientIndexingService(
             )
         }
     }
-
-    /**
-     * Update all client descriptions in the system
-     * This can be used for batch updates or system-wide refreshes
-     */
-    suspend fun updateAllClientDescriptions(): Map<ObjectId, ClientDescriptionResult> =
-        withContext(Dispatchers.Default) {
-            try {
-                logger.info { "Updating descriptions for all clients" }
-
-                val clients = clientRepository.findAll().toList()
-                val results = mutableMapOf<ObjectId, ClientDescriptionResult>()
-
-                for (client in clients) {
-                    try {
-                        val result = updateClientDescriptions(client.id)
-                        results[client.id] = result
-                        logger.info { "Updated descriptions for client: ${client.name}" }
-                    } catch (e: Exception) {
-                        logger.error(e) { "Failed to update descriptions for client: ${client.name}" }
-                        results[client.id] = ClientDescriptionResult("", "", 0)
-                    }
-                }
-
-                logger.info { "Completed updating descriptions for ${clients.size} clients" }
-                results
-            } catch (e: Exception) {
-                logger.error(e) { "Failed to update all client descriptions" }
-                emptyMap()
-            }
-        }
 }

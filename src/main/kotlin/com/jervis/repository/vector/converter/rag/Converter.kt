@@ -9,7 +9,7 @@ import kotlin.reflect.full.memberProperties
 /**
  * Convert Properties to Qdrant JsonWithInt.Value payload at the repository boundary
  */
-fun Properties.toQdrantPayload(): Map<String, JsonWithInt.Value> = entries.mapValues { (_, v) -> anyToJsonValue(v) }.toMap()
+fun Properties.toQdrantPayload(): Map<String, JsonWithInt.Value> = this.entries.mapValues { (_, v) -> anyToJsonValue(v) }.toMap()
 
 private fun anyToJsonValue(value: Any?): JsonWithInt.Value =
     when (value) {
@@ -58,13 +58,12 @@ private fun anyToJsonValue(value: Any?): JsonWithInt.Value =
     }
 
 /** Bridge: keep legacy function name but delegate to POJO conversion */
-internal fun RagDocument.convertRagDocumentToPayload(): Map<String, JsonWithInt.Value> =
-    this.convertRagDocumentToProperties().toQdrantPayload()
+fun RagDocument.convertRagDocumentToPayload(): Map<String, JsonWithInt.Value> = this.convertRagDocumentToProperties().toQdrantPayload()
 
 /**
  * Build a POJO Properties map from RagDocument using reflection
  */
-internal fun RagDocument.convertRagDocumentToProperties(): Properties {
+fun RagDocument.convertRagDocumentToProperties(): Properties {
     val props = mutableMapOf<String, Any?>()
     val kClass = this::class as KClass<RagDocument>
     for (property in kClass.memberProperties) {

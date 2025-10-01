@@ -5,8 +5,7 @@ import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.PlanStatus
 import com.jervis.dto.ChatResponse
 import com.jervis.service.gateway.core.LlmGateway
-import com.jervis.service.gateway.processing.LlmResponseWrapper
-import com.jervis.service.prompts.PromptRepository
+import com.jervis.service.gateway.processing.dto.LlmResponseWrapper
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.time.Instant
@@ -20,19 +19,18 @@ import java.time.Instant
 @Service
 class Finalizer(
     private val gateway: LlmGateway,
-    private val promptRepository: PromptRepository,
     private val taskResolutionChecker: TaskResolutionChecker,
 ) {
     private val logger = KotlinLogging.logger {}
 
     suspend fun finalize(context: TaskContext): ChatResponse {
         logger.debug { "FINALIZER_START: Processing context=${context.id} with ${context.plans.size} plans" }
-        
+
         // Validate questionChecklist coverage using TaskResolutionChecker
         val resolutionResult = taskResolutionChecker.performLlmAnalysis(context)
-        logger.debug { 
+        logger.debug {
             "FINALIZER_CHECKLIST_VALIDATION: complete=${resolutionResult.complete}, " +
-            "missingRequirements=${resolutionResult.missingRequirements.size}"
+                "missingRequirements=${resolutionResult.missingRequirements.size}"
         }
 
         val finalizedPlans =
@@ -59,12 +57,11 @@ class Finalizer(
                     val answer =
                         gateway
                             .callLlm(
-                                type = PromptTypeEnum.FINALIZER,
-                                userPrompt = userPrompt,
+                                type = PromptTypeEnum.FINALIZER_ANSWER,
+                                responseSchema = LlmResponseWrapper(),
                                 quick = context.quick,
-                                LlmResponseWrapper(),
+                                mappingValue = mapOf("promptData" to userPrompt),
                                 outputLanguage = userLang,
-                                mappingValue = emptyMap(),
                             )
                     plan.finalAnswer = answer.response
                     plan.status = PlanStatus.FINALIZED
@@ -72,52 +69,42 @@ class Finalizer(
                     plan
                 }
 
-        val planAnswers = finalizedPlans
-            .filter { it.status == PlanStatus.FINALIZED }
-            .toList()
-            .joinToString(separator = "\n\n") { plan ->
-                val title = plan.originalQuestion.ifBlank { plan.englishQuestion }
-                buildList {
-                    title.takeIf { it.isNotBlank() }?.let { add("Question: $it") }
-                    plan.finalAnswer?.let { add("Answer: $it") }
-                }.joinToString("\n")
-            }.ifBlank { "No plans were finalized." }
+        val planAnswers =
+            finalizedPlans
+                .filter { it.status == PlanStatus.FINALIZED }
+                .toList()
+                .joinToString(separator = "\n\n") { plan ->
+                    val title = plan.originalQuestion.ifBlank { plan.englishQuestion }
+                    buildList {
+                        title.takeIf { it.isNotBlank() }?.let { add("Question: $it") }
+                        plan.finalAnswer?.let { add("Answer: $it") }
+                    }.joinToString("\n")
+                }.ifBlank { "No plans were finalized." }
 
         // Include missing requirements if checklist validation shows incomplete coverage
-        val aggregatedMessage = buildString {
-            append(planAnswers)
-            
-            if (!resolutionResult.complete && resolutionResult.missingRequirements.isNotEmpty()) {
-                append("\n\n--- INCOMPLETE CHECKLIST COVERAGE ---\n")
-                append("The following requirements from the original question checklist need additional attention:\n")
-                resolutionResult.missingRequirements.forEachIndexed { index, requirement ->
-                    append("${index + 1}. $requirement\n")
-                }
-                if (resolutionResult.recommendations.isNotEmpty()) {
-                    append("\nRecommendations:\n")
-                    resolutionResult.recommendations.forEach { recommendation ->
-                        append("• $recommendation\n")
+        val aggregatedMessage =
+            buildString {
+                append(planAnswers)
+
+                if (!resolutionResult.complete && resolutionResult.missingRequirements.isNotEmpty()) {
+                    append("\n\n--- INCOMPLETE CHECKLIST COVERAGE ---\n")
+                    append("The following requirements from the original question checklist need additional attention:\n")
+                    resolutionResult.missingRequirements.forEachIndexed { index, requirement ->
+                        append("${index + 1}. $requirement\n")
+                    }
+                    if (resolutionResult.recommendations.isNotEmpty()) {
+                        append("\nRecommendations:\n")
+                        resolutionResult.recommendations.forEach { recommendation ->
+                            append("• $recommendation\n")
+                        }
                     }
                 }
             }
-        }
 
         return ChatResponse(
             message = aggregatedMessage,
         )
     }
-
-    private fun buildSystemPrompt(): String =
-        """
-        You are a Finalizer assistant. Produce one clear and unambiguous answer for the user based on the provided plan context.
-        
-        CRITICAL REQUIREMENT: You must NEVER invent or fabricate any information. All information you provide must come from available tools (McpTools) or the actual plan context provided to you. If you don't have access to specific information through tools, explicitly state that you cannot provide it rather than guessing or inventing details.
-        
-        - Be concise and actionable.
-        - If a direct answer is possible, state it immediately.
-        - Summarize only what is necessary for the user to act.
-        - Do not mention internal tools, steps, or planning.
-        """.trimIndent()
 
     private fun buildUserPrompt(
         originalQuestion: String,

@@ -11,6 +11,7 @@ data class Plan(
     val originalLanguage: String,
     val englishQuestion: String,
     val questionChecklist: List<String> = emptyList(),
+    val investigationGuidance: List<String> = emptyList(),
     var status: PlanStatus = PlanStatus.CREATED,
     var steps: List<PlanStep> = emptyList(), // Legacy flat step list for backward compatibility
     var executionTree: List<ExecutionNode> = emptyList(), // New tree-based execution model

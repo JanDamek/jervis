@@ -56,7 +56,7 @@ sealed interface ToolResult {
         fun success(
             toolName: String,
             summary: String,
-            content: String = "",
+            content: String,
             vararg additionalSections: String,
         ): ToolResult =
             Ok(

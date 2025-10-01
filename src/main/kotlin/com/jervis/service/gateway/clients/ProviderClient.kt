@@ -1,7 +1,7 @@
 package com.jervis.service.gateway.clients
 
 import com.jervis.configuration.ModelsProperties
-import com.jervis.configuration.prompts.PromptConfig
+import com.jervis.configuration.prompts.PromptConfigBase
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProvider
 
@@ -13,6 +13,6 @@ interface ProviderClient {
         systemPrompt: String?,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
-        prompt: PromptConfig,
+        prompt: PromptConfigBase,
     ): LlmResponse
 }
