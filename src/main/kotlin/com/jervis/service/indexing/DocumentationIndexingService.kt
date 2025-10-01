@@ -2,14 +2,12 @@ package com.jervis.service.indexing
 
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.rag.RagDocument
-import com.jervis.domain.rag.RagDocumentType
 import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.vector.VectorStorageRepository
+import com.jervis.service.document.TikaDocumentProcessor
 import com.jervis.service.gateway.EmbeddingGateway
-import com.jervis.service.gateway.core.LlmGateway
-import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.service.indexing.dto.DocumentationProcessingResponse
+import com.jervis.service.indexing.monitoring.IndexingStepType
 import com.jervis.service.rag.RagIndexingStatusService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -40,7 +38,6 @@ class DocumentationIndexingService(
     private val historicalVersioningService: HistoricalVersioningService,
     private val indexingMonitorService: com.jervis.service.indexing.monitoring.IndexingMonitorService,
     private val tikaDocumentProcessor: TikaDocumentProcessor,
-    private val llmGateway: LlmGateway,
 ) {
     private val logger = KotlinLogging.logger {}
     private val httpClient =
@@ -144,7 +141,7 @@ class DocumentationIndexingService(
                 logger.info { "Found ${documentationFiles.size} documentation files to process" }
                 indexingMonitorService.addStepLog(
                     project.id,
-                    "documentation",
+                    IndexingStepType.DOCUMENTATION,
                     "Found ${documentationFiles.size} documentation files to process",
                 )
 
@@ -153,7 +150,7 @@ class DocumentationIndexingService(
                         val relativePath = docPath.relativize(docFile).toString()
                         indexingMonitorService.addStepLog(
                             project.id,
-                            "documentation",
+                            IndexingStepType.DOCUMENTATION,
                             "Processing documentation file (${index + 1}/${documentationFiles.size}): $relativePath",
                         )
 
@@ -163,7 +160,7 @@ class DocumentationIndexingService(
                             skippedDocs++
                             indexingMonitorService.addStepLog(
                                 project.id,
-                                "documentation",
+                                IndexingStepType.DOCUMENTATION,
                                 "⚠ Skipped file (extraction failed): $relativePath - ${processingResult.errorMessage ?: "Empty content"}",
                             )
                             continue
@@ -182,7 +179,7 @@ class DocumentationIndexingService(
                             skippedDocs++
                             indexingMonitorService.addStepLog(
                                 project.id,
-                                "documentation",
+                                IndexingStepType.DOCUMENTATION,
                                 "⚠ Skipped already indexed file: $relativePath",
                             )
                             logger.debug { "Skipping already indexed documentation file: $relativePath" }
@@ -194,7 +191,6 @@ class DocumentationIndexingService(
                             projectId = project.id,
                             filePath = "docs/$relativePath",
                             gitCommitHash = gitCommitHash,
-                            ragSourceType = RagSourceType.DOCUMENTATION,
                             fileContent = processingResult.plainText.toByteArray(),
                             language = processingResult.metadata.language ?: inferDocumentationType(docFile),
                             module = "documentation",
@@ -214,34 +210,31 @@ class DocumentationIndexingService(
                             val ragDocument =
                                 RagDocument(
                                     projectId = project.id,
-                                    documentType = RagDocumentType.DOCUMENTATION,
-                                    ragSourceType = RagSourceType.DOCUMENTATION,
-                                    pageContent =
+                                    summary =
                                         buildDocumentationSentenceContent(
                                             docFile,
                                             sentenceWithLocation,
                                             processingResult.metadata,
                                         ),
                                     clientId = project.clientId,
-                                    source = "file://${project.name}/docs/$relativePath#sentence-$index",
+                                    ragSourceType = RagSourceType.DOCUMENTATION,
                                     path = relativePath,
-                                    module = "documentation",
                                     language = processingResult.metadata.language ?: inferDocumentationType(docFile),
                                     gitCommitHash = gitCommitHash,
-                                    chunkId = "sentence-$index",
+                                    chunkId = index,
                                     symbolName = "doc-${docFile.fileName}",
                                 )
 
                             // Generate embedding and store
                             val embedding =
-                                embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, ragDocument.pageContent)
+                                embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, ragDocument.summary)
                             vectorStorage.store(ModelType.EMBEDDING_TEXT, ragDocument, embedding)
                         }
 
                         processedDocs++
                         indexingMonitorService.addStepLog(
                             project.id,
-                            "documentation",
+                            IndexingStepType.DOCUMENTATION,
                             "✓ Successfully indexed documentation file: $relativePath",
                         )
                         logger.debug { "Successfully indexed documentation file: $relativePath" }
@@ -249,7 +242,7 @@ class DocumentationIndexingService(
                         val relativePath = docPath.relativize(docFile).toString()
                         indexingMonitorService.addStepLog(
                             project.id,
-                            "documentation",
+                            IndexingStepType.DOCUMENTATION,
                             "✗ Failed to index documentation file: $relativePath - ${e.message}",
                         )
                         logger.warn(e) { "Failed to index documentation file: ${docFile.pathString}" }
@@ -321,7 +314,6 @@ class DocumentationIndexingService(
                         projectId = project.id,
                         filePath = urlPath,
                         gitCommitHash = gitCommitHash,
-                        ragSourceType = RagSourceType.DOCUMENTATION,
                         fileContent = content.toByteArray(),
                         language = inferUrlDocumentationType(url),
                         module = "documentation-urls",
@@ -331,19 +323,16 @@ class DocumentationIndexingService(
                     val ragDocument =
                         RagDocument(
                             projectId = project.id,
-                            documentType = RagDocumentType.DOCUMENTATION,
-                            ragSourceType = RagSourceType.DOCUMENTATION,
-                            pageContent = buildUrlDocumentationContent(url, content),
+                            summary = buildUrlDocumentationContent(url, content),
                             clientId = project.clientId,
-                            source = url,
+                            ragSourceType = RagSourceType.URL,
                             path = urlPath,
-                            module = "documentation-urls",
                             language = inferUrlDocumentationType(url),
                             gitCommitHash = gitCommitHash,
                         )
 
                     // Generate embedding and store
-                    val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, ragDocument.pageContent)
+                    val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, ragDocument.summary)
                     vectorStorage.store(ModelType.EMBEDDING_TEXT, ragDocument, embedding)
 
                     processedDocs++
@@ -454,29 +443,8 @@ class DocumentationIndexingService(
             val path = uri.path?.takeIf { it.isNotEmpty() } ?: "root"
             val host = uri.host ?: "unknown-host"
             "${host}$path".replace("[^a-zA-Z0-9-_/]".toRegex(), "-")
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             "url-${url.hashCode()}"
-        }
-
-    /**
-     * Build formatted content for local documentation files
-     */
-    private fun buildDocumentationContent(
-        docFile: Path,
-        content: String,
-    ): String =
-        buildString {
-            appendLine("Documentation: ${docFile.fileName}")
-            appendLine("=".repeat(60))
-            appendLine("File: ${docFile.pathString}")
-            appendLine("Type: ${inferDocumentationType(docFile)}")
-            appendLine()
-            appendLine("Content:")
-            appendLine(content)
-            appendLine()
-            appendLine("---")
-            appendLine("Source: Local Documentation File")
-            appendLine("Indexed as: Documentation Content")
         }
 
     /**

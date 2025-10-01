@@ -2,7 +2,7 @@ package com.jervis.service.gateway.clients
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.jervis.configuration.ModelsProperties
-import com.jervis.configuration.prompts.PromptConfig
+import com.jervis.configuration.prompts.PromptConfigBase
 import com.jervis.configuration.prompts.PromptsConfiguration
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProvider
@@ -10,16 +10,6 @@ import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.awaitBody
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-data class OllamaGenerateResponse(
-    val model: String? = null,
-    val response: String = "",
-    val done_reason: String? = null,
-    val prompt_eval_count: Int? = null,
-    val eval_count: Int? = null,
-    val created_at: String? = null,
-)
 
 @Service
 class OllamaClient(
@@ -33,7 +23,7 @@ class OllamaClient(
         systemPrompt: String?,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
-        prompt: PromptConfig,
+        prompt: PromptConfigBase,
     ): LlmResponse {
         val creativityConfig = getCreativityConfig(prompt)
         val options = buildOptions(creativityConfig, config)
@@ -118,7 +108,17 @@ class OllamaClient(
 
     private fun calculateTotalTokens(response: OllamaGenerateResponse): Int = (response.prompt_eval_count ?: 0) + (response.eval_count ?: 0)
 
-    private fun getCreativityConfig(prompt: PromptConfig) =
+    private fun getCreativityConfig(prompt: PromptConfigBase) =
         promptsConfiguration.creativityLevels[prompt.modelParams.creativityLevel]
             ?: throw IllegalStateException("No creativity level configuration found for ${prompt.modelParams.creativityLevel}")
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class OllamaGenerateResponse(
+        val model: String? = null,
+        val response: String = "",
+        val done_reason: String? = null,
+        val prompt_eval_count: Int? = null,
+        val eval_count: Int? = null,
+        val created_at: String? = null,
+    )
 }

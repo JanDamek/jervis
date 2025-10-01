@@ -6,9 +6,9 @@ import com.jervis.dto.ChatResponse
 import com.jervis.entity.mongo.PlanDocument
 import com.jervis.repository.mongo.PlanMongoRepository
 import com.jervis.service.agent.context.TaskContextService
+import com.jervis.service.agent.execution.PlanningRunner
 import com.jervis.service.agent.finalizer.Finalizer
 import com.jervis.service.agent.planner.Planner
-import com.jervis.service.agent.planner.PlanningRunner
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -65,6 +65,7 @@ class AgentOrchestratorService(
                 originalLanguage = detectionResult.originalLanguage,
                 englishQuestion = detectionResult.englishText,
                 questionChecklist = detectionResult.questionChecklist,
+                investigationGuidance = detectionResult.investigationGuidance,
             )
         planMongoRepository.save(PlanDocument.fromDomain(plan))
         context.plans += plan

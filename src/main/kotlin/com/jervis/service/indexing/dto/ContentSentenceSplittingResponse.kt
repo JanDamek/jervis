@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 
 /**
  * Response schema for CONTENT_SENTENCE_SPLITTING prompt type.
- * Matches the responseSchema defined in prompts.yaml for CONTENT_SENTENCE_SPLITTING.
+ * Matches the responseSchema defined in prompts-tools.yaml for CONTENT_SENTENCE_SPLITTING.
  */
 @Serializable
 data class ContentSentenceSplittingResponse(

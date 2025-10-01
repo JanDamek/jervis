@@ -2,7 +2,7 @@ package com.jervis.service.gateway.clients
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.jervis.configuration.ModelsProperties
-import com.jervis.configuration.prompts.PromptConfig
+import com.jervis.configuration.prompts.PromptConfigBase
 import com.jervis.configuration.prompts.PromptsConfiguration
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProvider
@@ -10,59 +10,6 @@ import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.awaitBody
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-data class OpenAiStyleResponse(
-    val id: String? = null,
-    val created: Long? = null,
-    val model: String? = null,
-    val choices: List<OpenAiChoice> = emptyList(),
-    val usage: OpenAiUsage? = null,
-    val `object`: String? = null,
-)
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-data class OpenAiChoice(
-    val index: Int = 0,
-    val message: OpenAiMessage = OpenAiMessage(),
-    val finish_reason: String? = null,
-)
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-data class OpenAiMessage(
-    val role: String = "assistant",
-    val content: String? = null,
-    val name: String? = null,
-    val refusal: String? = null,
-    val tool_calls: List<OpenAiToolCall>? = null,
-    val function_call: OpenAiFunctionCall? = null,
-)
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-data class OpenAiToolCall(
-    val id: String,
-    val type: String,
-    val function: OpenAiFunction,
-)
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-data class OpenAiFunction(
-    val name: String,
-    val arguments: String,
-)
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-data class OpenAiFunctionCall(
-    val name: String,
-    val arguments: String,
-)
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-data class OpenAiUsage(
-    val prompt_tokens: Int? = null,
-    val completion_tokens: Int? = null,
-    val total_tokens: Int? = null,
-)
 
 @Service
 class OpenAiClient(
@@ -76,7 +23,7 @@ class OpenAiClient(
         systemPrompt: String?,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
-        prompt: PromptConfig,
+        prompt: PromptConfigBase,
     ): LlmResponse {
         val creativityConfig = getCreativityConfig(prompt)
         val messages = buildMessagesList(systemPrompt, userPrompt)
@@ -145,7 +92,60 @@ class OpenAiClient(
 
     private fun calculateTotalTokens(usage: OpenAiUsage?): Int = (usage?.prompt_tokens ?: 0) + (usage?.completion_tokens ?: 0)
 
-    private fun getCreativityConfig(prompt: PromptConfig) =
+    private fun getCreativityConfig(prompt: PromptConfigBase) =
         promptsConfiguration.creativityLevels[prompt.modelParams.creativityLevel]
             ?: throw IllegalStateException("No creativity level configuration found for ${prompt.modelParams.creativityLevel}")
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class OpenAiStyleResponse(
+        val id: String? = null,
+        val created: Long? = null,
+        val model: String? = null,
+        val choices: List<OpenAiChoice> = emptyList(),
+        val usage: OpenAiUsage? = null,
+        val `object`: String? = null,
+    )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class OpenAiChoice(
+        val index: Int = 0,
+        val message: OpenAiMessage = OpenAiMessage(),
+        val finish_reason: String? = null,
+    )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class OpenAiMessage(
+        val role: String = "assistant",
+        val content: String? = null,
+        val name: String? = null,
+        val refusal: String? = null,
+        val tool_calls: List<OpenAiToolCall>? = null,
+        val function_call: OpenAiFunctionCall? = null,
+    )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class OpenAiToolCall(
+        val id: String,
+        val type: String,
+        val function: OpenAiFunction,
+    )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class OpenAiFunction(
+        val name: String,
+        val arguments: String,
+    )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class OpenAiFunctionCall(
+        val name: String,
+        val arguments: String,
+    )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class OpenAiUsage(
+        val prompt_tokens: Int? = null,
+        val completion_tokens: Int? = null,
+        val total_tokens: Int? = null,
+    )
 }

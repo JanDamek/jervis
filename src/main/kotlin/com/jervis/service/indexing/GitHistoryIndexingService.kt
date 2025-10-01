@@ -1,15 +1,15 @@
 package com.jervis.service.indexing
 
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.rag.RagDocument
-import com.jervis.domain.rag.RagDocumentType
 import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.gateway.core.LlmGateway
-import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.service.indexing.dto.GitCommitProcessingResponse
+import com.jervis.service.indexing.monitoring.IndexingStepType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -17,10 +17,6 @@ import org.springframework.stereotype.Service
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.nio.file.Path
-import java.time.Instant
-import java.time.LocalDateTime
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 
 /**
  * Service for indexing Git history into RAG system.
@@ -52,6 +48,7 @@ class GitHistoryIndexingService(
         val author: String,
         val date: String,
         val message: String,
+        val branch: String,
         val changedFiles: List<String>,
         val additions: Int,
         val deletions: Int,
@@ -78,8 +75,9 @@ class GitHistoryIndexingService(
                 val newCommits = getNewGitCommits(projectPath, indexedCommits, maxCommits)
                 logger.info { "Found ${newCommits.size} new commits to index for project: ${project.name}" }
                 indexingMonitorService.addStepLog(
-                    project.id, "git_history", 
-                    "Found ${newCommits.size} new commits to index (${indexedCommits.size} already indexed)"
+                    project.id,
+                    IndexingStepType.GIT_HISTORY,
+                    "Found ${newCommits.size} new commits to index (${indexedCommits.size} already indexed)",
                 )
 
                 var processedCommits = 0
@@ -88,28 +86,32 @@ class GitHistoryIndexingService(
                 for ((index, commit) in newCommits.withIndex()) {
                     try {
                         indexingMonitorService.addStepLog(
-                            project.id, "git_history", 
-                            "Processing commit (${index + 1}/${newCommits.size}): ${commit.hash.take(8)} by ${commit.author}"
+                            project.id,
+                            IndexingStepType.GIT_HISTORY,
+                            "Processing commit (${index + 1}/${newCommits.size}): ${commit.hash.take(8)} by ${commit.author}",
                         )
-                        
+
                         val success = indexGitCommit(project, commit)
                         if (success) {
                             processedCommits++
                             indexingMonitorService.addStepLog(
-                                project.id, "git_history", 
-                                "✓ Successfully indexed commit: ${commit.hash.take(8)} - ${commit.message.take(50)}..."
+                                project.id,
+                                IndexingStepType.GIT_HISTORY,
+                                "✓ Successfully indexed commit: ${commit.hash.take(8)} - ${commit.message.take(50)}...",
                             )
                         } else {
                             errorCommits++
                             indexingMonitorService.addStepLog(
-                                project.id, "git_history", 
-                                "✗ Failed to index commit: ${commit.hash.take(8)}"
+                                project.id,
+                                IndexingStepType.GIT_HISTORY,
+                                "✗ Failed to index commit: ${commit.hash.take(8)}",
                             )
                         }
                     } catch (e: Exception) {
                         indexingMonitorService.addStepLog(
-                            project.id, "git_history", 
-                            "✗ Error indexing commit: ${commit.hash.take(8)} - ${e.message}"
+                            project.id,
+                            IndexingStepType.GIT_HISTORY,
+                            "✗ Error indexing commit: ${commit.hash.take(8)} - ${e.message}",
                         )
                         logger.warn(e) { "Failed to index commit: ${commit.hash}" }
                         errorCommits++
@@ -137,31 +139,8 @@ class GitHistoryIndexingService(
         commit: GitCommit,
     ): Boolean {
         try {
-            val commitSummary =
-                buildString {
-                    appendLine("Git Commit: ${commit.hash}")
-                    appendLine("Author: ${commit.author}")
-                    appendLine("Date: ${commit.date}")
-                    appendLine("Message: ${commit.message}")
-                    appendLine()
-                    appendLine("Changes:")
-                    appendLine("- Files changed: ${commit.changedFiles.size}")
-                    appendLine("- Lines added: ${commit.additions}")
-                    appendLine("- Lines deleted: ${commit.deletions}")
-                    appendLine()
-                    if (commit.changedFiles.isNotEmpty()) {
-                        appendLine("Modified files:")
-                        commit.changedFiles.take(20).forEach { file ->
-                            appendLine("  - $file")
-                        }
-                        if (commit.changedFiles.size > 20) {
-                            appendLine("  ... and ${commit.changedFiles.size - 20} more files")
-                        }
-                    }
-                }
-
             // Create atomic sentences for RAG embedding following requirement #4
-            val sentences = createCommitSentences(commit, commitSummary)
+            val sentences = createCommitSentences(commit)
 
             logger.debug { "Split commit ${commit.hash} into ${sentences.size} atomic sentences" }
 
@@ -172,18 +151,14 @@ class GitHistoryIndexingService(
 
                 val ragDocument =
                     RagDocument(
-                        projectId = project.id!!,
-                        documentType = RagDocumentType.GIT_HISTORY,
-                        ragSourceType = RagSourceType.GIT,
-                        pageContent = sentence,
+                        projectId = project.id,
+                        ragSourceType = RagSourceType.GIT_HISTORY,
+                        summary = sentence,
                         clientId = project.clientId,
-                        source = "git://${project.name}/${commit.hash}#sentence-$index",
                         path = "git/commits/${commit.hash}",
-                        module = "git-history",
                         language = "git-commit",
-                        timestamp = parseGitDate(commit.date).toEpochMilli(),
                         gitCommitHash = commit.hash,
-                        chunkId = "sentence-$index",
+                        chunkId = index,
                         symbolName = "git-commit-${commit.hash.take(8)}",
                     )
 
@@ -207,7 +182,6 @@ class GitHistoryIndexingService(
             val filter =
                 mapOf(
                     "projectId" to project.id.toString(),
-                    "documentType" to RagDocumentType.GIT_HISTORY.name,
                 )
 
             val existingDocs =
@@ -242,7 +216,7 @@ class GitHistoryIndexingService(
                     ProcessBuilder(
                         "git",
                         "log",
-                        "--pretty=format:%H|%an|%ad|%s",
+                        "--pretty=format:%H|%an|%ad|%D|%s",
                         "--date=iso",
                         "--numstat",
                         "-n",
@@ -260,7 +234,7 @@ class GitHistoryIndexingService(
                 reader.useLines { lines ->
                     for (line in lines) {
                         when {
-                            line.contains("|") && line.split("|").size >= 4 -> {
+                            line.contains("|") && line.split("|").size >= 5 -> {
                                 // Save previous commit if exists
                                 currentCommit?.let { commit ->
                                     if (!indexedCommits.contains(commit.hash)) {
@@ -276,12 +250,17 @@ class GitHistoryIndexingService(
 
                                 // Parse new commit
                                 val parts = line.split("|")
+                                val refNames = parts[3]
+                                // Extract branch from refnames (format: "origin/main, main" -> "main")
+                                val branch = extractBranchFromRefNames(refNames)
+
                                 currentCommit =
                                     GitCommit(
                                         hash = parts[0],
                                         author = parts[1],
                                         date = parts[2],
-                                        message = parts.drop(3).joinToString("|"),
+                                        branch = branch,
+                                        message = parts.drop(4).joinToString("|"),
                                         changedFiles = emptyList(),
                                         additions = 0,
                                         deletions = 0,
@@ -330,63 +309,81 @@ class GitHistoryIndexingService(
         }
 
     /**
+     * Extract branch name from git refnames string
+     */
+    private fun extractBranchFromRefNames(refNames: String): String {
+        if (refNames.isBlank()) return "main"
+
+        // Split by comma and look for branch references
+        val refs = refNames.split(",").map { it.trim() }
+
+        // Priority order: local branches > origin branches > fallback to main
+        val localBranch = refs.find { it.matches(Regex("^[^/]+$")) && !it.startsWith("tag:") }
+        if (localBranch != null) return localBranch
+
+        val originBranch = refs.find { it.startsWith("origin/") && !it.contains("HEAD") }
+        if (originBranch != null) return originBranch.removePrefix("origin/")
+
+        // If we find HEAD -> origin/something, extract that
+        val headRef = refs.find { it.contains("HEAD ->") }
+        if (headRef != null) {
+            val branchPart = headRef.substringAfter("HEAD ->").trim()
+            if (branchPart.startsWith("origin/")) {
+                return branchPart.removePrefix("origin/")
+            }
+            return branchPart
+        }
+
+        return "main" // Fallback
+    }
+
+    /**
      * Create atomic sentences for RAG embedding from git commit data using LLM processing.
      * Following requirement #4: "každý commit se také musí rozložit na krátké popisky"
      */
-    private suspend fun createCommitSentences(commit: GitCommit, commitSummary: String): List<String> {
-        return try {
-            val commitContent = buildString {
-                appendLine("Commit: ${commit.hash}")
-                appendLine("Author: ${commit.author}")
-                appendLine("Date: ${commit.date}")
-                appendLine("Message: ${commit.message}")
-                if (commit.changedFiles.isNotEmpty()) {
-                    appendLine("Files changed (${commit.changedFiles.size}): ${commit.changedFiles.joinToString(", ")}")
-                    appendLine("Statistics: +${commit.additions} additions, -${commit.deletions} deletions")
+    private suspend fun createCommitSentences(commit: GitCommit): List<String> =
+        try {
+            val commitContent =
+                buildString {
+                    appendLine("Commit: ${commit.hash}")
+                    appendLine("Author: ${commit.author}")
+                    appendLine("Date: ${commit.date}")
+                    appendLine("Message: ${commit.message}")
+                    if (commit.changedFiles.isNotEmpty()) {
+                        appendLine("Files changed (${commit.changedFiles.size}): ${commit.changedFiles.joinToString(", ")}")
+                        appendLine("Statistics: +${commit.additions} additions, -${commit.deletions} deletions")
+                    }
                 }
-            }
 
-            val response = llmGateway.callLlm(
-                type = PromptTypeEnum.GIT_COMMIT_PROCESSING,
-                userPrompt = "",
-                quick = false,
-                responseSchema = GitCommitProcessingResponse(),
-                mappingValue = mapOf(
-                    "commitHash" to commit.hash,
-                    "commitAuthor" to commit.author,
-                    "commitDate" to commit.date,
-                    "commitBranch" to "main", // Default branch, could be enhanced to get actual branch
-                    "commitContent" to commitContent
+            val response =
+                llmGateway.callLlm(
+                    type = PromptTypeEnum.GIT_COMMIT_PROCESSING,
+                    responseSchema = GitCommitProcessingResponse(),
+                    quick = false,
+                    mappingValue =
+                        mapOf(
+                            "commitHash" to commit.hash,
+                            "commitAuthor" to commit.author,
+                            "commitDate" to commit.date,
+                            "commitBranch" to commit.branch,
+                            "commitContent" to commitContent,
+                        ),
                 )
-            )
 
             // Filter out any empty or too short sentences
             response.sentences.filter { it.trim().isNotEmpty() && it.length >= 10 }
         } catch (e: Exception) {
             logger.warn(e) { "Failed to process commit with LLM, falling back to simple processing for commit: ${commit.hash}" }
-            
+
             // Fallback to simple processing if LLM fails
             val sentences = mutableListOf<String>()
             sentences.add("Git commit ${commit.hash.take(8)} by ${commit.author} on ${commit.date}")
             sentences.add(commit.message.take(200)) // Truncate long messages
             if (commit.changedFiles.isNotEmpty()) {
-                sentences.add("Modified ${commit.changedFiles.size} files with ${commit.additions} additions and ${commit.deletions} deletions")
+                sentences.add(
+                    "Modified ${commit.changedFiles.size} files with ${commit.additions} additions and ${commit.deletions} deletions",
+                )
             }
             sentences.filter { it.trim().isNotEmpty() && it.length >= 10 }
-        }
-    }
-
-
-    /**
-     * Parse git date format to Instant
-     */
-    private fun parseGitDate(dateStr: String): Instant =
-        try {
-            val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss xxxx")
-            val localDateTime = LocalDateTime.parse(dateStr, formatter)
-            localDateTime.atZone(ZoneId.systemDefault()).toInstant()
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to parse git date: $dateStr, using current time" }
-            Instant.now()
         }
 }

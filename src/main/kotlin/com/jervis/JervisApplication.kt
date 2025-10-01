@@ -34,7 +34,10 @@ import javax.swing.UIManager
 @SpringBootApplication
 @EnableMongoRepositories(basePackages = ["com.jervis.repository.mongo"])
 @EnableConfigurationProperties(PromptsConfiguration::class)
-@PropertySource(value = ["classpath:prompts.yaml"], factory = YamlPropertySourceFactory::class)
+@PropertySource(
+    value = ["classpath:prompts-tools.yaml", "classpath:prompts-services.yaml"],
+    factory = YamlPropertySourceFactory::class,
+)
 @ComponentScan(
     basePackages = [
         "com.jervis.service", "com.jervis.ui.component",

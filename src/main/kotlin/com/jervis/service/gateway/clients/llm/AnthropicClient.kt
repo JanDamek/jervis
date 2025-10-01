@@ -2,7 +2,7 @@ package com.jervis.service.gateway.clients.llm
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.jervis.configuration.ModelsProperties
-import com.jervis.configuration.prompts.PromptConfig
+import com.jervis.configuration.prompts.PromptConfigBase
 import com.jervis.configuration.prompts.PromptsConfiguration
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProvider
@@ -11,27 +11,6 @@ import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.awaitBody
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-data class AnthropicMessagesResponse(
-    val id: String? = null,
-    val model: String? = null,
-    val content: List<AnthropicContent> = emptyList(),
-    val stop_reason: String? = null,
-    val usage: AnthropicUsage? = null,
-)
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-data class AnthropicContent(
-    val type: String = "text",
-    val text: String = "",
-)
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-data class AnthropicUsage(
-    val input_tokens: Int? = null,
-    val output_tokens: Int? = null,
-)
 
 @Service
 class AnthropicClient(
@@ -45,7 +24,7 @@ class AnthropicClient(
         systemPrompt: String?,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
-        prompt: PromptConfig,
+        prompt: PromptConfigBase,
     ): LlmResponse {
         val creativityConfig = getCreativityConfig(prompt)
         val messages = buildMessages(userPrompt)
@@ -110,7 +89,28 @@ class AnthropicClient(
         )
     }
 
-    private fun getCreativityConfig(prompt: PromptConfig) =
+    private fun getCreativityConfig(prompt: PromptConfigBase) =
         promptsConfiguration.creativityLevels[prompt.modelParams.creativityLevel]
             ?: throw IllegalStateException("No creativity level configuration found for ${prompt.modelParams.creativityLevel}")
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class AnthropicMessagesResponse(
+        val id: String? = null,
+        val model: String? = null,
+        val content: List<AnthropicContent> = emptyList(),
+        val stop_reason: String? = null,
+        val usage: AnthropicUsage? = null,
+    )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class AnthropicContent(
+        val type: String = "text",
+        val text: String = "",
+    )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class AnthropicUsage(
+        val input_tokens: Int? = null,
+        val output_tokens: Int? = null,
+    )
 }

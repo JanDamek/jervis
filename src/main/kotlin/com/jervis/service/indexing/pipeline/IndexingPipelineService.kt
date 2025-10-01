@@ -2,30 +2,31 @@ package com.jervis.service.indexing.pipeline
 
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.model.ModelType
-import com.jervis.domain.rag.EmbeddingType
-import com.jervis.domain.rag.LineRange
 import com.jervis.domain.rag.RagDocument
-import com.jervis.domain.rag.RagDocumentType
 import com.jervis.domain.rag.RagSourceType
+import com.jervis.domain.rag.SymbolType
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.analysis.JoernAnalysisService
+import com.jervis.service.analysis.JoernResultParser
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.gateway.core.LlmGateway
+import com.jervis.service.gateway.processing.TokenEstimationService
+import com.jervis.service.gateway.processing.dto.LlmResponseWrapper
+import com.jervis.service.indexing.monitoring.IndexingMonitorService
+import com.jervis.service.indexing.monitoring.IndexingProgress
+import com.jervis.service.indexing.monitoring.IndexingStepStatus
+import com.jervis.service.indexing.monitoring.IndexingStepType
+import com.jervis.service.rag.RagIndexingStatusService
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
-import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.io.path.extension
-import kotlin.io.path.isRegularFile
-import kotlin.io.path.name
 
 /**
  * Pipeline-based indexing service using Kotlin Channels for streaming processing.
@@ -36,13 +37,17 @@ class IndexingPipelineService(
     private val embeddingGateway: EmbeddingGateway,
     private val vectorStorage: VectorStorageRepository,
     private val joernAnalysisService: JoernAnalysisService,
+    private val joernResultParser: JoernResultParser,
     private val llmGateway: LlmGateway,
+    private val indexingMonitorService: IndexingMonitorService,
+    private val ragIndexingStatusService: RagIndexingStatusService,
+    private val tokenEstimationService: TokenEstimationService,
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
         private const val CHANNEL_BUFFER_SIZE = 100
-        private const val PRODUCER_CONCURRENCY = 2
         private const val CONSUMER_CONCURRENCY = 4
+        private const val MAX_LLM_SUMMARY_TOKENS = 300
     }
 
     /**
@@ -56,8 +61,17 @@ class IndexingPipelineService(
             logger.info { "PIPELINE_START: Starting streaming indexation for project: ${project.name}" }
             val overallStartTime = System.currentTimeMillis()
 
+            // Report pipeline start UNDER EXISTING STEP: code_files
+            indexingMonitorService.updateStepProgress(
+                project.id,
+                IndexingStepType.CODE_FILES,
+                IndexingStepStatus.RUNNING,
+                IndexingProgress(0, 4), // joern, embedding, storage, collect
+                "Initializing code files indexing pipeline",
+                logs = listOf("Pipeline indexing started for code files"),
+            )
+
             // Create channels for pipeline stages
-            val fileChannel = Channel<Path>(CHANNEL_BUFFER_SIZE)
             val joernResultChannel = Channel<JoernAnalysisItem>(CHANNEL_BUFFER_SIZE)
             val embeddingChannel = Channel<EmbeddingPipelineItem>(CHANNEL_BUFFER_SIZE)
             val storageChannel = Channel<StoragePipelineItem>(CHANNEL_BUFFER_SIZE)
@@ -65,41 +79,77 @@ class IndexingPipelineService(
             // Launch all pipeline stages concurrently
             val pipeline =
                 listOf(
-                    // Stage 1: File Discovery Producer
+                    // Stage 1: Language-based Joern Analysis Producer
                     async {
-                        fileDiscoveryProducer(project, projectPath, fileChannel)
+                        languageBasedJoernProducer(project, projectPath, joernResultChannel)
                     },
-                    // Stage 2: Joern Analysis Consumer/Producer
-                    async {
-                        joernAnalysisProcessor(project, fileChannel, joernResultChannel)
-                    },
-                    // Stage 3: Parallel Embedding Processors (multiple consumers)
+                    // Stage 2: Parallel Embedding Processors (multiple consumers)
                     async {
                         embeddingPipelineProcessor(project, joernResultChannel, embeddingChannel)
                     },
-                    // Stage 4: Vector Storage Consumer
+                    // Stage 3: Vector Storage Consumer
                     async {
                         vectorStorageProcessor(project, embeddingChannel, storageChannel)
                     },
-                    // Stage 5: Results Collector
+                    // Stage 4: Results Collector
                     async {
                         resultsCollector(storageChannel)
                     },
                 )
 
             try {
+                // Update general pipeline progress under code_files
+                indexingMonitorService.updateStepProgress(
+                    project.id,
+                    IndexingStepType.CODE_FILES,
+                    IndexingStepStatus.RUNNING,
+                    IndexingProgress(1, 4),
+                    "Executing pipeline stages (joern, embeddings, storage)",
+                    logs = listOf("Pipeline stages launched and running"),
+                )
+
                 // Wait for pipeline completion
                 val results = pipeline.awaitAll()
 
                 val totalTime = System.currentTimeMillis() - overallStartTime
                 logger.info { "PIPELINE_COMPLETE: Streaming indexation completed for project: ${project.name} in ${totalTime}ms" }
 
-                aggregateResults(results, totalTime)
+                // Report completion under code_files
+                indexingMonitorService.updateStepProgress(
+                    project.id,
+                    IndexingStepType.CODE_FILES,
+                    IndexingStepStatus.COMPLETED,
+                    IndexingProgress(4, 4),
+                    "Code files indexing pipeline completed successfully",
+                    logs = listOf("Pipeline completed in ${totalTime}ms"),
+                )
+
+                val result = aggregateResults(results, totalTime)
+
+                // Clear file content cache to free memory after successful completion
+                joernResultParser.clearCache()
+                logger.debug { "File content cache cleared after successful pipeline completion" }
+
+                result
             } catch (e: Exception) {
                 logger.error(e) { "PIPELINE_ERROR: Pipeline failed for project: ${project.name}" }
 
+                // Report failure to monitoring under code_files
+                indexingMonitorService.updateStepProgress(
+                    project.id,
+                    IndexingStepType.CODE_FILES,
+                    IndexingStepStatus.FAILED,
+                    IndexingProgress(0, 4),
+                    errorMessage = "Code files pipeline failed: ${e.message}",
+                    logs = listOf("Pipeline execution failed", "Error: ${e.message}"),
+                )
+
                 // Cancel all pipeline stages
                 pipeline.forEach { it.cancel() }
+
+                // Clear file content cache to free memory after pipeline failure
+                joernResultParser.clearCache()
+                logger.debug { "File content cache cleared after pipeline failure" }
 
                 IndexingPipelineResult(
                     totalProcessed = 0,
@@ -112,105 +162,68 @@ class IndexingPipelineService(
         }
 
     /**
-     * Producer Stage 1: Discover and stream files for processing
+     * Producer Stage 1: Language-based Joern analysis using per-language CPGs
      */
-    private suspend fun fileDiscoveryProducer(
+    private suspend fun languageBasedJoernProducer(
         project: ProjectDocument,
         projectPath: Path,
-        fileChannel: SendChannel<Path>,
+        joernResultChannel: SendChannel<JoernAnalysisItem>,
     ) {
         try {
-            logger.info { "PIPELINE_PRODUCER: Starting file discovery for ${project.name}" }
-            val startTime = System.currentTimeMillis()
-            var discoveredFiles = 0
+            logger.info { "PIPELINE_JOERN: Starting language-based Joern analysis for ${project.name}" }
 
-            Files.walk(projectPath).use { stream ->
-                val files = stream
-                    .filter { it.isRegularFile() }
-                    .filter { shouldProcessFile(it, project) }
-                    .toList()
-                
-                for (filePath in files) {
-                    logger.debug { "PIPELINE_PRODUCER: Discovered file: $filePath" }
-                    fileChannel.send(filePath)
-                    discoveredFiles++
+            indexingMonitorService.addStepLog(
+                project.id,
+                IndexingStepType.CODE_FILES,
+                "Language-based Joern analysis started",
+            )
+
+            val startTime = System.currentTimeMillis()
+            var processedSymbols = 0
+
+            // Use the new language-based indexing approach
+            joernAnalysisService.indexProjectWithJoern(projectPath).collect { symbol ->
+                val analysisItem =
+                    JoernAnalysisItem(
+                        filePath = Path.of(symbol.filePath),
+                        symbol = symbol,
+                        projectId = project.id,
+                        workerId = 0, // Single worker for language-based approach
+                        timestamp = System.currentTimeMillis(),
+                    )
+
+                joernResultChannel.send(analysisItem)
+                processedSymbols++
+
+                if (processedSymbols % 100 == 0) {
+                    logger.debug { "PIPELINE_JOERN: Processed $processedSymbols symbols" }
+                    // Proactively maintain cache to prevent memory buildup
+                    joernResultParser.maintainCache()
                 }
             }
-
-            val totalTime = System.currentTimeMillis() - startTime
-            logger.info { "PIPELINE_PRODUCER: File discovery completed - discovered $discoveredFiles files in ${totalTime}ms" }
-        } catch (e: Exception) {
-            logger.error(e) { "PIPELINE_PRODUCER_ERROR: File discovery failed" }
-        } finally {
-            fileChannel.close()
-        }
-    }
-
-    /**
-     * Consumer/Producer Stage 2: Process files through Joern analysis
-     */
-    private suspend fun joernAnalysisProcessor(
-        project: ProjectDocument,
-        fileChannel: ReceiveChannel<Path>,
-        joernResultChannel: SendChannel<JoernAnalysisItem>,
-    ) = coroutineScope {
-        logger.info { "PIPELINE_JOERN: Starting Joern analysis processor" }
-        val startTime = System.currentTimeMillis()
-        var processedFiles = 0
-        var generatedSymbols = 0
-
-        try {
-            // Launch multiple Joern workers for parallel processing
-            val workers =
-                (1..PRODUCER_CONCURRENCY).map { workerId ->
-                    async {
-                        var workerFiles = 0
-                        var workerSymbols = 0
-
-                        for (filePath in fileChannel) {
-                            try {
-                                logger.debug { "PIPELINE_JOERN_WORKER_$workerId: Processing file: $filePath" }
-
-                                // Analyze file with Joern
-                                val symbols = analyzeFileWithJoern(filePath)
-
-                                // Stream results to next stage
-                                for (symbol in symbols) {
-                                    val analysisItem =
-                                        JoernAnalysisItem(
-                                            filePath = filePath,
-                                            symbol = symbol,
-                                            projectId = project.id,
-                                            workerId = workerId,
-                                            timestamp = System.currentTimeMillis(),
-                                        )
-                                    joernResultChannel.send(analysisItem)
-                                    workerSymbols++
-                                }
-
-                                workerFiles++
-                            } catch (e: Exception) {
-                                logger.warn(e) { "PIPELINE_JOERN_ERROR: Failed to analyze file: $filePath" }
-                            }
-                        }
-
-                        logger.debug { "PIPELINE_JOERN_WORKER_$workerId: Completed - files: $workerFiles, symbols: $workerSymbols" }
-                        Pair(workerFiles, workerSymbols)
-                    }
-                }
-
-            // Wait for all workers and collect statistics
-            val workerResults = workers.awaitAll()
-            processedFiles = workerResults.sumOf { it.first }
-            generatedSymbols = workerResults.sumOf { it.second }
 
             val totalTime = System.currentTimeMillis() - startTime
             logger.info {
-                "PIPELINE_JOERN: Analysis processor completed - " +
-                    "files: $processedFiles, symbols: $generatedSymbols, time: ${totalTime}ms"
+                "PIPELINE_JOERN: Language-based Joern analysis completed - processed $processedSymbols symbols in ${totalTime}ms"
             }
+
+            indexingMonitorService.addStepLog(
+                project.id,
+                IndexingStepType.CODE_FILES,
+                "Language-based Joern analysis completed: $processedSymbols symbols in ${totalTime}ms",
+            )
         } catch (e: Exception) {
-            logger.error(e) { "PIPELINE_JOERN_PROCESSOR_ERROR: Joern analysis failed" }
+            logger.error(e) { "PIPELINE_JOERN_ERROR: Language-based Joern analysis failed" }
+
+            indexingMonitorService.updateStepProgress(
+                project.id,
+                IndexingStepType.CODE_FILES,
+                IndexingStepStatus.FAILED,
+                IndexingProgress(0, 4),
+                errorMessage = "Language-based Joern analysis failed: ${e.message}",
+                logs = listOf("Joern analysis stage failed", "Error: ${e.message}"),
+            )
+            throw e
         } finally {
             joernResultChannel.close()
         }
@@ -225,6 +238,14 @@ class IndexingPipelineService(
         embeddingChannel: SendChannel<EmbeddingPipelineItem>,
     ) = coroutineScope {
         logger.info { "PIPELINE_EMBEDDING: Starting embedding pipeline processor" }
+
+        // Log under code_files instead of unknown step
+        indexingMonitorService.addStepLog(
+            project.id,
+            IndexingStepType.CODE_FILES,
+            "Embedding pipeline started",
+        )
+
         val startTime = System.currentTimeMillis()
 
         // Create specialized channels for different embedding types
@@ -238,29 +259,71 @@ class IndexingPipelineService(
                 async {
                     var routedItems = 0
                     for (analysisItem in joernResultChannel) {
+                        // Check if content should be processed based on hash
+                        val shouldProcess = shouldProcessSymbol(project, analysisItem)
+
+                        if (!shouldProcess) {
+                            logger.debug {
+                                "PIPELINE_SPLITTER: Skipping ${analysisItem.symbol.name} - content unchanged"
+                            }
+                            continue
+                        }
+
                         when (analysisItem.symbol.type) {
                             JoernSymbolType.METHOD -> {
-                                // Send code for code embedding
-                                codeEmbeddingChannel.send(
-                                    CodeEmbeddingTask(analysisItem, analysisItem.symbol.code ?: ""),
-                                )
+                                var itemsAdded = 0
 
-                                // Send method for text summary embedding
-                                textEmbeddingChannel.send(
-                                    TextEmbeddingTask(analysisItem, generateMethodSummary(analysisItem)),
-                                )
-                                routedItems += 2
+                                // Send code for code embedding ONLY if code is not empty
+                                val code = analysisItem.symbol.code
+                                if (code?.isNotBlank() == true) {
+                                    codeEmbeddingChannel.send(
+                                        CodeEmbeddingTask(analysisItem, code),
+                                    )
+                                    itemsAdded++
+                                } else {
+                                    logger.debug {
+                                        "PIPELINE_SPLITTER: Skipping code embedding for ${analysisItem.symbol.name} - no code available"
+                                    }
+                                }
+
+                                // Send method for text summary embedding only if beneficial
+                                if (shouldGenerateTextSummary(analysisItem.symbol.type)) {
+                                    generateMethodSummary(analysisItem)?.let {
+                                        textEmbeddingChannel.send(
+                                            TextEmbeddingTask(analysisItem, it),
+                                        )
+                                        itemsAdded++
+                                    }
+                                }
+
+                                routedItems += itemsAdded
                             }
 
                             JoernSymbolType.CLASS -> {
-                                classAnalysisChannel.send(
-                                    ClassAnalysisTask(analysisItem, analysisItem.symbol),
-                                )
-                                routedItems++
+                                if (shouldGenerateTextSummary(analysisItem.symbol.type)) {
+                                    classAnalysisChannel.send(
+                                        ClassAnalysisTask(analysisItem, analysisItem.symbol),
+                                    )
+                                    routedItems++
+                                }
+                            }
+
+                            JoernSymbolType.VARIABLE, JoernSymbolType.FIELD, JoernSymbolType.PARAMETER -> {
+                                // For simple symbols, only send code embedding, skip LLM text summary
+                                val code = analysisItem.symbol.code
+                                if (code?.isNotBlank() == true) {
+                                    codeEmbeddingChannel.send(
+                                        CodeEmbeddingTask(analysisItem, code),
+                                    )
+                                    routedItems++
+                                    logger.debug {
+                                        "PIPELINE_SPLITTER: Processing ${analysisItem.symbol.type} ${analysisItem.symbol.name} for code embedding only"
+                                    }
+                                }
                             }
 
                             else -> {
-                                logger.debug { "PIPELINE_SPLITTER: Skipping unknown symbol type: ${analysisItem.symbol.type}" }
+                                logger.debug { "PIPELINE_SPLITTER: Skipping symbol type: ${analysisItem.symbol.type}" }
                             }
                         }
                     }
@@ -294,8 +357,23 @@ class IndexingPipelineService(
 
             val totalTime = System.currentTimeMillis() - startTime
             logger.info { "PIPELINE_EMBEDDING: Embedding pipeline processor completed in ${totalTime}ms" }
+
+            indexingMonitorService.addStepLog(
+                project.id,
+                IndexingStepType.CODE_FILES,
+                "Embedding pipeline completed in ${totalTime}ms",
+            )
         } catch (e: Exception) {
             logger.error(e) { "PIPELINE_EMBEDDING_ERROR: Embedding processor failed" }
+
+            indexingMonitorService.updateStepProgress(
+                project.id,
+                IndexingStepType.CODE_FILES,
+                IndexingStepStatus.FAILED,
+                IndexingProgress(0, 5),
+                errorMessage = "Embedding pipeline failed: ${e.message}",
+                logs = listOf("Embedding pipeline stage failed", "Error: ${e.message}"),
+            )
         } finally {
             embeddingChannel.close()
         }
@@ -318,13 +396,14 @@ class IndexingPipelineService(
                     val embedding = embeddingGateway.callEmbedding(modelType, task.content)
                     val processingTime = System.currentTimeMillis() - startTime
 
-                    val pipelineItem = EmbeddingPipelineItem(
-                        analysisItem = task.analysisItem,
-                        content = task.content,
-                        embedding = embedding,
-                        embeddingType = modelType,
-                        processingTimeMs = processingTime,
-                    )
+                    val pipelineItem =
+                        EmbeddingPipelineItem(
+                            analysisItem = task.analysisItem,
+                            content = task.content,
+                            embedding = embedding,
+                            embeddingType = modelType,
+                            processingTimeMs = processingTime,
+                        )
 
                     outputChannel.send(pipelineItem)
                     processedItems++
@@ -356,13 +435,14 @@ class IndexingPipelineService(
                     val embedding = embeddingGateway.callEmbedding(modelType, task.content)
                     val processingTime = System.currentTimeMillis() - startTime
 
-                    val pipelineItem = EmbeddingPipelineItem(
-                        analysisItem = task.analysisItem,
-                        content = task.content,
-                        embedding = embedding,
-                        embeddingType = modelType,
-                        processingTimeMs = processingTime,
-                    )
+                    val pipelineItem =
+                        EmbeddingPipelineItem(
+                            analysisItem = task.analysisItem,
+                            content = task.content,
+                            embedding = embedding,
+                            embeddingType = modelType,
+                            processingTimeMs = processingTime,
+                        )
 
                     outputChannel.send(pipelineItem)
                     processedItems++
@@ -377,7 +457,6 @@ class IndexingPipelineService(
         }
     }
 
-
     /**
      * Class analysis processor
      */
@@ -391,19 +470,21 @@ class IndexingPipelineService(
             for (classTask in inputChannel) {
                 // Process class analysis and generate embedding
                 val classSummary = generateClassSummary(classTask.classSymbol)
-                val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, classSummary)
+                classSummary?.let {
+                    val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, it)
 
-                val pipelineItem =
-                    EmbeddingPipelineItem(
-                        analysisItem = classTask.analysisItem,
-                        content = classSummary,
-                        embedding = embedding,
-                        embeddingType = ModelType.EMBEDDING_TEXT,
-                        processingTimeMs = System.currentTimeMillis() - classTask.analysisItem.timestamp,
-                    )
+                    val pipelineItem =
+                        EmbeddingPipelineItem(
+                            analysisItem = classTask.analysisItem,
+                            content = classSummary,
+                            embedding = embedding,
+                            embeddingType = ModelType.EMBEDDING_TEXT,
+                            processingTimeMs = System.currentTimeMillis() - classTask.analysisItem.timestamp,
+                        )
 
-                outputChannel.send(pipelineItem)
-                processedClasses++
+                    outputChannel.send(pipelineItem)
+                    processedClasses++
+                }
             }
 
             logger.info { "PIPELINE_CLASS_PROCESSOR: Completed - processed $processedClasses classes" }
@@ -421,9 +502,17 @@ class IndexingPipelineService(
         storageChannel: SendChannel<StoragePipelineItem>,
     ) = coroutineScope {
         logger.info { "PIPELINE_STORAGE: Starting vector storage processor" }
+
+        // Log under code_files
+        indexingMonitorService.addStepLog(
+            project.id,
+            IndexingStepType.CODE_FILES,
+            "Vector storage stage started",
+        )
+
         val startTime = System.currentTimeMillis()
-        var totalProcessed = 0
-        var totalErrors = 0
+        var totalProcessed: Int
+        var totalErrors: Int
 
         try {
             // Launch multiple storage workers for parallel writes
@@ -443,7 +532,7 @@ class IndexingPipelineService(
                                 // Store to vector database
                                 vectorStorage.store(item.embeddingType, ragDocument, item.embedding)
 
-                                // Report success
+                                // Report success (to collector) and log target
                                 val storageItem =
                                     StoragePipelineItem(
                                         analysisItem = item.analysisItem,
@@ -454,6 +543,14 @@ class IndexingPipelineService(
 
                                 storageChannel.send(storageItem)
                                 workerProcessed++
+
+                                // EXTRA: log where item went
+                                indexingMonitorService.addStepLog(
+                                    project.id,
+                                    IndexingStepType.CODE_FILES,
+                                    "Stored embedding for ${symbolSafeName(item.analysisItem.symbol)} " +
+                                        "to vector DB (${item.embeddingType})",
+                                )
                             } catch (e: Exception) {
                                 logger.error(e) { "PIPELINE_STORAGE_ERROR: Failed to store item" }
                                 storageChannel.send(
@@ -483,8 +580,23 @@ class IndexingPipelineService(
                 "PIPELINE_STORAGE: Vector storage processor completed - " +
                     "processed: $totalProcessed, errors: $totalErrors, time: ${totalTime}ms"
             }
+
+            indexingMonitorService.addStepLog(
+                project.id,
+                IndexingStepType.CODE_FILES,
+                "Vector storage completed: processed=$totalProcessed, errors=$totalErrors, time=${totalTime}ms",
+            )
         } catch (e: Exception) {
             logger.error(e) { "PIPELINE_STORAGE_PROCESSOR_ERROR: Storage processing failed" }
+
+            indexingMonitorService.updateStepProgress(
+                project.id,
+                IndexingStepType.CODE_FILES,
+                IndexingStepStatus.FAILED,
+                IndexingProgress(0, 5),
+                errorMessage = "Vector storage failed: ${e.message}",
+                logs = listOf("Vector storage stage failed", "Error: ${e.message}"),
+            )
         } finally {
             storageChannel.close()
         }
@@ -540,350 +652,69 @@ class IndexingPipelineService(
         }
     }
 
-    // Helper methods would be implemented here...
-    private fun shouldProcessFile(
-        filePath: Path,
-        project: ProjectDocument,
-    ): Boolean {
-        // Implementation for file filtering logic
-        val fileName = filePath.fileName.toString().lowercase()
-        val extension = fileName.substringAfterLast('.', "")
-
-        return extension in setOf("kt", "java", "js", "ts", "py", "scala") &&
-            !fileName.contains("test") &&
-            !filePath.toString().contains("/target/") &&
-            !filePath.toString().contains("/node_modules/")
-    }
-
-    private suspend fun analyzeFileWithJoern(filePath: Path): List<JoernSymbol> {
-        try {
-            logger.debug { "PIPELINE_JOERN_ANALYSIS: Analyzing file with Joern: $filePath" }
-            
-            val fileName = filePath.name
-            val extension = filePath.extension
-
-            // Only process supported file types
-            if (extension !in setOf("kt", "java", "js", "ts", "py", "scala")) {
-                logger.debug { "PIPELINE_JOERN_ANALYSIS: Skipping unsupported file type: $extension" }
-                return emptyList()
-            }
-
-            // Get project root (assuming filePath is within a project)
-            val projectRoot = findProjectRoot(filePath)
-            if (projectRoot == null) {
-                logger.warn { "PIPELINE_JOERN_ANALYSIS: Could not find project root for file: $filePath" }
-                return emptyList()
-            }
-
-            // Setup Joern directory
-            val joernDir = joernAnalysisService.setupJoernDirectory(projectRoot)
-            val cpgPath = joernDir.resolve("cpg.bin")
-            
-            logger.debug { "PIPELINE_JOERN_ANALYSIS: Using project root: $projectRoot, Joern dir: $joernDir" }
-
-            // Ensure CPG exists for the project
-            val cpgExists = joernAnalysisService.ensureCpgExists(projectRoot, cpgPath)
-            if (!cpgExists) {
-                logger.error { "PIPELINE_JOERN_ANALYSIS: Failed to create or find CPG for project: $projectRoot" }
-                return emptyList()
-            }
-
-            logger.debug { "PIPELINE_JOERN_ANALYSIS: CPG verified at: $cpgPath" }
-
-            // Generate Joern script for symbol extraction
-            val extractionScript = createSymbolExtractionScript(cpgPath, filePath.toString())
-            val scriptFile = joernDir.resolve("symbol_extraction_${filePath.hashCode()}.sc")
-
-            Files.writeString(scriptFile, extractionScript)
-            logger.debug { "PIPELINE_JOERN_ANALYSIS: Created symbol extraction script: $scriptFile" }
-
-            // Execute Joern analysis
-            val result = executeJoernScript(projectRoot, joernDir, scriptFile)
-            
-            // Clean up script file
-            try {
-                Files.deleteIfExists(scriptFile)
-            } catch (e: Exception) {
-                logger.debug(e) { "Could not delete script file: $scriptFile" }
-            }
-
-            if (result.isNotEmpty()) {
-                val symbols = parseJoernSymbolResults(result)
-                logger.debug { "PIPELINE_JOERN_ANALYSIS: Extracted ${symbols.size} symbols from file: $filePath" }
-                return symbols
-            } else {
-                logger.warn { "PIPELINE_JOERN_ANALYSIS: No results from Joern script for file: $filePath" }
-                return emptyList()
-            }
-            
-        } catch (e: Exception) {
-            logger.error(e) { "PIPELINE_JOERN_ANALYSIS: Error analyzing file with Joern: $filePath" }
-            return emptyList()
-        }
-    }
-
     /**
-     * Find project root directory from a file path
+     * Create Joern script for symbol extraction for a specific file using template
      */
-    private fun findProjectRoot(filePath: Path): Path? {
-        var current = filePath.parent
-        while (current != null) {
-            // Look for common project indicators
-            if (Files.exists(current.resolve("pom.xml")) ||
-                Files.exists(current.resolve("build.gradle")) ||
-                Files.exists(current.resolve("build.gradle.kts")) ||
-                Files.exists(current.resolve("package.json")) ||
-                Files.exists(current.resolve(".git"))
-            ) {
-                return current
-            }
-            current = current.parent
-        }
-        return null
-    }
 
-    /**
-     * Create Joern script for symbol extraction for a specific file
-     */
-    private fun createSymbolExtractionScript(cpgPath: Path, targetFilePath: String): String {
-        val cpgPathString = cpgPath.toString()
-        val normalizedFilePath = targetFilePath.replace("\\", "/")
-        
-        return buildString {
-            appendLine("importCpg(\"$cpgPathString\")")
-            appendLine()
-            appendLine("// Filter symbols by specific file")
-            appendLine("val targetFile = \"$normalizedFilePath\"")
-            appendLine()
-            appendLine("// Get classes from the target file")
-            appendLine("val classData = cpg.typeDecl.filterNot(_.isExternal)")
-            appendLine("  .filter(_.filename.contains(targetFile) || _.filename.endsWith(targetFile.split(\"/\").last))")
-            appendLine("  .map { cls =>")
-            appendLine("    val lineStart = cls.lineNumber.getOrElse(0)")
-            appendLine("    s\"{\\\"type\\\":\\\"CLASS\\\",\\\"name\\\":\\\"\${cls.name}\\\",\\\"fullName\\\":\\\"\${cls.fullName}\\\",\\\"file\\\":\\\"\${cls.filename}\\\",\\\"lineStart\\\":\$lineStart,\\\"lineEnd\\\":\$lineStart,\\\"nodeId\\\":\\\"\${cls.id}\\\",\\\"namespace\\\":\\\"\\\"}\"")
-            appendLine("  }.toList")
-            appendLine()
-            appendLine("// Get methods from the target file")
-            appendLine("val methodData = cpg.method.filterNot(_.isExternal)")
-            appendLine("  .filter(_.filename.contains(targetFile) || _.filename.endsWith(targetFile.split(\"/\").last))")
-            appendLine("  .map { method =>")
-            appendLine("    val lineStart = method.lineNumber.getOrElse(0)")
-            appendLine("    val parentClass = method.typeDecl.name.headOption.getOrElse(\"\")")
-            appendLine("    s\"{\\\"type\\\":\\\"METHOD\\\",\\\"name\\\":\\\"\${method.name}\\\",\\\"fullName\\\":\\\"\${method.fullName}\\\",\\\"signature\\\":\\\"\${method.signature}\\\",\\\"file\\\":\\\"\${method.filename}\\\",\\\"lineStart\\\":\$lineStart,\\\"lineEnd\\\":\$lineStart,\\\"nodeId\\\":\\\"\${method.id}\\\",\\\"parentClass\\\":\\\"\$parentClass\\\"}\"")
-            appendLine("  }.toList")
-            appendLine()
-            appendLine("// Output file-specific data as JSON")
-            appendLine("val allData = classData ++ methodData")
-            appendLine("allData.foreach(println)")
-        }
-    }
-
-    /**
-     * Execute Joern script with error handling
-     */
-    private suspend fun executeJoernScript(
-        projectPath: Path,
-        joernDir: Path,
-        scriptFile: Path
-    ): String = withContext(kotlinx.coroutines.Dispatchers.IO) {
-        try {
-            logger.debug { "PIPELINE_JOERN: Executing script: $scriptFile" }
-
-            val processBuilder = ProcessBuilder(
-                "joern",
-                "--script",
-                scriptFile.toString()
-            ).apply {
-                directory(joernDir.toFile())
-                environment().apply {
-                    put("JAVA_OPTS", "-Xmx2g -Xms512m")
-                    put("PATH", System.getenv("PATH"))
-                }
-            }
-
-            val process = processBuilder.start()
-            val finished = process.waitFor(15, java.util.concurrent.TimeUnit.MINUTES)
-
-            if (!finished) {
-                process.destroyForcibly()
-                logger.error { "PIPELINE_JOERN: Script execution timed out after 15 minutes" }
-                return@withContext ""
-            }
-
-            val exitCode = process.exitValue()
-            val output = process.inputStream.bufferedReader().use { it.readText() }
-            val error = process.errorStream.bufferedReader().use { it.readText() }
-
-            if (exitCode == 0) {
-                logger.debug { "PIPELINE_JOERN: Script executed successfully" }
-                return@withContext output
-            } else {
-                logger.error { "PIPELINE_JOERN: Script execution failed (exit=$exitCode): $error" }
-                return@withContext ""
-            }
-        } catch (e: Exception) {
-            logger.error(e) { "PIPELINE_JOERN: Error executing Joern script" }
-            return@withContext ""
-        }
-    }
-
-    /**
-     * Parse Joern symbol results from script output
-     */
-    private suspend fun parseJoernSymbolResults(output: String): List<JoernSymbol> {
-        val symbols = mutableListOf<JoernSymbol>()
-
-        if (output.isBlank()) {
-            logger.debug { "PIPELINE_JOERN: No output to parse" }
-            return emptyList()
-        }
-
-        val lines = output.lines().filter { it.trim().isNotEmpty() }
-        logger.debug { "PIPELINE_JOERN: Processing ${lines.size} lines from output" }
-
-        for ((index, line) in lines.withIndex()) {
-            try {
-                val trimmedLine = line.trim()
-                if (!trimmedLine.startsWith("{") || !trimmedLine.endsWith("}")) {
-                    continue
-                }
-
-                val symbol = parseSymbolLine(trimmedLine)
-                if (symbol != null) {
-                    symbols.add(symbol)
-                    logger.debug { "PIPELINE_JOERN: Parsed symbol: ${symbol.type} ${symbol.name}" }
-                }
-            } catch (e: Exception) {
-                logger.warn(e) { "PIPELINE_JOERN: Error parsing line $index: ${line.take(200)}" }
-            }
-        }
-
-        logger.info { "PIPELINE_JOERN: Parsed ${symbols.size} symbols from output" }
-        return symbols
-    }
-
-    /**
-     * Parse individual symbol line from JSON output
-     */
-    private fun parseSymbolLine(line: String): JoernSymbol? {
+    private suspend fun generateMethodSummary(analysisItem: JoernAnalysisItem): String? {
+        // Generate method summary using LLM with token limit and chunking
         return try {
-            val type = extractJsonValue(line, "type")
-            val name = extractJsonValue(line, "name")
-            val fullName = extractJsonValue(line, "fullName")
-            val file = extractJsonValue(line, "file")
-            val nodeId = extractJsonValue(line, "nodeId")
-            val lineStartStr = extractJsonValue(line, "lineStart")
-            val lineEndStr = extractJsonValue(line, "lineEnd")
-            val signature = extractJsonValue(line, "signature")
-            val parentClass = extractJsonValue(line, "parentClass")
+            return analysisItem.symbol.code?.let {
+                val llmResponse =
+                    llmGateway
+                        .callLlm(
+                            type = PromptTypeEnum.METHOD_SUMMARY,
+                            responseSchema = LlmResponseWrapper(),
+                            quick = false,
+                            mappingValue =
+                                mapOf(
+                                    "methodName" to analysisItem.symbol.name,
+                                    "methodSignature" to "${analysisItem.symbol.name}()",
+                                    "parentClass" to (analysisItem.symbol.parentClass ?: "Unknown"),
+                                    "filePath" to analysisItem.symbol.filePath,
+                                    "code" to it,
+                                ),
+                        ).response
 
-            if (type.isEmpty() || name.isEmpty()) {
-                return null
+                // Check token limit and chunk if necessary
+                tokenEstimationService.processLlmOutputWithTokenLimit(
+                    llmResponse,
+                    "method ${analysisItem.symbol.name}",
+                    MAX_LLM_SUMMARY_TOKENS,
+                )
             }
-
-            val symbolType = when (type.uppercase()) {
-                "NAMESPACE" -> JoernSymbolType.NAMESPACE
-                "CLASS" -> JoernSymbolType.CLASS
-                "METHOD" -> JoernSymbolType.METHOD
-                "FUNCTION" -> JoernSymbolType.FUNCTION
-                else -> return null
-            }
-
-            val lineStart = lineStartStr.toIntOrNull() ?: 0
-            val lineEnd = lineEndStr.toIntOrNull() ?: lineStart
-
-            val language = when {
-                file.endsWith(".kt") -> "kotlin"
-                file.endsWith(".java") -> "java"
-                file.endsWith(".scala") -> "scala"
-                else -> "java"
-            }
-
-            JoernSymbol(
-                type = symbolType,
-                name = name,
-                fullName = fullName,
-                signature = if (signature.isNotEmpty()) signature else null,
-                filePath = file,
-                lineRange = LineRange(lineStart, lineEnd),
-                code = null,
-                joernNodeId = nodeId,
-                language = language,
-                relations = emptyList(),
-                parentClass = if (parentClass.isNotEmpty()) parentClass else null,
-                namespace = null
-            )
-        } catch (e: Exception) {
-            logger.warn(e) { "PIPELINE_JOERN: Error parsing symbol JSON: ${line.take(200)}" }
-            null
-        }
-    }
-
-    /**
-     * Extract JSON value using simple string parsing
-     */
-    private fun extractJsonValue(json: String, key: String): String {
-        return try {
-            val pattern = "\"$key\":\"([^\"]*)\""
-            val regex = Regex(pattern)
-            val matchResult = regex.find(json)
-            matchResult?.groups?.get(1)?.value ?: ""
-        } catch (e: Exception) {
-            ""
-        }
-    }
-
-    private suspend fun generateMethodSummary(analysisItem: JoernAnalysisItem): String {
-        // Generate method summary using LLM
-        return try {
-            val prompt =
-                buildString {
-                    appendLine("Generate a concise method summary:")
-                    appendLine("Method: ${analysisItem.symbol.name}")
-                    appendLine("Class: ${analysisItem.symbol.parentClass}")
-                    appendLine("File: ${analysisItem.symbol.filePath}")
-                    if (analysisItem.symbol.code?.isNotBlank() == true) {
-                        appendLine("Code:")
-                        appendLine(analysisItem.symbol.code)
-                    }
-                }
-
-            llmGateway.callLlm(
-                type = PromptTypeEnum.METHOD_SUMMARY,
-                userPrompt = prompt,
-                quick = true,
-                responseSchema = "",
-                mappingValue =
-                    mapOf(
-                        "methodName" to analysisItem.symbol.name,
-                        "methodSignature" to "${analysisItem.symbol.name}()",
-                        "parentClass" to (analysisItem.symbol.parentClass ?: "Unknown"),
-                        "filePath" to analysisItem.symbol.filePath,
-                        "code" to (analysisItem.symbol.code ?: ""),
-                    ),
-            )
         } catch (e: Exception) {
             logger.warn(e) { "Failed to generate method summary for ${analysisItem.symbol.name}" }
             "Method ${analysisItem.symbol.name} in class ${analysisItem.symbol.parentClass}"
         }
     }
 
-    private suspend fun generateClassSummary(classSymbol: JoernSymbol): String {
-        // Generate class summary using LLM
+    private suspend fun generateClassSummary(classSymbol: JoernSymbol): String? {
+        // Generate class summary using LLM with token limit and chunking
         return try {
-            llmGateway.callLlm(
-                type = PromptTypeEnum.CLASS_SUMMARY,
-                userPrompt = "",
-                quick = true,
-                responseSchema = "",
-                mappingValue =
-                    mapOf(
-                        "className" to classSymbol.name,
-                        "filePath" to classSymbol.filePath,
-                        "code" to (classSymbol.code ?: ""),
-                        "relations" to "",
-                    ),
-            )
+            classSymbol.code?.let {
+                val llmResponse =
+                    llmGateway
+                        .callLlm(
+                            type = PromptTypeEnum.CLASS_SUMMARY,
+                            responseSchema = LlmResponseWrapper(),
+                            quick = false,
+                            mappingValue =
+                                mapOf(
+                                    "className" to classSymbol.name,
+                                    "filePath" to classSymbol.filePath,
+                                    "code" to it,
+                                    "relations" to "",
+                                ),
+                        ).response
+
+                // Check token limit and chunk if necessary
+                tokenEstimationService.processLlmOutputWithTokenLimit(
+                    llmResponse,
+                    "class ${classSymbol.name}",
+                    MAX_LLM_SUMMARY_TOKENS,
+                )
+            }
         } catch (e: Exception) {
             logger.warn(e) { "Failed to generate class summary for ${classSymbol.name}" }
             "Class ${classSymbol.name} in file ${classSymbol.filePath}"
@@ -901,29 +732,17 @@ class IndexingPipelineService(
                 RagDocument(
                     projectId = project.id,
                     clientId = project.clientId,
-                    documentType =
-                        if (item.embeddingType == ModelType.EMBEDDING_CODE) {
-                            RagDocumentType.CODE
-                        } else {
-                            RagDocumentType.METHOD_DESCRIPTION
-                        },
                     ragSourceType = RagSourceType.JOERN,
-                    pageContent = item.content,
-                    source = "file://${symbol.filePath}",
+                    summary = item.content,
                     path = symbol.filePath,
                     language = symbol.language,
                     className = symbol.parentClass,
                     methodName = symbol.name,
                     symbolName = symbol.name,
-                    lineRange = symbol.lineRange,
-                    embeddingType =
-                        when (item.embeddingType) {
-                            ModelType.EMBEDDING_CODE -> EmbeddingType.EMBEDDING_CODE
-                            ModelType.EMBEDDING_TEXT -> EmbeddingType.EMBEDDING_TEXT
-                            else -> EmbeddingType.EMBEDDING_TEXT
-                        },
-                    joernNodeId = symbol.joernNodeId,
-                    relations = symbol.relations,
+                    lineStart = symbol.lineStart,
+                    lineEnd = symbol.lineEnd,
+                    joernNodeId = symbol.nodeId,
+                    symbolType = SymbolType.METHOD,
                 )
             }
 
@@ -931,19 +750,16 @@ class IndexingPipelineService(
                 RagDocument(
                     projectId = project.id,
                     clientId = project.clientId,
-                    documentType = RagDocumentType.CLASS_SUMMARY,
-                    ragSourceType = RagSourceType.CLASS,
-                    pageContent = item.content,
-                    source = "class://${project.name}/${symbol.name}",
+                    ragSourceType = RagSourceType.JOERN,
+                    summary = item.content,
                     path = symbol.filePath,
                     language = symbol.language,
-                    packageName = symbol.packageName,
+                    parentClass = symbol.parentClass,
                     className = symbol.name,
                     symbolName = symbol.name,
-                    lineRange = symbol.lineRange,
-                    embeddingType = EmbeddingType.EMBEDDING_TEXT,
-                    joernNodeId = symbol.joernNodeId,
-                    relations = symbol.relations,
+                    lineStart = symbol.lineStart,
+                    joernNodeId = symbol.nodeId,
+                    symbolType = SymbolType.CLASS,
                 )
             }
 
@@ -951,21 +767,12 @@ class IndexingPipelineService(
                 RagDocument(
                     projectId = project.id,
                     clientId = project.clientId,
-                    documentType = RagDocumentType.CODE,
                     ragSourceType = RagSourceType.JOERN,
-                    pageContent = item.content,
-                    source = "file://${symbol.filePath}",
+                    summary = item.content,
                     path = symbol.filePath,
                     language = symbol.language,
                     symbolName = symbol.name,
-                    embeddingType =
-                        when (item.embeddingType) {
-                            ModelType.EMBEDDING_CODE -> EmbeddingType.EMBEDDING_CODE
-                            ModelType.EMBEDDING_TEXT -> EmbeddingType.EMBEDDING_TEXT
-                            else -> EmbeddingType.EMBEDDING_TEXT
-                        },
-                    joernNodeId = symbol.joernNodeId,
-                    relations = symbol.relations,
+                    joernNodeId = symbol.nodeId,
                 )
             }
         }
@@ -1010,4 +817,52 @@ class IndexingPipelineService(
             throughput = throughput,
         )
     }
+
+    private fun symbolSafeName(symbol: JoernSymbol): String =
+        buildString {
+            append(symbol.name)
+            symbol.parentClass?.let { append(" (class $it)") }
+        }
+
+    /**
+     * Check if symbol should be processed based on content hash to avoid redundant work
+     */
+    private suspend fun shouldProcessSymbol(
+        project: ProjectDocument,
+        analysisItem: JoernAnalysisItem,
+    ): Boolean =
+        try {
+            val symbol = analysisItem.symbol
+            val symbolContent = symbol.code?.toByteArray(Charsets.UTF_8) ?: byteArrayOf()
+
+            // Create a unique identifier for this symbol within the file
+            val symbolPath = "${symbol.filePath}#${symbol.type}:${symbol.name}:${symbol.lineStart}-${symbol.lineEnd}"
+
+            // Use current git commit hash if available, otherwise use "unknown"
+            val gitCommitHash = "current" // TODO: Get actual git commit hash from context
+
+            ragIndexingStatusService.shouldIndexFile(
+                projectId = project.id,
+                filePath = symbolPath,
+                gitCommitHash = gitCommitHash,
+                fileContent = symbolContent,
+            )
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to check if symbol should be processed: ${analysisItem.symbol.name}" }
+            // If we can't determine, process it to be safe
+            true
+        }
+
+    /**
+     * Determine if LLM text summary should be generated for this symbol type
+     * Variables and fields typically don't need LLM summaries for code embeddings
+     */
+    private fun shouldGenerateTextSummary(symbolType: JoernSymbolType): Boolean =
+        when (symbolType) {
+            JoernSymbolType.METHOD, JoernSymbolType.FUNCTION -> true
+            JoernSymbolType.CLASS -> true
+            JoernSymbolType.VARIABLE, JoernSymbolType.FIELD, JoernSymbolType.PARAMETER -> false
+            JoernSymbolType.CALL, JoernSymbolType.IMPORT -> false
+            JoernSymbolType.FILE, JoernSymbolType.PACKAGE, JoernSymbolType.MODULE -> false
+        }
 }

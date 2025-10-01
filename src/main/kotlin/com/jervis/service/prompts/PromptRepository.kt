@@ -1,6 +1,9 @@
 package com.jervis.service.prompts
 
-import com.jervis.configuration.prompts.*
+import com.jervis.configuration.prompts.PromptConfigBase
+import com.jervis.configuration.prompts.PromptToolConfig
+import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.PromptsConfiguration
 import jakarta.annotation.PostConstruct
 import org.springframework.stereotype.Service
 
@@ -8,25 +11,24 @@ import org.springframework.stereotype.Service
 class PromptRepository(
     private val promptsConfig: PromptsConfiguration,
 ) {
-    
     @PostConstruct
     fun validateConfiguration() {
         // Validate no duplicate keys between prompts and tools
         val promptKeys = promptsConfig.prompts.keys
         val toolKeys = promptsConfig.tools.keys
         val duplicateKeys = promptKeys.intersect(toolKeys)
-        
+
         if (duplicateKeys.isNotEmpty()) {
             throw IllegalStateException("Duplicate keys found in both prompts and tools maps: $duplicateKeys")
         }
-        
+
         // Validate all tools have non-empty descriptions
         promptsConfig.tools.forEach { (key, toolConfig) ->
             if (toolConfig.description.isBlank()) {
                 throw IllegalStateException("Tool $key has empty or blank description")
             }
         }
-        
+
         // Log validation success
         println("[DEBUG] Prompt configuration validation successful:")
         println("[DEBUG] - Tools configured: ${toolKeys.size}")
@@ -65,26 +67,4 @@ class PromptRepository(
     fun getToolConfig(promptTypeEnum: PromptTypeEnum): PromptToolConfig =
         promptsConfig.tools[promptTypeEnum]
             ?: throw IllegalArgumentException("No tool configuration found for type: $promptTypeEnum")
-
-    /**
-     * Legacy method for backward compatibility during migration
-     */
-    @Deprecated("Use getPrompt() which returns PromptConfigBase instead")
-    fun getPromptLegacy(promptTypeEnum: PromptTypeEnum): PromptConfig {
-        val baseConfig = getPrompt(promptTypeEnum)
-        return when (baseConfig) {
-            is PromptToolConfig -> PromptConfig(
-                systemPrompt = baseConfig.systemPrompt,
-                userPrompt = baseConfig.userPrompt,
-                description = baseConfig.description,
-                modelParams = baseConfig.modelParams
-            )
-            is PromptGenericConfig -> PromptConfig(
-                systemPrompt = baseConfig.systemPrompt,
-                userPrompt = baseConfig.userPrompt,
-                description = null,
-                modelParams = baseConfig.modelParams
-            )
-        }
-    }
 }

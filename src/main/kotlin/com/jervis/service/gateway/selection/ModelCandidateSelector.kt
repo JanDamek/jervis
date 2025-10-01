@@ -17,7 +17,7 @@ class ModelCandidateSelector(
 ) {
     /**
      * Selects model candidates based on model type, quick mode preference, and estimated token requirements.
-     * Always returns at least one model (the one with highest token capacity) to ensure processing can proceed.
+     * Always returns at least one model (the one with the highest token capacity) to ensure processing can proceed.
      */
     fun selectCandidates(
         modelType: ModelType,

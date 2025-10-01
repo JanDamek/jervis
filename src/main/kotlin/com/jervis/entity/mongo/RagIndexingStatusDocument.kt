@@ -1,7 +1,5 @@
 package com.jervis.entity.mongo
 
-import com.jervis.domain.rag.RagDocumentType
-import com.jervis.domain.rag.RagSourceType
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.CompoundIndex
@@ -31,7 +29,6 @@ enum class IndexingStatus {
  * Information about individual indexed content piece
  */
 data class IndexedContentInfo(
-    val contentType: RagDocumentType,
     val vectorStoreId: String?,
     val contentHash: String,
     val contentLength: Int,
@@ -64,7 +61,6 @@ data class RagIndexingStatusDocument(
     val gitCommitHash: String,
     @Indexed
     val status: IndexingStatus,
-    val ragSourceType: RagSourceType,
     val indexedContent: List<IndexedContentInfo> = emptyList(),
     val fileSize: Long,
     val fileHash: String,

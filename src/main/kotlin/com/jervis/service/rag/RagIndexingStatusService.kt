@@ -1,6 +1,5 @@
 package com.jervis.service.rag
 
-import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.mongo.IndexingStatus
 import com.jervis.entity.mongo.RagIndexingStatusDocument
 import com.jervis.repository.mongo.RagIndexingStatusMongoRepository
@@ -28,7 +27,6 @@ class RagIndexingStatusService(
         projectId: ObjectId,
         filePath: String,
         gitCommitHash: String,
-        ragSourceType: RagSourceType,
         fileContent: ByteArray,
         language: String? = null,
         module: String? = null,
@@ -60,7 +58,6 @@ class RagIndexingStatusService(
                 filePath = filePath,
                 gitCommitHash = gitCommitHash,
                 status = IndexingStatus.INDEXING,
-                ragSourceType = ragSourceType,
                 fileSize = fileSize,
                 fileHash = fileHash,
                 language = language,

@@ -18,7 +18,7 @@ data class PlanStepDocument(
     var contextId: ObjectId? = null,
     val name: String,
     val taskDescription: String,
-    val stepBack: Int = 0,
+    val stepBack: List<Int> = emptyList(),
     var status: StepStatus = StepStatus.PENDING,
     var output: ToolResult? = null,
 ) {
@@ -28,11 +28,11 @@ data class PlanStepDocument(
             order = this.order,
             planId = this.planId!!,
             contextId = this.contextId!!,
-            name = this.name,
-            taskDescription = this.taskDescription,
-            stepBack = this.stepBack,
+            stepToolName = this.name,
+            stepInstruction = this.taskDescription,
+            stepDependsOn = this.stepBack,
             status = this.status,
-            output = this.output,
+            toolResult = this.output,
         )
 
     companion object {
@@ -42,11 +42,11 @@ data class PlanStepDocument(
                 order = planStep.order,
                 planId = planStep.planId,
                 contextId = planStep.contextId,
-                name = planStep.name,
-                taskDescription = planStep.taskDescription,
-                stepBack = planStep.stepBack,
+                name = planStep.stepToolName,
+                taskDescription = planStep.stepInstruction,
+                stepBack = planStep.stepDependsOn,
                 status = planStep.status,
-                output = planStep.output,
+                output = planStep.toolResult,
             )
     }
 }

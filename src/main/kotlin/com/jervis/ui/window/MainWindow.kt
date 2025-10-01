@@ -10,7 +10,6 @@ import com.jervis.service.indexing.monitoring.IndexingMonitorService
 import com.jervis.service.notification.PlanStatusChangeEvent
 import com.jervis.service.notification.StepCompletionEvent
 import com.jervis.service.project.ProjectService
-import com.jervis.ui.window.IndexingMonitorWindow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -278,7 +277,7 @@ class MainWindow(
                     cellHasFocus: Boolean,
                 ) = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus).apply {
                     if (value is PlanStep) {
-                        text = "${value.name} (${value.status})"
+                        text = "${value.stepToolName} (${value.status})"
                     }
                 }
             }
@@ -995,7 +994,7 @@ class MainWindow(
     }
 
     private fun showStepDetails(step: PlanStep) {
-        val dialog = JDialog(this, "Step Details: ${step.name}", true)
+        val dialog = JDialog(this, "Step Details: ${step.stepToolName}", true)
         dialog.size = Dimension(600, 400)
         dialog.setLocationRelativeTo(this)
 
@@ -1003,15 +1002,15 @@ class MainWindow(
 
         // Step information
         val stepInfo = StringBuilder()
-        stepInfo.appendLine("Step Name: ${step.name}")
-        stepInfo.appendLine("Task Description: ${step.taskDescription}")
+        stepInfo.appendLine("Step Name: ${step.stepToolName}")
+        stepInfo.appendLine("Task Description: ${step.stepInstruction}")
         stepInfo.appendLine("Status: ${step.status}")
         stepInfo.appendLine("Order: ${step.order}")
         stepInfo.appendLine()
 
-        if (step.output != null) {
+        if (step.toolResult != null) {
             stepInfo.appendLine("Output:")
-            stepInfo.appendLine(step.output!!.output)
+            stepInfo.appendLine(step.toolResult!!.output)
         } else {
             stepInfo.appendLine("No output available for this step")
         }
@@ -1086,8 +1085,8 @@ class MainWindow(
             planInfo.appendLine("No steps available")
         } else {
             plan.steps.sortedBy { it.order }.forEach { step ->
-                planInfo.appendLine("- ${step.name} (${step.status}): ${step.taskDescription}")
-                step.output?.let { output ->
+                planInfo.appendLine("- ${step.stepToolName} (${step.status}): ${step.stepInstruction}")
+                step.toolResult?.let { output ->
                     planInfo.appendLine("  Output: ${output.output.take(200)}...")
                 }
             }
@@ -1145,7 +1144,7 @@ class MainWindow(
                             }
                         }
                     }
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     // Handle error silently or log
                 }
             }
@@ -1168,10 +1167,11 @@ class MainWindow(
 
         // Tools menu
         val toolsMenu = JMenu("Tools")
-        
+
         // Indexing Monitor
         val indexingMonitorItem = JMenuItem("Indexing Monitor")
-        indexingMonitorItem.accelerator = KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.META_DOWN_MASK or InputEvent.SHIFT_DOWN_MASK)
+        indexingMonitorItem.accelerator =
+            KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.META_DOWN_MASK or InputEvent.SHIFT_DOWN_MASK)
         indexingMonitorItem.addActionListener { showIndexingMonitor() }
         toolsMenu.add(indexingMonitorItem)
 
@@ -1220,7 +1220,7 @@ class MainWindow(
                 this,
                 "Failed to open indexing monitor: ${e.message}",
                 "Error",
-                JOptionPane.ERROR_MESSAGE
+                JOptionPane.ERROR_MESSAGE,
             )
         }
     }
@@ -1302,7 +1302,7 @@ class MainWindow(
                         contextMenu.show(e.component, e.x, e.y)
                     }
                 }
-            }
+            },
         )
     }
 }

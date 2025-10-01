@@ -3,6 +3,7 @@ package com.jervis.service.agent.finalizer
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.service.gateway.core.LlmGateway
+import com.jervis.service.mcp.domain.ToolResult
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -37,16 +38,14 @@ class TaskResolutionChecker(
         val analysisResult =
             llmGateway.callLlm(
                 type = PromptTypeEnum.TASK_RESOLUTION_CHECKER,
-                userPrompt = contextData,
+                responseSchema = LlmAnalysisResult(),
                 quick = false,
-                LlmAnalysisResult(),
-                mappingValue = emptyMap(),
+                mappingValue = mapOf("contextData" to contextData),
             )
 
         logger.info {
             "LLM analysis complete for ${taskContext.name}: " +
-                "complete=${analysisResult.complete}, " +
-                "confidence=${analysisResult.completionConfidence}"
+                "complete=${analysisResult.complete}"
         }
         return analysisResult
     }
@@ -65,7 +64,7 @@ class TaskResolutionChecker(
             contextInfo.append("Status: ${plan.status}\n")
             contextInfo.append("Context Summary: ${plan.contextSummary ?: "None"}\n")
             contextInfo.append("Final Answer: ${plan.finalAnswer ?: "None"}\n")
-            
+
             // Include questionChecklist for validation
             if (plan.questionChecklist.isNotEmpty()) {
                 contextInfo.append("Question Checklist (MUST be verified as completed):\n")
@@ -73,41 +72,60 @@ class TaskResolutionChecker(
                     contextInfo.append("  ${index + 1}. $checklistItem\n")
                 }
             }
-            
+
             contextInfo.append("Steps (${plan.steps.size}):\n")
 
             plan.steps.forEach { step ->
-                contextInfo.append("  - Step ${step.order}: ${step.name}\n")
-                contextInfo.append("    Description: ${step.taskDescription}\n")
+                contextInfo.append("  - Step ${step.order}: ${step.stepToolName}\n")
+                contextInfo.append("    Description: ${step.stepInstruction}\n")
                 contextInfo.append("    Status: ${step.status}\n")
-                
+
                 // Include actual step content for better model understanding
-                when (val output = step.output) {
-                    is com.jervis.service.mcp.domain.ToolResult.Ok -> {
-                        contextInfo.append("    Output: SUCCESS - ${output.output.lineSequence().firstOrNull()?.take(300) ?: ""}\n")
+                when (val output = step.toolResult) {
+                    is ToolResult.Ok -> {
+                        contextInfo.append(
+                            "    Output: SUCCESS - ${
+                                output.output
+                                    .lineSequence()
+                                    .firstOrNull()
+                                    ?.take(300) ?: ""
+                            }\n",
+                        )
                     }
-                    is com.jervis.service.mcp.domain.ToolResult.Error -> {
+
+                    is ToolResult.Error -> {
                         val errorMsg = output.errorMessage ?: "Unknown error"
                         contextInfo.append("    Output: FAILED - $errorMsg\n")
                         if (output.output.isNotBlank()) {
                             contextInfo.append("    Error Details: ${output.output.take(500)}\n")
                         }
                     }
-                    is com.jervis.service.mcp.domain.ToolResult.Ask -> {
-                        contextInfo.append("    Output: ASK - ${output.output.lineSequence().firstOrNull()?.take(300) ?: ""}\n")
+
+                    is ToolResult.Ask -> {
+                        contextInfo.append(
+                            "    Output: ASK - ${
+                                output.output
+                                    .lineSequence()
+                                    .firstOrNull()
+                                    ?.take(300) ?: ""
+                            }\n",
+                        )
                     }
-                    is com.jervis.service.mcp.domain.ToolResult.Stop -> {
+
+                    is ToolResult.Stop -> {
                         contextInfo.append("    Output: STOPPED - ${output.reason}\n")
                         if (output.output.isNotBlank()) {
                             contextInfo.append("    Stop Details: ${output.output.take(300)}\n")
                         }
                     }
-                    is com.jervis.service.mcp.domain.ToolResult.InsertStep -> {
-                        contextInfo.append("    Output: INSERT_STEP - ${output.stepToInsert.name}\n")
+
+                    is ToolResult.InsertStep -> {
+                        contextInfo.append("    Output: INSERT_STEP - ${output.stepToInsert.stepToolName}\n")
                         if (output.output.isNotBlank()) {
-                            contextInfo.append("    Insert Details: ${output.output.take(300)}\n")
+                            contextInfo.append("    Insert Details: ${output.output}\n")
                         }
                     }
+
                     null -> {
                         contextInfo.append("    Output: None\n")
                     }
@@ -125,10 +143,8 @@ class TaskResolutionChecker(
     @Serializable
     data class LlmAnalysisResult(
         val complete: Boolean = false,
-        val completionConfidence: Double = 0.0,
         val missingRequirements: List<String> = emptyList(),
         val qualityIssues: List<String> = emptyList(),
         val recommendations: List<String> = emptyList(),
-        val summary: String = "",
     )
 }

@@ -30,8 +30,10 @@ import javax.swing.JDialog
 import javax.swing.JFileChooser
 import javax.swing.JFrame
 import javax.swing.JLabel
+import javax.swing.JMenuItem
 import javax.swing.JOptionPane
 import javax.swing.JPanel
+import javax.swing.JPopupMenu
 import javax.swing.JScrollPane
 import javax.swing.JTable
 import javax.swing.JTextArea
@@ -81,7 +83,7 @@ class ProjectSettingWindow(
      */
     private fun setupUI() {
         defaultCloseOperation = DISPOSE_ON_CLOSE
-        setSize(800, 600)
+        setSize(1280, 600)
         setLocationRelativeTo(null)
 
         // Configure table
@@ -171,12 +173,96 @@ class ProjectSettingWindow(
         // Table selection listener
         projectTable.selectionModel.addListSelectionListener { updateButtonState() }
 
-        // Double-click to edit
+        // Double-click to edit and right-click context menu
         projectTable.addMouseListener(
             object : MouseAdapter() {
                 override fun mouseClicked(e: MouseEvent) {
                     if (e.clickCount == 2) {
                         editSelectedProject()
+                    }
+                }
+
+                override fun mousePressed(e: MouseEvent) = maybeShowPopup(e)
+
+                override fun mouseReleased(e: MouseEvent) = maybeShowPopup(e)
+
+                private fun maybeShowPopup(e: MouseEvent) {
+                    if (e.isPopupTrigger) {
+                        val row = projectTable.rowAtPoint(e.point)
+                        if (row >= 0) {
+                            projectTable.setRowSelectionInterval(row, row)
+                            val contextMenu = JPopupMenu()
+
+                            // Add Project
+                            val addItem = JMenuItem("Add New Project")
+                            addItem.addActionListener { addNewProject() }
+                            contextMenu.add(addItem)
+
+                            contextMenu.addSeparator()
+
+                            // Edit Project
+                            val editItem = JMenuItem("Edit Project")
+                            editItem.addActionListener { editSelectedProject() }
+                            editItem.isEnabled = projectTable.selectedRow != -1
+                            contextMenu.add(editItem)
+
+                            // Delete Project
+                            val deleteItem = JMenuItem("Delete Project")
+                            deleteItem.addActionListener { deleteSelectedProject() }
+                            deleteItem.isEnabled = projectTable.selectedRow != -1
+                            contextMenu.add(deleteItem)
+
+                            contextMenu.addSeparator()
+
+                            // Set as Default
+                            val defaultItem = JMenuItem("Set as Default")
+                            defaultItem.addActionListener { setSelectedProjectAsDefault() }
+                            if (projectTable.selectedRow != -1) {
+                                val selectedProject = projectTableModel.getProjectAt(projectTable.selectedRow)
+                                defaultItem.isEnabled = !selectedProject.isActive
+                            } else {
+                                defaultItem.isEnabled = false
+                            }
+                            contextMenu.add(defaultItem)
+
+                            contextMenu.addSeparator()
+
+                            // Assign Client
+                            val assignClientItem = JMenuItem("Assign Client")
+                            assignClientItem.addActionListener { assignClientToSelectedProject() }
+                            contextMenu.add(assignClientItem)
+
+                            // Create New Client
+                            val newClientItem = JMenuItem("Create New Client")
+                            newClientItem.addActionListener { createNewClient() }
+                            contextMenu.add(newClientItem)
+
+                            contextMenu.addSeparator()
+
+                            // Edit Dependencies
+                            val dependenciesItem = JMenuItem("Edit Dependencies")
+                            dependenciesItem.addActionListener { editDependenciesForSelectedProject() }
+                            contextMenu.add(dependenciesItem)
+
+                            // Toggle Disabled
+                            val toggleDisabledItem = JMenuItem("Toggle Disabled")
+                            toggleDisabledItem.addActionListener { toggleDisabledForSelectedProject() }
+                            contextMenu.add(toggleDisabledItem)
+
+                            contextMenu.addSeparator()
+
+                            // Reindex Project
+                            val reindexProjectItem = JMenuItem("Reindex Project")
+                            reindexProjectItem.addActionListener { reindexSelectedProject() }
+                            contextMenu.add(reindexProjectItem)
+
+                            // Reindex All Projects
+                            val reindexAllItem = JMenuItem("Reindex All Projects")
+                            reindexAllItem.addActionListener { reindexAllProjects() }
+                            contextMenu.add(reindexAllItem)
+
+                            contextMenu.show(projectTable, e.x, e.y)
+                        }
                     }
                 }
             },

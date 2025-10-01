@@ -2,10 +2,9 @@ package com.jervis.service.gateway.processing
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
-import com.jervis.configuration.prompts.PromptConfig
+import com.jervis.configuration.prompts.PromptConfigBase
 import org.springframework.stereotype.Service
 
-private const val USER_PROMPT_ = "{userPrompt}"
 private const val STEP_CONTEXT_ = "{stepContext}"
 
 /**
@@ -27,33 +26,28 @@ class PromptBuilderService {
      * Automatically prepends {stepContext} placeholder if missing from the template.
      */
     fun buildUserPrompt(
-        prompt: PromptConfig,
+        prompt: PromptConfigBase,
         mappingValues: Map<String, String>,
-        userPrompt: String,
         outputLanguage: String?,
         responseSchema: Any?,
     ): String {
         val userPromptTemplate: String =
             prompt.userPrompt?.let { template ->
-                // First handle stepContext - prepend if missing
-                val templateWithStepContext =
-                    if (STEP_CONTEXT_ in template) {
-                        template
-                    } else {
-                        "=== PREVIOUS STEP CONTEXT ===\n$STEP_CONTEXT_\n=== END CONTEXT ===\n\n$template"
-                    }
-
-                // Then handle userPrompt - append if missing
-                if (USER_PROMPT_ in templateWithStepContext) {
-                    templateWithStepContext
+                if (STEP_CONTEXT_ in template) {
+                    template
                 } else {
-                    "$templateWithStepContext\n\n=== USER REQUEST ===\n$USER_PROMPT_\n=== END REQUEST ===".trim()
+                    "=== PREVIOUS STEP CONTEXT ===\n" +
+                        "$STEP_CONTEXT_\n" +
+                        "=== END CONTEXT ===\n\n" +
+                        template
                 }
-            }
-                ?: "=== PREVIOUS STEP CONTEXT ===\n$STEP_CONTEXT_\n=== END CONTEXT ===\n\n=== USER REQUEST ===\n$USER_PROMPT_\n=== END REQUEST ==="
+            } ?: (
+                "=== PREVIOUS STEP CONTEXT ===\n" +
+                    "$STEP_CONTEXT_\n" +
+                    "=== END CONTEXT ===\n\n"
+            )
 
-        val templatedPrompt = userPromptTemplate.replace(USER_PROMPT_, userPrompt)
-        val mappedPrompt = applyMappingValues(templatedPrompt, mappingValues)
+        val mappedPrompt = applyMappingValues(userPromptTemplate, mappingValues)
         val languagePrompt = appendLanguageInstruction(mappedPrompt, outputLanguage)
         return appendJsonModeInstructions(languagePrompt, responseSchema)
     }
@@ -63,7 +57,7 @@ class PromptBuilderService {
      * JSON mode instructions are now handled in userPrompt.
      */
     fun buildSystemPrompt(
-        prompt: PromptConfig,
+        prompt: PromptConfigBase,
         mappingValues: Map<String, String>,
     ): String = applyMappingValues(prompt.systemPrompt, mappingValues)
 
@@ -79,7 +73,7 @@ class PromptBuilderService {
         }
 
     /**
-     * Appends language instruction to the prompt if output language is specified.
+     * Appends language instruction to the prompt if the output language is specified.
      */
     private fun appendLanguageInstruction(
         prompt: String,
@@ -87,7 +81,9 @@ class PromptBuilderService {
     ): String =
         outputLanguage
             ?.takeUnless { it.isBlank() }
-            ?.let { "$prompt\n\nPlease respond in language: $it" }
+            ?.let {
+                "$prompt\nPlease respond in language: $it\n"
+            }
             ?: prompt
 
     /**
@@ -99,9 +95,10 @@ class PromptBuilderService {
         responseSchema: Any?,
     ): String =
         when (responseSchema) {
-            null -> throw IllegalArgumentException(
-                "responseSchema cannot be null - JSON mode is always enabled.",
-            )
+            null ->
+                error {
+                    "responseSchema cannot be null - JSON mode is always enabled."
+                }
 
             else -> {
                 val exampleJson = serializeToJsonExample(responseSchema)
@@ -110,7 +107,7 @@ class PromptBuilderService {
         }
 
     /**
-     * Serializes response schema to pretty-formatted JSON string using ObjectMapper.
+     * Serializes response schema to a pretty-formatted JSON string using ObjectMapper.
      * Uses pretty printing and consistent field ordering for better LLM comprehension.
      */
     private fun serializeToJsonExample(responseSchema: Any): String =
@@ -127,5 +124,15 @@ class PromptBuilderService {
      * Builds ultra-simplified JSON mode instruction - optimized for minimal token usage.
      */
     private fun buildStrictJsonModeInstruction(exampleJson: String): String =
-        "\nJSON: $exampleJson"
+        """        
+        
+OUTPUT CONTRACT (STRICT):
+- Return ONLY raw JSON that matches the schema below.
+- NO markdown, NO code fences, NO comments, NO trailing text.
+- If you cannot populate a field, set it to null (do not invent).
+- Do not change field names or types. 
+- In String fields of JSON always escape double quotes.
+Response in JSON: 
+$exampleJson
+        """.trimIndent()
 }

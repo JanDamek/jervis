@@ -58,18 +58,18 @@ models: # embedding dimensions configured per model
 
   QUESTION_INTERPRETER:
     - provider: OLLAMA
-      model: qwen2.5:7b-instruct-q4_K_M
-      maxTokens: 163840
+      model: qwen3-coder:30b
+      maxTokens: 32768
 
   RAG:
     - provider: OLLAMA
-      model: qwen2.5:7b-instruct-q4_K_M
-      maxTokens: 163840
+      model: qwen3-coder:30b
+      maxTokens: 131072
 
   CODER:
     - provider: OLLAMA
-      model: qwen2.5-coder:14b-instruct-q4_K_M
-      maxTokens: 163840
+      model: qwen3-coder:30b
+      maxTokens: 32768
       quick: false
     - provider: ANTHROPIC
       model: claude-3-5-sonnet-20241022
@@ -78,19 +78,19 @@ models: # embedding dimensions configured per model
 
   PLANNER:
     - provider: OLLAMA
-      model: qwen2.5:14b-instruct-q4_K_M
-      maxTokens: 163840
+      model: qwen3-coder:30b
+      maxTokens: 32768
 
   JOERN:
     - provider: OLLAMA
-      model: qwen2.5:7b-instruct-q4_K_M
-      maxTokens: 163840
+      model: qwen3-coder:30b
+      maxTokens: 32768
 
   # Nové obecné modely pro většinu interních operací
   GENERIC_TEXT_MODEL:
     - provider: OLLAMA
-      model: qwen2.5:7b-instruct-q4_K_M
-      maxTokens: 163840
+      model: qwen3-coder:30b
+      maxTokens: 32768
     - provider: OPENAI
       model: gpt-4o-mini
       maxTokens: 8192
@@ -98,17 +98,18 @@ models: # embedding dimensions configured per model
 
   GENERIC_CODE_MODEL:
     - provider: OLLAMA
-      model: qwen2.5:7b-instruct-q4_K_M
-      maxTokens: 163840
+      model: qwen3-coder:30b
+      maxTokens: 32768
     - provider: ANTHROPIC
       model: claude-3-5-haiku-20241022
       maxTokens: 8192
       quick: true
 
+  # Heavy models - BATCH PROCESSING ONLY due to P40 VRAM limitations
   HEAVY_TEXT_MODEL:
     - provider: OLLAMA
-      model: qwen2.5:32b-instruct-q4_K_M
-      maxTokens: 163840
+      model: qwen3-coder:30b
+      maxTokens: 32768
       quick: false
     - provider: OPENAI
       model: gpt-4o
@@ -117,8 +118,8 @@ models: # embedding dimensions configured per model
 
   HEAVY_CODE_MODEL:
     - provider: OLLAMA
-      model: qwen2.5:32b-instruct-q4_K_M
-      maxTokens: 163840
+      model: qwen3-coder:30b
+      maxTokens: 32768
       quick: false
     - provider: ANTHROPIC
       model: claude-3-5-sonnet-20241022

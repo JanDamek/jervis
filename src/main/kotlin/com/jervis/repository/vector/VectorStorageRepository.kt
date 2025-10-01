@@ -4,6 +4,7 @@ import com.jervis.configuration.ModelsProperties
 import com.jervis.configuration.QdrantProperties
 import com.jervis.configuration.TimeoutsProperties
 import com.jervis.domain.model.ModelType
+import com.jervis.domain.rag.EmbeddingType
 import com.jervis.domain.rag.RagDocument
 import com.jervis.repository.vector.converter.rag.convertRagDocumentToPayload
 import io.grpc.Status
@@ -41,7 +42,6 @@ class VectorStorageRepository(
     private val isConnected = AtomicBoolean(false)
     private val qdrantClientRef = AtomicReference<QdrantClient?>(null)
 
-
     /**
      * Get dimension for a specific embedding model type from configuration
      */
@@ -56,22 +56,15 @@ class VectorStorageRepository(
     }
 
     /**
-     * Generate a collection name using only embedding type and dimension
-     * Format: {embedding_type}_{dimension}
+     * Generate collection name routing to semantic_code and semantic_text
+     * Following Story 4: unified collections for better organization
      */
-    private fun getCollectionNameForModelType(modelType: ModelType): String {
-        val dimension = getDimensionForModelType(modelType)
-
-        val typePrefix =
-            when (modelType) {
-                ModelType.EMBEDDING_TEXT -> "text"
-                ModelType.EMBEDDING_CODE -> "code"
-                else -> throw IllegalArgumentException("Unsupported collection type: $modelType")
-            }
-
-        return "${typePrefix}_$dimension"
-    }
-
+    private fun getCollectionNameForModelType(modelType: ModelType): String =
+        when (modelType) {
+            ModelType.EMBEDDING_TEXT -> "semantic_text"
+            ModelType.EMBEDDING_CODE -> "semantic_code"
+            else -> throw IllegalArgumentException("Unsupported collection type: $modelType")
+        }
 
     /**
      * Validate that all embedding models of the same type have consistent dimensions
@@ -315,21 +308,77 @@ class VectorStorageRepository(
     }
 
     /**
+     * Overloaded store method with automatic EmbeddingType routing
+     * Uses the embeddingType field from RagDocument to route to appropriate collection
+     */
+    suspend fun store(
+        embeddingType: EmbeddingType,
+        ragDocument: RagDocument,
+        embedding: List<Float>,
+    ): String {
+        val modelType =
+            when (embeddingType) {
+                EmbeddingType.EMBEDDING_TEXT -> ModelType.EMBEDDING_TEXT
+                EmbeddingType.EMBEDDING_CODE -> ModelType.EMBEDDING_CODE
+            }
+        return store(modelType, ragDocument, embedding)
+    }
+
+    /**
      * Unified search method: picks a collection by type (EMBEDDING_TEXT / EMBEDDING_CODE)
+     * Enhanced with ragSourceType and symbolType filtering for Story 4
      */
     suspend fun search(
         collectionType: ModelType,
         query: List<Float>,
         limit: Int = 10000,
         minScore: Float = 0.0f,
+        projectId: String? = null,
+        clientId: String? = null,
+        ragSourceType: com.jervis.domain.rag.RagSourceType? = null,
+        symbolType: com.jervis.domain.rag.SymbolType? = null,
         filter: Map<String, Any>? = null,
     ): List<Map<String, JsonWithInt.Value>> {
         val collection = getCollectionNameForModelType(collectionType)
         val dimension = getDimensionForModelType(collectionType)
         val effectiveQuery = query.ifEmpty { List(dimension) { 0.0f } }
 
+        // Build scoping filter
+        val scopingFilter =
+            when {
+                projectId == null && clientId == null -> null // Global search
+                projectId == null && clientId != null -> mapOf("clientId" to clientId) // Client search
+                projectId != null && clientId != null ->
+                    mapOf(
+                        "\$or" to
+                            listOf(
+                                mapOf("projectId" to projectId),
+                                mapOf("clientId" to clientId),
+                            ),
+                    ) // Project search with OR condition
+                else -> null
+            }
+
+        // Build additional filters for Story 4 requirements
+        val additionalFilters = mutableMapOf<String, Any>()
+        ragSourceType?.let { additionalFilters["ragSourceType"] = it.name }
+        symbolType?.let { additionalFilters["symbolType"] = it.name }
+
+        // Combine all filters (scoping + additional + custom)
+        val allFilters = listOfNotNull(scopingFilter, additionalFilters.takeIf { it.isNotEmpty() }, filter)
+        val combinedFilter =
+            when (allFilters.size) {
+                0 -> null
+                1 -> allFilters.first()
+                else -> {
+                    val mergedFilter = mutableMapOf<String, Any>()
+                    allFilters.forEach { filterMap -> mergedFilter.putAll(filterMap) }
+                    mergedFilter
+                }
+            }
+
         val qdrantFilter =
-            if (filter.isNullOrEmpty().not()) createQdrantFilter(filter) else null
+            if (combinedFilter.isNullOrEmpty().not()) createQdrantFilter(combinedFilter) else null
 
         val searchBuilder =
             Points.SearchPoints
@@ -374,47 +423,100 @@ class VectorStorageRepository(
     private fun createQdrantFilter(filterMap: Map<String, Any>): Points.Filter {
         val filterBuilder = Points.Filter.newBuilder()
         filterMap.forEach { (key, value) ->
-            val condition =
-                when (value) {
-                    is String ->
-                        Points.FieldCondition
-                            .newBuilder()
-                            .setKey(key)
-                            .setMatch(Points.Match.newBuilder().setKeyword(value))
-                            .build()
+            when {
+                key == "\$or" && value is List<*> -> {
+                    // Handle OR conditions for project scoping
+                    val orConditions =
+                        value
+                            .filterIsInstance<Map<String, Any>>()
+                            .mapNotNull { orCondition ->
+                                val orFilterBuilder = Points.Filter.newBuilder()
+                                orCondition.forEach { (orKey, orValue) ->
+                                    val fieldCondition = createFieldCondition(orKey, orValue)
+                                    if (fieldCondition != null) {
+                                        orFilterBuilder.addMust(
+                                            Points.Condition
+                                                .newBuilder()
+                                                .setField(fieldCondition)
+                                                .build(),
+                                        )
+                                    }
+                                }
+                                if (orFilterBuilder.mustCount > 0) orFilterBuilder.build() else null
+                            }
 
-                    is Int ->
-                        Points.FieldCondition
-                            .newBuilder()
-                            .setKey(key)
-                            .setRange(
-                                Points.Range
+                    if (orConditions.isNotEmpty()) {
+                        val shouldBuilder = Points.Filter.newBuilder()
+                        orConditions.forEach { orFilter ->
+                            shouldBuilder.addShould(
+                                Points.Condition
                                     .newBuilder()
-                                    .setGt(0.0)
-                                    .setLt(value.toDouble() + 0.1)
+                                    .setFilter(orFilter)
                                     .build(),
-                            ).build()
-
-                    is Boolean ->
-                        Points.FieldCondition
-                            .newBuilder()
-                            .setKey(key)
-                            .setMatch(Points.Match.newBuilder().setKeyword(value.toString()))
-                            .build()
-
-                    else -> null
+                            )
+                        }
+                        filterBuilder.addMust(
+                            Points.Condition
+                                .newBuilder()
+                                .setFilter(shouldBuilder.build())
+                                .build(),
+                        )
+                    }
                 }
-            if (condition != null) {
-                filterBuilder.addMust(
-                    Points.Condition
-                        .newBuilder()
-                        .setField(condition)
-                        .build(),
-                )
+
+                else -> {
+                    // Handle regular field conditions
+                    val condition = createFieldCondition(key, value)
+                    if (condition != null) {
+                        filterBuilder.addMust(
+                            Points.Condition
+                                .newBuilder()
+                                .setField(condition)
+                                .build(),
+                        )
+                    }
+                }
             }
         }
         return filterBuilder.build()
     }
+
+    /**
+     * Create a field condition for a specific key-value pair
+     */
+    private fun createFieldCondition(
+        key: String,
+        value: Any,
+    ): Points.FieldCondition? =
+        when (value) {
+            is String ->
+                Points.FieldCondition
+                    .newBuilder()
+                    .setKey(key)
+                    .setMatch(Points.Match.newBuilder().setKeyword(value))
+                    .build()
+
+            is Int ->
+                Points.FieldCondition
+                    .newBuilder()
+                    .setKey(key)
+                    .setRange(
+                        Points.Range
+                            .newBuilder()
+                            .setGt(0.0)
+                            .setLt(value.toDouble() + 0.1)
+                            .build(),
+                    ).build()
+
+            is Boolean ->
+                Points.FieldCondition
+                    .newBuilder()
+                    .setKey(key)
+                    .setMatch(Points.Match.newBuilder().setKeyword(value.toString()))
+                    .build()
+
+            else -> null
+        }
 
     /**
      * Health check result for vector storage
@@ -423,7 +525,7 @@ class VectorStorageRepository(
         val isHealthy: Boolean,
         val details: Map<String, Any>,
         val error: String? = null,
-        val responseTimeMs: Long = 0
+        val responseTimeMs: Long = 0,
     )
 
     /**
@@ -432,91 +534,97 @@ class VectorStorageRepository(
     suspend fun healthCheck(): HealthCheckResult {
         val startTime = System.currentTimeMillis()
         val details = mutableMapOf<String, Any>()
-        
+
         return try {
             logger.debug { "Performing vector storage health check" }
-            
+
             // Check basic connectivity by performing simple search operations on both collections
             val textCollection = getCollectionNameForModelType(ModelType.EMBEDDING_TEXT)
             val codeCollection = getCollectionNameForModelType(ModelType.EMBEDDING_CODE)
-            
+
             var textCollectionHealthy = false
             var codeCollectionHealthy = false
-            
+
             // Test text collection with empty search
             try {
-                val textResults = search(
-                    collectionType = ModelType.EMBEDDING_TEXT,
-                    query = emptyList(), // Empty query for health check
-                    limit = 1,
-                    minScore = 0.0f
-                )
+                val textResults =
+                    search(
+                        collectionType = ModelType.EMBEDDING_TEXT,
+                        query = emptyList(), // Empty query for health check
+                        limit = 1,
+                        minScore = 0.0f,
+                    )
                 textCollectionHealthy = true
-                details["textCollection"] = mapOf(
-                    "name" to textCollection,
-                    "accessible" to true,
-                    "testSearchResults" to textResults.size
-                )
+                details["textCollection"] =
+                    mapOf(
+                        "name" to textCollection,
+                        "accessible" to true,
+                        "testSearchResults" to textResults.size,
+                    )
             } catch (e: Exception) {
                 logger.warn(e) { "Text collection health check failed" }
-                details["textCollection"] = mapOf(
-                    "name" to textCollection,
-                    "accessible" to false,
-                    "error" to (e.message ?: "Unknown error")
-                )
+                details["textCollection"] =
+                    mapOf(
+                        "name" to textCollection,
+                        "accessible" to false,
+                        "error" to (e.message ?: "Unknown error"),
+                    )
             }
-            
+
             // Test code collection with empty search
             try {
-                val codeResults = search(
-                    collectionType = ModelType.EMBEDDING_CODE,
-                    query = emptyList(), // Empty query for health check
-                    limit = 1,
-                    minScore = 0.0f
-                )
+                val codeResults =
+                    search(
+                        collectionType = ModelType.EMBEDDING_CODE,
+                        query = emptyList(), // Empty query for health check
+                        limit = 1,
+                        minScore = 0.0f,
+                    )
                 codeCollectionHealthy = true
-                details["codeCollection"] = mapOf(
-                    "name" to codeCollection,
-                    "accessible" to true,
-                    "testSearchResults" to codeResults.size
-                )
+                details["codeCollection"] =
+                    mapOf(
+                        "name" to codeCollection,
+                        "accessible" to true,
+                        "testSearchResults" to codeResults.size,
+                    )
             } catch (e: Exception) {
                 logger.warn(e) { "Code collection health check failed" }
-                details["codeCollection"] = mapOf(
-                    "name" to codeCollection,
-                    "accessible" to false,
-                    "error" to (e.message ?: "Unknown error")
-                )
+                details["codeCollection"] =
+                    mapOf(
+                        "name" to codeCollection,
+                        "accessible" to false,
+                        "error" to (e.message ?: "Unknown error"),
+                    )
             }
-            
+
             val responseTime = System.currentTimeMillis() - startTime
             val isHealthy = textCollectionHealthy && codeCollectionHealthy
-            
+
             details["connectionStatus"] = if (isHealthy) "HEALTHY" else "DEGRADED"
             details["responseTime"] = responseTime
             details["collectionsChecked"] = 2
             details["collectionsHealthy"] = listOf(textCollectionHealthy, codeCollectionHealthy).count { it }
-            
+
             logger.debug { "Vector storage health check completed: healthy=$isHealthy, responseTime=${responseTime}ms" }
-            
+
             HealthCheckResult(
                 isHealthy = isHealthy,
                 details = details.toMap(),
-                responseTimeMs = responseTime
+                responseTimeMs = responseTime,
             )
         } catch (e: Exception) {
             val responseTime = System.currentTimeMillis() - startTime
             details["connectionStatus"] = "ERROR"
             details["responseTime"] = responseTime
             details["errorType"] = e::class.simpleName ?: "UnknownException"
-            
+
             logger.error(e) { "Vector storage health check failed with exception" }
-            
+
             HealthCheckResult(
                 isHealthy = false,
                 details = details.toMap(),
                 error = e.message ?: "Unknown error during health check",
-                responseTimeMs = responseTime
+                responseTimeMs = responseTime,
             )
         }
     }
