@@ -3,7 +3,6 @@ package com.jervis.ui.window
 import com.jervis.common.Constants.GLOBAL_ID
 import com.jervis.dto.ChatRequestContext
 import com.jervis.entity.mongo.ScheduledTaskDocument
-import com.jervis.entity.mongo.ScheduledTaskStatus
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.client.ClientService
 import com.jervis.service.project.ProjectService
@@ -11,6 +10,9 @@ import com.jervis.service.scheduling.TaskQueryService
 import com.jervis.service.scheduling.TaskSchedulingService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.bson.types.ObjectId
@@ -324,12 +326,13 @@ class SchedulerWindow(
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val tasks =
-                    taskQueryService.getTasksByStatus(ScheduledTaskStatus.PENDING) +
-                        taskQueryService.getTasksByStatus(ScheduledTaskStatus.RUNNING) +
-                        taskQueryService
-                            .getTasksByStatus(ScheduledTaskStatus.COMPLETED)
-                            .takeLast(10) // Show last 10 completed
-
+                    flow {
+                        emitAll(taskQueryService.getTasksByStatus(ScheduledTaskDocument.ScheduledTaskStatus.PENDING))
+                        emitAll(taskQueryService.getTasksByStatus(ScheduledTaskDocument.ScheduledTaskStatus.RUNNING))
+                        emitAll(
+                            taskQueryService.getTasksByStatus(ScheduledTaskDocument.ScheduledTaskStatus.COMPLETED),
+                        )
+                    }
                 // Load projects and clients to enhance display
                 val projects = projectService.getAllProjects()
                 val clients = clientService.list()
@@ -344,10 +347,9 @@ class SchedulerWindow(
 
                 withContext(Dispatchers.Main) {
                     taskListModel.clear()
-                    enhancedTasks.sortedByDescending { it.task.scheduledAt }.forEach { enhancedTask ->
+                    enhancedTasks.collect { enhancedTask ->
                         taskListModel.addElement(enhancedTask)
                     }
-                    statusLabel.text = "Načteno ${tasks.size} úkolů"
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -370,7 +372,7 @@ class SchedulerWindow(
             try {
                 // Basic task validation - check if description is meaningful
                 val isValidTask = description.length >= 10 && description.contains(" ")
-                
+
                 withContext(Dispatchers.Main) {
                     if (isValidTask) {
                         statusLabel.text = "Úkol byl ověřen a je připraven k naplánování"
@@ -606,7 +608,7 @@ class SchedulerWindow(
             }
 
         // Can only execute pending tasks
-        if (task.status != ScheduledTaskStatus.PENDING) {
+        if (task.status != ScheduledTaskDocument.ScheduledTaskStatus.PENDING) {
             statusLabel.text = "Lze spustit pouze čekající úkoly"
             return
         }
@@ -789,11 +791,11 @@ class SchedulerWindow(
                     val scheduledTime = task.scheduledAt.atZone(ZoneId.systemDefault()).format(dateFormatter)
                     val status =
                         when (task.status) {
-                            ScheduledTaskStatus.PENDING -> "Čekající"
-                            ScheduledTaskStatus.RUNNING -> "Běží"
-                            ScheduledTaskStatus.COMPLETED -> "Dokončeno"
-                            ScheduledTaskStatus.FAILED -> "Selhalo"
-                            ScheduledTaskStatus.CANCELLED -> "Zrušeno"
+                            ScheduledTaskDocument.ScheduledTaskStatus.PENDING -> "Čekající"
+                            ScheduledTaskDocument.ScheduledTaskStatus.RUNNING -> "Běží"
+                            ScheduledTaskDocument.ScheduledTaskStatus.COMPLETED -> "Dokončeno"
+                            ScheduledTaskDocument.ScheduledTaskStatus.FAILED -> "Selhalo"
+                            ScheduledTaskDocument.ScheduledTaskStatus.CANCELLED -> "Zrušeno"
                         }
 
                     val clientInfo = value.clientName?.let { "Klient: $it" } ?: ""
@@ -818,10 +820,15 @@ class SchedulerWindow(
 
                     // Color coding based on status
                     when (task.status) {
-                        ScheduledTaskStatus.RUNNING -> foreground = java.awt.Color.BLUE
-                        ScheduledTaskStatus.FAILED -> foreground = java.awt.Color.RED
-                        ScheduledTaskStatus.CANCELLED -> foreground = java.awt.Color.GRAY
-                        ScheduledTaskStatus.COMPLETED -> foreground = java.awt.Color(0, 128, 0) // Dark green
+                        ScheduledTaskDocument.ScheduledTaskStatus.RUNNING -> foreground = java.awt.Color.BLUE
+                        ScheduledTaskDocument.ScheduledTaskStatus.FAILED -> foreground = java.awt.Color.RED
+                        ScheduledTaskDocument.ScheduledTaskStatus.CANCELLED -> {
+                            foreground = java.awt.Color.GRAY
+                        }
+
+                        ScheduledTaskDocument.ScheduledTaskStatus.COMPLETED ->
+                            foreground =
+                                java.awt.Color(0, 128, 0) // Dark green
                         else -> foreground = if (isSelected) list?.selectionForeground else list?.foreground
                     }
                 }
@@ -831,19 +838,19 @@ class SchedulerWindow(
                     val scheduledTime = value.scheduledAt.atZone(ZoneId.systemDefault()).format(dateFormatter)
                     val status =
                         when (value.status) {
-                            ScheduledTaskStatus.PENDING -> "Čekající"
-                            ScheduledTaskStatus.RUNNING -> "Běží"
-                            ScheduledTaskStatus.COMPLETED -> "Dokončeno"
-                            ScheduledTaskStatus.FAILED -> "Selhalo"
-                            ScheduledTaskStatus.CANCELLED -> "Zrušeno"
+                            ScheduledTaskDocument.ScheduledTaskStatus.PENDING -> "Čekající"
+                            ScheduledTaskDocument.ScheduledTaskStatus.RUNNING -> "Běží"
+                            ScheduledTaskDocument.ScheduledTaskStatus.COMPLETED -> "Dokončeno"
+                            ScheduledTaskDocument.ScheduledTaskStatus.FAILED -> "Selhalo"
+                            ScheduledTaskDocument.ScheduledTaskStatus.CANCELLED -> "Zrušeno"
                         }
 
                     text = "${value.taskName} - $status ($scheduledTime)"
 
                     when (value.status) {
-                        ScheduledTaskStatus.RUNNING -> foreground = java.awt.Color.BLUE
-                        ScheduledTaskStatus.FAILED -> foreground = java.awt.Color.RED
-                        ScheduledTaskStatus.CANCELLED -> foreground = java.awt.Color.GRAY
+                        ScheduledTaskDocument.ScheduledTaskStatus.RUNNING -> foreground = java.awt.Color.BLUE
+                        ScheduledTaskDocument.ScheduledTaskStatus.FAILED -> foreground = java.awt.Color.RED
+                        ScheduledTaskDocument.ScheduledTaskStatus.CANCELLED -> foreground = java.awt.Color.GRAY
                         else -> foreground = if (isSelected) list?.selectionForeground else list?.foreground
                     }
                 }

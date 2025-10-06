@@ -18,7 +18,7 @@ class CommunicationTeamsTool(
 ) : McpTool {
     private val logger = KotlinLogging.logger {}
 
-    override val name: PromptTypeEnum = PromptTypeEnum.COMMUNICATION_TEAMS
+    override val name: PromptTypeEnum = PromptTypeEnum.COMMUNICATION_TEAMS_TOOL
 
     @Serializable
     data class CommunicationTeamsParams(
@@ -33,14 +33,17 @@ class CommunicationTeamsTool(
     ): CommunicationTeamsParams {
         val llmResponse =
             llmGateway.callLlm(
-                type = PromptTypeEnum.COMMUNICATION_TEAMS,
-                mappingValue = mapOf("taskDescription" to taskDescription),
-                quick = context.quick,
+                type = PromptTypeEnum.COMMUNICATION_TEAMS_TOOL,
+                mappingValue =
+                    mapOf(
+                        "taskDescription" to taskDescription,
+                        "stepContext" to stepContext,
+                    ),
+                    quick = context.quick,
                 responseSchema = CommunicationTeamsParams(),
-                stepContext = stepContext,
             )
 
-        return llmResponse
+        return llmResponse.result
     }
 
     override suspend fun execute(

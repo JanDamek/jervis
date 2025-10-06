@@ -5,8 +5,6 @@ import com.fasterxml.jackson.databind.SerializationFeature
 import com.jervis.configuration.prompts.PromptConfigBase
 import org.springframework.stereotype.Service
 
-private const val STEP_CONTEXT_ = "{stepContext}"
-
 /**
  * Service responsible for building system and user prompts for LLM requests.
  * Uses ObjectMapper with pretty printing for JSON example generation for better LLM readability.
@@ -22,8 +20,7 @@ class PromptBuilderService {
 
     /**
      * Builds the complete user prompt by applying template replacement, mapping values, language instructions, and JSON instructions.
-     * Automatically appends {userPrompt} placeholder if missing from the template.
-     * Automatically prepends {stepContext} placeholder if missing from the template.
+     * Uses only placeholders explicitly defined in the YAML prompt configuration.
      */
     fun buildUserPrompt(
         prompt: PromptConfigBase,
@@ -31,21 +28,7 @@ class PromptBuilderService {
         outputLanguage: String?,
         responseSchema: Any?,
     ): String {
-        val userPromptTemplate: String =
-            prompt.userPrompt?.let { template ->
-                if (STEP_CONTEXT_ in template) {
-                    template
-                } else {
-                    "=== PREVIOUS STEP CONTEXT ===\n" +
-                        "$STEP_CONTEXT_\n" +
-                        "=== END CONTEXT ===\n\n" +
-                        template
-                }
-            } ?: (
-                "=== PREVIOUS STEP CONTEXT ===\n" +
-                    "$STEP_CONTEXT_\n" +
-                    "=== END CONTEXT ===\n\n"
-            )
+        val userPromptTemplate: String = prompt.userPrompt ?: ""
 
         val mappedPrompt = applyMappingValues(userPromptTemplate, mappingValues)
         val languagePrompt = appendLanguageInstruction(mappedPrompt, outputLanguage)
@@ -63,14 +46,49 @@ class PromptBuilderService {
 
     /**
      * Applies mapping value replacements to the prompt template.
+     * Validates placeholders BEFORE replacement to avoid false positives from content.
      */
     private fun applyMappingValues(
         promptTemplate: String,
         mappingValues: Map<String, String>,
-    ): String =
-        mappingValues.entries.fold(promptTemplate) { acc, (key, value) ->
-            acc.replace("{$key}", value)
+    ): String {
+        validatePlaceholdersBeforeReplacement(promptTemplate, mappingValues)
+
+        val result =
+            mappingValues.entries.fold(promptTemplate) { acc, (key, value) ->
+                acc.replace("{$key}", value)
+            }
+        return result
+    }
+
+    /**
+     * Validates that all placeholders in the template have corresponding values.
+     * Extracts placeholders from the template BEFORE replacement to avoid confusion with content.
+     * Only matches valid placeholder identifiers (alphanumeric and underscores), not code or JSON structures.
+     * Throws IllegalStateException if any required placeholders are missing values.
+     */
+    private fun validatePlaceholdersBeforeReplacement(
+        promptTemplate: String,
+        mappingValues: Map<String, String>,
+    ) {
+        val placeholderPattern = Regex("""\{([a-zA-Z_][a-zA-Z0-9_]*)\}""")
+        val templatePlaceholders =
+            placeholderPattern
+                .findAll(promptTemplate)
+                .map { it.groupValues[1] }
+                .toSet()
+
+        val missingPlaceholders =
+            templatePlaceholders.filter { placeholder ->
+                !mappingValues.containsKey(placeholder)
+            }
+
+        if (missingPlaceholders.isNotEmpty()) {
+            throw IllegalStateException(
+                "Missing values for placeholders: ${missingPlaceholders.joinToString(", ") { "{$it}" }}"
+            )
         }
+    }
 
     /**
      * Appends language instruction to the prompt if the output language is specified.
@@ -125,14 +143,17 @@ class PromptBuilderService {
      */
     private fun buildStrictJsonModeInstruction(exampleJson: String): String =
         """        
-        
 OUTPUT CONTRACT (STRICT):
 - Return ONLY raw JSON that matches the schema below.
 - NO markdown, NO code fences, NO comments, NO trailing text.
 - If you cannot populate a field, set it to null (do not invent).
 - Do not change field names or types. 
 - In String fields of JSON always escape double quotes.
+
 Response in JSON: 
 $exampleJson
+
+You MUST NOT output <think> or reasoning steps.
+Do all reasoning silently and return ONLY the final JSON according to the schema.
         """.trimIndent()
 }

@@ -7,10 +7,8 @@ import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
-import com.jervis.service.mcp.util.ToolResponseBuilder
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.Serializable
@@ -18,7 +16,6 @@ import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.io.File
 import java.io.IOException
-import java.nio.file.AccessDeniedException
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.seconds
 
@@ -32,7 +29,7 @@ class SystemExecuteCommandTool(
         private val logger = KotlinLogging.logger {}
     }
 
-    override val name = PromptTypeEnum.SYSTEM_EXECUTE_COMMAND
+    override val name = PromptTypeEnum.SYSTEM_EXECUTE_COMMAND_TOOL
 
     @Serializable
     data class SystemExecuteCommandParams(
@@ -46,14 +43,17 @@ class SystemExecuteCommandTool(
     ): SystemExecuteCommandParams {
         val llmResponse =
             llmGateway.callLlm(
-                type = PromptTypeEnum.SYSTEM_EXECUTE_COMMAND,
-                mappingValue = mapOf("taskDescription" to taskDescription),
+                type = PromptTypeEnum.SYSTEM_EXECUTE_COMMAND_TOOL,
+                mappingValue =
+                    mapOf(
+                        "taskDescription" to taskDescription,
+                        "stepContext" to stepContext,
+                    ),
                 quick = context.quick,
                 responseSchema = SystemExecuteCommandParams(),
-                stepContext = stepContext,
             )
 
-        return llmResponse
+        return llmResponse.result
     }
 
     override suspend fun execute(

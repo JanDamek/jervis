@@ -63,7 +63,7 @@ class Finalizer(
                                 mappingValue = mapOf("promptData" to userPrompt),
                                 outputLanguage = userLang,
                             )
-                    plan.finalAnswer = answer.response
+                    plan.finalAnswer = answer.result.response
                     plan.status = PlanStatus.FINALIZED
                     plan.updatedAt = Instant.now()
                     plan
@@ -71,8 +71,6 @@ class Finalizer(
 
         val planAnswers =
             finalizedPlans
-                .filter { it.status == PlanStatus.FINALIZED }
-                .toList()
                 .joinToString(separator = "\n\n") { plan ->
                     val title = plan.originalQuestion.ifBlank { plan.englishQuestion }
                     buildList {

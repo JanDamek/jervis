@@ -76,6 +76,11 @@ class TrayIconManager {
             windowManager.showIndexingMonitor()
         }
 
+        val debugWindowItem = MenuItem("Show Debug Window")
+        debugWindowItem.addActionListener {
+            windowManager.showDebugWindow()
+        }
+
         val exitItem = MenuItem("Exit")
         exitItem.addActionListener {
             System.exit(0)
@@ -87,6 +92,7 @@ class TrayIconManager {
         popup.add(openClientsItem)
         popup.add(openSchedulerItem)
         popup.add(indexingMonitorItem)
+        popup.add(debugWindowItem)
         popup.addSeparator()
         popup.add(exitItem)
 

@@ -36,7 +36,7 @@ class ProjectVersionControlTool(
         private fun sanitizeCommitMessage(message: String): String = message.replace("\"", "\\\"").replace("\n", " ").replace("\r", " ")
     }
 
-    override val name: PromptTypeEnum = PromptTypeEnum.PROJECT_VERSION_CONTROL
+    override val name: PromptTypeEnum = PromptTypeEnum.PROJECT_VERSION_CONTROL_TOOL
 
     @Serializable
     data class ProjectVersionControlParams(
@@ -51,14 +51,17 @@ class ProjectVersionControlTool(
     ): ProjectVersionControlParams {
         val llmResponse =
             llmGateway.callLlm(
-                type = PromptTypeEnum.PROJECT_VERSION_CONTROL,
-                mappingValue = mapOf("taskDescription" to taskDescription),
+                type = PromptTypeEnum.PROJECT_VERSION_CONTROL_TOOL,
+                mappingValue =
+                    mapOf(
+                        "taskDescription" to taskDescription,
+                        "stepContext" to stepContext,
+                    ),
                 quick = context.quick,
                 responseSchema = ProjectVersionControlParams(),
-                stepContext = stepContext,
             )
 
-        return llmResponse
+        return llmResponse.result
     }
 
     override suspend fun execute(

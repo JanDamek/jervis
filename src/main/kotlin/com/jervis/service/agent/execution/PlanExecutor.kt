@@ -1,37 +1,131 @@
 package com.jervis.service.agent.execution
 
-import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.plan.PlanStatus
+import com.jervis.domain.plan.PlanStep
 import com.jervis.domain.plan.StepStatus
 import com.jervis.service.agent.context.TaskContextService
+import com.jervis.service.agent.finalizer.TaskResolutionChecker
+import com.jervis.service.agent.planner.Planner
 import com.jervis.service.mcp.McpToolRegistry
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.notification.StepNotificationService
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import mu.KotlinLogging
+import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 import java.time.Instant
 
 /**
- * Simple flat executor that processes plan steps sequentially by order.
- * Removed complex recovery planning, tree execution, and step insertion logic.
+ * Executor that processes plan steps and manages task resolution checking.
+ * Supports concurrent execution of multiple plans within a context.
+ * Each plan is executed independently with its own steps processed sequentially.
+ * Handles step execution, plan status updates, and creation of additional plans for missing requirements.
  */
 @Service
 class PlanExecutor(
     private val mcpToolRegistry: McpToolRegistry,
     private val taskContextService: TaskContextService,
     private val stepNotificationService: StepNotificationService,
+    private val taskResolutionChecker: TaskResolutionChecker,
+    private val planner: Planner,
 ) {
     private val logger = KotlinLogging.logger {}
 
-    suspend fun execute(context: TaskContext) {
-        // Process each plan that is not yet completed or failed
-        context.plans
-            .filter { it.status !in listOf(PlanStatus.COMPLETED, PlanStatus.FAILED) }
-            .forEach { plan ->
-                executePlan(context, plan)
+    /**
+     * Check if the task is resolved. If not, create an additional plan to address missing requirements.
+     * Returns true if task is fully resolved, false if additional planning was needed.
+     */
+    suspend fun checkResolutionAndCreateAdditionalPlanIfNeeded(taskContext: TaskContext): Boolean {
+        logger.info { "EXECUTOR_RESOLUTION_CHECK: Checking resolution for context ${taskContext.id}" }
+
+        val resolutionResult = taskResolutionChecker.performLlmAnalysis(taskContext)
+        logger.info {
+            "EXECUTOR_RESOLUTION_CHECK: complete=${resolutionResult.complete}, " +
+                "missingRequirements=${resolutionResult.missingRequirements.size}"
+        }
+
+        if (!resolutionResult.complete && resolutionResult.missingRequirements.isNotEmpty()) {
+            logger.info { "EXECUTOR_INCOMPLETE_TASK: Creating additional plan to address missing requirements" }
+
+            val missingRequirementsDescription = buildMissingRequirementsPrompt(resolutionResult)
+            val additionalPlan = createAdditionalPlan(taskContext, missingRequirementsDescription)
+
+            taskContext.plans += additionalPlan
+            taskContextService.save(taskContext)
+
+            logger.info {
+                "EXECUTOR_ADDITIONAL_PLAN_CREATED: planId=${additionalPlan.id}, " +
+                    "steps=${additionalPlan.steps.size}, addressing ${resolutionResult.missingRequirements.size} missing items"
             }
+
+            return false
+        }
+
+        logger.info { "EXECUTOR_RESOLUTION_COMPLETE: Task fully resolved = ${resolutionResult.complete}" }
+        return resolutionResult.complete
+    }
+
+    /**
+     * Creates a comprehensive prompt describing missing requirements for re-planning
+     */
+    private fun buildMissingRequirementsPrompt(resolutionResult: TaskResolutionChecker.LlmAnalysisResult): String =
+        buildString {
+            appendLine("The following requirements are missing or incomplete and need to be addressed:")
+            resolutionResult.missingRequirements.forEachIndexed { index, requirementDetail ->
+                appendLine("${index + 1}. $requirementDetail")
+                appendLine()
+            }
+            appendLine("Please create a plan to complete these missing requirements.")
+        }
+
+    /**
+     * Creates an additional plan to address missing requirements
+     */
+    private suspend fun createAdditionalPlan(
+        taskContext: TaskContext,
+        missingRequirementsDescription: String,
+    ): Plan {
+        val additionalPlan =
+            Plan(
+                id = ObjectId(),
+                contextId = taskContext.id,
+                originalQuestion = missingRequirementsDescription,
+                originalLanguage = "en",
+                englishQuestion = missingRequirementsDescription,
+                initialRagQueries = listOf(),
+                status = PlanStatus.CREATED,
+                steps = emptyList(),
+                contextSummary = "Additional plan to address incomplete requirements",
+                finalAnswer = null,
+                createdAt = Instant.now(),
+                updatedAt = Instant.now(),
+            )
+
+        val initialSteps = planner.suggestNextSteps(taskContext, additionalPlan)
+
+        return additionalPlan.copy(steps = initialSteps)
+    }
+
+    suspend fun execute(context: TaskContext) {
+        // Process each plan that is not yet completed or failed concurrently
+        val activePlans =
+            context.plans
+                .filter { it.status !in listOf(PlanStatus.COMPLETED, PlanStatus.FAILED) }
+
+        if (activePlans.isEmpty()) return
+
+        coroutineScope {
+            val jobs =
+                activePlans.map { plan ->
+                    async {
+                        executePlan(context, plan)
+                    }
+                }
+            jobs.forEach { it.await() }
+        }
     }
 
     private suspend fun executePlan(
@@ -63,92 +157,8 @@ class PlanExecutor(
 
         logger.info { "EXECUTOR: Processing ${pendingSteps.size} pending steps" }
 
-        var planFailed = false
-
-        for (step in pendingSteps) {
-            if (planFailed) break
-
-            try {
-                logger.info { "EXECUTOR: Executing step '${step.stepToolName}' (order=${step.order})" }
-
-                val tool = mcpToolRegistry.byName(PromptTypeEnum.valueOf(step.stepToolName))
-                val stepContext = buildStepContext(plan)
-
-                val result =
-                    tool.execute(
-                        context = context,
-                        plan = plan,
-                        taskDescription = step.stepInstruction,
-                        stepContext = stepContext,
-                    )
-
-                logger.info { "EXECUTOR: Step '${step.stepToolName}' completed with result type: ${result.javaClass.simpleName}" }
-
-                when (result) {
-                    is ToolResult.Ok, is ToolResult.Ask -> {
-                        step.toolResult = result
-                        step.status = StepStatus.DONE
-                        stepNotificationService.notifyStepCompleted(context.id, plan.id, step)
-                    }
-
-                    is ToolResult.Stop -> {
-                        step.toolResult = result
-                        step.status = StepStatus.FAILED
-                        plan.status = PlanStatus.FAILED
-                        plan.finalAnswer = result.reason
-                        planFailed = true
-                        logger.info { "EXECUTOR: Plan stopped by tool: ${result.reason}" }
-                        stepNotificationService.notifyStepCompleted(context.id, plan.id, step)
-                    }
-
-                    is ToolResult.Error -> {
-                        step.toolResult = result
-                        step.status = StepStatus.FAILED
-                        plan.status = PlanStatus.FAILED
-                        plan.finalAnswer = "Step failed: ${result.errorMessage ?: "Unknown error"}"
-                        planFailed = true
-                        logger.error { "EXECUTOR: Step '${step.stepToolName}' failed: ${result.errorMessage}" }
-                        stepNotificationService.notifyStepCompleted(context.id, plan.id, step)
-                    }
-
-                    else -> {
-                        // Handle any other result types as errors
-                        step.toolResult =
-                            ToolResult.error("Unsupported tool result type: ${result.javaClass.simpleName}")
-                        step.status = StepStatus.FAILED
-                        plan.status = PlanStatus.FAILED
-                        plan.finalAnswer = "Unsupported tool result"
-                        planFailed = true
-                        logger.error { "EXECUTOR: Unsupported result type from step '${step.stepToolName}'" }
-                        stepNotificationService.notifyStepCompleted(context.id, plan.id, step)
-                    }
-                }
-            } catch (e: Exception) {
-                logger.error(e) { "EXECUTOR: Exception executing step '${step.stepToolName}'" }
-                step.toolResult = ToolResult.error("Step execution failed: ${e.message}")
-                step.status = StepStatus.FAILED
-                plan.status = PlanStatus.FAILED
-                plan.finalAnswer = "Step execution failed: ${e.message}"
-                planFailed = true
-                stepNotificationService.notifyStepCompleted(context.id, plan.id, step)
-            }
-
-            // Save progress after each step
-            plan.updatedAt = Instant.now()
-            taskContextService.save(context)
-        }
-
-        // Final plan status update
-        if (!planFailed) {
-            val allStepsCompleted = plan.steps.all { it.status == StepStatus.DONE }
-            if (allStepsCompleted) {
-                plan.status = PlanStatus.COMPLETED
-                logger.info { "EXECUTOR: Plan ${plan.id} completed successfully" }
-            } else {
-                plan.status = PlanStatus.FAILED
-                plan.finalAnswer = "Not all steps completed"
-                logger.warn { "EXECUTOR: Plan ${plan.id} has incomplete steps" }
-            }
+        pendingSteps.forEach { step ->
+            executeOneStep(step, plan, context)
         }
 
         plan.updatedAt = Instant.now()
@@ -156,6 +166,78 @@ class PlanExecutor(
         stepNotificationService.notifyPlanStatusChanged(context.id, plan.id, plan.status)
 
         logger.info { "EXECUTOR: Plan execution finished - planId=${plan.id}, status=${plan.status}" }
+    }
+
+    suspend fun executeOneStep(
+        step: PlanStep,
+        plan: Plan,
+        context: TaskContext,
+    ): Boolean {
+        var planFailed: Boolean
+        try {
+            logger.info { "EXECUTOR: Executing step '${step.stepToolName}' (order=${step.order})" }
+
+            val tool = mcpToolRegistry.byName(step.stepToolName)
+            val stepContext = buildStepContext(plan)
+
+            val result =
+                tool.execute(
+                    context = context,
+                    plan = plan,
+                    taskDescription = step.stepInstruction,
+                    stepContext = stepContext,
+                )
+            step.toolResult = result
+
+            logger.info { "EXECUTOR: Step '${step.stepToolName}' completed with result type: ${result.javaClass.simpleName}" }
+
+            when (result) {
+                is ToolResult.Ok, is ToolResult.Ask -> {
+                    step.status = StepStatus.DONE
+                    stepNotificationService.notifyStepCompleted(context.id, plan.id, step)
+                    planFailed = false
+                }
+
+                is ToolResult.Stop -> {
+                    step.status = StepStatus.FAILED
+                    plan.status = PlanStatus.FAILED
+                    plan.finalAnswer = result.reason
+                    planFailed = true
+                    logger.info { "EXECUTOR: Plan stopped by tool: ${result.reason}" }
+                    stepNotificationService.notifyStepCompleted(context.id, plan.id, step)
+                }
+
+                is ToolResult.Error -> {
+                    step.status = StepStatus.FAILED
+                    // Don't mark plan as FAILED - planner may resolve this with alternative steps
+                    planFailed = false
+                    logger.error { "EXECUTOR: Step '${step.stepToolName}' failed: ${result.errorMessage}" }
+                    stepNotificationService.notifyStepCompleted(context.id, plan.id, step)
+                }
+
+                else -> {
+                    step.status = StepStatus.FAILED
+                    // Don't mark plan as FAILED - planner may resolve this with alternative steps
+                    planFailed = false
+                    logger.error { "EXECUTOR: Unsupported result type from step '${step.stepToolName}'" }
+                    stepNotificationService.notifyStepCompleted(context.id, plan.id, step)
+                }
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "EXECUTOR: Exception executing step '${step.stepToolName}'" }
+            step.toolResult = ToolResult.error("Step execution failed: ${e.message}")
+            step.status = StepStatus.FAILED
+            plan.status = PlanStatus.FAILED
+            plan.finalAnswer = "Step execution failed: ${e.message}"
+            planFailed = true
+            stepNotificationService.notifyStepCompleted(context.id, plan.id, step)
+        }
+
+        // Save progress after each step
+        plan.updatedAt = Instant.now()
+        taskContextService.save(context)
+
+        return planFailed
     }
 
     /**
@@ -184,10 +266,10 @@ class PlanExecutor(
      */
     private fun summarizeToolResult(toolResult: ToolResult?): String =
         when (toolResult) {
-            is ToolResult.Ok -> toolResult.output.take(200) + if (toolResult.output.length > 200) "..." else ""
-            is ToolResult.Ask -> "Asked user: ${toolResult.output.take(100)}"
+            is ToolResult.Ok -> toolResult.output
+            is ToolResult.Ask -> "Asked user: ${toolResult.output}"
             is ToolResult.Error -> "Error: ${toolResult.errorMessage}"
             is ToolResult.Stop -> "Stopped: ${toolResult.reason}"
-            else -> "Unknown result"
+            else -> "Unknown result: ${toolResult?.output}"
         }
 }

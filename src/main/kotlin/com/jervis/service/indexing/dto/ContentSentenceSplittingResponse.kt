@@ -3,10 +3,10 @@ package com.jervis.service.indexing.dto
 import kotlinx.serialization.Serializable
 
 /**
- * Response schema for CONTENT_SENTENCE_SPLITTING prompt type.
- * Matches the responseSchema defined in prompts-tools.yaml for CONTENT_SENTENCE_SPLITTING.
+ * Response DTO for content sentence splitting using LLM.
+ * Used to convert any input (code, text, meeting) into atomic sentences for RAG storage.
  */
 @Serializable
 data class ContentSentenceSplittingResponse(
-    val sentences: List<String> = emptyList()
+    val sentences: List<String> = emptyList(),
 )

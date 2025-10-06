@@ -53,7 +53,7 @@ class TaskContextService(
             )
         val saved = taskContextRepo.save(toSave)
         logger.info {
-            "TASK_CONTEXT_CREATED: contextId=${saved.id} client='${client.name}' project='${project.name}' quick=$quick"
+            "TASK_CONTEXT_CREATED: contextId=${saved.id} client='${client.name}' project='${project.name}' contextName='$contextName' quick=$quick"
         }
 
         val plansList =

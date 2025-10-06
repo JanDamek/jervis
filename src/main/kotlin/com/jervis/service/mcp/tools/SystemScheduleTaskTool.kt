@@ -33,7 +33,7 @@ class SystemScheduleTaskTool(
         private val dateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
     }
 
-    override val name: PromptTypeEnum = PromptTypeEnum.SYSTEM_SCHEDULE_TASK
+    override val name: PromptTypeEnum = PromptTypeEnum.SYSTEM_SCHEDULE_TASK_TOOL
 
     @Serializable
     data class ScheduleParams(
@@ -281,17 +281,17 @@ class SystemScheduleTaskTool(
                 ),
             )
 
-        return llmGateway.callLlm(
-            type = PromptTypeEnum.SYSTEM_SCHEDULE_TASK,
-            responseSchema = ScheduleParams(),
-            quick = context.quick,
-            mappingValue =
-                mappingValues +
-                    mapOf(
-                        "taskDescription" to taskDescription,
-                        "userPrompt" to taskDescription,
-                    ),
-            stepContext = stepContext,
-        )
+        return llmGateway
+            .callLlm(
+                type = PromptTypeEnum.SYSTEM_SCHEDULE_TASK_TOOL,
+                responseSchema = ScheduleParams(),
+                quick = context.quick,
+                mappingValue =
+                    mappingValues +
+                        mapOf(
+                            "taskDescription" to taskDescription,
+                            "stepContext" to stepContext,
+                        ),
+            ).result
     }
 }

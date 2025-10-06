@@ -1,6 +1,5 @@
 package com.jervis.service.rag
 
-import com.jervis.entity.mongo.IndexingStatus
 import com.jervis.entity.mongo.RagIndexingStatusDocument
 import com.jervis.repository.mongo.RagIndexingStatusMongoRepository
 import org.bson.types.ObjectId
@@ -44,7 +43,7 @@ class RagIndexingStatusService(
 
         val document =
             existing?.copy(
-                status = IndexingStatus.INDEXING,
+                status = RagIndexingStatusDocument.IndexingStatus.INDEXING,
                 fileSize = fileSize,
                 fileHash = fileHash,
                 language = language,
@@ -57,7 +56,7 @@ class RagIndexingStatusService(
                 projectId = projectId,
                 filePath = filePath,
                 gitCommitHash = gitCommitHash,
-                status = IndexingStatus.INDEXING,
+                status = RagIndexingStatusDocument.IndexingStatus.INDEXING,
                 fileSize = fileSize,
                 fileHash = fileHash,
                 language = language,
@@ -111,25 +110,25 @@ class RagIndexingStatusService(
             }
 
             // Previously failed indexing - should retry
-            existingStatus.status == IndexingStatus.FAILED -> {
+            existingStatus.status == RagIndexingStatusDocument.IndexingStatus.FAILED -> {
                 logger.debug("Previous indexing failed, retrying: $filePath")
                 true
             }
 
             // Currently being indexed - skip to avoid conflicts
-            existingStatus.status == IndexingStatus.INDEXING -> {
+            existingStatus.status == RagIndexingStatusDocument.IndexingStatus.INDEXING -> {
                 logger.debug("File currently being indexed, skipping: $filePath")
                 false
             }
 
             // File was removed - should re-index if it exists again
-            existingStatus.status == IndexingStatus.REMOVED -> {
+            existingStatus.status == RagIndexingStatusDocument.IndexingStatus.REMOVED -> {
                 logger.debug("File was previously removed, re-indexing: $filePath")
                 true
             }
 
             // Successfully indexed - check if content changed
-            existingStatus.status == IndexingStatus.INDEXED -> {
+            existingStatus.status == RagIndexingStatusDocument.IndexingStatus.INDEXED -> {
                 val newFileHash = calculateFileHash(fileContent)
                 val contentChanged = existingStatus.fileHash != newFileHash
 

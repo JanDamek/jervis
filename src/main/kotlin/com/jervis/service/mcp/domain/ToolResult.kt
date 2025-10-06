@@ -64,25 +64,6 @@ sealed interface ToolResult {
             )
 
         /**
-         * Creates a result for file operations (create, update, delete, etc.).
-         * @param toolName Name of the tool performing the operation
-         * @param fileName Name or path of the file
-         * @param action Action performed (e.g., "Created", "Updated", "Deleted")
-         * @param details Optional details about the operation
-         * @param content Optional file content or additional information
-         */
-        fun fileOperation(
-            toolName: String,
-            fileName: String,
-            action: String,
-            details: String = "",
-            content: String = "",
-        ): ToolResult =
-            Ok(
-                ToolResponseBuilder.fileResult(toolName, fileName, action, details, content),
-            )
-
-        /**
          * Creates a result for analysis operations with counts/statistics.
          * @param toolName Name of the analysis tool
          * @param analysisType Type of analysis performed
@@ -100,43 +81,24 @@ sealed interface ToolResult {
             results: String = "",
         ): ToolResult =
             Ok(
-                ToolResponseBuilder.analysisResult(toolName, analysisType, count, unit, details, results),
-            )
-
-        /**
-         * Creates a result for search/query operations.
-         * @param toolName Name of the search tool
-         * @param resultCount Number of results found
-         * @param queryInfo Optional information about the query
-         * @param results Search results content
-         */
-        fun searchResult(
-            toolName: String,
-            resultCount: Int,
-            queryInfo: String = "",
-            results: String,
-        ): ToolResult =
-            Ok(
-                ToolResponseBuilder.searchResult(toolName, resultCount, queryInfo, results),
+                ToolResponseBuilder.analysisResult(toolName, count, unit, details, results),
             )
 
         /**
          * Creates a result for listing operations.
          * @param toolName Name of the tool
-         * @param itemCount Number of items listed
          * @param itemType Type of items (e.g., "files", "directories", "tasks")
          * @param rootInfo Optional information about the root/context
          * @param listing The actual listing content
          */
         fun listingResult(
             toolName: String,
-            itemCount: Int,
             itemType: String,
             rootInfo: String = "",
             listing: String,
         ): ToolResult =
             Ok(
-                ToolResponseBuilder.listingResult(toolName, itemCount, itemType, rootInfo, listing),
+                ToolResponseBuilder.listingResult(toolName, itemType, rootInfo, listing),
             )
     }
 }

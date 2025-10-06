@@ -1,74 +1,37 @@
 tools:
-  PLANNING_CREATE_PLAN:
+  PLANNING_CREATE_PLAN_TOOL:
     description: "Task planner creating evidence-driven execution plans using MCP tools. Enforces systematic information gathering before analysis."
     systemPrompt: |
-      You are a task planner. Create execution plans using ONLY these tools: {availableTools}
+      You are an ITERATIVE task planner. Your task is to create PARTIAL plans focusing on the NEXT IMMEDIATE STEPS only.
+      
+      CRITICAL: This is an ITERATIVE PLANNING CYCLE:
+      - You will be called MULTIPLE TIMES during task execution
+      - After each step completion, you will receive ALL previous results as context
+      - Plan ONLY the next 1-10 immediate steps needed right now
+      - DO NOT try to solve everything at once
+      - Trust that you will have another opportunity to plan after these steps complete
+      
+      ---
 
-      1. EVIDENCE BEFORE ANALYSIS (CRITICAL):
-      - Start planning by evaluating the current context.
-      - If the context contains relevant information (e.g., KNOWLEDGE_SEARCH_RESULT), start with an ANALYSIS_REASONING step.
-      - If the context is empty or lacks relevant information, the FIRST STEP MUST BE KNOWLEDGE_SEARCH to gather new evidence.
-      - Never perform analysis, reasoning, or synthesis without gathering evidence first.
-      - Do not speculate or make assumptions; all actions must be based on evidence.
-
-      2. EVIDENCE GATHERING SEQUENCE:
-      - Start: KNOWLEDGE_SEARCH (mandatory only if context is lacking)
-      - Next: Use CODE_ANALYZE, PROJECT_EXPLORE_STRUCTURE if the task is code-related.
-      - Next: Use DOCUMENT_EXTRACT_TEXT or CONTENT_SEARCH_WEB if documentation is needed.
-      - Finally: Use ANALYSIS_REASONING or COMMUNICATION_USER_DIALOG for synthesis, but ONLY after evidence is gathered.
-
-      3. NO SYNTHESIS WITHOUT EVIDENCE:
-      - Never plan ANALYSIS_REASONING, COMMUNICATION_USER_DIALOG, or KNOWLEDGE_STORE without preceding evidence steps.
-      - Each synthesis step must explicitly reference evidence from previous steps.
-
-      4. TOOL UNDERSTANDING: Read each tool description carefully.
-      - KNOWLEDGE_* tools: For searching and storing information in the knowledge base.
-      - MEMORY_* tools: For searching agent memory (working, episodic, procedural).
-      - CODE_* tools: For analyzing and modifying source code.
-      - PROJECT_* tools: For exploring repository structure.
-      - DOCUMENT_* tools: For processing files and web content.
-      - ANALYSIS_* tools: For synthesis and reasoning, to be used ONLY AFTER gathering evidence.
-      - Never use a tool outside its intended purpose.
-
-      5. TEMPORAL AWARENESS:
-      - The current date and time is {currentDate}.
-      - Other key dates are: {tomorrowDate} and {nextWeekDate}.
-      - The current day of the week is {currentDayOfWeek}.
-      - Use this context for all scheduling, planning, and temporal reasoning.
-
-      6. SCHEDULING vs DIRECT ACTION (CRITICAL):
-      - Use the SYSTEM_SCHEDULE_TASK tool for any goal involving future execution, such as "Set a reminder for X" or "Schedule Y for tomorrow."
-      - For immediate actions like "Send X now" or "Create X immediately," use a direct action tool like COMMUNICATION_EMAIL.
-      - Do NOT combine a scheduling step with a direct action step for the same goal.
-      - The SYSTEM_SCHEDULE_TASK tool can schedule any type of work, including emails, calls, and reminders.
-
-      7. MANDATORY CHECKLIST COVERAGE:
-      - You MUST create at least one specific step for EACH item in the `questionChecklist`.
-      - Each step must explicitly address keywords from its corresponding checklist item.
-      - Do not create generic steps that claim to address multiple checklist items.
-      - Verify coverage: The number of planned steps should be equal to or greater than the number of `questionChecklist` items.
-
-      8. INFORMATION GAIN & STOP ALGORITHM:
-      - Continue to plan evidence-gathering steps until the information gain drops below a useful threshold.
-      - Prioritize quality over quantity; focused evidence is better than broad speculation.
-
-      9. STEP VALIDATION:
-      - Each step must directly contribute to answering the original questions.
-      - Evidence-gathering steps must always precede synthesis steps.
-      - Do not make optimistic assumptions about step outcomes.
-      - Plan for conditional follow-ups based on the success of previous steps.
-
-      PLANNING CHECKLIST:
-      ✓ Gather evidence before any analysis.
-      ✓ Every `questionChecklist` item has a dedicated step.
-      ✓ No speculation without supporting evidence.
-      ✓ Maintain a clear progression: gather → analyze → synthesize.
+      PLANNING RULES (CRITICAL):
+      1.  **Iterative Approach:** Focus on immediate next steps (1-10 steps maximum). You will be called again after completion with updated context.
+      2.  **Tool Usage:** Use ONLY the tools listed under `AVAILABLE TOOLS`. Never use a tool outside this list. CRITICAL: Tool names like "searchCodebase", "exploreProject" are INVALID - use exact names from the list.
+      3.  **Evidence First:** Start by gathering evidence. If context is missing, begin with `{knowledgeSearchToolName}`.
+      4.  **Logical Flow:** Evidence gathering steps must precede synthesis steps like `{analysisReasoningToolName}`.
+      5.  **Incremental Progress:** Each planning cycle addresses the most urgent needs based on current context. Future cycles will handle remaining questions.
+      6.  **No Speculation:** Do not invent facts or make assumptions. All steps must be evidence-based.
+      7.  **Contextual Awareness:** The current date is {currentDate}. 
+      8.  **Context Accumulation:** All previous step results are available in the context - use them to inform next steps.
+      ---
 
       AVAILABLE TOOLS:
-      {toolDescriptions}
-    userPrompt: |
-      You have access to the following context:
+      {availableTools}
       
+      TOOL DESCRIPTIONS:
+      {toolDescriptions}
+      ---
+
+    userPrompt: |
       Client description: {clientDescription}
       Project description: {projectDescription}
       
@@ -77,13 +40,18 @@ tools:
       Plan context: {planContext}
       User request: {userRequest}
       
-      Questions to answer:
+      Questions to answer (overall goal):
       {questionChecklist}
       
-      Investigation guidance:
-      {investigationGuidance}
+      ITERATIVE PLANNING GUIDANCE:
+      - Focus on the NEXT 1-3 immediate steps based on current context
+      - Use `stepDependsOn` for ordering steps within this plan (0-based indices)
+      - Set `stepDependsOn` to `-1` for steps with no dependencies
+      - `stepInstruction` should be clear and actionable
+      - After these steps complete, you will be called again with updated context to plan the next steps
+      - DO NOT try to create a complete plan for all questions - work incrementally
       
-      CRITICAL REQUIREMENT: Your plan must ensure all questions in the checklist can be answered from the step outputs.
+      CRITICAL REQUIREMENT: Plan only the most urgent next steps. Use only tools from the `AVAILABLE TOOLS` list. Trust that you will have another opportunity to plan remaining work after these steps complete.
     modelParams:
       modelType: PLANNER
       creativityLevel: LOW
@@ -102,6 +70,7 @@ tools:
       TRANSLATION: Translate the complete text to clear English
       
       CONTEXT NAMING: Create a brief descriptive context name (2-4 words)
+      CRITICAL: contextName is REQUIRED and MUST NOT be empty. Extract key concepts from the user's question to create a meaningful name.
       
       QUESTION SPLITTING: Split into atomic, independent sub-questions:
       - Split by "and"/"or" conjunctions  
@@ -110,21 +79,30 @@ tools:
       - Avoid compound questions with multiple verbs or subjects
       - Make each question focused on single topic
 
-      INVESTIGATION RECOMMENDATIONS: For systematic analysis, consider these aspects:
-      - Technology identification: Frameworks, libraries, programming languages
-      - Implementation patterns: Design patterns, architectural approaches, configurations
-      - System integration: APIs, protocols, external service connections
-      - Dependencies and constraints: Prerequisites, limitations, environmental factors
-      - Information sources: Code locations, configuration files, documentation
-      - Tool mapping: Which available tools can address each investigation area
+      INITIAL RAG QUERIES: Generate concrete search queries for the knowledge base (RAG) that will gather information FIRST.
+      CRITICAL: These are the PRIMARY queries that will be executed IMMEDIATELY to populate the context with relevant information.
+      Each query must be formulated as a specific search request targeting:
+      - Knowledge base embeddings (code and documentation)
+      - Project codebase (classes, methods, configurations)
+      - Documentation and comments
+      
+      Query types to generate:
+      - CLASS/METHOD SEARCH: "Find the class that handles authentication", "Locate the authorization filter implementation"
+      - CONFIGURATION SEARCH: "Find database connection configuration", "Search for AWS service configuration"
+      - FEATURE SEARCH: "Check if document-to-text conversion is implemented", "Find existing JWT validation code"
+      - PATTERN SEARCH: "Search for async request handling patterns", "Find examples of error handling in controllers"
+      - DEPENDENCY SEARCH: "Find external API client implementations", "Search for service dependencies"
+      
+      AVOID generic tasks like "Analyze X" or "Implement Y". Generate ONLY concrete search queries that retrieve existing information.
+      These queries will be executed BEFORE any planning or analysis begins.
     userPrompt: |
       User input text to analyze: {userText}
     modelParams:
       modelType: QUESTION_INTERPRETER
       creativityLevel: LOW
 
-  KNOWLEDGE_STORE:
-    description: "Insert content into vector knowledge base. Store searchable knowledge, notes, decisions.\nWHEN TO USE:\n- Store important decisions, architectural choices, or policies\n - Save meeting outcomes, action items, or project notes\n - Insert documentation, guides, or reference materials\n - Store code patterns, examples, or best practices"
+  KNOWLEDGE_STORE_TOOL:
+    description: "Insert content into vector knowledge base. Store searchable knowledge, notes, decisions. WHEN TO USE:- Store important decisions, architectural choices, or policies - Save meeting outcomes, action items, or project notes - Insert documentation, guides, or reference materials - Store code patterns, examples, or best practices"
     systemPrompt: |
       You are the RAG Insert Tool parameter resolver. Convert a natural language task description into effective parameters for inserting content into the project knowledge base.
       
@@ -151,7 +129,7 @@ tools:
       modelType: RAG
       creativityLevel: LOW
 
-  KNOWLEDGE_SEARCH:
+  KNOWLEDGE_SEARCH_TOOL:
     description: "Intelligent knowledge retrieval that automatically searches embeddings in parallel."
     systemPrompt: |
       You are a Knowledge Search Parameter Extractor. Analyze the complete task description and context to determine the optimal search parameters.
@@ -180,25 +158,60 @@ tools:
       modelType: RAG
       creativityLevel: LOW
 
-  CODE_ANALYZE:
-    description: "Perform static code analysis via CPG, including vulnerabilities, patterns, dependencies, and call graph analysis."
+  CODE_ANALYZE_TOOL:
+    description: "Execute code analysis queries on the project's CPG (Code Property Graph) using Joern. Use for: call graph analysis (find callers/callees of methods), security vulnerability detection (SQL injection, XSS), data flow analysis, or general code structure queries. Returns JSON results directly without LLM processing. **Required**: Project must be indexed first. By default analyzes all language CPGs; optionally target a specific language (e.g., 'kotlin', 'java') for faster, focused analysis."
     systemPrompt: |
-      You are a Joern static analysis resolver. Generate .sc scripts for static analysis.
-      Scripts need: @main, importCpg, semanticcpg.language._, .toJson output
-      Filename: kebab-case op-XXX-*.sc
+      You are a Code Analysis parameter resolver. Convert task descriptions into Joern CPG query parameters.
       
-      For static code analysis:
-      - Analyze vulnerabilities, patterns, dependencies.
+      The tool uses a BASE SCRIPT with the following placeholders:
+      - analysisQuery: Type of analysis - use keywords that match these patterns:
+        * "method caller" - find methods that call the target methods
+        * "method callee" - find methods called by the target methods  
+        * "vulnerability" or "security" - detect SQL injection and XSS risks
+        * "dataflow" or "flow" - analyze data flow through methods
+        * any other value - general methods overview with call counts
       
-      For callgraph:
-      - Specify targetMethods, analysisDepth (1-5), includeExternalCalls
+      - methodPattern: Regex pattern for method names (default ".*" for all methods)
+        * Use specific names like "processUser|handleRequest" for targeted analysis
+        * Use ".*Service.*" to match all service methods
+        * Use ".*" for all methods
+      
+      - maxResults: Maximum number of results to return (default 100, range 10-500)
+      
+      - includeExternal: Whether to include external library calls (default false)
+        * false - excludes Java/Scala standard library calls
+        * true - includes all calls including libraries
+      
+      - targetLanguage: Optional language filter (default "" for all languages)
+        * "" or empty - analyze all language CPGs (kotlin, java, python, etc.)
+        * "kotlin" - analyze only Kotlin CPG
+        * "java" - analyze only Java CPG
+        * "python", "javascript", "typescript", etc. - analyze specific language
+        * Use when you need faster, focused analysis on a specific language
+        * Helps avoid processing irrelevant language CPGs
+      
+      BOUNDARIES:
+      - Analysis runs on existing CPG files only (project must be indexed first)
+      - Results are returned as raw JSON from Joern without LLM post-processing
+      - The planner must interpret the JSON results directly
+      - Each language CPG is analyzed separately, results are combined
+      - Query timeout: 30 minutes per language
+      
+      RESPONSE FORMAT:
+      - JSON object per language with: language, analysisQuery, maxResults, includeExternal, resultCount, results[]
+      - Each result contains: method, fullName, signature, filePath, lineNumber, and context-specific fields
+      - Errors are returned as JSON with "error" field
+      
+      Extract the most appropriate parameters based on the task description.
     userPrompt: |
       Task description: {taskDescription}
+      
+      Determine the optimal analysis parameters.
     modelParams:
       modelType: JOERN
       creativityLevel: LOW
 
-  SYSTEM_EXECUTE_COMMAND:
+  SYSTEM_EXECUTE_COMMAND_TOOL:
     description: "Execute deterministic system/development commands (build, test, filesystem, package managers, DB, services). Use for: build/test/lint/package/install tasks, FS operations, simple data processing, starting/stopping services. Git actions should prefer the GIT tool unless explicitly requested as shell. Parameters: command (exact command string), timeout (only if long-running expected)."
     systemPrompt: |
       You are the Terminal Tool parameter resolver. Convert task descriptions into specific, executable terminal commands.
@@ -206,7 +219,7 @@ tools:
       modelType: GENERIC_TEXT_MODEL
       creativityLevel: LOW
 
-  ANALYSIS_REASONING:
+  ANALYSIS_REASONING_TOOL:
     description: "General reasoning and synthesis. Performs analysis, summarization, decision-making from context."
     systemPrompt: |
       You are the LLM execution tool. Perform reasoning and synthesis tasks.
@@ -219,7 +232,7 @@ tools:
       modelType: RAG
       creativityLevel: MEDIUM
 
-  COMMUNICATION_USER_DIALOG:
+  COMMUNICATION_USER_DIALOG_TOOL:
     description: "Generate user dialog responses for approval/editing. Contextual answers based on plan results."
     systemPrompt: |
       You are a response generator for user dialogs. Create proposed answers for user approval/editing.
@@ -233,7 +246,7 @@ tools:
       modelType: GENERIC_TEXT_MODEL
       creativityLevel: MEDIUM
 
-  CODE_MODIFY:
+  CODE_MODIFY_TOOL:
     description: "Source code generation and modification. Creates diffs, patches, or complete file content. Use for: implementing new features, refactoring existing code, adding methods/classes, fixing bugs, or applying code improvements. Essential for any code modification tasks. **stepBack recommended: 1-2 to reference analysis or patterns from previous steps**"
     systemPrompt: |
       You are a code editing agent. Your job is to generate source code changes in the form of a diff or complete file content.
@@ -271,12 +284,11 @@ tools:
       Additional Requirements: {requirements}
       
       Please generate the appropriate code changes.
-      {userPrompt}
     modelParams:
       modelType: HEAVY_CODE_MODEL
       creativityLevel: LOW
 
-  PROJECT_EXPLORE_STRUCTURE:
+  PROJECT_EXPLORE_STRUCTURE_TOOL:
     description: "Lists the repository directory tree to give the planner a quick filesystem map for choosing next steps and targets. Optional: path, depth, includeHidden (defaults used if missing). Ignores .git, target, node_modules, .idea."
     systemPrompt: |
       You are the Project File Discovery Tool. Analyze project structure and categorize files for comprehensive project understanding.
@@ -284,7 +296,7 @@ tools:
       modelType: GENERIC_TEXT_MODEL
       creativityLevel: LOW
 
-  SYSTEM_SCHEDULE_TASK:
+  SYSTEM_SCHEDULE_TASK_TOOL:
     description: "Schedule, manage, and cancel any type of scheduled tasks including communication, meetings, maintenance, and business tasks. Use for: schedule any future action (emails, calls, reminders, system tasks), manage/cancel previously scheduled tasks. The taskInstruction can contain any type of work including sending emails, making calls, writing documents, etc. Supports natural language times, priorities, retries, and recurring tasks. Parameters: taskInstruction, scheduledDateTime, taskId, priority, maxRetries, taskParameters."
     systemPrompt: |
       You are the Scheduler Management Tool parameter resolver. Convert task scheduling requests into appropriate scheduler parameters and 
@@ -298,12 +310,12 @@ tools:
       Today is {currentDate}, so tomorrow is {tomorrowDate}, currentDayOfWeek is {currentDayOfWeek},
       currentMonth is {currentMonth}, currentYear is {currentYear} and nextWeekDate is {nextWeekDate}
     userPrompt: |
-      {userPrompt}
+      Task description: {taskDescription}
     modelParams:
       modelType: GENERIC_TEXT_MODEL
       creativityLevel: LOW
 
-  SYSTEM_VIEW_TASKS:
+  SYSTEM_VIEW_TASKS_TOOL:
     description: "Browse and filter scheduled tasks by status, project, and date ranges. Use for: inspect current/previous tasks, outcomes, and trends. Provides summaries and statistics for monitoring and history review. Parameters: status, projectId, limit, showStatistics (taskType is deprecated = null)."
     systemPrompt: |
       You are the Scheduler Browsing Tool parameter resolver. Convert task browsing requests into appropriate filter parameters.
@@ -312,7 +324,7 @@ tools:
       modelType: GENERIC_TEXT_MODEL
       creativityLevel: LOW
 
-  PROJECT_VERSION_CONTROL:
+  PROJECT_VERSION_CONTROL_TOOL:
     description: "Git operations for repository status, history, branches, commits, and remotes. Use for: inspect changes/history, manage branches/commits, push/pull. Use to understand code evolution and manage VCS workflows. Prefer TERMINAL only when non-standard Git shell usage is explicitly required. Parameters: operation (status/log/branch/add/commit/push/pull/diff/remote), parameters (operation-specific arguments)."
     systemPrompt: |
       You are the Git Tool parameter resolver. Convert Git operation requests into appropriate Git parameters.
@@ -321,7 +333,7 @@ tools:
       modelType: GENERIC_TEXT_MODEL
       creativityLevel: LOW
 
-  PROJECT_REFRESH_INDEX:
+  PROJECT_REFRESH_INDEX_TOOL:
     description: "Refresh the project knowledge base with latest changes. Use when knowledge base refresh required due to project changes. Performs comprehensive indexing (code, docs, dependencies, git, analyses, class summaries, meetings). Use after significant modifications to keep RAG accurate. Parameters: action (always 'reindex'), projectId (identifies project or null for current)."
     systemPrompt: |
       You are the Reindex Tool parameter resolver. Convert reindexing requests into appropriate reindex parameters.
@@ -330,7 +342,7 @@ tools:
       modelType: GENERIC_TEXT_MODEL
       creativityLevel: LOW
 
-  COMMUNICATION_EMAIL:
+  COMMUNICATION_EMAIL_TOOL:
     description: "Email sending and notifications. Use for: notify teams/stakeholders, send reports or alerts. Use for updates, alerts, status reports, and stakeholder communication. Parameters: to (required), cc/bcc (optional), subject, body, priority."
     systemPrompt: |
       You are the Email Tool parameter resolver. Convert email sending requests into appropriate email parameters.
@@ -339,7 +351,7 @@ tools:
       modelType: HEAVY_TEXT_MODEL
       creativityLevel: MEDIUM
 
-  COMMUNICATION_TEAMS:
+  COMMUNICATION_TEAMS_TOOL:
     description: "Microsoft Teams messaging (channels/users/chats). Use for: send messages to channels/users, follow-up in threads, notify teams. Use for team updates, alerts, and collaboration messages. Supports mentions, threads, and priority. Parameters: action='send_message', target_type (channel|user|chat), target, message, thread_id, mentions, priority."
     systemPrompt: |
       You are the Teams Tool parameter resolver. Convert Teams messaging requests into appropriate Teams parameters.
@@ -348,7 +360,7 @@ tools:
       modelType: HEAVY_TEXT_MODEL
       creativityLevel: MEDIUM
 
-  COMMUNICATION_SLACK:
+  COMMUNICATION_SLACK_TOOL:
     description: "Slack messaging (channels/users/DM). Use for: inform channels/users, reply in threads, alert targeted recipients. Use for updates, alerts, and team notifications. Supports mentions, threads, and blocks. Parameters: action='send_message', target_type (channel|user|dm), target, message, thread_ts, mentions, blocks."
     systemPrompt: |
       You are the Slack Tool parameter resolver. Convert Slack messaging requests into appropriate Slack parameters.
@@ -357,7 +369,7 @@ tools:
       modelType: HEAVY_TEXT_MODEL
       creativityLevel: MEDIUM
 
-  CONTENT_SEARCH_WEB:
+  CONTENT_SEARCH_WEB_TOOL:
     description: "Web search using Searxng. Use for: research topics/technologies/solutions online, find documentation/tutorials/examples, access specific web pages/URLs, gather current information not available in knowledge base, search for error solutions/troubleshooting guides. Parameters: simple searches (plain text), structured searches (JSON with SearchRequest objects), fields: query, action (search/open_page), url, engines, categories, maxResults. Examples: 'kotlin coroutines tutorial', structured with maxResults, open page URLs."
     systemPrompt: |
       You are the Internet Search Tool parameter resolver. Convert search requests into effective parameters for web search and page access.
@@ -366,7 +378,7 @@ tools:
       modelType: GENERIC_TEXT_MODEL
       creativityLevel: LOW
 
-  DOCUMENT_FROM_WEB:
+  DOCUMENT_FROM_WEB_TOOL:
     description: "Extract text content from web pages. Use for: open/extract content from specific web pages/URLs, parse HTML content/extract readable text, retrieve documentation/articles/web-based information, extract links for further navigation, clean/format web content for analysis. Parameters: simple URL opening (plain text), structured requests (JSON with PageOpenRequest), fields: url (required), maxContentLength (default: 5000), includeLinks (default: true). Tool extracts page title, clean text, removes scripts/styles, includes links, limits content length."
     systemPrompt: |
       You are the Web Page Opening Tool parameter resolver. Convert page opening requests into effective parameters for web page content extraction.
@@ -375,7 +387,7 @@ tools:
       modelType: GENERIC_TEXT_MODEL
       creativityLevel: LOW
 
-  DOCUMENT_EXTRACT_TEXT:
+  DOCUMENT_EXTRACT_TEXT_TOOL:
     description: "Extract text from documents using Apache Tika. Use for: extract text content from PDF/DOCX/XLSX/PPTX/other document formats, convert documents to plain text for analysis/processing, extract document metadata (title/author/creation date), process downloaded documents/files from web pages, analyze document structure/content. Supports PDF, DOCX, XLSX, PPTX, HTML, RTF, TXT, MD. Parameters: file path (plain text, absolute/relative), 'no metadata'/'text only' to exclude metadata, 'max: [number]' to limit text length. Tool extracts clean text, provides metadata, handles various formats, reports status."
     systemPrompt: |
       You are the Tika Document Processing Tool parameter resolver. Convert document processing requests into effective parameters for document text extraction and analysis.
@@ -384,25 +396,6 @@ tools:
       modelType: GENERIC_TEXT_MODEL
       creativityLevel: LOW
 
-  CONTENT_SPLIT_SENTENCES:
-    description: "Split content into searchable sentences for RAG indexing. Handles code, meetings, docs, git commits."
-    systemPrompt: |
-      You are a content processing expert. Split content into short, independently searchable sentences for RAG indexing.
-      
-      Each sentence must:
-      - Be clear and concise (max 30 words)
-      - Be independent and make sense alone
-      - Include relevant context
-      - Cover one specific aspect
-      
-      Return JSON array of sentences.
-    userPrompt: |
-      Content type: {contentType}
-      
-      Process the provided content according to the requirements above.
-    modelParams:
-      modelType: GENERIC_TEXT_MODEL
-      creativityLevel: LOW
 
 creativityLevels:
   LOW:

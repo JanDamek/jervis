@@ -1,5 +1,6 @@
 package com.jervis.domain.plan
 
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.service.mcp.domain.ToolResult
 import org.bson.types.ObjectId
 
@@ -8,10 +9,9 @@ data class PlanStep(
     var order: Int = -1,
     var planId: ObjectId,
     var contextId: ObjectId,
-    val stepToolName: String,
+    val stepToolName: PromptTypeEnum,
     val stepInstruction: String,
-    val stepDependsOn: List<Int> = emptyList(),
-    val stepGroup: String? = null,
+    val stepDependsOn: Int = -1,
     var status: StepStatus = StepStatus.PENDING,
     var toolResult: ToolResult? = null,
 )

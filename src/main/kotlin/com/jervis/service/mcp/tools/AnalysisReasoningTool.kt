@@ -15,7 +15,7 @@ class AnalysisReasoningTool(
     private val llmGateway: LlmGateway,
     override val promptRepository: PromptRepository,
 ) : McpTool {
-    override val name: PromptTypeEnum = PromptTypeEnum.ANALYSIS_REASONING
+    override val name: PromptTypeEnum = PromptTypeEnum.ANALYSIS_REASONING_TOOL
 
     override suspend fun execute(
         context: TaskContext,
@@ -31,17 +31,23 @@ class AnalysisReasoningTool(
     ): ToolResult {
         val llmResult =
             llmGateway.callLlm(
-                type = PromptTypeEnum.ANALYSIS_REASONING,
+                type = PromptTypeEnum.ANALYSIS_REASONING_TOOL,
                 responseSchema = LlmResponseWrapper(),
                 quick = context.quick,
-                mappingValue = mapOf("taskParams" to params),
-                stepContext = stepContext,
+                mappingValue =
+                    mapOf(
+                        "taskParams" to params,
+                        "stepContext" to stepContext,
+                    ),
             )
 
-        val enhancedOutput = llmResult.response.trim().ifEmpty { "Empty LLM response" }
+        val enhancedOutput =
+            llmResult.result.response
+                .trim()
+                .ifEmpty { "Empty LLM response" }
         return ToolResult.success(
             "LLM",
-            enhancedOutput.take(200),
+            enhancedOutput,
             enhancedOutput,
         )
     }

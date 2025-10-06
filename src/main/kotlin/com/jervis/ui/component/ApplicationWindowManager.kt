@@ -4,6 +4,7 @@ import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.client.ClientProjectLinkService
 import com.jervis.service.client.ClientService
+import com.jervis.service.debug.DesktopDebugWindowService
 import com.jervis.service.indexing.ClientIndexingService
 import com.jervis.service.indexing.IndexingService
 import com.jervis.service.indexing.monitoring.IndexingMonitorService
@@ -29,6 +30,7 @@ class ApplicationWindowManager(
     private val taskSchedulingService: TaskSchedulingService,
     private val taskQueryService: TaskQueryService,
     private val indexingMonitorService: IndexingMonitorService,
+    private val debugWindowService: DesktopDebugWindowService,
 ) {
     private val mainWindow: MainWindow by lazy {
         MainWindow(
@@ -39,6 +41,7 @@ class ApplicationWindowManager(
             taskContextService,
             indexingMonitorService,
             this,
+            debugWindowService,
         )
     }
 
@@ -128,5 +131,9 @@ class ApplicationWindowManager(
 
     fun showIndexingMonitor() {
         mainWindow.showIndexingMonitor()
+    }
+
+    fun showDebugWindow() {
+        debugWindowService.showDebugWindow()
     }
 }

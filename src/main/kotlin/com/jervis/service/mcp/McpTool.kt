@@ -25,6 +25,6 @@ interface McpTool {
         context: TaskContext,
         plan: Plan,
         taskDescription: String,
-        stepContext: String = "", // Context from previous steps based on stepBack
+        stepContext: String = "",
     ): ToolResult
 }

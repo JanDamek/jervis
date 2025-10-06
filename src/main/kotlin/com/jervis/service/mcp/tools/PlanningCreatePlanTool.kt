@@ -14,7 +14,7 @@ class PlanningCreatePlanTool(
     private val planner: Planner,
     override val promptRepository: PromptRepository,
 ) : McpTool {
-    override val name: PromptTypeEnum = PromptTypeEnum.PLANNING_CREATE_PLAN
+    override val name: PromptTypeEnum = PromptTypeEnum.PLANNING_CREATE_PLAN_TOOL
 
     override suspend fun execute(
         context: TaskContext,
@@ -26,16 +26,12 @@ class PlanningCreatePlanTool(
             return ToolResult.error("Task description cannot be empty")
         }
 
-        try {
-            planner.createPlan(context, plan)
-        } catch (e: Exception) {
-            return ToolResult.error("Planning failed: ${e.message}. Please check the task description and context.")
-        }
+        val nextSteps = planner.suggestNextSteps(context, plan)
 
         return ToolResult.success(
             toolName = "PLANNER",
-            summary = "Plan created successfully",
-            content = "New plan has been added to the task context and is ready for execution.",
+            summary = "Planning completed successfully",
+            content = "Suggested ${nextSteps.size} next steps for the current plan based on context and progress.",
         )
     }
 }

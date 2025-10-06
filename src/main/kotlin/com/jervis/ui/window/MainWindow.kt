@@ -6,6 +6,7 @@ import com.jervis.domain.plan.PlanStep
 import com.jervis.dto.ChatRequestContext
 import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
+import com.jervis.service.debug.DesktopDebugWindowService
 import com.jervis.service.indexing.monitoring.IndexingMonitorService
 import com.jervis.service.notification.PlanStatusChangeEvent
 import com.jervis.service.notification.StepCompletionEvent
@@ -58,6 +59,7 @@ class MainWindow(
     private val taskContextService: TaskContextService,
     private val indexingMonitorService: IndexingMonitorService,
     private val applicationWindowManager: com.jervis.ui.component.ApplicationWindowManager,
+    private val debugWindowService: DesktopDebugWindowService,
 ) : JFrame("JERVIS Assistant") {
     private val windowScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
@@ -1175,6 +1177,13 @@ class MainWindow(
         indexingMonitorItem.addActionListener { showIndexingMonitor() }
         toolsMenu.add(indexingMonitorItem)
 
+        // Debug Window
+        val debugWindowItem = JMenuItem("Show Debug Window")
+        debugWindowItem.accelerator =
+            KeyStroke.getKeyStroke(KeyEvent.VK_D, InputEvent.META_DOWN_MASK or InputEvent.SHIFT_DOWN_MASK)
+        debugWindowItem.addActionListener { showDebugWindow() }
+        toolsMenu.add(debugWindowItem)
+
         toolsMenu.addSeparator()
 
         // Additional tools can be added here as needed
@@ -1219,6 +1228,21 @@ class MainWindow(
             JOptionPane.showMessageDialog(
                 this,
                 "Failed to open indexing monitor: ${e.message}",
+                "Error",
+                JOptionPane.ERROR_MESSAGE,
+            )
+        }
+    }
+
+    private fun showDebugWindow() {
+        try {
+            debugWindowService.showDebugWindow()
+            logger.info { "Debug window opened" }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to open debug window" }
+            JOptionPane.showMessageDialog(
+                this,
+                "Failed to open debug window: ${e.message}",
                 "Error",
                 JOptionPane.ERROR_MESSAGE,
             )

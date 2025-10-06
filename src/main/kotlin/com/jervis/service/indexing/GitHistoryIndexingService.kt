@@ -341,49 +341,35 @@ class GitHistoryIndexingService(
      * Create atomic sentences for RAG embedding from git commit data using LLM processing.
      * Following requirement #4: "každý commit se také musí rozložit na krátké popisky"
      */
-    private suspend fun createCommitSentences(commit: GitCommit): List<String> =
-        try {
-            val commitContent =
-                buildString {
-                    appendLine("Commit: ${commit.hash}")
-                    appendLine("Author: ${commit.author}")
-                    appendLine("Date: ${commit.date}")
-                    appendLine("Message: ${commit.message}")
-                    if (commit.changedFiles.isNotEmpty()) {
-                        appendLine("Files changed (${commit.changedFiles.size}): ${commit.changedFiles.joinToString(", ")}")
-                        appendLine("Statistics: +${commit.additions} additions, -${commit.deletions} deletions")
-                    }
+    private suspend fun createCommitSentences(commit: GitCommit): List<String> {
+        val commitContent =
+            buildString {
+                appendLine("Commit: ${commit.hash}")
+                appendLine("Author: ${commit.author}")
+                appendLine("Date: ${commit.date}")
+                appendLine("Message: ${commit.message}")
+                if (commit.changedFiles.isNotEmpty()) {
+                    appendLine("Files changed (${commit.changedFiles.size}): ${commit.changedFiles.joinToString(", ")}")
+                    appendLine("Statistics: +${commit.additions} additions, -${commit.deletions} deletions")
                 }
-
-            val response =
-                llmGateway.callLlm(
-                    type = PromptTypeEnum.GIT_COMMIT_PROCESSING,
-                    responseSchema = GitCommitProcessingResponse(),
-                    quick = false,
-                    mappingValue =
-                        mapOf(
-                            "commitHash" to commit.hash,
-                            "commitAuthor" to commit.author,
-                            "commitDate" to commit.date,
-                            "commitBranch" to commit.branch,
-                            "commitContent" to commitContent,
-                        ),
-                )
-
-            // Filter out any empty or too short sentences
-            response.sentences.filter { it.trim().isNotEmpty() && it.length >= 10 }
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to process commit with LLM, falling back to simple processing for commit: ${commit.hash}" }
-
-            // Fallback to simple processing if LLM fails
-            val sentences = mutableListOf<String>()
-            sentences.add("Git commit ${commit.hash.take(8)} by ${commit.author} on ${commit.date}")
-            sentences.add(commit.message.take(200)) // Truncate long messages
-            if (commit.changedFiles.isNotEmpty()) {
-                sentences.add(
-                    "Modified ${commit.changedFiles.size} files with ${commit.additions} additions and ${commit.deletions} deletions",
-                )
             }
-            sentences.filter { it.trim().isNotEmpty() && it.length >= 10 }
-        }
+
+        val response =
+            llmGateway.callLlm(
+                type = PromptTypeEnum.GIT_COMMIT_PROCESSING,
+                responseSchema = GitCommitProcessingResponse(),
+                quick = false,
+                mappingValue =
+                    mapOf(
+                        "commitHash" to commit.hash,
+                        "commitAuthor" to commit.author,
+                        "commitDate" to commit.date,
+                        "commitBranch" to commit.branch,
+                        "commitContent" to commitContent,
+                    ),
+            )
+
+        // Filter out any empty or too short sentences
+        return response.result.sentences.filter { it.trim().isNotEmpty() && it.length >= 10 }
+    }
 }

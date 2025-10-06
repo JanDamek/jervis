@@ -2,6 +2,7 @@ package com.jervis.service.gateway.core
 
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.service.gateway.processing.JsonParser
+import com.jervis.service.gateway.processing.ParsedResponse
 import com.jervis.service.gateway.processing.PromptBuilderService
 import com.jervis.service.gateway.processing.TokenEstimationService
 import com.jervis.service.gateway.selection.ModelCandidateSelector
@@ -32,6 +33,7 @@ class LlmGateway(
     /**
      * Main entry point for LLM calls with strict JSON validation.
      * Uses enhanced prompt building and eliminates all fallback mechanisms.
+     * Returns both think content and parsed JSON result.
      */
     suspend fun <T : Any> callLlm(
         type: PromptTypeEnum,
@@ -39,15 +41,13 @@ class LlmGateway(
         quick: Boolean = false,
         mappingValue: Map<String, String> = emptyMap(),
         outputLanguage: String? = null,
-        stepContext: String = "",
-    ): T {
+    ): ParsedResponse<T> {
         require((responseSchema is String).not()) { "Response schema must be a object not string." }
         val prompt = promptRepository.getPrompt(type)
 
         val mappingValues =
             buildMap {
                 putAll(mappingValue)
-                put("stepContext", stepContext) // Always include stepContext, even if empty
 
                 // Add J.E.R.V.I.S. identity
                 put("assistantIdentity", "J.E.R.V.I.S.")
@@ -93,7 +93,7 @@ class LlmGateway(
         check(candidates.isNotEmpty()) { "No LLM candidates configured for $type" }
 
         // Check if we need selective processing due to token limits
-        val maxTokenLimit = candidates.mapNotNull { it.maxTokens }.maxOrNull() ?: 16000
+        val maxTokenLimit = candidates.mapNotNull { it.contextLength }.maxOrNull() ?: 16000
 
         if (estimatedTokens > maxTokenLimit) {
             logger.info { "Token limit exceeded ($estimatedTokens > $maxTokenLimit), using SelectiveLlmProcessor for type: $type" }
@@ -104,14 +104,17 @@ class LlmGateway(
                 var lastException: Exception? = null
                 for (candidate in candidates) {
                     try {
-                        val response = llmCallExecutor.executeCall(candidate, sysPrompt, usrPrompt, prompt, type)
+                        val response =
+                            llmCallExecutor.executeCall(candidate, sysPrompt, usrPrompt, prompt, type, estimatedTokens)
 
-                        return@executor jsonParser.validateAndParse(
-                            response.answer,
-                            responseSchema,
-                            candidate.provider!!,
-                            candidate.model,
-                        )
+                        val parsedResponse =
+                            jsonParser.validateAndParseWithThink(
+                                response.answer,
+                                responseSchema,
+                                candidate.provider!!,
+                                candidate.model,
+                            )
+                        return@executor parsedResponse.result
                     } catch (e: Exception) {
                         logger.error { "LLM call failed for provider=${candidate.provider} model=${candidate.model}: ${e.message}" }
                         logger.error { "Full error details: ${e.stackTraceToString()}" }
@@ -134,7 +137,8 @@ class LlmGateway(
                 logger.info {
                     "SelectiveLlmProcessor completed successfully: processed=${selectiveResult.processedChunks}, failed=${selectiveResult.failedChunks}"
                 }
-                return selectiveResult.combinedResult
+                // For SelectiveLlmProcessor, we don't have think content as it processes chunks
+                return ParsedResponse(null, selectiveResult.combinedResult)
             } else {
                 error {
                     "SelectiveLlmProcessor failed: processed=${selectiveResult.processedChunks}, failed=${selectiveResult.failedChunks}"
@@ -146,10 +150,11 @@ class LlmGateway(
         // Try candidates sequentially - only proceed to next on failure
         for (candidate in candidates) {
             try {
-                val response = llmCallExecutor.executeCall(candidate, systemPrompt, finalUserPrompt, prompt, type)
+                val response =
+                    llmCallExecutor.executeCall(candidate, systemPrompt, finalUserPrompt, prompt, type, estimatedTokens)
 
-                // SIMPLE JSON PARSING - NO VALIDATION
-                return jsonParser.validateAndParse(
+                // JSON PARSING WITH THINK EXTRACTION
+                return jsonParser.validateAndParseWithThink(
                     response.answer,
                     responseSchema,
                     candidate.provider!!,

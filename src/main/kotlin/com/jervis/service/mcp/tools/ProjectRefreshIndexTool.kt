@@ -26,7 +26,7 @@ class ProjectRefreshIndexTool(
 ) : McpTool {
     private val logger = KotlinLogging.logger {}
 
-    override val name: PromptTypeEnum = PromptTypeEnum.PROJECT_REFRESH_INDEX
+    override val name: PromptTypeEnum = PromptTypeEnum.PROJECT_REFRESH_INDEX_TOOL
 
     @Serializable
     data class ProjectRefreshIndexParams(
@@ -41,13 +41,16 @@ class ProjectRefreshIndexTool(
     ): ProjectRefreshIndexParams {
         val llmResponse =
             llmGateway.callLlm(
-                type = PromptTypeEnum.PROJECT_REFRESH_INDEX,
-                mappingValue = mapOf("taskDescription" to taskDescription),
-                quick = context.quick,
+                type = PromptTypeEnum.PROJECT_REFRESH_INDEX_TOOL,
+                mappingValue =
+                    mapOf(
+                        "taskDescription" to taskDescription,
+                        "stepContext" to stepContext,
+                    ),
+                    quick = context.quick,
                 responseSchema = ProjectRefreshIndexParams(),
-                stepContext = stepContext,
             )
-        return llmResponse
+        return llmResponse.result
     }
 
     override suspend fun execute(

@@ -492,7 +492,7 @@ class MeetingTranscriptIndexingService(
                 )
 
             // Filter out any empty or too short sentences
-            response.sentences.filter { it.trim().isNotEmpty() && it.length >= 10 }
+            response.result.sentences.filter { it.trim().isNotEmpty() && it.length >= 10 }
         } catch (e: Exception) {
             logger.error(e) { "Failed to process meeting content with LLM, falling back to basic processing" }
 

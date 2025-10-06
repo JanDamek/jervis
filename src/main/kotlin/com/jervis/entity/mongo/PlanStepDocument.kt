@@ -1,5 +1,6 @@
 package com.jervis.entity.mongo
 
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.plan.PlanStep
 import com.jervis.domain.plan.StepStatus
 import com.jervis.service.mcp.domain.ToolResult
@@ -16,9 +17,9 @@ data class PlanStepDocument(
     var order: Int = -1,
     var planId: ObjectId? = null,
     var contextId: ObjectId? = null,
-    val name: String,
-    val taskDescription: String,
-    val stepBack: List<Int> = emptyList(),
+    val stepToolName: PromptTypeEnum,
+    val stepInstruction: String,
+    val stepDependsOn: Int = -1,
     var status: StepStatus = StepStatus.PENDING,
     var output: ToolResult? = null,
 ) {
@@ -28,9 +29,9 @@ data class PlanStepDocument(
             order = this.order,
             planId = this.planId!!,
             contextId = this.contextId!!,
-            stepToolName = this.name,
-            stepInstruction = this.taskDescription,
-            stepDependsOn = this.stepBack,
+            stepToolName = this.stepToolName,
+            stepInstruction = this.stepInstruction,
+            stepDependsOn = this.stepDependsOn,
             status = this.status,
             toolResult = this.output,
         )
@@ -42,9 +43,9 @@ data class PlanStepDocument(
                 order = planStep.order,
                 planId = planStep.planId,
                 contextId = planStep.contextId,
-                name = planStep.stepToolName,
-                taskDescription = planStep.stepInstruction,
-                stepBack = planStep.stepDependsOn,
+                stepToolName = planStep.stepToolName,
+                stepInstruction = planStep.stepInstruction,
+                stepDependsOn = planStep.stepDependsOn,
                 status = planStep.status,
                 output = planStep.toolResult,
             )

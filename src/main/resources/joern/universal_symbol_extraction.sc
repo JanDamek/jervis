@@ -61,6 +61,7 @@ val functionData = cpg.method.filterNot(_.isExternal).filterNot(_.typeDecl.nonEm
 
 // Get all variables (local variables)
 val variableData = cpg.local
+  .filter(_.method.nonEmpty)
   .map { variable =>
     val lineStart = variable.lineNumber.headOption.getOrElse(0)
     val lineEnd = variable.ast.lineNumber.l.filter(_ > 0).maxOption.getOrElse(lineStart)
@@ -80,6 +81,7 @@ val variableData = cpg.local
 
 // Get all method calls
 val callData = cpg.call.filterNot(_.name.startsWith("<"))
+  .filter(_.method.nonEmpty)
   .map { call =>
     val lineStart = call.lineNumber.headOption.getOrElse(0)
     val lineEnd = call.ast.lineNumber.l.filter(_ > 0).maxOption.getOrElse(lineStart)
@@ -136,6 +138,7 @@ val fieldData = cpg.member
 
 // Get all parameters
 val parameterData = cpg.parameter.filterNot(_.name == "this")
+  .filter(_.method.nonEmpty)
   .map { param =>
     val lineStart = param.lineNumber.headOption.getOrElse(0)
     val lineEnd = param.ast.lineNumber.l.filter(_ > 0).maxOption.getOrElse(lineStart)

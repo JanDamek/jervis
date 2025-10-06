@@ -110,6 +110,10 @@ object MacOSAppUtils {
             indexingMonitorItem.addActionListener { applicationWindowManager.showIndexingMonitor() }
             toolsMenu.add(indexingMonitorItem)
 
+            val debugWindowItem = JMenuItem("Show Debug Window")
+            debugWindowItem.addActionListener { applicationWindowManager.showDebugWindow() }
+            toolsMenu.add(debugWindowItem)
+
             // Window menu - handled automatically by macOS but we can add custom items
             val windowMenu = JMenu("Window")
             // macOS will automatically add minimize, zoom, etc.
@@ -167,6 +171,10 @@ object MacOSAppUtils {
                     val indexingMonitorItem = java.awt.MenuItem("Indexing Monitor")
                     indexingMonitorItem.addActionListener { applicationWindowManager.showIndexingMonitor() }
                     dockMenu.add(indexingMonitorItem)
+
+                    val debugWindowItem = java.awt.MenuItem("Show Debug Window")
+                    debugWindowItem.addActionListener { applicationWindowManager.showDebugWindow() }
+                    dockMenu.add(debugWindowItem)
 
                     dockMenu.addSeparator()
 

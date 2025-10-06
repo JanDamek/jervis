@@ -26,6 +26,7 @@ class LmStudioClient(
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
         prompt: PromptConfigBase,
+        estimatedTokens: Int,
     ): LlmResponse {
         val creativityConfig = getCreativityConfig(prompt)
         val messages = buildMessagesList(systemPrompt, userPrompt)
@@ -71,7 +72,8 @@ class LmStudioClient(
                 "top_p" to creativityConfig.topP,
             )
 
-        return config.maxTokens
+        // max_tokens: Maximum tokens for response (output only)
+        return config.numPredict
             ?.let { baseBody + ("max_tokens" to it) }
             ?: baseBody
     }

@@ -8,14 +8,19 @@ import org.springframework.http.MediaType
 import org.springframework.http.client.reactive.ReactorClientHttpConnector
 import org.springframework.web.reactive.function.client.ExchangeStrategies
 import org.springframework.web.reactive.function.client.WebClient
+import org.springframework.web.reactive.function.client.WebClientResponseException
 import reactor.netty.http.client.HttpClient
 import reactor.netty.resources.ConnectionProvider
+import reactor.util.retry.Retry
+import java.io.IOException
+import java.net.ConnectException
 import java.time.Duration
 
 @Configuration
 class WebClientConfig(
     private val connectionPoolProperties: ConnectionPoolProperties,
     private val timeoutsProperties: TimeoutsProperties,
+    private val retryProperties: RetryProperties,
 ) {
     @Bean
     @Qualifier("lmStudioWebClient")
@@ -30,6 +35,7 @@ class WebClientConfig(
                 headers.accept = listOf(MediaType.APPLICATION_JSON)
             }.exchangeStrategies(defaultExchangeStrategies())
             .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
+            .filter(createRetryFilter())
             .build()
 
     @Bean
@@ -45,6 +51,7 @@ class WebClientConfig(
                 headers.accept = listOf(MediaType.APPLICATION_JSON)
             }.exchangeStrategies(defaultExchangeStrategies())
             .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
+            .filter(createRetryFilter())
             .build()
 
     @Bean
@@ -62,6 +69,7 @@ class WebClientConfig(
                 if (!key.isNullOrBlank()) headers["Authorization"] = "Bearer $key"
             }.exchangeStrategies(defaultExchangeStrategies())
             .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
+            .filter(createRetryFilter())
             .build()
 
     @Bean
@@ -80,6 +88,7 @@ class WebClientConfig(
                 headers["anthropic-version"] = ANTHROPIC_VERSION
             }.exchangeStrategies(defaultExchangeStrategies())
             .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
+            .filter(createRetryFilter())
             .build()
 
     @Bean
@@ -94,6 +103,7 @@ class WebClientConfig(
                 headers.accept = listOf(MediaType.APPLICATION_JSON, MediaType.TEXT_HTML)
             }.exchangeStrategies(defaultExchangeStrategies())
             .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
+            .filter(createRetryFilter())
             .build()
 
     private fun defaultExchangeStrategies(): ExchangeStrategies =
@@ -123,6 +133,23 @@ class WebClientConfig(
         // Removed ReadTimeoutHandler and WriteTimeoutHandler to eliminate timeouts for long-running LLM operations
         // Removed responseTimeout to allow unlimited response time for heavy model processing
     }
+
+    private fun createRetryFilter() =
+        {
+            request: org.springframework.web.reactive.function.client.ClientRequest,
+            next: org.springframework.web.reactive.function.client.ExchangeFunction,
+            ->
+            next.exchange(request).retryWhen(
+                Retry
+                    .backoff(
+                        retryProperties.webclient.maxAttempts,
+                        Duration.ofMillis(retryProperties.webclient.initialBackoffMillis),
+                    ).maxBackoff(Duration.ofMillis(retryProperties.webclient.maxBackoffMillis))
+                    .filter { throwable ->
+                        throwable is ConnectException || throwable is IOException && throwable !is WebClientResponseException
+                    },
+            )
+        }
 
     companion object {
         private const val DEFAULT_MAX_IN_MEMORY_BYTES = 8 * 1024 * 1024 // 8 MB

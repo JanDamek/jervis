@@ -22,23 +22,15 @@ class LanguageOrchestrator(
                     responseSchema = DetectionResult(),
                 )
 
-        return result
+        return result.result
     }
 
     @Serializable
     data class DetectionResult(
-        val englishText: String = "The text in English goes here.",
-        val originalLanguage: String = "Czech",
-        val contextName: String = "New Context",
-        val questionChecklist: List<String> =
-            listOf(
-                "What is the main goal of this scenario?",
-                "Who are the key stakeholders?",
-            ),
-        val investigationGuidance: List<String> =
-            listOf(
-                "Review historical data for similar scenarios.",
-                "Consult with domain experts.",
-            ),
+        val englishText: String = "",
+        val originalLanguage: String = "",
+        val contextName: String = "",
+        val questionChecklist: List<String> = listOf(""),
+        val initialRagQueries: List<String> = listOf(""),
     )
 }

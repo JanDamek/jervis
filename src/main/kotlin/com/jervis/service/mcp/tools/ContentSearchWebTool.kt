@@ -28,7 +28,7 @@ class ContentSearchWebTool(
 ) : McpTool {
     private val logger = KotlinLogging.logger {}
 
-    override val name: PromptTypeEnum = PromptTypeEnum.CONTENT_SEARCH_WEB
+    override val name: PromptTypeEnum = PromptTypeEnum.CONTENT_SEARCH_WEB_TOOL
 
     @Serializable
     data class ContentSearchWebParams(
@@ -59,13 +59,16 @@ class ContentSearchWebTool(
     ): ContentSearchWebParams {
         val llmResponse =
             llmGateway.callLlm(
-                type = PromptTypeEnum.CONTENT_SEARCH_WEB,
-                mappingValue = mapOf("taskDescription" to taskDescription),
+                type = PromptTypeEnum.CONTENT_SEARCH_WEB_TOOL,
+                mappingValue =
+                    mapOf(
+                        "taskDescription" to taskDescription,
+                        "stepContext" to stepContext,
+                    ),
                 quick = context.quick,
                 responseSchema = ContentSearchWebParams(),
-                stepContext = stepContext,
             )
-        return llmResponse
+        return llmResponse.result
     }
 
     override suspend fun execute(
