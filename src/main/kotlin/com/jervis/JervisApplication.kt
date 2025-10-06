@@ -7,6 +7,7 @@ import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.client.ClientProjectLinkService
 import com.jervis.service.client.ClientService
+import com.jervis.service.debug.DesktopDebugWindowService
 import com.jervis.service.indexing.ClientIndexingService
 import com.jervis.service.indexing.IndexingService
 import com.jervis.service.indexing.monitoring.IndexingMonitorService
@@ -56,6 +57,7 @@ class JervisApplication(
     private val taskSchedulingService: TaskSchedulingService,
     private val taskQueryService: TaskQueryService,
     private val indexingMonitorService: IndexingMonitorService,
+    private val debugWindowService: DesktopDebugWindowService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -78,6 +80,7 @@ class JervisApplication(
                     taskSchedulingService,
                     taskQueryService,
                     indexingMonitorService,
+                    debugWindowService,
                 )
 
             EventQueue.invokeLater {

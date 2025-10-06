@@ -132,52 +132,28 @@ class TikaDocumentProcessor(
 
     /**
      * Split extracted text into sentences with location tracking using LLM-based processing.
-     * Uses CONTENT_SENTENCE_SPLITTING prompt for intelligent sentence splitting optimized for RAG.
+     * Uses CONTENT_SPLIT_SENTENCES prompt for intelligent sentence splitting optimized for RAG.
      */
     suspend fun splitIntoSentencesWithLocation(
         text: String,
         metadata: DocumentMetadata,
-    ): List<SentenceWithLocation> =
-        try {
-            val response =
-                llmGateway.callLlm(
-                    type = PromptTypeEnum.CONTENT_SPLIT_SENTENCES,
-                    quick = false,
-                    responseSchema = ContentSentenceSplittingResponse(),
-                    mappingValue =
-                        mapOf(
-                            "contentType" to (metadata.contentType ?: "document"),
-                            "source" to (metadata.title ?: metadata.sourceLocation?.documentPath ?: "unknown"),
-                            "content" to text,
-                        ),
-                )
+    ): List<SentenceWithLocation> {
+        val response =
+            llmGateway.callLlm(
+                type = PromptTypeEnum.CONTENT_SPLIT_SENTENCES,
+                quick = false,
+                responseSchema = ContentSentenceSplittingResponse(),
+                mappingValue =
+                    mapOf(
+                        "contentType" to (metadata.contentType ?: "document"),
+                        "sourcePath" to (metadata.title ?: metadata.sourceLocation?.documentPath ?: "unknown"),
+                        "content" to text,
+                    ),
+            )
 
-            // Map LLM sentences to SentenceWithLocation objects with metadata
-            response.sentences
-                .mapIndexed { index, sentence ->
-                    SentenceWithLocation(
-                        text = sentence,
-                        location =
-                            SourceLocation(
-                                documentPath = metadata.sourceLocation?.documentPath ?: "unknown",
-                                paragraphIndex = index,
-                                characterOffset = calculateCharacterOffset(text, sentence),
-                                sectionTitle = extractNearestSectionTitle(text, sentence),
-                                pageNumber = metadata.sourceLocation?.pageNumber,
-                            ),
-                    )
-                }.filter { it.text.trim().isNotEmpty() && it.text.length >= 10 }
-        } catch (e: Exception) {
-            logger.error(e) { "Failed to process content with LLM, falling back to basic sentence splitting" }
-
-            // Fallback to basic processing if LLM fails
-            val sentences =
-                text
-                    .split(Regex("[.!?\\n]+"))
-                    .map { it.trim() }
-                    .filter { it.length > 15 && !it.matches(Regex("^[\\s\\p{Punct}]*$")) }
-
-            sentences.mapIndexed { index, sentence ->
+        // Map LLM sentences to SentenceWithLocation objects with metadata
+        return response.result.sentences
+            .mapIndexed { index, sentence ->
                 SentenceWithLocation(
                     text = sentence,
                     location =
@@ -189,8 +165,8 @@ class TikaDocumentProcessor(
                             pageNumber = metadata.sourceLocation?.pageNumber,
                         ),
                 )
-            }
-        }
+            }.filter { it.text.trim().isNotEmpty() && it.text.length >= 10 }
+    }
 
     /**
      * Sentence with its location within the document

@@ -23,31 +23,29 @@ class CodeAnalyzeTool(
     private val timeoutsProperties: TimeoutsProperties,
     override val promptRepository: PromptRepository,
 ) : McpTool {
-    override val name: PromptTypeEnum = PromptTypeEnum.CODE_ANALYZE
+    override val name: PromptTypeEnum = PromptTypeEnum.CODE_ANALYZE_TOOL
 
     @Serializable
     data class CodeAnalyzeParams(
-        val scriptContent: String = "",
-        val scriptFilename: String = "",
-        val targetMethods: List<String> = emptyList(),
-        val analysisDepth: Int = 3,
-        val includeExternalCalls: Boolean = false,
+        val analysisQuery: String = "",
+        val methodPattern: String = ".*",
+        val maxResults: Int = 100,
+        val includeExternal: Boolean = false,
+        val targetLanguage: String = "",
     )
 
     private suspend fun parseTaskDescription(
         taskDescription: String,
         context: TaskContext,
-        stepContext: String = "",
     ): CodeAnalyzeParams {
         val llmResponse =
             llmGateway.callLlm(
-                type = PromptTypeEnum.CODE_ANALYZE,
+                type = PromptTypeEnum.CODE_ANALYZE_TOOL,
                 responseSchema = CodeAnalyzeParams(),
                 quick = context.quick,
                 mappingValue = mapOf("taskDescription" to taskDescription),
-                stepContext = stepContext,
             )
-        return llmResponse
+        return llmResponse.result
     }
 
     override suspend fun execute(
@@ -57,7 +55,7 @@ class CodeAnalyzeTool(
         stepContext: String,
     ): ToolResult =
         withContext(Dispatchers.IO) {
-            val params = parseTaskDescription(taskDescription, context, stepContext)
+            val params = parseTaskDescription(taskDescription, context)
             val projectDir = File(context.projectDocument.path)
 
             if (!projectDir.exists() || !projectDir.isDirectory) {
@@ -65,21 +63,40 @@ class CodeAnalyzeTool(
             }
 
             try {
-                // Get all existing CPG files using the new multi-language approach
-                val cpgList = joernAnalysisService.ensurePerLanguageCpgs(projectDir.toPath())
-                if (cpgList.isEmpty()) {
+                val allCpgList = joernAnalysisService.ensurePerLanguageCpgs(projectDir.toPath())
+                if (allCpgList.isEmpty()) {
                     return@withContext ToolResult.error("No CPG files found in project. Run indexing first to generate CPG files.")
                 }
 
-                val results = mutableListOf<String>()
-                var totalMethodCount = 0
+                val cpgList =
+                    if (params.targetLanguage.isNotBlank()) {
+                        allCpgList.filter { cpgPath ->
+                            val languageName = extractLanguageFromCpgPath(cpgPath)
+                            languageName.equals(params.targetLanguage, ignoreCase = true)
+                        }
+                    } else {
+                        allCpgList
+                    }
 
-                // Process each CPG file separately
+                if (cpgList.isEmpty()) {
+                    return@withContext ToolResult.error(
+                        "No CPG files found for language '${params.targetLanguage}'. Available languages: ${
+                            allCpgList.map {
+                                extractLanguageFromCpgPath(
+                                    it,
+                                )
+                            }.joinToString(", ")
+                        }",
+                    )
+                }
+
+                val results = mutableListOf<String>()
+
                 for (cpgPath in cpgList) {
                     val languageName = extractLanguageFromCpgPath(cpgPath)
 
                     try {
-                        val script = generateCallgraphScript(params, cpgPath)
+                        val script = loadAndPrepareScript(params, cpgPath, languageName)
                         val scriptFile = createTempScriptFile(script, languageName)
                         val result = runJoernScript(scriptFile, projectDir)
 
@@ -87,65 +104,27 @@ class CodeAnalyzeTool(
                             return@withContext ToolResult.error("Joern failed for ${cpgPath.fileName}: ${result.output}")
                         }
 
-                        // Add language header to the result
                         val languageResult = "=== ${languageName.uppercase()} ANALYSIS ===\n${result.output}"
                         results.add(languageResult)
-
-                        // Count methods if this is callgraph analysis
-                        if (params.targetMethods.isNotEmpty() || params.analysisDepth != 3 || params.includeExternalCalls) {
-                            totalMethodCount += countMethodsInOutput(result.output, params)
-                        }
                     } catch (e: Exception) {
-                        val errorResult = "=== ${languageName.uppercase()} ANALYSIS (FAILED) ===\nError: ${e.message}"
+                        val errorMessage = e.message ?: e.toString()
+                        val errorResult = "=== ${languageName.uppercase()} ANALYSIS (FAILED) ===\nError: $errorMessage"
                         results.add(errorResult)
                     }
                 }
 
-                // Format the multi-language result
                 val combinedResults = results.joinToString("\n\n---\n\n")
 
-                // Determine analysis type and format response accordingly
-                if (params.targetMethods.isNotEmpty() || params.analysisDepth != 3 || params.includeExternalCalls) {
-                    // This is a call graph analysis
-                    val summary =
-                        when {
-                            params.targetMethods.isNotEmpty() -> "Multi-language analysis of ${params.targetMethods.size} target methods across ${cpgList.size} languages"
-                            totalMethodCount > 0 -> "Multi-language analysis of $totalMethodCount methods across ${cpgList.size} languages"
-                            else -> "Multi-language callgraph analysis across ${cpgList.size} languages"
-                        }
-
-                    val analysisParams =
-                        buildString {
-                            appendLine(
-                                "Languages: ${
-                                    cpgList.map { path -> extractLanguageFromCpgPath(path) }.joinToString(", ")
-                                }",
-                            )
-                            if (params.targetMethods.isNotEmpty()) {
-                                appendLine("Target Methods: ${params.targetMethods.joinToString(", ")}")
-                            }
-                            appendLine("Analysis Depth: ${params.analysisDepth}")
-                            appendLine("Include External Calls: ${params.includeExternalCalls}")
-                        }.trim()
-
-                    ToolResult.success(
-                        toolName = "MULTI_LANGUAGE_JOERN_ANALYSIS",
-                        summary = summary,
-                        content = analysisParams,
-                        formatJoernOutput(combinedResults),
-                    )
-                } else {
-                    // This is a static analysis
-                    ToolResult.analysisResult(
-                        toolName = "CODE_ANALYZE",
-                        analysisType = "Multi-language CPG Analysis",
-                        count = cpgList.size,
-                        unit = "language",
-                        results = formatJoernOutput(combinedResults),
-                    )
-                }
+                ToolResult.analysisResult(
+                    toolName = "CODE_ANALYZE",
+                    analysisType = "Code Analysis: ${params.analysisQuery}",
+                    count = cpgList.size,
+                    unit = "language",
+                    results = formatJoernOutput(combinedResults),
+                )
             } catch (e: Exception) {
-                ToolResult.error("Multi-language Joern analysis error: ${e.message}")
+                val errorMessage = e.message ?: e.toString()
+                ToolResult.error("Code analysis error: $errorMessage")
             }
         }
 
@@ -175,72 +154,25 @@ class CodeAnalyzeTool(
             ProcessResult(processResult.output, processResult.isSuccess, processResult.exitCode)
         }
 
-    private fun generateCallgraphScript(
+    private fun loadAndPrepareScript(
         params: CodeAnalyzeParams,
         cpgPath: java.nio.file.Path,
-    ): String =
-        buildString {
-            appendLine("importCpg(\"${cpgPath}\")")
-            appendLine("import io.shiftleft.semanticcpg.language._")
-            appendLine("")
+        language: String,
+    ): String {
+        val templateResource =
+            this::class.java.getResourceAsStream("/joern/code_analysis.sc")
+                ?: throw RuntimeException("Code analysis template not found in resources")
 
-            if (params.targetMethods.isNotEmpty()) {
-                appendLine("// Focused analysis on specific methods")
-                val methodNames = params.targetMethods.joinToString("\", \"", "\"", "\"")
-                appendLine("val targetMethods = List($methodNames)")
-                appendLine("val callgraphData = cpg.method.name(targetMethods: _*).map { method =>")
-                appendLine("  Map(")
-                appendLine("    \"method\" -> method.name,")
-                appendLine("    \"fullName\" -> method.fullName,")
-                appendLine("    \"signature\" -> method.signature,")
-                appendLine("    \"callers\" -> method.caller.take(${params.analysisDepth}).map(c => Map(")
-                appendLine("      \"name\" -> c.name,")
-                appendLine("      \"fullName\" -> c.fullName,")
-                appendLine("      \"signature\" -> c.signature")
-                appendLine("    )).toList,")
-                if (params.includeExternalCalls) {
-                    appendLine("    \"callees\" -> method.callee.take(${params.analysisDepth}).map(c => Map(")
-                } else {
-                    appendLine(
-                        "    \"callees\" -> method.callee.take(${params.analysisDepth}).filter(c => !c.fullName.startsWith(\"java.\") && !c.fullName.startsWith(\"scala.\")).map(c => Map(",
-                    )
-                }
-                appendLine("      \"name\" -> c.name,")
-                appendLine("      \"fullName\" -> c.fullName,")
-                appendLine("      \"signature\" -> c.signature")
-                appendLine("    )).toList")
-                appendLine("  )")
-                appendLine("}.toList")
-            } else {
-                appendLine("// Full callgraph analysis")
-                if (params.includeExternalCalls) {
-                    appendLine("val callgraphData = cpg.method.take(100).map { method =>")
-                } else {
-                    appendLine(
-                        "val callgraphData = cpg.method.filter(m => !m.fullName.startsWith(\"java.\") && !m.fullName.startsWith(\"scala.\")).take(100).map { method =>",
-                    )
-                }
-                appendLine("  Map(")
-                appendLine("    \"method\" -> method.name,")
-                appendLine("    \"fullName\" -> method.fullName,")
-                appendLine("    \"signature\" -> method.signature,")
-                appendLine("    \"callCount\" -> method.caller.size,")
-                appendLine("    \"calleeCount\" -> method.callee.size")
-                appendLine("  )")
-                appendLine("}.toList")
-            }
+        val template = templateResource.bufferedReader().use { it.readText() }
 
-            appendLine("")
-            appendLine("val result = Map(")
-            appendLine("  \"analysisType\" -> \"callgraph\",")
-            appendLine("  \"targetMethods\" -> List(${params.targetMethods.joinToString("\", \"", "\"", "\"")}),")
-            appendLine("  \"analysisDepth\" -> ${params.analysisDepth},")
-            appendLine("  \"includeExternalCalls\" -> ${params.includeExternalCalls},")
-            appendLine("  \"results\" -> callgraphData")
-            appendLine(")")
-            appendLine("")
-            appendLine("println(result.toJson)")
-        }
+        return template
+            .replace("{{CPG_PATH}}", cpgPath.toString())
+            .replace("{{LANGUAGE}}", language)
+            .replace("{{ANALYSIS_QUERY}}", params.analysisQuery)
+            .replace("{{METHOD_PATTERN}}", params.methodPattern)
+            .replace("{{MAX_RESULTS}}", params.maxResults.toString())
+            .replace("{{INCLUDE_EXTERNAL}}", params.includeExternal.toString())
+    }
 
     private fun formatJoernOutput(output: String): String =
         try {
@@ -279,28 +211,6 @@ class CodeAnalyzeTool(
             val scriptFile = File.createTempFile("joern-$languageName-", ".sc")
             scriptFile.writeText(script)
             scriptFile
-        }
-
-    /**
-     * Count methods in Joern output for progress reporting
-     */
-    private fun countMethodsInOutput(
-        output: String,
-        params: CodeAnalyzeParams,
-    ): Int =
-        if (params.targetMethods.isNotEmpty()) {
-            params.targetMethods.size
-        } else {
-            try {
-                val trimmed = output.trim()
-                when {
-                    trimmed.contains("\"results\"") -> trimmed.split("\"method\"").size - 1
-                    trimmed.contains("\"callgraphData\"") -> trimmed.split("\"method\"").size - 1
-                    else -> 0
-                }
-            } catch (_: Exception) {
-                0
-            }
         }
 
     data class ProcessResult(

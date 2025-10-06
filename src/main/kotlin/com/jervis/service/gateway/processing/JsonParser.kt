@@ -6,68 +6,136 @@ import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
 /**
- * Simple JSON parser that converts JSON string directly to target class.
- * No validation, no fallbacks - just direct conversion.
+ * Data class to hold both think content and parsed JSON result
  */
+data class ParsedResponse<T>(
+    val thinkContent: String?,
+    val result: T,
+)
+
 @Service
 class JsonParser {
     private val logger = KotlinLogging.logger {}
 
     private val objectMapper =
         ObjectMapper().apply {
-            // Allow extra fields - no strict validation
             configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-            // Allow missing fields
             configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES, false)
-            // Allow single values to be treated as single-element arrays
             configure(com.fasterxml.jackson.databind.DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY, true)
         }
 
     /**
-     * Cleans LLM response by removing markdown code blocks and other formatting.
-     * Handles common formatting issues where LLMs wrap JSON in ```json...``` blocks.
-     * Sanitizes control characters that cause Jackson parsing errors.
-     * Validates that the response appears to be JSON format.
+     * Extracts think content from <think></think> tags
      */
+    private fun extractThinkContent(rawResponse: String): String? {
+        val thinkStartTag = "<think>"
+        val thinkEndTag = "</think>"
+
+        val startIndex = rawResponse.indexOf(thinkStartTag)
+        if (startIndex == -1) return null
+
+        val contentStart = startIndex + thinkStartTag.length
+        val endIndex = rawResponse.indexOf(thinkEndTag, contentStart)
+        if (endIndex == -1) return null
+
+        return rawResponse.substring(contentStart, endIndex).trim()
+    }
+
+    /**
+     * Removes think content from response to get clean content for JSON parsing
+     */
+    private fun removeThinkContent(rawResponse: String): String {
+        val thinkStartTag = "<think>"
+        val thinkEndTag = "</think>"
+
+        var cleaned = rawResponse
+        var startIndex = cleaned.indexOf(thinkStartTag)
+
+        while (startIndex != -1) {
+            val endIndex = cleaned.indexOf(thinkEndTag, startIndex)
+            if (endIndex != -1) {
+                // Remove the entire think block including tags
+                cleaned = cleaned.substring(0, startIndex) + cleaned.substring(endIndex + thinkEndTag.length)
+                startIndex = cleaned.indexOf(thinkStartTag)
+            } else {
+                // Malformed think tag, just remove the start tag
+                cleaned = cleaned.substring(0, startIndex) + cleaned.substring(startIndex + thinkStartTag.length)
+                break
+            }
+        }
+
+        return cleaned.trim()
+    }
+
+    // Nová metoda pro nalezení finálního JSON bloku
+    private fun findFinalJsonBlock(rawResponse: String): String {
+        val delimiter = "**START_JSON_OUTPUT**"
+        val startIndex = rawResponse.indexOf(delimiter)
+
+        return if (startIndex != -1) {
+            // Pokud oddělovač existuje, vrátí text po něm
+            rawResponse.substring(startIndex + delimiter.length).trim()
+        } else {
+            // Jinak vrátí celý text a spoléhá na existující logiku čištění
+            rawResponse.trim()
+        }
+    }
+
     private fun cleanJsonResponse(response: String): String {
         var cleaned = response.trim()
 
-        // Remove markdown code blocks (```json...``` or ```...```)
+        // Odstranění markdownu, pokud je stále přítomen
         if (cleaned.startsWith("```")) {
-            // Find the first newline after opening ```
             val firstNewline = cleaned.indexOf('\n')
             if (firstNewline != -1) {
                 cleaned = cleaned.substring(firstNewline + 1)
             }
-
-            // Remove closing ```
             if (cleaned.endsWith("```")) {
                 cleaned = cleaned.substring(0, cleaned.length - 3).trim()
             }
         }
 
-        // Additional cleanup for common formatting issues
-        cleaned = cleaned.trim()
+        // Vyčištění textu před parsováním - handle both objects {} and arrays []
+        val objectStart = cleaned.indexOf('{')
+        val objectEnd = cleaned.lastIndexOf('}')
+        val arrayStart = cleaned.indexOf('[')
+        val arrayEnd = cleaned.lastIndexOf(']')
 
-        // Sanitize control characters that cause Jackson parsing errors
-        // This fixes the "Illegal unquoted character (CTRL-CHAR, code 10)" error
-        cleaned = sanitizeControlCharacters(cleaned)
+        // Determine if we have an object or array and which comes first
+        val jsonStart: Int
+        val jsonEnd: Int
 
-        // Validate that the cleaned response looks like JSON
-        if (!cleaned.startsWith("{") && !cleaned.startsWith("[")) {
-            throw IllegalStateException(
-                "LLM returned non-JSON response. Expected JSON format but got plain text starting with: " +
-                "${cleaned.take(100)}..."
-            )
+        when {
+            objectStart != -1 && (arrayStart == -1 || objectStart < arrayStart) -> {
+                // Object comes first or only object exists
+                jsonStart = objectStart
+                jsonEnd = objectEnd
+                if (jsonEnd == -1) {
+                    throw IllegalStateException("LLM returned malformed JSON object - missing closing brace.")
+                }
+            }
+
+            arrayStart != -1 -> {
+                // Array comes first or only array exists
+                jsonStart = arrayStart
+                jsonEnd = arrayEnd
+                if (jsonEnd == -1) {
+                    throw IllegalStateException("LLM returned malformed JSON array - missing closing bracket.")
+                }
+            }
+
+            else -> {
+                throw IllegalStateException("LLM returned non-JSON response - no valid JSON found.")
+            }
         }
 
-        return cleaned
+        // Extrahování pouze JSON bloku
+        val jsonOnly = cleaned.substring(jsonStart, jsonEnd + 1)
+
+        // Sanitizace speciálních znaků
+        return sanitizeControlCharacters(jsonOnly)
     }
 
-    /**
-     * Sanitizes control characters in JSON strings to prevent Jackson parsing errors.
-     * Escapes newlines, carriage returns, tabs and other control characters within JSON string values.
-     */
     private fun sanitizeControlCharacters(json: String): String {
         val result = StringBuilder()
         var i = 0
@@ -79,92 +147,120 @@ class JsonParser {
 
             when {
                 escapeNext -> {
-                    // Previous character was backslash, don't modify this character
                     result.append(char)
                     escapeNext = false
                 }
 
                 char == '\\' && insideString -> {
-                    // Backslash inside string - next character should be preserved
                     result.append(char)
                     escapeNext = true
                 }
 
                 char == '"' -> {
-                    // Quote - toggle string mode
                     result.append(char)
                     insideString = !insideString
                 }
 
-                insideString -> {
-                    // Inside string value - escape control characters
+                insideString && char.code < 32 -> { // Uvnitř řetězce, sanitizuje řídící znaky
                     when (char) {
                         '\n' -> result.append("\\n")
                         '\r' -> result.append("\\r")
                         '\t' -> result.append("\\t")
                         '\b' -> result.append("\\b")
-                        '\u000C' -> result.append("\\f") // form feed
-                        else -> {
-                            if (char.code < 32) {
-                                // Other control characters - escape as unicode
-                                result.append("\\u").append(String.format("%04x", char.code))
-                            } else {
-                                result.append(char)
-                            }
-                        }
+                        '\u000C' -> result.append("\\f")
+                        else -> result.append("\\u").append(String.format("%04x", char.code))
                     }
                 }
 
                 else -> {
-                    // Outside string - preserve as-is
                     result.append(char)
                 }
             }
             i++
         }
-
         return result.toString()
     }
 
     /**
-     * Simply converts JSON string to target class without any validation.
-     * Handles both single objects and collections properly.
-     * Automatically strips markdown code blocks if present.
+     * New method that extracts think content and parses JSON
      */
+    fun <T : Any> validateAndParseWithThink(
+        rawResponse: String,
+        responseSchema: T,
+        provider: ModelProvider,
+        model: String,
+    ): ParsedResponse<T> {
+        try {
+            // Fáze 1: Extrakce think content
+            val thinkContent = extractThinkContent(rawResponse)
+
+            // Fáze 2: Odstranění think content pro čištění JSON
+            val responseWithoutThink = removeThinkContent(rawResponse)
+
+            // Fáze 3: Nalezení a extrakce JSON bloku
+            val finalJson = findFinalJsonBlock(responseWithoutThink)
+
+            // Fáze 4: Vyčištění a parsování
+            val trimmedResponse = cleanJsonResponse(finalJson)
+
+            // Pokus o parsování
+            val parsedResult =
+                when (responseSchema) {
+                    is Collection<*> -> {
+                        if (responseSchema.isEmpty()) {
+                            @Suppress("UNCHECKED_CAST")
+                            responseSchema as T
+                        } else {
+                            val elementType = responseSchema.first()!!::class.java
+                            val listType =
+                                objectMapper.typeFactory.constructCollectionType(ArrayList::class.java, elementType)
+                            @Suppress("UNCHECKED_CAST")
+                            objectMapper.readValue(trimmedResponse, listType) as T
+                    }
+                    }
+
+                    else -> {
+                        objectMapper.readValue(trimmedResponse, responseSchema::class.java)
+                    }
+                }
+
+            return ParsedResponse(thinkContent, parsedResult)
+        } catch (e: Exception) {
+            logger.error { "JSON parsing with think extraction failed for $provider/$model: ${e.message}" }
+            logger.error { "Raw response: $rawResponse" }
+            throw e
+        }
+    }
+
     fun <T : Any> validateAndParse(
         rawResponse: String,
         responseSchema: T,
         provider: ModelProvider,
         model: String,
     ): T {
-        return try {
-            val trimmedResponse = cleanJsonResponse(rawResponse.trim())
+        try {
+            // Fáze 1: Nalezení a extrakce JSON bloku
+            val finalJson = findFinalJsonBlock(rawResponse)
 
-            // If responseSchema is a collection, parse as array and return the same type
-            when (responseSchema) {
+            // Fáze 2: Vyčištění a parsování
+            val trimmedResponse = cleanJsonResponse(finalJson)
+
+            // Pokus o parsování
+            return when (responseSchema) {
                 is Collection<*> -> {
                     if (responseSchema.isEmpty()) {
-                        // Empty collection - can't determine element type, return as-is
                         @Suppress("UNCHECKED_CAST")
-                        return responseSchema as T
+                        responseSchema as T
+                    } else {
+                        val elementType = responseSchema.first()!!::class.java
+                        val listType =
+                            objectMapper.typeFactory.constructCollectionType(ArrayList::class.java, elementType)
+                        @Suppress("UNCHECKED_CAST")
+                        objectMapper.readValue(trimmedResponse, listType) as T
                     }
-
-                    // Get the element type from the first element
-                    val elementType = responseSchema.first()!!::class.java
-
-                    // Use ArrayList to avoid singleton collection deserialization issues
-                    val listType =
-                        objectMapper.typeFactory.constructCollectionType(
-                            ArrayList::class.java,
-                            elementType,
-                        )
-
-                    @Suppress("UNCHECKED_CAST")
-                    objectMapper.readValue(trimmedResponse, listType) as T
                 }
 
                 else -> {
-                    // Single object parsing
                     objectMapper.readValue(trimmedResponse, responseSchema::class.java)
                 }
             }

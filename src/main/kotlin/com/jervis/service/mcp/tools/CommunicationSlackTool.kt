@@ -18,7 +18,7 @@ class CommunicationSlackTool(
 ) : McpTool {
     private val logger = KotlinLogging.logger {}
 
-    override val name: PromptTypeEnum = PromptTypeEnum.COMMUNICATION_SLACK
+    override val name: PromptTypeEnum = PromptTypeEnum.COMMUNICATION_SLACK_TOOL
 
     @Serializable
     data class CommunicationSlackParams(
@@ -33,14 +33,17 @@ class CommunicationSlackTool(
     ): CommunicationSlackParams {
         val llmResponse =
             llmGateway.callLlm(
-                type = PromptTypeEnum.COMMUNICATION_SLACK,
+                type = PromptTypeEnum.COMMUNICATION_SLACK_TOOL,
                 responseSchema = CommunicationSlackParams(),
                 quick = context.quick,
-                mappingValue = mapOf("taskDescription" to taskDescription),
-                stepContext = stepContext,
+                mappingValue =
+                    mapOf(
+                        "taskDescription" to taskDescription,
+                        "stepContext" to stepContext,
+                    ),
             )
 
-        return llmResponse
+        return llmResponse.result
     }
 
     override suspend fun execute(

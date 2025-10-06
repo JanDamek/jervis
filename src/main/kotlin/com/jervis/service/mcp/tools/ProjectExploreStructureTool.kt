@@ -29,7 +29,7 @@ class ProjectExploreStructureTool(
         private val logger = KotlinLogging.logger {}
     }
 
-    override val name: PromptTypeEnum = PromptTypeEnum.PROJECT_EXPLORE_STRUCTURE
+    override val name: PromptTypeEnum = PromptTypeEnum.PROJECT_EXPLORE_STRUCTURE_TOOL
 
     @Serializable
     data class ProjectExploreStructureParams(
@@ -122,7 +122,6 @@ class ProjectExploreStructureTool(
 
             ToolResult.listingResult(
                 toolName = name.name,
-                itemCount = fileTreeResult.itemCount,
                 itemType = "files and directories",
                 rootInfo = "Root: $projectPath",
                 listing = fileTreeResult.content,

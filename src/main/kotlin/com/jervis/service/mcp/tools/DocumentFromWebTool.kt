@@ -27,7 +27,7 @@ class DocumentFromWebTool(
 ) : McpTool {
     private val logger = KotlinLogging.logger {}
 
-    override val name: PromptTypeEnum = PromptTypeEnum.DOCUMENT_FROM_WEB
+    override val name: PromptTypeEnum = PromptTypeEnum.DOCUMENT_FROM_WEB_TOOL
 
     @Serializable
     data class DocumentFromWebParams(
@@ -42,13 +42,16 @@ class DocumentFromWebTool(
     ): DocumentFromWebParams {
         val llmResponse =
             llmGateway.callLlm(
-                type = PromptTypeEnum.DOCUMENT_FROM_WEB,
-                mappingValue = mapOf("taskDescription" to taskDescription),
-                quick = context.quick,
+                type = PromptTypeEnum.DOCUMENT_FROM_WEB_TOOL,
+                mappingValue =
+                    mapOf(
+                        "taskDescription" to taskDescription,
+                        "stepContext" to stepContext,
+                    ),
+                    quick = context.quick,
                 responseSchema = DocumentFromWebParams(),
-                stepContext = stepContext,
             )
-        return llmResponse
+        return llmResponse.result
     }
 
     override suspend fun execute(

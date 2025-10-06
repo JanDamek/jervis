@@ -4,8 +4,10 @@ import com.jervis.configuration.ModelsProperties
 import com.jervis.configuration.prompts.PromptConfigBase
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.llm.LlmResponse
+import com.jervis.service.debug.DesktopDebugWindowService
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
+import java.util.UUID
 
 /**
  * Service responsible for executing LLM calls with proper reactive patterns and error handling.
@@ -14,11 +16,13 @@ import org.springframework.stereotype.Service
 @Service
 class LlmCallExecutor(
     private val clients: List<com.jervis.service.gateway.clients.ProviderClient>,
+    private val debugWindowService: DesktopDebugWindowService,
 ) {
     private val logger = KotlinLogging.logger {}
 
     /**
      * Executes LLM call for the given candidate model with proper reactive patterns.
+     * Routes to streaming if debug window is active.
      */
     suspend fun executeCall(
         candidate: ModelsProperties.ModelDetail,
@@ -26,6 +30,7 @@ class LlmCallExecutor(
         userPrompt: String,
         prompt: PromptConfigBase,
         promptType: PromptTypeEnum,
+        estimatedTokens: Int,
     ): LlmResponse {
         val provider =
             candidate.provider
@@ -38,7 +43,27 @@ class LlmCallExecutor(
 
         return try {
             logger.debug { "LLM Request - systemPrompt=$systemPrompt, userPrompt=$userPrompt" }
-            val response = client.call(candidate.model, systemPrompt, userPrompt, candidate, prompt)
+
+            // Always use streaming for debug purposes - debug window will be shown automatically
+            val debugSessionId = UUID.randomUUID().toString()
+
+            debugWindowService.startDebugSession(
+                debugSessionId,
+                promptType,
+                systemPrompt,
+                userPrompt,
+            )
+
+            val response =
+                executeStreamingCall(
+                    client,
+                    candidate,
+                    systemPrompt,
+                    userPrompt,
+                    prompt,
+                    estimatedTokens,
+                    debugSessionId,
+                )
 
             validateResponse(response, provider)
             logSuccessfulCall(provider, candidate.model, startTime)
@@ -50,6 +75,68 @@ class LlmCallExecutor(
             logFailedCall(provider, candidate.model, startTime, errorDetail)
             throw IllegalStateException("LLM call failed for $provider: $errorDetail", throwable)
         }
+    }
+
+    /**
+     * Executes streaming LLM call and converts to regular LlmResponse.
+     * Maintains fail-first approach - no fallback on streaming failure.
+     */
+    private suspend fun executeStreamingCall(
+        client: com.jervis.service.gateway.clients.ProviderClient,
+        candidate: ModelsProperties.ModelDetail,
+        systemPrompt: String,
+        userPrompt: String,
+        prompt: PromptConfigBase,
+        estimatedTokens: Int,
+        debugSessionId: String,
+    ): LlmResponse {
+        val responseBuilder = StringBuilder()
+        var finalMetadata: Map<String, Any> = emptyMap()
+        var model = candidate.model
+        var promptTokens = 0
+        var completionTokens = 0
+        var totalTokens = 0
+        var finishReason = "stop"
+
+        // Collect streaming response
+        client
+            .callWithStreaming(
+                candidate.model,
+                systemPrompt,
+                userPrompt,
+                candidate,
+                prompt,
+                estimatedTokens,
+                debugSessionId,
+            ).collect { chunk ->
+                if (chunk.content.isNotEmpty()) {
+                    responseBuilder.append(chunk.content)
+                }
+
+                if (chunk.isComplete && chunk.metadata.isNotEmpty()) {
+                    finalMetadata = chunk.metadata
+                    model = chunk.metadata["model"] as? String ?: candidate.model
+                    promptTokens = chunk.metadata["prompt_tokens"] as? Int ?: 0
+                    completionTokens = chunk.metadata["completion_tokens"] as? Int ?: 0
+                    totalTokens = chunk.metadata["total_tokens"] as? Int ?: 0
+                    finishReason = chunk.metadata["finish_reason"] as? String ?: "stop"
+                }
+            }
+
+        val finalResponse =
+            LlmResponse(
+                answer = responseBuilder.toString(),
+                model = model,
+                promptTokens = promptTokens,
+                completionTokens = completionTokens,
+                totalTokens = totalTokens,
+                finishReason = finishReason,
+            )
+
+        // Complete debug session
+        debugWindowService.completeSession(debugSessionId, finalResponse)
+
+        return finalResponse
     }
 
     /**

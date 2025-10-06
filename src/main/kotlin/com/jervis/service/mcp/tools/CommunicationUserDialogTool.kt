@@ -41,7 +41,7 @@ class CommunicationUserDialogTool(
     private val gateway: LlmGateway,
     override val promptRepository: PromptRepository,
 ) : McpTool {
-    override val name = PromptTypeEnum.COMMUNICATION_USER_DIALOG
+    override val name = PromptTypeEnum.COMMUNICATION_USER_DIALOG_TOOL
 
     override suspend fun execute(
         context: TaskContext,
@@ -52,7 +52,7 @@ class CommunicationUserDialogTool(
         val proposedAnswer =
             gateway
                 .callLlm(
-                    type = PromptTypeEnum.COMMUNICATION_USER_DIALOG,
+                    type = PromptTypeEnum.COMMUNICATION_USER_DIALOG_TOOL,
                     responseSchema = LlmResponseWrapper(),
                     quick = context.quick,
                     mappingValue = mapOf("taskDescription" to taskDescription),
@@ -69,7 +69,7 @@ class CommunicationUserDialogTool(
                     previousOutput = previousOutput,
                     questionOriginal = taskDescription,
                     questionTranslated = taskDescription,
-                    proposedAnswer = proposedAnswer.response,
+                    proposedAnswer = proposedAnswer.result.response,
                 )
             }
 
@@ -80,11 +80,11 @@ class CommunicationUserDialogTool(
                 }
 
                 UserDecision.ENTER -> {
-                    decisionResult.answerText.ifBlank { proposedAnswer.response }
+                    decisionResult.answerText.ifBlank { proposedAnswer.result.response }
                 }
 
                 UserDecision.EDIT -> {
-                    decisionResult.answerText.ifBlank { proposedAnswer.response }
+                    decisionResult.answerText.ifBlank { proposedAnswer.result.response }
                 }
             }
 
@@ -107,7 +107,7 @@ class CommunicationUserDialogTool(
         return ToolResult.success(
             "USER_INTERACTION",
             summary,
-            finalAnswerEn.response,
+            finalAnswerEn.result.response,
         )
     }
 

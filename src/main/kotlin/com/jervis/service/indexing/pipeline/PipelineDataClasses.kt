@@ -87,6 +87,8 @@ data class EmbeddingPipelineItem(
     val embedding: List<Float>,
     val embeddingType: ModelType,
     val processingTimeMs: Long,
+    val chunkIndex: Int = 0,
+    val totalChunks: Int = 1,
 )
 
 /**

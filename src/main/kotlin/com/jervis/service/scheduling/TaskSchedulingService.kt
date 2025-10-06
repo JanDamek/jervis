@@ -2,13 +2,11 @@ package com.jervis.service.scheduling
 
 import com.jervis.dto.ChatRequestContext
 import com.jervis.entity.mongo.ScheduledTaskDocument
-import com.jervis.entity.mongo.ScheduledTaskStatus
 import com.jervis.repository.mongo.ProjectMongoRepository
 import com.jervis.repository.mongo.ScheduledTaskMongoRepository
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.client.ClientService
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -69,15 +67,8 @@ class TaskSchedulingService(
             val pendingTasks =
                 scheduledTaskRepository
                     .findPendingTasksScheduledBefore(Instant.now())
-                    .toList()
-                    .sortedWith(
-                        compareByDescending<ScheduledTaskDocument> { it.priority }
-                            .thenBy { it.scheduledAt },
-                    )
 
-            logger.debug { "Found ${pendingTasks.size} pending tasks to process" }
-
-            for (task in pendingTasks) {
+            pendingTasks.collect { task ->
                 try {
                     executeTask(task)
                 } catch (e: Exception) {
@@ -98,7 +89,8 @@ class TaskSchedulingService(
             logger.info { "Executing task: ${task.taskName} with instruction: ${task.taskInstruction}" }
 
             // Mark task as running
-            val runningTask = taskManagementService.updateTaskStatus(task, ScheduledTaskStatus.RUNNING)
+            val runningTask =
+                taskManagementService.updateTaskStatus(task, ScheduledTaskDocument.ScheduledTaskStatus.RUNNING)
 
             try {
                 val project =
@@ -131,7 +123,7 @@ class TaskSchedulingService(
                 }
 
                 // Mark task as completed
-                taskManagementService.updateTaskStatus(runningTask, ScheduledTaskStatus.COMPLETED)
+                taskManagementService.updateTaskStatus(runningTask, ScheduledTaskDocument.ScheduledTaskStatus.COMPLETED)
             } catch (e: Exception) {
                 logger.error(e) { "Task execution failed: ${task.taskName}" }
                 markTaskAsFailed(runningTask, e.message ?: "Execution failed")
@@ -146,7 +138,11 @@ class TaskSchedulingService(
         val failedTask = task.copy(retryCount = newRetryCount)
 
         // Mark task as failed using TaskManagementService
-        taskManagementService.updateTaskStatus(failedTask, ScheduledTaskStatus.FAILED, errorMessage)
+        taskManagementService.updateTaskStatus(
+            failedTask,
+            ScheduledTaskDocument.ScheduledTaskStatus.FAILED,
+            errorMessage,
+        )
 
         if (newRetryCount < task.maxRetries) {
             // Schedule retry with exponential backoff
@@ -177,9 +173,9 @@ class TaskSchedulingService(
     suspend fun cleanupStuckTasks() {
         try {
             val stuckThreshold = Instant.now().minus(Duration.ofHours(STUCK_TASK_TIMEOUT_HOURS))
-            val stuckTasks = scheduledTaskRepository.findStuckTasks(stuckThreshold).toList()
+            val stuckTasks = scheduledTaskRepository.findStuckTasks(stuckThreshold)
 
-            for (task in stuckTasks) {
+            stuckTasks.collect { task ->
                 logger.warn { "Marking stuck task as failed: ${task.taskName}" }
                 markTaskAsFailed(task, "Task stuck - exceeded timeout of ${STUCK_TASK_TIMEOUT_HOURS} hours")
             }

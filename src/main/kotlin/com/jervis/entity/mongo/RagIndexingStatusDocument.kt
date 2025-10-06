@@ -9,33 +9,6 @@ import org.springframework.data.mongodb.core.mapping.Document
 import java.time.Instant
 
 /**
- * Status of indexed content in RAG system
- */
-enum class IndexingStatus {
-    /** Successfully indexed */
-    INDEXED,
-
-    /** Indexing in progress */
-    INDEXING,
-
-    /** Indexing failed */
-    FAILED,
-
-    /** File was removed/deleted */
-    REMOVED,
-}
-
-/**
- * Information about individual indexed content piece
- */
-data class IndexedContentInfo(
-    val vectorStoreId: String?,
-    val contentHash: String,
-    val contentLength: Int,
-    val description: String,
-)
-
-/**
  * MongoDB document for tracking RAG indexing status of files.
  * This provides the foundation for maintaining RAG in good condition by tracking
  * every indexed file, what content was extracted, and version information.
@@ -72,4 +45,31 @@ data class RagIndexingStatusDocument(
     val lastUpdatedAt: Instant = Instant.now(),
     val indexingStartedAt: Instant? = null,
     val indexingCompletedAt: Instant? = null,
-)
+) {
+    /**
+     * Status of indexed content in RAG system
+     */
+    enum class IndexingStatus {
+        /** Successfully indexed */
+        INDEXED,
+
+        /** Indexing in progress */
+        INDEXING,
+
+        /** Indexing failed */
+        FAILED,
+
+        /** File was removed/deleted */
+        REMOVED,
+    }
+
+    /**
+     * Information about an individual indexed content piece
+     */
+    data class IndexedContentInfo(
+        val vectorStoreId: String?,
+        val contentHash: String,
+        val contentLength: Int,
+        val description: String,
+    )
+}

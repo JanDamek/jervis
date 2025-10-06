@@ -6,7 +6,8 @@ import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.mongo.ClientMongoRepository
 import com.jervis.repository.mongo.ProjectMongoRepository
 import com.jervis.service.gateway.core.LlmGateway
-import com.jervis.service.gateway.processing.dto.LlmResponseWrapper
+import com.jervis.service.indexing.dto.ClientFullDescriptionResponse
+import com.jervis.service.indexing.dto.ClientShortDescriptionResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -90,42 +91,37 @@ class ClientIndexingService(
         client: ClientDocument,
         projects: List<ProjectDocument>,
     ): ClientDescriptionResult {
-        try {
-            logger.debug { "Generating client descriptions for: ${client.name} with ${projects.size} projects" }
+        logger.debug { "Generating client descriptions for: ${client.name} with ${projects.size} projects" }
 
-            // Collect all project descriptions
-            val projectDescriptions =
-                projects.map { project ->
-                    when {
-                        !project.fullDescription.isNullOrBlank() -> {
-                            "**${project.name}**: ${project.fullDescription}"
-                        }
+        // Collect all project descriptions
+        val projectDescriptions =
+            projects.map { project ->
+                when {
+                    !project.fullDescription.isNullOrBlank() -> {
+                        "**${project.name}**: ${project.fullDescription}"
+                    }
 
-                        !project.shortDescription.isNullOrBlank() -> {
-                            "**${project.name}**: ${project.shortDescription}"
-                        }
+                    !project.shortDescription.isNullOrBlank() -> {
+                        "**${project.name}**: ${project.shortDescription}"
+                    }
 
-                        !project.description.isNullOrBlank() -> {
-                            "**${project.name}**: ${project.description}"
-                        }
+                    !project.description.isNullOrBlank() -> {
+                        "**${project.name}**: ${project.description}"
+                    }
 
-                        else -> {
-                            "**${project.name}**: ${project.languages.joinToString(", ")} project"
-                        }
+                    else -> {
+                        "**${project.name}**: ${project.languages.joinToString(", ")} project"
                     }
                 }
+            }
 
-            // Generate short description
-            val shortDescription = generateClientShortDescription(client, projects, projectDescriptions)
+        // Generate short description
+        val shortDescription = generateClientShortDescription(client, projects, projectDescriptions)
 
-            // Generate full description
-            val fullDescription = generateClientFullDescription(client, projects, projectDescriptions, shortDescription)
+        // Generate full description
+        val fullDescription = generateClientFullDescription(client, projects, projectDescriptions, shortDescription)
 
-            return ClientDescriptionResult(shortDescription, fullDescription, projects.size)
-        } catch (e: Exception) {
-            logger.error(e) { "Failed to generate client descriptions for: ${client.name}" }
-            return ClientDescriptionResult("", "", 0)
-        }
+        return ClientDescriptionResult(shortDescription, fullDescription, projects.size)
     }
 
     /**
@@ -136,49 +132,28 @@ class ClientIndexingService(
         projects: List<ProjectDocument>,
         projectDescriptions: List<String>,
     ): String {
-        val userPrompt =
-            buildString {
-                appendLine("Create a short description for this client organization:")
-                appendLine()
-                appendLine("Client Name: ${client.name}")
-                if (!client.description.isNullOrBlank()) {
-                    appendLine("Client Description: ${client.description}")
-                }
-                appendLine("Number of Projects: ${projects.size}")
-                appendLine()
-                appendLine("Project Portfolio:")
-                projectDescriptions.take(5).forEach { desc ->
-                    val summary =
-                        if (desc.length > 300) {
-                            desc.take(300) + "..."
-                        } else {
-                            desc
-                        }
-                    appendLine("• $summary")
-                }
-
-                if (projects.size > 5) {
-                    appendLine("... and ${projects.size - 5} more projects")
-                }
-
-                appendLine()
-                appendLine("Technology Overview:")
-                val allLanguages = projects.flatMap { it.languages }.distinct()
-                appendLine("• Languages: ${allLanguages.joinToString(", ")}")
-
-                appendLine()
-                appendLine("Generate a concise, professional short description that captures this client's business and technical profile.")
+        val allLanguages = projects.flatMap { it.languages }.distinct()
+        val projectSummaries =
+            projectDescriptions.take(5).map { desc ->
+                if (desc.length > 300) desc.take(300) + "..." else desc
             }
 
         val llmResponse =
             llmGateway.callLlm(
                 type = PromptTypeEnum.CLIENT_DESCRIPTION_SHORT,
-                responseSchema = LlmResponseWrapper(),
+                responseSchema = ClientShortDescriptionResponse(),
                 quick = false,
-                mappingValue = mapOf("clientAnalysisData" to userPrompt),
+                mappingValue =
+                    mapOf(
+                        "clientName" to client.name,
+                        "clientDescription" to (client.description ?: ""),
+                        "projectCount" to projects.size.toString(),
+                        "projectSummaries" to projectSummaries.joinToString(", ", "• "),
+                        "technologies" to allLanguages.joinToString(", "),
+                    ),
             )
 
-        return llmResponse.response.trim()
+        return llmResponse.result.shortDescription.trim()
     }
 
     /**
@@ -190,48 +165,30 @@ class ClientIndexingService(
         projectDescriptions: List<String>,
         shortDescription: String,
     ): String {
-        val userPrompt =
-            buildString {
-                appendLine("Create a comprehensive business and technical description for this client organization:")
-                appendLine()
-                appendLine("Client Name: ${client.name}")
-                if (!client.description.isNullOrBlank()) {
-                    appendLine("Client Description: ${client.description}")
-                }
-                appendLine("Short Description: $shortDescription")
-                appendLine("Total Projects: ${projects.size}")
-                appendLine()
-
-                appendLine("Complete Project Portfolio Analysis:")
-                appendLine("=".repeat(60))
-                projectDescriptions.forEachIndexed { index, desc ->
-                    appendLine("Project ${index + 1}:")
-                    appendLine(desc)
-                    appendLine()
-                    appendLine("-".repeat(40))
-                }
-
-                appendLine()
-                appendLine("Technical Profile:")
-                val allLanguages = projects.flatMap { it.languages }.distinct()
-                appendLine("• Programming Languages: ${allLanguages.joinToString(", ")}")
-                appendLine("• Active Projects: ${projects.count { !it.isDisabled }}")
-                appendLine("• Total Codebase Projects: ${projects.size}")
-
-                val projectPaths = projects.map { it.path }.filter { it.isNotBlank() }
-                appendLine("• Managed Repositories: ${projectPaths.size}")
-
-                appendLine()
-                appendLine("Generate a comprehensive client organization description with the sections outlined above.")
-                appendLine("Focus on business insights and technical capabilities that would be valuable for strategic planning.")
-            }
+        val allLanguages = projects.flatMap { it.languages }.distinct()
+        val projectPaths = projects.map { it.path }.filter { it.isNotBlank() }
+        val portfolioAnalysis =
+            projectDescriptions
+                .mapIndexed { index, desc ->
+                    "Project ${index + 1}:\n$desc"
+                }.joinToString("\n\n" + "-".repeat(40) + "\n\n")
 
         val llmResponse =
             llmGateway.callLlm(
                 type = PromptTypeEnum.CLIENT_DESCRIPTION_FULL,
-                responseSchema = LlmResponseWrapper(),
+                responseSchema = ClientFullDescriptionResponse(),
                 quick = false,
-                mappingValue = mapOf("clientAnalysisData" to userPrompt),
+                mappingValue =
+                    mapOf(
+                        "clientName" to client.name,
+                        "clientDescription" to (client.description ?: ""),
+                        "shortDescription" to shortDescription,
+                        "totalProjects" to projects.size.toString(),
+                        "portfolioAnalysis" to portfolioAnalysis,
+                        "programmingLanguages" to allLanguages.joinToString(", "),
+                        "activeProjects" to projects.count { !it.isDisabled }.toString(),
+                        "managedRepositories" to projectPaths.size.toString(),
+                    ),
             )
 
         return buildString {
@@ -239,12 +196,12 @@ class ClientIndexingService(
             appendLine()
             appendLine("**Total Projects:** ${projects.size}")
             appendLine("**Active Projects:** ${projects.count { !it.isDisabled }}")
-            appendLine("**Technology Stack:** ${projects.flatMap { it.languages }.distinct().joinToString(", ")}")
+            appendLine("**Technology Stack:** ${allLanguages.joinToString(", ")}")
             appendLine("**Generated:** ${java.time.Instant.now()}")
             appendLine()
             appendLine("---")
             appendLine()
-            appendLine(llmResponse.response)
+            appendLine(llmResponse.result.fullDescription)
             appendLine()
             appendLine("---")
             appendLine(

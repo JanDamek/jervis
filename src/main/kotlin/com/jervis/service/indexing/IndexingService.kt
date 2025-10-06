@@ -32,8 +32,7 @@ class IndexingService(
     private val gitHistoryIndexingService: GitHistoryIndexingService,
     private val clientIndexingService: ClientIndexingService,
     private val historicalVersioningService: HistoricalVersioningService,
-    private val documentationIndexingService: DocumentationIndexingService,
-    private val meetingTranscriptIndexingService: MeetingTranscriptIndexingService,
+    private val documentIndexingService: DocumentIndexingService,
     private val indexingMonitorService: IndexingMonitorService,
     private val indexingPipelineService: IndexingPipelineService,
 ) {
@@ -133,7 +132,7 @@ class IndexingService(
                         }
                     }
 
-                // Documentation pipeline
+                // Unified document indexing (documentation and meeting transcripts)
                 parallelTasks +=
                     async {
                         try {
@@ -141,15 +140,15 @@ class IndexingService(
                                 project.id,
                                 com.jervis.service.indexing.monitoring.IndexingStepType.DOCUMENTATION,
                                 com.jervis.service.indexing.monitoring.IndexingStepStatus.RUNNING,
-                                message = "Indexing project documentation",
+                                message = "Indexing all project documents (documentation and meetings)",
                             )
-                            val result = documentationIndexingService.indexProjectDocumentation(project)
+                            val result = documentIndexingService.indexProjectDocuments(project)
                             indexingMonitorService.updateStepProgress(
                                 project.id,
                                 com.jervis.service.indexing.monitoring.IndexingStepType.DOCUMENTATION,
                                 com.jervis.service.indexing.monitoring.IndexingStepStatus.COMPLETED,
                                 message =
-                                    "Documentation indexed (processed=${result.processedDocuments}, " +
+                                    "All documents indexed (processed=${result.processedDocuments}, " +
                                         "skipped=${result.skippedDocuments}, errors=${result.errorDocuments})",
                             )
                             result
@@ -158,38 +157,7 @@ class IndexingService(
                                 project.id,
                                 com.jervis.service.indexing.monitoring.IndexingStepType.DOCUMENTATION,
                                 com.jervis.service.indexing.monitoring.IndexingStepStatus.FAILED,
-                                errorMessage = "Documentation indexing failed: ${e.message}",
-                            )
-                            throw e
-                        }
-                    }
-
-                // Meeting transcripts pipeline
-                parallelTasks +=
-                    async {
-                        try {
-                            indexingMonitorService.updateStepProgress(
-                                project.id,
-                                com.jervis.service.indexing.monitoring.IndexingStepType.MEETING_TRANSCRIPTS,
-                                com.jervis.service.indexing.monitoring.IndexingStepStatus.RUNNING,
-                                message = "Indexing meeting transcripts",
-                            )
-                            val result = meetingTranscriptIndexingService.indexProjectMeetingTranscripts(project)
-                            indexingMonitorService.updateStepProgress(
-                                project.id,
-                                com.jervis.service.indexing.monitoring.IndexingStepType.MEETING_TRANSCRIPTS,
-                                com.jervis.service.indexing.monitoring.IndexingStepStatus.COMPLETED,
-                                message =
-                                    "Meeting transcripts indexed (processed=${result.processedTranscripts}, " +
-                                        "skipped=${result.skippedTranscripts}, errors=${result.errorTranscripts})",
-                            )
-                            result
-                        } catch (e: Exception) {
-                            indexingMonitorService.updateStepProgress(
-                                project.id,
-                                com.jervis.service.indexing.monitoring.IndexingStepType.MEETING_TRANSCRIPTS,
-                                com.jervis.service.indexing.monitoring.IndexingStepStatus.FAILED,
-                                errorMessage = "Meeting transcripts indexing failed: ${e.message}",
+                                errorMessage = "Unified document indexing failed: ${e.message}",
                             )
                             throw e
                         }

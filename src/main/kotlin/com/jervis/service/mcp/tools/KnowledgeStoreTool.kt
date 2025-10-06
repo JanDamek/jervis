@@ -32,7 +32,7 @@ class KnowledgeStoreTool(
         private val logger = KotlinLogging.logger {}
     }
 
-    override val name: PromptTypeEnum = PromptTypeEnum.KNOWLEDGE_STORE
+    override val name: PromptTypeEnum = PromptTypeEnum.KNOWLEDGE_STORE_TOOL
 
     @Serializable
     data class KnowledgeStoreParams(
@@ -48,13 +48,16 @@ class KnowledgeStoreTool(
     ): KnowledgeStoreParams {
         val llmResponse =
             llmGateway.callLlm(
-                type = PromptTypeEnum.KNOWLEDGE_STORE,
-                mappingValue = mapOf("taskDescription" to taskDescription),
+                type = PromptTypeEnum.KNOWLEDGE_STORE_TOOL,
+                mappingValue =
+                    mapOf(
+                        "taskDescription" to taskDescription,
+                        "stepContext" to stepContext,
+                    ),
                 quick = context.quick,
                 responseSchema = KnowledgeStoreParams(),
-                stepContext = stepContext,
             )
-        return llmResponse
+        return llmResponse.result
     }
 
     override suspend fun execute(

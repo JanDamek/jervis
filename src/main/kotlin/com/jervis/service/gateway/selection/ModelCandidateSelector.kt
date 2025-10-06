@@ -48,7 +48,7 @@ class ModelCandidateSelector(
 
         val selectedModels =
             capacityFilteredModels.ifEmpty {
-                listOf(quickFilteredModels.maxByOrNull { it.maxTokens ?: 0 }!!)
+                listOf(quickFilteredModels.maxByOrNull { it.contextLength ?: 0 }!!)
             }
 
         return selectedModels.asFlow()
@@ -60,5 +60,5 @@ class ModelCandidateSelector(
     private fun hasCapacityForTokens(
         candidate: ModelsProperties.ModelDetail,
         estimatedTokens: Int,
-    ): Boolean = candidate.maxTokens?.let { maxTokens -> maxTokens >= estimatedTokens } ?: true
+    ): Boolean = candidate.contextLength?.let { maxTokens -> maxTokens >= estimatedTokens } ?: true
 }

@@ -18,7 +18,7 @@ class CommunicationEmailTool(
 ) : McpTool {
     private val logger = KotlinLogging.logger {}
 
-    override val name: PromptTypeEnum = PromptTypeEnum.COMMUNICATION_EMAIL
+    override val name: PromptTypeEnum = PromptTypeEnum.COMMUNICATION_EMAIL_TOOL
 
     @Serializable
     data class CommunicationEmailParams(
@@ -34,14 +34,17 @@ class CommunicationEmailTool(
     ): CommunicationEmailParams {
         val llmResponse =
             llmGateway.callLlm(
-                type = PromptTypeEnum.COMMUNICATION_EMAIL,
+                type = PromptTypeEnum.COMMUNICATION_EMAIL_TOOL,
                 responseSchema = CommunicationEmailParams(),
                 quick = context.quick,
-                mappingValue = mapOf("taskDescription" to taskDescription),
-                stepContext = stepContext,
+                mappingValue =
+                    mapOf(
+                        "taskDescription" to taskDescription,
+                        "stepContext" to stepContext,
+                    ),
             )
 
-        return llmResponse
+        return llmResponse.result
     }
 
     override suspend fun execute(

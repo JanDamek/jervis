@@ -1,21 +1,30 @@
 package com.jervis.service.gateway.clients
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.jervis.configuration.ModelsProperties
 import com.jervis.configuration.prompts.PromptConfigBase
 import com.jervis.configuration.prompts.PromptsConfiguration
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProvider
+import com.jervis.service.debug.DesktopDebugWindowService
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.reactive.asFlow
+import mu.KotlinLogging
 import org.springframework.beans.factory.annotation.Qualifier
+import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
-import org.springframework.web.reactive.function.client.awaitBody
 
 @Service
 class OllamaClient(
     @Qualifier("ollamaWebClient") private val webClient: WebClient,
     private val promptsConfiguration: PromptsConfiguration,
+    private val debugWindowService: DesktopDebugWindowService,
 ) : ProviderClient {
+    private val logger = KotlinLogging.logger {}
+
     override val provider: ModelProvider = ModelProvider.OLLAMA
 
     override suspend fun call(
@@ -24,25 +33,117 @@ class OllamaClient(
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
         prompt: PromptConfigBase,
+        estimatedTokens: Int,
     ): LlmResponse {
-        val creativityConfig = getCreativityConfig(prompt)
-        val options = buildOptions(creativityConfig, config)
-        val requestBody = buildRequestBody(model, userPrompt, systemPrompt, options)
+        // Use streaming implementation and collect the full response
+        val responseBuilder = StringBuilder()
+        var finalMetadata: Map<String, Any> = emptyMap()
 
-        val response: OllamaGenerateResponse =
-            webClient
-                .post()
-                .uri("/api/generate")
-                .bodyValue(requestBody)
-                .retrieve()
-                .awaitBody()
+        callWithStreaming(model, systemPrompt, userPrompt, config, prompt, estimatedTokens, null)
+            .collect { chunk ->
+                responseBuilder.append(chunk.content)
+                if (chunk.isComplete) {
+                    finalMetadata = chunk.metadata
+                }
+            }
 
-        return parseResponse(response, model)
+        return LlmResponse(
+            answer = responseBuilder.toString(),
+            model = finalMetadata["model"] as? String ?: model,
+            promptTokens = finalMetadata["prompt_tokens"] as? Int ?: 0,
+            completionTokens = finalMetadata["completion_tokens"] as? Int ?: 0,
+            totalTokens = finalMetadata["total_tokens"] as? Int ?: 0,
+            finishReason = finalMetadata["finish_reason"] as? String ?: "stop",
+        )
     }
+
+    override suspend fun callWithStreaming(
+        model: String,
+        systemPrompt: String?,
+        userPrompt: String,
+        config: ModelsProperties.ModelDetail,
+        prompt: PromptConfigBase,
+        estimatedTokens: Int,
+        debugSessionId: String?,
+    ): Flow<StreamChunk> =
+        flow {
+            val creativityConfig = getCreativityConfig(prompt)
+            val options = buildOptions(creativityConfig, config, estimatedTokens)
+            val requestBody = buildRequestBody(model, userPrompt, systemPrompt, options)
+
+            logger.debug { "Sending streaming request to ollama: $requestBody" }
+
+            val responseFlow =
+                webClient
+                    .post()
+                    .uri("/api/generate")
+                    .bodyValue(requestBody)
+                    .accept(MediaType.TEXT_EVENT_STREAM)
+                    .retrieve()
+                    .bodyToFlux(String::class.java)
+                    .asFlow()
+
+            val responseBuilder = StringBuilder()
+            var totalPromptTokens = 0
+            var totalCompletionTokens = 0
+            var finalModel = model
+            var finishReason = "stop"
+
+            responseFlow.collect { line ->
+                if (line.isNotBlank()) {
+                    try {
+                        val mapper = jacksonObjectMapper()
+                        val jsonNode = mapper.readTree(line)
+
+                        val content = jsonNode.get("response")?.asText() ?: ""
+                        val isDone = jsonNode.get("done")?.asBoolean() ?: false
+
+                        if (content.isNotEmpty()) {
+                            responseBuilder.append(content)
+
+                            // Update debug window if session is active
+                            debugSessionId?.let { sessionId ->
+                                debugWindowService.appendResponse(sessionId, content)
+                            }
+
+                            emit(StreamChunk(content = content, isComplete = false))
+                        }
+
+                        if (isDone) {
+                            // Extract final metadata
+                            totalPromptTokens = jsonNode.get("prompt_eval_count")?.asInt() ?: 0
+                            totalCompletionTokens = jsonNode.get("eval_count")?.asInt() ?: 0
+                            finalModel = jsonNode.get("model")?.asText() ?: model
+                            finishReason = jsonNode.get("done_reason")?.asText() ?: "stop"
+
+                            // Emit final chunk with metadata
+                            emit(
+                                StreamChunk(
+                                    content = "",
+                                    isComplete = true,
+                                    metadata =
+                                        mapOf(
+                                            "model" to finalModel,
+                                            "prompt_tokens" to totalPromptTokens,
+                                            "completion_tokens" to totalCompletionTokens,
+                                            "total_tokens" to (totalPromptTokens + totalCompletionTokens),
+                                            "finish_reason" to finishReason,
+                                        ),
+                                ),
+                            )
+                        }
+                    } catch (e: Exception) {
+                        logger.error { "Error parsing Ollama streaming response: ${e.message}" }
+                        // Continue processing other chunks
+                    }
+                }
+            }
+        }
 
     private fun buildOptions(
         creativityConfig: com.jervis.configuration.prompts.CreativityConfig,
         config: ModelsProperties.ModelDetail,
+        estimatedTokens: Int,
     ): Map<String, Any> {
         val temperatureOption =
             creativityConfig.temperature
@@ -56,13 +157,27 @@ class OllamaClient(
                 ?.let { mapOf("top_p" to it) }
                 ?: emptyMap()
 
-        val maxTokensOption =
-            config.maxTokens
-                ?.takeIf { it > 0 }
-                ?.let { mapOf("num_predict" to it) }
-                ?: emptyMap()
+        // num_predict: Maximum tokens for response (from configuration, default 4096)
+        val numPredict = config.numPredict ?: 4096
+        val maxTokensOption = mapOf("num_predict" to numPredict)
 
-        return temperatureOption + topPOption + maxTokensOption
+        // num_ctx: Total context window = input + output (calculated dynamically)
+        val numCtx = estimatedTokens + numPredict
+        val contextLength = config.contextLength ?: 32768
+
+        // Validate: num_ctx should not exceed model's maximum capacity
+        val finalNumCtx = minOf(numCtx, contextLength)
+
+        if (numCtx > contextLength) {
+            logger.warn {
+                "Calculated num_ctx ($numCtx = $estimatedTokens input + $numPredict output) " +
+                    "exceeds model capacity ($contextLength). Capping at $finalNumCtx."
+            }
+        }
+
+        val contextLengthOption = mapOf("num_ctx" to finalNumCtx)
+
+        return temperatureOption + topPOption + maxTokensOption + contextLengthOption
     }
 
     private fun buildRequestBody(
@@ -75,7 +190,7 @@ class OllamaClient(
             mapOf(
                 "model" to model,
                 "prompt" to userPrompt,
-                "stream" to false,
+                "stream" to true,
             )
 
         val systemField =

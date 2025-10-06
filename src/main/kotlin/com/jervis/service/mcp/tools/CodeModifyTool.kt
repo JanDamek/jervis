@@ -23,7 +23,7 @@ class CodeModifyTool(
         private val logger = KotlinLogging.logger {}
     }
 
-    override val name: PromptTypeEnum = PromptTypeEnum.CODE_MODIFY
+    override val name: PromptTypeEnum = PromptTypeEnum.CODE_MODIFY_TOOL
 
     @Serializable
     data class CodeModifyParams(
@@ -39,18 +39,20 @@ class CodeModifyTool(
     ): CodeModifyParams {
         val llmResponse =
             llmGateway.callLlm(
-                type = PromptTypeEnum.CODE_MODIFY,
+                type = PromptTypeEnum.CODE_MODIFY_TOOL,
                 responseSchema = CodeModifyParams(),
                 quick = context.quick,
                 mappingValue =
                     mapOf(
                         "taskDescription" to taskDescription,
-                        "userPrompt" to taskDescription,
+                        "filePath" to "", // Will be extracted from taskDescription by LLM
+                        "language" to "kotlin", // Default to Kotlin for this project
+                        "requirements" to "", // Additional requirements will be extracted from taskDescription
+                        "stepContext" to stepContext,
                     ),
-                stepContext = stepContext,
             )
 
-        return llmResponse
+        return llmResponse.result
     }
 
     override suspend fun execute(

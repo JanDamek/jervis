@@ -33,7 +33,7 @@ class DocumentExtractTextTool(
         private val logger = KotlinLogging.logger {}
     }
 
-    override val name: PromptTypeEnum = PromptTypeEnum.DOCUMENT_EXTRACT_TEXT
+    override val name: PromptTypeEnum = PromptTypeEnum.DOCUMENT_EXTRACT_TEXT_TOOL
 
     @Serializable
     data class DocumentExtractTextParams(
@@ -47,13 +47,16 @@ class DocumentExtractTextTool(
     ): DocumentExtractTextParams {
         val llmResponse =
             llmGateway.callLlm(
-                type = PromptTypeEnum.DOCUMENT_EXTRACT_TEXT,
-                mappingValue = mapOf("taskDescription" to taskDescription),
+                type = PromptTypeEnum.DOCUMENT_EXTRACT_TEXT_TOOL,
+                mappingValue =
+                    mapOf(
+                        "taskDescription" to taskDescription,
+                        "stepContext" to stepContext,
+                    ),
                 quick = context.quick,
                 responseSchema = DocumentExtractTextParams(),
-                stepContext = stepContext,
             )
-        return llmResponse
+        return llmResponse.result
     }
 
     override suspend fun execute(

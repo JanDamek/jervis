@@ -13,9 +13,10 @@ class ModelsProperties {
     data class ModelDetail(
         var provider: ModelProvider? = null,
         var model: String = "",
-        var maxTokens: Int? = null,
+        var contextLength: Int? = null,
         var concurrency: Int? = null,
         var quick: Boolean = false,
         var dimension: Int? = null,
+        var numPredict: Int? = null, // Ollama max tokens to predict (output only)
     )
 }

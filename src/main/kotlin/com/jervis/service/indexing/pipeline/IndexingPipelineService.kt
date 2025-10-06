@@ -11,8 +11,7 @@ import com.jervis.service.analysis.JoernAnalysisService
 import com.jervis.service.analysis.JoernResultParser
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.gateway.core.LlmGateway
-import com.jervis.service.gateway.processing.TokenEstimationService
-import com.jervis.service.gateway.processing.dto.LlmResponseWrapper
+import com.jervis.service.indexing.dto.TextChunksResponse
 import com.jervis.service.indexing.monitoring.IndexingMonitorService
 import com.jervis.service.indexing.monitoring.IndexingProgress
 import com.jervis.service.indexing.monitoring.IndexingStepStatus
@@ -41,13 +40,11 @@ class IndexingPipelineService(
     private val llmGateway: LlmGateway,
     private val indexingMonitorService: IndexingMonitorService,
     private val ragIndexingStatusService: RagIndexingStatusService,
-    private val tokenEstimationService: TokenEstimationService,
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
         private const val CHANNEL_BUFFER_SIZE = 100
         private const val CONSUMER_CONCURRENCY = 4
-        private const val MAX_LLM_SUMMARY_TOKENS = 300
     }
 
     /**
@@ -288,9 +285,10 @@ class IndexingPipelineService(
 
                                 // Send method for text summary embedding only if beneficial
                                 if (shouldGenerateTextSummary(analysisItem.symbol.type)) {
-                                    generateMethodSummary(analysisItem)?.let {
+                                    val chunks = generateMethodSummary(analysisItem)
+                                    chunks.forEach { chunk ->
                                         textEmbeddingChannel.send(
-                                            TextEmbeddingTask(analysisItem, it),
+                                            TextEmbeddingTask(analysisItem, chunk),
                                         )
                                         itemsAdded++
                                     }
@@ -468,21 +466,29 @@ class IndexingPipelineService(
 
         try {
             for (classTask in inputChannel) {
-                // Process class analysis and generate embedding
-                val classSummary = generateClassSummary(classTask.classSymbol)
-                classSummary?.let {
-                    val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, it)
+                // Process class analysis and generate embedding for each chunk
+                val chunks = generateClassSummary(classTask.classSymbol)
+                val totalChunks = chunks.size
+
+                chunks.forEachIndexed { index, chunk ->
+                    val startTime = System.currentTimeMillis()
+                    val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, chunk)
 
                     val pipelineItem =
                         EmbeddingPipelineItem(
                             analysisItem = classTask.analysisItem,
-                            content = classSummary,
+                            content = chunk,
                             embedding = embedding,
                             embeddingType = ModelType.EMBEDDING_TEXT,
-                            processingTimeMs = System.currentTimeMillis() - classTask.analysisItem.timestamp,
+                            processingTimeMs = System.currentTimeMillis() - startTime,
+                            chunkIndex = index,
+                            totalChunks = totalChunks,
                         )
 
                     outputChannel.send(pipelineItem)
+                }
+
+                if (chunks.isNotEmpty()) {
                     processedClasses++
                 }
             }
@@ -656,70 +662,46 @@ class IndexingPipelineService(
      * Create Joern script for symbol extraction for a specific file using template
      */
 
-    private suspend fun generateMethodSummary(analysisItem: JoernAnalysisItem): String? {
-        // Generate method summary using LLM with token limit and chunking
-        return try {
-            return analysisItem.symbol.code?.let {
-                val llmResponse =
-                    llmGateway
-                        .callLlm(
-                            type = PromptTypeEnum.METHOD_SUMMARY,
-                            responseSchema = LlmResponseWrapper(),
-                            quick = false,
-                            mappingValue =
-                                mapOf(
-                                    "methodName" to analysisItem.symbol.name,
-                                    "methodSignature" to "${analysisItem.symbol.name}()",
-                                    "parentClass" to (analysisItem.symbol.parentClass ?: "Unknown"),
-                                    "filePath" to analysisItem.symbol.filePath,
-                                    "code" to it,
-                                ),
-                        ).response
+    private suspend fun generateMethodSummary(analysisItem: JoernAnalysisItem): List<String> =
+        try {
+            analysisItem.symbol.code?.let { code ->
+                val response =
+                    llmGateway.callLlm(
+                        type = PromptTypeEnum.METHOD_SUMMARY,
+                        responseSchema = TextChunksResponse(),
+                        quick = false,
+                        mappingValue =
+                            mapOf(
+                                "parentClass" to (analysisItem.symbol.parentClass ?: "Unknown"),
+                                "code" to code,
+                            ),
+                    )
 
-                // Check token limit and chunk if necessary
-                tokenEstimationService.processLlmOutputWithTokenLimit(
-                    llmResponse,
-                    "method ${analysisItem.symbol.name}",
-                    MAX_LLM_SUMMARY_TOKENS,
-                )
-            }
+                response.result.chunks.filter { it.isNotBlank() }
+            } ?: emptyList()
         } catch (e: Exception) {
-            logger.warn(e) { "Failed to generate method summary for ${analysisItem.symbol.name}" }
-            "Method ${analysisItem.symbol.name} in class ${analysisItem.symbol.parentClass}"
+            logger.warn(e) { "Failed to generate method summary chunks for ${analysisItem.symbol.name}" }
+            throw e
         }
-    }
 
-    private suspend fun generateClassSummary(classSymbol: JoernSymbol): String? {
-        // Generate class summary using LLM with token limit and chunking
-        return try {
-            classSymbol.code?.let {
-                val llmResponse =
-                    llmGateway
-                        .callLlm(
-                            type = PromptTypeEnum.CLASS_SUMMARY,
-                            responseSchema = LlmResponseWrapper(),
-                            quick = false,
-                            mappingValue =
-                                mapOf(
-                                    "className" to classSymbol.name,
-                                    "filePath" to classSymbol.filePath,
-                                    "code" to it,
-                                    "relations" to "",
-                                ),
-                        ).response
+    private suspend fun generateClassSummary(classSymbol: JoernSymbol): List<String> =
+        try {
+            classSymbol.code?.let { code ->
+                val response =
+                    llmGateway.callLlm(
+                        type = PromptTypeEnum.CLASS_SUMMARY,
+                        responseSchema =
+                            TextChunksResponse(),
+                        quick = false,
+                        mappingValue = mapOf("code" to code),
+                    )
 
-                // Check token limit and chunk if necessary
-                tokenEstimationService.processLlmOutputWithTokenLimit(
-                    llmResponse,
-                    "class ${classSymbol.name}",
-                    MAX_LLM_SUMMARY_TOKENS,
-                )
-            }
+                response.result.chunks.filter { it.isNotBlank() }
+            } ?: emptyList()
         } catch (e: Exception) {
-            logger.warn(e) { "Failed to generate class summary for ${classSymbol.name}" }
-            "Class ${classSymbol.name} in file ${classSymbol.filePath}"
+            logger.warn(e) { "Failed to generate class summary chunks for ${classSymbol.name}" }
+            throw e
         }
-    }
 
     private fun createRagDocument(
         project: ProjectDocument,
@@ -743,6 +725,8 @@ class IndexingPipelineService(
                     lineEnd = symbol.lineEnd,
                     joernNodeId = symbol.nodeId,
                     symbolType = SymbolType.METHOD,
+                    chunkId = item.chunkIndex,
+                    chunkOf = item.totalChunks,
                 )
             }
 
@@ -760,6 +744,8 @@ class IndexingPipelineService(
                     lineStart = symbol.lineStart,
                     joernNodeId = symbol.nodeId,
                     symbolType = SymbolType.CLASS,
+                    chunkId = item.chunkIndex,
+                    chunkOf = item.totalChunks,
                 )
             }
 
@@ -773,6 +759,8 @@ class IndexingPipelineService(
                     language = symbol.language,
                     symbolName = symbol.name,
                     joernNodeId = symbol.nodeId,
+                    chunkId = item.chunkIndex,
+                    chunkOf = item.totalChunks,
                 )
             }
         }

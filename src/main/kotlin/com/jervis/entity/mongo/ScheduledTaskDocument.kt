@@ -9,26 +9,6 @@ import org.springframework.data.mongodb.core.mapping.Document
 import java.time.Instant
 
 /**
- * Status of scheduled tasks
- */
-enum class ScheduledTaskStatus {
-    /** Task is pending execution */
-    PENDING,
-
-    /** Task is currently running */
-    RUNNING,
-
-    /** Task completed successfully */
-    COMPLETED,
-
-    /** Task failed */
-    FAILED,
-
-    /** Task was cancelled */
-    CANCELLED,
-}
-
-/**
  * MongoDB document for managing scheduled tasks executed through planner.
  * All tasks are defined as text instructions that are executed by agents through MCP tools.
  */
@@ -42,7 +22,7 @@ data class ScheduledTaskDocument(
     val id: ObjectId = ObjectId.get(),
     @Indexed
     val projectId: ObjectId,
-    /** Task instruction to be executed through planner */
+    /** Task instruction to be executed through a planner */
     @Indexed
     val taskInstruction: String,
     /** Current task status */
@@ -75,4 +55,24 @@ data class ScheduledTaskDocument(
     val lastUpdatedAt: Instant = Instant.now(),
     /** User or system that created this task */
     val createdBy: String = "system",
-)
+) {
+    /**
+     * Status of scheduled tasks
+     */
+    enum class ScheduledTaskStatus {
+        /** Task is pending execution */
+        PENDING,
+
+        /** Task is currently running */
+        RUNNING,
+
+        /** Task completed successfully */
+        COMPLETED,
+
+        /** Task failed */
+        FAILED,
+
+        /** Task was cancelled */
+        CANCELLED,
+    }
+}

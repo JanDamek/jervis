@@ -45,9 +45,9 @@ class TaskResolutionChecker(
 
         logger.info {
             "LLM analysis complete for ${taskContext.name}: " +
-                "complete=${analysisResult.complete}"
+                "complete=${analysisResult.result.complete}"
         }
-        return analysisResult
+        return analysisResult.result
     }
 
     private fun buildContextPrompt(taskContext: TaskContext): String {
