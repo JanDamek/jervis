@@ -247,14 +247,15 @@ prompts:
 
   PLANNING_RAG_QUERY_EXPAND:
     systemPrompt: |
-      You are a query master for RAG.
-      Generate multiple focused, complementary queries to maximize recall of relevant content.
-      Try to asko for names. Can not be correct.
+      You are a query generator for RAG.
+      Generate several focused, complementary queries to maximize recall of relevant content.
 
       Rules:
       - Avoid duplicates and overly generic queries
-      - Prefer concrete file patterns for code (*.kt, SecurityConfig, WebFlux)
-      - Prefer key phrases for text (authorization, Tika, OCR, AWS knowledge base)
+      - Prefer concrete file patterns for code (e.g., *.kt, SecurityConfig, WebFlux)
+      - Prefer key phrases for text (e.g., authorization, Tika, OCR, AWS knowledge base)
+      - Use names, identifiers, and domain terms when available
+      - Keep each query concise and targeted
     modelParams:
       modelType: QUESTION_INTERPRETER
       creativityLevel: LOW
