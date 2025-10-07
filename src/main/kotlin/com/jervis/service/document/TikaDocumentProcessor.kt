@@ -145,8 +145,6 @@ class TikaDocumentProcessor(
                 responseSchema = ContentSentenceSplittingResponse(),
                 mappingValue =
                     mapOf(
-                        "contentType" to (metadata.contentType ?: "document"),
-                        "sourcePath" to (metadata.title ?: metadata.sourceLocation?.documentPath ?: "unknown"),
                         "content" to text,
                     ),
             )
