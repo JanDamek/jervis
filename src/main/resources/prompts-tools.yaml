@@ -124,6 +124,9 @@ tools:
       - If applicable, provide metadata such as source, language, module, path, packageName, className, methodName
     userPrompt: |
       Today is {currentDate}
+      
+      Task description: {taskDescription}
+      Step context: {stepContext}
 
     modelParams:
       modelType: RAG
