@@ -288,8 +288,6 @@ prompts:
     userPrompt: |
       Split the following content into atomic, standalone sentences for RAG indexing:
       
-      **Content Type:** {contentType}
-      **Source:** {sourcePath}
       **Content:**
       {content}
       
