@@ -97,24 +97,43 @@ class ContentSearchWebTool(
     private suspend fun performSearch(query: String): String {
         logger.debug { "CONTENT_SEARCH_WEB_QUERY: '$query'" }
 
-        val encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8)
-        val searchPath =
-            buildString {
-                append("/search")
-                append("?q=$encodedQuery")
-                append("&format=json")
-                append("&safesearch=1")
+        // Try multiple compatible endpoints/param names to support different search backends (SearxNG / OpenGX).
+        // Order is chosen to keep backward compatibility with SearxNG first.
+        val attempts = listOf(
+            SearchAttempt(path = "/search", param = "q"), // SearxNG classic
+            SearchAttempt(path = "/search", param = "query"), // some gateways expect 'query'
+            SearchAttempt(path = "/api/search", param = "q"), // alternative API prefix
+            SearchAttempt(path = "/opengx/search", param = "query"), // OpenGX style (heuristic)
+        )
+
+        var lastError: Throwable? = null
+        for (attempt in attempts) {
+            runCatching {
+                val response =
+                    webClient
+                        .get()
+                        .uri { uriBuilder ->
+                            uriBuilder
+                                .path(attempt.path)
+                                .queryParam(attempt.param, query)
+                                .queryParam("format", "json")
+                                .queryParam("safesearch", "1")
+                                .build()
+                        }.retrieve()
+                        .awaitBody<SearxngResponse>()
+
+                logger.info { "CONTENT_SEARCH_WEB_ENDPOINT_OK: path='${attempt.path}', param='${attempt.param}'" }
+                return formatSearchResults(query, response)
+            }.onFailure { ex ->
+                lastError = ex
+                logger.warn { "CONTENT_SEARCH_WEB_ENDPOINT_FAIL: path='${attempt.path}', param='${attempt.param}', error='${ex.message}'" }
             }
+        }
 
-        val response =
-            webClient
-                .get()
-                .uri(searchPath)
-                .retrieve()
-                .awaitBody<SearxngResponse>()
-
-        return formatSearchResults(query, response)
+        throw IllegalStateException("All search endpoint attempts failed for query: '$query'", lastError)
     }
+
+    private data class SearchAttempt(val path: String, val param: String)
 
     private fun formatSearchResults(
         query: String,
