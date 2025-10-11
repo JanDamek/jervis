@@ -194,3 +194,24 @@ connection-pools:
     max-life-time-minutes: 60
     max-idle-time-minutes: 30
 
+
+
+# Audio processing configuration
+audio:
+  monitoring:
+    default-git-check-interval-minutes: 15
+    default-whisper-model: base
+    max-file-size-mb: 100
+    supported-formats:
+      - wav
+      - mp3
+      - m4a
+      - flac
+      - ogg
+      - opus
+      - webm
+
+  whisper:
+    api-url: ${WHISPER_API_URL:http://192.168.100.117:9000/}
+    timeout-seconds: 300
+    max-retries: 3
