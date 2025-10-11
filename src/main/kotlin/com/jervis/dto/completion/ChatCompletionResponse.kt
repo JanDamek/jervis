@@ -2,7 +2,9 @@ package com.jervis.dto.completion
 
 import com.jervis.dto.Choice
 import com.jervis.dto.Usage
+import kotlinx.serialization.Serializable
 
+@Serializable
 data class ChatCompletionResponse(
     override val id: String,
     override val `object`: String,
