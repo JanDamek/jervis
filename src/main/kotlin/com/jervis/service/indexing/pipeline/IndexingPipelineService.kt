@@ -27,6 +27,7 @@ import kotlinx.coroutines.coroutineScope
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.nio.file.Path
+import java.security.MessageDigest
 
 /**
  * Pipeline-based indexing service using Kotlin Channels for streaming processing.
@@ -251,6 +252,9 @@ class IndexingPipelineService(
         val textEmbeddingChannel = Channel<TextEmbeddingTask>(CHANNEL_BUFFER_SIZE)
         val classAnalysisChannel = Channel<ClassAnalysisTask>(CHANNEL_BUFFER_SIZE)
 
+        // Track files we have already cleaned in this run (avoid repeated deletions)
+        val cleanedFiles = mutableSetOf<String>()
+
         try {
             // Splitter: Route Joern results to appropriate processors
             val splitter =
@@ -265,6 +269,16 @@ class IndexingPipelineService(
                                 "PIPELINE_SPLITTER: Skipping ${analysisItem.symbol.name} - content unchanged"
                             }
                             continue
+                        }
+
+                        // Ensure old vectors for this source file are removed before (re)indexing
+                        val filePath = analysisItem.symbol.filePath
+                        if (cleanedFiles.add(filePath)) {
+                            try {
+                                deleteVectorsForFile(project, filePath)
+                            } catch (e: Exception) {
+                                logger.warn(e) { "PIPELINE_SPLITTER: Failed to delete old vectors for $filePath" }
+                            }
                         }
 
                         when (analysisItem.symbol.type) {
@@ -510,8 +524,8 @@ class IndexingPipelineService(
     ) = coroutineScope {
         logger.info { "PIPELINE_STORAGE: Starting vector storage processor" }
 
-        // Track vector IDs per source file for indexing completion updates
-        val fileVectorIds = mutableMapOf<String, MutableList<String>>()
+        // Track indexed content per source file for indexing completion updates
+        val fileIndexedContent = mutableMapOf<String, MutableList<RagIndexingStatusDocument.IndexedContentInfo>>()
 
         // Log under code_files
         indexingMonitorService.addStepLog(
@@ -542,10 +556,17 @@ class IndexingPipelineService(
                                 // Store to vector database and capture vector ID
                                 val vectorId = vectorStorage.store(item.embeddingType, ragDocument, item.embedding)
 
-                                // Track vector ID per file
+                                // Track indexed info per file
                                 val filePath = item.analysisItem.symbol.filePath
-                                synchronized(fileVectorIds) {
-                                    fileVectorIds.getOrPut(filePath) { mutableListOf() }.add(vectorId)
+                                val contentHash = computeSha256(item.content)
+                                val info = RagIndexingStatusDocument.IndexedContentInfo(
+                                    vectorStoreId = vectorId,
+                                    contentHash = contentHash,
+                                    contentLength = item.content.length,
+                                    description = "Indexed symbol from $filePath",
+                                )
+                                synchronized(fileIndexedContent) {
+                                    fileIndexedContent.getOrPut(filePath) { mutableListOf() }.add(info)
                                 }
 
                                 // Report success (to collector) and log target
@@ -592,20 +613,13 @@ class IndexingPipelineService(
             totalErrors = workerResults.sumOf { it.second }
 
             // After storage completes, update indexing status per file with collected vector IDs
-            fileVectorIds.forEach { (filePath, vectorIds) ->
+            fileIndexedContent.forEach { (filePath, contents) ->
                 try {
                     ragIndexingStatusService.completeIndexing(
                         projectId = project.id,
                         filePath = filePath,
                         gitCommitHash = "current", // TODO: supply real commit hash from context
-                        vectorStoreIds = vectorIds.map { id ->
-                            RagIndexingStatusDocument.IndexedContentInfo(
-                                vectorStoreId = id,
-                                contentHash = "",
-                                contentLength = 0,
-                                description = "Indexed symbol from $filePath",
-                            )
-                        },
+                        vectorStoreIds = contents,
                     )
                 } catch (e: Exception) {
                     logger.error(e) { "Failed to mark indexing complete for $filePath" }
@@ -758,6 +772,7 @@ class IndexingPipelineService(
                     symbolType = SymbolType.METHOD,
                     chunkId = item.chunkIndex,
                     chunkOf = item.totalChunks,
+                    gitCommitHash = "current",
                 )
             }
 
@@ -777,6 +792,7 @@ class IndexingPipelineService(
                     symbolType = SymbolType.CLASS,
                     chunkId = item.chunkIndex,
                     chunkOf = item.totalChunks,
+                    gitCommitHash = "current",
                 )
             }
 
@@ -792,6 +808,7 @@ class IndexingPipelineService(
                     joernNodeId = symbol.nodeId,
                     chunkId = item.chunkIndex,
                     chunkOf = item.totalChunks,
+                    gitCommitHash = "current",
                 )
             }
         }
@@ -842,6 +859,29 @@ class IndexingPipelineService(
             append(symbol.name)
             symbol.parentClass?.let { append(" (class $it)") }
         }
+
+    /**
+     * Delete all existing vectors for a given source file prior to re-indexing.
+     * Uses projectId and path filter, without relying on gitCommitHash.
+     */
+    private suspend fun deleteVectorsForFile(project: ProjectDocument, filePath: String) {
+        val filter = mapOf(
+            "projectId" to project.id.toString(),
+            "path" to filePath,
+        )
+        val deletedText = vectorStorage.deleteByFilter(ModelType.EMBEDDING_TEXT, filter)
+        val deletedCode = vectorStorage.deleteByFilter(ModelType.EMBEDDING_CODE, filter)
+        logger.info { "PIPELINE_CLEANUP: Deleted old vectors for $filePath (text=$deletedText, code=$deletedCode)" }
+    }
+
+    /**
+     * Compute SHA-256 hash of a text content, used for per-chunk content tracking.
+     */
+    private fun computeSha256(text: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val bytes = digest.digest(text.toByteArray(Charsets.UTF_8))
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
 
     /**
      * Check if symbol should be processed based on content hash to avoid redundant work
