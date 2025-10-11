@@ -109,5 +109,10 @@ For the full rule set and rationale, see .junie/guidelines.md.
 
 ## Notes
 
+---
+
+## Server–User Component Split
+
+See docs/architecture.md for the architecture diagram, API contract (/api/v0), and rationale for the separation between the Server (APIs/business logic) and User (UI/client) layers.
 - JavaFX client is optional; current focus is the Spring Boot server with Kotlin-first coroutines.
 - MCP integration is via adapters; additional tools can be added over time.
