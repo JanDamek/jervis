@@ -1,10 +1,12 @@
 package com.jervis.dto
 
-import com.fasterxml.jackson.annotation.JsonProperty
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 
+@Serializable
 data class Choice(
-    override val index: Int,
+    val index: Int,
     val message: ChatMessage,
-    @JsonProperty("finish_reason")
-    override val finishReason: String?,
-) : BaseChoice(index, finishReason)
+    @SerialName("finish_reason")
+    val finishReason: String? = null,
+)

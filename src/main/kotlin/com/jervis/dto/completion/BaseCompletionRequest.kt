@@ -1,12 +1,14 @@
 package com.jervis.dto.completion
 
-import com.fasterxml.jackson.annotation.JsonProperty
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 
-// Base class for completion requests
+/** Base class for completion requests */
+@Serializable
 open class BaseCompletionRequest(
     open val model: String? = null,
     open val temperature: Double? = null,
-    @JsonProperty("max_tokens")
+    @SerialName("max_tokens")
     open val maxTokens: Int? = null,
     open val stream: Boolean? = null,
 )
