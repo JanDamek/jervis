@@ -44,13 +44,15 @@ class AudioTranscriptIndexingService(
     private val vectorStorage: VectorStorageRepository,
     private val ragIndexingStatusService: RagIndexingStatusService,
     private val historicalVersioningService: HistoricalVersioningService,
-    private val indexingMonitorService: com.jervis.service.indexing.monitoring.IndexingMonitorService,
+    private val indexingMonitorService: IndexingMonitorService,
     private val audioProps: AudioTranscriptionProperties,
     private val audioMonitoringProps: AudioMonitoringProperties,
-    private val indexingMonitorService: IndexingMonitorService,
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
+        private const val UNKNOWN = "unknown"
+        private const val AUDIO_MODULE = "audio"
+        private const val MIN_SENTENCE_LENGTH = 10
     }
 
     /** Result of audio indexing operation. */
@@ -90,7 +92,7 @@ class AudioTranscriptIndexingService(
             val audioPath = project.audioPath
             if (audioPath.isNullOrBlank()) {
                 logger.info { "No audio path configured for project: ${project.name}" }
-                return@withContext AudioIndexingResult(0, 0, 0, 0)
+                return@withContext AudioIndexingResult(0, 0, 0, 0, 0, 0, 0)
             }
 
             indexAudioDirectory(
@@ -100,9 +102,7 @@ class AudioTranscriptIndexingService(
                 projectPath = Paths.get(project.path),
                 scope = Scope.PROJECT,
             )
-                // Treat as skipped rather than error to avoid failing the whole indexing
-                return@withContext AudioIndexingResult(0, 0, 0)
-            }
+        }
 
     suspend fun indexClientAudioFiles(
         client: ClientDocument,
@@ -127,16 +127,18 @@ class AudioTranscriptIndexingService(
         projectPath: Path?,
         scope: Scope,
     ): AudioIndexingResult {
-            val audioDir = Paths.get(audioPath)
-            if (!Files.exists(audioDir)) {
+        val audioDir = Paths.get(audioPath)
+        if (!Files.exists(audioDir)) {
+            projectId?.let {
                 indexingMonitorService.updateStepProgress(
-                    project.id,
+                    it,
                     IndexingStepType.AUDIO_TRANSCRIPTS,
                     IndexingStepStatus.FAILED,
                     errorMessage = "Audio path does not exist: $audioPath",
                 )
-                logger.warn { "Audio path does not exist: $audioPath" }
-            return AudioIndexingResult(0, 0, 1, 0)
+            }
+            logger.warn { "Audio path does not exist: $audioPath" }
+            return AudioIndexingResult(0, 0, 1, 0, 0, 0, 1)
         }
 
         val gitCommitHash =
@@ -189,8 +191,7 @@ class AudioTranscriptIndexingService(
                         skippedFiles++
                         logger.debug { "Skipping already indexed audio file: $relativePath" }
                         continue
-                return@withContext AudioIndexingResult(0, 0, 1)
-            }
+                    }
 
                     ragIndexingStatusService.startIndexing(
                         projectId = projectOrClientId,
@@ -237,13 +238,7 @@ class AudioTranscriptIndexingService(
                                     gitCommitHash = gitCommitHash,
                                     chunkId = sentenceIndex,
                                     symbolName = "audio-${audioFile.nameWithoutExtension}",
-            // Minimal stub implementation: mark as completed with zero processed
-            indexingMonitorService.updateStepProgress(
-                project.id,
-                IndexingStepType.AUDIO_TRANSCRIPTS,
-                IndexingStepStatus.COMPLETED,
-                message = "No-op audio indexing (stub)",
-            )
+                                )
 
                             vectorStorage.store(ModelType.EMBEDDING_TEXT, ragDocument, embedding)
                             successfulSentences++
@@ -289,7 +284,15 @@ class AudioTranscriptIndexingService(
                 "Total time: ${totalTranscriptionTime}s"
         }
 
-        return AudioIndexingResult(processedFiles, skippedFiles, errorFiles, totalTranscriptionTime)
+        return AudioIndexingResult(
+            processedFiles = processedFiles,
+            skippedFiles = skippedFiles,
+            errorFiles = errorFiles,
+            totalTranscriptionTimeSeconds = totalTranscriptionTime,
+            processedAudios = processedFiles,
+            skippedAudios = skippedFiles,
+            errorAudios = errorFiles,
+        )
     }
 
     private fun findSupportedAudioFiles(root: Path): List<Path> {
@@ -305,8 +308,6 @@ class AudioTranscriptIndexingService(
             .filter { it.toString().matches(regex) }
             .toList()
     }
-
-    private fun Path.isSupportedAudio(): Boolean = extension.lowercase() in SUPPORTED_FORMATS
 
     private fun createTranscriptSentences(
         transcription: WhisperGateway.WhisperTranscriptionResponse,
@@ -344,12 +345,4 @@ class AudioTranscriptIndexingService(
 
         return sentences.filter { it.isNotEmpty() }
     }
-
-    private companion object {
-        private const val UNKNOWN = "unknown"
-        private const val AUDIO_MODULE = "audio"
-        private const val MIN_SENTENCE_LENGTH = 10
-        private val SUPPORTED_FORMATS = setOf("wav", "mp3", "m4a", "flac", "ogg", "opus", "webm")
-            AudioIndexingResult(processedAudios = 0, skippedAudios = 0, errorAudios = 0)
-        }
 }
