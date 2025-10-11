@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.bson.types.ObjectId
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import java.nio.file.Files
 import java.nio.file.Path
@@ -26,6 +27,11 @@ import kotlin.io.path.pathString
 
 /**
  * Service for indexing audio files by transcribing them and storing transcript embeddings.
+ * Minimal audio transcript indexing facade.
+ *
+ * This service provides a narrow API used by AudioMonitoringService to trigger (re)indexing.
+ * For now it only scans for supported audio files and logs counts, acting as an integration point
+ * where full audio-to-text processing (e.g., Whisper) can be plugged in later.
  */
 @Service
 class AudioTranscriptIndexingService(
@@ -36,6 +42,8 @@ class AudioTranscriptIndexingService(
     private val historicalVersioningService: HistoricalVersioningService,
     private val indexingMonitorService: com.jervis.service.indexing.monitoring.IndexingMonitorService,
     private val audioProps: AudioTranscriptionProperties,
+    @Value("\${audio.monitoring.supported-formats}")
+    private val supportedFormats: List<String>,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -57,9 +65,10 @@ class AudioTranscriptIndexingService(
         withContext(Dispatchers.IO) {
             logger.info { "Starting audio indexing for project: ${project.name}" }
 
-            val audioPath = project.audioPath
-            if (audioPath.isNullOrBlank()) {
-                logger.info { "No audio path configured for project: ${project.name}" }
+    suspend fun indexProjectAudioFiles(project: ProjectDocument) = withContext(Dispatchers.IO) {
+        val audioPath = project.audioPath
+        if (audioPath.isNullOrBlank()) {
+            logger.info { "No audio path configured for project: ${project.name}" }
                 return@withContext AudioIndexingResult(0, 0, 0, 0)
             }
 
@@ -70,6 +79,7 @@ class AudioTranscriptIndexingService(
                 projectPath = Paths.get(project.path),
                 scope = Scope.PROJECT,
             )
+            return@withContext
         }
 
     suspend fun indexClientAudioFiles(
@@ -99,10 +109,19 @@ class AudioTranscriptIndexingService(
         if (!Files.exists(audioDir)) {
             logger.warn { "Audio path does not exist: $audioPath" }
             return AudioIndexingResult(0, 0, 1, 0)
-        }
+        val files = findSupportedAudioFiles(audioDir)
+        logger.info { "Audio indexing requested for project ${project.name}: ${files.size} file(s) detected in $audioPath" }
+        // Placeholder for real indexing pipeline.
+    }
 
         val gitCommitHash = projectPath?.let { historicalVersioningService.getCurrentGitCommitHash(it) }
             ?: "audio-${System.currentTimeMillis()}"
+    suspend fun indexClientAudioFiles(client: ClientDocument, audioPath: String) = withContext(Dispatchers.IO) {
+        val audioDir = Paths.get(audioPath)
+        val files = findSupportedAudioFiles(audioDir)
+        logger.info { "Audio indexing requested for client ${client.name}: ${files.size} file(s) detected in $audioPath" }
+        // Placeholder for real indexing pipeline.
+    }
 
         var processedFiles = 0
         var skippedFiles = 0
@@ -113,7 +132,13 @@ class AudioTranscriptIndexingService(
             val audioFiles = Files
                 .walk(audioDir)
                 .filter { it.isRegularFile() && it.isSupportedAudio() }
-                .toList()
+    private fun findSupportedAudioFiles(root: Path): List<Path> {
+        if (!Files.exists(root)) return emptyList()
+        val regex = Regex(".*\\.(" + supportedFormats.joinToString("|") { Regex.escape(it) } + ")$", RegexOption.IGNORE_CASE)
+        return Files.walk(root)
+            .filter { it.isRegularFile() }
+            .filter { it.toString().matches(regex) }
+            .toList()
 
             logger.info { "Found ${audioFiles.size} audio files to process in ${scope.label} scope" }
             projectId?.let {
