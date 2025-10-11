@@ -52,6 +52,9 @@ class GitHistoryIndexingService(
         val changedFiles: List<String>,
         val additions: Int,
         val deletions: Int,
+        val parentHashes: List<String> = emptyList(),
+        val tags: List<String> = emptyList(),
+        val changedMethods: Map<String, Set<String>> = emptyMap(),
     )
 
     /**
@@ -160,6 +163,7 @@ class GitHistoryIndexingService(
                         gitCommitHash = commit.hash,
                         chunkId = index,
                         symbolName = "git-commit-${commit.hash.take(8)}",
+                        branch = commit.branch,
                     )
 
                 vectorStorage.store(ModelType.EMBEDDING_TEXT, ragDocument, embedding)
@@ -216,7 +220,7 @@ class GitHistoryIndexingService(
                     ProcessBuilder(
                         "git",
                         "log",
-                        "--pretty=format:%H|%an|%ad|%D|%s",
+                        "--pretty=format:%H|%P|%an|%ad|%D|%s",
                         "--date=iso",
                         "--numstat",
                         "-n",
@@ -234,15 +238,17 @@ class GitHistoryIndexingService(
                 reader.useLines { lines ->
                     for (line in lines) {
                         when {
-                            line.contains("|") && line.split("|").size >= 5 -> {
+                            line.contains("|") && line.split("|").size >= 6 -> {
                                 // Save previous commit if exists
                                 currentCommit?.let { commit ->
                                     if (!indexedCommits.contains(commit.hash)) {
+                                        val methods = getChangedMethodsForCommit(projectPath, commit.hash)
                                         commits.add(
                                             commit.copy(
                                                 changedFiles = changedFiles.toList(),
                                                 additions = additions,
                                                 deletions = deletions,
+                                                changedMethods = methods,
                                             ),
                                         )
                                     }
@@ -250,20 +256,26 @@ class GitHistoryIndexingService(
 
                                 // Parse new commit
                                 val parts = line.split("|")
-                                val refNames = parts[3]
+                                val hash = parts[0]
+                                val parentsRaw = parts[1]
+                                val parents = parentsRaw.split(" ").filter { it.isNotBlank() }
+                                val refNames = parts[4]
+                                val tags = extractTagsFromRefNames(refNames)
                                 // Extract branch from refnames (format: "origin/main, main" -> "main")
                                 val branch = extractBranchFromRefNames(refNames)
 
                                 currentCommit =
                                     GitCommit(
-                                        hash = parts[0],
-                                        author = parts[1],
-                                        date = parts[2],
+                                        hash = hash,
+                                        author = parts[2],
+                                        date = parts[3],
                                         branch = branch,
-                                        message = parts.drop(4).joinToString("|"),
+                                        message = parts.drop(5).joinToString("|"),
                                         changedFiles = emptyList(),
                                         additions = 0,
                                         deletions = 0,
+                                        parentHashes = parents,
+                                        tags = tags,
                                     )
                                 changedFiles.clear()
                                 additions = 0
@@ -290,11 +302,13 @@ class GitHistoryIndexingService(
                 // Don't forget the last commit
                 currentCommit?.let { commit ->
                     if (!indexedCommits.contains(commit.hash)) {
+                        val methods = getChangedMethodsForCommit(projectPath, commit.hash)
                         commits.add(
                             commit.copy(
                                 changedFiles = changedFiles.toList(),
                                 additions = additions,
                                 deletions = deletions,
+                                changedMethods = methods,
                             ),
                         )
                     }
@@ -314,27 +328,91 @@ class GitHistoryIndexingService(
     private fun extractBranchFromRefNames(refNames: String): String {
         if (refNames.isBlank()) return "main"
 
-        // Split by comma and look for branch references
         val refs = refNames.split(",").map { it.trim() }
 
-        // Priority order: local branches > origin branches > fallback to main
         val localBranch = refs.find { it.matches(Regex("^[^/]+$")) && !it.startsWith("tag:") }
         if (localBranch != null) return localBranch
 
         val originBranch = refs.find { it.startsWith("origin/") && !it.contains("HEAD") }
         if (originBranch != null) return originBranch.removePrefix("origin/")
 
-        // If we find HEAD -> origin/something, extract that
         val headRef = refs.find { it.contains("HEAD ->") }
         if (headRef != null) {
             val branchPart = headRef.substringAfter("HEAD ->").trim()
-            if (branchPart.startsWith("origin/")) {
-                return branchPart.removePrefix("origin/")
-            }
+            if (branchPart.startsWith("origin/")) return branchPart.removePrefix("origin/")
             return branchPart
         }
 
-        return "main" // Fallback
+        return "main"
+    }
+
+    /** Extract tags from refnames string (e.g., "tag: v1.19, origin/main") */
+    private fun extractTagsFromRefNames(refNames: String): List<String> =
+        refNames.split(",")
+            .map { it.trim() }
+            .filter { it.startsWith("tag:") }
+            .map { it.removePrefix("tag:").trim() }
+
+    /**
+     * Parse changed method/function names for a commit using unified=0 hunks and simple heuristics.
+     * Map key is file path, value is set of method identifiers touched in that file.
+     */
+    private fun getChangedMethodsForCommit(projectPath: Path, commitHash: String): Map<String, Set<String>> {
+        return try {
+            val process =
+                ProcessBuilder("git", "show", "-p", "--unified=0", "--no-color", commitHash)
+                    .directory(projectPath.toFile())
+                    .start()
+
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
+            val result = mutableMapOf<String, MutableSet<String>>()
+            var currentFile: String? = null
+
+            fun addMethod(name: String) {
+                val file = currentFile ?: return
+                val set = result.getOrPut(file) { mutableSetOf() }
+                set.add(name)
+            }
+
+            reader.useLines { lines ->
+                lines.forEach { line ->
+                    when {
+                        line.startsWith("diff --git ") -> {
+                            // diff --git a/path b/path
+                            val parts = line.split(" ")
+                            if (parts.size >= 4) {
+                                val b = parts[3]
+                                currentFile = b.removePrefix("b/")
+                            }
+                        }
+                        line.startsWith("+++ b/") -> {
+                            currentFile = line.removePrefix("+++ b/").trim()
+                        }
+                        line.startsWith("@@ ") -> {
+                            // Try to extract signature after the second @@ if present, e.g., @@ -12,0 +13,0 @@ fun isAuthorized(...)
+                            val after = line.substringAfterLast("@@").trim()
+                            val sig = after.takeIf { it.isNotBlank() } ?: ""
+                            val methodFromSig = Regex("(fun|def|void|public|private|protected|static)?\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\(")
+                                .find(sig)?.groupValues?.getOrNull(2)
+                            if (!methodFromSig.isNullOrBlank()) addMethod(methodFromSig)
+                        }
+                        line.startsWith("+") || line.startsWith("-") -> {
+                            val content = line.drop(1)
+                            // Kotlin/Java simple detectors
+                            Regex("\\bfun\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\(").find(content)?.let { addMethod(it.groupValues[1]) }
+                            Regex("\\b(?:public|private|protected|static\\s+)?[A-Za-z0-9_<>\\[\\]]+\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\(")
+                                .find(content)?.let { addMethod(it.groupValues[1]) }
+                        }
+                    }
+                }
+            }
+
+            process.waitFor()
+            result.mapValues { it.value.toSet() }
+        } catch (e: Exception) {
+            logger.debug(e) { "Failed to parse changed methods for commit $commitHash" }
+            emptyMap()
+        }
     }
 
     /**
@@ -342,15 +420,49 @@ class GitHistoryIndexingService(
      * Following requirement #4: "každý commit se také musí rozložit na krátké popisky"
      */
     private suspend fun createCommitSentences(commit: GitCommit): List<String> {
+        val atomic = mutableListOf<String>()
+
+        // Deterministic atomic facts to guarantee RAG discoverability
+        atomic += "Commit ${commit.hash} on branch ${commit.branch} was authored by ${commit.author} on ${commit.date}."
+        if (commit.message.isNotBlank()) {
+            atomic += "Commit ${commit.hash} message: ${commit.message}."
+        }
+        if (commit.changedFiles.isNotEmpty()) {
+            atomic += "Commit ${commit.hash} changed ${commit.changedFiles.size} files: ${commit.changedFiles.joinToString(", ")}."
+            atomic += "Commit ${commit.hash} stats: +${commit.additions} additions and -${commit.deletions} deletions."
+        }
+        if (commit.parentHashes.size >= 2) {
+            atomic += "Commit ${commit.hash} is a merge of ${commit.parentHashes.joinToString(" and ")}."
+        }
+        commit.tags.takeIf { it.isNotEmpty() }?.let { tags ->
+            atomic += "Commit ${commit.hash} has tags: ${tags.joinToString(", ")}."
+        }
+        // Method-level facts for queries like 'who last changed isAuthorized'
+        commit.changedMethods.forEach { (file, methods) ->
+            methods.forEach { method ->
+                atomic += "Method ${method} in ${file} was modified in commit ${commit.hash} by ${commit.author} on ${commit.date}."
+            }
+        }
+
+        // Provide structured block to LLM to optionally expand/norm sentences
         val commitContent =
             buildString {
                 appendLine("Commit: ${commit.hash}")
                 appendLine("Author: ${commit.author}")
                 appendLine("Date: ${commit.date}")
+                appendLine("Branch: ${commit.branch}")
+                appendLine("Parents: ${commit.parentHashes.joinToString(", ")}")
+                appendLine("Tags: ${commit.tags.joinToString(", ")}")
                 appendLine("Message: ${commit.message}")
                 if (commit.changedFiles.isNotEmpty()) {
                     appendLine("Files changed (${commit.changedFiles.size}): ${commit.changedFiles.joinToString(", ")}")
                     appendLine("Statistics: +${commit.additions} additions, -${commit.deletions} deletions")
+                }
+                if (commit.changedMethods.isNotEmpty()) {
+                    appendLine("Changed methods:")
+                    commit.changedMethods.forEach { (file, methods) ->
+                        appendLine("- $file: ${methods.joinToString(", ")}")
+                    }
                 }
             }
 
@@ -369,7 +481,11 @@ class GitHistoryIndexingService(
                     ),
             )
 
-        // Filter out any empty or too short sentences
-        return response.result.sentences.filter { it.trim().isNotEmpty() && it.length >= 10 }
+        // Combine deterministic and LLM-generated sentences, then filter
+        val llmSentences = response.result.sentences
+        return (atomic + llmSentences)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && it.length >= 10 }
+            .distinct()
     }
 }
