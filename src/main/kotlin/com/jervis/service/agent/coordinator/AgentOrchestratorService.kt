@@ -32,6 +32,7 @@ class AgentOrchestratorService(
     private val languageOrchestrator: LanguageOrchestrator,
     private val planner: Planner,
     private val planMongoRepository: PlanMongoRepository,
+    private val stepNotificationService: com.jervis.service.notification.StepNotificationService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -183,6 +184,14 @@ class AgentOrchestratorService(
 
             val response = finalizer.finalize(context)
             taskContextService.save(context)
+
+            // Notify UI about finalization for each plan now marked as FINALIZED
+            context.plans
+                .filter { it.status == com.jervis.domain.plan.PlanStatus.FINALIZED }
+                .forEach { finalizedPlan ->
+                    stepNotificationService.notifyPlanStatusChanged(context.id, finalizedPlan.id, finalizedPlan.status)
+                }
+
             logger.info { "AGENT_END: Final response generated." }
             logger.debug { "AGENT_FINAL_RESPONSE: \"${response.message}\"" }
             return response
