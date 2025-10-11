@@ -1,21 +1,27 @@
 package com.jervis.service.gateway
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.stereotype.Service
 import java.nio.file.Path
 
 /**
- * Default fallback implementation that fails fast if no real WhisperGateway is configured.
- * This keeps the application context bootable for components that do not use audio transcription.
+ * Default implementation of WhisperGateway.
+ * This implementation throws UnsupportedOperationException when called,
+ * indicating that a proper Whisper API integration should be configured.
  */
 @Service
-@ConditionalOnMissingBean(WhisperGateway::class)
 class DefaultWhisperGateway : WhisperGateway {
     override suspend fun transcribeAudioFile(
         audioFile: Path,
         model: String,
-        language: String?
-    ): WhisperGateway.WhisperTranscriptionResponse {
+        language: String?,
+    ): WhisperGateway.WhisperTranscriptionResponse =
         throw UnsupportedOperationException("No WhisperGateway implementation is configured. Please provide one via Spring context.")
-    }
+
+    override suspend fun transcribeAudioBytes(
+        audioBytes: ByteArray,
+        fileName: String,
+        model: String,
+        language: String?,
+    ): WhisperGateway.WhisperTranscriptionResponse =
+        throw UnsupportedOperationException("No WhisperGateway implementation is configured. Please provide one via Spring context.")
 }

@@ -1,20 +1,20 @@
 package com.jervis.service.indexing
 
+import com.jervis.configuration.AudioMonitoringProperties
 import com.jervis.entity.mongo.ClientDocument
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.mongo.ClientMongoRepository
 import com.jervis.repository.mongo.ProjectMongoRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.time.Instant
-import java.util.Comparator
 
 /**
  * Service for monitoring audio directories and triggering reindexing based on git changes.
@@ -26,8 +26,7 @@ class AudioMonitoringService(
     private val clientRepository: ClientMongoRepository,
     private val audioTranscriptIndexingService: AudioTranscriptIndexingService,
     private val historicalVersioningService: HistoricalVersioningService,
-    @Value("\${audio.monitoring.default-git-check-interval-minutes}")
-    private val defaultIntervalMinutes: Long,
+    private val audioMonitoringProps: AudioMonitoringProperties,
 ) {
     private val logger = KotlinLogging.logger {}
     private val lastCheckedCommits = mutableMapOf<String, String>()
@@ -43,57 +42,62 @@ class AudioMonitoringService(
         }
     }
 
-    private suspend fun monitorProjectAudioDirectories() = withContext(Dispatchers.IO) {
-        val projects = projectRepository.findAll().toList()
-        for (project in projects) {
-            if (project.isDisabled) continue
+    private suspend fun monitorProjectAudioDirectories() =
+        withContext(Dispatchers.IO) {
+            val projects = projectRepository.findAll().toList()
+            for (project in projects) {
+                if (project.isDisabled) continue
 
-            val audioPath = project.audioPath
-            if (audioPath.isNullOrBlank()) continue
+                val audioPath = project.audioPath
+                if (audioPath.isNullOrBlank()) continue
 
-            val audioDir = Paths.get(audioPath)
-            if (!Files.exists(audioDir)) {
-                logger.warn { "Audio path does not exist for project ${project.name}: $audioPath" }
-                continue
-            }
-
-            try {
-                val interval = getEffectiveInterval(project)
-                if (shouldCheckDirectory(audioPath, interval)) {
-                    checkAndReindexProject(project, audioDir)
+                val audioDir = Paths.get(audioPath)
+                if (!Files.exists(audioDir)) {
+                    logger.warn { "Audio path does not exist for project ${project.name}: $audioPath" }
+                    continue
                 }
-            } catch (e: Exception) {
-                logger.error(e) { "Error monitoring audio for project: ${project.name}" }
+
+                try {
+                    val interval = getEffectiveInterval(project)
+                    if (shouldCheckDirectory(audioPath, interval)) {
+                        checkAndReindexProject(project, audioDir)
+                    }
+                } catch (e: Exception) {
+                    logger.error(e) { "Error monitoring audio for project: ${project.name}" }
+                }
             }
         }
-    }
 
-    private suspend fun monitorClientAudioDirectories() = withContext(Dispatchers.IO) {
-        val clients = clientRepository.findAll().toList()
-        for (client in clients) {
-            if (client.isDisabled) continue
+    private suspend fun monitorClientAudioDirectories() =
+        withContext(Dispatchers.IO) {
+            val clients = clientRepository.findAll().toList()
+            for (client in clients) {
+                if (client.isDisabled) continue
 
-            val audioPath = client.audioPath
-            if (audioPath.isNullOrBlank()) continue
+                val audioPath = client.audioPath
+                if (audioPath.isNullOrBlank()) continue
 
-            val audioDir = Paths.get(audioPath)
-            if (!Files.exists(audioDir)) {
-                logger.warn { "Audio path does not exist for client ${client.name}: $audioPath" }
-                continue
-            }
-
-            try {
-                val interval = defaultIntervalMinutes
-                if (shouldCheckDirectory(audioPath, interval)) {
-                    checkAndReindexClient(client, audioDir)
+                val audioDir = Paths.get(audioPath)
+                if (!Files.exists(audioDir)) {
+                    logger.warn { "Audio path does not exist for client ${client.name}: $audioPath" }
+                    continue
                 }
-            } catch (e: Exception) {
-                logger.error(e) { "Error monitoring audio for client: ${client.name}" }
+
+                try {
+                    val interval = audioMonitoringProps.defaultGitCheckIntervalMinutes
+                    if (shouldCheckDirectory(audioPath, interval)) {
+                        checkAndReindexClient(client, audioDir)
+                    }
+                } catch (e: Exception) {
+                    logger.error(e) { "Error monitoring audio for client: ${client.name}" }
+                }
             }
         }
-    }
 
-    private suspend fun checkAndReindexProject(project: ProjectDocument, audioDir: Path) {
+    private suspend fun checkAndReindexProject(
+        project: ProjectDocument,
+        audioDir: Path,
+    ) {
         val projectPath = Paths.get(project.path)
         val currentCommit = historicalVersioningService.getCurrentGitCommitHash(projectPath) ?: return
 
@@ -109,7 +113,10 @@ class AudioMonitoringService(
         }
     }
 
-    private suspend fun checkAndReindexClient(client: ClientDocument, audioDir: Path) {
+    private suspend fun checkAndReindexClient(
+        client: ClientDocument,
+        audioDir: Path,
+    ) {
         val markerPath = audioDir.resolve(".last_indexed")
 
         val lastModified =
@@ -119,8 +126,9 @@ class AudioMonitoringService(
             Files
                 .walk(audioDir)
                 .filter { Files.isRegularFile(it) }
-                .filter { it.toString().matches(Regex(".*\\.(wav|mp3|m4a|flac|ogg|opus|webm)$", RegexOption.IGNORE_CASE)) }
-                .map { Files.getLastModifiedTime(it).toInstant() }
+                .filter {
+                    it.toString().matches(Regex(".*\\.(wav|mp3|m4a|flac|ogg|opus|webm)$", RegexOption.IGNORE_CASE))
+                }.map { Files.getLastModifiedTime(it).toInstant() }
                 .max(Comparator.naturalOrder())
                 .orElse(Instant.MIN)
 
@@ -134,9 +142,13 @@ class AudioMonitoringService(
     }
 
     private fun getEffectiveInterval(project: ProjectDocument): Long =
-        project.overrides.audioMonitoring?.gitCheckIntervalMinutes ?: defaultIntervalMinutes
+        project.overrides.audioMonitoring?.gitCheckIntervalMinutes
+            ?: audioMonitoringProps.defaultGitCheckIntervalMinutes
 
-    private fun shouldCheckDirectory(audioPath: String, intervalMinutes: Long): Boolean {
+    private fun shouldCheckDirectory(
+        audioPath: String,
+        intervalMinutes: Long,
+    ): Boolean {
         val now = Instant.now()
         val lastCheck = lastCheckTimes[audioPath] ?: Instant.MIN
         val minutesSinceLastCheck = (now.epochSecond - lastCheck.epochSecond) / 60
