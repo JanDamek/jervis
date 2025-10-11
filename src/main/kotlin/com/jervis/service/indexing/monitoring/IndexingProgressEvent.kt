@@ -19,6 +19,7 @@ enum class IndexingStepType(
     COMPREHENSIVE_FILES("Comprehensive Files", "Deep analysis of source files"),
     DOCUMENTATION("Documentation", "Processing project documentation"),
     MEETING_TRANSCRIPTS("Meeting Transcripts", "Indexing meeting transcripts"),
+    AUDIO_TRANSCRIPTS("Audio Transcripts", "Indexing audio transcripts"),
     CLIENT_UPDATE("Client Update", "Updating client descriptions"),
     PROJECT("Project Indexing", "Overall project indexing process"),
 }
