@@ -26,6 +26,7 @@ data class ProjectDocument(
     val fullDescription: String? = null,
     val path: String = "",
     val meetingPath: String? = null,
+    val audioPath: String? = null,
     val documentationPath: String? = null,
     val documentationUrls: List<String> = emptyList(),
     val languages: List<String> = emptyList(), // Programming languages used in the project
