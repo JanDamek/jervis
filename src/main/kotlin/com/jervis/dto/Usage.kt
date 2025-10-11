@@ -1,12 +1,14 @@
 package com.jervis.dto
 
-import com.fasterxml.jackson.annotation.JsonProperty
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 
+@Serializable
 data class Usage(
-    @JsonProperty("prompt_tokens")
+    @SerialName("prompt_tokens")
     val promptTokens: Int,
-    @JsonProperty("completion_tokens")
+    @SerialName("completion_tokens")
     val completionTokens: Int,
-    @JsonProperty("total_tokens")
+    @SerialName("total_tokens")
     val totalTokens: Int,
 )

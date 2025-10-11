@@ -1,12 +1,13 @@
 package com.jervis.dto.completion
 
-import com.fasterxml.jackson.annotation.JsonProperty
-import com.jervis.dto.BaseChoice
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 
+@Serializable
 data class CompletionChoice(
     val text: String,
-    override val index: Int,
-    val logprobs: Any? = null,
-    @JsonProperty("finish_reason")
-    override val finishReason: String = "stop",
-) : BaseChoice(index, finishReason)
+    val index: Int,
+    val logprobs: String? = null,
+    @SerialName("finish_reason")
+    val finishReason: String = "stop",
+)
