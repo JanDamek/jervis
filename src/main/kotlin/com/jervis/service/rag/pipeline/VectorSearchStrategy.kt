@@ -32,7 +32,7 @@ class VectorSearchStrategy(
     ): List<DocumentChunk> {
         logger.debug { "VECTOR_SEARCH: Starting for '${query.searchTerms}'" }
 
-        val (projectId, clientId) = resolveScope(query.global, context)
+        val (projectId, clientId) = resolveScope(!query.filterByProject, context)
 
         return coroutineScope {
             val textResults = async { searchByModelType(ModelType.EMBEDDING_TEXT, query, projectId, clientId) }
@@ -64,7 +64,6 @@ class VectorSearchStrategy(
                 collectionType = modelType,
                 query = embedding,
                 limit = MAX_INITIAL_RESULTS,
-                minScore = query.scoreThreshold,
                 projectId = projectId,
                 clientId = clientId,
                 filter = null,
