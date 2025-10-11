@@ -28,6 +28,9 @@ import kotlin.io.path.nameWithoutExtension
 import kotlin.io.path.pathString
 
 /**
+ * Minimal audio transcript indexing service placeholder.
+ * Accepts uploaded audio files and logs that a transcription job was enqueued.
+ * Actual transcription and RAG indexing can be implemented later and wired here.
  * Service for indexing audio files by transcribing them and storing transcript embeddings.
  * Minimal audio transcript indexing facade.
  *
@@ -38,6 +41,7 @@ import kotlin.io.path.pathString
  * Minimal implementation to integrate with existing monitoring and indexing pipeline.
  */
 @Service
+class AudioTranscriptIndexingService {
 class AudioTranscriptIndexingService(
     private val whisperGateway: WhisperGateway,
     private val embeddingGateway: EmbeddingGateway,
@@ -49,12 +53,13 @@ class AudioTranscriptIndexingService(
     private val audioMonitoringProps: AudioMonitoringProperties,
 ) {
     companion object {
-        private val logger = KotlinLogging.logger {}
+    private val logger = KotlinLogging.logger {}
         private const val UNKNOWN = "unknown"
         private const val AUDIO_MODULE = "audio"
         private const val MIN_SENTENCE_LENGTH = 10
     }
 
+    data class TranscriptionJob(
     /** Result of audio indexing operation. */
     data class AudioIndexingResult(
         val processedFiles: Int,
@@ -68,6 +73,8 @@ class AudioTranscriptIndexingService(
 
     data class AudioMetadata(
         val fileName: String,
+        val filePath: Path,
+        val source: String,
         val format: String,
         val durationSeconds: Float? = null,
         val language: String? = null,
@@ -325,8 +332,11 @@ class AudioTranscriptIndexingService(
                 metadata.durationSeconds?.let { append(", duration: ${it.toInt()}s") }
                 metadata.language?.let { append(", language: $it") }
             },
-        )
+    )
 
+    suspend fun enqueueTranscription(job: TranscriptionJob) {
+        // For now, just log; a real implementation would dispatch a background job.
+        logger.info { "Enqueued transcription job for ${'$'}{job.source}: ${'$'}{job.fileName} at ${'$'}{job.filePath}" }
         if (transcription.segments.isNotEmpty()) {
             transcription.segments.forEach { segment ->
                 val text = segment.text.trim()
