@@ -525,26 +525,27 @@ class VectorStorageRepository(
     suspend fun deleteByFilter(
         collectionType: ModelType,
         filter: Map<String, Any>,
-    ): Int = executeQdrantOperation("deleteByFilter") { client ->
-        val collectionName = getCollectionNameForModelType(collectionType)
-        val qdrantFilter = createQdrantFilter(filter)
+    ): Int =
+        executeQdrantOperation("deleteByFilter") { client ->
+            val collectionName = getCollectionNameForModelType(collectionType)
+            val qdrantFilter = createQdrantFilter(filter)
 
-        val deleteRequest =
-            Points.DeletePoints
-                .newBuilder()
-                .setCollectionName(collectionName)
-                .setPoints(
-                    Points.PointsSelector
-                        .newBuilder()
-                        .setFilter(qdrantFilter)
-                        .build(),
-                ).build()
+            val deleteRequest =
+                Points.DeletePoints
+                    .newBuilder()
+                    .setCollectionName(collectionName)
+                    .setPoints(
+                        Points.PointsSelector
+                            .newBuilder()
+                            .setFilter(qdrantFilter)
+                            .build(),
+                    ).build()
 
-        val response = client.deleteAsync(deleteRequest).get()
-        logger.info { "Deleted vectors from $collectionName with filter: $filter" }
-        // Qdrant async delete returns an UpdateResult; operationId is not a count, but we return 0 as best‑effort
-        response.result?.operationId?.toInt() ?: 0
-    } ?: 0
+            client.deleteAsync(deleteRequest).get()
+            logger.info { "Deleted vectors from $collectionName with filter: $filter" }
+            // Qdrant async delete returns an UpdateResult; operationId is not a count, so we return 0 as best-effort
+            0
+        } ?: 0
 
     /**
      * Deletes specific vector points by their IDs.
@@ -552,30 +553,37 @@ class VectorStorageRepository(
     suspend fun deleteByIds(
         collectionType: ModelType,
         pointIds: List<String>,
-    ): Int = executeQdrantOperation("deleteByIds") { client ->
-        val collectionName = getCollectionNameForModelType(collectionType)
+    ): Int =
+        executeQdrantOperation("deleteByIds") { client ->
+            val collectionName = getCollectionNameForModelType(collectionType)
 
-        val idsList =
-            Points.PointsIdsList
-                .newBuilder()
-                .addAllIds(pointIds.map { id -> Points.PointId.newBuilder().setUuid(id).build() })
-                .build()
+            val idsList =
+                Points.PointsIdsList
+                    .newBuilder()
+                    .addAllIds(
+                        pointIds.map { id ->
+                            Points.PointId
+                                .newBuilder()
+                                .setUuid(id)
+                                .build()
+                        },
+                    ).build()
 
-        val deleteRequest =
-            Points.DeletePoints
-                .newBuilder()
-                .setCollectionName(collectionName)
-                .setPoints(
-                    Points.PointsSelector
-                        .newBuilder()
-                        .setPoints(idsList)
-                        .build(),
-                ).build()
+            val deleteRequest =
+                Points.DeletePoints
+                    .newBuilder()
+                    .setCollectionName(collectionName)
+                    .setPoints(
+                        Points.PointsSelector
+                            .newBuilder()
+                            .setPoints(idsList)
+                            .build(),
+                    ).build()
 
-        client.deleteAsync(deleteRequest).get()
-        logger.info { "Deleted ${pointIds.size} vectors from $collectionName" }
-        pointIds.size
-    } ?: 0
+            client.deleteAsync(deleteRequest).get()
+            logger.info { "Deleted ${pointIds.size} vectors from $collectionName" }
+            pointIds.size
+        } ?: 0
 
     /**
      * Health check result for vector storage

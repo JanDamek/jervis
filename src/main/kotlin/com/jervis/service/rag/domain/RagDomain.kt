@@ -19,8 +19,7 @@ data class DocumentChunk(
 @Serializable
 data class RagQuery(
     val searchTerms: String = "",
-    val scoreThreshold: Float = 0.7f,
-    val global: Boolean = false,
+    val filterByProject: Boolean = false,
 )
 
 /**
