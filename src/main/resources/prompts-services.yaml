@@ -161,10 +161,11 @@ prompts:
       Output: JSON with "chunks" array containing plain English description strings.
     userPrompt: |
       ANALYZE THIS CODE (input for your analysis):
+      ```
       {code}
+      ```
       
       TASK: Describe what this class/interface does in plain English sentences.
-
     modelParams:
       modelType: JOERN
       creativityLevel: MEDIUM
@@ -194,7 +195,9 @@ prompts:
     userPrompt: |
       ANALYZE THIS METHOD (input for your analysis):
       Class: {parentClass}
+      ```
       {code}
+      ```
       
       TASK: Describe what this method does in plain English sentences.
 
