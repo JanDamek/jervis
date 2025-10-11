@@ -108,8 +108,28 @@ For the full rule set and rationale, see .junie/guidelines.md.
 ---
 
 ## Notes
+- **Language**: Kotlin
+- **Framework**: Spring Boot (WebFlux)
+- **Database**: MongoDB
+- **Vector DB**: Qdrant
+- **UI**: Java Swing + Static Web (persona selection)
+- **LLMs**: Anthropic Claude, OpenAI GPT, Ollama, LM Studio
+- **Protocols**: MCP (via Koog library)
+- **Build Tool**: Maven
 
 ---
+
+## Persona Selection (No Auth)
+
+A lightweight startup screen lets users choose a persona without authentication.
+
+- Screen path: open the app root at `/` (served from `resources/static/index.html`).
+- Roles: Developer, Designer, Manager.
+- Storage: role is saved in the HTTP session (no database persistence).
+- API:
+  - `GET /api/session/role` → `{ "role": "DEVELOPER|DESIGNER|MANAGER|null" }`
+  - `POST /api/session/role` with `{ "role": "DEVELOPER|DESIGNER|MANAGER" }`
+- Mockups: Figma placeholder link is included in the page footer.
 
 ## Server–User Component Split
 
