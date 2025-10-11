@@ -151,21 +151,21 @@
             <classifier>osx-aarch_64</classifier>
         </dependency>
 
-        <!-- Pro podporu ListenableFuture -->
+        <!-- For ListenableFuture support -->
         <dependency>
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
             <version>${guava.version}</version>
         </dependency>
 
-        <!-- SLF4J API pro logování (používá Qdrant klient) -->
+        <!-- SLF4J API for logging (used by Qdrant client) -->
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
             <version>${slf4j-api.version}</version>
         </dependency>
 
-        <!-- Pokud ještě není v projektu: základní gRPC anotace -->
+        <!-- Basic gRPC annotations if not already present in the project -->
         <dependency>
             <groupId>jakarta.annotation</groupId>
             <artifactId>jakarta.annotation-api</artifactId>
