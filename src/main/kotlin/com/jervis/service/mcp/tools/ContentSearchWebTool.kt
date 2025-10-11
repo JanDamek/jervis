@@ -13,8 +13,6 @@ import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.awaitBody
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 
 /**
  * Content Search Web tool using Searxng for web search capabilities.
@@ -88,7 +86,15 @@ class ContentSearchWebTool(
     ): ToolResult {
         logger.info { "CONTENT_SEARCH_WEB_START: Executing web search for query='${params.query}'" }
 
-        val searchResult = performSearch(params.query)
+        val query = params.query.trim()
+        if (query.isBlank()) {
+            return ToolResult.error(
+                output = "Web search failed",
+                message = "Query must not be blank.",
+            )
+        }
+
+        val searchResult = performSearch(query)
 
         logger.info { "CONTENT_SEARCH_WEB_SUCCESS: Completed web search operation" }
         return ToolResult.ok(searchResult)
@@ -97,22 +103,20 @@ class ContentSearchWebTool(
     private suspend fun performSearch(query: String): String {
         logger.debug { "CONTENT_SEARCH_WEB_QUERY: '$query'" }
 
-        val encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8)
-        val searchPath =
-            buildString {
-                append("/search")
-                append("?q=$encodedQuery")
-                append("&format=json")
-                append("&safesearch=1")
-            }
-
         val response =
             webClient
                 .get()
-                .uri(searchPath)
-                .retrieve()
+                .uri { uriBuilder ->
+                    uriBuilder
+                        .path("/search")
+                        .queryParam("q", query)
+                        .queryParam("format", "json")
+                        .queryParam("safesearch", "1")
+                        .build()
+                }.retrieve()
                 .awaitBody<SearxngResponse>()
 
+        logger.info { "CONTENT_SEARCH_WEB_ENDPOINT_OK: path='/search', param='q'" }
         return formatSearchResults(query, response)
     }
 
