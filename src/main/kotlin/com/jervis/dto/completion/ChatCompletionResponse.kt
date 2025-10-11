@@ -6,10 +6,10 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class ChatCompletionResponse(
-    override val id: String,
-    override val `object`: String,
-    override val created: Long,
-    override val model: String,
+    val id: String,
+    val `object`: String,
+    val created: Long,
+    val model: String,
     val choices: List<Choice>,
-    override val usage: Usage?,
-) : BaseCompletionResponse(id, `object`, created, model, usage)
+    val usage: Usage?,
+)
