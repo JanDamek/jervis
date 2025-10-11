@@ -35,6 +35,7 @@ class IndexingService(
     private val documentIndexingService: DocumentIndexingService,
     private val indexingMonitorService: IndexingMonitorService,
     private val indexingPipelineService: IndexingPipelineService,
+    private val audioTranscriptIndexingService: AudioTranscriptIndexingService,
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -193,6 +194,14 @@ class IndexingService(
                 IndexingResult(0, 0, 1, "PIPELINE_COMPREHENSIVE")
             }
         }
+
+    /**
+     * Add audio indexing for project's audio files using speech-to-text pipeline.
+     */
+    suspend fun indexProjectAudio(project: ProjectDocument): AudioTranscriptIndexingService.AudioIndexingResult {
+        logger.info { "Starting audio indexing for project: ${'$'}{project.name}" }
+        return audioTranscriptIndexingService.indexProjectAudioFiles(project)
+    }
 
     /**
      * Index all projects in the system with sequential execution
