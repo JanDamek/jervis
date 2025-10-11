@@ -335,6 +335,9 @@ class ProjectSettingWindow(
                     clientId = GLOBAL_ID,
                     name = result.name,
                     path = result.path,
+                    meetingPath = result.meetingPath,
+                    audioPath = result.audioPath,
+                    documentationPath = result.documentationPath,
                     description = result.description,
                     languages = result.languages,
                     primaryUrl = result.primaryUrl.takeIf { it.isNotBlank() },
@@ -373,6 +376,9 @@ class ProjectSettingWindow(
                     "Edit Project",
                     project.name,
                     project.path,
+                    project.meetingPath ?: "",
+                    project.audioPath ?: "",
+                    project.documentationPath ?: "",
                     project.description ?: "",
                     project.primaryUrl ?: "",
                     project.extraUrls.joinToString(", "),
@@ -395,6 +401,9 @@ class ProjectSettingWindow(
                     project.copy(
                         name = result.name,
                         path = result.path,
+                        meetingPath = result.meetingPath,
+                        audioPath = result.audioPath,
+                        documentationPath = result.documentationPath,
                         description = result.description,
                         languages = result.languages,
                         primaryUrl = result.primaryUrl.takeIf { it.isNotBlank() },
@@ -868,6 +877,9 @@ class ProjectSettingWindow(
         title: String,
         initialName: String = "",
         initialPath: String = "",
+        initialMeetingPath: String = "",
+        initialAudioPath: String = "",
+        initialDocumentationPath: String = "",
         initialDescription: String = "",
         initialPrimaryUrl: String = "",
         initialExtraUrls: String = "",
@@ -892,6 +904,26 @@ class ProjectSettingWindow(
                 toolTipText = "Absolute path to your project directory."
             }
         private val browseButton = JButton("Browse…")
+
+        // Optional paths
+        private val meetingPathField =
+            JTextField(initialMeetingPath).apply {
+                preferredSize = Dimension(480, 30)
+                toolTipText = "Folder with meeting transcripts (text/markdown)."
+            }
+        private val browseMeetingButton = JButton("Browse…")
+        private val audioPathField =
+            JTextField(initialAudioPath).apply {
+                preferredSize = Dimension(480, 30)
+                toolTipText = "Folder with audio files to be transcribed (wav/mp3/m4a/etc.)."
+            }
+        private val browseAudioButton = JButton("Browse…")
+        private val documentationPathField =
+            JTextField(initialDocumentationPath).apply {
+                preferredSize = Dimension(480, 30)
+                toolTipText = "Folder with local documentation (markdown/html/pdf)."
+            }
+        private val browseDocumentationButton = JButton("Browse…")
         private val descriptionArea =
             JTextArea(initialDescription.ifEmpty { "Optional project description" }, 4, 50).apply {
                 // Add placeholder functionality
@@ -995,6 +1027,9 @@ class ProjectSettingWindow(
             okButton.addActionListener { saveAndClose() }
             cancelButton.addActionListener { dispose() }
             browseButton.addActionListener { browsePath() }
+            browseMeetingButton.addActionListener { browseDirectoryInto(meetingPathField) }
+            browseAudioButton.addActionListener { browseDirectoryInto(audioPathField) }
+            browseDocumentationButton.addActionListener { browseDirectoryInto(documentationPathField) }
 
             // Build UI with tabs
             val panel = JPanel(BorderLayout())
@@ -1005,6 +1040,10 @@ class ProjectSettingWindow(
             // Basic Information Tab
             val basicPanel = createBasicInfoPanel()
             tabbedPane.addTab("Basic Information", basicPanel)
+
+            // Paths Tab
+            val pathsPanel = createPathsPanel()
+            tabbedPane.addTab("Paths", pathsPanel)
 
             // Repository Tab
             val repoPanel = createRepositoryPanel()
@@ -1055,6 +1094,10 @@ class ProjectSettingWindow(
         }
 
         private fun createBasicInfoPanel(): JPanel {
+            return createBasicInfoPanelInternal()
+        }
+
+        private fun createBasicInfoPanelInternal(): JPanel {
             val panel = JPanel(GridBagLayout())
             val gbc = GridBagConstraints()
             gbc.insets = Insets(8, 8, 8, 8)
@@ -1140,6 +1183,73 @@ class ProjectSettingWindow(
             gbc.gridwidth = 2
             gbc.fill = GridBagConstraints.HORIZONTAL
             panel.add(defaultCheckbox, gbc)
+
+            return panel
+        }
+
+        private fun createPathsPanel(): JPanel {
+            val panel = JPanel(GridBagLayout())
+            val gbc = GridBagConstraints()
+            gbc.insets = Insets(8, 8, 8, 8)
+            var row = 0
+
+            // Meeting transcripts folder
+            gbc.gridx = 0
+            gbc.gridy = row
+            gbc.gridwidth = 1
+            gbc.anchor = GridBagConstraints.LINE_END
+            panel.add(JLabel("Meeting transcripts folder:"), gbc)
+            gbc.gridx = 1
+            gbc.anchor = GridBagConstraints.LINE_START
+            gbc.fill = GridBagConstraints.HORIZONTAL
+            gbc.weightx = 1.0
+            panel.add(meetingPathField, gbc)
+            gbc.gridx = 2
+            gbc.fill = GridBagConstraints.NONE
+            gbc.weightx = 0.0
+            panel.add(browseMeetingButton, gbc)
+            row++
+
+            // Audio files folder
+            gbc.gridx = 0
+            gbc.gridy = row
+            gbc.gridwidth = 1
+            gbc.anchor = GridBagConstraints.LINE_END
+            panel.add(JLabel("Audio files folder:"), gbc)
+            gbc.gridx = 1
+            gbc.anchor = GridBagConstraints.LINE_START
+            gbc.fill = GridBagConstraints.HORIZONTAL
+            gbc.weightx = 1.0
+            panel.add(audioPathField, gbc)
+            gbc.gridx = 2
+            gbc.fill = GridBagConstraints.NONE
+            gbc.weightx = 0.0
+            panel.add(browseAudioButton, gbc)
+            row++
+
+            // Documentation folder
+            gbc.gridx = 0
+            gbc.gridy = row
+            gbc.gridwidth = 1
+            gbc.anchor = GridBagConstraints.LINE_END
+            panel.add(JLabel("Documentation folder:"), gbc)
+            gbc.gridx = 1
+            gbc.anchor = GridBagConstraints.LINE_START
+            gbc.fill = GridBagConstraints.HORIZONTAL
+            gbc.weightx = 1.0
+            panel.add(documentationPathField, gbc)
+            gbc.gridx = 2
+            gbc.fill = GridBagConstraints.NONE
+            gbc.weightx = 0.0
+            panel.add(browseDocumentationButton, gbc)
+            row++
+
+            // Spacer
+            gbc.gridx = 0
+            gbc.gridy = row
+            gbc.gridwidth = 3
+            gbc.weighty = 1.0
+            panel.add(JPanel(), gbc)
 
             return panel
         }
@@ -1357,6 +1467,22 @@ class ProjectSettingWindow(
             return panel
         }
 
+        private fun browseDirectoryInto(target: JTextField) {
+            val fileChooser = JFileChooser()
+            fileChooser.fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+            val currentPath = target.text.trim()
+            fileChooser.currentDirectory =
+                if (currentPath.isNotEmpty()) {
+                    val pathFile = File(currentPath)
+                    if (pathFile.exists()) pathFile else File(System.getProperty("user.home"))
+                } else {
+                    File(System.getProperty("user.home"))
+                }
+            if (fileChooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+                target.text = fileChooser.selectedFile.absolutePath
+            }
+        }
+
         private fun saveAndClose() {
             val name = nameField.text.trim()
             val path = pathField.text.trim()
@@ -1398,6 +1524,10 @@ class ProjectSettingWindow(
                 }
             val isDisabled = isDisabledCheckbox.isSelected
             val isDefault = defaultCheckbox.isSelected
+
+            val meetingPath = meetingPathField.text.trim().ifEmpty { null }
+            val audioPath = audioPathField.text.trim().ifEmpty { null }
+            val documentationPath = documentationPathField.text.trim().ifEmpty { null }
 
             // Validate required fields
             if (name.isBlank()) {
@@ -1447,6 +1577,9 @@ class ProjectSettingWindow(
                 ProjectResult(
                     name,
                     path,
+                    meetingPath,
+                    audioPath,
+                    documentationPath,
                     description,
                     primaryUrl,
                     extraUrls,
@@ -1490,6 +1623,9 @@ class ProjectSettingWindow(
     data class ProjectResult(
         val name: String,
         val path: String,
+        val meetingPath: String?,
+        val audioPath: String?,
+        val documentationPath: String?,
         val description: String,
         val primaryUrl: String,
         val extraUrls: List<String>,
