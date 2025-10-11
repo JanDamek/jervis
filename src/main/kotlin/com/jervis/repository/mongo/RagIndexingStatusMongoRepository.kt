@@ -19,4 +19,27 @@ interface RagIndexingStatusMongoRepository : CoroutineCrudRepository<RagIndexing
         gitCommitHash: String,
         filePath: String,
     ): RagIndexingStatusDocument?
+
+    /**
+     * Finds all indexed files for a project at a specific commit.
+     */
+    fun findAllByProjectIdAndGitCommitHash(
+        projectId: ObjectId,
+        gitCommitHash: String,
+    ): kotlinx.coroutines.flow.Flow<RagIndexingStatusDocument>
+
+    /**
+     * Finds all files for a project (across all commits).
+     */
+    fun findAllByProjectId(
+        projectId: ObjectId,
+    ): kotlinx.coroutines.flow.Flow<RagIndexingStatusDocument>
+
+    /**
+     * Finds files by status.
+     */
+    fun findAllByProjectIdAndStatus(
+        projectId: ObjectId,
+        status: RagIndexingStatusDocument.IndexingStatus,
+    ): kotlinx.coroutines.flow.Flow<RagIndexingStatusDocument>
 }
