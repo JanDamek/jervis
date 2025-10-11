@@ -22,6 +22,9 @@ enum class RagSourceType {
     /** Meeting transcripts and recorded sessions */
     MEETING_TRANSCRIPT,
 
+    /** Audio transcripts converted from speech-to-text */
+    AUDIO_TRANSCRIPT,
+
     /** LLM-generated content */
     LLM,
 
