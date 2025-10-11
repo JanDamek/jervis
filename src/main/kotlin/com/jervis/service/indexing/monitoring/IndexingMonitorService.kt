@@ -214,6 +214,7 @@ class IndexingMonitorService(
             IndexingStep(IndexingStepType.COMPREHENSIVE_FILES),
             IndexingStep(IndexingStepType.DOCUMENTATION),
             IndexingStep(IndexingStepType.MEETING_TRANSCRIPTS),
+            IndexingStep(IndexingStepType.AUDIO_TRANSCRIPTS),
             IndexingStep(IndexingStepType.CLIENT_UPDATE),
         )
 
