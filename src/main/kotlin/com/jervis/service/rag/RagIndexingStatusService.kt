@@ -5,6 +5,7 @@ import com.jervis.repository.mongo.RagIndexingStatusMongoRepository
 import org.bson.types.ObjectId
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import kotlinx.coroutines.flow.toList
 import java.security.MessageDigest
 import java.time.Instant
 
@@ -16,6 +17,7 @@ import java.time.Instant
 @Service
 class RagIndexingStatusService(
     private val ragIndexingStatusRepository: RagIndexingStatusMongoRepository,
+    private val vectorStorage: com.jervis.repository.vector.VectorStorageRepository,
 ) {
     private val logger = LoggerFactory.getLogger(RagIndexingStatusService::class.java)
 
@@ -149,5 +151,137 @@ class RagIndexingStatusService(
                 true
             }
         }
+    }
+    /**
+     * Marks file indexing as completed and stores vector IDs.
+     */
+    suspend fun completeIndexing(
+        projectId: ObjectId,
+        filePath: String,
+        gitCommitHash: String,
+        vectorStoreIds: List<RagIndexingStatusDocument.IndexedContentInfo>,
+    ): RagIndexingStatusDocument {
+        val existing =
+            ragIndexingStatusRepository.findByProjectIdAndGitCommitHashAndFilePath(
+                projectId,
+                gitCommitHash,
+                filePath,
+            ) ?: throw IllegalStateException("No indexing record found for $filePath")
+
+        val updated =
+            existing.copy(
+                status = RagIndexingStatusDocument.IndexingStatus.INDEXED,
+                indexedContent = vectorStoreIds,
+                indexingCompletedAt = Instant.now(),
+                lastUpdatedAt = Instant.now(),
+            )
+
+        return ragIndexingStatusRepository.save(updated).also {
+            logger.info("Completed indexing: $filePath with ${vectorStoreIds.size} vectors")
+        }
+    }
+
+    /**
+     * Marks file indexing as failed.
+     */
+    suspend fun failIndexing(
+        projectId: ObjectId,
+        filePath: String,
+        gitCommitHash: String,
+        errorMessage: String,
+    ): RagIndexingStatusDocument {
+        val existing =
+            ragIndexingStatusRepository.findByProjectIdAndGitCommitHashAndFilePath(
+                projectId,
+                gitCommitHash,
+                filePath,
+            ) ?: throw IllegalStateException("No indexing record found for $filePath")
+
+        val updated =
+            existing.copy(
+                status = RagIndexingStatusDocument.IndexingStatus.FAILED,
+                errorMessage = errorMessage,
+                lastUpdatedAt = Instant.now(),
+            )
+
+        return ragIndexingStatusRepository.save(updated)
+    }
+
+    /**
+     * Marks file as removed.
+     */
+    suspend fun markAsRemoved(
+        projectId: ObjectId,
+        filePath: String,
+        gitCommitHash: String,
+    ): RagIndexingStatusDocument? {
+        val existing =
+            ragIndexingStatusRepository.findByProjectIdAndGitCommitHashAndFilePath(
+                projectId,
+                gitCommitHash,
+                filePath,
+            ) ?: return null
+
+        val updated =
+            existing.copy(
+                status = RagIndexingStatusDocument.IndexingStatus.REMOVED,
+                lastUpdatedAt = Instant.now(),
+            )
+        return ragIndexingStatusRepository.save(updated)
+    }
+
+    /**
+     * Gets all indexed files for a project at a specific commit.
+     */
+    suspend fun getAllIndexedFilesForCommit(
+        projectId: ObjectId,
+        gitCommitHash: String,
+    ): List<RagIndexingStatusDocument> =
+        ragIndexingStatusRepository.findAllByProjectIdAndGitCommitHash(projectId, gitCommitHash).toList()
+
+    /**
+     * Deletes old embeddings for a file before re-indexing. Can run in parallel with new indexing.
+     */
+    suspend fun deleteOldEmbeddings(
+        projectId: ObjectId,
+        filePath: String,
+        gitCommitHash: String,
+    ): Int = kotlinx.coroutines.coroutineScope {
+        val existingStatus = getFileIndexingStatus(projectId, gitCommitHash, filePath) ?: return@coroutineScope 0
+
+        if (existingStatus.indexedContent.isEmpty()) {
+            logger.debug("No embeddings to delete for $filePath")
+            return@coroutineScope 0
+        }
+
+        logger.info("Deleting ${existingStatus.indexedContent.size} old embeddings for $filePath")
+
+        val textDeletions =
+            kotlinx.coroutines.async {
+                vectorStorage.deleteByFilter(
+                    com.jervis.domain.model.ModelType.EMBEDDING_TEXT,
+                    mapOf(
+                        "projectId" to projectId.toString(),
+                        "path" to filePath,
+                        "gitCommitHash" to gitCommitHash,
+                    ),
+                )
+            }
+
+        val codeDeletions =
+            kotlinx.coroutines.async {
+                vectorStorage.deleteByFilter(
+                    com.jervis.domain.model.ModelType.EMBEDDING_CODE,
+                    mapOf(
+                        "projectId" to projectId.toString(),
+                        "path" to filePath,
+                        "gitCommitHash" to gitCommitHash,
+                    ),
+                )
+            }
+
+        val totalDeleted = textDeletions.await() + codeDeletions.await()
+        logger.info("Deleted $totalDeleted embeddings for $filePath")
+        totalDeleted
     }
 }
