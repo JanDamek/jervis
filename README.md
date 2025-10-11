@@ -52,3 +52,9 @@
 - **Build Tool**: Maven
 
 ---
+
+---
+
+## Server–User Component Split
+
+See docs/architecture.md for the architecture diagram, API contract (/api/v0), and rationale for the separation between the Server (APIs/business logic) and User (UI/client) layers.
