@@ -1,7 +1,9 @@
 package com.jervis.dto.completion
 
 import com.jervis.dto.Usage
+import kotlinx.serialization.Serializable
 
+@Serializable
 data class CompletionResponse(
     override val id: String,
     override val `object`: String = "text_completion",
