@@ -6,6 +6,7 @@ import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
 import com.jervis.domain.rag.SymbolType
 import com.jervis.entity.mongo.ProjectDocument
+import com.jervis.entity.mongo.RagIndexingStatusDocument
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.analysis.JoernAnalysisService
 import com.jervis.service.analysis.JoernResultParser
@@ -509,6 +510,9 @@ class IndexingPipelineService(
     ) = coroutineScope {
         logger.info { "PIPELINE_STORAGE: Starting vector storage processor" }
 
+        // Track vector IDs per source file for indexing completion updates
+        val fileVectorIds = mutableMapOf<String, MutableList<String>>()
+
         // Log under code_files
         indexingMonitorService.addStepLog(
             project.id,
@@ -535,8 +539,14 @@ class IndexingPipelineService(
                                 // Create RagDocument
                                 val ragDocument = createRagDocument(project, item)
 
-                                // Store to vector database
-                                vectorStorage.store(item.embeddingType, ragDocument, item.embedding)
+                                // Store to vector database and capture vector ID
+                                val vectorId = vectorStorage.store(item.embeddingType, ragDocument, item.embedding)
+
+                                // Track vector ID per file
+                                val filePath = item.analysisItem.symbol.filePath
+                                synchronized(fileVectorIds) {
+                                    fileVectorIds.getOrPut(filePath) { mutableListOf() }.add(vectorId)
+                                }
 
                                 // Report success (to collector) and log target
                                 val storageItem =
@@ -580,6 +590,27 @@ class IndexingPipelineService(
             val workerResults = workers.awaitAll()
             totalProcessed = workerResults.sumOf { it.first }
             totalErrors = workerResults.sumOf { it.second }
+
+            // After storage completes, update indexing status per file with collected vector IDs
+            fileVectorIds.forEach { (filePath, vectorIds) ->
+                try {
+                    ragIndexingStatusService.completeIndexing(
+                        projectId = project.id,
+                        filePath = filePath,
+                        gitCommitHash = "current", // TODO: supply real commit hash from context
+                        vectorStoreIds = vectorIds.map { id ->
+                            RagIndexingStatusDocument.IndexedContentInfo(
+                                vectorStoreId = id,
+                                contentHash = "",
+                                contentLength = 0,
+                                description = "Indexed symbol from $filePath",
+                            )
+                        },
+                    )
+                } catch (e: Exception) {
+                    logger.error(e) { "Failed to mark indexing complete for $filePath" }
+                }
+            }
 
             val totalTime = System.currentTimeMillis() - startTime
             logger.info {
