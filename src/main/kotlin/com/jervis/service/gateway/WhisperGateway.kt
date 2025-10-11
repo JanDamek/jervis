@@ -1,35 +1,11 @@
 package com.jervis.service.gateway
 
-
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import mu.KotlinLogging
-import org.springframework.beans.factory.annotation.Value
-import org.springframework.http.MediaType
-import org.springframework.http.client.MultipartBodyBuilder
-import org.springframework.stereotype.Service
-import org.springframework.web.reactive.function.client.WebClient
-import org.springframework.web.reactive.function.client.awaitBody
 import java.nio.file.Path
-import kotlin.io.path.readBytes
 
 /**
- * Gateway for Whisper speech-to-text API integration.
+ * Gateway interface for Whisper speech-to-text API integration.
  */
-@Service
-class WhisperGateway(
-    private val webClientBuilder: WebClient.Builder,
-    @Value("\${audio.whisper.api-url}") private val whisperApiUrl: String,
-    @Value("\${audio.whisper.timeout-seconds}") private val timeoutSeconds: Long,
-) {
-    private val logger = KotlinLogging.logger {}
-
-    private val webClient: WebClient by lazy {
-        webClientBuilder
-            .baseUrl(whisperApiUrl)
-            .build()
-    }
-
+interface WhisperGateway {
     data class WhisperTranscriptionRequest(
         val model: String = "base",
         val language: String? = null,
@@ -51,55 +27,16 @@ class WhisperGateway(
         val text: String,
     )
 
-    /**
-     * Transcribe audio file to text using Whisper API
-     */
     suspend fun transcribeAudioFile(
         audioFile: Path,
         model: String = "base",
         language: String? = null,
-    ): WhisperTranscriptionResponse = withContext(Dispatchers.IO) {
-        logger.info { "Transcribing audio file: ${'$'}{audioFile.fileName} with model: ${'$'}model" }
+    ): WhisperTranscriptionResponse
 
-        val multipartBody = MultipartBodyBuilder().apply {
-            part("file", audioFile.readBytes())
-                .filename(audioFile.fileName.toString())
-            part("model", model)
-            language?.let { part("language", it) }
-            part("response_format", "verbose_json")
-        }.build()
-
-        webClient.post()
-            .uri("/v1/audio/transcriptions")
-            .contentType(MediaType.MULTIPART_FORM_DATA)
-            .bodyValue(multipartBody)
-            .retrieve()
-            .awaitBody<WhisperTranscriptionResponse>()
-    }
-
-    /**
-     * Transcribe audio from byte array
-     */
     suspend fun transcribeAudioBytes(
         audioBytes: ByteArray,
         fileName: String,
         model: String = "base",
         language: String? = null,
-    ): WhisperTranscriptionResponse = withContext(Dispatchers.IO) {
-        logger.info { "Transcribing audio bytes: ${'$'}fileName (${'$'}{audioBytes.size} bytes) with model: ${'$'}model" }
-
-        val multipartBody = MultipartBodyBuilder().apply {
-            part("file", audioBytes).filename(fileName)
-            part("model", model)
-            language?.let { part("language", it) }
-            part("response_format", "verbose_json")
-        }.build()
-
-        webClient.post()
-            .uri("/v1/audio/transcriptions")
-            .contentType(MediaType.MULTIPART_FORM_DATA)
-            .bodyValue(multipartBody)
-            .retrieve()
-            .awaitBody<WhisperTranscriptionResponse>()
-    }
+    ): WhisperTranscriptionResponse
 }

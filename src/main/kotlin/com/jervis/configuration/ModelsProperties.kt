@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component
 @Component
 @ConfigurationProperties(prefix = "")
 class ModelsProperties {
-    lateinit var models: Map<ModelType, List<ModelDetail>>
+    var models: Map<ModelType, List<ModelDetail>> = emptyMap()
 
     data class ModelDetail(
         var provider: ModelProvider? = null,

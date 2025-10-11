@@ -1,5 +1,6 @@
 package com.jervis.service.indexing
 
+import com.jervis.configuration.AudioMonitoringProperties
 import com.jervis.configuration.AudioTranscriptionProperties
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.rag.RagDocument
@@ -15,7 +16,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.bson.types.ObjectId
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import java.nio.file.Files
 import java.nio.file.Path
@@ -42,8 +42,7 @@ class AudioTranscriptIndexingService(
     private val historicalVersioningService: HistoricalVersioningService,
     private val indexingMonitorService: com.jervis.service.indexing.monitoring.IndexingMonitorService,
     private val audioProps: AudioTranscriptionProperties,
-    @Value("\${audio.monitoring.supported-formats}")
-    private val supportedFormats: List<String>,
+    private val audioMonitoringProps: AudioMonitoringProperties,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -61,14 +60,20 @@ class AudioTranscriptIndexingService(
         val language: String? = null,
     )
 
+    private enum class Scope(
+        val label: String,
+    ) {
+        PROJECT("project"),
+        CLIENT("client"),
+    }
+
     suspend fun indexProjectAudioFiles(project: ProjectDocument): AudioIndexingResult =
         withContext(Dispatchers.IO) {
             logger.info { "Starting audio indexing for project: ${project.name}" }
 
-    suspend fun indexProjectAudioFiles(project: ProjectDocument) = withContext(Dispatchers.IO) {
-        val audioPath = project.audioPath
-        if (audioPath.isNullOrBlank()) {
-            logger.info { "No audio path configured for project: ${project.name}" }
+            val audioPath = project.audioPath
+            if (audioPath.isNullOrBlank()) {
+                logger.info { "No audio path configured for project: ${project.name}" }
                 return@withContext AudioIndexingResult(0, 0, 0, 0)
             }
 
@@ -79,7 +84,6 @@ class AudioTranscriptIndexingService(
                 projectPath = Paths.get(project.path),
                 scope = Scope.PROJECT,
             )
-            return@withContext
         }
 
     suspend fun indexClientAudioFiles(
@@ -109,19 +113,11 @@ class AudioTranscriptIndexingService(
         if (!Files.exists(audioDir)) {
             logger.warn { "Audio path does not exist: $audioPath" }
             return AudioIndexingResult(0, 0, 1, 0)
-        val files = findSupportedAudioFiles(audioDir)
-        logger.info { "Audio indexing requested for project ${project.name}: ${files.size} file(s) detected in $audioPath" }
-        // Placeholder for real indexing pipeline.
-    }
+        }
 
-        val gitCommitHash = projectPath?.let { historicalVersioningService.getCurrentGitCommitHash(it) }
-            ?: "audio-${System.currentTimeMillis()}"
-    suspend fun indexClientAudioFiles(client: ClientDocument, audioPath: String) = withContext(Dispatchers.IO) {
-        val audioDir = Paths.get(audioPath)
-        val files = findSupportedAudioFiles(audioDir)
-        logger.info { "Audio indexing requested for client ${client.name}: ${files.size} file(s) detected in $audioPath" }
-        // Placeholder for real indexing pipeline.
-    }
+        val gitCommitHash =
+            projectPath?.let { historicalVersioningService.getCurrentGitCommitHash(it) }
+                ?: "audio-${System.currentTimeMillis()}"
 
         var processedFiles = 0
         var skippedFiles = 0
@@ -129,16 +125,7 @@ class AudioTranscriptIndexingService(
         var totalTranscriptionTime = 0L
 
         try {
-            val audioFiles = Files
-                .walk(audioDir)
-                .filter { it.isRegularFile() && it.isSupportedAudio() }
-    private fun findSupportedAudioFiles(root: Path): List<Path> {
-        if (!Files.exists(root)) return emptyList()
-        val regex = Regex(".*\\.(" + supportedFormats.joinToString("|") { Regex.escape(it) } + ")$", RegexOption.IGNORE_CASE)
-        return Files.walk(root)
-            .filter { it.isRegularFile() }
-            .filter { it.toString().matches(regex) }
-            .toList()
+            val audioFiles = findSupportedAudioFiles(audioDir)
 
             logger.info { "Found ${audioFiles.size} audio files to process in ${scope.label} scope" }
             projectId?.let {
@@ -166,12 +153,13 @@ class AudioTranscriptIndexingService(
                     val projectOrClientId = projectId ?: clientId
                     val virtualPath = "audio/${scope.label}/$relativePath"
 
-                    val shouldIndex = ragIndexingStatusService.shouldIndexFile(
-                        projectId = projectOrClientId,
-                        filePath = virtualPath,
-                        gitCommitHash = gitCommitHash,
-                        fileContent = fileBytes,
-                    )
+                    val shouldIndex =
+                        ragIndexingStatusService.shouldIndexFile(
+                            projectId = projectOrClientId,
+                            filePath = virtualPath,
+                            gitCommitHash = gitCommitHash,
+                            fileContent = fileBytes,
+                        )
 
                     if (!shouldIndex) {
                         skippedFiles++
@@ -188,18 +176,20 @@ class AudioTranscriptIndexingService(
                         module = AUDIO_MODULE,
                     )
 
-                    val transcription = whisperGateway.transcribeAudioFile(
-                        audioFile = audioFile,
-                        model = audioProps.model,
-                        language = audioProps.language,
-                    )
+                    val transcription =
+                        whisperGateway.transcribeAudioFile(
+                            audioFile = audioFile,
+                            model = audioProps.model,
+                            language = audioProps.language,
+                        )
 
-                    val metadata = AudioMetadata(
-                        fileName = audioFile.fileName.toString(),
-                        format = audioFile.extension,
-                        durationSeconds = transcription.duration,
-                        language = transcription.language,
-                    )
+                    val metadata =
+                        AudioMetadata(
+                            fileName = audioFile.fileName.toString(),
+                            format = audioFile.extension,
+                            durationSeconds = transcription.duration,
+                            language = transcription.language,
+                        )
 
                     val sentences = createTranscriptSentences(transcription, metadata)
 
@@ -211,17 +201,18 @@ class AudioTranscriptIndexingService(
                             val sentence = sentences[sentenceIndex]
                             val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, sentence)
 
-                            val ragDocument = RagDocument(
-                                projectId = projectOrClientId,
-                                clientId = clientId,
-                                ragSourceType = RagSourceType.AUDIO_TRANSCRIPT,
-                                summary = sentence,
-                                path = relativePath,
-                                language = metadata.language ?: UNKNOWN,
-                                gitCommitHash = gitCommitHash,
-                                chunkId = sentenceIndex,
-                                symbolName = "audio-${audioFile.nameWithoutExtension}",
-                            )
+                            val ragDocument =
+                                RagDocument(
+                                    projectId = projectOrClientId,
+                                    clientId = clientId,
+                                    ragSourceType = RagSourceType.AUDIO_TRANSCRIPT,
+                                    summary = sentence,
+                                    path = relativePath,
+                                    language = metadata.language ?: UNKNOWN,
+                                    gitCommitHash = gitCommitHash,
+                                    chunkId = sentenceIndex,
+                                    symbolName = "audio-${audioFile.nameWithoutExtension}",
+                                )
 
                             vectorStorage.store(ModelType.EMBEDDING_TEXT, ragDocument, embedding)
                             successfulSentences++
@@ -230,7 +221,7 @@ class AudioTranscriptIndexingService(
                         }
                     }
 
-                    logger.info { "Successfully indexed audio $relativePath as ${successfulSentences}/${sentences.size} sentences" }
+                    logger.info { "Successfully indexed audio $relativePath as $successfulSentences/${sentences.size} sentences" }
 
                     processedFiles++
                     val elapsedTime = (System.currentTimeMillis() - startTime) / 1000
@@ -270,6 +261,20 @@ class AudioTranscriptIndexingService(
         return AudioIndexingResult(processedFiles, skippedFiles, errorFiles, totalTranscriptionTime)
     }
 
+    private fun findSupportedAudioFiles(root: Path): List<Path> {
+        if (!Files.exists(root)) return emptyList()
+        val regex =
+            Regex(
+                ".*\\.(" + audioMonitoringProps.supportedFormats.joinToString("|") { Regex.escape(it) } + ")$",
+                RegexOption.IGNORE_CASE,
+            )
+        return Files
+            .walk(root)
+            .filter { it.isRegularFile() }
+            .filter { it.toString().matches(regex) }
+            .toList()
+    }
+
     private fun Path.isSupportedAudio(): Boolean = extension.lowercase() in SUPPORTED_FORMATS
 
     private fun createTranscriptSentences(
@@ -298,17 +303,16 @@ class AudioTranscriptIndexingService(
                 }
             }
         } else {
-            val textSentences = transcription.text
-                .split(Regex("[.!?\\n]+"))
-                .map { it.trim() }
-                .filter { it.length >= MIN_SENTENCE_LENGTH }
+            val textSentences =
+                transcription.text
+                    .split(Regex("[.!?\\n]+"))
+                    .map { it.trim() }
+                    .filter { it.length >= MIN_SENTENCE_LENGTH }
             sentences.addAll(textSentences)
         }
 
         return sentences.filter { it.isNotEmpty() }
     }
-
-    private enum class Scope(val label: String) { PROJECT("project"), CLIENT("client") }
 
     private companion object {
         private const val UNKNOWN = "unknown"

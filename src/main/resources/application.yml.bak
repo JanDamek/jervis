@@ -212,7 +212,6 @@ audio:
       - webm
 
   whisper:
-    enabled: ${WHISPER_ENABLED:false}
     api-url: ${WHISPER_API_URL:http://192.168.100.117:9000/}
     timeout-seconds: 300
     max-retries: 3
