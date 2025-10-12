@@ -8,6 +8,9 @@
 /logs/
 /logs/
 
+# Gradle
+.gradle/
+
 # Joern analysis artifacts
 /.joern/
 .joernignore
