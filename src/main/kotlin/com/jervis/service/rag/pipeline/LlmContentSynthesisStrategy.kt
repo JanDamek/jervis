@@ -96,14 +96,11 @@ class LlmContentSynthesisStrategy(
                 "originalQuery" to query,
                 "clusteredContent" to content,
                 "contextInfo" to "${context.clientDocument.name} - ${context.projectDocument.name}",
-                "answerInstruction" to
-                    "Based on the retrieved information, provide a comprehensive, accurate answer. " +
-                    "Focus on completeness and technical precision.",
             )
 
         val response =
             llmGateway.callLlm(
-                type = PromptTypeEnum.PLANNING_CREATE_PLAN_TOOL,
+                type = PromptTypeEnum.KNOWLEDGE_FINALIZE_ANSWER,
                 responseSchema = AnswerResponse(),
                 mappingValue = mappingValue,
                 quick = false,

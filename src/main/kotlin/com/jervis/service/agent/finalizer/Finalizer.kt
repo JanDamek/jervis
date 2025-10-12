@@ -2,7 +2,9 @@ package com.jervis.service.agent.finalizer
 
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
+import com.jervis.domain.plan.Plan
 import com.jervis.domain.plan.PlanStatus
+import com.jervis.domain.plan.StepStatus
 import com.jervis.dto.ChatResponse
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.gateway.processing.dto.LlmResponseWrapper
@@ -19,19 +21,11 @@ import java.time.Instant
 @Service
 class Finalizer(
     private val gateway: LlmGateway,
-    private val taskResolutionChecker: TaskResolutionChecker,
 ) {
     private val logger = KotlinLogging.logger {}
 
     suspend fun finalize(context: TaskContext): ChatResponse {
         logger.debug { "FINALIZER_START: Processing context=${context.id} with ${context.plans.size} plans" }
-
-        // Validate questionChecklist coverage using TaskResolutionChecker
-        val resolutionResult = taskResolutionChecker.performLlmAnalysis(context)
-        logger.debug {
-            "FINALIZER_CHECKLIST_VALIDATION: complete=${resolutionResult.complete}, " +
-                "missingRequirements=${resolutionResult.missingRequirements.size}"
-        }
 
         val finalizedPlans =
             context.plans
@@ -43,16 +37,9 @@ class Finalizer(
                     logger.debug { "FINALIZER_PLAN_CONTEXT: contextSummary='${plan.contextSummary}', finalAnswer='${plan.finalAnswer}'" }
 
                     val userLang = plan.originalLanguage.ifBlank { "EN" }
-                    val userPrompt =
-                        buildUserPrompt(
-                            originalQuestion = plan.originalQuestion,
-                            englishQuestion = plan.englishQuestion,
-                            contextSummary = plan.contextSummary,
-                            finalAnswer = plan.finalAnswer,
-                            userLanguage = userLang,
-                        )
+                    val mappingValues = buildFinalizerContext(context, plan, userLang)
 
-                    logger.debug { "FINALIZER_USER_PROMPT: userPrompt='$userPrompt'" }
+                    logger.debug { "FINALIZER_MAPPING_VALUES: $mappingValues" }
 
                     val answer =
                         gateway
@@ -60,7 +47,7 @@ class Finalizer(
                                 type = PromptTypeEnum.FINALIZER_ANSWER,
                                 responseSchema = LlmResponseWrapper(),
                                 quick = context.quick,
-                                mappingValue = mapOf("promptData" to userPrompt),
+                                mappingValue = mappingValues,
                                 outputLanguage = userLang,
                             )
                     plan.finalAnswer = answer.result.response
@@ -83,20 +70,6 @@ class Finalizer(
         val aggregatedMessage =
             buildString {
                 append(planAnswers)
-
-                if (!resolutionResult.complete && resolutionResult.missingRequirements.isNotEmpty()) {
-                    append("\n\n--- INCOMPLETE CHECKLIST COVERAGE ---\n")
-                    append("The following requirements from the original question checklist need additional attention:\n")
-                    resolutionResult.missingRequirements.forEachIndexed { index, requirement ->
-                        append("${index + 1}. $requirement\n")
-                    }
-                    if (resolutionResult.recommendations.isNotEmpty()) {
-                        append("\nRecommendations:\n")
-                        resolutionResult.recommendations.forEach { recommendation ->
-                            append("• $recommendation\n")
-                        }
-                    }
-                }
             }
 
         return ChatResponse(
@@ -104,23 +77,72 @@ class Finalizer(
         )
     }
 
-    private fun buildUserPrompt(
-        originalQuestion: String,
-        englishQuestion: String,
-        contextSummary: String?,
-        finalAnswer: String?,
+    private fun buildFinalizerContext(
+        context: TaskContext,
+        plan: Plan,
         userLanguage: String,
-    ): String =
-        buildString {
-            appendLine("User language (ISO-639-1): $userLanguage")
-            appendLine("Answer strictly in this language.")
-            appendLine()
-            appendLine("Context:")
-            appendLine("originalQuestion=$originalQuestion")
-            appendLine("englishQuestion=$englishQuestion")
-            if (!contextSummary.isNullOrBlank()) appendLine("summary=$contextSummary")
-            if (!finalAnswer.isNullOrBlank()) appendLine("answer=$finalAnswer")
-            appendLine()
-            appendLine("Write the final answer for the user.")
+    ): Map<String, String> {
+        val planContextSummary = buildPlanContextSummary(plan)
+
+        return mapOf(
+            "userRequest" to plan.englishQuestion,
+            "projectDescription" to (context.projectDocument.description ?: "Project: ${context.projectDocument.name}"),
+            "clientDescription" to (context.clientDocument.description ?: "Client: ${context.clientDocument.name}"),
+            "questionChecklist" to plan.questionChecklist.joinToString(", "),
+            "initialRagQueries" to plan.initialRagQueries.joinToString(", "),
+            "planContext" to planContextSummary,
+            "completedSteps" to
+                plan.steps
+                    .filter { it.status == StepStatus.DONE }
+                    .joinToString("\n") { step ->
+                        buildString {
+                            append("${step.stepToolName}: ${step.stepInstruction}")
+                            step.toolResult?.let { result ->
+                                append("\n  Result: ${result.output}")
+                            }
+                        }
+                    },
+            "userLanguage" to userLanguage,
+        )
+    }
+
+    private fun buildPlanContextSummary(plan: Plan): String {
+        val totalSteps = plan.steps.size
+        val completedSteps = plan.steps.count { it.status == StepStatus.DONE }
+        val failedSteps = plan.steps.count { it.status == StepStatus.FAILED }
+
+        return buildString {
+            appendLine("Plan ID: ${plan.id}")
+            appendLine("Original Question: ${plan.originalQuestion}")
+            appendLine("English Question: ${plan.englishQuestion}")
+            appendLine("Progress: $completedSteps/$totalSteps steps completed")
+            if (failedSteps > 0) {
+                appendLine("Failed Steps: $failedSteps")
+            }
+
+            if (completedSteps > 0) {
+                appendLine("\nCompleted Steps:")
+                plan.steps
+                    .filter { it.status == StepStatus.DONE }
+                    .forEachIndexed { index, step ->
+                        appendLine("${index + 1}. ${step.stepToolName}: ${step.stepInstruction}")
+                        step.toolResult?.let { result ->
+                            appendLine("   Result: ${result.output}")
+                        }
+                    }
+            }
+
+            if (failedSteps > 0) {
+                appendLine("\nFailed Steps:")
+                plan.steps
+                    .filter { it.status == StepStatus.FAILED }
+                    .forEach { step ->
+                        appendLine("- ${step.stepToolName}: ${step.stepInstruction}")
+                        step.toolResult?.let { result ->
+                            appendLine("   Error: ${result.output}")
+                        }
+                    }
+            }
         }
+    }
 }
