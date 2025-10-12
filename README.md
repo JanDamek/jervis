@@ -136,3 +136,23 @@ A lightweight startup screen lets users choose a persona without authentication.
 See docs/architecture.md for the architecture diagram, API contract (/api/v0), and rationale for the separation between the Server (APIs/business logic) and User (UI/client) layers.
 - JavaFX client is optional; current focus is the Spring Boot server with Kotlin-first coroutines.
 - MCP integration is via adapters; additional tools can be added over time.
+
+
+---
+
+## Monorepo Structure
+
+As of 2025-10-12, this repository is organized as a mono‑repo to host all platforms:
+
+```
+jervis/
+├── core/     (shared DTOs, business logic — Kotlin Multiplatform)
+├── server/   (Spring Boot backend — Kotlin, WebFlux)
+├── desktop/  (JavaFX UI — Kotlin)
+├── ios/      (Swift client)
+└── android/  (Kotlin Android app)
+```
+
+- Rationale and details: see docs/mono-repo-structure.md
+- Dependency management plan: see docs/dependency-management-plan.md
+- CI/CD: see .github/workflows/monorepo-ci.yml (path‑based builds for affected modules)
