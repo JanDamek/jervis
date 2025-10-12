@@ -874,14 +874,14 @@ class IndexingPipelineService(
         project: ProjectDocument,
         filePath: String,
     ) {
-        val filter =
-            mapOf(
-                "projectId" to project.id.toString(),
-                "path" to filePath,
-            )
-        val deletedText = vectorStorage.deleteByFilter(ModelType.EMBEDDING_TEXT, filter)
-        val deletedCode = vectorStorage.deleteByFilter(ModelType.EMBEDDING_CODE, filter)
-        logger.info { "PIPELINE_CLEANUP: Deleted old vectors for $filePath (text=$deletedText, code=$deletedCode)" }
+        // Use safe ID-based deletion via RagIndexingStatusService
+        val gitCommitHash = "current" // TODO: supply real commit hash from context
+        val deleted = ragIndexingStatusService.deleteOldEmbeddings(
+            projectId = project.id,
+            filePath = filePath,
+            gitCommitHash = gitCommitHash,
+        )
+        logger.info { "PIPELINE_CLEANUP: Deleted old vectors for $filePath using ID-based deletion (count=$deleted)" }
     }
 
     /**

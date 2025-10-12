@@ -251,39 +251,29 @@ class RagIndexingStatusService(
         kotlinx.coroutines.coroutineScope {
             val existingStatus = getFileIndexingStatus(projectId, gitCommitHash, filePath) ?: return@coroutineScope 0
 
-            if (existingStatus.indexedContent.isEmpty()) {
+            val ids = existingStatus.indexedContent.mapNotNull { it.vectorStoreId }.distinct()
+            if (ids.isEmpty()) {
                 logger.debug("No embeddings to delete for $filePath")
                 return@coroutineScope 0
             }
 
-            logger.info("Deleting ${existingStatus.indexedContent.size} old embeddings for $filePath")
+            logger.info("Deleting ${ids.size} old embeddings by ID for $filePath")
 
-            val textDeletions =
-                async {
-                    vectorStorage.deleteByFilter(
-                        com.jervis.domain.model.ModelType.EMBEDDING_TEXT,
-                        mapOf(
-                            "projectId" to projectId.toString(),
-                            "path" to filePath,
-                            "gitCommitHash" to gitCommitHash,
-                        ),
-                    )
-                }
-
-            val codeDeletions =
-                async {
-                    vectorStorage.deleteByFilter(
-                        com.jervis.domain.model.ModelType.EMBEDDING_CODE,
-                        mapOf(
-                            "projectId" to projectId.toString(),
-                            "path" to filePath,
-                            "gitCommitHash" to gitCommitHash,
-                        ),
-                    )
-                }
+            val textDeletions = async {
+                vectorStorage.deleteByIds(
+                    com.jervis.domain.model.ModelType.EMBEDDING_TEXT,
+                    ids,
+                )
+            }
+            val codeDeletions = async {
+                vectorStorage.deleteByIds(
+                    com.jervis.domain.model.ModelType.EMBEDDING_CODE,
+                    ids,
+                )
+            }
 
             val totalDeleted = textDeletions.await() + codeDeletions.await()
-            logger.info("Deleted $totalDeleted embeddings for $filePath")
+            logger.info("Deleted $totalDeleted embeddings for $filePath using ID-based deletion")
             totalDeleted
         }
 }
