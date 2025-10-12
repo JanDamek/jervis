@@ -1,10 +1,12 @@
 package com.jervis.service.indexing
 
 import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.dto.ClientDescriptionResult
 import com.jervis.entity.mongo.ClientDocument
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.mongo.ClientMongoRepository
 import com.jervis.repository.mongo.ProjectMongoRepository
+import com.jervis.service.IClientIndexingService
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.indexing.dto.ClientFullDescriptionResponse
 import com.jervis.service.indexing.dto.ClientShortDescriptionResponse
@@ -27,20 +29,14 @@ class ClientIndexingService(
     private val clientRepository: ClientMongoRepository,
     private val projectRepository: ProjectMongoRepository,
     private val llmGateway: LlmGateway,
-) {
+) : IClientIndexingService {
     private val logger = KotlinLogging.logger {}
-
-    data class ClientDescriptionResult(
-        val shortDescription: String,
-        val fullDescription: String,
-        val projectCount: Int,
-    )
 
     /**
      * Update client descriptions by aggregating all project descriptions
      * This should be called whenever any project for the client is reindexed
      */
-    suspend fun updateClientDescriptions(clientId: ObjectId): ClientDescriptionResult =
+    override suspend fun updateClientDescriptions(clientId: ObjectId): ClientDescriptionResult =
         withContext(Dispatchers.Default) {
             try {
                 logger.info { "Updating client descriptions for client: $clientId" }
@@ -174,7 +170,7 @@ class ClientIndexingService(
         shortDescription: String,
     ): String {
         val allLanguages = projects.flatMap { it.languages }.distinct()
-        val projectPaths = projects.map { it.path }.filter { it.isNotBlank() }
+        val projectPaths = projects.map { it.projectPath }.filter { it.isNotBlank() }
         val portfolioAnalysis =
             projectDescriptions
                 .mapIndexed { index, desc ->
@@ -217,11 +213,11 @@ class ClientIndexingService(
                         projectDescriptions.take(10).forEachIndexed { index, desc ->
                             appendLine("### ${index + 1}. ${desc.substringBefore(":**").removePrefix("**")}")
                             appendLine(desc.substringAfter(":** ").take(200))
-                        appendLine()
+                            appendLine()
+                        }
                     }
                 }
             }
-        }
 
         return buildString {
             appendLine("# ${client.name} - Client Organization Analysis")

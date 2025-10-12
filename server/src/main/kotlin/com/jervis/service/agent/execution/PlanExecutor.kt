@@ -1,5 +1,6 @@
 package com.jervis.service.agent.execution
 
+import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.plan.PlanStatus
@@ -97,7 +98,8 @@ class PlanExecutor(
         try {
             logger.info { "EXECUTOR: Executing step '${step.stepToolName}' (order=${step.order})" }
 
-            val tool = mcpToolRegistry.byName(step.stepToolName)
+            val toolEnum = PromptTypeEnum.valueOf(step.stepToolName)
+            val tool = mcpToolRegistry.byName(toolEnum)
             val stepContext = buildStepContext(plan)
 
             val result =
@@ -107,7 +109,7 @@ class PlanExecutor(
                     taskDescription = step.stepInstruction,
                     stepContext = stepContext,
                 )
-            step.toolResult = result
+            step.toolResult = result.output
 
             logger.info { "EXECUTOR: Step '${step.stepToolName}' completed with result type: ${result.javaClass.simpleName}" }
 
@@ -145,7 +147,7 @@ class PlanExecutor(
             }
         } catch (e: Exception) {
             logger.error(e) { "EXECUTOR: Exception executing step '${step.stepToolName}'" }
-            step.toolResult = ToolResult.error("Step execution failed: ${e.message}")
+            step.toolResult = "Step execution failed: ${e.message}"
             step.status = StepStatus.FAILED
             plan.status = PlanStatus.FAILED
             plan.finalAnswer = "Step execution failed: ${e.message}"
@@ -184,12 +186,5 @@ class PlanExecutor(
     /**
      * Create a brief summary of a tool result for context
      */
-    private fun summarizeToolResult(toolResult: ToolResult?): String =
-        when (toolResult) {
-            is ToolResult.Ok -> toolResult.output
-            is ToolResult.Ask -> "Asked user: ${toolResult.output}"
-            is ToolResult.Error -> "Error: ${toolResult.errorMessage}"
-            is ToolResult.Stop -> "Stopped: ${toolResult.reason}"
-            else -> "Unknown result: ${toolResult?.output}"
-        }
+    private fun summarizeToolResult(toolResult: String?): String = toolResult?.take(200) ?: "No result"
 }

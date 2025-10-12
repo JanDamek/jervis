@@ -1,9 +1,7 @@
 package com.jervis.entity.mongo
 
-import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.plan.PlanStep
 import com.jervis.domain.plan.StepStatus
-import com.jervis.service.mcp.domain.ToolResult
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.Indexed
@@ -17,11 +15,11 @@ data class PlanStepDocument(
     var order: Int = -1,
     var planId: ObjectId? = null,
     var contextId: ObjectId? = null,
-    val stepToolName: PromptTypeEnum,
+    val stepToolName: String,
     val stepInstruction: String,
     val stepDependsOn: Int = -1,
     var status: StepStatus = StepStatus.PENDING,
-    var output: ToolResult? = null,
+    var output: String? = null,
 ) {
     fun toDomain(): PlanStep =
         PlanStep(

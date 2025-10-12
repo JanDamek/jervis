@@ -1,6 +1,5 @@
 package com.jervis.service.notification
 
-import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.plan.PlanStep
 import org.bson.types.ObjectId
 import org.springframework.context.ApplicationEventPublisher
@@ -48,7 +47,7 @@ data class StepCompletionEvent(
     val contextId: ObjectId,
     val planId: ObjectId,
     val stepId: ObjectId,
-    val stepName: PromptTypeEnum,
+    val stepName: String,
     val stepStatus: com.jervis.domain.plan.StepStatus,
     val timestamp: Instant,
 )

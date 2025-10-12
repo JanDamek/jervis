@@ -1,6 +1,5 @@
 package com.jervis.service.debug
 
-import com.jervis.configuration.prompts.PromptTypeEnum
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import mu.KotlinLogging
@@ -36,7 +35,7 @@ class DesktopDebugWindowService {
 
     suspend fun startDebugSession(
         sessionId: String,
-        promptType: PromptTypeEnum,
+        promptType: String,
         systemPrompt: String,
         userPrompt: String,
     ): DebugSession {
@@ -208,7 +207,7 @@ class DesktopDebugWindowService {
 
 data class DebugSession(
     val id: String,
-    val promptType: PromptTypeEnum,
+    val promptType: String,
     val systemPrompt: String,
     val userPrompt: String,
     val startTime: LocalDateTime,
@@ -227,7 +226,7 @@ data class DebugSession(
 sealed class DebugEvent {
     data class SessionStarted(
         val sessionId: String,
-        val promptType: PromptTypeEnum,
+        val promptType: String,
         val systemPrompt: String,
         val userPrompt: String,
     ) : DebugEvent()

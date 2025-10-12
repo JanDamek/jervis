@@ -98,7 +98,7 @@ class AudioMonitoringService(
         project: ProjectDocument,
         audioDir: Path,
     ) {
-        val projectPath = Paths.get(project.path)
+        val projectPath = Paths.get(project.projectPath)
         val currentCommit = historicalVersioningService.getCurrentGitCommitHash(projectPath) ?: return
 
         val lastCommit = lastCheckedCommits[audioDir.toString()]

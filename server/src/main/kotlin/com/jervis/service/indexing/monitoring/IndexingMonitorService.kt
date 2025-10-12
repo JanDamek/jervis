@@ -1,5 +1,6 @@
 package com.jervis.service.indexing.monitoring
 
+import com.jervis.service.IIndexingMonitorService
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -16,7 +17,7 @@ import java.util.concurrent.ConcurrentHashMap
 @Service
 class IndexingMonitorService(
     private val eventPublisher: ApplicationEventPublisher,
-) {
+) : IIndexingMonitorService {
     private val logger = KotlinLogging.logger {}
 
     private val projectStates = ConcurrentHashMap<ObjectId, ProjectIndexingState>()
@@ -25,12 +26,12 @@ class IndexingMonitorService(
     /**
      * Flow of indexing progress events for real-time monitoring
      */
-    val progressFlow: Flow<IndexingProgressEvent> = _progressFlow.asSharedFlow()
+    override val progressFlow: Flow<IndexingProgressEvent> = _progressFlow.asSharedFlow()
 
     /**
      * Start indexing for a project
      */
-    suspend fun startProjectIndexing(
+    override suspend fun startProjectIndexing(
         projectId: ObjectId,
         projectName: String,
     ) {
@@ -61,14 +62,14 @@ class IndexingMonitorService(
     /**
      * Update step progress
      */
-    suspend fun updateStepProgress(
+    override suspend fun updateStepProgress(
         projectId: ObjectId,
         stepType: IndexingStepType,
         status: IndexingStepStatus,
-        progress: IndexingProgress? = null,
-        message: String? = null,
-        errorMessage: String? = null,
-        logs: List<String> = emptyList(),
+        progress: IndexingProgress?,
+        message: String?,
+        errorMessage: String?,
+        logs: List<String>,
     ) {
         val state = projectStates[projectId] ?: return
         val step = findStep(state.steps, stepType) ?: return
@@ -123,7 +124,7 @@ class IndexingMonitorService(
     /**
      * Add a log message to a step
      */
-    suspend fun addStepLog(
+    override suspend fun addStepLog(
         projectId: ObjectId,
         stepType: IndexingStepType,
         logMessage: String,
@@ -148,7 +149,7 @@ class IndexingMonitorService(
     /**
      * Complete project indexing
      */
-    suspend fun completeProjectIndexing(projectId: ObjectId) {
+    override suspend fun completeProjectIndexing(projectId: ObjectId) {
         val state = projectStates[projectId] ?: return
         val updatedState =
             state.copy(
@@ -173,7 +174,7 @@ class IndexingMonitorService(
     /**
      * Fail project indexing
      */
-    suspend fun failProjectIndexing(
+    override suspend fun failProjectIndexing(
         projectId: ObjectId,
         errorMessage: String,
     ) {
@@ -201,7 +202,7 @@ class IndexingMonitorService(
     /**
      * Get all current project states
      */
-    fun getAllProjectStates(): Map<ObjectId, ProjectIndexingState> = projectStates.toMap()
+    override fun getAllProjectStates(): Map<ObjectId, ProjectIndexingState> = projectStates.toMap()
 
     private fun createIndexingSteps(): List<IndexingStep> =
         listOf(

@@ -10,9 +10,6 @@ import com.jervis.service.gateway.processing.dto.LlmResponseWrapper
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.swing.Swing
-import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import java.awt.BorderLayout
 import java.awt.Color
@@ -59,19 +56,20 @@ class CommunicationUserDialogTool(
                     outputLanguage = plan.originalLanguage.lowercase().ifBlank { "en" },
                 )
 
-        val previousOutput = plan.finalAnswer ?: plan.contextSummary
-        val decisionResult =
-            withContext(Dispatchers.Swing) {
-                showUserAwaitDialog(
-                    owner = null,
-                    client = context.clientDocument,
-                    project = context.projectDocument,
-                    previousOutput = previousOutput,
-                    questionOriginal = taskDescription,
-                    questionTranslated = taskDescription,
-                    proposedAnswer = proposedAnswer.result.response,
-                )
-            }
+        plan.finalAnswer ?: plan.contextSummary
+        val decisionResult = UserDecisionResult()
+        // TODO make thislike websocket call or push notification for iOS and Android
+//            withContext(Dispatchers.Swing) {
+//                showUserAwaitDialog(
+//                    owner = null,
+//                    client = context.clientDocument,
+//                    project = context.projectDocument,
+//                    previousOutput = previousOutput,
+//                    questionOriginal = taskDescription,
+//                    questionTranslated = taskDescription,
+//                    proposedAnswer = proposedAnswer.result.response,
+//                )
+//            }
 
         val finalAnswerOriginal =
             when (decisionResult.decision) {
@@ -112,7 +110,7 @@ class CommunicationUserDialogTool(
     }
 
     data class UserDecisionResult(
-        val decision: UserDecision,
+        val decision: UserDecision = UserDecision.ESC,
         val answerText: String = "",
     )
 

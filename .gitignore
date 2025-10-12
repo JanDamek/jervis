@@ -1,12 +1,14 @@
 # Project exclude paths
 .github
 .idea
+.gradle
 
 *.iml
 
 /target/
 /logs/
-/logs/
+/*/build/
+/build
 
 # Joern analysis artifacts
 /.joern/

@@ -98,7 +98,7 @@ class Finalizer(
                         buildString {
                             append("${step.stepToolName}: ${step.stepInstruction}")
                             step.toolResult?.let { result ->
-                                append("\n  Result: ${result.output}")
+                                append("\n  Result: ${result.take(500)}")
                             }
                         }
                     },
@@ -127,7 +127,7 @@ class Finalizer(
                     .forEachIndexed { index, step ->
                         appendLine("${index + 1}. ${step.stepToolName}: ${step.stepInstruction}")
                         step.toolResult?.let { result ->
-                            appendLine("   Result: ${result.output}")
+                            appendLine("   Result: ${result.take(200)}")
                         }
                     }
             }
@@ -139,7 +139,7 @@ class Finalizer(
                     .forEach { step ->
                         appendLine("- ${step.stepToolName}: ${step.stepInstruction}")
                         step.toolResult?.let { result ->
-                            appendLine("   Error: ${result.output}")
+                            appendLine("   Error: ${result.take(200)}")
                         }
                     }
             }

@@ -129,7 +129,7 @@ class DocumentExtractTextTool(
             path.isAbsolute -> path
             else -> {
                 // Resolve relative to project path
-                val projectPath = Paths.get(context.projectDocument.path)
+                val projectPath = Paths.get(context.projectDocument.projectPath)
                 if (Files.exists(projectPath) && Files.isDirectory(projectPath)) {
                     projectPath.resolve(filePath)
                 } else {

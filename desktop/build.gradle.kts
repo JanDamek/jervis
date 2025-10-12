@@ -22,7 +22,15 @@ repositories {
 }
 
 dependencies {
-    implementation(project(":server"))
+    implementation(project(":common"))
+    implementation(project(":api-client"))
+
+    // Spring Framework
+    implementation("org.springframework.boot:spring-boot-starter")
+    implementation("org.springframework:spring-context")
+
+    // MongoDB BSON
+    implementation("org.mongodb:bson:5.2.1")
 
     // UI & Swing
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.9.0")
@@ -43,6 +51,6 @@ tasks.withType<KotlinCompile>().configureEach {
     }
 }
 
-(tasks.test) {
+tasks.test {
     useJUnitPlatform()
 }

@@ -43,35 +43,38 @@ class FileLevelIndexingService(
         val files = Files.walk(projectPath).filter { Files.isRegularFile(it) }.toList()
         logger.info { "FILE_INDEX: Found ${files.size} files to consider for indexing" }
 
-        files.map { filePath ->
-            async {
-                try {
-                    indexSingleFile(project, filePath)
-                } catch (e: Exception) {
-                    logger.warn(e) { "FILE_INDEX: Failed to index $filePath: ${e.message}" }
+        files
+            .map { filePath ->
+                async {
+                    try {
+                        indexSingleFile(project, filePath)
+                    } catch (e: Exception) {
+                        logger.warn(e) { "FILE_INDEX: Failed to index $filePath: ${e.message}" }
+                    }
                 }
-            }
-        }.awaitAll()
+            }.awaitAll()
     }
 
     private suspend fun indexSingleFile(
         project: ProjectDocument,
         filePath: Path,
-    ) {
+    ) = coroutineScope {
         val contentBytes = Files.readAllBytes(filePath)
-        val filePathStr = project.projectPath?.let { base ->
-            // If repository stores projectPath, prefer relative
-            runCatching { Path.of(base).relativize(filePath).toString() }.getOrElse { filePath.toString() }
-        } ?: filePath.toString()
+        val filePathStr =
+            project.projectPath?.let { base ->
+                // If repository stores projectPath, prefer relative
+                runCatching { Path.of(base).relativize(filePath).toString() }.getOrElse { filePath.toString() }
+            } ?: filePath.toString()
         val gitCommitHash = "current" // TODO: supply actual commit hash from context
 
-        val shouldIndex = ragIndexingStatusService.shouldIndexFile(
-            projectId = project.id,
-            filePath = filePathStr,
-            gitCommitHash = gitCommitHash,
-            fileContent = contentBytes,
-        )
-        if (!shouldIndex) return
+        val shouldIndex =
+            ragIndexingStatusService.shouldIndexFile(
+                projectId = project.id,
+                filePath = filePathStr,
+                gitCommitHash = gitCommitHash,
+                fileContent = contentBytes,
+            )
+        if (!shouldIndex) return@coroutineScope
 
         // Start indexing record
         ragIndexingStatusService.startIndexing(
@@ -83,24 +86,26 @@ class FileLevelIndexingService(
         )
 
         // Delete old embeddings safely by ID in parallel with LLM call
-        val deleteJob = async {
-            ragIndexingStatusService.deleteOldEmbeddings(
-                projectId = project.id,
-                filePath = filePathStr,
-                gitCommitHash = gitCommitHash,
-            )
-        }
+        val deleteJob =
+            async {
+                ragIndexingStatusService.deleteOldEmbeddings(
+                    projectId = project.id,
+                    filePath = filePathStr,
+                    gitCommitHash = gitCommitHash,
+                )
+            }
 
         val llm: ParsedResponse<List<FileAnalysisChunk>> =
             llmGateway.callLlm(
                 type = PromptTypeEnum.COMPREHENSIVE_FILE_ANALYSIS,
                 responseSchema = listOf(FileAnalysisChunk()),
                 quick = false,
-                mappingValue = mapOf(
-                    "filePath" to filePathStr,
-                    "language" to (detectLanguage(filePath) ?: "unknown"),
-                    "fileContent" to contentBytes.toString(Charsets.UTF_8),
-                ),
+                mappingValue =
+                    mapOf(
+                        "filePath" to filePathStr,
+                        "language" to (detectLanguage(filePath) ?: "unknown"),
+                        "fileContent" to contentBytes.toString(Charsets.UTF_8),
+                    ),
             )
 
         // Ensure deletion finished (best-effort)
@@ -116,22 +121,24 @@ class FileLevelIndexingService(
                 val codeVectorId =
                     vectorStorage.store(
                         collectionType = ModelType.EMBEDDING_CODE,
-                        ragDocument = RagDocument(
-                            projectId = project.id,
-                            clientId = project.clientId,
-                            ragSourceType = RagSourceType.LLM,
-                            summary = code, // summary = code per spec
-                            path = filePathStr,
-                            gitCommitHash = gitCommitHash,
-                        ),
+                        ragDocument =
+                            RagDocument(
+                                projectId = project.id,
+                                clientId = project.clientId,
+                                ragSourceType = RagSourceType.LLM,
+                                summary = code, // summary = code per spec
+                                path = filePathStr,
+                                gitCommitHash = gitCommitHash,
+                            ),
                         embedding = codeEmbedding,
                     )
-                vectorInfos += RagIndexingStatusDocument.IndexedContentInfo(
-                    vectorStoreId = codeVectorId,
-                    contentHash = sha256(code),
-                    contentLength = code.length,
-                    description = "file-level",
-                )
+                vectorInfos +=
+                    RagIndexingStatusDocument.IndexedContentInfo(
+                        vectorStoreId = codeVectorId,
+                        contentHash = sha256(code),
+                        contentLength = code.length,
+                        description = "file-level",
+                    )
             }
 
             chunk.descriptionChunks.forEach { desc ->
@@ -140,22 +147,24 @@ class FileLevelIndexingService(
                 val textVectorId =
                     vectorStorage.store(
                         collectionType = ModelType.EMBEDDING_TEXT,
-                        ragDocument = RagDocument(
-                            projectId = project.id,
-                            clientId = project.clientId,
-                            ragSourceType = RagSourceType.LLM,
-                            summary = code, // summary stays code: find code by description
-                            path = filePathStr,
-                            gitCommitHash = gitCommitHash,
-                        ),
+                        ragDocument =
+                            RagDocument(
+                                projectId = project.id,
+                                clientId = project.clientId,
+                                ragSourceType = RagSourceType.LLM,
+                                summary = code, // summary stays code: find code by description
+                                path = filePathStr,
+                                gitCommitHash = gitCommitHash,
+                            ),
                         embedding = textEmbedding,
                     )
-                vectorInfos += RagIndexingStatusDocument.IndexedContentInfo(
-                    vectorStoreId = textVectorId,
-                    contentHash = sha256(desc),
-                    contentLength = desc.length,
-                    description = "file-level",
-                )
+                vectorInfos +=
+                    RagIndexingStatusDocument.IndexedContentInfo(
+                        vectorStoreId = textVectorId,
+                        contentHash = sha256(desc),
+                        contentLength = desc.length,
+                        description = "file-level",
+                    )
             }
         }
 

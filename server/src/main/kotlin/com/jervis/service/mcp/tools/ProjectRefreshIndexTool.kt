@@ -64,7 +64,7 @@ class ProjectRefreshIndexTool(
                 val project = context.projectDocument
                 logger.info { "Starting reindex operation for project: ${project.name}" }
 
-                if (project.path.isEmpty()) {
+                if (project.projectPath.isEmpty()) {
                     return@withContext ToolResult.error("Project has no path configured: ${project.name}")
                 }
 
@@ -81,7 +81,7 @@ class ProjectRefreshIndexTool(
                             appendLine("✅ Comprehensive Project Reindexing Completed")
                             appendLine()
                             appendLine("Project: ${project.name}")
-                            appendLine("Path: ${project.path}")
+                            appendLine("Path: ${project.projectPath}")
                             appendLine()
                             appendLine("Statistics:")
                             appendLine("• Processed files: ${result.processedFiles}")

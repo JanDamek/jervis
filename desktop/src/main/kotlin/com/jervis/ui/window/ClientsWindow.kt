@@ -4,10 +4,10 @@ import com.jervis.common.Constants.GLOBAL_ID
 import com.jervis.entity.mongo.ClientDocument
 import com.jervis.entity.mongo.ClientProjectLinkDocument
 import com.jervis.entity.mongo.ProjectDocument
-import com.jervis.service.client.ClientProjectLinkService
-import com.jervis.service.client.ClientService
-import com.jervis.service.indexing.IndexingService
-import com.jervis.service.project.ProjectService
+import com.jervis.service.IClientProjectLinkService
+import com.jervis.service.IClientService
+import com.jervis.service.IIndexingService
+import com.jervis.service.IProjectService
 import com.jervis.ui.component.ClientSettingsComponents
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -39,10 +39,10 @@ import javax.swing.border.EmptyBorder
  * Swing window for managing Clients and adding Projects to a selected Client.
  */
 class ClientsWindow(
-    private val clientService: ClientService,
-    private val projectService: ProjectService,
-    private val linkService: ClientProjectLinkService,
-    private val indexingService: IndexingService,
+    private val clientService: IClientService,
+    private val projectService: IProjectService,
+    private val linkService: IClientProjectLinkService,
+    private val indexingService: IIndexingService,
 ) : JFrame("Client Management") {
     private val clientsList = JList<ClientDocument>()
     private val listModel = javax.swing.DefaultListModel<ClientDocument>()
@@ -850,7 +850,7 @@ class ClientsWindow(
                             clientId = clientId,
                             name = name,
                             description = desc,
-                            path = path,
+                            projectPath = path,
                             isActive = false,
                         )
                     withContext(Dispatchers.IO) { projectService.saveProject(project, false) }

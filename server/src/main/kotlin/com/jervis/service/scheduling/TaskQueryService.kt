@@ -2,7 +2,9 @@ package com.jervis.service.scheduling
 
 import com.jervis.entity.mongo.ScheduledTaskDocument
 import com.jervis.repository.mongo.ScheduledTaskMongoRepository
+import com.jervis.service.ITaskQueryService
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.toList
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 
@@ -14,15 +16,27 @@ import org.springframework.stereotype.Service
 @Service
 class TaskQueryService(
     private val scheduledTaskRepository: ScheduledTaskMongoRepository,
-) {
+) : ITaskQueryService {
     /**
-     * Get tasks for a project
+     * Get tasks for a project (Flow version for internal use)
      */
-    fun getTasksForProject(projectId: ObjectId): Flow<ScheduledTaskDocument> = scheduledTaskRepository.findByProjectId(projectId)
+    fun getTasksForProjectFlow(projectId: ObjectId): Flow<ScheduledTaskDocument> = scheduledTaskRepository.findByProjectId(projectId)
 
     /**
-     * Get tasks by status
+     * Get tasks for a project (List version for interface)
      */
-    fun getTasksByStatus(status: ScheduledTaskDocument.ScheduledTaskStatus): Flow<ScheduledTaskDocument> =
+    override suspend fun getTasksForProject(projectId: ObjectId): List<ScheduledTaskDocument> =
+        scheduledTaskRepository.findByProjectId(projectId).toList()
+
+    /**
+     * Get tasks by status (Flow version for internal use)
+     */
+    fun getTasksByStatusFlow(status: ScheduledTaskDocument.ScheduledTaskStatus): Flow<ScheduledTaskDocument> =
         scheduledTaskRepository.findByStatus(status)
+
+    /**
+     * Get tasks by status (List version for interface)
+     */
+    override suspend fun getTasksByStatus(status: ScheduledTaskDocument.ScheduledTaskStatus): List<ScheduledTaskDocument> =
+        scheduledTaskRepository.findByStatus(status).toList()
 }

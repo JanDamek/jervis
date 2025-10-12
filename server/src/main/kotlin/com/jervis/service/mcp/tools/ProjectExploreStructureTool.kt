@@ -135,7 +135,7 @@ class ProjectExploreStructureTool(
         val candidates =
             buildList {
                 if (!overridePath.isNullOrBlank()) add(overridePath)
-                val ctxPath = context.projectDocument.path
+                val ctxPath = context.projectDocument.projectPath
                 if (ctxPath.isNotBlank()) add(ctxPath)
                 add(System.getProperty("user.dir"))
             }

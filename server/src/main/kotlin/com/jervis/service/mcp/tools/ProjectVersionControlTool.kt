@@ -79,7 +79,7 @@ class ProjectVersionControlTool(
         params: ProjectVersionControlParams,
         context: TaskContext,
     ): ToolResult {
-        val projectDir = File(context.projectDocument.path)
+        val projectDir = File(context.projectDocument.projectPath)
         val command = buildGitCommand(params)
 
         val processResult =

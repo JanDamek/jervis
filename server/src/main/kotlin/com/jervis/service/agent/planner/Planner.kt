@@ -83,7 +83,7 @@ class Planner(
             planId = planId,
             contextId = contextId,
             order = order,
-            stepToolName = validToolName,
+            stepToolName = validToolName.name,
             stepInstruction = dto.stepInstruction,
             stepDependsOn = dto.stepDependsOn,
             status = StepStatus.PENDING,
@@ -143,7 +143,7 @@ class Planner(
                         .forEachIndexed { index, step ->
                             appendLine("${index + 1}. ${step.stepToolName}: ${step.stepInstruction}")
                             step.toolResult?.let { result ->
-                                appendLine("   Result: ${result.output}")
+                                appendLine("   Result: ${result.take(200)}")
                             }
                         }
                 }
@@ -155,7 +155,7 @@ class Planner(
                         .forEach { step ->
                             appendLine("- ${step.stepToolName}: ${step.stepInstruction}")
                             step.toolResult?.let { result ->
-                                appendLine("   Error: ${result.output}")
+                                appendLine("   Error: ${result.take(200)}")
                             }
                         }
                 }

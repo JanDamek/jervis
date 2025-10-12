@@ -8,6 +8,7 @@ import com.jervis.dto.ChatRequestContext
 import com.jervis.dto.ChatResponse
 import com.jervis.entity.mongo.PlanDocument
 import com.jervis.repository.mongo.PlanMongoRepository
+import com.jervis.service.IAgentOrchestratorService
 import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.execution.PlanExecutor
 import com.jervis.service.agent.finalizer.Finalizer
@@ -33,10 +34,10 @@ class AgentOrchestratorService(
     private val planner: Planner,
     private val planMongoRepository: PlanMongoRepository,
     private val stepNotificationService: com.jervis.service.notification.StepNotificationService,
-) {
+) : IAgentOrchestratorService {
     private val logger = KotlinLogging.logger {}
 
-    suspend fun handle(
+    override suspend fun handle(
         text: String,
         ctx: ChatRequestContext,
     ): ChatResponse {
@@ -54,14 +55,15 @@ class AgentOrchestratorService(
                     text.take(50).trim().ifBlank { "New Context" }
                 }
 
+            val existingId = ctx.existingContextId
             val context =
-                if (ctx.existingContextId != null) {
-                    taskContextService.findById(ctx.existingContextId)?.apply {
+                if (existingId != null) {
+                    taskContextService.findById(existingId)?.apply {
                         if (this.name == "New Context") {
                             this.name = contextName
                         }
                     }
-                        ?: throw IllegalArgumentException("Context with ID ${ctx.existingContextId} not found")
+                        ?: throw IllegalArgumentException("Context with ID $existingId not found")
                 } else {
                     taskContextService.create(
                         clientId = ctx.clientId,
@@ -199,7 +201,7 @@ class AgentOrchestratorService(
                     PlanStep(
                         id = ObjectId.get(),
                         order = index,
-                        stepToolName = PromptTypeEnum.KNOWLEDGE_SEARCH_TOOL,
+                        stepToolName = PromptTypeEnum.KNOWLEDGE_SEARCH_TOOL.name,
                         stepInstruction = query,
                         planId = plan.id,
                         contextId = context.id,
