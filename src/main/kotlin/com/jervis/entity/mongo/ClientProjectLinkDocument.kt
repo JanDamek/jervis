@@ -12,7 +12,7 @@ import java.time.Instant
  */
 @Document(collection = "client_project_links")
 @CompoundIndexes(
-    CompoundIndex(name = "client_project_unique", def = "{ 'clientId': 1, 'projectId': 1 }", unique = true)
+    CompoundIndex(name = "client_project_unique", def = "{ 'clientId': 1, 'projectId': 1 }", unique = true),
 )
 data class ClientProjectLinkDocument(
     @Id
@@ -20,9 +20,9 @@ data class ClientProjectLinkDocument(
     val clientId: ObjectId,
     val projectId: ObjectId,
     // Per-link flags
-    val isDisabled: Boolean = false,              // disable project usage for this client
-    val anonymizationEnabled: Boolean = true,     // apply anonymization when using this project for this client
-    val historical: Boolean = false,              // if true, do not take from RAG, but keep in awareness
+    val isDisabled: Boolean = false, // disable project usage for this client
+    val anonymizationEnabled: Boolean = true, // apply anonymization when using this project for this client
+    val historical: Boolean = false, // if true, do not take from RAG, but keep in awareness
     val createdAt: Instant = Instant.now(),
     val updatedAt: Instant = Instant.now(),
 )

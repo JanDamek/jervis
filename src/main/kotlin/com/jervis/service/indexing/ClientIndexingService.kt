@@ -138,22 +138,30 @@ class ClientIndexingService(
                 if (desc.length > 300) desc.take(300) + "..." else desc
             }
 
-        val llmResponse =
-            llmGateway.callLlm(
-                type = PromptTypeEnum.CLIENT_DESCRIPTION_SHORT,
-                responseSchema = ClientShortDescriptionResponse(),
-                quick = false,
-                mappingValue =
-                    mapOf(
-                        "clientName" to client.name,
-                        "clientDescription" to (client.description ?: ""),
-                        "projectCount" to projects.size.toString(),
-                        "projectSummaries" to projectSummaries.joinToString(", ", "• "),
-                        "technologies" to allLanguages.joinToString(", "),
-                    ),
-            )
-
-        return llmResponse.result.shortDescription.trim()
+        return try {
+            val llmResponse =
+                llmGateway.callLlm(
+                    type = PromptTypeEnum.CLIENT_DESCRIPTION_SHORT,
+                    responseSchema = ClientShortDescriptionResponse(),
+                    quick = false,
+                    mappingValue =
+                        mapOf(
+                            "clientName" to client.name,
+                            "clientDescription" to (client.description ?: ""),
+                            "projectCount" to projects.size.toString(),
+                            "projectSummaries" to projectSummaries.joinToString(", ", "• "),
+                            "technologies" to allLanguages.joinToString(", "),
+                        ),
+                )
+            llmResponse.result.shortDescription.trim()
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to generate short description using LLM for client ${client.name}, using fallback" }
+            "${client.name} manages ${projects.size} project${if (projects.size != 1) "s" else ""} using technologies: ${
+                allLanguages.take(
+                    5,
+                ).joinToString(", ")
+            }${if (allLanguages.size > 5) ", and others" else ""}"
+        }
     }
 
     /**
@@ -173,23 +181,47 @@ class ClientIndexingService(
                     "Project ${index + 1}:\n$desc"
                 }.joinToString("\n\n" + "-".repeat(40) + "\n\n")
 
-        val llmResponse =
-            llmGateway.callLlm(
-                type = PromptTypeEnum.CLIENT_DESCRIPTION_FULL,
-                responseSchema = ClientFullDescriptionResponse(),
-                quick = false,
-                mappingValue =
-                    mapOf(
-                        "clientName" to client.name,
-                        "clientDescription" to (client.description ?: ""),
-                        "shortDescription" to shortDescription,
-                        "totalProjects" to projects.size.toString(),
-                        "portfolioAnalysis" to portfolioAnalysis,
-                        "programmingLanguages" to allLanguages.joinToString(", "),
-                        "activeProjects" to projects.count { !it.isDisabled }.toString(),
-                        "managedRepositories" to projectPaths.size.toString(),
-                    ),
-            )
+        val llmGeneratedDescription =
+            try {
+                val llmResponse =
+                    llmGateway.callLlm(
+                        type = PromptTypeEnum.CLIENT_DESCRIPTION_FULL,
+                        responseSchema = ClientFullDescriptionResponse(),
+                        quick = false,
+                        mappingValue =
+                            mapOf(
+                                "clientName" to client.name,
+                                "clientDescription" to (client.description ?: ""),
+                                "shortDescription" to shortDescription,
+                                "totalProjects" to projects.size.toString(),
+                                "portfolioAnalysis" to portfolioAnalysis,
+                                "programmingLanguages" to allLanguages.joinToString(", "),
+                                "activeProjects" to projects.count { !it.isDisabled }.toString(),
+                                "managedRepositories" to projectPaths.size.toString(),
+                            ),
+                    )
+                llmResponse.result.fullDescription
+            } catch (e: Exception) {
+                logger.warn(e) { "Failed to generate full description using LLM for client ${client.name}, using fallback" }
+                buildString {
+                    appendLine("## Overview")
+                    appendLine(shortDescription)
+                    appendLine()
+                    appendLine("## Projects")
+                    appendLine(
+                        "This client manages ${projects.size} project(s), with ${projects.count { !it.isDisabled }} currently active.",
+                    )
+                    appendLine()
+                    if (projectDescriptions.isNotEmpty()) {
+                        appendLine("## Project Portfolio")
+                        projectDescriptions.take(10).forEachIndexed { index, desc ->
+                            appendLine("### ${index + 1}. ${desc.substringBefore(":**").removePrefix("**")}")
+                            appendLine(desc.substringAfter(":** ").take(200))
+                        appendLine()
+                    }
+                }
+            }
+        }
 
         return buildString {
             appendLine("# ${client.name} - Client Organization Analysis")
@@ -201,7 +233,7 @@ class ClientIndexingService(
             appendLine()
             appendLine("---")
             appendLine()
-            appendLine(llmResponse.result.fullDescription)
+            appendLine(llmGeneratedDescription)
             appendLine()
             appendLine("---")
             appendLine(

@@ -216,7 +216,7 @@ class JsonParser {
                                 objectMapper.typeFactory.constructCollectionType(ArrayList::class.java, elementType)
                             @Suppress("UNCHECKED_CAST")
                             objectMapper.readValue(trimmedResponse, listType) as T
-                    }
+                        }
                     }
 
                     else -> {

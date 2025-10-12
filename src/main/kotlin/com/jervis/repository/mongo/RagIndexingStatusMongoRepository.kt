@@ -31,9 +31,7 @@ interface RagIndexingStatusMongoRepository : CoroutineCrudRepository<RagIndexing
     /**
      * Finds all files for a project (across all commits).
      */
-    fun findAllByProjectId(
-        projectId: ObjectId,
-    ): kotlinx.coroutines.flow.Flow<RagIndexingStatusDocument>
+    fun findAllByProjectId(projectId: ObjectId): kotlinx.coroutines.flow.Flow<RagIndexingStatusDocument>
 
     /**
      * Finds files by status.

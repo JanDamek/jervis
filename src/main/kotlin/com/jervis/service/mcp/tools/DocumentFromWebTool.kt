@@ -48,7 +48,7 @@ class DocumentFromWebTool(
                         "taskDescription" to taskDescription,
                         "stepContext" to stepContext,
                     ),
-                    quick = context.quick,
+                quick = context.quick,
                 responseSchema = DocumentFromWebParams(),
             )
         return llmResponse.result
