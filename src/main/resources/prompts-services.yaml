@@ -146,6 +146,7 @@ prompts:
       1. Write ONLY natural language descriptions - NO code, NO imports, NO syntax
       2. Explain WHAT the class does, not HOW it's written
       3. Use complete English sentences describing functionality
+      4. When code is not complete, write only base information, not try to guess
       
       WRONG outputs (NEVER do this):
       - "import ..."

@@ -85,7 +85,7 @@ class PromptBuilderService {
 
         if (missingPlaceholders.isNotEmpty()) {
             throw IllegalStateException(
-                "Missing values for placeholders: ${missingPlaceholders.joinToString(", ") { "{$it}" }}"
+                "Missing values for placeholders: ${missingPlaceholders.joinToString(", ") { "{$it}" }}",
             )
         }
     }
@@ -152,8 +152,5 @@ OUTPUT CONTRACT (STRICT):
 
 Response in JSON: 
 $exampleJson
-
-You MUST NOT output <think> or reasoning steps.
-Do all reasoning silently and return ONLY the final JSON according to the schema.
         """.trimIndent()
 }

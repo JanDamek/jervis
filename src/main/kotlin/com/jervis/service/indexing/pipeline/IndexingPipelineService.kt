@@ -481,30 +481,33 @@ class IndexingPipelineService(
 
         try {
             for (classTask in inputChannel) {
-                // Process class analysis and generate embedding for each chunk
-                val chunks = generateClassSummary(classTask.classSymbol)
-                val totalChunks = chunks.size
+                try {
+                    val chunks = generateClassSummary(classTask.classSymbol)
+                    val totalChunks = chunks.size
 
-                chunks.forEachIndexed { index, chunk ->
-                    val startTime = System.currentTimeMillis()
-                    val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, chunk)
+                    chunks.forEachIndexed { index, chunk ->
+                        val startTime = System.currentTimeMillis()
+                        val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, chunk)
 
-                    val pipelineItem =
-                        EmbeddingPipelineItem(
-                            analysisItem = classTask.analysisItem,
-                            content = chunk,
-                            embedding = embedding,
-                            embeddingType = ModelType.EMBEDDING_TEXT,
-                            processingTimeMs = System.currentTimeMillis() - startTime,
-                            chunkIndex = index,
-                            totalChunks = totalChunks,
-                        )
+                        val pipelineItem =
+                            EmbeddingPipelineItem(
+                                analysisItem = classTask.analysisItem,
+                                content = chunk,
+                                embedding = embedding,
+                                embeddingType = ModelType.EMBEDDING_TEXT,
+                                processingTimeMs = System.currentTimeMillis() - startTime,
+                                chunkIndex = index,
+                                totalChunks = totalChunks,
+                            )
 
-                    outputChannel.send(pipelineItem)
-                }
+                        outputChannel.send(pipelineItem)
+                    }
 
-                if (chunks.isNotEmpty()) {
-                    processedClasses++
+                    if (chunks.isNotEmpty()) {
+                        processedClasses++
+                    }
+                } catch (e: Exception) {
+                    logger.warn(e) { "PIPELINE_CLASS_PROCESSOR_ERROR: Failed to process class ${classTask.classSymbol.name}" }
                 }
             }
 
@@ -559,12 +562,13 @@ class IndexingPipelineService(
                                 // Track indexed info per file
                                 val filePath = item.analysisItem.symbol.filePath
                                 val contentHash = computeSha256(item.content)
-                                val info = RagIndexingStatusDocument.IndexedContentInfo(
-                                    vectorStoreId = vectorId,
-                                    contentHash = contentHash,
-                                    contentLength = item.content.length,
-                                    description = "Indexed symbol from $filePath",
-                                )
+                                val info =
+                                    RagIndexingStatusDocument.IndexedContentInfo(
+                                        vectorStoreId = vectorId,
+                                        contentHash = contentHash,
+                                        contentLength = item.content.length,
+                                        description = "Indexed symbol from $filePath",
+                                    )
                                 synchronized(fileIndexedContent) {
                                     fileIndexedContent.getOrPut(filePath) { mutableListOf() }.add(info)
                                 }
@@ -725,8 +729,10 @@ class IndexingPipelineService(
                 response.result.chunks.filter { it.isNotBlank() }
             } ?: emptyList()
         } catch (e: Exception) {
-            logger.warn(e) { "Failed to generate method summary chunks for ${analysisItem.symbol.name}" }
-            throw e
+            logger.warn(
+                e,
+            ) { "Failed to generate method summary chunks for ${analysisItem.symbol.name}, skipping text summary for this symbol" }
+            emptyList()
         }
 
     private suspend fun generateClassSummary(classSymbol: JoernSymbol): List<String> =
@@ -744,8 +750,8 @@ class IndexingPipelineService(
                 response.result.chunks.filter { it.isNotBlank() }
             } ?: emptyList()
         } catch (e: Exception) {
-            logger.warn(e) { "Failed to generate class summary chunks for ${classSymbol.name}" }
-            throw e
+            logger.warn(e) { "Failed to generate class summary chunks for ${classSymbol.name}, skipping text summary for this symbol" }
+            emptyList()
         }
 
     private fun createRagDocument(
@@ -864,11 +870,15 @@ class IndexingPipelineService(
      * Delete all existing vectors for a given source file prior to re-indexing.
      * Uses projectId and path filter, without relying on gitCommitHash.
      */
-    private suspend fun deleteVectorsForFile(project: ProjectDocument, filePath: String) {
-        val filter = mapOf(
-            "projectId" to project.id.toString(),
-            "path" to filePath,
-        )
+    private suspend fun deleteVectorsForFile(
+        project: ProjectDocument,
+        filePath: String,
+    ) {
+        val filter =
+            mapOf(
+                "projectId" to project.id.toString(),
+                "path" to filePath,
+            )
         val deletedText = vectorStorage.deleteByFilter(ModelType.EMBEDDING_TEXT, filter)
         val deletedCode = vectorStorage.deleteByFilter(ModelType.EMBEDDING_CODE, filter)
         logger.info { "PIPELINE_CLEANUP: Deleted old vectors for $filePath (text=$deletedText, code=$deletedCode)" }

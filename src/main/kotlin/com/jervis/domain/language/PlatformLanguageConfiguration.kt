@@ -44,7 +44,6 @@ data class PlatformLanguageConfiguration(
 ) {
     fun getLanguageForPlatform(platform: CommunicationPlatform): Language = platformSettings[platform]?.language ?: defaultLanguage
 
-
     fun isAutoDetectionEnabled(platform: CommunicationPlatform): Boolean = platformSettings[platform]?.useAutoDetection ?: false
 
     fun withPlatformLanguage(

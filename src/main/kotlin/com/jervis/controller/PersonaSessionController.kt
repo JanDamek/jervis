@@ -16,7 +16,6 @@ private const val SESSION_ROLE_KEY = "role"
 @RestController
 @RequestMapping("/api/session/role")
 class PersonaSessionController {
-
     @GetMapping(produces = [MediaType.APPLICATION_JSON_VALUE])
     suspend fun getRole(session: WebSession): RoleSelectionResponse {
         val value = session.getAttribute<String>(SESSION_ROLE_KEY)
@@ -26,11 +25,12 @@ class PersonaSessionController {
     @PostMapping(consumes = [MediaType.APPLICATION_JSON_VALUE], produces = [MediaType.APPLICATION_JSON_VALUE])
     suspend fun setRole(
         @RequestBody body: RoleSelectionRequest,
-        session: WebSession
+        session: WebSession,
     ): RoleSelectionResponse {
         val normalized = body.role.trim().uppercase()
-        val valid = runCatching { UserRole.valueOf(normalized) }.getOrNull()
-            ?: throw IllegalArgumentException("Unsupported role: ${body.role}")
+        val valid =
+            runCatching { UserRole.valueOf(normalized) }.getOrNull()
+                ?: throw IllegalArgumentException("Unsupported role: ${body.role}")
 
         session.attributes[SESSION_ROLE_KEY] = valid.name
         // WebFlux sessions are saved automatically at the end of request if mutated

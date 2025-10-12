@@ -295,19 +295,26 @@ class DocumentIndexingService(
 
     /**
      * Uses LLM to split content into atomic, independent sentences for RAG storage.
-     * This replaces manual text splitting logic with consistent AI-based approach.
+     * Falls back to simple sentence splitting if LLM fails.
      */
     private suspend fun splitContentIntoAtomicSentences(content: String): List<String> {
         if (content.trim().isEmpty()) return emptyList()
 
-        val result =
-            llmGateway.callLlm(
-                type = PromptTypeEnum.CONTENT_SPLIT_SENTENCES,
-                responseSchema = ContentSentenceSplittingResponse(),
-                mappingValue = mapOf("content" to content.take(8000)), // Limit content size for LLM
-            )
-
-        return result.result.sentences.filter { it.trim().isNotEmpty() }
+        return try {
+            val result =
+                llmGateway.callLlm(
+                    type = PromptTypeEnum.CONTENT_SPLIT_SENTENCES,
+                    responseSchema = ContentSentenceSplittingResponse(),
+                    mappingValue = mapOf("content" to content.take(8000)),
+                )
+            result.result.sentences.filter { it.trim().isNotEmpty() }
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to split content using LLM, falling back to simple sentence splitting" }
+            content
+                .split(Regex("[.!?]+\\s+"))
+                .map { it.trim() }
+                .filter { it.isNotEmpty() && it.length >= 10 }
+        }
     }
 
     private suspend fun fetchUrlContent(url: String): String {

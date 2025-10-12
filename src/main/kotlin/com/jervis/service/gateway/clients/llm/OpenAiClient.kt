@@ -98,11 +98,11 @@ class OpenAiClient(
             emit(
                 StreamChunk(
                     content = "",
-                isComplete = true,
-                metadata = finalMetadata + mapOf("full_response" to responseBuffer.toString()),
-            ),
-        )
-    }
+                    isComplete = true,
+                    metadata = finalMetadata + mapOf("full_response" to responseBuffer.toString()),
+                ),
+            )
+        }
 
     private fun buildMessagesList(
         systemPrompt: String?,
@@ -188,20 +188,23 @@ class OpenAiClient(
                     val finishReason = firstChoice.get("finish_reason")?.asText()
 
                     val usage = jsonNode.get("usage")
-                    val metadata = if (usage != null) {
-                        mapOf(
-                            "model" to (jsonNode.get("model")?.asText() ?: ""),
-                            "prompt_tokens" to (usage.get("prompt_tokens")?.asInt() ?: 0),
-                            "completion_tokens" to (usage.get("completion_tokens")?.asInt() ?: 0),
-                            "total_tokens" to (usage.get("total_tokens")?.asInt() ?: 0),
-                            "finish_reason" to (finishReason ?: "")
-                        )
-                    } else emptyMap()
+                    val metadata =
+                        if (usage != null) {
+                            mapOf(
+                                "model" to (jsonNode.get("model")?.asText() ?: ""),
+                                "prompt_tokens" to (usage.get("prompt_tokens")?.asInt() ?: 0),
+                                "completion_tokens" to (usage.get("completion_tokens")?.asInt() ?: 0),
+                                "total_tokens" to (usage.get("total_tokens")?.asInt() ?: 0),
+                                "finish_reason" to (finishReason ?: ""),
+                            )
+                        } else {
+                            emptyMap()
+                        }
 
                     StreamChunk(
                         content = content,
                         isComplete = finishReason != null,
-                        metadata = metadata
+                        metadata = metadata,
                     )
                 } else {
                     StreamChunk("") // Empty chunk for malformed data

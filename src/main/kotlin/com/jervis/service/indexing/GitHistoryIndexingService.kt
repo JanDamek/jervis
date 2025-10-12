@@ -348,7 +348,8 @@ class GitHistoryIndexingService(
 
     /** Extract tags from refnames string (e.g., "tag: v1.19, origin/main") */
     private fun extractTagsFromRefNames(refNames: String): List<String> =
-        refNames.split(",")
+        refNames
+            .split(",")
             .map { it.trim() }
             .filter { it.startsWith("tag:") }
             .map { it.removePrefix("tag:").trim() }
@@ -357,7 +358,10 @@ class GitHistoryIndexingService(
      * Parse changed method/function names for a commit using unified=0 hunks and simple heuristics.
      * Map key is file path, value is set of method identifiers touched in that file.
      */
-    private fun getChangedMethodsForCommit(projectPath: Path, commitHash: String): Map<String, Set<String>> {
+    private fun getChangedMethodsForCommit(
+        projectPath: Path,
+        commitHash: String,
+    ): Map<String, Set<String>> {
         return try {
             val process =
                 ProcessBuilder("git", "show", "-p", "--unified=0", "--no-color", commitHash)
@@ -385,23 +389,32 @@ class GitHistoryIndexingService(
                                 currentFile = b.removePrefix("b/")
                             }
                         }
+
                         line.startsWith("+++ b/") -> {
                             currentFile = line.removePrefix("+++ b/").trim()
                         }
+
                         line.startsWith("@@ ") -> {
                             // Try to extract signature after the second @@ if present, e.g., @@ -12,0 +13,0 @@ fun isAuthorized(...)
                             val after = line.substringAfterLast("@@").trim()
                             val sig = after.takeIf { it.isNotBlank() } ?: ""
-                            val methodFromSig = Regex("(fun|def|void|public|private|protected|static)?\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\(")
-                                .find(sig)?.groupValues?.getOrNull(2)
+                            val methodFromSig =
+                                Regex("(fun|def|void|public|private|protected|static)?\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\(")
+                                    .find(sig)
+                                    ?.groupValues
+                                    ?.getOrNull(2)
                             if (!methodFromSig.isNullOrBlank()) addMethod(methodFromSig)
                         }
+
                         line.startsWith("+") || line.startsWith("-") -> {
                             val content = line.drop(1)
                             // Kotlin/Java simple detectors
-                            Regex("\\bfun\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\(").find(content)?.let { addMethod(it.groupValues[1]) }
+                            Regex("\\bfun\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\(")
+                                .find(content)
+                                ?.let { addMethod(it.groupValues[1]) }
                             Regex("\\b(?:public|private|protected|static\\s+)?[A-Za-z0-9_<>\\[\\]]+\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\(")
-                                .find(content)?.let { addMethod(it.groupValues[1]) }
+                                .find(content)
+                                ?.let { addMethod(it.groupValues[1]) }
                         }
                     }
                 }
@@ -428,7 +441,11 @@ class GitHistoryIndexingService(
             atomic += "Commit ${commit.hash} message: ${commit.message}."
         }
         if (commit.changedFiles.isNotEmpty()) {
-            atomic += "Commit ${commit.hash} changed ${commit.changedFiles.size} files: ${commit.changedFiles.joinToString(", ")}."
+            atomic += "Commit ${commit.hash} changed ${commit.changedFiles.size} files: ${
+                commit.changedFiles.joinToString(
+                    ", ",
+                )
+            }."
             atomic += "Commit ${commit.hash} stats: +${commit.additions} additions and -${commit.deletions} deletions."
         }
         if (commit.parentHashes.size >= 2) {
@@ -440,7 +457,7 @@ class GitHistoryIndexingService(
         // Method-level facts for queries like 'who last changed isAuthorized'
         commit.changedMethods.forEach { (file, methods) ->
             methods.forEach { method ->
-                atomic += "Method ${method} in ${file} was modified in commit ${commit.hash} by ${commit.author} on ${commit.date}."
+                atomic += "Method $method in $file was modified in commit ${commit.hash} by ${commit.author} on ${commit.date}."
             }
         }
 
@@ -466,23 +483,28 @@ class GitHistoryIndexingService(
                 }
             }
 
-        val response =
-            llmGateway.callLlm(
-                type = PromptTypeEnum.GIT_COMMIT_PROCESSING,
-                responseSchema = GitCommitProcessingResponse(),
-                quick = false,
-                mappingValue =
-                    mapOf(
-                        "commitHash" to commit.hash,
-                        "commitAuthor" to commit.author,
-                        "commitDate" to commit.date,
-                        "commitBranch" to commit.branch,
-                        "commitContent" to commitContent,
-                    ),
-            )
+        val llmSentences =
+            try {
+                val response =
+                    llmGateway.callLlm(
+                        type = PromptTypeEnum.GIT_COMMIT_PROCESSING,
+                        responseSchema = GitCommitProcessingResponse(),
+                        quick = false,
+                        mappingValue =
+                            mapOf(
+                                "commitHash" to commit.hash,
+                                "commitAuthor" to commit.author,
+                                "commitDate" to commit.date,
+                                "commitBranch" to commit.branch,
+                                "commitContent" to commitContent,
+                            ),
+                    )
+                response.result.sentences
+            } catch (e: Exception) {
+                logger.warn(e) { "Failed to generate LLM sentences for commit ${commit.hash}, using atomic sentences only" }
+                emptyList()
+            }
 
-        // Combine deterministic and LLM-generated sentences, then filter
-        val llmSentences = response.result.sentences
         return (atomic + llmSentences)
             .map { it.trim() }
             .filter { it.isNotEmpty() && it.length >= 10 }

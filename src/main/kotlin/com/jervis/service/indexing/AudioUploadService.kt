@@ -35,99 +35,103 @@ class AudioUploadService(
     suspend fun uploadProjectAudio(
         projectId: ObjectId,
         filePart: FilePart,
-    ): UploadResult = withContext(Dispatchers.IO) {
-        val project: ProjectDocument =
-            projectRepository.findById(projectId)
-                ?: error("Project not found: ${'$'}projectId")
+    ): UploadResult =
+        withContext(Dispatchers.IO) {
+            val project: ProjectDocument =
+                projectRepository.findById(projectId)
+                    ?: error("Project not found: ${'$'}projectId")
 
-        val audioPath = project.audioPath ?: error("Project has no audio path configured")
+            val audioPath = project.audioPath ?: error("Project has no audio path configured")
 
-        val fileName = filePart.filename()
-        val targetPath = Paths.get(audioPath).resolve(fileName)
+            val fileName = filePart.filename()
+            val targetPath = Paths.get(audioPath).resolve(fileName)
 
-        Files.createDirectories(targetPath.parent)
+            Files.createDirectories(targetPath.parent)
 
-        // Save the uploaded file using reactive -> coroutine bridge
-        filePart.transferTo(targetPath).awaitFirstOrNull()
+            // Save the uploaded file using reactive -> coroutine bridge
+            filePart.transferTo(targetPath).awaitFirstOrNull()
 
-        val fileSize = Files.size(targetPath)
-        logger.info { "Uploaded audio file for project ${'$'}{project.name}: ${'$'}fileName (${'$'}fileSize bytes)" }
+            val fileSize = Files.size(targetPath)
+            logger.info { "Uploaded audio file for project ${'$'}{project.name}: ${'$'}fileName (${'$'}fileSize bytes)" }
 
-        audioTranscriptIndexingService.enqueueTranscription(
-            AudioTranscriptIndexingService.TranscriptionJob(
-                fileName = fileName,
-                filePath = targetPath,
-                source = "project:${'$'}{project.id}",
-            ),
-        )
+            audioTranscriptIndexingService.enqueueTranscription(
+                AudioTranscriptIndexingService.TranscriptionJob(
+                    fileName = fileName,
+                    filePath = targetPath,
+                    source = "project:${'$'}{project.id}",
+                ),
+            )
 
-        UploadResult(fileName, fileSize, targetPath)
-    }
+            UploadResult(fileName, fileSize, targetPath)
+        }
 
     suspend fun uploadClientAudio(
         clientId: ObjectId,
         filePart: FilePart,
-    ): UploadResult = withContext(Dispatchers.IO) {
-        val client: ClientDocument =
-            clientRepository.findById(clientId)
-                ?: error("Client not found: ${'$'}clientId")
+    ): UploadResult =
+        withContext(Dispatchers.IO) {
+            val client: ClientDocument =
+                clientRepository.findById(clientId)
+                    ?: error("Client not found: ${'$'}clientId")
 
-        val audioPath = client.audioPath ?: error("Client has no audio path configured")
+            val audioPath = client.audioPath ?: error("Client has no audio path configured")
 
-        val fileName = filePart.filename()
-        val targetPath = Paths.get(audioPath).resolve(fileName)
+            val fileName = filePart.filename()
+            val targetPath = Paths.get(audioPath).resolve(fileName)
 
-        Files.createDirectories(targetPath.parent)
-        filePart.transferTo(targetPath).awaitFirstOrNull()
+            Files.createDirectories(targetPath.parent)
+            filePart.transferTo(targetPath).awaitFirstOrNull()
 
-        val fileSize = Files.size(targetPath)
-        logger.info { "Uploaded audio file for client ${'$'}{client.name}: ${'$'}fileName (${'$'}fileSize bytes)" }
+            val fileSize = Files.size(targetPath)
+            logger.info { "Uploaded audio file for client ${'$'}{client.name}: ${'$'}fileName (${'$'}fileSize bytes)" }
 
-        audioTranscriptIndexingService.enqueueTranscription(
-            AudioTranscriptIndexingService.TranscriptionJob(
-                fileName = fileName,
-                filePath = targetPath,
-                source = "client:${'$'}{client.id}",
-            ),
-        )
+            audioTranscriptIndexingService.enqueueTranscription(
+                AudioTranscriptIndexingService.TranscriptionJob(
+                    fileName = fileName,
+                    filePath = targetPath,
+                    source = "client:${'$'}{client.id}",
+                ),
+            )
 
-        UploadResult(fileName, fileSize, targetPath)
-    }
+            UploadResult(fileName, fileSize, targetPath)
+        }
 
     suspend fun streamProjectAudio(
         projectId: ObjectId,
         fileName: String,
         audioData: Flow<ByteArray>,
-    ): UploadResult = withContext(Dispatchers.IO) {
-        val project: ProjectDocument =
-            projectRepository.findById(projectId)
-                ?: error("Project not found: ${'$'}projectId")
+    ): UploadResult =
+        withContext(Dispatchers.IO) {
+            val project: ProjectDocument =
+                projectRepository.findById(projectId)
+                    ?: error("Project not found: ${'$'}projectId")
 
-        val audioPath = project.audioPath ?: error("Project has no audio path configured")
+            val audioPath = project.audioPath ?: error("Project has no audio path configured")
 
-        val targetPath = Paths.get(audioPath).resolve(fileName)
-        Files.createDirectories(targetPath.parent)
+            val targetPath = Paths.get(audioPath).resolve(fileName)
+            Files.createDirectories(targetPath.parent)
 
-        val fileSize = audioData.fold(0L) { totalBytes, chunk ->
-            Files.write(
-                targetPath,
-                chunk,
-                StandardOpenOption.CREATE,
-                StandardOpenOption.APPEND,
+            val fileSize =
+                audioData.fold(0L) { totalBytes, chunk ->
+                    Files.write(
+                        targetPath,
+                        chunk,
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.APPEND,
+                    )
+                    totalBytes + chunk.size
+                }
+
+            logger.info { "Streamed audio file for project ${'$'}{project.name}: ${'$'}fileName (${'$'}fileSize bytes)" }
+
+            audioTranscriptIndexingService.enqueueTranscription(
+                AudioTranscriptIndexingService.TranscriptionJob(
+                    fileName = fileName,
+                    filePath = targetPath,
+                    source = "project:${'$'}{project.id}",
+                ),
             )
-            totalBytes + chunk.size
+
+            UploadResult(fileName, fileSize, targetPath)
         }
-
-        logger.info { "Streamed audio file for project ${'$'}{project.name}: ${'$'}fileName (${'$'}fileSize bytes)" }
-
-        audioTranscriptIndexingService.enqueueTranscription(
-            AudioTranscriptIndexingService.TranscriptionJob(
-                fileName = fileName,
-                filePath = targetPath,
-                source = "project:${'$'}{project.id}",
-            ),
-        )
-
-        UploadResult(fileName, fileSize, targetPath)
-    }
 }

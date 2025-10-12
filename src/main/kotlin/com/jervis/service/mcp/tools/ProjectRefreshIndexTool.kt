@@ -47,7 +47,7 @@ class ProjectRefreshIndexTool(
                         "taskDescription" to taskDescription,
                         "stepContext" to stepContext,
                     ),
-                    quick = context.quick,
+                quick = context.quick,
                 responseSchema = ProjectRefreshIndexParams(),
             )
         return llmResponse.result
