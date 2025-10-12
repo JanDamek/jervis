@@ -3,8 +3,10 @@ package com.jervis.ui.window
 import com.jervis.common.Constants.GLOBAL_ID
 import com.jervis.entity.mongo.ClientDocument
 import com.jervis.entity.mongo.ProjectDocument
-import com.jervis.service.indexing.IndexingService
-import com.jervis.service.project.ProjectService
+import com.jervis.service.IClientIndexingService
+import com.jervis.service.IClientService
+import com.jervis.service.IIndexingService
+import com.jervis.service.IProjectService
 import com.jervis.ui.component.ClientSettingsComponents
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,10 +50,10 @@ import javax.swing.table.DefaultTableCellRenderer
  * Provides functionality to add, edit, delete, and manage projects.
  */
 class ProjectSettingWindow(
-    private val projectService: ProjectService,
-    private val clientService: com.jervis.service.client.ClientService,
-    private val indexingService: IndexingService,
-    private val clientIndexingService: com.jervis.service.indexing.ClientIndexingService,
+    private val projectService: IProjectService,
+    private val clientService: IClientService,
+    private val indexingService: IIndexingService,
+    private val clientIndexingService: IClientIndexingService,
 ) : JFrame("Project Management") {
     private val projectTableModel = ProjectTableModel(emptyList())
     private val projectTable = JTable(projectTableModel)
@@ -334,7 +336,7 @@ class ProjectSettingWindow(
                 ProjectDocument(
                     clientId = GLOBAL_ID,
                     name = result.name,
-                    path = result.path,
+                    projectPath = result.path,
                     meetingPath = result.meetingPath,
                     audioPath = result.audioPath,
                     documentationPath = result.documentationPath,
@@ -375,7 +377,7 @@ class ProjectSettingWindow(
                     this,
                     "Edit Project",
                     project.name,
-                    project.path,
+                    project.projectPath,
                     project.meetingPath ?: "",
                     project.audioPath ?: "",
                     project.documentationPath ?: "",
@@ -400,7 +402,7 @@ class ProjectSettingWindow(
                 val updatedProject =
                     project.copy(
                         name = result.name,
-                        path = result.path,
+                        projectPath = result.path,
                         meetingPath = result.meetingPath,
                         audioPath = result.audioPath,
                         documentationPath = result.documentationPath,
@@ -845,7 +847,7 @@ class ProjectSettingWindow(
             return when (columnIndex) {
                 0 -> project.id.toHexString() ?: ""
                 1 -> project.name
-                2 -> project.path
+                2 -> project.projectPath
                 3 -> project.description ?: ""
                 4 -> project.clientId?.toHexString() ?: ""
                 5 -> project.isDisabled
@@ -1093,9 +1095,7 @@ class ProjectSettingWindow(
             isFocusable = true
         }
 
-        private fun createBasicInfoPanel(): JPanel {
-            return createBasicInfoPanelInternal()
-        }
+        private fun createBasicInfoPanel(): JPanel = createBasicInfoPanelInternal()
 
         private fun createBasicInfoPanelInternal(): JPanel {
             val panel = JPanel(GridBagLayout())
@@ -1695,16 +1695,6 @@ class ProjectSettingWindow(
             try {
                 withContext(Dispatchers.IO) {
                     indexingService.indexProject(project)
-
-                    // Update client descriptions after successful project indexing
-                    project.clientId?.let { clientId ->
-                        try {
-                            clientIndexingService.updateClientDescriptions(clientId)
-                        } catch (e: Exception) {
-                            // Log but don't fail the whole operation
-                            println("Warning: Failed to update client descriptions for project: ${project.name} - ${e.message}")
-                        }
-                    }
                 }
 
                 JOptionPane.showMessageDialog(

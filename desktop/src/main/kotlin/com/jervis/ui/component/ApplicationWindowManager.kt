@@ -1,16 +1,16 @@
 package com.jervis.ui.component
 
-import com.jervis.service.agent.context.TaskContextService
-import com.jervis.service.agent.coordinator.AgentOrchestratorService
-import com.jervis.service.client.ClientProjectLinkService
-import com.jervis.service.client.ClientService
+import com.jervis.service.IAgentOrchestratorService
+import com.jervis.service.IClientIndexingService
+import com.jervis.service.IClientProjectLinkService
+import com.jervis.service.IClientService
+import com.jervis.service.IIndexingMonitorService
+import com.jervis.service.IIndexingService
+import com.jervis.service.IProjectService
+import com.jervis.service.ITaskContextService
+import com.jervis.service.ITaskQueryService
+import com.jervis.service.ITaskSchedulingService
 import com.jervis.service.debug.DesktopDebugWindowService
-import com.jervis.service.indexing.ClientIndexingService
-import com.jervis.service.indexing.IndexingService
-import com.jervis.service.indexing.monitoring.IndexingMonitorService
-import com.jervis.service.project.ProjectService
-import com.jervis.service.scheduling.TaskQueryService
-import com.jervis.service.scheduling.TaskSchedulingService
 import com.jervis.ui.utils.MacOSAppUtils
 import com.jervis.ui.window.ClientsWindow
 import com.jervis.ui.window.MainWindow
@@ -20,16 +20,16 @@ import com.jervis.ui.window.TrayIconManager
 import javax.swing.UIManager
 
 class ApplicationWindowManager(
-    private val projectService: ProjectService,
-    private val chatCoordinator: AgentOrchestratorService,
-    private val clientService: ClientService,
-    private val linkService: ClientProjectLinkService,
-    private val taskContextService: TaskContextService,
-    private val indexingService: IndexingService,
-    private val clientIndexingService: ClientIndexingService,
-    private val taskSchedulingService: TaskSchedulingService,
-    private val taskQueryService: TaskQueryService,
-    private val indexingMonitorService: IndexingMonitorService,
+    private val projectService: IProjectService,
+    private val chatCoordinator: IAgentOrchestratorService,
+    private val clientService: IClientService,
+    private val linkService: IClientProjectLinkService,
+    private val taskContextService: ITaskContextService,
+    private val indexingService: IIndexingService,
+    private val clientIndexingService: IClientIndexingService,
+    private val taskSchedulingService: ITaskSchedulingService,
+    private val taskQueryService: ITaskQueryService,
+    private val indexingMonitorService: IIndexingMonitorService,
     private val debugWindowService: DesktopDebugWindowService,
 ) {
     private val mainWindow: MainWindow by lazy {

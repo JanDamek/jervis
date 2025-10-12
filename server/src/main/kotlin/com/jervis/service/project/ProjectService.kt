@@ -2,6 +2,7 @@ package com.jervis.service.project
 
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.mongo.ProjectMongoRepository
+import com.jervis.service.IProjectService
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -10,32 +11,20 @@ import java.time.Instant
 @Service
 class ProjectService(
     private val projectRepository: ProjectMongoRepository,
-) {
+) : IProjectService {
     companion object {
         private val logger = KotlinLogging.logger {}
     }
 
-    /**
-     * Gets all projects
-     */
-    suspend fun getAllProjects(): List<ProjectDocument> = projectRepository.findAll().toList()
+    override suspend fun getAllProjects(): List<ProjectDocument> = projectRepository.findAll().toList()
 
-    /**
-     * Gets the default project if it exists
-     */
-    suspend fun getDefaultProject(): ProjectDocument? = projectRepository.findByIsActiveIsTrue()
+    override suspend fun getDefaultProject(): ProjectDocument? = projectRepository.findByIsActiveIsTrue()
 
-    /**
-     * Sets a project as active
-     */
-    suspend fun setActiveProject(project: ProjectDocument) {
+    override suspend fun setActiveProject(project: ProjectDocument) {
         setDefaultProject(project)
     }
 
-    /**
-     * Sets a project as default and removes default status from other projects
-     */
-    suspend fun setDefaultProject(project: ProjectDocument) {
+    override suspend fun setDefaultProject(project: ProjectDocument) {
         // First, remove the default status from all projects
         val allProjects = getAllProjects()
         allProjects.forEach { existingProject ->
@@ -60,12 +49,9 @@ class ProjectService(
         }
     }
 
-    /**
-     * Creates or updates a project
-     */
-    suspend fun saveProject(
+    override suspend fun saveProject(
         project: ProjectDocument,
-        makeDefault: Boolean = false,
+        makeDefault: Boolean,
     ): ProjectDocument {
         val isNew = false
         val updatedProject = project.copy(updatedAt = Instant.now())
@@ -76,37 +62,31 @@ class ProjectService(
         }
 
         if (isNew) {
-            logger.info("Created new project: ${savedProject.name}")
+            logger.info { "Created new project: ${savedProject.name}" }
         } else {
-            logger.info("Updated project: ${savedProject.name}")
+            logger.info { "Updated project: ${savedProject.name}" }
         }
 
         return savedProject
     }
 
-    /**
-     * Deletes a project
-     */
-    suspend fun deleteProject(project: ProjectDocument) {
-        // Check if this is the default project
+    override suspend fun deleteProject(project: ProjectDocument) {
         if (project.isActive) {
-            logger.warn("Attempting to delete default project: ${project.name}")
-            // You might want to prevent deletion or set another project as default
+            logger.warn { "Attempting to delete default project: ${project.name}" }
         }
 
         projectRepository.delete(project)
-        logger.info("Deleted project: ${project.name}")
+        logger.info { "Deleted project: ${project.name}" }
     }
 
-    // Blocking wrapper methods for compatibility
     suspend fun getAllProjectsBlocking(): List<ProjectDocument> = getAllProjects()
 
     suspend fun getDefaultProjectBlocking(): ProjectDocument? = getDefaultProject()
 
     suspend fun setDefaultProjectBlocking(project: ProjectDocument) = setDefaultProject(project)
 
-    suspend fun getProjectByName(model: String?): ProjectDocument =
-        model?.let {
-            projectRepository.findByName(it)!!
-        }!!
+    override suspend fun getProjectByName(name: String?): ProjectDocument =
+        requireNotNull(name?.let { projectRepository.findByName(it) }) {
+            "Project not found with name: $name"
+        }
 }

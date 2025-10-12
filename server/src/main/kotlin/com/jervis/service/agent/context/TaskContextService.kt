@@ -9,6 +9,7 @@ import com.jervis.repository.mongo.PlanMongoRepository
 import com.jervis.repository.mongo.PlanStepMongoRepository
 import com.jervis.repository.mongo.ProjectMongoRepository
 import com.jervis.repository.mongo.TaskContextMongoRepository
+import com.jervis.service.ITaskContextService
 import com.jervis.service.client.ClientService
 import com.jervis.service.project.ProjectService
 import kotlinx.coroutines.flow.map
@@ -27,17 +28,17 @@ class TaskContextService(
     private val projectMongoRepository: ProjectMongoRepository,
     private val planMongoRepository: PlanMongoRepository,
     private val planStepMongoRepository: PlanStepMongoRepository,
-) {
+) : ITaskContextService {
     private val logger = KotlinLogging.logger {}
 
     /**
      * Create a TaskContext for the given context. Resolves and enforces scope.
      */
-    suspend fun create(
+    override suspend fun create(
         clientId: ObjectId,
         projectId: ObjectId,
-        quick: Boolean = false,
-        contextName: String = "New Context",
+        quick: Boolean,
+        contextName: String,
     ): TaskContext {
         val client = clientMongoRepository.findById(clientId)
         val project = projectMongoRepository.findById(projectId)
@@ -73,7 +74,7 @@ class TaskContextService(
     /**
      * Cascading save: persists context, its active plan, and its plan steps.
      */
-    suspend fun save(context: TaskContext) {
+    override suspend fun save(context: TaskContext) {
         val contextDoc =
             TaskContextDocument.fromDomain(context).apply {
                 updatedAt = Instant.now()
@@ -104,7 +105,7 @@ class TaskContextService(
     /**
      * Find existing TaskContext by ID.
      */
-    suspend fun findById(contextId: ObjectId): TaskContext? {
+    override suspend fun findById(contextId: ObjectId): TaskContext? {
         val contextDoc = taskContextRepo.findById(contextId) ?: return null
 
         val plansList =
@@ -129,7 +130,7 @@ class TaskContextService(
     /**
      * List contexts for a given client and optional project.
      */
-    suspend fun listFor(
+    override suspend fun listFor(
         clientId: ObjectId,
         projectId: ObjectId?,
     ): List<TaskContext> {
@@ -181,7 +182,7 @@ class TaskContextService(
     /**
      * Delete context with cascading deletion of all associated plans and plan steps.
      */
-    suspend fun delete(contextId: ObjectId) {
+    override suspend fun delete(contextId: ObjectId) {
         logger.info { "TASK_CONTEXT_DELETE_START: contextId=$contextId" }
 
         // Find and delete all plan steps for this context

@@ -10,6 +10,7 @@ import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
 import com.jervis.service.scheduling.TaskQueryService
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flow
@@ -55,31 +56,35 @@ class SystemViewTasksTool(
             logger.debug { "Parsed browse parameters: $params" }
 
             val filteredTasks =
-                flow {
+                flow<ScheduledTaskDocument> {
                     when {
                         params.status != null && params.projectId != null -> {
                             val status = ScheduledTaskDocument.ScheduledTaskStatus.valueOf(params.status.uppercase())
                             val projectId = org.bson.types.ObjectId(params.projectId)
-                            emitAll(taskQueryService.getTasksForProject(projectId).filter { it.status == status })
+                            emitAll(taskQueryService.getTasksForProject(projectId).asFlow().filter { it.status == status })
                         }
 
                         params.status != null -> {
                             val status = ScheduledTaskDocument.ScheduledTaskStatus.valueOf(params.status.uppercase())
-                            emitAll(taskQueryService.getTasksByStatus(status))
+                            emitAll(taskQueryService.getTasksByStatus(status).asFlow())
                         }
 
                         params.projectId != null -> {
                             val projectId = org.bson.types.ObjectId(params.projectId)
-                            emitAll(taskQueryService.getTasksForProject(projectId))
+                            emitAll(taskQueryService.getTasksForProject(projectId).asFlow())
                         }
 
                         else -> {
                             // Get all pending and running tasks by default
                             emitAll(
-                                taskQueryService.getTasksByStatus(ScheduledTaskDocument.ScheduledTaskStatus.PENDING),
+                                taskQueryService
+                                    .getTasksByStatus(ScheduledTaskDocument.ScheduledTaskStatus.PENDING)
+                                    .asFlow(),
                             )
                             emitAll(
-                                taskQueryService.getTasksByStatus(ScheduledTaskDocument.ScheduledTaskStatus.RUNNING),
+                                taskQueryService
+                                    .getTasksByStatus(ScheduledTaskDocument.ScheduledTaskStatus.RUNNING)
+                                    .asFlow(),
                             )
                         }
                     }

@@ -56,7 +56,7 @@ class CodeAnalyzeTool(
     ): ToolResult =
         withContext(Dispatchers.IO) {
             val params = parseTaskDescription(taskDescription, context)
-            val projectDir = File(context.projectDocument.path)
+            val projectDir = File(context.projectDocument.projectPath)
 
             if (!projectDir.exists() || !projectDir.isDirectory) {
                 return@withContext ToolResult.error("Project path does not exist or is not a directory: $projectDir")

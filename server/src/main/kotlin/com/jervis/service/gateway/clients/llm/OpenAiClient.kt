@@ -7,7 +7,6 @@ import com.jervis.configuration.prompts.PromptConfigBase
 import com.jervis.configuration.prompts.PromptsConfiguration
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProvider
-import com.jervis.service.debug.DesktopDebugWindowService
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.reactive.asFlow
@@ -21,7 +20,6 @@ import org.springframework.web.reactive.function.client.awaitBody
 class OpenAiClient(
     @Qualifier("openaiWebClient") private val webClient: WebClient,
     private val promptsConfiguration: PromptsConfiguration,
-    private val debugWindowService: DesktopDebugWindowService,
 ) : ProviderClient {
     override val provider: ModelProvider = ModelProvider.OPENAI
 
@@ -80,11 +78,6 @@ class OpenAiClient(
 
                 if (parsedChunk.content.isNotEmpty()) {
                     responseBuffer.append(parsedChunk.content)
-
-                    // Update debug window if session is active
-                    debugSessionId?.let { sessionId ->
-                        debugWindowService.appendResponse(sessionId, parsedChunk.content)
-                    }
                 }
 
                 if (parsedChunk.isComplete) {

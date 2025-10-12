@@ -62,9 +62,9 @@ class DocumentIndexingService(
         withContext(Dispatchers.IO) {
             logger.info { "Starting unified document indexing for project: ${project.name}" }
 
-            val projectPath = Paths.get(project.path)
+            val projectPath = Paths.get(project.projectPath)
             if (!Files.exists(projectPath)) {
-                logger.warn { "Project path does not exist: ${project.path}" }
+                logger.warn { "Project path does not exist: ${project.projectPath}" }
                 return@withContext DocumentIndexingResult(0, 0, 1)
             }
 
@@ -177,7 +177,7 @@ class DocumentIndexingService(
             logger.info { "Starting URL document indexing for ${documentationUrls.size} URLs" }
 
             val gitCommitHash =
-                historicalVersioningService.getCurrentGitCommitHash(Paths.get(project.path))
+                historicalVersioningService.getCurrentGitCommitHash(Paths.get(project.projectPath))
                     ?: "url-docs-${System.currentTimeMillis()}"
 
             var processedCount = 0

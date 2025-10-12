@@ -26,7 +26,7 @@ class TaskSchedulingService(
     private val agentOrchestratorService: AgentOrchestratorService,
     private val clientService: ClientService,
     private val taskManagementService: TaskManagementService,
-) {
+) : com.jervis.service.ITaskSchedulingService {
     companion object {
         private val logger = KotlinLogging.logger {}
         private const val STUCK_TASK_TIMEOUT_HOURS = 6L
@@ -35,16 +35,16 @@ class TaskSchedulingService(
     /**
      * Schedule a new task
      */
-    suspend fun scheduleTask(
+    override suspend fun scheduleTask(
         projectId: ObjectId,
         taskInstruction: String,
         taskName: String,
         scheduledAt: Instant,
-        taskParameters: Map<String, String> = emptyMap(),
-        priority: Int = 0,
-        maxRetries: Int = 3,
-        cronExpression: String? = null,
-        createdBy: String = "system",
+        taskParameters: Map<String, String>,
+        priority: Int,
+        maxRetries: Int,
+        cronExpression: String?,
+        createdBy: String,
     ): ScheduledTaskDocument =
         taskManagementService.scheduleTask(
             projectId = projectId,
@@ -187,5 +187,5 @@ class TaskSchedulingService(
     /**
      * Cancel a task
      */
-    suspend fun cancelTask(taskId: ObjectId): Boolean = taskManagementService.cancelTask(taskId)
+    override suspend fun cancelTask(taskId: ObjectId): Boolean = taskManagementService.cancelTask(taskId)
 }

@@ -4,7 +4,6 @@ import com.jervis.configuration.ModelsProperties
 import com.jervis.configuration.prompts.PromptConfigBase
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.llm.LlmResponse
-import com.jervis.service.debug.DesktopDebugWindowService
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.util.UUID
@@ -16,7 +15,6 @@ import java.util.UUID
 @Service
 class LlmCallExecutor(
     private val clients: List<com.jervis.service.gateway.clients.ProviderClient>,
-    private val debugWindowService: DesktopDebugWindowService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -46,13 +44,6 @@ class LlmCallExecutor(
 
             // Always use streaming for debug purposes - debug window will be shown automatically
             val debugSessionId = UUID.randomUUID().toString()
-
-            debugWindowService.startDebugSession(
-                debugSessionId,
-                promptType,
-                systemPrompt,
-                userPrompt,
-            )
 
             val response =
                 executeStreamingCall(
@@ -91,7 +82,6 @@ class LlmCallExecutor(
         debugSessionId: String,
     ): LlmResponse {
         val responseBuilder = StringBuilder()
-        var finalMetadata: Map<String, Any> = emptyMap()
         var model = candidate.model
         var promptTokens = 0
         var completionTokens = 0
@@ -114,7 +104,6 @@ class LlmCallExecutor(
                 }
 
                 if (chunk.isComplete && chunk.metadata.isNotEmpty()) {
-                    finalMetadata = chunk.metadata
                     model = chunk.metadata["model"] as? String ?: candidate.model
                     promptTokens = chunk.metadata["prompt_tokens"] as? Int ?: 0
                     completionTokens = chunk.metadata["completion_tokens"] as? Int ?: 0
@@ -132,9 +121,6 @@ class LlmCallExecutor(
                 totalTokens = totalTokens,
                 finishReason = finishReason,
             )
-
-        // Complete debug session
-        debugWindowService.completeSession(debugSessionId, finalResponse)
 
         return finalResponse
     }

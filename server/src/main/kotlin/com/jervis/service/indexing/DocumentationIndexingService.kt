@@ -122,7 +122,7 @@ class DocumentationIndexingService(
 
             // Get current git commit hash for tracking
             val gitCommitHash =
-                historicalVersioningService.getCurrentGitCommitHash(Paths.get(project.path))
+                historicalVersioningService.getCurrentGitCommitHash(Paths.get(project.projectPath))
                     ?: "local-docs-${System.currentTimeMillis()}"
 
             var processedDocs = 0
@@ -274,7 +274,7 @@ class DocumentationIndexingService(
 
             // Get current git commit hash for tracking
             val gitCommitHash =
-                historicalVersioningService.getCurrentGitCommitHash(Paths.get(project.path))
+                historicalVersioningService.getCurrentGitCommitHash(Paths.get(project.projectPath))
                     ?: "url-docs-${System.currentTimeMillis()}"
 
             var processedDocs = 0

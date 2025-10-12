@@ -80,7 +80,7 @@ class MeetingTranscriptIndexingService(
 
             // Get current git commit hash for tracking
             val gitCommitHash =
-                historicalVersioningService.getCurrentGitCommitHash(Paths.get(project.path))
+                historicalVersioningService.getCurrentGitCommitHash(Paths.get(project.projectPath))
                     ?: "meetings-${System.currentTimeMillis()}"
 
             var processedTranscripts = 0

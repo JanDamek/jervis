@@ -7,7 +7,6 @@ import com.jervis.configuration.prompts.PromptConfigBase
 import com.jervis.configuration.prompts.PromptsConfiguration
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProvider
-import com.jervis.service.debug.DesktopDebugWindowService
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.reactive.asFlow
@@ -21,7 +20,6 @@ import org.springframework.web.reactive.function.client.WebClient
 class OllamaClient(
     @Qualifier("ollamaWebClient") private val webClient: WebClient,
     private val promptsConfiguration: PromptsConfiguration,
-    private val debugWindowService: DesktopDebugWindowService,
 ) : ProviderClient {
     private val logger = KotlinLogging.logger {}
 
@@ -100,11 +98,6 @@ class OllamaClient(
 
                         if (content.isNotEmpty()) {
                             responseBuilder.append(content)
-
-                            // Update debug window if session is active
-                            debugSessionId?.let { sessionId ->
-                                debugWindowService.appendResponse(sessionId, content)
-                            }
 
                             emit(StreamChunk(content = content, isComplete = false))
                         }

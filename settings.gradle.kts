@@ -21,4 +21,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "jervis"
-include(":server", ":desktop")
+include(":common", ":server", ":desktop", ":api-client")

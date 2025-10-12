@@ -109,7 +109,7 @@ class AudioTranscriptIndexingService(
                 audioPath = audioPath,
                 projectId = project.id,
                 clientId = project.clientId,
-                projectPath = Paths.get(project.path),
+                projectPath = Paths.get(project.projectPath),
                 scope = Scope.PROJECT,
             )
         }

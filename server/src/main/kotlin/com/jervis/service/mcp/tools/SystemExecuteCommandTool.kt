@@ -90,7 +90,7 @@ class SystemExecuteCommandTool(
     }
 
     private fun validateWorkingDirectory(context: TaskContext): ToolResult? {
-        val workingDirectory = File(context.projectDocument.path)
+        val workingDirectory = File(context.projectDocument.projectPath)
         return when {
             !workingDirectory.exists() -> ToolResult.error("Working directory does not exist: ${workingDirectory.absolutePath}")
             !workingDirectory.isDirectory -> ToolResult.error("Path is not a directory: ${workingDirectory.absolutePath}")
@@ -104,7 +104,7 @@ class SystemExecuteCommandTool(
         params: SystemExecuteCommandParams,
         context: TaskContext,
     ): ToolResult {
-        val workingDirectory = File(context.projectDocument.path)
+        val workingDirectory = File(context.projectDocument.projectPath)
         val timeoutSeconds = timeoutsProperties.mcp.terminalToolTimeoutSeconds
 
         return withTimeout(timeoutSeconds.seconds) {

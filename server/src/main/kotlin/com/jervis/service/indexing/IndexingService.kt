@@ -36,7 +36,8 @@ class IndexingService(
     private val indexingMonitorService: IndexingMonitorService,
     private val indexingPipelineService: IndexingPipelineService,
     private val audioTranscriptIndexingService: AudioTranscriptIndexingService,
-) {
+    private val fileLevelIndexingService: FileLevelIndexingService,
+) : com.jervis.service.IIndexingService {
     companion object {
         private val logger = KotlinLogging.logger {}
     }
@@ -54,7 +55,7 @@ class IndexingService(
     /**
      * Comprehensive project indexing using streaming pipeline architecture
      */
-    suspend fun indexProject(project: ProjectDocument): IndexingResult =
+    override suspend fun indexProject(project: ProjectDocument): IndexingResult =
         withContext(Dispatchers.Default) {
             try {
                 logger.info { "Starting PIPELINE indexing for project: ${project.name}" }
@@ -62,13 +63,13 @@ class IndexingService(
                 // Start project indexing monitoring
                 indexingMonitorService.startProjectIndexing(project.id, project.name)
 
-                val projectPath = Paths.get(project.path)
+                val projectPath = Paths.get(project.projectPath)
 
                 if (!Files.exists(projectPath)) {
-                    logger.error { "Project path does not exist: ${project.path}" }
+                    logger.error { "Project path does not exist: ${project.projectPath}" }
                     indexingMonitorService.failProjectIndexing(
                         project.id,
-                        "Project path does not exist: ${project.path}",
+                        "Project path does not exist: ${project.projectPath}",
                     )
                     return@withContext IndexingResult(0, 0, 1, "PIPELINE_COMPREHENSIVE")
                 }
@@ -164,6 +165,34 @@ class IndexingService(
                         }
                     }
 
+                // File-level comprehensive indexing
+                parallelTasks +=
+                    async {
+                        try {
+                            indexingMonitorService.updateStepProgress(
+                                project.id,
+                                com.jervis.service.indexing.monitoring.IndexingStepType.COMPREHENSIVE_FILES,
+                                com.jervis.service.indexing.monitoring.IndexingStepStatus.RUNNING,
+                                message = "Indexing files with comprehensive LLM analysis",
+                            )
+                            fileLevelIndexingService.indexProjectFiles(project, projectPath)
+                            indexingMonitorService.updateStepProgress(
+                                project.id,
+                                com.jervis.service.indexing.monitoring.IndexingStepType.COMPREHENSIVE_FILES,
+                                com.jervis.service.indexing.monitoring.IndexingStepStatus.COMPLETED,
+                                message = "File-level indexing completed",
+                            )
+                        } catch (e: Exception) {
+                            indexingMonitorService.updateStepProgress(
+                                project.id,
+                                com.jervis.service.indexing.monitoring.IndexingStepType.COMPREHENSIVE_FILES,
+                                com.jervis.service.indexing.monitoring.IndexingStepStatus.FAILED,
+                                errorMessage = "File-level indexing failed: ${e.message}",
+                            )
+                            throw e
+                        }
+                    }
+
                 // Wait for parallel tasks
                 val parallelResults = parallelTasks.awaitAll()
                 val results = listOf(joernResult, fallbackResult) + parallelResults
@@ -207,7 +236,7 @@ class IndexingService(
      * Index all projects in the system with sequential execution
      * Projects are processed one by one to avoid resource contention and ensure stable processing
      */
-    suspend fun indexAllProjects(projects: List<ProjectDocument>) =
+    override suspend fun indexAllProjects(projects: List<ProjectDocument>) =
         withContext(Dispatchers.Default) {
             logger.info { "Starting sequential indexing for all ${projects.size} projects" }
 
@@ -299,7 +328,7 @@ class IndexingService(
      * Index projects for a specific client with sequential execution
      * Projects are processed one by one to avoid resource contention and ensure stable processing
      */
-    suspend fun indexProjectsForClient(
+    override suspend fun indexProjectsForClient(
         projects: List<ProjectDocument>,
         clientName: String,
     ) = withContext(Dispatchers.Default) {

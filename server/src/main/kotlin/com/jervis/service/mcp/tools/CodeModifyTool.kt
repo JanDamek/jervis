@@ -12,7 +12,6 @@ import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.io.path.writeText
 
 @Service
 class CodeModifyTool(
@@ -70,7 +69,7 @@ class CodeModifyTool(
         params: CodeModifyParams,
         context: TaskContext,
     ): ToolResult {
-        val projectPath = Path.of(context.projectDocument.path)
+        val projectPath = Path.of(context.projectDocument.projectPath)
         val targetFile = projectPath.resolve(params.targetPath)
 
         // Create parent directories if they don't exist
