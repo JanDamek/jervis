@@ -137,45 +137,31 @@ class AgentOrchestratorService(
                 }
 
                 if (!anyNewSteps) {
-                    // No new steps from any planner - check if task is resolved
-                    logger.info { "AGENT_LOOP_PLANNER_EMPTY: No new steps from any planner, checking resolution" }
-                    val isResolved = planExecutor.checkResolutionAndCreateAdditionalPlanIfNeeded(context)
-                    if (isResolved) {
-                        logger.info { "AGENT_LOOP_RESOLVED: Task fully resolved, marking plans as COMPLETED" }
-                        // Mark all RUNNING plans as COMPLETED now that the loop is ending
-                        context.plans
-                            .filter { it.status == com.jervis.domain.plan.PlanStatus.RUNNING }
-                            .forEach { runningPlan ->
-                                // Only mark as COMPLETED if:
-                                // 1. Plan has at least one step
-                                // 2. No PENDING steps remain (all steps are DONE or FAILED)
-                                // Note: Plans CAN have FAILED steps - planner will handle them with alternative approaches
-                                val hasSteps = runningPlan.steps.isNotEmpty()
-                                val noPendingSteps =
-                                    runningPlan.steps.none { it.status == com.jervis.domain.plan.StepStatus.PENDING }
+                    logger.info { "AGENT_LOOP_RESOLVED: Task fully resolved, marking plans as COMPLETED" }
+                    context.plans
+                        .filter { it.status == com.jervis.domain.plan.PlanStatus.RUNNING }
+                        .forEach { runningPlan ->
+                            val hasSteps = runningPlan.steps.isNotEmpty()
+                            val noPendingSteps =
+                                runningPlan.steps.none { it.status == com.jervis.domain.plan.StepStatus.PENDING }
 
-                                if (hasSteps && noPendingSteps) {
-                                    runningPlan.status = com.jervis.domain.plan.PlanStatus.COMPLETED
-                                    runningPlan.updatedAt = java.time.Instant.now()
-                                    logger.info { "AGENT_LOOP_PLAN_COMPLETED: Plan ${runningPlan.id} marked as COMPLETED" }
-                                } else {
-                                    val reason =
-                                        when {
-                                            !hasSteps -> "has no steps"
-                                            !noPendingSteps -> "has pending steps"
-                                            else -> "unknown reason"
-                                        }
-                                    logger.warn {
-                                        "AGENT_LOOP_PLAN_NOT_COMPLETED: Plan ${runningPlan.id} $reason, cannot mark as COMPLETED"
+                            if (hasSteps && noPendingSteps) {
+                                runningPlan.status = com.jervis.domain.plan.PlanStatus.COMPLETED
+                                runningPlan.updatedAt = java.time.Instant.now()
+                                logger.info { "AGENT_LOOP_PLAN_COMPLETED: Plan ${runningPlan.id} marked as COMPLETED" }
+                            } else {
+                                val reason =
+                                    when {
+                                        !hasSteps -> "has no steps"
+                                        else -> "has pending steps"
                                     }
+                                logger.warn {
+                                    "AGENT_LOOP_PLAN_NOT_COMPLETED: Plan ${runningPlan.id} $reason, cannot mark as COMPLETED"
                                 }
                             }
-                        taskContextService.save(context)
-                        break
-                    }
-                    // Resolution check created additional plan with steps, loop will continue and execute them
-                    logger.info { "AGENT_LOOP_ADDITIONAL_PLAN: Additional plan created, continuing execution" }
-                    continue
+                        }
+                    taskContextService.save(context)
+                    break
                 }
 
                 // Save context after adding steps to all plans

@@ -6,15 +6,12 @@ import com.jervis.domain.plan.PlanStatus
 import com.jervis.domain.plan.PlanStep
 import com.jervis.domain.plan.StepStatus
 import com.jervis.service.agent.context.TaskContextService
-import com.jervis.service.agent.finalizer.TaskResolutionChecker
-import com.jervis.service.agent.planner.Planner
 import com.jervis.service.mcp.McpToolRegistry
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.notification.StepNotificationService
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import mu.KotlinLogging
-import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 import java.time.Instant
 
@@ -29,85 +26,8 @@ class PlanExecutor(
     private val mcpToolRegistry: McpToolRegistry,
     private val taskContextService: TaskContextService,
     private val stepNotificationService: StepNotificationService,
-    private val taskResolutionChecker: TaskResolutionChecker,
-    private val planner: Planner,
 ) {
     private val logger = KotlinLogging.logger {}
-
-    /**
-     * Check if the task is resolved. If not, create an additional plan to address missing requirements.
-     * Returns true if task is fully resolved, false if additional planning was needed.
-     */
-    suspend fun checkResolutionAndCreateAdditionalPlanIfNeeded(taskContext: TaskContext): Boolean {
-        logger.info { "EXECUTOR_RESOLUTION_CHECK: Checking resolution for context ${taskContext.id}" }
-
-        val resolutionResult = taskResolutionChecker.performLlmAnalysis(taskContext)
-        logger.info {
-            "EXECUTOR_RESOLUTION_CHECK: complete=${resolutionResult.complete}, " +
-                "missingRequirements=${resolutionResult.missingRequirements.size}"
-        }
-
-        if (!resolutionResult.complete && resolutionResult.missingRequirements.isNotEmpty()) {
-            logger.info { "EXECUTOR_INCOMPLETE_TASK: Creating additional plan to address missing requirements" }
-
-            val missingRequirementsDescription = buildMissingRequirementsPrompt(resolutionResult)
-            val additionalPlan = createAdditionalPlan(taskContext, missingRequirementsDescription)
-
-            taskContext.plans += additionalPlan
-            taskContextService.save(taskContext)
-
-            logger.info {
-                "EXECUTOR_ADDITIONAL_PLAN_CREATED: planId=${additionalPlan.id}, " +
-                    "steps=${additionalPlan.steps.size}, addressing ${resolutionResult.missingRequirements.size} missing items"
-            }
-
-            return false
-        }
-
-        logger.info { "EXECUTOR_RESOLUTION_COMPLETE: Task fully resolved = ${resolutionResult.complete}" }
-        return resolutionResult.complete
-    }
-
-    /**
-     * Creates a comprehensive prompt describing missing requirements for re-planning
-     */
-    private fun buildMissingRequirementsPrompt(resolutionResult: TaskResolutionChecker.LlmAnalysisResult): String =
-        buildString {
-            appendLine("The following requirements are missing or incomplete and need to be addressed:")
-            resolutionResult.missingRequirements.forEachIndexed { index, requirementDetail ->
-                appendLine("${index + 1}. $requirementDetail")
-                appendLine()
-            }
-            appendLine("Please create a plan to complete these missing requirements.")
-        }
-
-    /**
-     * Creates an additional plan to address missing requirements
-     */
-    private suspend fun createAdditionalPlan(
-        taskContext: TaskContext,
-        missingRequirementsDescription: String,
-    ): Plan {
-        val additionalPlan =
-            Plan(
-                id = ObjectId(),
-                contextId = taskContext.id,
-                originalQuestion = missingRequirementsDescription,
-                originalLanguage = "en",
-                englishQuestion = missingRequirementsDescription,
-                initialRagQueries = listOf(),
-                status = PlanStatus.CREATED,
-                steps = emptyList(),
-                contextSummary = "Additional plan to address incomplete requirements",
-                finalAnswer = null,
-                createdAt = Instant.now(),
-                updatedAt = Instant.now(),
-            )
-
-        val initialSteps = planner.suggestNextSteps(taskContext, additionalPlan)
-
-        return additionalPlan.copy(steps = initialSteps)
-    }
 
     suspend fun execute(context: TaskContext) {
         // Process each plan that is not yet completed or failed concurrently

@@ -119,6 +119,10 @@ class ProjectVersionControlTool(
     }
 
     private fun buildGitCommand(params: ProjectVersionControlParams): String {
+        if (params.operation.isBlank()) {
+            return "echo 'Error: Git operation is required. Supported operations: status, log, branch, add, commit, push, pull, diff, remote'"
+        }
+
         return when (params.operation.lowercase()) {
             "status" -> "git status --porcelain=v1"
             "log" -> {
@@ -245,7 +249,14 @@ class ProjectVersionControlTool(
                 }
             }
 
-            else -> "git ${params.operation}"
+            else -> {
+                val sanitizedOp = params.operation.trim()
+                if (sanitizedOp.contains(" ") || !SAFE_NAME.matches(sanitizedOp)) {
+                    "echo 'Error: Invalid Git operation: $sanitizedOp. Supported operations: status, log, branch, add, commit, push, pull, diff, remote'"
+                } else {
+                    "git $sanitizedOp"
+                }
+            }
         }
     }
 }

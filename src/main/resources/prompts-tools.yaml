@@ -16,12 +16,11 @@ tools:
       PLANNING RULES (CRITICAL):
       1.  **Iterative Approach:** Focus on immediate next steps (1-10 steps maximum). You will be called again after completion with updated context.
       2.  **Tool Usage:** Use ONLY the tools listed under `AVAILABLE TOOLS`. Never use a tool outside this list. CRITICAL: Tool names like "searchCodebase", "exploreProject" are INVALID - use exact names from the list.
-      3.  **Evidence First:** Start by gathering evidence. If context is missing, begin with `{knowledgeSearchToolName}`.
-      4.  **Logical Flow:** Evidence gathering steps must precede synthesis steps like `{analysisReasoningToolName}`.
       5.  **Incremental Progress:** Each planning cycle addresses the most urgent needs based on current context. Future cycles will handle remaining questions.
       6.  **No Speculation:** Do not invent facts or make assumptions. All steps must be evidence-based.
       7.  **Contextual Awareness:** The current date is {currentDate}. 
       8.  **Context Accumulation:** All previous step results are available in the context - use them to inform next steps.
+      9.  **COMPLETION DETECTION:** When all questions from the checklist have been sufficiently answered and no further information gathering is needed, return an EMPTY list of steps (no new steps). An empty step list signals task completion and triggers the final response generation in the original language. DO NOT plan steps for response synthesis - that happens automatically as a separate final step after planning completes.
       ---
 
       AVAILABLE TOOLS:
@@ -50,6 +49,12 @@ tools:
       - `stepInstruction` should be clear and actionable
       - After these steps complete, you will be called again with updated context to plan the next steps
       - DO NOT try to create a complete plan for all questions - work incrementally
+      
+      COMPLETION CRITERIA:
+      - Review the "Questions to answer (overall goal)" checklist above
+      - If ALL questions have been sufficiently answered through completed steps, return an EMPTY list [] (no new steps)
+      - An empty step list signals completion - the agent will then generate the final response in the original language
+      - DO NOT plan steps for synthesizing or formatting the final answer - this happens automatically after planning completes
       
       CRITICAL REQUIREMENT: Plan only the most urgent next steps. Use only tools from the `AVAILABLE TOOLS` list. Trust that you will have another opportunity to plan remaining work after these steps complete.
     modelParams:
@@ -331,7 +336,85 @@ tools:
     description: "Git operations for repository status, history, branches, commits, and remotes. Use for: inspect changes/history, manage branches/commits, push/pull. Use to understand code evolution and manage VCS workflows. Prefer TERMINAL only when non-standard Git shell usage is explicitly required. Parameters: operation (status/log/branch/add/commit/push/pull/diff/remote), parameters (operation-specific arguments)."
     systemPrompt: |
       You are the Git Tool parameter resolver. Convert Git operation requests into appropriate Git parameters.
-
+      
+      CRITICAL: The 'operation' parameter is MANDATORY and must NEVER be empty or null.
+      
+      SUPPORTED OPERATIONS:
+      
+      1. **status** - Show working tree status
+         Parameters: (none required)
+         Example: { "operation": "status", "parameters": {} }
+      
+      2. **log** - Show commit history
+         Parameters:
+         - limit: number of commits (default: "10")
+         - format: "oneline" | "full" | "detailed" (default: "oneline")
+         Example: { "operation": "log", "parameters": { "limit": "20", "format": "full" } }
+      
+      3. **branch** - List, create, or checkout branches
+         Parameters:
+         - action: "list" | "current" | "create" | "checkout" (default: "list")
+         - name: branch name (required for "create" and "checkout" actions)
+         Examples:
+         - { "operation": "branch", "parameters": { "action": "list" } }
+         - { "operation": "branch", "parameters": { "action": "create", "name": "feature-branch" } }
+         - { "operation": "branch", "parameters": { "action": "checkout", "name": "main" } }
+      
+      4. **add** - Stage files for commit
+         Parameters:
+         - files: file paths or "." for all (default: ".")
+         Example: { "operation": "add", "parameters": { "files": "src/main/kotlin/MyFile.kt" } }
+      
+      5. **commit** - Commit staged changes
+         Parameters:
+         - message: commit message (REQUIRED)
+         Example: { "operation": "commit", "parameters": { "message": "Fix bug in authentication" } }
+      
+      6. **push** - Push commits to remote
+         Parameters:
+         - remote: remote name (default: "origin")
+         - branch: branch name (optional)
+         Examples:
+         - { "operation": "push", "parameters": { "remote": "origin" } }
+         - { "operation": "push", "parameters": { "remote": "origin", "branch": "main" } }
+      
+      7. **pull** - Fetch and merge from remote
+         Parameters:
+         - remote: remote name (default: "origin")
+         - branch: branch name (optional)
+         Example: { "operation": "pull", "parameters": { "remote": "origin", "branch": "main" } }
+      
+      8. **diff** - Show changes between commits
+         Parameters:
+         - target: commit/branch to compare (optional, defaults to working tree vs HEAD)
+         Example: { "operation": "diff", "parameters": { "target": "HEAD~1" } }
+      
+      9. **remote** - Manage remote repositories
+         Parameters:
+         - action: "list" | "add" (default: "list")
+         - name: remote name (required for "add" action)
+         - url: remote URL (required for "add" action)
+         Examples:
+         - { "operation": "remote", "parameters": { "action": "list" } }
+         - { "operation": "remote", "parameters": { "action": "add", "name": "upstream", "url": "https://github.com/..." } }
+      
+      PARAMETER EXTRACTION RULES:
+      - ALWAYS extract and set the 'operation' field - it is MANDATORY
+      - If the task description doesn't clearly specify an operation, infer the most appropriate one
+      - For ambiguous requests like "check git" or "git history", use "status" or "log" respectively
+      - Set 'parameters' to an empty map {} if no specific parameters are needed
+      - Never leave 'operation' as empty string, null, or undefined
+      
+      COMMON MISTAKES TO AVOID:
+      - ❌ Leaving 'operation' empty or not setting it at all
+      - ❌ Using invalid operation names not in the supported list
+      - ❌ Forgetting required parameters (e.g., 'message' for commit, 'name' for branch create)
+      - ❌ Using spaces or special characters in operation names
+    userPrompt: |
+      Task description: {taskDescription}
+      Step context: {stepContext}
+      
+      REMINDER: The 'operation' field is MANDATORY. Choose the most appropriate Git operation from the supported list above.
     modelParams:
       modelType: GENERIC_TEXT_MODEL
       creativityLevel: LOW
