@@ -28,7 +28,7 @@ A Kotlin-first assistant and service toolkit for reasoning over codebases, docum
 - Datastores: MongoDB, Qdrant (vector)
 - LLMs: Anthropic Claude, OpenAI GPT, Ollama, LM Studio
 - Protocols: Model Context Protocol (MCP)
-- Build Tool: Maven
+- Build Tool: Gradle (Kotlin DSL)
 
 ---
 
@@ -64,7 +64,7 @@ A Kotlin-first assistant and service toolkit for reasoning over codebases, docum
 
 Prerequisites:
 - JDK 21+
-- Maven 3.9+
+- Gradle 8.7+ (or use the Gradle Wrapper if present)
 - Node 18+ (only if building UI assets)
 - Docker (optional; for local MongoDB and Qdrant)
 
@@ -76,9 +76,10 @@ Steps:
 3. Start local services (optional):
    - MongoDB: `docker run -p 27017:27017 mongo:7`
    - Qdrant: `docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant:latest`
-4. Build and run the server:
-   - `mvn -q -DskipTests package`
-   - `mvn spring-boot:run`
+4. Build and run the server (Gradle):
+   - Build: `gradle -q build -x test`
+   - Run: `gradle bootRun`
+   - Tip: If the Gradle Wrapper is available, prefer `./gradlew build` and `./gradlew bootRun`
 5. Verify health: open `http://localhost:8080` (or configured port).
 
 ---
