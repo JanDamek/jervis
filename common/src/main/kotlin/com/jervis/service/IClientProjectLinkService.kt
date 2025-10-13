@@ -1,15 +1,15 @@
 package com.jervis.service
 
-import com.jervis.entity.mongo.ClientProjectLinkDocument
+import com.jervis.dto.ClientProjectLinkDto
 import org.bson.types.ObjectId
 
 interface IClientProjectLinkService {
-    suspend fun listForClient(clientId: ObjectId): List<ClientProjectLinkDocument>
+    suspend fun listForClient(clientId: ObjectId): List<ClientProjectLinkDto>
 
     suspend fun get(
         clientId: ObjectId,
         projectId: ObjectId,
-    ): ClientProjectLinkDocument?
+    ): ClientProjectLinkDto?
 
     suspend fun upsert(
         clientId: ObjectId,
@@ -17,22 +17,22 @@ interface IClientProjectLinkService {
         isDisabled: Boolean?,
         anonymizationEnabled: Boolean?,
         historical: Boolean?,
-    ): ClientProjectLinkDocument
+    ): ClientProjectLinkDto
 
     suspend fun toggleDisabled(
         clientId: ObjectId,
         projectId: ObjectId,
-    ): ClientProjectLinkDocument
+    ): ClientProjectLinkDto
 
     suspend fun toggleAnonymization(
         clientId: ObjectId,
         projectId: ObjectId,
-    ): ClientProjectLinkDocument
+    ): ClientProjectLinkDto
 
     suspend fun toggleHistorical(
         clientId: ObjectId,
         projectId: ObjectId,
-    ): ClientProjectLinkDocument
+    ): ClientProjectLinkDto
 
     suspend fun delete(
         clientId: ObjectId,
