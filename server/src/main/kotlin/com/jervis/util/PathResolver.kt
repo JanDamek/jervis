@@ -1,6 +1,7 @@
 package com.jervis.util
 
 import com.jervis.configuration.DataRootProperties
+import com.jervis.entity.mongo.ClientDocument
 import com.jervis.entity.mongo.ProjectDocument
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Component
@@ -16,6 +17,9 @@ class PathResolver(
 
     fun clientDir(clientId: ObjectId): Path =
         root.resolve("clients").resolve(clientId.toHexString())
+
+    fun clientAudioDir(client: ClientDocument): Path =
+        clientDir(client.id).resolve("audio")
 
     fun projectDir(clientId: ObjectId, projectId: ObjectId): Path =
         clientDir(clientId).resolve("projects").resolve(projectId.toHexString())

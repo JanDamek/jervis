@@ -41,6 +41,7 @@ class DocumentIndexingService(
     private val indexingMonitorService: com.jervis.service.indexing.monitoring.IndexingMonitorService,
     private val tikaDocumentProcessor: TikaDocumentProcessor,
     private val llmGateway: LlmGateway,
+    private val pathResolver: com.jervis.util.PathResolver,
 ) {
     private val logger = KotlinLogging.logger {}
 
