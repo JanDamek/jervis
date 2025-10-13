@@ -1,6 +1,6 @@
 package com.jervis.controller
 
-import com.jervis.entity.mongo.ProjectDocument
+import com.jervis.dto.ProjectDto
 import com.jervis.service.IProjectService
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -17,34 +17,34 @@ class ProjectRestController(
     private val projectService: IProjectService,
 ) {
     @GetMapping
-    suspend fun getAllProjects(): List<ProjectDocument> = projectService.getAllProjects()
+    suspend fun getAllProjects(): List<ProjectDto> = projectService.getAllProjects()
 
     @GetMapping("/default")
-    suspend fun getDefaultProject(): ProjectDocument? = projectService.getDefaultProject()
+    suspend fun getDefaultProject(): ProjectDto? = projectService.getDefaultProject()
 
     @PutMapping("/active")
     suspend fun setActiveProject(
-        @RequestBody project: ProjectDocument,
+        @RequestBody project: ProjectDto,
     ) {
         projectService.setActiveProject(project)
     }
 
     @PutMapping("/default")
     suspend fun setDefaultProject(
-        @RequestBody project: ProjectDocument,
+        @RequestBody project: ProjectDto,
     ) {
         projectService.setDefaultProject(project)
     }
 
     @PostMapping
     suspend fun saveProject(
-        @RequestBody project: ProjectDocument,
+        @RequestBody project: ProjectDto,
         @RequestParam(required = false, defaultValue = "false") makeDefault: Boolean,
-    ): ProjectDocument = projectService.saveProject(project, makeDefault)
+    ): ProjectDto = projectService.saveProject(project, makeDefault)
 
     @DeleteMapping
     suspend fun deleteProject(
-        @RequestBody project: ProjectDocument,
+        @RequestBody project: ProjectDto,
     ) {
         projectService.deleteProject(project)
     }
@@ -52,5 +52,5 @@ class ProjectRestController(
     @GetMapping("/by-name")
     suspend fun getProjectByName(
         @RequestParam name: String,
-    ): ProjectDocument = projectService.getProjectByName(name)
+    ): ProjectDto = projectService.getProjectByName(name)
 }

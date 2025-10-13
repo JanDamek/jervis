@@ -1,6 +1,6 @@
 package com.jervis.controller
 
-import com.jervis.entity.mongo.ClientDocument
+import com.jervis.dto.ClientDto
 import com.jervis.service.IClientService
 import org.bson.types.ObjectId
 import org.springframework.web.bind.annotation.DeleteMapping
@@ -19,14 +19,14 @@ class ClientRestController(
 ) {
     @PostMapping
     suspend fun create(
-        @RequestBody client: ClientDocument,
-    ): ClientDocument = clientService.create(client)
+        @RequestBody client: ClientDto,
+    ): ClientDto = clientService.create(client)
 
     @PutMapping("/{id}")
     suspend fun update(
         @PathVariable id: String,
-        @RequestBody client: ClientDocument,
-    ): ClientDocument = clientService.update(ObjectId(id), client)
+        @RequestBody client: ClientDto,
+    ): ClientDto = clientService.update(ObjectId(id), client)
 
     @DeleteMapping("/{id}")
     suspend fun delete(
@@ -36,10 +36,10 @@ class ClientRestController(
     }
 
     @GetMapping
-    suspend fun list(): List<ClientDocument> = clientService.list()
+    suspend fun list(): List<ClientDto> = clientService.list()
 
     @GetMapping("/{id}")
     suspend fun getClientById(
         @PathVariable id: String,
-    ): ClientDocument? = clientService.getClientById(ObjectId(id))
+    ): ClientDto? = clientService.getClientById(ObjectId(id))
 }

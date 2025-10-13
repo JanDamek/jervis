@@ -1,5 +1,8 @@
 package com.jervis.domain.client
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 data class Formatting(
     val formatter: String = "ktlint",
     val version: String? = null,

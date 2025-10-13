@@ -13,7 +13,6 @@ data class RagDocument(
     val summary: String = "",
     val ragSourceType: RagSourceType,
     val language: String? = null,
-    val path: String? = null,
     val packageName: String? = null,
     val className: String? = null,
     val parentClass: String? = null,
@@ -28,8 +27,8 @@ data class RagDocument(
     val symbolName: String? = null,
     /** Joern CPG node ID for traceability */
     val joernNodeId: String? = null,
-    val safetyTags: List<String> = listOf(), // Bezpečnostní značky
-    val chunkId: Int? = null, // Index činka
-    val chunkOf: Int? = null, // Celkový počet činků (pro map-reduce)
-    val branch: String = "main", // Název větve (např. main, develop, release-vX)
+    val safetyTags: List<String> = listOf(),
+    val chunkId: Int? = null,
+    val chunkOf: Int? = null,
+    val branch: String = "main",
 )
