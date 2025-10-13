@@ -1,5 +1,6 @@
 package com.jervis
 
+import com.jervis.configuration.DataRootProperties
 import com.jervis.configuration.YamlPropertySourceFactory
 import com.jervis.configuration.prompts.PromptsConfiguration
 import org.springframework.boot.autoconfigure.SpringBootApplication
@@ -11,7 +12,7 @@ import org.springframework.data.mongodb.repository.config.EnableMongoRepositorie
 
 @SpringBootApplication
 @EnableMongoRepositories(basePackages = ["com.jervis.repository.mongo"])
-@EnableConfigurationProperties(PromptsConfiguration::class)
+@EnableConfigurationProperties(PromptsConfiguration::class, DataRootProperties::class)
 @PropertySource(
     value = ["classpath:prompts-tools.yaml", "classpath:prompts-services.yaml"],
     factory = YamlPropertySourceFactory::class,
