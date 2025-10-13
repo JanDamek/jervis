@@ -24,10 +24,6 @@ data class ProjectDocument(
     val description: String? = null,
     val shortDescription: String? = null,
     val fullDescription: String? = null,
-    val path: String = "",
-    val meetingPath: String? = null,
-    val audioPath: String? = null,
-    val documentationPath: String? = null,
     val documentationUrls: List<String> = emptyList(),
     val languages: List<String> = emptyList(), // Programming languages used in the project
     val communicationLanguage: Language = Language.getDefault(), // Communication language for this project
