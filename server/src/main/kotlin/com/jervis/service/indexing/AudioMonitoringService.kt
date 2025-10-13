@@ -27,6 +27,7 @@ class AudioMonitoringService(
     private val audioTranscriptIndexingService: AudioTranscriptIndexingService,
     private val historicalVersioningService: HistoricalVersioningService,
     private val audioMonitoringProps: AudioMonitoringProperties,
+    private val pathResolver: com.jervis.util.PathResolver,
 ) {
     private val logger = KotlinLogging.logger {}
     private val lastCheckedCommits = mutableMapOf<String, String>()
@@ -48,18 +49,17 @@ class AudioMonitoringService(
             for (project in projects) {
                 if (project.isDisabled) continue
 
-                val audioPath = project.audioPath
-                if (audioPath.isNullOrBlank()) continue
-
-                val audioDir = Paths.get(audioPath)
+                val audioDir = pathResolver.projectAudioDir(project)
                 if (!Files.exists(audioDir)) {
-                    logger.warn { "Audio path does not exist for project ${project.name}: $audioPath" }
-                    continue
+                    try { Files.createDirectories(audioDir) } catch (e: Exception) {
+                        logger.warn(e) { "Failed to create audio directory for project ${project.name}: $audioDir" }
+                        continue
+                    }
                 }
 
                 try {
                     val interval = getEffectiveInterval(project)
-                    if (shouldCheckDirectory(audioPath, interval)) {
+                    if (shouldCheckDirectory(audioDir.toString(), interval)) {
                         checkAndReindexProject(project, audioDir)
                     }
                 } catch (e: Exception) {
@@ -74,18 +74,17 @@ class AudioMonitoringService(
             for (client in clients) {
                 if (client.isDisabled) continue
 
-                val audioPath = client.audioPath
-                if (audioPath.isNullOrBlank()) continue
-
-                val audioDir = Paths.get(audioPath)
+                val audioDir = pathResolver.clientAudioDir(client)
                 if (!Files.exists(audioDir)) {
-                    logger.warn { "Audio path does not exist for client ${client.name}: $audioPath" }
-                    continue
+                    try { Files.createDirectories(audioDir) } catch (e: Exception) {
+                        logger.warn(e) { "Failed to create audio directory for client ${client.name}: $audioDir" }
+                        continue
+                    }
                 }
 
                 try {
                     val interval = audioMonitoringProps.defaultGitCheckIntervalMinutes
-                    if (shouldCheckDirectory(audioPath, interval)) {
+                    if (shouldCheckDirectory(audioDir.toString(), interval)) {
                         checkAndReindexClient(client, audioDir)
                     }
                 } catch (e: Exception) {
@@ -98,7 +97,7 @@ class AudioMonitoringService(
         project: ProjectDocument,
         audioDir: Path,
     ) {
-        val projectPath = Paths.get(project.projectPath)
+        val projectPath = pathResolver.projectGitDir(project)
         val currentCommit = historicalVersioningService.getCurrentGitCommitHash(projectPath) ?: return
 
         val lastCommit = lastCheckedCommits[audioDir.toString()]
