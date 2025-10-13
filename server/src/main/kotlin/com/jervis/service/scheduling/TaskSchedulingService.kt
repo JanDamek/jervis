@@ -1,5 +1,6 @@
 package com.jervis.service.scheduling
 
+import com.jervis.domain.task.ScheduledTaskStatus
 import com.jervis.dto.ChatRequestContext
 import com.jervis.entity.mongo.ScheduledTaskDocument
 import com.jervis.repository.mongo.ProjectMongoRepository
@@ -90,7 +91,7 @@ class TaskSchedulingService(
 
             // Mark task as running
             val runningTask =
-                taskManagementService.updateTaskStatus(task, ScheduledTaskDocument.ScheduledTaskStatus.RUNNING)
+                taskManagementService.updateTaskStatus(task, ScheduledTaskStatus.RUNNING)
 
             try {
                 val project =
@@ -123,7 +124,7 @@ class TaskSchedulingService(
                 }
 
                 // Mark task as completed
-                taskManagementService.updateTaskStatus(runningTask, ScheduledTaskDocument.ScheduledTaskStatus.COMPLETED)
+                taskManagementService.updateTaskStatus(runningTask, ScheduledTaskStatus.COMPLETED)
             } catch (e: Exception) {
                 logger.error(e) { "Task execution failed: ${task.taskName}" }
                 markTaskAsFailed(runningTask, e.message ?: "Execution failed")
@@ -140,7 +141,7 @@ class TaskSchedulingService(
         // Mark task as failed using TaskManagementService
         taskManagementService.updateTaskStatus(
             failedTask,
-            ScheduledTaskDocument.ScheduledTaskStatus.FAILED,
+            ScheduledTaskStatus.FAILED,
             errorMessage,
         )
 
