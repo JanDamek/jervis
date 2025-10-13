@@ -1,5 +1,6 @@
 package com.jervis.service.scheduling
 
+import com.jervis.domain.task.ScheduledTaskStatus
 import com.jervis.entity.mongo.ScheduledTaskDocument
 import com.jervis.repository.mongo.ScheduledTaskMongoRepository
 import com.jervis.service.ITaskQueryService
@@ -31,12 +32,11 @@ class TaskQueryService(
     /**
      * Get tasks by status (Flow version for internal use)
      */
-    fun getTasksByStatusFlow(status: ScheduledTaskDocument.ScheduledTaskStatus): Flow<ScheduledTaskDocument> =
-        scheduledTaskRepository.findByStatus(status)
+    fun getTasksByStatusFlow(status: ScheduledTaskStatus): Flow<ScheduledTaskDocument> = scheduledTaskRepository.findByStatus(status)
 
     /**
      * Get tasks by status (List version for interface)
      */
-    override suspend fun getTasksByStatus(status: ScheduledTaskDocument.ScheduledTaskStatus): List<ScheduledTaskDocument> =
+    override suspend fun getTasksByStatus(status: ScheduledTaskStatus): List<ScheduledTaskDocument> =
         scheduledTaskRepository.findByStatus(status).toList()
 }

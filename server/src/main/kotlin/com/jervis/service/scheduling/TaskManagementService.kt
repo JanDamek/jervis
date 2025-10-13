@@ -1,5 +1,6 @@
 package com.jervis.service.scheduling
 
+import com.jervis.domain.task.ScheduledTaskStatus
 import com.jervis.entity.mongo.ScheduledTaskDocument
 import com.jervis.repository.mongo.ScheduledTaskMongoRepository
 import kotlinx.coroutines.Dispatchers
@@ -62,12 +63,12 @@ class TaskManagementService(
         withContext(Dispatchers.IO) {
             val task = scheduledTaskRepository.findById(taskId) ?: return@withContext false
 
-            if (task.status == ScheduledTaskDocument.ScheduledTaskStatus.PENDING ||
-                task.status == ScheduledTaskDocument.ScheduledTaskStatus.FAILED
+            if (task.status == ScheduledTaskStatus.PENDING ||
+                task.status == ScheduledTaskStatus.FAILED
             ) {
                 val cancelledTask =
                     task.copy(
-                        status = ScheduledTaskDocument.ScheduledTaskStatus.CANCELLED,
+                        status = ScheduledTaskStatus.CANCELLED,
                         lastUpdatedAt = Instant.now(),
                     )
                 scheduledTaskRepository.save(cancelledTask)
@@ -84,7 +85,7 @@ class TaskManagementService(
      */
     suspend fun updateTaskStatus(
         task: ScheduledTaskDocument,
-        newStatus: ScheduledTaskDocument.ScheduledTaskStatus,
+        newStatus: ScheduledTaskStatus,
         errorMessage: String? = null,
     ): ScheduledTaskDocument =
         withContext(Dispatchers.IO) {
@@ -93,7 +94,7 @@ class TaskManagementService(
                     status = newStatus,
                     errorMessage = errorMessage,
                     startedAt =
-                        if (newStatus == ScheduledTaskDocument.ScheduledTaskStatus.RUNNING &&
+                        if (newStatus == ScheduledTaskStatus.RUNNING &&
                             task.startedAt == null
                         ) {
                             Instant.now()
@@ -101,8 +102,8 @@ class TaskManagementService(
                             task.startedAt
                         },
                     completedAt =
-                        if (newStatus == ScheduledTaskDocument.ScheduledTaskStatus.COMPLETED ||
-                            newStatus == ScheduledTaskDocument.ScheduledTaskStatus.FAILED
+                        if (newStatus == ScheduledTaskStatus.COMPLETED ||
+                            newStatus == ScheduledTaskStatus.FAILED
                         ) {
                             Instant.now()
                         } else {
