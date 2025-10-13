@@ -30,6 +30,7 @@ import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
+import java.time.Instant
 import javax.swing.DefaultListModel
 import javax.swing.JButton
 import javax.swing.JCheckBox
@@ -50,6 +51,8 @@ import javax.swing.JTextArea
 import javax.swing.KeyStroke
 import javax.swing.ListSelectionModel
 import javax.swing.border.EmptyBorder
+import kotlin.collections.indexOfFirst
+import kotlin.collections.sortedByDescending
 
 class MainWindow(
     private val projectService: ProjectService,
@@ -778,7 +781,7 @@ class MainWindow(
         val newName = JOptionPane.showInputDialog(this, "Context name:", ctx.name)
         if (newName != null && newName.isNotBlank()) {
             ctx.name = newName.trim()
-            ctx.updatedAt = java.time.Instant.now()
+            ctx.updatedAt = Instant.now()
 
             // Save the updated context to database
             coroutineScope.launch {
@@ -869,8 +872,8 @@ class MainWindow(
                     ),
                 name = name,
                 plans = emptyList(),
-                createdAt = java.time.Instant.now(),
-                updatedAt = java.time.Instant.now(),
+                createdAt = Instant.now(),
+                updatedAt = Instant.now(),
                 quick = false,
             )
 

@@ -4,28 +4,6 @@ import org.bson.types.ObjectId
 import java.time.Instant
 
 /**
- * Type of embedding used for the document content
- */
-enum class EmbeddingType {
-    /** Text embeddings with 768 dimensions for semantic text search */
-    EMBEDDING_TEXT,
-
-    /** Code embeddings with 3584 dimensions for code-specific search */
-    EMBEDDING_CODE,
-}
-
-/**
- * Types of code symbols extracted from Joern analysis
- */
-enum class SymbolType {
-    /** Class or interface definition */
-    CLASS,
-
-    /** Method or function definition */
-    METHOD,
-}
-
-/**
  * Represents a document with content and metadata.
  * This class is used for storing and retrieving documents from the vector database.
  */
@@ -50,8 +28,6 @@ data class RagDocument(
     val symbolName: String? = null,
     /** Joern CPG node ID for traceability */
     val joernNodeId: String? = null,
-    /** Type of symbol (CLASS, METHOD, FIELD, NAMESPACE, RELATION) */
-    val symbolType: SymbolType? = null,
     val safetyTags: List<String> = listOf(), // Bezpečnostní značky
     val chunkId: Int? = null, // Index činka
     val chunkOf: Int? = null, // Celkový počet činků (pro map-reduce)
