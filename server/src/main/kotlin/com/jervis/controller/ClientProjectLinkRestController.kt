@@ -1,9 +1,7 @@
 package com.jervis.controller
 
-import com.jervis.entity.mongo.ClientProjectLinkDocument
+import com.jervis.dto.ClientProjectLinkDto
 import com.jervis.service.IClientProjectLinkService
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.asFlow
 import org.bson.types.ObjectId
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -22,13 +20,13 @@ class ClientProjectLinkRestController(
     @GetMapping("/client/{clientId}")
     suspend fun listForClient(
         @PathVariable clientId: String,
-    ): Flow<ClientProjectLinkDocument> = linkService.listForClient(ObjectId(clientId)).asFlow()
+    ): List<ClientProjectLinkDto> = linkService.listForClient(ObjectId(clientId))
 
     @GetMapping("/client/{clientId}/project/{projectId}")
     suspend fun get(
         @PathVariable clientId: String,
         @PathVariable projectId: String,
-    ): ClientProjectLinkDocument? = linkService.get(ObjectId(clientId), ObjectId(projectId))
+    ): ClientProjectLinkDto? = linkService.get(ObjectId(clientId), ObjectId(projectId))
 
     @PostMapping("/client/{clientId}/project/{projectId}")
     suspend fun upsert(
@@ -37,7 +35,7 @@ class ClientProjectLinkRestController(
         @RequestParam(required = false) isDisabled: Boolean?,
         @RequestParam(required = false) anonymizationEnabled: Boolean?,
         @RequestParam(required = false) historical: Boolean?,
-    ): ClientProjectLinkDocument =
+    ): ClientProjectLinkDto =
         linkService.upsert(
             ObjectId(clientId),
             ObjectId(projectId),
@@ -50,19 +48,19 @@ class ClientProjectLinkRestController(
     suspend fun toggleDisabled(
         @PathVariable clientId: String,
         @PathVariable projectId: String,
-    ): ClientProjectLinkDocument = linkService.toggleDisabled(ObjectId(clientId), ObjectId(projectId))
+    ): ClientProjectLinkDto = linkService.toggleDisabled(ObjectId(clientId), ObjectId(projectId))
 
     @PutMapping("/client/{clientId}/project/{projectId}/toggle-anonymization")
     suspend fun toggleAnonymization(
         @PathVariable clientId: String,
         @PathVariable projectId: String,
-    ): ClientProjectLinkDocument = linkService.toggleAnonymization(ObjectId(clientId), ObjectId(projectId))
+    ): ClientProjectLinkDto = linkService.toggleAnonymization(ObjectId(clientId), ObjectId(projectId))
 
     @PutMapping("/client/{clientId}/project/{projectId}/toggle-historical")
     suspend fun toggleHistorical(
         @PathVariable clientId: String,
         @PathVariable projectId: String,
-    ): ClientProjectLinkDocument = linkService.toggleHistorical(ObjectId(clientId), ObjectId(projectId))
+    ): ClientProjectLinkDto = linkService.toggleHistorical(ObjectId(clientId), ObjectId(projectId))
 
     @DeleteMapping("/client/{clientId}/project/{projectId}")
     suspend fun delete(

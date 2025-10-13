@@ -17,7 +17,6 @@ data class ClientDto(
     val description: String? = null,
     val shortDescription: String? = null,
     val fullDescription: String? = null,
-    val audioPath: String? = null,
     val defaultCodingGuidelines: Guidelines = Guidelines(),
     val defaultReviewPolicy: ReviewPolicy = ReviewPolicy(),
     val defaultFormatting: Formatting = Formatting(),

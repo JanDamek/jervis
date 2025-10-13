@@ -10,15 +10,6 @@ import com.jervis.domain.client.SecretsPolicy
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class AudioMonitoringConfig(
-    val enabled: Boolean = true,
-    val gitCheckIntervalMinutes: Long? = null,
-    val supportedFormats: List<String> = listOf("wav", "mp3", "m4a", "flac", "ogg"),
-    val whisperModel: String = "base",
-    val whisperLanguage: String? = null,
-)
-
-@Serializable
 data class ProjectOverrides(
     val codingGuidelines: Guidelines? = null,
     val reviewPolicy: ReviewPolicy? = null,

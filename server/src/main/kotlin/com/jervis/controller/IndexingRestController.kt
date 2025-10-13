@@ -1,6 +1,6 @@
 package com.jervis.controller
 
-import com.jervis.entity.mongo.ProjectDocument
+import com.jervis.dto.ProjectDto
 import com.jervis.service.IIndexingService
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -15,19 +15,19 @@ class IndexingRestController(
 ) {
     @PostMapping("/project")
     suspend fun indexProject(
-        @RequestBody project: ProjectDocument,
+        @RequestBody project: ProjectDto,
     ): Any = indexingService.indexProject(project)
 
     @PostMapping("/all-projects")
     suspend fun indexAllProjects(
-        @RequestBody projects: List<ProjectDocument>,
+        @RequestBody projects: List<ProjectDto>,
     ) {
         indexingService.indexAllProjects(projects)
     }
 
     @PostMapping("/client-projects")
     suspend fun indexProjectsForClient(
-        @RequestBody projects: List<ProjectDocument>,
+        @RequestBody projects: List<ProjectDto>,
         @RequestParam clientName: String,
     ) {
         indexingService.indexProjectsForClient(projects, clientName)

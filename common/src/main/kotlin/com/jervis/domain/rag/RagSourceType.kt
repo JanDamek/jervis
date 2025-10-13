@@ -42,4 +42,19 @@ enum class RagSourceType {
 
     /** Memory/context content */
     MEMORY,
+
+    /** Email messages */
+    EMAIL,
+
+    /** Slack messages */
+    SLACK,
+
+    /** Microsoft Teams messages */
+    TEAMS,
+
+    /** Discord messages */
+    DISCORD,
+
+    /** Jira issues and comments */
+    JIRA,
 }

@@ -1,8 +1,11 @@
 package com.jervis.service.client
 
+import com.jervis.dto.ClientProjectLinkDto
 import com.jervis.entity.mongo.ClientProjectLinkDocument
+import com.jervis.mapper.toDto
 import com.jervis.repository.mongo.ClientProjectLinkMongoRepository
 import com.jervis.service.IClientProjectLinkService
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -15,12 +18,13 @@ class ClientProjectLinkService(
 ) : IClientProjectLinkService {
     private val logger = KotlinLogging.logger {}
 
-    override suspend fun listForClient(clientId: ObjectId): List<ClientProjectLinkDocument> = linkRepo.findByClientId(clientId).toList()
+    override suspend fun listForClient(clientId: ObjectId): List<ClientProjectLinkDto> =
+        linkRepo.findByClientId(clientId).map { it.toDto() }.toList()
 
     override suspend fun get(
         clientId: ObjectId,
         projectId: ObjectId,
-    ): ClientProjectLinkDocument? = linkRepo.findByClientIdAndProjectId(clientId, projectId)
+    ): ClientProjectLinkDto? = linkRepo.findByClientIdAndProjectId(clientId, projectId)?.toDto()
 
     override suspend fun upsert(
         clientId: ObjectId,
@@ -28,7 +32,7 @@ class ClientProjectLinkService(
         isDisabled: Boolean?,
         anonymizationEnabled: Boolean?,
         historical: Boolean?,
-    ): ClientProjectLinkDocument {
+    ): ClientProjectLinkDto {
         val existing = linkRepo.findByClientIdAndProjectId(clientId, projectId)
         val now = Instant.now()
         return if (existing == null) {
@@ -42,7 +46,7 @@ class ClientProjectLinkService(
                     createdAt = now,
                     updatedAt = now,
                 )
-            linkRepo.save(link)
+            linkRepo.save(link).toDto()
         } else {
             val updated =
                 existing.copy(
@@ -51,18 +55,18 @@ class ClientProjectLinkService(
                     historical = historical ?: existing.historical,
                     updatedAt = now,
                 )
-            linkRepo.save(updated)
+            linkRepo.save(updated).toDto()
         }
     }
 
     override suspend fun toggleDisabled(
         clientId: ObjectId,
         projectId: ObjectId,
-    ): ClientProjectLinkDocument =
+    ): ClientProjectLinkDto =
         upsert(
             clientId,
             projectId,
-            isDisabled = !(get(clientId, projectId)?.isDisabled ?: false),
+            isDisabled = !(linkRepo.findByClientIdAndProjectId(clientId, projectId)?.isDisabled ?: false),
             anonymizationEnabled = null,
             historical = null,
         )
@@ -70,25 +74,29 @@ class ClientProjectLinkService(
     override suspend fun toggleAnonymization(
         clientId: ObjectId,
         projectId: ObjectId,
-    ): ClientProjectLinkDocument =
+    ): ClientProjectLinkDto =
         upsert(
             clientId,
             projectId,
             isDisabled = null,
-            anonymizationEnabled = !(get(clientId, projectId)?.anonymizationEnabled ?: true),
+            anonymizationEnabled =
+                !(
+                    linkRepo.findByClientIdAndProjectId(clientId, projectId)?.anonymizationEnabled
+                        ?: true
+                ),
             historical = null,
         )
 
     override suspend fun toggleHistorical(
         clientId: ObjectId,
         projectId: ObjectId,
-    ): ClientProjectLinkDocument =
+    ): ClientProjectLinkDto =
         upsert(
             clientId,
             projectId,
             isDisabled = null,
             anonymizationEnabled = null,
-            historical = !(get(clientId, projectId)?.historical ?: false),
+            historical = !(linkRepo.findByClientIdAndProjectId(clientId, projectId)?.historical ?: false),
         )
 
     override suspend fun delete(

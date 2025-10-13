@@ -1,7 +1,10 @@
 package com.jervis.domain.client
 
-data class SlackConn(
-    val workspace: String? = null,
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class TeamsConn(
+    val tenant: String? = null,
     val scopes: List<String>? = null,
     val credentialsRef: String? = null,
 )

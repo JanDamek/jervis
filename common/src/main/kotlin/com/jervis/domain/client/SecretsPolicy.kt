@@ -1,5 +1,8 @@
 package com.jervis.domain.client
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 data class SecretsPolicy(
     val bannedPatterns: List<String> =
         listOf(
