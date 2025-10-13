@@ -6,6 +6,7 @@ import com.jervis.configuration.TimeoutsProperties
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.rag.EmbeddingType
 import com.jervis.domain.rag.RagDocument
+import com.jervis.domain.rag.RagSourceType
 import com.jervis.repository.vector.converter.rag.convertRagDocumentToPayload
 import io.grpc.Status
 import io.grpc.StatusRuntimeException
@@ -335,7 +336,7 @@ class VectorStorageRepository(
         minScore: Float = 0.0f,
         projectId: String? = null,
         clientId: String? = null,
-        ragSourceType: com.jervis.domain.rag.RagSourceType? = null,
+        ragSourceType: RagSourceType? = null,
         symbolType: com.jervis.domain.rag.SymbolType? = null,
         filter: Map<String, Any>? = null,
     ): List<Map<String, JsonWithInt.Value>> {
