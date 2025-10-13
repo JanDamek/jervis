@@ -1,22 +1,22 @@
 package com.jervis.service
 
-import com.jervis.entity.mongo.ProjectDocument
+import com.jervis.dto.ProjectDto
 
 interface IProjectService {
-    suspend fun getAllProjects(): List<ProjectDocument>
+    suspend fun getAllProjects(): List<ProjectDto>
 
-    suspend fun getDefaultProject(): ProjectDocument?
+    suspend fun getDefaultProject(): ProjectDto?
 
-    suspend fun setActiveProject(project: ProjectDocument)
+    suspend fun setActiveProject(project: ProjectDto)
 
-    suspend fun setDefaultProject(project: ProjectDocument)
+    suspend fun setDefaultProject(project: ProjectDto)
 
     suspend fun saveProject(
-        project: ProjectDocument,
+        project: ProjectDto,
         makeDefault: Boolean = false,
-    ): ProjectDocument
+    ): ProjectDto
 
-    suspend fun deleteProject(project: ProjectDocument)
+    suspend fun deleteProject(project: ProjectDto)
 
-    suspend fun getProjectByName(name: String?): ProjectDocument
+    suspend fun getProjectByName(name: String?): ProjectDto
 }
