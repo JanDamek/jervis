@@ -1,9 +1,12 @@
 package com.jervis.controller
 
-import com.jervis.entity.mongo.ScheduledTaskDocument
-import com.jervis.service.ITaskSchedulingService
+import com.jervis.dto.ScheduleTaskRequestDto
+import com.jervis.dto.ScheduledTaskDto
+import com.jervis.mapper.toDto
+import com.jervis.service.scheduling.TaskSchedulingService
 import org.bson.types.ObjectId
 import org.springframework.web.bind.annotation.DeleteMapping
+import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -14,38 +17,43 @@ import java.time.Instant
 @RestController
 @RequestMapping("/api/task-scheduling")
 class TaskSchedulingRestController(
-    private val taskSchedulingService: ITaskSchedulingService,
+    private val taskSchedulingService: TaskSchedulingService,
 ) {
     @PostMapping("/schedule")
     suspend fun scheduleTask(
-        @RequestBody request: ScheduleTaskRequest,
-    ): ScheduledTaskDocument =
-        taskSchedulingService.scheduleTask(
-            projectId = request.projectId,
-            taskInstruction = request.taskInstruction,
-            taskName = request.taskName,
-            scheduledAt = request.scheduledAt,
-            taskParameters = request.taskParameters,
-            priority = request.priority,
-            maxRetries = request.maxRetries,
-            cronExpression = request.cronExpression,
-            createdBy = request.createdBy,
-        )
+        @RequestBody request: ScheduleTaskRequestDto,
+    ): ScheduledTaskDto =
+        taskSchedulingService
+            .scheduleTask(
+                projectId = ObjectId(request.projectId),
+                taskInstruction = request.taskInstruction,
+                taskName = request.taskName,
+                scheduledAt = Instant.ofEpochMilli(request.scheduledAt),
+                taskParameters = request.taskParameters,
+                priority = request.priority,
+                maxRetries = request.maxRetries,
+                cronExpression = request.cronExpression,
+                createdBy = request.createdBy,
+            ).toDto()
 
     @DeleteMapping("/cancel/{taskId}")
     suspend fun cancelTask(
         @PathVariable taskId: String,
     ): Boolean = taskSchedulingService.cancelTask(ObjectId(taskId))
 
-    data class ScheduleTaskRequest(
-        val projectId: ObjectId,
-        val taskInstruction: String,
-        val taskName: String,
-        val scheduledAt: Instant,
-        val taskParameters: Map<String, String> = emptyMap(),
-        val priority: Int = 0,
-        val maxRetries: Int = 3,
-        val cronExpression: String? = null,
-        val createdBy: String = "system",
-    )
+    @GetMapping("/{taskId}")
+    suspend fun findById(
+        @PathVariable taskId: String,
+    ): ScheduledTaskDto? = taskSchedulingService.findById(ObjectId(taskId))?.toDto()
+
+    @GetMapping("/list")
+    suspend fun listAllTasks(): List<ScheduledTaskDto> = taskSchedulingService.listAllTasks().map { it.toDto() }
+
+    @GetMapping("/project/{projectId}")
+    suspend fun listTasksForProject(
+        @PathVariable projectId: String,
+    ): List<ScheduledTaskDto> = taskSchedulingService.listTasksForProject(ObjectId(projectId)).map { it.toDto() }
+
+    @GetMapping("/pending")
+    suspend fun listPendingTasks(): List<ScheduledTaskDto> = taskSchedulingService.listPendingTasks().map { it.toDto() }
 }

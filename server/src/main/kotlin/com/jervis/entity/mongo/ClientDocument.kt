@@ -31,6 +31,7 @@ data class ClientDocument(
     val defaultInspirationPolicy: InspirationPolicy = InspirationPolicy(),
     val tools: ClientTools = ClientTools(),
     val defaultLanguage: Language = Language.getDefault(), // Default communication language for this client
+    val audioPath: String? = null,
     val dependsOnProjects: List<ObjectId> = emptyList(),
     val isDisabled: Boolean = false,
     val disabledProjects: List<ObjectId> = emptyList(),

@@ -1,6 +1,6 @@
 package com.jervis.dto
 
-import org.bson.types.ObjectId
+import kotlinx.serialization.Serializable
 
 /**
  * Provides the context for a user's chat request.
@@ -11,11 +11,12 @@ import org.bson.types.ObjectId
  *
  * When quick is true, routing prefers models marked as quick.
  */
+@Serializable
 data class ChatRequestContext(
-    val clientId: ObjectId,
-    val projectId: ObjectId,
+    val clientId: String,
+    val projectId: String,
     val autoScope: Boolean = false,
     val quick: Boolean = false,
     val confirmedScope: Boolean = false,
-    val existingContextId: ObjectId? = null, // ID of existing context to continue conversation
+    val existingContextId: String? = null, // ID of existing context to continue conversation
 )

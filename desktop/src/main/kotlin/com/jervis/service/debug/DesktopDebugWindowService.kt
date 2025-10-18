@@ -1,5 +1,6 @@
 package com.jervis.service.debug
 
+import com.jervis.service.IDebugWindowService
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import mu.KotlinLogging
@@ -10,11 +11,11 @@ import java.util.concurrent.atomic.AtomicLong
 import javax.swing.SwingUtilities
 
 /**
- * Service for managing debug sessions for LLM calls with memory management.
+ * Desktop implementation of debug window service for managing LLM debug sessions.
  * Implements 512MB RAM limit and 1-day retention policy to prevent JVM heap issues.
  */
 @Service
-class DesktopDebugWindowService {
+class DesktopDebugWindowService : IDebugWindowService {
     private val logger = KotlinLogging.logger {}
 
     // Memory management
@@ -33,12 +34,12 @@ class DesktopDebugWindowService {
     @Volatile
     private var debugWindow: DebugWindowFrame? = null
 
-    suspend fun startDebugSession(
+    override suspend fun startDebugSession(
         sessionId: String,
         promptType: String,
         systemPrompt: String,
         userPrompt: String,
-    ): DebugSession {
+    ) {
         cleanupOldSessions()
 
         val session =
@@ -70,11 +71,9 @@ class DesktopDebugWindowService {
         _debugEvents.tryEmit(
             DebugEvent.SessionStarted(sessionId, promptType, systemPrompt, userPrompt),
         )
-
-        return session
     }
 
-    suspend fun appendResponse(
+    override suspend fun appendResponse(
         sessionId: String,
         chunk: String,
     ) {
@@ -93,23 +92,20 @@ class DesktopDebugWindowService {
         }
     }
 
-    suspend fun completeSession(
-        sessionId: String,
-        finalResponse: com.jervis.domain.llm.LlmResponse,
-    ) {
+    override suspend fun completeSession(sessionId: String) {
         sessions[sessionId]?.let { session ->
-            session.complete(finalResponse)
+            session.complete()
             logger.info { "Debug session completed: $sessionId" }
 
-            // Emit event
-            _debugEvents.tryEmit(DebugEvent.SessionCompleted(sessionId, finalResponse))
+            _debugEvents.tryEmit(DebugEvent.SessionCompleted(sessionId))
 
-            // Clean up after completion to free memory
+            debugWindow?.completeSession(sessionId)
+
             cleanupSession(sessionId)
         }
     }
 
-    fun showDebugWindow() {
+    override fun showDebugWindow() {
         SwingUtilities.invokeLater {
             if (debugWindow == null) {
                 debugWindow = DebugWindowFrame()
@@ -124,15 +120,15 @@ class DesktopDebugWindowService {
         }
     }
 
-    fun hideDebugWindow() {
+    override fun hideDebugWindow() {
         SwingUtilities.invokeLater {
             debugWindow?.isVisible = false
         }
     }
 
-    fun isDebugWindowVisible(): Boolean = debugWindow?.isVisible ?: false
+    override fun isDebugWindowVisible(): Boolean = debugWindow?.isVisible ?: false
 
-    fun getActiveSessionIds(): List<String> = sessions.keys.toList()
+    override fun getActiveSessionIds(): List<String> = sessions.keys.toList()
 
     private fun ensureDebugWindowVisible(session: DebugSession) {
         SwingUtilities.invokeLater {
@@ -203,41 +199,4 @@ class DesktopDebugWindowService {
                 session.responseBuffer.length
         ) * 2L // UTF-8 estimation
     }
-}
-
-data class DebugSession(
-    val id: String,
-    val promptType: String,
-    val systemPrompt: String,
-    val userPrompt: String,
-    val startTime: LocalDateTime,
-    val responseBuffer: StringBuilder,
-    var completionTime: LocalDateTime? = null,
-    var finalResponse: com.jervis.domain.llm.LlmResponse? = null,
-) {
-    fun complete(response: com.jervis.domain.llm.LlmResponse) {
-        completionTime = LocalDateTime.now()
-        finalResponse = response
-    }
-
-    fun isCompleted(): Boolean = completionTime != null
-}
-
-sealed class DebugEvent {
-    data class SessionStarted(
-        val sessionId: String,
-        val promptType: String,
-        val systemPrompt: String,
-        val userPrompt: String,
-    ) : DebugEvent()
-
-    data class ResponseChunk(
-        val sessionId: String,
-        val chunk: String,
-    ) : DebugEvent()
-
-    data class SessionCompleted(
-        val sessionId: String,
-        val response: com.jervis.domain.llm.LlmResponse,
-    ) : DebugEvent()
 }

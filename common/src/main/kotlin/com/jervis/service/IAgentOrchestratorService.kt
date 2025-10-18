@@ -1,11 +1,7 @@
 package com.jervis.service
 
-import com.jervis.dto.ChatRequestContext
-import com.jervis.dto.ChatResponse
+import com.jervis.dto.ChatRequest
 
-interface IAgentOrchestratorService {
-    suspend fun handle(
-        text: String,
-        ctx: ChatRequestContext,
-    ): ChatResponse
+fun interface IAgentOrchestratorService {
+    fun handle(request: ChatRequest)
 }

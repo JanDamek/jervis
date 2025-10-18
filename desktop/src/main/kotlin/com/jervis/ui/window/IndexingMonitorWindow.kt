@@ -1,6 +1,6 @@
 package com.jervis.ui.window
 
-import com.jervis.service.indexing.monitoring.IndexingMonitorService
+import com.jervis.service.IIndexingMonitorService
 import com.jervis.service.indexing.monitoring.IndexingProgressEvent
 import com.jervis.service.indexing.monitoring.IndexingStep
 import com.jervis.service.indexing.monitoring.IndexingStepStatus
@@ -8,13 +8,10 @@ import com.jervis.service.indexing.monitoring.ProjectIndexingState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.swing.Swing
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
-import org.bson.types.ObjectId
 import org.springframework.context.event.EventListener
 import java.awt.BorderLayout
 import java.awt.Color
@@ -47,7 +44,7 @@ import java.awt.Component as AwtComponent
  * Dialog window for monitoring indexing progress
  */
 class IndexingMonitorWindow(
-    private val indexingMonitorService: IndexingMonitorService,
+    private val indexingMonitorService: IIndexingMonitorService,
     parentWindow: JFrame? = null,
 ) : JDialog(parentWindow, "Indexing Monitor", false) {
     private val logger = KotlinLogging.logger {}
@@ -62,7 +59,7 @@ class IndexingMonitorWindow(
     // Tree model and nodes
     private val rootNode = DefaultMutableTreeNode("Indexing Projects")
     private val treeModel = DefaultTreeModel(rootNode)
-    private val projectNodes = mutableMapOf<ObjectId, DefaultMutableTreeNode>()
+    private val projectNodes = mutableMapOf<String, DefaultMutableTreeNode>()
 
     init {
         initializeUI()
@@ -71,11 +68,6 @@ class IndexingMonitorWindow(
         // Start periodic refresh
         refreshTimer = Timer(1000) { refreshDisplay() }
         refreshTimer.start()
-
-        // Subscribe to progress events
-        indexingMonitorService.progressFlow
-            .onEach { event -> handleProgressEvent(event) }
-            .launchIn(coroutineScope)
 
         // Load initial data
         refreshDisplay()
@@ -173,7 +165,7 @@ class IndexingMonitorWindow(
         }
     }
 
-    private fun updateTreeModel(projectStates: Map<ObjectId, ProjectIndexingState>) {
+    private fun updateTreeModel(projectStates: Map<String, ProjectIndexingState>) {
         // Save current tree state before update
         val expandedPaths = saveExpandedPaths()
         val selectedPath = projectTree.selectionPath
@@ -398,7 +390,7 @@ class IndexingMonitorWindow(
         }
     }
 
-    private fun updateStatusLabel(projectStates: Map<ObjectId, ProjectIndexingState>) {
+    private fun updateStatusLabel(projectStates: Map<String, ProjectIndexingState>) {
         val activeCount = projectStates.values.count { it.isActive }
         val completedCount = projectStates.values.count { it.isCompleted }
         val failedCount = projectStates.values.count { it.hasFailed }

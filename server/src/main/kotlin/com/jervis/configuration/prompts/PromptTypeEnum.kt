@@ -43,6 +43,7 @@ enum class PromptTypeEnum(
     // PLANNING & ORCHESTRATION
     PLANNING_CREATE_PLAN_TOOL(listOf("planning_create_plan", "create_plan", "plan.create")),
     PLANNING_ANALYZE_QUESTION(listOf("planning_analyze_question", "analyze_question", "plan.analyze")),
+    EVENT_TRIAGE(listOf("event_triage", "triage", "decide_before_rag")),
     FINALIZER_ANSWER(listOf("finalizer_answer", "final_answer", "answer.final")),
 
     // INTERNAL/ANALYSIS PROMPTS

@@ -158,7 +158,6 @@ class GitHistoryIndexingService(
                         ragSourceType = RagSourceType.GIT_HISTORY,
                         summary = sentence,
                         clientId = project.clientId,
-                        path = "git/commits/${commit.hash}",
                         language = "git-commit",
                         gitCommitHash = commit.hash,
                         chunkId = index,

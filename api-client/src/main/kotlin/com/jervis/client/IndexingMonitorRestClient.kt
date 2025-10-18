@@ -1,10 +1,10 @@
 package com.jervis.client
 
+import com.jervis.dto.AddLogRequest
+import com.jervis.dto.FailIndexingRequest
+import com.jervis.dto.StartIndexingRequest
+import com.jervis.dto.UpdateStepRequest
 import com.jervis.service.IIndexingMonitorService
-import com.jervis.service.indexing.monitoring.IndexingProgress
-import com.jervis.service.indexing.monitoring.IndexingProgressEvent
-import com.jervis.service.indexing.monitoring.IndexingStepStatus
-import com.jervis.service.indexing.monitoring.IndexingStepType
 import com.jervis.service.indexing.monitoring.ProjectIndexingState
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -13,9 +13,6 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
-import org.bson.types.ObjectId
 
 class IndexingMonitorRestClient(
     private val httpClient: HttpClient,
@@ -23,91 +20,39 @@ class IndexingMonitorRestClient(
 ) : IIndexingMonitorService {
     private val apiPath = "$baseUrl/api/indexing-monitor"
 
-    override val progressFlow: Flow<IndexingProgressEvent>
-        get() =
-            flow {
-                // For REST client, progressFlow is not supported (would require WebSocket or SSE)
-                // This is a placeholder that emits nothing
-                // Real-time updates would need a different transport mechanism
-            }
-
-    override suspend fun startProjectIndexing(
-        projectId: ObjectId,
-        projectName: String,
-    ) {
+    override suspend fun startProjectIndexing(request: StartIndexingRequest) {
         httpClient.post("$apiPath/start") {
             contentType(ContentType.Application.Json)
-            setBody(
-                mapOf(
-                    "projectId" to projectId.toHexString(),
-                    "projectName" to projectName,
-                ),
-            )
+            setBody(request)
         }
     }
 
-    override suspend fun updateStepProgress(
-        projectId: ObjectId,
-        stepType: IndexingStepType,
-        status: IndexingStepStatus,
-        progress: IndexingProgress?,
-        message: String?,
-        errorMessage: String?,
-        logs: List<String>,
-    ) {
+    override suspend fun updateStepProgress(request: UpdateStepRequest) {
         httpClient.post("$apiPath/update-step") {
             contentType(ContentType.Application.Json)
-            setBody(
-                mapOf(
-                    "projectId" to projectId.toHexString(),
-                    "stepType" to stepType.name,
-                    "status" to status.name,
-                    "progress" to progress,
-                    "message" to message,
-                    "errorMessage" to errorMessage,
-                    "logs" to logs,
-                ),
-            )
+            setBody(request)
         }
     }
 
-    override suspend fun addStepLog(
-        projectId: ObjectId,
-        stepType: IndexingStepType,
-        logMessage: String,
-    ) {
+    override suspend fun addStepLog(request: AddLogRequest) {
         httpClient.post("$apiPath/add-log") {
             contentType(ContentType.Application.Json)
-            setBody(
-                mapOf(
-                    "projectId" to projectId.toHexString(),
-                    "stepType" to stepType.name,
-                    "logMessage" to logMessage,
-                ),
-            )
+            setBody(request)
         }
     }
 
-    override suspend fun completeProjectIndexing(projectId: ObjectId) {
-        httpClient.post("$apiPath/complete/${projectId.toHexString()}")
+    override suspend fun completeProjectIndexing(projectId: String) {
+        httpClient.post("$apiPath/complete/$projectId")
     }
 
-    override suspend fun failProjectIndexing(
-        projectId: ObjectId,
-        errorMessage: String,
-    ) {
+    override suspend fun failProjectIndexing(request: FailIndexingRequest) {
         httpClient.post("$apiPath/fail") {
             contentType(ContentType.Application.Json)
-            setBody(
-                mapOf(
-                    "projectId" to projectId.toHexString(),
-                    "errorMessage" to errorMessage,
-                ),
-            )
+            setBody(request)
         }
     }
 
-    override fun getAllProjectStates(): Map<ObjectId, ProjectIndexingState> {
+    override fun getAllProjectStates(): Map<String, ProjectIndexingState> {
         // This method is synchronous in the interface, but REST calls are async
         // For now, return empty map - this should be called via suspend function
         return emptyMap()

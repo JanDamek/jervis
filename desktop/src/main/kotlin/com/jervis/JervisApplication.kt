@@ -9,7 +9,6 @@ import com.jervis.service.IIndexingMonitorService
 import com.jervis.service.IIndexingService
 import com.jervis.service.IProjectService
 import com.jervis.service.ITaskContextService
-import com.jervis.service.ITaskQueryService
 import com.jervis.service.ITaskSchedulingService
 import com.jervis.service.debug.DesktopDebugWindowService
 import com.jervis.ui.component.ApplicationWindowManager
@@ -44,7 +43,6 @@ class JervisApplication(
     private val indexingService: IIndexingService,
     private val clientIndexingService: IClientIndexingService,
     private val taskSchedulingService: ITaskSchedulingService,
-    private val taskQueryService: ITaskQueryService,
     private val indexingMonitorService: IIndexingMonitorService,
     private val debugWindowService: DesktopDebugWindowService,
 ) {
@@ -67,7 +65,6 @@ class JervisApplication(
                     indexingService,
                     clientIndexingService,
                     taskSchedulingService,
-                    taskQueryService,
                     indexingMonitorService,
                     debugWindowService,
                 )
@@ -75,8 +72,8 @@ class JervisApplication(
             EventQueue.invokeLater {
                 applicationWindows.initialize()
                 applicationWindows.showMainWindow()
+                setDockIcon()
             }
-            setDockIcon()
         }
 
     /**

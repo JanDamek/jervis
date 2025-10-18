@@ -3,11 +3,13 @@ package com.jervis.service.mcp.tools
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
+import com.jervis.mapper.toDto
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.indexing.IndexingService
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
+import com.jervis.service.storage.DirectoryStructureService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -23,6 +25,7 @@ class ProjectRefreshIndexTool(
     private val llmGateway: LlmGateway,
     private val indexingService: IndexingService,
     override val promptRepository: PromptRepository,
+    private val directoryStructureService: DirectoryStructureService,
 ) : McpTool {
     private val logger = KotlinLogging.logger {}
 
@@ -64,12 +67,16 @@ class ProjectRefreshIndexTool(
                 val project = context.projectDocument
                 logger.info { "Starting reindex operation for project: ${project.name}" }
 
-                if (project.projectPath.isEmpty()) {
-                    return@withContext ToolResult.error("Project has no path configured: ${project.name}")
-                }
+                val projectPath =
+                    directoryStructureService.getGitDirectory(
+                        context.clientDocument.id,
+                        project.id,
+                    )
 
                 // Perform comprehensive reindexing using all available indexing services
-                val result = indexingService.indexProject(project)
+                // Convert ProjectDocument to ProjectDto as required by indexProject()
+                val projectDto = project.toDto()
+                val result = indexingService.indexProject(projectDto) as IndexingService.IndexingResult
 
                 logger.info { "Successfully completed comprehensive reindex operation for project: ${project.name}" }
 
@@ -81,7 +88,7 @@ class ProjectRefreshIndexTool(
                             appendLine("✅ Comprehensive Project Reindexing Completed")
                             appendLine()
                             appendLine("Project: ${project.name}")
-                            appendLine("Path: ${project.projectPath}")
+                            appendLine("Path: $projectPath")
                             appendLine()
                             appendLine("Statistics:")
                             appendLine("• Processed files: ${result.processedFiles}")

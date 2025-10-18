@@ -1,9 +1,9 @@
 package com.jervis.ui.window
 
-import com.jervis.common.Constants.GLOBAL_ID
-import com.jervis.entity.mongo.ClientDocument
-import com.jervis.entity.mongo.ClientProjectLinkDocument
-import com.jervis.entity.mongo.ProjectDocument
+import com.jervis.common.Constants.Companion.GLOBAL_ID_STRING
+import com.jervis.dto.ClientDto
+import com.jervis.dto.ClientProjectLinkDto
+import com.jervis.dto.ProjectDto
 import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
 import com.jervis.service.IIndexingService
@@ -13,7 +13,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.bson.types.ObjectId
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.FlowLayout
@@ -44,8 +43,8 @@ class ClientsWindow(
     private val linkService: IClientProjectLinkService,
     private val indexingService: IIndexingService,
 ) : JFrame("Client Management") {
-    private val clientsList = JList<ClientDocument>()
-    private val listModel = javax.swing.DefaultListModel<ClientDocument>()
+    private val clientsList = JList<ClientDto>()
+    private val listModel = javax.swing.DefaultListModel<ClientDto>()
 
     private val nameField = JTextField()
     private val descriptionField = JTextField()
@@ -61,17 +60,17 @@ class ClientsWindow(
     private val dependenciesBtn = JButton("Dependencies…")
     private val reindexBtn = JButton("Reindex Client Projects")
 
-    private val projectsList = JList<ProjectDocument>()
-    private val projectsModel = javax.swing.DefaultListModel<ProjectDocument>()
+    private val projectsList = JList<ProjectDto>()
+    private val projectsModel = javax.swing.DefaultListModel<ProjectDto>()
     private val removeProjectBtn = JButton("Remove from Client")
     private val toggleDisableForClientBtn = JButton("Toggle Disable for Client")
     private val toggleAnonymizeForClientBtn = JButton("Toggle Anonymization for Client")
     private val toggleHistoricalForClientBtn = JButton("Toggle Historical for Client")
 
-    private var selectedClientId: ObjectId? = null
-    private var clientDependencies: MutableSet<ObjectId> = mutableSetOf()
-    private var currentClient: ClientDocument? = null
-    private var linksByProject: Map<ObjectId, ClientProjectLinkDocument> = emptyMap()
+    private var selectedClientId: String? = null
+    private var clientDependencies: MutableSet<String> = mutableSetOf()
+    private var currentClient: ClientDto? = null
+    private var linksByProject: Map<String, ClientProjectLinkDto> = emptyMap()
 
     init {
         defaultCloseOperation = DISPOSE_ON_CLOSE
@@ -114,8 +113,8 @@ class ClientsWindow(
                 ): java.awt.Component {
                     val label =
                         super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus) as JLabel
-                    val c = value as? ClientDocument
-                    label.text = c?.let { it.name } ?: ""
+                    val c = value as? ClientDto
+                    label.text = c?.name ?: ""
                     return label
                 }
             }
@@ -251,9 +250,9 @@ class ClientsWindow(
         }
     }
 
-    private fun fillClientForm(c: ClientDocument) {
+    private fun fillClientForm(c: ClientDto) {
         nameField.text = c.name
-        descriptionField.text = c.description ?: ""
+        descriptionField.text = c.fullDescription ?: ""
         anonymizeCheckbox.toolTipText = "If checked, the client is temporarily disabled."
         anonymizeCheckbox.isSelected = c.isDisabled
         clientDependencies = c.dependsOnProjects.toMutableSet()
@@ -281,9 +280,9 @@ class ClientsWindow(
                 val id = selectedClientId
                 if (id == null) {
                     val c =
-                        ClientDocument(
+                        ClientDto(
                             name = name,
-                            description = desc,
+                            fullDescription = desc,
                             isDisabled = disabled,
                             dependsOnProjects = clientDependencies.toList(),
                         )
@@ -302,11 +301,11 @@ class ClientsWindow(
                     val updated =
                         existing.copy(
                             name = name,
-                            description = desc,
+                            fullDescription = desc,
                             isDisabled = disabled,
                             dependsOnProjects = clientDependencies.toList(),
                         )
-                    withContext(Dispatchers.IO) { clientService.update(id, updated) }
+                    withContext(Dispatchers.IO) { clientService.update(updated) }
                     currentClient = updated
                 }
                 loadClients()
@@ -359,7 +358,7 @@ class ClientsWindow(
         }
     }
 
-    private fun loadProjectsForClient(clientId: ObjectId) {
+    private fun loadProjectsForClient(clientId: String) {
         CoroutineScope(Dispatchers.Main).launch {
             val all = withContext(Dispatchers.IO) { projectService.getAllProjects() }
             val forClient = all.filter { it.clientId == clientId }
@@ -389,7 +388,7 @@ class ClientsWindow(
                     ): java.awt.Component {
                         val label =
                             super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus) as JLabel
-                        val p = value as? ProjectDocument
+                        val p = value as? ProjectDto
                         if (p != null) {
                             val markers = mutableListOf<String>()
                             if (p.isDisabled) markers.add("DISABLED")
@@ -434,7 +433,7 @@ class ClientsWindow(
             }
 
             val dialog = JDialog(this@ClientsWindow, "Přiřadit existující projekty", true)
-            val listModel = javax.swing.DefaultListModel<ProjectDocument>()
+            val listModel = javax.swing.DefaultListModel<ProjectDto>()
             allProjects.forEach { listModel.addElement(it) }
             val list = JList(listModel)
             list.selectionMode = ListSelectionModel.MULTIPLE_INTERVAL_SELECTION
@@ -461,11 +460,11 @@ class ClientsWindow(
                                 isSelected,
                                 cellHasFocus,
                             ) as JLabel
-                        val p = value as? ProjectDocument
+                        val p = value as? ProjectDto
                         if (p != null) {
-                            val assigned = p.clientId?.toHexString()
+                            val assigned = p.clientId
                             val suffix =
-                                if (assigned != null && assigned != clientId.toHexString()) " — přiřazeno jinému klientovi" else ""
+                                if (assigned != null && assigned != clientId) " — přiřazeno jinému klientovi" else ""
                             label.text = "${p.name}$suffix"
                         }
                         return label
@@ -537,7 +536,7 @@ class ClientsWindow(
         CoroutineScope(Dispatchers.Main).launch {
             val allProjects = withContext(Dispatchers.IO) { projectService.getAllProjects() }
             val dialog = JDialog(this@ClientsWindow, "Závislosti klienta (vyberte projekty)", true)
-            val listModel = javax.swing.DefaultListModel<ProjectDocument>()
+            val listModel = javax.swing.DefaultListModel<ProjectDto>()
             allProjects.forEach { listModel.addElement(it) }
             val list = JList(listModel)
             list.selectionMode = ListSelectionModel.MULTIPLE_INTERVAL_SELECTION
@@ -564,7 +563,7 @@ class ClientsWindow(
                                 isSelected,
                                 cellHasFocus,
                             ) as JLabel
-                        val p = value as? ProjectDocument
+                        val p = value as? ProjectDto
                         if (p != null) label.text = p.name
                         return label
                     }
@@ -632,7 +631,7 @@ class ClientsWindow(
         CoroutineScope(Dispatchers.Main).launch {
             try {
                 // Unassign project from client
-                val updatedProject = project.copy(clientId = GLOBAL_ID)
+                val updatedProject = project.copy(clientId = GLOBAL_ID_STRING)
                 withContext(Dispatchers.IO) {
                     projectService.saveProject(updatedProject, false)
                     // Delete link settings for this client-project pair
@@ -811,7 +810,6 @@ class ClientsWindow(
         ok.addActionListener {
             val name = nameField.text.trim()
             val slug = slugField.text.trim()
-            val path = pathField.text.trim()
             val url = urlField.text.trim()
             val desc = descField.text.trim().ifEmpty { null }
             val regex = Regex("^[a-z0-9-]+$")
@@ -846,11 +844,11 @@ class ClientsWindow(
             CoroutineScope(Dispatchers.Main).launch {
                 try {
                     val project =
-                        ProjectDocument(
+                        ProjectDto(
+                            id = GLOBAL_ID_STRING,
                             clientId = clientId,
                             name = name,
                             description = desc,
-                            projectPath = path,
                             isActive = false,
                         )
                     withContext(Dispatchers.IO) { projectService.saveProject(project, false) }
@@ -920,7 +918,7 @@ class ClientsWindow(
         if (result != null) {
             CoroutineScope(Dispatchers.Main).launch {
                 try {
-                    withContext(Dispatchers.IO) { clientService.update(client.id, result) }
+                    withContext(Dispatchers.IO) { clientService.update(result.copy(id = client.id)) }
                     currentClient = result
                     fillClientForm(result)
                     JOptionPane.showMessageDialog(
@@ -1035,7 +1033,7 @@ class ClientsWindow(
         private val okButton = JButton("Vytvořit klienta")
         private val cancelButton = JButton("Zrušit")
 
-        var result: ClientDocument? = null
+        var result: ClientDto? = null
 
         init {
             preferredSize = Dimension(850, 750)
@@ -1176,9 +1174,10 @@ class ClientsWindow(
 
             try {
                 val newClient =
-                    ClientDocument(
+                    ClientDto(
+                        id = GLOBAL_ID_STRING,
                         name = name,
-                        description = description,
+                        fullDescription = description,
                         defaultCodingGuidelines = guidelinesPanel.getGuidelines(),
                         defaultReviewPolicy = reviewPolicyPanel.getReviewPolicy(),
                         defaultFormatting = formattingPanel.getFormatting(),
@@ -1207,7 +1206,7 @@ class ClientsWindow(
      */
     private class ClientSettingsDialog(
         owner: JFrame,
-        private val client: ClientDocument,
+        private val client: ClientDto,
     ) : JDialog(owner, "Nastavení klienta: ${client.name}", true) {
         private val guidelinesPanel = ClientSettingsComponents.createGuidelinesPanel(client.defaultCodingGuidelines)
         private val reviewPolicyPanel = ClientSettingsComponents.createReviewPolicyPanel(client.defaultReviewPolicy)
@@ -1221,7 +1220,7 @@ class ClientsWindow(
         private val okButton = JButton("OK")
         private val cancelButton = JButton("Cancel")
 
-        var result: ClientDocument? = null
+        var result: ClientDto? = null
 
         init {
             preferredSize = Dimension(800, 700)
@@ -1300,7 +1299,6 @@ class ClientsWindow(
                         defaultAnonymization = anonymizationPanel.getAnonymization(),
                         defaultInspirationPolicy = inspirationPolicyPanel.getInspirationPolicy(),
                         tools = clientToolsPanel.getClientTools(),
-                        updatedAt = java.time.Instant.now(),
                     )
 
                 result = updatedClient

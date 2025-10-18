@@ -1,9 +1,5 @@
 package com.jervis.service.indexing.monitoring
 
-import com.jervis.service.IIndexingMonitorService
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.context.ApplicationEventPublisher
@@ -17,21 +13,15 @@ import java.util.concurrent.ConcurrentHashMap
 @Service
 class IndexingMonitorService(
     private val eventPublisher: ApplicationEventPublisher,
-) : IIndexingMonitorService {
+) {
     private val logger = KotlinLogging.logger {}
 
     private val projectStates = ConcurrentHashMap<ObjectId, ProjectIndexingState>()
-    private val _progressFlow = MutableSharedFlow<IndexingProgressEvent>(extraBufferCapacity = 1000)
-
-    /**
-     * Flow of indexing progress events for real-time monitoring
-     */
-    override val progressFlow: Flow<IndexingProgressEvent> = _progressFlow.asSharedFlow()
 
     /**
      * Start indexing for a project
      */
-    override suspend fun startProjectIndexing(
+    suspend fun startProjectIndexing(
         projectId: ObjectId,
         projectName: String,
     ) {
@@ -39,7 +29,7 @@ class IndexingMonitorService(
 
         val state =
             ProjectIndexingState(
-                projectId = projectId,
+                projectId = projectId.toHexString(),
                 projectName = projectName,
                 status = IndexingStepStatus.RUNNING,
                 startTime = Instant.now(),
@@ -49,7 +39,7 @@ class IndexingMonitorService(
         projectStates[projectId] = state
 
         publishEvent(
-            IndexingProgressEvent(
+            IndexingProgressUpdate(
                 projectId = projectId,
                 projectName = projectName,
                 stepType = IndexingStepType.PROJECT,
@@ -62,14 +52,14 @@ class IndexingMonitorService(
     /**
      * Update step progress
      */
-    override suspend fun updateStepProgress(
+    suspend fun updateStepProgress(
         projectId: ObjectId,
         stepType: IndexingStepType,
         status: IndexingStepStatus,
-        progress: IndexingProgress?,
-        message: String?,
-        errorMessage: String?,
-        logs: List<String>,
+        progress: IndexingProgress? = null,
+        message: String? = null,
+        errorMessage: String? = null,
+        logs: List<String> = emptyList(),
     ) {
         val state = projectStates[projectId] ?: return
         val step = findStep(state.steps, stepType) ?: return
@@ -101,7 +91,7 @@ class IndexingMonitorService(
         updateStepInState(state.steps, stepType, updatedStep)
 
         publishEvent(
-            IndexingProgressEvent(
+            IndexingProgressUpdate(
                 projectId = projectId,
                 projectName = state.projectName,
                 stepType = stepType,
@@ -124,7 +114,7 @@ class IndexingMonitorService(
     /**
      * Add a log message to a step
      */
-    override suspend fun addStepLog(
+    suspend fun addStepLog(
         projectId: ObjectId,
         stepType: IndexingStepType,
         logMessage: String,
@@ -136,7 +126,7 @@ class IndexingMonitorService(
         step.logs.add(timestampedLog)
 
         publishEvent(
-            IndexingProgressEvent(
+            IndexingProgressUpdate(
                 projectId = projectId,
                 projectName = state.projectName,
                 stepType = stepType,
@@ -149,7 +139,7 @@ class IndexingMonitorService(
     /**
      * Complete project indexing
      */
-    override suspend fun completeProjectIndexing(projectId: ObjectId) {
+    suspend fun completeProjectIndexing(projectId: ObjectId) {
         val state = projectStates[projectId] ?: return
         val updatedState =
             state.copy(
@@ -161,7 +151,7 @@ class IndexingMonitorService(
         logger.info { "Completed indexing for project: ${state.projectName} ($projectId)" }
 
         publishEvent(
-            IndexingProgressEvent(
+            IndexingProgressUpdate(
                 projectId = projectId,
                 projectName = state.projectName,
                 stepType = IndexingStepType.PROJECT,
@@ -174,7 +164,7 @@ class IndexingMonitorService(
     /**
      * Fail project indexing
      */
-    override suspend fun failProjectIndexing(
+    suspend fun failProjectIndexing(
         projectId: ObjectId,
         errorMessage: String,
     ) {
@@ -189,7 +179,7 @@ class IndexingMonitorService(
         logger.error { "Failed indexing for project: ${state.projectName} ($projectId) - $errorMessage" }
 
         publishEvent(
-            IndexingProgressEvent(
+            IndexingProgressUpdate(
                 projectId = projectId,
                 projectName = state.projectName,
                 stepType = IndexingStepType.PROJECT,
@@ -202,7 +192,7 @@ class IndexingMonitorService(
     /**
      * Get all current project states
      */
-    override fun getAllProjectStates(): Map<ObjectId, ProjectIndexingState> = projectStates.toMap()
+    fun getAllProjectStates(): Map<ObjectId, ProjectIndexingState> = projectStates.toMap()
 
     private fun createIndexingSteps(): List<IndexingStep> =
         listOf(
@@ -246,9 +236,8 @@ class IndexingMonitorService(
         }
     }
 
-    private suspend fun publishEvent(event: IndexingProgressEvent) {
+    private suspend fun publishEvent(event: IndexingProgressUpdate) {
         try {
-            _progressFlow.emit(event)
             eventPublisher.publishEvent(event)
         } catch (e: Exception) {
             logger.error(e) { "Failed to publish indexing progress event" }

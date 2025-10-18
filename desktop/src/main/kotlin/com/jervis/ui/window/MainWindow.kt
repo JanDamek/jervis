@@ -1,16 +1,24 @@
 package com.jervis.ui.window
 
-import com.jervis.common.Constants.GLOBAL_ID
-import com.jervis.domain.plan.Plan
-import com.jervis.domain.plan.PlanStep
+import com.jervis.common.Constants.Companion.GLOBAL_ID_STRING
+import com.jervis.domain.plan.PlanStatus
+import com.jervis.dto.ChatRequest
 import com.jervis.dto.ChatRequestContext
-import com.jervis.service.agent.context.TaskContextService
-import com.jervis.service.agent.coordinator.AgentOrchestratorService
+import com.jervis.dto.ClientDto
+import com.jervis.dto.PlanDto
+import com.jervis.dto.PlanStepDto
+import com.jervis.dto.ProjectDto
+import com.jervis.dto.TaskContextDto
+import com.jervis.dto.events.PlanStatusChangeEventDto
+import com.jervis.dto.events.StepCompletionEventDto
+import com.jervis.service.IAgentOrchestratorService
+import com.jervis.service.IClientProjectLinkService
+import com.jervis.service.IClientService
+import com.jervis.service.IIndexingMonitorService
+import com.jervis.service.IProjectService
+import com.jervis.service.ITaskContextService
 import com.jervis.service.debug.DesktopDebugWindowService
-import com.jervis.service.indexing.monitoring.IndexingMonitorService
-import com.jervis.service.notification.PlanStatusChangeEvent
-import com.jervis.service.notification.StepCompletionEvent
-import com.jervis.service.project.ProjectService
+import com.jervis.ui.component.ApplicationWindowManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -18,7 +26,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.swing.Swing
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
-import org.bson.types.ObjectId
 import org.springframework.context.event.EventListener
 import java.awt.BorderLayout
 import java.awt.Dimension
@@ -30,7 +37,7 @@ import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
-import java.time.Instant
+import javax.swing.DefaultListCellRenderer
 import javax.swing.DefaultListModel
 import javax.swing.JButton
 import javax.swing.JCheckBox
@@ -51,17 +58,17 @@ import javax.swing.JTextArea
 import javax.swing.KeyStroke
 import javax.swing.ListSelectionModel
 import javax.swing.border.EmptyBorder
-import kotlin.collections.indexOfFirst
-import kotlin.collections.sortedByDescending
+import javax.swing.event.DocumentEvent
+import javax.swing.event.DocumentListener
 
 class MainWindow(
-    private val projectService: ProjectService,
-    private val chatCoordinator: AgentOrchestratorService,
-    private val clientService: com.jervis.service.client.ClientService,
-    private val linkService: com.jervis.service.client.ClientProjectLinkService,
-    private val taskContextService: TaskContextService,
-    private val indexingMonitorService: IndexingMonitorService,
-    private val applicationWindowManager: com.jervis.ui.component.ApplicationWindowManager,
+    private val projectService: IProjectService,
+    private val chatCoordinator: IAgentOrchestratorService,
+    private val clientService: IClientService,
+    private val linkService: IClientProjectLinkService,
+    private val taskContextService: ITaskContextService,
+    private val indexingMonitorService: IIndexingMonitorService,
+    private val applicationWindowManager: ApplicationWindowManager,
     private val debugWindowService: DesktopDebugWindowService,
 ) : JFrame("JERVIS Assistant") {
     private val windowScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -84,12 +91,12 @@ class MainWindow(
     private val contextList = JList<Any>(contextListModel)
 
     // Plan display UI (right side when enabled)
-    private val planListModel = DefaultListModel<Plan>()
-    private val planList = JList<Plan>(planListModel)
+    private val planListModel = DefaultListModel<PlanDto>()
+    private val planList = JList<PlanDto>(planListModel)
     private val planScroll = JScrollPane(planList)
 
-    private val stepListModel = DefaultListModel<PlanStep>()
-    private val stepList = JList<PlanStep>(stepListModel)
+    private val stepListModel = DefaultListModel<PlanStepDto>()
+    private val stepList = JList<PlanStepDto>(stepListModel)
     private val stepScroll = JScrollPane(stepList)
 
     // Combined panel for two lists
@@ -97,11 +104,11 @@ class MainWindow(
 
     private val coroutineScope = CoroutineScope(Dispatchers.Default)
 
-    private val projectNameById = mutableMapOf<ObjectId, String>()
+    private val projectNameById = mutableMapOf<String, String>()
 
     // In-memory context storage, grouped by (client, project)
     private val contextsByScope =
-        mutableMapOf<Pair<String?, String?>, MutableList<com.jervis.domain.context.TaskContext>>()
+        mutableMapOf<Pair<String?, String?>, MutableList<TaskContextDto>>()
 
     // Project change blocking state
     private var isProjectLoading = false
@@ -121,7 +128,7 @@ class MainWindow(
 
         // Set opaque cell renderer to prevent text overlap issues and add status icons
         contextList.cellRenderer =
-            object : javax.swing.DefaultListCellRenderer() {
+            object : DefaultListCellRenderer() {
                 init {
                     // Ensure renderer is opaque to prevent background from painting over text
                     isOpaque = true
@@ -135,13 +142,13 @@ class MainWindow(
                     cellHasFocus: Boolean,
                 ) = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus).apply {
                     when (value) {
-                        is com.jervis.domain.context.TaskContext -> {
+                        is TaskContextDto -> {
                             val hasRunningPlans =
-                                value.plans.any { it.status == com.jervis.domain.plan.PlanStatus.RUNNING }
+                                value.plans.any { it.status == PlanStatus.RUNNING }
                             val hasCompletedPlans =
                                 value.plans.any {
-                                    it.status == com.jervis.domain.plan.PlanStatus.COMPLETED ||
-                                        it.status == com.jervis.domain.plan.PlanStatus.FINALIZED
+                                    it.status == PlanStatus.COMPLETED ||
+                                        it.status == PlanStatus.FINALIZED
                                 }
                             val icon =
                                 when {
@@ -163,7 +170,7 @@ class MainWindow(
 
     // UI selector models
     data class SelectorItem(
-        val id: ObjectId,
+        val id: String,
         val name: String,
     ) {
         override fun toString(): String = name
@@ -258,7 +265,7 @@ class MainWindow(
 
         // Set up list renderers to show meaningful text
         planList.cellRenderer =
-            object : javax.swing.DefaultListCellRenderer() {
+            object : DefaultListCellRenderer() {
                 override fun getListCellRendererComponent(
                     list: JList<*>?,
                     value: Any?,
@@ -266,14 +273,14 @@ class MainWindow(
                     isSelected: Boolean,
                     cellHasFocus: Boolean,
                 ) = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus).apply {
-                    if (value is Plan) {
+                    if (value is PlanDto) {
                         text = "${value.originalQuestion.take(50)}... (${value.status})"
                     }
                 }
             }
 
         stepList.cellRenderer =
-            object : javax.swing.DefaultListCellRenderer() {
+            object : DefaultListCellRenderer() {
                 override fun getListCellRendererComponent(
                     list: JList<*>?,
                     value: Any?,
@@ -281,7 +288,7 @@ class MainWindow(
                     isSelected: Boolean,
                     cellHasFocus: Boolean,
                 ) = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus).apply {
-                    if (value is PlanStep) {
+                    if (value is PlanStepDto) {
                         text = "${value.stepToolName} (${value.status})"
                     }
                 }
@@ -330,12 +337,12 @@ class MainWindow(
 
         // Add document listener for dynamic resizing
         inputField.document.addDocumentListener(
-            object : javax.swing.event.DocumentListener {
-                override fun insertUpdate(e: javax.swing.event.DocumentEvent) = adjustInputHeight()
+            object : DocumentListener {
+                override fun insertUpdate(e: DocumentEvent) = adjustInputHeight()
 
-                override fun removeUpdate(e: javax.swing.event.DocumentEvent) = adjustInputHeight()
+                override fun removeUpdate(e: DocumentEvent) = adjustInputHeight()
 
-                override fun changedUpdate(e: javax.swing.event.DocumentEvent) = adjustInputHeight()
+                override fun changedUpdate(e: DocumentEvent) = adjustInputHeight()
 
                 private fun adjustInputHeight() {
                     EventQueue.invokeLater {
@@ -448,13 +455,13 @@ class MainWindow(
             val selectedTaskContext =
                 if (selectedContextIndex >= 0) {
                     val item = contextListModel.getElementAt(selectedContextIndex)
-                    item as? com.jervis.domain.context.TaskContext
+                    item as? TaskContextDto
                 } else {
                     null
                 }
 
             // If context has running plans, prevent sending
-            if (selectedTaskContext != null && selectedTaskContext.plans.any { it.status == com.jervis.domain.plan.PlanStatus.RUNNING }) {
+            if (selectedTaskContext != null && selectedTaskContext.plans.any { it.status == PlanStatus.RUNNING }) {
                 chatArea.append(
                     "System: Cannot send to context with running plan. Please wait for completion or select another context.\n\n",
                 )
@@ -465,7 +472,7 @@ class MainWindow(
             inputField.text = ""
 
             // Clear draft text after sending
-            val selectedContext = contextList.selectedValue as? com.jervis.domain.context.TaskContext
+            val selectedContext = contextList.selectedValue as? TaskContextDto
             val key = contextDraftKey(selectedContext)
             contextDrafts.remove(key)
 
@@ -490,7 +497,7 @@ class MainWindow(
                     val selectedTaskContext =
                         if (selectedContextIndex >= 0) {
                             val item = contextListModel.getElementAt(selectedContextIndex)
-                            item as? com.jervis.domain.context.TaskContext
+                            item as? TaskContextDto
                         } else {
                             null
                         }
@@ -504,20 +511,16 @@ class MainWindow(
                             existingContextId = selectedTaskContext?.id, // Pass existing context ID if selected
                         )
 
-                    // Process the query using the ChatCoordinator
-                    val response = chatCoordinator.handle(text, ctx)
+                    // Process the query using the ChatCoordinator (fire-and-forget)
+                    // Response will arrive via WebSocket notifications
+                    chatCoordinator.handle(ChatRequest(text, ctx))
 
                     // Update UI on the EDT
                     withContext(Dispatchers.Swing) {
-                        // Remove the "Processing..." message
-                        val content = chatArea.text
-                        chatArea.text = content.replace("Assistant: Processing...\n", "")
+                        // Keep "Processing..." message visible - will be replaced by WebSocket response
 
                         // Reset Quick response checkbox as one-time setting
                         quickCheckbox.isSelected = false
-
-                        // Display only final assistant message; scope decisions happen in services
-                        chatArea.append("Assistant: ${response.message}\n\n")
 
                         // Refresh contexts from database to get updated plans and newly created contexts
                         refreshContextsFromDbForCurrentSelection(selectFirst = false) {
@@ -527,7 +530,7 @@ class MainWindow(
                                     // Select the first actual context (index 1, after "New context" item)
                                     contextList.selectedIndex = 1
                                     val selectedContext = contextListModel.getElementAt(1)
-                                    if (selectedContext is com.jervis.domain.context.TaskContext) {
+                                    if (selectedContext is TaskContextDto) {
                                         displayContextInChatArea(selectedContext)
                                         updateSendButtonState()
                                     }
@@ -615,13 +618,18 @@ class MainWindow(
             }
         selectedClient.name
         val clientId = selectedClient.id
-        val selectedProject = projectSelector.selectedItem as? SelectorItem
-        selectedProject?.name
-        val projectId = selectedProject?.id
+        val selectedProject =
+            projectSelector.selectedItem as? SelectorItem ?: run {
+                contextsByScope[currentScopeKey()] = mutableListOf()
+                rebuildContextList(selectFirst)
+                onComplete()
+                return
+            }
+        val projectId = selectedProject.id
 
         coroutineScope.launch {
             try {
-                val docs = taskContextService.listFor(clientId, projectId)
+                val docs = taskContextService.listForClientAndProject(clientId, projectId)
                 // Use TaskContext objects directly instead of converting to custom UI objects
                 withContext(Dispatchers.Swing) {
                     contextsByScope[currentScopeKey()] = docs.toMutableList()
@@ -655,7 +663,7 @@ class MainWindow(
     }
 
     // --- Context list helpers and tool skeletons ---
-    private val NEW_CONTEXT_LABEL = "➕ New context"
+    private val NEW_CONTEXT_LABEL = "+ New context"
 
     private fun currentScopeKey(): Pair<String?, String?> =
         Pair(
@@ -663,15 +671,14 @@ class MainWindow(
             (projectSelector.selectedItem as? SelectorItem)?.name,
         )
 
-    private fun contextsForCurrentScope(): MutableList<com.jervis.domain.context.TaskContext> =
-        contextsByScope.getOrPut(currentScopeKey()) { mutableListOf() }
+    private fun contextsForCurrentScope(): MutableList<TaskContextDto> = contextsByScope.getOrPut(currentScopeKey()) { mutableListOf() }
 
     /**
      * Generate a unique key for draft text storage
      */
-    private fun contextDraftKey(context: com.jervis.domain.context.TaskContext?): String =
+    private fun contextDraftKey(context: TaskContextDto?): String =
         if (context != null) {
-            "${context.clientDocument.name}:${context.projectDocument.name}:${context.id}"
+            "${context.client.name}:${context.project.name}:${context.id}"
         } else {
             "${currentScopeKey().first}:${currentScopeKey().second}:NEW"
         }
@@ -680,7 +687,7 @@ class MainWindow(
      * Save current input text as draft for the currently selected context
      */
     private fun saveDraftText() {
-        val selectedContext = contextList.selectedValue as? com.jervis.domain.context.TaskContext
+        val selectedContext = contextList.selectedValue as TaskContextDto
         val key = contextDraftKey(selectedContext)
         val currentText = inputField.text
         if (currentText.isNotBlank()) {
@@ -693,7 +700,7 @@ class MainWindow(
     /**
      * Restore draft text for the specified context
      */
-    private fun restoreDraftText(context: com.jervis.domain.context.TaskContext?) {
+    private fun restoreDraftText(context: TaskContextDto?) {
         val key = contextDraftKey(context)
         val draftText = contextDrafts[key] ?: ""
         inputField.text = draftText
@@ -719,7 +726,7 @@ class MainWindow(
                                     restoreDraftText(null)
                                 }
 
-                            is com.jervis.domain.context.TaskContext -> {
+                            is TaskContextDto -> {
                                 if (e.clickCount == 1) {
                                     // Single click - display conversation in chat area
                                     displayContextInChatArea(item)
@@ -755,7 +762,7 @@ class MainWindow(
                         if (index >= 0) {
                             contextList.selectedIndex = index
                             val item = contextListModel.getElementAt(index)
-                            if (item is com.jervis.domain.context.TaskContext) {
+                            if (item is TaskContextDto) {
                                 val menu = JPopupMenu()
                                 val renameItem = JMenuItem("Rename…")
                                 val deleteItem = JMenuItem("Delete…")
@@ -777,16 +784,18 @@ class MainWindow(
         )
     }
 
-    private fun promptRename(ctx: com.jervis.domain.context.TaskContext) {
+    private fun promptRename(ctx: TaskContextDto) {
         val newName = JOptionPane.showInputDialog(this, "Context name:", ctx.name)
         if (newName != null && newName.isNotBlank()) {
-            ctx.name = newName.trim()
-            ctx.updatedAt = Instant.now()
+            val ctxToSave =
+                ctx.copy(
+                    name = newName.trim(),
+                )
 
             // Save the updated context to database
             coroutineScope.launch {
                 try {
-                    taskContextService.save(ctx)
+                    taskContextService.save(ctxToSave)
                 } catch (e: Exception) {
                     // Handle save error silently or log
                 }
@@ -795,7 +804,7 @@ class MainWindow(
         }
     }
 
-    private fun promptDelete(ctx: com.jervis.domain.context.TaskContext) {
+    private fun promptDelete(ctx: TaskContextDto) {
         val result =
             JOptionPane.showConfirmDialog(
                 this,
@@ -831,7 +840,7 @@ class MainWindow(
     private fun rebuildContextList(selectFirst: Boolean = false) {
         val items = mutableListOf<Any>()
         items.add(NEW_CONTEXT_LABEL)
-        val contexts = contextsForCurrentScope().sortedByDescending { it.updatedAt }
+        val contexts = contextsForCurrentScope()
         items.addAll(contexts)
         EventQueue.invokeLater {
             contextListModel.removeAllElements()
@@ -842,38 +851,31 @@ class MainWindow(
         }
     }
 
-    private fun createAndSelectNewContext(defaultNameFromText: String? = null): com.jervis.domain.context.TaskContext {
+    private fun createAndSelectNewContext(defaultNameFromText: String? = null): TaskContextDto {
         val key = currentScopeKey()
         val name = (defaultNameFromText?.take(40)?.ifBlank { null }) ?: "New context"
 
         // Create TaskContext using TaskContextService
-        val selectedClient = clientSelector.selectedItem as? SelectorItem
-        val selectedProject = projectSelector.selectedItem as? SelectorItem
+        val selectedClient = clientSelector.selectedItem as SelectorItem
+        val selectedProject = projectSelector.selectedItem as SelectorItem
 
         val ctx =
-            com.jervis.domain.context.TaskContext(
-                id =
-                    ObjectId
-                        .get(),
-                clientDocument =
-                    com.jervis.entity.mongo.ClientDocument(
-                        id =
-                            selectedClient?.id ?: ObjectId
-                                .get(),
+            TaskContextDto(
+                id = GLOBAL_ID_STRING,
+                client =
+                    ClientDto(
+                        id = selectedClient.id,
                         name = key.first ?: "Unknown Client",
                     ),
-                projectDocument =
-                    com.jervis.entity.mongo.ProjectDocument(
+                project =
+                    ProjectDto(
                         id =
-                            selectedProject?.id ?: ObjectId
-                                .get(),
-                        clientId = GLOBAL_ID,
+                            selectedProject.id,
+                        clientId = GLOBAL_ID_STRING,
                         name = key.second ?: "Unknown Project",
                     ),
                 name = name,
                 plans = emptyList(),
-                createdAt = Instant.now(),
-                updatedAt = Instant.now(),
                 quick = false,
             )
 
@@ -884,7 +886,7 @@ class MainWindow(
         EventQueue.invokeLater {
             for (i in 0 until contextListModel.size()) {
                 val item = contextListModel.getElementAt(i)
-                if (item is com.jervis.domain.context.TaskContext && item.id == ctx.id) {
+                if (item is TaskContextDto && item.id == ctx.id) {
                     contextList.selectedIndex = i
                     break
                 }
@@ -893,9 +895,9 @@ class MainWindow(
         return ctx
     }
 
-    private fun ensureSelectedContextForCurrentScope(defaultNameFromText: String?): com.jervis.domain.context.TaskContext {
+    private fun ensureSelectedContextForCurrentScope(defaultNameFromText: String?): TaskContextDto {
         val selected = contextList.selectedValue
-        return if (selected is com.jervis.domain.context.TaskContext) {
+        return if (selected is TaskContextDto) {
             selected
         } else {
             createAndSelectNewContext(
@@ -904,13 +906,13 @@ class MainWindow(
         }
     }
 
-    private fun displayContextInChatArea(ctx: com.jervis.domain.context.TaskContext) {
+    private fun displayContextInChatArea(ctx: TaskContextDto) {
         val sb = StringBuilder()
 
         if (ctx.plans.isEmpty()) {
             sb.appendLine("No conversation history in this context yet.")
         } else {
-            ctx.plans.sortedBy { it.createdAt }.forEach { plan ->
+            ctx.plans.forEach { plan ->
                 sb.appendLine("Me: ${plan.originalQuestion}")
 
                 // Extract the assistant's response from finalAnswer, removing duplicate question text
@@ -940,9 +942,9 @@ class MainWindow(
     }
 
     private fun updateSendButtonState() {
-        val selectedContext = contextList.selectedValue as? com.jervis.domain.context.TaskContext
+        val selectedContext = contextList.selectedValue as? TaskContextDto
         val hasRunningPlans =
-            selectedContext?.plans?.any { it.status == com.jervis.domain.plan.PlanStatus.RUNNING } == true
+            selectedContext?.plans?.any { it.status == PlanStatus.RUNNING } == true
 
         // Enable send button if:
         // 1. No context is selected (New context mode) - always allow new context creation
@@ -972,10 +974,10 @@ class MainWindow(
         planListModel.clear()
 
         // Get selected context
-        val selectedContext = contextList.selectedValue as? com.jervis.domain.context.TaskContext
+        val selectedContext = contextList.selectedValue as? TaskContextDto
 
         if (selectedContext != null && selectedContext.plans.isNotEmpty()) {
-            selectedContext.plans.sortedBy { it.createdAt }.forEach { plan ->
+            selectedContext.plans.forEach { plan ->
                 planListModel.addElement(plan)
             }
         }
@@ -998,7 +1000,7 @@ class MainWindow(
         }
     }
 
-    private fun showStepDetails(step: PlanStep) {
+    private fun showStepDetails(step: PlanStepDto) {
         val dialog = JDialog(this, "Step Details: ${step.stepToolName}", true)
         dialog.size = Dimension(600, 400)
         dialog.setLocationRelativeTo(this)
@@ -1015,7 +1017,7 @@ class MainWindow(
 
         if (step.toolResult != null) {
             stepInfo.appendLine("Output:")
-            stepInfo.appendLine(step.toolResult!!.output)
+            stepInfo.appendLine(step.toolResult)
         } else {
             stepInfo.appendLine("No output available for this step")
         }
@@ -1052,11 +1054,11 @@ class MainWindow(
     }
 
     private fun showPlanDetails(row: Int) {
-        val selectedContext = contextList.selectedValue as? com.jervis.domain.context.TaskContext ?: return
+        val selectedContext = contextList.selectedValue as? TaskContextDto ?: return
 
         if (selectedContext.plans.isEmpty() || row >= selectedContext.plans.size) return
 
-        val plan = selectedContext.plans.sortedBy { it.createdAt }[row]
+        val plan = selectedContext.plans[row]
 
         val dialog = JDialog(this, "Plan Details: ${plan.originalQuestion.take(50)}...", true)
         dialog.size = Dimension(600, 400)
@@ -1069,8 +1071,6 @@ class MainWindow(
         planInfo.appendLine("Original Question: ${plan.originalQuestion}")
         planInfo.appendLine("English Question: ${plan.englishQuestion}")
         planInfo.appendLine("Status: ${plan.status}")
-        planInfo.appendLine("Created: ${plan.createdAt}")
-        planInfo.appendLine("Updated: ${plan.updatedAt}")
         planInfo.appendLine()
 
         if (plan.contextSummary != null) {
@@ -1092,7 +1092,7 @@ class MainWindow(
             plan.steps.sortedBy { it.order }.forEach { step ->
                 planInfo.appendLine("- ${step.stepToolName} (${step.status}): ${step.stepInstruction}")
                 step.toolResult?.let { output ->
-                    planInfo.appendLine("  Output: ${output.output.take(200)}...")
+                    planInfo.appendLine("  Output: ${output.take(200)}...")
                 }
             }
         }
@@ -1126,34 +1126,6 @@ class MainWindow(
 
         dialog.contentPane = content
         dialog.isVisible = true
-    }
-
-    @EventListener
-    fun handleStepCompletion(event: StepCompletionEvent) {
-        // Update plan display if it's currently shown and the event is for the selected context
-        val selectedContext = contextList.selectedValue as? com.jervis.domain.context.TaskContext
-        if (selectedContext != null && selectedContext.id == event.contextId && showPlansCheckbox.isSelected) {
-            coroutineScope.launch {
-                // Refresh context from database to get updated data
-                try {
-                    val updatedContext = taskContextService.findById(event.contextId)
-                    if (updatedContext != null) {
-                        withContext(Dispatchers.Swing) {
-                            // Update the context in our local storage
-                            val currentScope = currentScopeKey()
-                            val contextList = contextsByScope[currentScope]
-                            val index = contextList?.indexOfFirst { it.id == updatedContext.id }
-                            if (index != null && index >= 0) {
-                                contextList[index] = updatedContext
-                                updatePlanList()
-                            }
-                        }
-                    }
-                } catch (_: Exception) {
-                    // Handle error silently or log
-                }
-            }
-        }
     }
 
     private fun setupMenuBar() {
@@ -1252,38 +1224,6 @@ class MainWindow(
         }
     }
 
-    @EventListener
-    fun handlePlanStatusChange(event: PlanStatusChangeEvent) {
-        // Update context display and UI state whenever plan status changes
-        coroutineScope.launch {
-            // Refresh context from database to get updated data
-            try {
-                val updatedContext = taskContextService.findById(event.contextId)
-                if (updatedContext != null) {
-                    withContext(Dispatchers.Swing) {
-                        // Update the context in our local storage
-                        val currentScope = currentScopeKey()
-                        val contextList = contextsByScope[currentScope]
-                        val index = contextList?.indexOfFirst { it.id == updatedContext.id }
-                        if (index != null && index >= 0) {
-                            contextList[index] = updatedContext
-                            // Rebuild context list to update status icons
-                            rebuildContextList()
-                            // Update send button state
-                            updateSendButtonState()
-                            // Update plan list if it's currently shown
-                            if (showPlansCheckbox.isSelected) {
-                                updatePlanList()
-                            }
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                logger.error(e) { "Error in handlePlanStatusChange" }
-            }
-        }
-    }
-
     /**
      * Sets up the context menu for the project selector with the same options as tray icon
      */
@@ -1331,5 +1271,56 @@ class MainWindow(
                 }
             },
         )
+    }
+
+    @EventListener
+    fun handleStepCompletionDto(event: StepCompletionEventDto) {
+        val selectedContext = contextList.selectedValue as? TaskContextDto
+        if (selectedContext != null && selectedContext.id == event.contextId && showPlansCheckbox.isSelected) {
+            coroutineScope.launch {
+                try {
+                    val updatedContext = taskContextService.findById(event.contextId)
+                    if (updatedContext != null) {
+                        withContext(Dispatchers.Swing) {
+                            val currentScope = currentScopeKey()
+                            val list = contextsByScope[currentScope]
+                            val index = list?.indexOfFirst { it.id == updatedContext.id }
+                            if (index != null && index >= 0) {
+                                list[index] = updatedContext
+                                updatePlanList()
+                            }
+                        }
+                    }
+                } catch (_: Exception) {
+                    // ignore
+                }
+            }
+        }
+    }
+
+    @EventListener
+    fun handlePlanStatusChangeDto(event: PlanStatusChangeEventDto) {
+        coroutineScope.launch {
+            try {
+                val updatedContext = taskContextService.findById(event.contextId)
+                if (updatedContext != null) {
+                    withContext(Dispatchers.Swing) {
+                        val currentScope = currentScopeKey()
+                        val list = contextsByScope[currentScope]
+                        val index = list?.indexOfFirst { it.id == updatedContext.id }
+                        if (index != null && index >= 0) {
+                            list[index] = updatedContext
+                            rebuildContextList()
+                            updateSendButtonState()
+                            if (showPlansCheckbox.isSelected) {
+                                updatePlanList()
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                logger.error(e) { "Error in handlePlanStatusChangeDto" }
+            }
+        }
     }
 }

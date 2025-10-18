@@ -1,6 +1,6 @@
 package com.jervis.service.listener
 
-import com.jervis.dto.ServiceType
+import com.jervis.domain.authentication.ServiceType
 import com.jervis.entity.mongo.ServiceCredentialsDocument
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

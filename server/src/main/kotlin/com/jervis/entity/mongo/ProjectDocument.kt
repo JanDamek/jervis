@@ -32,6 +32,7 @@ data class ProjectDocument(
     val extraUrls: List<String> = emptyList(),
     val credentialsRef: String? = null,
     val defaultBranch: String = "main",
+    val projectPath: String? = null,
     // Per-project overrides (nullable fields).
     val overrides: ProjectOverrides = ProjectOverrides(),
     // Inspiration-only flag.

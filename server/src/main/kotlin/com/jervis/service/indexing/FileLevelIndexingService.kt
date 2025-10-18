@@ -127,7 +127,6 @@ class FileLevelIndexingService(
                                 clientId = project.clientId,
                                 ragSourceType = RagSourceType.LLM,
                                 summary = code, // summary = code per spec
-                                path = filePathStr,
                                 gitCommitHash = gitCommitHash,
                             ),
                         embedding = codeEmbedding,
@@ -153,7 +152,6 @@ class FileLevelIndexingService(
                                 clientId = project.clientId,
                                 ragSourceType = RagSourceType.LLM,
                                 summary = code, // summary stays code: find code by description
-                                path = filePathStr,
                                 gitCommitHash = gitCommitHash,
                             ),
                         embedding = textEmbedding,

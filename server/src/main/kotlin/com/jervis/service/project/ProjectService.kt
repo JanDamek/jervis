@@ -5,7 +5,6 @@ import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.mapper.toDocument
 import com.jervis.mapper.toDto
 import com.jervis.repository.mongo.ProjectMongoRepository
-import com.jervis.service.IProjectService
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -14,20 +13,20 @@ import java.time.Instant
 @Service
 class ProjectService(
     private val projectRepository: ProjectMongoRepository,
-) : IProjectService {
+) {
     companion object {
         private val logger = KotlinLogging.logger {}
     }
 
-    override suspend fun getAllProjects(): List<ProjectDto> = projectRepository.findAll().toList().map { it.toDto() }
+    suspend fun getAllProjects(): List<ProjectDto> = projectRepository.findAll().toList().map { it.toDto() }
 
-    override suspend fun getDefaultProject(): ProjectDto? = projectRepository.findByIsActiveIsTrue()?.toDto()
+    suspend fun getDefaultProject(): ProjectDto? = projectRepository.findByIsActiveIsTrue()?.toDto()
 
-    override suspend fun setActiveProject(project: ProjectDto) {
+    suspend fun setActiveProject(project: ProjectDto) {
         setDefaultProject(project)
     }
 
-    override suspend fun setDefaultProject(project: ProjectDto) {
+    suspend fun setDefaultProject(project: ProjectDto) {
         val projectDoc = project.toDocument()
 
         // First, remove the default status from all projects
@@ -54,7 +53,7 @@ class ProjectService(
         }
     }
 
-    override suspend fun saveProject(
+    suspend fun saveProject(
         project: ProjectDto,
         makeDefault: Boolean,
     ): ProjectDto {
@@ -76,7 +75,7 @@ class ProjectService(
         return savedProject.toDto()
     }
 
-    override suspend fun deleteProject(project: ProjectDto) {
+    suspend fun deleteProject(project: ProjectDto) {
         val projectDoc = project.toDocument()
         if (projectDoc.isActive) {
             logger.warn { "Attempting to delete default project: ${projectDoc.name}" }
@@ -113,7 +112,7 @@ class ProjectService(
         }
     }
 
-    override suspend fun getProjectByName(name: String?): ProjectDto =
+    suspend fun getProjectByName(name: String?): ProjectDto =
         requireNotNull(name?.let { projectRepository.findByName(it) }) {
             "Project not found with name: $name"
         }.toDto()

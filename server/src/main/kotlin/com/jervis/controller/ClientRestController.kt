@@ -1,8 +1,7 @@
 package com.jervis.controller
 
 import com.jervis.dto.ClientDto
-import com.jervis.service.IClientService
-import org.bson.types.ObjectId
+import com.jervis.service.client.ClientService
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -15,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController
 @RestController
 @RequestMapping("/api/clients")
 class ClientRestController(
-    private val clientService: IClientService,
+    private val clientService: ClientService,
 ) {
     @PostMapping
     suspend fun create(
@@ -26,13 +25,13 @@ class ClientRestController(
     suspend fun update(
         @PathVariable id: String,
         @RequestBody client: ClientDto,
-    ): ClientDto = clientService.update(ObjectId(id), client)
+    ): ClientDto = clientService.update(client)
 
     @DeleteMapping("/{id}")
     suspend fun delete(
         @PathVariable id: String,
     ) {
-        clientService.delete(ObjectId(id))
+        clientService.delete(id)
     }
 
     @GetMapping
@@ -41,5 +40,5 @@ class ClientRestController(
     @GetMapping("/{id}")
     suspend fun getClientById(
         @PathVariable id: String,
-    ): ClientDto? = clientService.getClientById(ObjectId(id))
+    ): ClientDto? = clientService.getClientById(id)
 }

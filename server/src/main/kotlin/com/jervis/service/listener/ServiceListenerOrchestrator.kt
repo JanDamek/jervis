@@ -1,11 +1,10 @@
 package com.jervis.service.listener
 
-import com.jervis.dto.ServiceType
+import com.jervis.domain.authentication.ServiceType
 import com.jervis.entity.mongo.ServiceCredentialsDocument
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.reactive.asFlow
@@ -18,7 +17,6 @@ import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.time.Duration.Companion.minutes
 
 /**
  * Orchestrates polling of all configured external service listeners

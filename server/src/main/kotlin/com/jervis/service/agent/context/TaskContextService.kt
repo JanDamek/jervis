@@ -4,12 +4,12 @@ import com.jervis.domain.context.TaskContext
 import com.jervis.entity.mongo.PlanDocument
 import com.jervis.entity.mongo.PlanStepDocument
 import com.jervis.entity.mongo.TaskContextDocument
+import com.jervis.mapper.toDocument
 import com.jervis.repository.mongo.ClientMongoRepository
 import com.jervis.repository.mongo.PlanMongoRepository
 import com.jervis.repository.mongo.PlanStepMongoRepository
 import com.jervis.repository.mongo.ProjectMongoRepository
 import com.jervis.repository.mongo.TaskContextMongoRepository
-import com.jervis.service.ITaskContextService
 import com.jervis.service.client.ClientService
 import com.jervis.service.project.ProjectService
 import kotlinx.coroutines.flow.map
@@ -28,13 +28,13 @@ class TaskContextService(
     private val projectMongoRepository: ProjectMongoRepository,
     private val planMongoRepository: PlanMongoRepository,
     private val planStepMongoRepository: PlanStepMongoRepository,
-) : ITaskContextService {
+) {
     private val logger = KotlinLogging.logger {}
 
     /**
      * Create a TaskContext for the given context. Resolves and enforces scope.
      */
-    override suspend fun create(
+    suspend fun create(
         clientId: ObjectId,
         projectId: ObjectId,
         quick: Boolean,
@@ -74,7 +74,7 @@ class TaskContextService(
     /**
      * Cascading save: persists context, its active plan, and its plan steps.
      */
-    override suspend fun save(context: TaskContext) {
+    suspend fun save(context: TaskContext) {
         val contextDoc =
             TaskContextDocument.fromDomain(context).apply {
                 updatedAt = Instant.now()
@@ -105,7 +105,7 @@ class TaskContextService(
     /**
      * Find existing TaskContext by ID.
      */
-    override suspend fun findById(contextId: ObjectId): TaskContext? {
+    suspend fun findById(contextId: ObjectId): TaskContext? {
         val contextDoc = taskContextRepo.findById(contextId) ?: return null
 
         val plansList =
@@ -117,20 +117,22 @@ class TaskContextService(
                 }.toList()
 
         // Load full documents for context
-        val clientDoc = contextDoc.clientId?.let { clientService.getClientById(it) }
-        val projectDoc =
-            contextDoc.projectId?.let { projectService.getAllProjects().find { p -> p.id == contextDoc.projectId } }
+        val clientDto = contextDoc.clientId?.let { clientService.getClientById(it.toHexString()) }
+        val projectDto =
+            contextDoc.projectId?.let {
+                projectService.getAllProjects().find { p -> ObjectId(p.id) == contextDoc.projectId }
+            }
 
         return contextDoc.toDomain(plansList).copy(
-            clientDocument = clientDoc!!,
-            projectDocument = projectDoc!!,
+            clientDocument = clientDto!!.toDocument(),
+            projectDocument = projectDto!!.toDocument(),
         )
     }
 
     /**
      * List contexts for a given client and optional project.
      */
-    override suspend fun listFor(
+    suspend fun listFor(
         clientId: ObjectId,
         projectId: ObjectId?,
     ): List<TaskContext> {
@@ -152,25 +154,25 @@ class TaskContextService(
                         }.toList()
 
                 // Load full documents for context
-                val clientDoc = contextDoc.clientId?.let { clientService.getClientById(it) }
-                val projectDoc =
+                val clientDto = contextDoc.clientId?.let { clientService.getClientById(it.toHexString()) }
+                val projectDto =
                     contextDoc.projectId?.let {
-                        projectService.getAllProjects().find { p -> p.id == contextDoc.projectId }
+                        projectService.getAllProjects().find { p -> ObjectId(p.id) == contextDoc.projectId }
                     }
 
-                if (clientDoc == null) {
+                if (clientDto == null) {
                     logger.warn { "Client document not found for clientId=${contextDoc.clientId}, skipping context ${contextDoc.id}" }
                     return@mapNotNull null
                 }
 
-                if (projectDoc == null) {
+                if (projectDto == null) {
                     logger.warn { "Project document not found for projectId=${contextDoc.projectId}, skipping context ${contextDoc.id}" }
                     return@mapNotNull null
                 }
 
                 contextDoc.toDomain(plansList).copy(
-                    clientDocument = clientDoc,
-                    projectDocument = projectDoc,
+                    clientDocument = clientDto.toDocument(),
+                    projectDocument = projectDto.toDocument(),
                 )
             } catch (e: Exception) {
                 logger.error(e) { "Error processing context document ${contextDoc.id}" }
@@ -182,7 +184,7 @@ class TaskContextService(
     /**
      * Delete context with cascading deletion of all associated plans and plan steps.
      */
-    override suspend fun delete(contextId: ObjectId) {
+    suspend fun delete(contextId: ObjectId) {
         logger.info { "TASK_CONTEXT_DELETE_START: contextId=$contextId" }
 
         // Find and delete all plan steps for this context

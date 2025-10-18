@@ -8,6 +8,7 @@ import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
+import com.jervis.service.storage.DirectoryStructureService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -28,6 +29,7 @@ class DocumentExtractTextTool(
     private val llmGateway: LlmGateway,
     override val promptRepository: PromptRepository,
     private val tikaDocumentProcessor: TikaDocumentProcessor,
+    private val directoryStructureService: DirectoryStructureService,
 ) : McpTool {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -128,12 +130,14 @@ class DocumentExtractTextTool(
         return when {
             path.isAbsolute -> path
             else -> {
-                // Resolve relative to project path
-                val projectPath = Paths.get(context.projectDocument.projectPath)
+                val projectPath =
+                    directoryStructureService.getGitDirectory(
+                        context.clientDocument.id,
+                        context.projectDocument.id,
+                    )
                 if (Files.exists(projectPath) && Files.isDirectory(projectPath)) {
                     projectPath.resolve(filePath)
                 } else {
-                    // Fallback to current directory
                     Paths.get(System.getProperty("user.dir")).resolve(filePath)
                 }
             }

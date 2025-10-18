@@ -6,6 +6,7 @@ import com.jervis.domain.plan.Plan
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
+import com.jervis.service.storage.DirectoryStructureService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -24,6 +25,7 @@ import kotlin.io.path.name
 @Service
 class ProjectExploreStructureTool(
     override val promptRepository: PromptRepository,
+    private val directoryStructureService: DirectoryStructureService,
 ) : McpTool {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -132,11 +134,16 @@ class ProjectExploreStructureTool(
         context: TaskContext,
         overridePath: String?,
     ): Path {
+        val projectGitPath =
+            directoryStructureService.getGitDirectory(
+                context.clientDocument.id,
+                context.projectDocument.id,
+            )
+
         val candidates =
             buildList {
                 if (!overridePath.isNullOrBlank()) add(overridePath)
-                val ctxPath = context.projectDocument.projectPath
-                if (ctxPath.isNotBlank()) add(ctxPath)
+                add(projectGitPath.toString())
                 add(System.getProperty("user.dir"))
             }
 
@@ -146,12 +153,7 @@ class ProjectExploreStructureTool(
             }
         }
 
-        // Fallback – aktuální adresář
-        val cwd = Path.of(System.getProperty("user.dir"))
-        logger.warn {
-            "PROJECT_EXPLORE_STRUCTURE_FALLBACK_PATH: No valid directory found among candidates=$candidates, using current directory: $cwd"
-        }
-        return cwd
+        return projectGitPath
     }
 
     private suspend fun buildFileTree(

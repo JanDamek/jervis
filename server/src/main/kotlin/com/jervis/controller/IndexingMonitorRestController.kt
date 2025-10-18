@@ -1,7 +1,11 @@
 package com.jervis.controller
 
+import com.jervis.dto.AddLogRequest
+import com.jervis.dto.FailIndexingRequest
+import com.jervis.dto.StartIndexingRequest
+import com.jervis.dto.UpdateStepRequest
 import com.jervis.service.IIndexingMonitorService
-import com.jervis.service.indexing.monitoring.IndexingProgress
+import com.jervis.service.indexing.monitoring.IndexingMonitorService
 import com.jervis.service.indexing.monitoring.IndexingStepStatus
 import com.jervis.service.indexing.monitoring.IndexingStepType
 import com.jervis.service.indexing.monitoring.ProjectIndexingState
@@ -16,10 +20,10 @@ import org.springframework.web.bind.annotation.RestController
 @RestController
 @RequestMapping("/api/indexing-monitor")
 class IndexingMonitorRestController(
-    private val indexingMonitorService: IIndexingMonitorService,
-) {
+    private val indexingMonitorService: IndexingMonitorService,
+) : IIndexingMonitorService {
     @PostMapping("/start")
-    suspend fun startProjectIndexing(
+    override suspend fun startProjectIndexing(
         @RequestBody request: StartIndexingRequest,
     ) {
         indexingMonitorService.startProjectIndexing(
@@ -29,7 +33,7 @@ class IndexingMonitorRestController(
     }
 
     @PostMapping("/update-step")
-    suspend fun updateStepProgress(
+    override suspend fun updateStepProgress(
         @RequestBody request: UpdateStepRequest,
     ) {
         indexingMonitorService.updateStepProgress(
@@ -44,7 +48,7 @@ class IndexingMonitorRestController(
     }
 
     @PostMapping("/add-log")
-    suspend fun addStepLog(
+    override suspend fun addStepLog(
         @RequestBody request: AddLogRequest,
     ) {
         indexingMonitorService.addStepLog(
@@ -55,14 +59,14 @@ class IndexingMonitorRestController(
     }
 
     @PostMapping("/complete/{projectId}")
-    suspend fun completeProjectIndexing(
+    override suspend fun completeProjectIndexing(
         @PathVariable projectId: String,
     ) {
         indexingMonitorService.completeProjectIndexing(ObjectId(projectId))
     }
 
     @PostMapping("/fail")
-    suspend fun failProjectIndexing(
+    override suspend fun failProjectIndexing(
         @RequestBody request: FailIndexingRequest,
     ) {
         indexingMonitorService.failProjectIndexing(
@@ -72,32 +76,6 @@ class IndexingMonitorRestController(
     }
 
     @GetMapping("/states")
-    fun getAllProjectStates(): Map<String, ProjectIndexingState> =
+    override fun getAllProjectStates(): Map<String, ProjectIndexingState> =
         indexingMonitorService.getAllProjectStates().mapKeys { it.key.toHexString() }
 }
-
-data class StartIndexingRequest(
-    val projectId: String,
-    val projectName: String,
-)
-
-data class UpdateStepRequest(
-    val projectId: String,
-    val stepType: String,
-    val status: String,
-    val progress: IndexingProgress?,
-    val message: String?,
-    val errorMessage: String?,
-    val logs: List<String>?,
-)
-
-data class AddLogRequest(
-    val projectId: String,
-    val stepType: String,
-    val logMessage: String,
-)
-
-data class FailIndexingRequest(
-    val projectId: String,
-    val errorMessage: String,
-)

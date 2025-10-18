@@ -66,21 +66,24 @@ class MeetingTranscriptIndexingService(
         withContext(Dispatchers.IO) {
             logger.info { "Starting meeting transcript indexing for project: ${project.name}" }
 
-            val meetingPath = project.meetingPath
-            if (meetingPath.isNullOrBlank()) {
-                logger.info { "No meeting path configured for project: ${project.name}" }
+            // Note: meetingPath is not a field in ProjectDocument
+            // Meeting transcripts should be stored in a subdirectory of the project path
+            val projectPathString = project.projectPath
+            if (projectPathString.isNullOrBlank()) {
+                logger.info { "No project path configured for project: ${project.name}" }
                 return@withContext MeetingTranscriptIndexingResult(0, 0, 0)
             }
 
-            val meetingDir = Paths.get(meetingPath)
+            val projectPath = Paths.get(projectPathString)
+            val meetingDir = projectPath.resolve("meetings")
             if (!Files.exists(meetingDir)) {
-                logger.warn { "Meeting path does not exist: $meetingPath" }
-                return@withContext MeetingTranscriptIndexingResult(0, 0, 1)
+                logger.info { "No meetings directory found for project: ${project.name}" }
+                return@withContext MeetingTranscriptIndexingResult(0, 0, 0)
             }
 
             // Get current git commit hash for tracking
             val gitCommitHash =
-                historicalVersioningService.getCurrentGitCommitHash(Paths.get(project.projectPath))
+                historicalVersioningService.getCurrentGitCommitHash(projectPath)
                     ?: "meetings-${System.currentTimeMillis()}"
 
             var processedTranscripts = 0
@@ -177,7 +180,6 @@ class MeetingTranscriptIndexingService(
                                         clientId = project.clientId,
                                         ragSourceType = RagSourceType.FILE,
                                         summary = sentence,
-                                        path = relativePath,
                                         language = inferMeetingFormat(meetingFile),
                                         gitCommitHash = gitCommitHash,
                                         chunkId = index,

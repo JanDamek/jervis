@@ -1,6 +1,6 @@
 package com.jervis.client
 
-import com.jervis.entity.mongo.ProjectDocument
+import com.jervis.dto.ProjectDto
 import com.jervis.service.IProjectService
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -19,18 +19,18 @@ class ProjectRestClient(
 ) : IProjectService {
     private val apiPath = "$baseUrl/api/projects"
 
-    override suspend fun getAllProjects(): List<ProjectDocument> = httpClient.get(apiPath).body()
+    override suspend fun getAllProjects(): List<ProjectDto> = httpClient.get(apiPath).body()
 
-    override suspend fun getDefaultProject(): ProjectDocument? = httpClient.get("$apiPath/default").body()
+    override suspend fun getDefaultProject(): ProjectDto? = httpClient.get("$apiPath/default").body()
 
-    override suspend fun setActiveProject(project: ProjectDocument) {
+    override suspend fun setActiveProject(project: ProjectDto) {
         httpClient.put("$apiPath/active") {
             contentType(ContentType.Application.Json)
             setBody(project)
         }
     }
 
-    override suspend fun setDefaultProject(project: ProjectDocument) {
+    override suspend fun setDefaultProject(project: ProjectDto) {
         httpClient.put("$apiPath/default") {
             contentType(ContentType.Application.Json)
             setBody(project)
@@ -38,9 +38,9 @@ class ProjectRestClient(
     }
 
     override suspend fun saveProject(
-        project: ProjectDocument,
+        project: ProjectDto,
         makeDefault: Boolean,
-    ): ProjectDocument =
+    ): ProjectDto =
         httpClient
             .post(apiPath) {
                 contentType(ContentType.Application.Json)
@@ -48,14 +48,14 @@ class ProjectRestClient(
                 setBody(project)
             }.body()
 
-    override suspend fun deleteProject(project: ProjectDocument) {
+    override suspend fun deleteProject(project: ProjectDto) {
         httpClient.delete(apiPath) {
             contentType(ContentType.Application.Json)
             setBody(project)
         }
     }
 
-    override suspend fun getProjectByName(name: String?): ProjectDocument =
+    override suspend fun getProjectByName(name: String?): ProjectDto =
         httpClient
             .get("$apiPath/by-name") {
                 parameter("name", name)

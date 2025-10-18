@@ -1,17 +1,17 @@
 package com.jervis.ui.component
 
-import com.jervis.domain.client.Anonymization
-import com.jervis.domain.client.ClientTools
-import com.jervis.domain.client.EmailConn
-import com.jervis.domain.client.Formatting
-import com.jervis.domain.client.GitConn
-import com.jervis.domain.client.Guidelines
-import com.jervis.domain.client.InspirationPolicy
-import com.jervis.domain.client.JiraConn
-import com.jervis.domain.client.ReviewPolicy
-import com.jervis.domain.client.SecretsPolicy
-import com.jervis.domain.client.SlackConn
-import com.jervis.domain.client.TeamsConn
+import com.jervis.dto.AnonymizationDto
+import com.jervis.dto.ClientToolsDto
+import com.jervis.dto.EmailConnDto
+import com.jervis.dto.FormattingDto
+import com.jervis.dto.GitConnDto
+import com.jervis.dto.GuidelinesDto
+import com.jervis.dto.InspirationPolicyDto
+import com.jervis.dto.JiraConnDto
+import com.jervis.dto.ReviewPolicyDto
+import com.jervis.dto.SecretsPolicyDto
+import com.jervis.dto.SlackConnDto
+import com.jervis.dto.TeamsConnDto
 import java.awt.Dimension
 import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
@@ -34,41 +34,44 @@ object ClientSettingsComponents {
     /**
      * Creates a panel for Guidelines configuration
      */
-    fun createGuidelinesPanel(guidelines: Guidelines = Guidelines()): GuidelinesPanel = GuidelinesPanel(guidelines)
+    fun createGuidelinesPanel(guidelines: GuidelinesDto = GuidelinesDto()): GuidelinesPanel = GuidelinesPanel(guidelines)
 
     /**
      * Creates a panel for ReviewPolicy configuration
      */
-    fun createReviewPolicyPanel(reviewPolicy: ReviewPolicy = ReviewPolicy()): ReviewPolicyPanel = ReviewPolicyPanel(reviewPolicy)
+    fun createReviewPolicyPanel(reviewPolicy: ReviewPolicyDto = ReviewPolicyDto()): ReviewPolicyPanel = ReviewPolicyPanel(reviewPolicy)
 
     /**
      * Creates a panel for Formatting configuration
      */
-    fun createFormattingPanel(formatting: Formatting = Formatting()): FormattingPanel = FormattingPanel(formatting)
+    fun createFormattingPanel(formatting: FormattingDto = FormattingDto()): FormattingPanel = FormattingPanel(formatting)
 
     /**
      * Creates a panel for SecretsPolicy configuration
      */
-    fun createSecretsPolicyPanel(secretsPolicy: SecretsPolicy = SecretsPolicy()): SecretsPolicyPanel = SecretsPolicyPanel(secretsPolicy)
+    fun createSecretsPolicyPanel(secretsPolicy: SecretsPolicyDto = SecretsPolicyDto()): SecretsPolicyPanel =
+        SecretsPolicyPanel(secretsPolicy)
 
     /**
      * Creates a panel for Anonymization configuration
      */
-    fun createAnonymizationPanel(anonymization: Anonymization = Anonymization()): AnonymizationPanel = AnonymizationPanel(anonymization)
+    fun createAnonymizationPanel(anonymization: AnonymizationDto = AnonymizationDto()): AnonymizationPanel =
+        AnonymizationPanel(anonymization)
 
     /**
      * Creates a panel for InspirationPolicy configuration
      */
-    fun createInspirationPolicyPanel(inspirationPolicy: InspirationPolicy = InspirationPolicy()): InspirationPolicyPanel =
+    fun createInspirationPolicyPanel(inspirationPolicy: InspirationPolicyDto = InspirationPolicyDto()): InspirationPolicyPanel =
         InspirationPolicyPanel(inspirationPolicy)
 
     /**
      * Creates a panel for ClientTools configuration
      */
-    fun createClientToolsPanel(clientTools: ClientTools = ClientTools()): ClientToolsPanel = ClientToolsPanel(clientTools)
+    fun createClientToolsPanel(clientTools: ClientToolsDto = ClientToolsDto()): ClientToolsPanel =
+        ClientToolsPanel(clientTools)
 
     class GuidelinesPanel(
-        initialGuidelines: Guidelines = Guidelines(),
+        initialGuidelines: GuidelinesDto = GuidelinesDto(),
     ) : JPanel(GridBagLayout()) {
         private val codeStyleDocUrlField =
             JTextField(initialGuidelines.codeStyleDocUrl ?: "").apply {
@@ -173,8 +176,8 @@ object ClientSettingsComponents {
             add(JPanel(), gbc)
         }
 
-        fun getGuidelines(): Guidelines =
-            Guidelines(
+        fun getGuidelines(): GuidelinesDto =
+            GuidelinesDto(
                 codeStyleDocUrl = codeStyleDocUrlField.text.trim().ifEmpty { null },
                 commitMessageConvention = commitMessageConventionField.text.trim(),
                 branchingModel = branchingModelField.text.trim(),
@@ -183,7 +186,7 @@ object ClientSettingsComponents {
     }
 
     class ReviewPolicyPanel(
-        initialReviewPolicy: ReviewPolicy = ReviewPolicy(),
+        initialReviewPolicy: ReviewPolicyDto = ReviewPolicyDto(),
     ) : JPanel(GridBagLayout()) {
         private val requireCodeOwnerCheckbox =
             JCheckBox("Require Code Owner", initialReviewPolicy.requireCodeOwner).apply {
@@ -254,14 +257,14 @@ object ClientSettingsComponents {
             add(JScrollPane(reviewersHintsArea), gbc)
         }
 
-        fun getReviewPolicy(): ReviewPolicy {
+        fun getReviewPolicy(): ReviewPolicyDto {
             val reviewersHints =
                 reviewersHintsArea.text
                     .split("\n")
                     .map { it.trim() }
                     .filter { it.isNotEmpty() }
 
-            return ReviewPolicy(
+            return ReviewPolicyDto(
                 requireCodeOwner = requireCodeOwnerCheckbox.isSelected,
                 minApprovals = minApprovalsSpinner.value as Int,
                 reviewersHints = reviewersHints,
@@ -270,7 +273,7 @@ object ClientSettingsComponents {
     }
 
     class FormattingPanel(
-        initialFormatting: Formatting = Formatting(),
+        initialFormatting: FormattingDto = FormattingDto(),
     ) : JPanel(GridBagLayout()) {
         private val formatterField =
             JTextField(initialFormatting.formatter).apply {
@@ -403,8 +406,8 @@ object ClientSettingsComponents {
                     parts[0].trim() to parts.getOrNull(1)?.trim().orEmpty()
                 }
 
-        fun getFormatting(): Formatting =
-            Formatting(
+        fun getFormatting(): FormattingDto =
+            FormattingDto(
                 formatter = formatterField.text.trim(),
                 version = versionField.text.trim().ifEmpty { null },
                 lineWidth = lineWidthSpinner.value as Int,
@@ -414,7 +417,7 @@ object ClientSettingsComponents {
     }
 
     class SecretsPolicyPanel(
-        initialSecretsPolicy: SecretsPolicy = SecretsPolicy(),
+        initialSecretsPolicy: SecretsPolicyDto = SecretsPolicyDto(),
     ) : JPanel(GridBagLayout()) {
         private val bannedPatternsArea =
             JTextArea(initialSecretsPolicy.bannedPatterns.joinToString("\n"), 6, 40).apply {
@@ -477,14 +480,14 @@ object ClientSettingsComponents {
             add(allowPIICheckbox, gbc)
         }
 
-        fun getSecretsPolicy(): SecretsPolicy {
+        fun getSecretsPolicy(): SecretsPolicyDto {
             val bannedPatterns =
                 bannedPatternsArea.text
                     .split("\n")
                     .map { it.trim() }
                     .filter { it.isNotEmpty() }
 
-            return SecretsPolicy(
+            return SecretsPolicyDto(
                 bannedPatterns = bannedPatterns,
                 cloudUploadAllowed = cloudUploadAllowedCheckbox.isSelected,
                 allowPII = allowPIICheckbox.isSelected,
@@ -493,7 +496,7 @@ object ClientSettingsComponents {
     }
 
     class AnonymizationPanel(
-        initialAnonymization: Anonymization = Anonymization(),
+        initialAnonymization: AnonymizationDto = AnonymizationDto(),
     ) : JPanel(GridBagLayout()) {
         private val enabledCheckbox =
             JCheckBox("Enable Anonymization", initialAnonymization.enabled).apply {
@@ -543,14 +546,14 @@ object ClientSettingsComponents {
             add(JScrollPane(rulesArea), gbc)
         }
 
-        fun getAnonymization(): Anonymization {
+        fun getAnonymization(): AnonymizationDto {
             val rules =
                 rulesArea.text
                     .split("\n")
                     .map { it.trim() }
                     .filter { it.isNotEmpty() }
 
-            return Anonymization(
+            return AnonymizationDto(
                 enabled = enabledCheckbox.isSelected,
                 rules = rules,
             )
@@ -558,7 +561,7 @@ object ClientSettingsComponents {
     }
 
     class InspirationPolicyPanel(
-        initialInspirationPolicy: InspirationPolicy = InspirationPolicy(),
+        initialInspirationPolicy: InspirationPolicyDto = InspirationPolicyDto(),
     ) : JPanel(GridBagLayout()) {
         private val allowCrossClientInspirationCheckbox =
             JCheckBox("Allow Cross-Client Inspiration", initialInspirationPolicy.allowCrossClientInspiration).apply {
@@ -680,7 +683,7 @@ object ClientSettingsComponents {
             add(JPanel(), gbc)
         }
 
-        fun getInspirationPolicy(): InspirationPolicy {
+        fun getInspirationPolicy(): InspirationPolicyDto {
             val allowedSlugs =
                 allowedClientSlugsArea.text
                     .split("\n")
@@ -693,7 +696,7 @@ object ClientSettingsComponents {
                     .map { it.trim() }
                     .filter { it.isNotEmpty() }
 
-            return InspirationPolicy(
+            return InspirationPolicyDto(
                 allowCrossClientInspiration = allowCrossClientInspirationCheckbox.isSelected,
                 allowedClientSlugs = allowedSlugs,
                 disallowedClientSlugs = disallowedSlugs,
@@ -704,7 +707,7 @@ object ClientSettingsComponents {
     }
 
     class ClientToolsPanel(
-        initialClientTools: ClientTools = ClientTools(),
+        initialClientTools: ClientToolsDto = ClientToolsDto(),
     ) : JPanel(GridBagLayout()) {
         // Git Connection Fields
         private val gitProviderField =
@@ -1179,12 +1182,12 @@ object ClientSettingsComponents {
             add(JPanel(), gbc)
         }
 
-        fun getClientTools(): ClientTools {
+        fun getClientTools(): ClientToolsDto {
             val git =
                 if (gitProviderField.text.trim().isNotEmpty() || gitBaseUrlField.text.trim().isNotEmpty() ||
                     gitAuthTypeField.text.trim().isNotEmpty() || gitCredentialsRefField.text.trim().isNotEmpty()
                 ) {
-                    GitConn(
+                    GitConnDto(
                         provider = gitProviderField.text.trim().ifEmpty { null },
                         baseUrl = gitBaseUrlField.text.trim().ifEmpty { null },
                         authType = gitAuthTypeField.text.trim().ifEmpty { null },
@@ -1203,7 +1206,7 @@ object ClientSettingsComponents {
                             .split("\n")
                             .map { it.trim() }
                             .filter { it.isNotEmpty() }
-                    JiraConn(
+                    JiraConnDto(
                         baseUrl = jiraBaseUrlField.text.trim().ifEmpty { null },
                         tenant = jiraTenantField.text.trim().ifEmpty { null },
                         scopes = if (scopes.isEmpty()) null else scopes,
@@ -1222,7 +1225,7 @@ object ClientSettingsComponents {
                             .split("\n")
                             .map { it.trim() }
                             .filter { it.isNotEmpty() }
-                    SlackConn(
+                    SlackConnDto(
                         workspace = slackWorkspaceField.text.trim().ifEmpty { null },
                         scopes = if (scopes.isEmpty()) null else scopes,
                         credentialsRef = slackCredentialsRefField.text.trim().ifEmpty { null },
@@ -1240,7 +1243,7 @@ object ClientSettingsComponents {
                             .split("\n")
                             .map { it.trim() }
                             .filter { it.isNotEmpty() }
-                    TeamsConn(
+                    TeamsConnDto(
                         tenant = teamsTenantField.text.trim().ifEmpty { null },
                         scopes = if (scopes.isEmpty()) null else scopes,
                         credentialsRef = teamsCredentialsRefField.text.trim().ifEmpty { null },
@@ -1253,7 +1256,7 @@ object ClientSettingsComponents {
                 if (emailProtocolField.text.trim().isNotEmpty() || emailServerField.text.trim().isNotEmpty() ||
                     emailUsernameField.text.trim().isNotEmpty() || emailCredentialsRefField.text.trim().isNotEmpty()
                 ) {
-                    EmailConn(
+                    EmailConnDto(
                         protocol = emailProtocolField.text.trim().ifEmpty { null },
                         server = emailServerField.text.trim().ifEmpty { null },
                         username = emailUsernameField.text.trim().ifEmpty { null },
@@ -1263,7 +1266,7 @@ object ClientSettingsComponents {
                     null
                 }
 
-            return ClientTools(
+            return ClientToolsDto(
                 git = git,
                 jira = jira,
                 slack = slack,

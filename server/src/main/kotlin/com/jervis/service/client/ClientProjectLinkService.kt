@@ -4,7 +4,6 @@ import com.jervis.dto.ClientProjectLinkDto
 import com.jervis.entity.mongo.ClientProjectLinkDocument
 import com.jervis.mapper.toDto
 import com.jervis.repository.mongo.ClientProjectLinkMongoRepository
-import com.jervis.service.IClientProjectLinkService
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
@@ -15,18 +14,18 @@ import java.time.Instant
 @Service
 class ClientProjectLinkService(
     private val linkRepo: ClientProjectLinkMongoRepository,
-) : IClientProjectLinkService {
+) {
     private val logger = KotlinLogging.logger {}
 
-    override suspend fun listForClient(clientId: ObjectId): List<ClientProjectLinkDto> =
+    suspend fun listForClient(clientId: ObjectId): List<ClientProjectLinkDto> =
         linkRepo.findByClientId(clientId).map { it.toDto() }.toList()
 
-    override suspend fun get(
+    suspend fun get(
         clientId: ObjectId,
         projectId: ObjectId,
     ): ClientProjectLinkDto? = linkRepo.findByClientIdAndProjectId(clientId, projectId)?.toDto()
 
-    override suspend fun upsert(
+    suspend fun upsert(
         clientId: ObjectId,
         projectId: ObjectId,
         isDisabled: Boolean?,
@@ -59,7 +58,7 @@ class ClientProjectLinkService(
         }
     }
 
-    override suspend fun toggleDisabled(
+    suspend fun toggleDisabled(
         clientId: ObjectId,
         projectId: ObjectId,
     ): ClientProjectLinkDto =
@@ -71,7 +70,7 @@ class ClientProjectLinkService(
             historical = null,
         )
 
-    override suspend fun toggleAnonymization(
+    suspend fun toggleAnonymization(
         clientId: ObjectId,
         projectId: ObjectId,
     ): ClientProjectLinkDto =
@@ -87,7 +86,7 @@ class ClientProjectLinkService(
             historical = null,
         )
 
-    override suspend fun toggleHistorical(
+    suspend fun toggleHistorical(
         clientId: ObjectId,
         projectId: ObjectId,
     ): ClientProjectLinkDto =
@@ -99,7 +98,7 @@ class ClientProjectLinkService(
             historical = !(linkRepo.findByClientIdAndProjectId(clientId, projectId)?.historical ?: false),
         )
 
-    override suspend fun delete(
+    suspend fun delete(
         clientId: ObjectId,
         projectId: ObjectId,
     ) {

@@ -8,17 +8,18 @@ import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
+import com.jervis.service.storage.DirectoryStructureService
 import com.jervis.util.ProcessStreamingUtils
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
-import java.io.File
 
 @Service
 class ProjectVersionControlTool(
     private val llmGateway: LlmGateway,
     private val timeoutsProperties: TimeoutsProperties,
     override val promptRepository: PromptRepository,
+    private val directoryStructureService: DirectoryStructureService,
 ) : McpTool {
     private val logger = KotlinLogging.logger {}
 
@@ -79,7 +80,12 @@ class ProjectVersionControlTool(
         params: ProjectVersionControlParams,
         context: TaskContext,
     ): ToolResult {
-        val projectDir = File(context.projectDocument.projectPath)
+        val projectDir =
+            directoryStructureService
+                .getGitDirectory(
+                    context.clientDocument.id,
+                    context.projectDocument.id,
+                ).toFile()
         val command = buildGitCommand(params)
 
         val processResult =

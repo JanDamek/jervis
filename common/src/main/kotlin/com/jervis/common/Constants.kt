@@ -1,14 +1,18 @@
 package com.jervis.common
 
-import org.bson.types.ObjectId
-
 /**
- * Global constants used across the application.
+ * Constants class.
+ * <p>
+ * This class is a part of the application's core functionality.
+ * It was created to provide features such as...
+ * </p>
+ *
+ * @author damekjan
+ * @version 1.0
+ * @since 14.10.2025
  */
-object Constants {
-    /**
-     * Global client ID used when no specific client is assigned.
-     * This should be used instead of null values for clientId fields.
-     */
-    val GLOBAL_ID: ObjectId = ObjectId("000000000000000000000000")
+class Constants {
+    companion object {
+        const val GLOBAL_ID_STRING: String = "GLOBAL_ID"
+    }
 }

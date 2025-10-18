@@ -34,6 +34,25 @@ qdrant:
 
 server:
   port: 5500
+  netty:
+    connection-timeout: 600s # 10 minutes for long-running agent operations
+    idle-timeout: 600s
+
+tika:
+  ocr:
+    enabled: true
+    languages:
+      - eng
+      - ces
+      - spa
+      - slk
+      - fin
+      - nor
+      - dan
+      - pol
+      - deu
+      - hun
+    timeout-ms: 120000
 
 models: # embedding dimensions configured per model
   EMBEDDING_TEXT:
@@ -200,8 +219,6 @@ connection-pools:
 audio:
   monitoring:
     default-git-check-interval-minutes: 15
-    default-whisper-model: base
-    max-file-size-mb: 100
     supported-formats:
       - wav
       - mp3
@@ -212,7 +229,7 @@ audio:
       - webm
 
   whisper:
-    enabled: ${WHISPER_ENABLED:false}
-    api-url: ${WHISPER_API_URL:http://192.168.100.117:9000/}
+    enabled: true
+    api-url: http://192.168.100.117:9000/
     timeout-seconds: 300
     max-retries: 3

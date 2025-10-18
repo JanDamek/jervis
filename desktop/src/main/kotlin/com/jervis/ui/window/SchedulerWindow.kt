@@ -1,21 +1,22 @@
 package com.jervis.ui.window
 
-import com.jervis.common.Constants.GLOBAL_ID
+import com.jervis.common.Constants.Companion.GLOBAL_ID_STRING
+import com.jervis.domain.task.ScheduledTaskStatus
+import com.jervis.dto.ChatRequest
 import com.jervis.dto.ChatRequestContext
-import com.jervis.entity.mongo.ScheduledTaskDocument
-import com.jervis.service.agent.coordinator.AgentOrchestratorService
-import com.jervis.service.client.ClientService
-import com.jervis.service.project.ProjectService
-import com.jervis.service.scheduling.TaskQueryService
-import com.jervis.service.scheduling.TaskSchedulingService
+import com.jervis.dto.ScheduledTaskDto
+import com.jervis.service.IAgentOrchestratorService
+import com.jervis.service.IClientService
+import com.jervis.service.IProjectService
+import com.jervis.service.ITaskSchedulingService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.bson.types.ObjectId
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.FlowLayout
@@ -50,11 +51,10 @@ import javax.swing.border.EmptyBorder
  * Allows users to create, view, and manage scheduled tasks that can execute any available MCP tool.
  */
 class SchedulerWindow(
-    private val taskSchedulingService: TaskSchedulingService,
-    private val taskQueryService: TaskQueryService,
-    private val clientService: ClientService,
-    private val projectService: ProjectService,
-    private val agentOrchestrator: AgentOrchestratorService,
+    private val taskSchedulingService: ITaskSchedulingService,
+    private val clientService: IClientService,
+    private val projectService: IProjectService,
+    private val agentOrchestrator: IAgentOrchestratorService,
 ) : JFrame("Plánovač úkolů") {
     private val taskListModel = DefaultListModel<Any>()
     private val taskList = JList(taskListModel)
@@ -303,7 +303,7 @@ class SchedulerWindow(
         }
     }
 
-    private fun loadProjectsForClient(clientId: ObjectId) {
+    private fun loadProjectsForClient(clientId: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val allProjects = projectService.getAllProjects()
@@ -327,10 +327,10 @@ class SchedulerWindow(
             try {
                 val tasks =
                     flow {
-                        emitAll(taskQueryService.getTasksByStatus(ScheduledTaskDocument.ScheduledTaskStatus.PENDING))
-                        emitAll(taskQueryService.getTasksByStatus(ScheduledTaskDocument.ScheduledTaskStatus.RUNNING))
+                        emitAll(taskSchedulingService.getTasksByStatus(ScheduledTaskStatus.PENDING).asFlow())
+                        emitAll(taskSchedulingService.getTasksByStatus(ScheduledTaskStatus.RUNNING).asFlow())
                         emitAll(
-                            taskQueryService.getTasksByStatus(ScheduledTaskDocument.ScheduledTaskStatus.COMPLETED),
+                            taskSchedulingService.getTasksByStatus(ScheduledTaskStatus.COMPLETED).asFlow(),
                         )
                     }
                 // Load projects and clients to enhance display
@@ -410,21 +410,18 @@ class SchedulerWindow(
         }
 
         // Validate cron expression if repeatable is selected
-        val cronExpression =
-            if (repeatableCheckBox.isSelected) {
-                val cron = cronExpressionField.text.trim()
-                if (cron.isEmpty()) {
-                    statusLabel.text = "Zadejte cron výraz pro opakující se úkol"
-                    return
-                }
-                cron
-            } else {
-                null
+        if (repeatableCheckBox.isSelected) {
+            val cron = cronExpressionField.text.trim()
+            if (cron.isEmpty()) {
+                statusLabel.text = "Zadejte cron výraz pro opakující se úkol"
+                return
             }
+            cron
+        } else {
+            null
+        }
 
-        val scheduledTime =
-            parseScheduledTime(scheduleTimeField.text.trim())
-                ?: Instant.now().plusSeconds(10) // Default to 10 seconds from now
+        val scheduledTime = scheduleTimeField.text.trim()
 
         statusLabel.text = "Vytvářím úkol..."
 
@@ -434,12 +431,8 @@ class SchedulerWindow(
                     projectId = selectedProject.id,
                     taskInstruction = description,
                     taskName = "Task: ${description.take(50)}${if (description.length > 50) "..." else ""}",
-                    scheduledAt = scheduledTime,
-                    taskParameters = emptyMap(),
+                    cronExpression = scheduledTime,
                     priority = 0,
-                    maxRetries = 3,
-                    cronExpression = cronExpression,
-                    createdBy = "user",
                 )
 
                 withContext(Dispatchers.Main) {
@@ -487,33 +480,21 @@ class SchedulerWindow(
                         existingContextId = null, // Always create new context
                     )
 
-                // Execute task immediately through AgentOrchestratorService
-                val response = agentOrchestrator.handle(description, chatRequestContext)
+                // Execute task immediately through AgentOrchestratorService (fire-and-forget)
+                // Response will arrive via WebSocket notifications
+                agentOrchestrator.handle(ChatRequest(description, chatRequestContext))
 
                 withContext(Dispatchers.Main) {
-                    statusLabel.text = "Úkol byl úspěšně dokončen"
+                    statusLabel.text = "Úkol byl odeslán ke zpracování. Sledujte progress přes WebSocket notifikace."
                     taskDescriptionArea.text = ""
 
-                    // Show result in a dialog
-                    val resultDialog = JDialog(this@SchedulerWindow, "Výsledek úkolu", true)
-                    resultDialog.layout = BorderLayout()
-                    resultDialog.size = Dimension(600, 400)
-                    resultDialog.setLocationRelativeTo(this@SchedulerWindow)
-
-                    val textArea = JTextArea(response.message)
-                    textArea.isEditable = false
-                    textArea.lineWrap = true
-                    textArea.wrapStyleWord = true
-
-                    resultDialog.add(JScrollPane(textArea), BorderLayout.CENTER)
-
-                    val closeButton = JButton("Zavřít")
-                    closeButton.addActionListener { resultDialog.dispose() }
-                    val buttonPanel = JPanel(FlowLayout())
-                    buttonPanel.add(closeButton)
-                    resultDialog.add(buttonPanel, BorderLayout.SOUTH)
-
-                    resultDialog.isVisible = true
+                    // Show confirmation dialog
+                    JOptionPane.showMessageDialog(
+                        this@SchedulerWindow,
+                        "Úkol byl úspěšně odeslán ke zpracování.\nVýsledky budou dostupné přes WebSocket notifikace.",
+                        "Úkol odeslán",
+                        JOptionPane.INFORMATION_MESSAGE,
+                    )
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -533,7 +514,7 @@ class SchedulerWindow(
         val task =
             when (selectedValue) {
                 is EnhancedTaskInfo -> selectedValue.task
-                is ScheduledTaskDocument -> selectedValue
+                is ScheduledTaskDto -> selectedValue
                 else -> {
                     statusLabel.text = "Neplatný typ úkolu"
                     return
@@ -551,14 +532,10 @@ class SchedulerWindow(
         if (result == JOptionPane.YES_OPTION) {
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val cancelled = taskSchedulingService.cancelTask(task.id)
+                    taskSchedulingService.cancelTask(task.id)
                     withContext(Dispatchers.Main) {
-                        if (cancelled) {
-                            statusLabel.text = "Úkol byl zrušen"
-                            loadTasks()
-                        } else {
-                            statusLabel.text = "Úkol se nepodařilo zrušit"
-                        }
+                        statusLabel.text = "Úkol byl zrušen"
+                        loadTasks()
                     }
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {
@@ -579,7 +556,7 @@ class SchedulerWindow(
         val task =
             when (selectedValue) {
                 is EnhancedTaskInfo -> selectedValue.task
-                is ScheduledTaskDocument -> selectedValue
+                is ScheduledTaskDto -> selectedValue
                 else -> {
                     statusLabel.text = "Neplatný typ úkolu"
                     return
@@ -600,7 +577,7 @@ class SchedulerWindow(
         val task =
             when (selectedValue) {
                 is EnhancedTaskInfo -> selectedValue.task
-                is ScheduledTaskDocument -> selectedValue
+                is ScheduledTaskDto -> selectedValue
                 else -> {
                     statusLabel.text = "Neplatný typ úkolu"
                     return
@@ -608,7 +585,7 @@ class SchedulerWindow(
             }
 
         // Can only execute pending tasks
-        if (task.status != ScheduledTaskDocument.ScheduledTaskStatus.PENDING) {
+        if (task.status != ScheduledTaskStatus.PENDING) {
             statusLabel.text = "Lze spustit pouze čekající úkoly"
             return
         }
@@ -627,7 +604,7 @@ class SchedulerWindow(
                 }
 
                 val clientId = project.clientId
-                if (clientId == GLOBAL_ID) {
+                if (clientId == GLOBAL_ID_STRING) {
                     withContext(Dispatchers.Main) {
                         statusLabel.text = "Projekt nemá přiřazeného klienta"
                     }
@@ -637,38 +614,26 @@ class SchedulerWindow(
                 // Create ChatRequestContext for immediate execution
                 val chatRequestContext =
                     ChatRequestContext(
-                        clientId = clientId,
+                        clientId = clientId!!,
                         projectId = project.id,
                         quick = false, // Default to full processing
                         existingContextId = null, // Always create new context
                     )
 
-                // Execute task immediately through AgentOrchestratorService
-                val response = agentOrchestrator.handle(task.taskInstruction, chatRequestContext)
+                // Execute task immediately through AgentOrchestratorService (fire-and-forget)
+                // Response will arrive via WebSocket notifications
+                agentOrchestrator.handle(ChatRequest(task.taskInstruction, chatRequestContext))
 
                 withContext(Dispatchers.Main) {
-                    statusLabel.text = "Vybraný úkol byl úspěšně dokončen"
+                    statusLabel.text = "Úkol '${task.taskName}' byl odeslán ke zpracování"
 
-                    // Show result in a dialog
-                    val resultDialog = JDialog(this@SchedulerWindow, "Výsledek úkolu: ${task.taskName}", true)
-                    resultDialog.layout = BorderLayout()
-                    resultDialog.size = Dimension(700, 500)
-                    resultDialog.setLocationRelativeTo(this@SchedulerWindow)
-
-                    val textArea = JTextArea(response.message)
-                    textArea.isEditable = false
-                    textArea.lineWrap = true
-                    textArea.wrapStyleWord = true
-
-                    resultDialog.add(JScrollPane(textArea), BorderLayout.CENTER)
-
-                    val closeButton = JButton("Zavřít")
-                    closeButton.addActionListener { resultDialog.dispose() }
-                    val buttonPanel = JPanel(FlowLayout())
-                    buttonPanel.add(closeButton)
-                    resultDialog.add(buttonPanel, BorderLayout.SOUTH)
-
-                    resultDialog.isVisible = true
+                    // Show confirmation dialog
+                    JOptionPane.showMessageDialog(
+                        this@SchedulerWindow,
+                        "Úkol '${task.taskName}' byl úspěšně odeslán ke zpracování.\nVýsledky budou dostupné přes WebSocket notifikace.",
+                        "Úkol odeslán",
+                        JOptionPane.INFORMATION_MESSAGE,
+                    )
 
                     // Refresh task list to show updated status
                     loadTasks()
@@ -745,21 +710,21 @@ class SchedulerWindow(
 
                 else -> null
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }
 
     // Data classes for combo box items
     data class ClientComboItem(
-        val id: ObjectId,
+        val id: String,
         val name: String,
     ) {
         override fun toString() = name
     }
 
     data class ProjectComboItem(
-        val id: ObjectId,
+        val id: String,
         val name: String,
     ) {
         override fun toString() = name
@@ -767,7 +732,7 @@ class SchedulerWindow(
 
     // Enhanced task info for better display
     data class EnhancedTaskInfo(
-        val task: ScheduledTaskDocument,
+        val task: ScheduledTaskDto,
         val projectName: String,
         val clientName: String?,
     )
@@ -788,14 +753,14 @@ class SchedulerWindow(
             when (value) {
                 is EnhancedTaskInfo -> {
                     val task = value.task
-                    val scheduledTime = task.scheduledAt.atZone(ZoneId.systemDefault()).format(dateFormatter)
+                    val scheduledTime = task.scheduledAt
                     val status =
                         when (task.status) {
-                            ScheduledTaskDocument.ScheduledTaskStatus.PENDING -> "Čekající"
-                            ScheduledTaskDocument.ScheduledTaskStatus.RUNNING -> "Běží"
-                            ScheduledTaskDocument.ScheduledTaskStatus.COMPLETED -> "Dokončeno"
-                            ScheduledTaskDocument.ScheduledTaskStatus.FAILED -> "Selhalo"
-                            ScheduledTaskDocument.ScheduledTaskStatus.CANCELLED -> "Zrušeno"
+                            ScheduledTaskStatus.PENDING -> "Čekající"
+                            ScheduledTaskStatus.RUNNING -> "Běží"
+                            ScheduledTaskStatus.COMPLETED -> "Dokončeno"
+                            ScheduledTaskStatus.FAILED -> "Selhalo"
+                            ScheduledTaskStatus.CANCELLED -> "Zrušeno"
                         }
 
                     val clientInfo = value.clientName?.let { "Klient: $it" } ?: ""
@@ -820,37 +785,37 @@ class SchedulerWindow(
 
                     // Color coding based on status
                     when (task.status) {
-                        ScheduledTaskDocument.ScheduledTaskStatus.RUNNING -> foreground = java.awt.Color.BLUE
-                        ScheduledTaskDocument.ScheduledTaskStatus.FAILED -> foreground = java.awt.Color.RED
-                        ScheduledTaskDocument.ScheduledTaskStatus.CANCELLED -> {
+                        ScheduledTaskStatus.RUNNING -> foreground = java.awt.Color.BLUE
+                        ScheduledTaskStatus.FAILED -> foreground = java.awt.Color.RED
+                        ScheduledTaskStatus.CANCELLED -> {
                             foreground = java.awt.Color.GRAY
                         }
 
-                        ScheduledTaskDocument.ScheduledTaskStatus.COMPLETED ->
+                        ScheduledTaskStatus.COMPLETED ->
                             foreground =
                                 java.awt.Color(0, 128, 0) // Dark green
                         else -> foreground = if (isSelected) list?.selectionForeground else list?.foreground
                     }
                 }
 
-                is ScheduledTaskDocument -> {
+                is ScheduledTaskDto -> {
                     // Fallback for backward compatibility
-                    val scheduledTime = value.scheduledAt.atZone(ZoneId.systemDefault()).format(dateFormatter)
+                    val scheduledTime = value.scheduledAt
                     val status =
                         when (value.status) {
-                            ScheduledTaskDocument.ScheduledTaskStatus.PENDING -> "Čekající"
-                            ScheduledTaskDocument.ScheduledTaskStatus.RUNNING -> "Běží"
-                            ScheduledTaskDocument.ScheduledTaskStatus.COMPLETED -> "Dokončeno"
-                            ScheduledTaskDocument.ScheduledTaskStatus.FAILED -> "Selhalo"
-                            ScheduledTaskDocument.ScheduledTaskStatus.CANCELLED -> "Zrušeno"
+                            ScheduledTaskStatus.PENDING -> "Čekající"
+                            ScheduledTaskStatus.RUNNING -> "Běží"
+                            ScheduledTaskStatus.COMPLETED -> "Dokončeno"
+                            ScheduledTaskStatus.FAILED -> "Selhalo"
+                            ScheduledTaskStatus.CANCELLED -> "Zrušeno"
                         }
 
                     text = "${value.taskName} - $status ($scheduledTime)"
 
                     when (value.status) {
-                        ScheduledTaskDocument.ScheduledTaskStatus.RUNNING -> foreground = java.awt.Color.BLUE
-                        ScheduledTaskDocument.ScheduledTaskStatus.FAILED -> foreground = java.awt.Color.RED
-                        ScheduledTaskDocument.ScheduledTaskStatus.CANCELLED -> foreground = java.awt.Color.GRAY
+                        ScheduledTaskStatus.RUNNING -> foreground = java.awt.Color.BLUE
+                        ScheduledTaskStatus.FAILED -> foreground = java.awt.Color.RED
+                        ScheduledTaskStatus.CANCELLED -> foreground = java.awt.Color.GRAY
                         else -> foreground = if (isSelected) list?.selectionForeground else list?.foreground
                     }
                 }
@@ -863,7 +828,7 @@ class SchedulerWindow(
     // Task details dialog
     private class TaskDetailsDialog(
         parent: JFrame,
-        private val task: ScheduledTaskDocument,
+        private val task: ScheduledTaskDto,
     ) : JDialog(parent, "Detail úkolu", true) {
         init {
             setupUI()
@@ -881,7 +846,7 @@ class SchedulerWindow(
             gbc.insets = Insets(5, 5, 5, 5)
             gbc.anchor = GridBagConstraints.WEST
 
-            val dateFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss")
+            DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss")
 
             // Add task details
             addRow(panel, gbc, 0, "Název:", task.taskName)
@@ -892,15 +857,14 @@ class SchedulerWindow(
                 gbc,
                 3,
                 "Naplánováno na:",
-                task.scheduledAt.atZone(ZoneId.systemDefault()).format(dateFormatter),
+                task.scheduledAt.toString(),
             )
-            addRow(panel, gbc, 4, "Vytvořeno:", task.createdAt.atZone(ZoneId.systemDefault()).format(dateFormatter))
             addRow(panel, gbc, 5, "Vytvořil:", task.createdBy)
             addRow(panel, gbc, 6, "Priorita:", task.priority.toString())
             addRow(panel, gbc, 7, "Pokusů:", "${task.retryCount}/${task.maxRetries}")
 
             if (task.errorMessage != null) {
-                addRow(panel, gbc, 8, "Chyba:", task.errorMessage)
+                addRow(panel, gbc, 8, "Chyba:", task.errorMessage ?: "")
             }
 
             add(panel, BorderLayout.CENTER)

@@ -1,14 +1,13 @@
 package com.jervis.dto
 
+import com.jervis.common.Constants
 import com.jervis.domain.language.Language
-import com.jervis.domain.project.IndexingRules
-import com.jervis.domain.project.ProjectOverrides
 import kotlinx.serialization.Serializable
 
 @Serializable
 data class ProjectDto(
-    val id: String,
-    val clientId: String,
+    val id: String = Constants.GLOBAL_ID_STRING,
+    val clientId: String?,
     val name: String,
     val description: String? = null,
     val shortDescription: String? = null,
@@ -20,12 +19,10 @@ data class ProjectDto(
     val extraUrls: List<String> = emptyList(),
     val credentialsRef: String? = null,
     val defaultBranch: String = "main",
-    val overrides: ProjectOverrides = ProjectOverrides(),
+    val overrides: ProjectOverridesDto = ProjectOverridesDto(),
     val inspirationOnly: Boolean = false,
-    val indexingRules: IndexingRules = IndexingRules(),
+    val indexingRules: IndexingRulesDto = IndexingRulesDto(),
     val dependsOnProjects: List<String> = emptyList(),
     val isDisabled: Boolean = false,
     val isActive: Boolean = false,
-    val createdAt: String,
-    val updatedAt: String,
 )
