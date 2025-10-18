@@ -1,13 +1,13 @@
 package com.jervis.service.scheduling
 
 import com.jervis.domain.task.ScheduledTaskStatus
-import com.jervis.dto.ChatRequestContext
 import com.jervis.entity.mongo.ScheduledTaskDocument
 import com.jervis.repository.mongo.ProjectMongoRepository
 import com.jervis.repository.mongo.ScheduledTaskMongoRepository
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.client.ClientService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -27,7 +27,7 @@ class TaskSchedulingService(
     private val agentOrchestratorService: AgentOrchestratorService,
     private val clientService: ClientService,
     private val taskManagementService: TaskManagementService,
-) : com.jervis.service.ITaskSchedulingService {
+) {
     companion object {
         private val logger = KotlinLogging.logger {}
         private const val STUCK_TASK_TIMEOUT_HOURS = 6L
@@ -36,7 +36,7 @@ class TaskSchedulingService(
     /**
      * Schedule a new task
      */
-    override suspend fun scheduleTask(
+    suspend fun scheduleTask(
         projectId: ObjectId,
         taskInstruction: String,
         taskName: String,
@@ -103,20 +103,15 @@ class TaskSchedulingService(
                     project.clientId
                         ?: throw IllegalStateException("Project ${project.name} has no associated client")
 
-                clientService.getClientById(clientId)
-                    ?: throw IllegalStateException("Client not found: $clientId")
-
-                // Create ChatRequestContext for the task
-                val chatRequestContext =
-                    ChatRequestContext(
+                // Execute task through AgentOrchestratorService using ObjectId-based context
+                val response =
+                    agentOrchestratorService.handle(
+                        text = task.taskInstruction,
                         clientId = clientId,
                         projectId = project.id,
                         quick = task.taskParameters["quick"]?.toBoolean() ?: false,
-                        existingContextId = null, // Always create new context for scheduled tasks
+                        existingContextId = null,
                     )
-
-                // Execute task through AgentOrchestratorService using the task instruction
-                val response = agentOrchestratorService.handle(task.taskInstruction, chatRequestContext)
 
                 logger.info {
                     "Task completed successfully: ${task.taskName}. " +
@@ -188,5 +183,14 @@ class TaskSchedulingService(
     /**
      * Cancel a task
      */
-    override suspend fun cancelTask(taskId: ObjectId): Boolean = taskManagementService.cancelTask(taskId)
+    suspend fun cancelTask(taskId: ObjectId): Boolean = taskManagementService.cancelTask(taskId)
+
+    suspend fun findById(taskId: ObjectId): ScheduledTaskDocument? = scheduledTaskRepository.findById(taskId)
+
+    suspend fun listAllTasks(): List<ScheduledTaskDocument> = scheduledTaskRepository.findAll().toList()
+
+    suspend fun listTasksForProject(projectId: ObjectId): List<ScheduledTaskDocument> =
+        scheduledTaskRepository.findByProjectId(projectId).toList()
+
+    suspend fun listPendingTasks(): List<ScheduledTaskDocument> = scheduledTaskRepository.findByStatus(ScheduledTaskStatus.PENDING).toList()
 }

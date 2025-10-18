@@ -12,8 +12,6 @@ fun ClientProjectLinkDocument.toDto(): ClientProjectLinkDto =
         isDisabled = this.isDisabled,
         anonymizationEnabled = this.anonymizationEnabled,
         historical = this.historical,
-        createdAt = this.createdAt.toString(),
-        updatedAt = this.updatedAt.toString(),
     )
 
 fun ClientProjectLinkDto.toDocument(): ClientProjectLinkDocument =

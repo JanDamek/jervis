@@ -1,7 +1,7 @@
 package com.jervis.controller
 
 import com.jervis.dto.ClientProjectLinkDto
-import com.jervis.service.IClientProjectLinkService
+import com.jervis.service.client.ClientProjectLinkService
 import org.bson.types.ObjectId
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController
 @RestController
 @RequestMapping("/api/client-project-links")
 class ClientProjectLinkRestController(
-    private val linkService: IClientProjectLinkService,
+    private val linkService: ClientProjectLinkService,
 ) {
     @GetMapping("/client/{clientId}")
     suspend fun listForClient(

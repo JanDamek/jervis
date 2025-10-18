@@ -8,7 +8,6 @@ import com.jervis.dto.ChatRequestContext
 import com.jervis.dto.ChatResponse
 import com.jervis.entity.mongo.PlanDocument
 import com.jervis.repository.mongo.PlanMongoRepository
-import com.jervis.service.IAgentOrchestratorService
 import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.agent.execution.PlanExecutor
 import com.jervis.service.agent.finalizer.Finalizer
@@ -34,20 +33,36 @@ class AgentOrchestratorService(
     private val planner: Planner,
     private val planMongoRepository: PlanMongoRepository,
     private val stepNotificationService: com.jervis.service.notification.StepNotificationService,
-) : IAgentOrchestratorService {
+) {
     private val logger = KotlinLogging.logger {}
 
-    override suspend fun handle(
+    suspend fun handle(
         text: String,
         ctx: ChatRequestContext,
     ): ChatResponse {
-        logger.info { "AGENT_START: Handling query for client='${ctx.clientId}', project='${ctx.projectId}'" }
+        return handle(
+            text = text,
+            clientId = org.bson.types.ObjectId(ctx.clientId),
+            projectId = org.bson.types.ObjectId(ctx.projectId),
+            quick = ctx.quick,
+            existingContextId = ctx.existingContextId?.let { org.bson.types.ObjectId(it) },
+        )
+    }
+
+    suspend fun handle(
+        text: String,
+        clientId: org.bson.types.ObjectId,
+        projectId: org.bson.types.ObjectId,
+        quick: Boolean = false,
+        existingContextId: org.bson.types.ObjectId? = null,
+    ): ChatResponse {
+        logger.info { "AGENT_START: Handling query for client='${clientId.toHexString()}', project='${projectId.toHexString()}'" }
 
         try {
             val detectionResult =
                 languageOrchestrator.translate(
                     text = text,
-                    quick = ctx.quick,
+                    quick = quick,
                 )
 
             val contextName =
@@ -55,20 +70,18 @@ class AgentOrchestratorService(
                     text.take(50).trim().ifBlank { "New Context" }
                 }
 
-            val existingId = ctx.existingContextId
             val context =
-                if (existingId != null) {
-                    taskContextService.findById(existingId)?.apply {
+                if (existingContextId != null) {
+                    taskContextService.findById(existingContextId)?.apply {
                         if (this.name == "New Context") {
                             this.name = contextName
                         }
-                    }
-                        ?: throw IllegalArgumentException("Context with ID $existingId not found")
+                    } ?: throw IllegalArgumentException("Context with ID $existingContextId not found")
                 } else {
                     taskContextService.create(
-                        clientId = ctx.clientId,
-                        projectId = ctx.projectId,
-                        quick = ctx.quick,
+                        clientId = clientId,
+                        projectId = projectId,
+                        quick = quick,
                         contextName = contextName,
                     )
                 }
@@ -184,7 +197,8 @@ class AgentOrchestratorService(
             logger.debug { "AGENT_FINAL_RESPONSE: \"${response.message}\"" }
             return response
         } catch (e: Exception) {
-            logger.error(e) { "AGENT_ERROR: Error handling query for client='${ctx.clientId}', project='${ctx.projectId}': ${e.message}" }
+            logger.error(e) {
+                "AGENT_ERROR: Error handling query for client='${clientId.toHexString()}', project='${projectId.toHexString()}': ${e.message}" }
             throw e
         }
     }
@@ -201,7 +215,7 @@ class AgentOrchestratorService(
                     PlanStep(
                         id = ObjectId.get(),
                         order = index,
-                        stepToolName = PromptTypeEnum.KNOWLEDGE_SEARCH_TOOL.name,
+                        stepToolName = PromptTypeEnum.KNOWLEDGE_SEARCH_TOOL,
                         stepInstruction = query,
                         planId = plan.id,
                         contextId = context.id,

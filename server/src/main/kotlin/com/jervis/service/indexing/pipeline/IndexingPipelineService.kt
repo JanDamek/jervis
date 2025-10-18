@@ -4,7 +4,6 @@ import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
-import com.jervis.domain.rag.SymbolType
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.entity.mongo.RagIndexingStatusDocument
 import com.jervis.repository.vector.VectorStorageRepository
@@ -767,7 +766,6 @@ class IndexingPipelineService(
                     clientId = project.clientId,
                     ragSourceType = RagSourceType.JOERN,
                     summary = item.content,
-                    path = symbol.filePath,
                     language = symbol.language,
                     className = symbol.parentClass,
                     methodName = symbol.name,
@@ -775,7 +773,6 @@ class IndexingPipelineService(
                     lineStart = symbol.lineStart,
                     lineEnd = symbol.lineEnd,
                     joernNodeId = symbol.nodeId,
-                    symbolType = SymbolType.METHOD,
                     chunkId = item.chunkIndex,
                     chunkOf = item.totalChunks,
                     gitCommitHash = "current",
@@ -788,14 +785,12 @@ class IndexingPipelineService(
                     clientId = project.clientId,
                     ragSourceType = RagSourceType.JOERN,
                     summary = item.content,
-                    path = symbol.filePath,
                     language = symbol.language,
                     parentClass = symbol.parentClass,
                     className = symbol.name,
                     symbolName = symbol.name,
                     lineStart = symbol.lineStart,
                     joernNodeId = symbol.nodeId,
-                    symbolType = SymbolType.CLASS,
                     chunkId = item.chunkIndex,
                     chunkOf = item.totalChunks,
                     gitCommitHash = "current",
@@ -808,7 +803,6 @@ class IndexingPipelineService(
                     clientId = project.clientId,
                     ragSourceType = RagSourceType.JOERN,
                     summary = item.content,
-                    path = symbol.filePath,
                     language = symbol.language,
                     symbolName = symbol.name,
                     joernNodeId = symbol.nodeId,
@@ -876,11 +870,12 @@ class IndexingPipelineService(
     ) {
         // Use safe ID-based deletion via RagIndexingStatusService
         val gitCommitHash = "current" // TODO: supply real commit hash from context
-        val deleted = ragIndexingStatusService.deleteOldEmbeddings(
-            projectId = project.id,
-            filePath = filePath,
-            gitCommitHash = gitCommitHash,
-        )
+        val deleted =
+            ragIndexingStatusService.deleteOldEmbeddings(
+                projectId = project.id,
+                filePath = filePath,
+                gitCommitHash = gitCommitHash,
+            )
         logger.info { "PIPELINE_CLEANUP: Deleted old vectors for $filePath using ID-based deletion (count=$deleted)" }
     }
 

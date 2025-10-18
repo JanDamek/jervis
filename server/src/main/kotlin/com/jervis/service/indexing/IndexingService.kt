@@ -5,10 +5,14 @@ import com.jervis.domain.model.ModelType
 import com.jervis.domain.project.IndexingRules
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
+import com.jervis.dto.ProjectDto
 import com.jervis.entity.mongo.ProjectDocument
+import com.jervis.mapper.toDocument
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.indexing.monitoring.IndexingMonitorService
+import com.jervis.service.indexing.monitoring.IndexingStepStatus
+import com.jervis.service.indexing.monitoring.IndexingStepType
 import com.jervis.service.indexing.pipeline.IndexingPipelineService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -55,52 +59,64 @@ class IndexingService(
     /**
      * Comprehensive project indexing using streaming pipeline architecture
      */
-    override suspend fun indexProject(project: ProjectDocument): IndexingResult =
+    override suspend fun indexProject(project: ProjectDto): Any =
         withContext(Dispatchers.Default) {
+            val projectDocument = project.toDocument()
             try {
-                logger.info { "Starting PIPELINE indexing for project: ${project.name}" }
+                logger.info { "Starting PIPELINE indexing for project: ${projectDocument.name}" }
 
                 // Start project indexing monitoring
-                indexingMonitorService.startProjectIndexing(project.id, project.name)
+                indexingMonitorService.startProjectIndexing(projectDocument.id, projectDocument.name)
 
-                val projectPath = Paths.get(project.projectPath)
+                if (projectDocument.projectPath == null) {
+                    logger.error { "Project path is not configured for project: ${projectDocument.name}" }
+                    indexingMonitorService.failProjectIndexing(
+                        projectDocument.id,
+                        "Project path is not configured for project: ${projectDocument.name}",
+                    )
+                    return@withContext IndexingResult(0, 0, 1, "PIPELINE_COMPREHENSIVE")
+                }
+
+                val projectPath = Paths.get(projectDocument.projectPath)
 
                 if (!Files.exists(projectPath)) {
-                    logger.error { "Project path does not exist: ${project.projectPath}" }
+                    logger.error { "Project path does not exist: ${projectDocument.projectPath}" }
                     indexingMonitorService.failProjectIndexing(
-                        project.id,
-                        "Project path does not exist: ${project.projectPath}",
+                        projectDocument.id,
+                        "Project path does not exist: ${projectDocument.projectPath}",
                     )
                     return@withContext IndexingResult(0, 0, 1, "PIPELINE_COMPREHENSIVE")
                 }
 
                 // Mark existing documents as historical to prevent duplication in RAG
-                logger.info { "Marking existing documents as historical for project: ${project.name}" }
+                logger.info { "Marking existing documents as historical for project: ${projectDocument.name}" }
                 try {
                     val gitCommitHash = historicalVersioningService.getCurrentGitCommitHash(projectPath)
                     val versioningResult =
-                        historicalVersioningService.markProjectDocumentsAsHistorical(project.id, gitCommitHash)
+                        historicalVersioningService.markProjectDocumentsAsHistorical(projectDocument.id, gitCommitHash)
                     logger.info {
-                        "Historical versioning completed for project: ${project.name} - " +
+                        "Historical versioning completed for project: ${projectDocument.name} - " +
                             "Marked historical: ${versioningResult.markedHistorical}, " +
                             "Preserved: ${versioningResult.preserved}, " +
                             "Errors: ${versioningResult.errors}"
                     }
                 } catch (e: Exception) {
-                    logger.warn(e) { "Failed to mark documents as historical for project: ${project.name}, continuing with indexing" }
+                    logger.warn(
+                        e,
+                    ) { "Failed to mark documents as historical for project: ${projectDocument.name}, continuing with indexing" }
                 }
 
                 // PHASE 1: Primary Joern Pipeline (sequential)
-                logger.info { "PHASE 1: Starting Joern pipeline for project: ${project.name}" }
-                val joernResult = indexingPipelineService.indexProjectWithPipeline(project, projectPath)
+                logger.info { "PHASE 1: Starting Joern pipeline for project: ${projectDocument.name}" }
+                val joernResult = indexingPipelineService.indexProjectWithPipeline(projectDocument, projectPath)
 
                 // PHASE 2: Fallback Pipeline for files not processed by Joern (sequential)
-                logger.info { "PHASE 2: Starting fallback pipeline for non-Joern files in project: ${project.name}" }
-                val joernProcessedFiles = getJoernProcessedFiles(project, projectPath)
-                val fallbackResult = processFallbackFiles(project, projectPath, joernProcessedFiles)
+                logger.info { "PHASE 2: Starting fallback pipeline for non-Joern files in project: ${projectDocument.name}" }
+                val joernProcessedFiles = getJoernProcessedFiles(projectDocument, projectPath)
+                val fallbackResult = processFallbackFiles(projectDocument, projectPath, joernProcessedFiles)
 
                 // PHASE 3: Parallel pipelines for additional content (parallel)
-                logger.info { "PHASE 3: Starting parallel pipelines for additional content in project: ${project.name}" }
+                logger.info { "PHASE 3: Starting parallel pipelines for additional content in project: ${projectDocument.name}" }
                 val parallelTasks = mutableListOf<kotlinx.coroutines.Deferred<Any>>()
 
                 // Git history pipeline
@@ -108,27 +124,36 @@ class IndexingService(
                     async {
                         try {
                             indexingMonitorService.updateStepProgress(
-                                project.id,
-                                com.jervis.service.indexing.monitoring.IndexingStepType.GIT_HISTORY,
-                                com.jervis.service.indexing.monitoring.IndexingStepStatus.RUNNING,
+                                projectDocument.id,
+                                IndexingStepType.GIT_HISTORY,
+                                IndexingStepStatus.RUNNING,
+                                progress = null,
                                 message = "Indexing git history",
+                                errorMessage = null,
+                                logs = emptyList(),
                             )
-                            val result = gitHistoryIndexingService.indexGitHistory(project, projectPath)
+                            val result = gitHistoryIndexingService.indexGitHistory(projectDocument, projectPath)
                             indexingMonitorService.updateStepProgress(
-                                project.id,
-                                com.jervis.service.indexing.monitoring.IndexingStepType.GIT_HISTORY,
-                                com.jervis.service.indexing.monitoring.IndexingStepStatus.COMPLETED,
+                                projectDocument.id,
+                                IndexingStepType.GIT_HISTORY,
+                                IndexingStepStatus.COMPLETED,
+                                progress = null,
                                 message =
                                     "Git history indexed (processed=${result.processedCommits}, " +
                                         "skipped=${result.skippedCommits}, errors=${result.errorCommits})",
+                                errorMessage = null,
+                                logs = emptyList(),
                             )
                             result
                         } catch (e: Exception) {
                             indexingMonitorService.updateStepProgress(
-                                project.id,
-                                com.jervis.service.indexing.monitoring.IndexingStepType.GIT_HISTORY,
-                                com.jervis.service.indexing.monitoring.IndexingStepStatus.FAILED,
+                                projectDocument.id,
+                                IndexingStepType.GIT_HISTORY,
+                                IndexingStepStatus.FAILED,
+                                progress = null,
+                                message = null,
                                 errorMessage = "Git history failed: ${e.message}",
+                                logs = emptyList(),
                             )
                             throw e
                         }
@@ -139,16 +164,16 @@ class IndexingService(
                     async {
                         try {
                             indexingMonitorService.updateStepProgress(
-                                project.id,
-                                com.jervis.service.indexing.monitoring.IndexingStepType.DOCUMENTATION,
-                                com.jervis.service.indexing.monitoring.IndexingStepStatus.RUNNING,
+                                projectDocument.id,
+                                IndexingStepType.DOCUMENTATION,
+                                IndexingStepStatus.RUNNING,
                                 message = "Indexing all project documents (documentation and meetings)",
                             )
-                            val result = documentIndexingService.indexProjectDocuments(project)
+                            val result = documentIndexingService.indexProjectDocuments(projectDocument)
                             indexingMonitorService.updateStepProgress(
-                                project.id,
-                                com.jervis.service.indexing.monitoring.IndexingStepType.DOCUMENTATION,
-                                com.jervis.service.indexing.monitoring.IndexingStepStatus.COMPLETED,
+                                projectDocument.id,
+                                IndexingStepType.DOCUMENTATION,
+                                IndexingStepStatus.COMPLETED,
                                 message =
                                     "All documents indexed (processed=${result.processedDocuments}, " +
                                         "skipped=${result.skippedDocuments}, errors=${result.errorDocuments})",
@@ -156,9 +181,9 @@ class IndexingService(
                             result
                         } catch (e: Exception) {
                             indexingMonitorService.updateStepProgress(
-                                project.id,
-                                com.jervis.service.indexing.monitoring.IndexingStepType.DOCUMENTATION,
-                                com.jervis.service.indexing.monitoring.IndexingStepStatus.FAILED,
+                                projectDocument.id,
+                                IndexingStepType.DOCUMENTATION,
+                                IndexingStepStatus.FAILED,
                                 errorMessage = "Unified document indexing failed: ${e.message}",
                             )
                             throw e
@@ -170,23 +195,23 @@ class IndexingService(
                     async {
                         try {
                             indexingMonitorService.updateStepProgress(
-                                project.id,
-                                com.jervis.service.indexing.monitoring.IndexingStepType.COMPREHENSIVE_FILES,
-                                com.jervis.service.indexing.monitoring.IndexingStepStatus.RUNNING,
+                                projectDocument.id,
+                                IndexingStepType.COMPREHENSIVE_FILES,
+                                IndexingStepStatus.RUNNING,
                                 message = "Indexing files with comprehensive LLM analysis",
                             )
-                            fileLevelIndexingService.indexProjectFiles(project, projectPath)
+                            fileLevelIndexingService.indexProjectFiles(projectDocument, projectPath)
                             indexingMonitorService.updateStepProgress(
-                                project.id,
-                                com.jervis.service.indexing.monitoring.IndexingStepType.COMPREHENSIVE_FILES,
-                                com.jervis.service.indexing.monitoring.IndexingStepStatus.COMPLETED,
+                                projectDocument.id,
+                                IndexingStepType.COMPREHENSIVE_FILES,
+                                IndexingStepStatus.COMPLETED,
                                 message = "File-level indexing completed",
                             )
                         } catch (e: Exception) {
                             indexingMonitorService.updateStepProgress(
-                                project.id,
-                                com.jervis.service.indexing.monitoring.IndexingStepType.COMPREHENSIVE_FILES,
-                                com.jervis.service.indexing.monitoring.IndexingStepStatus.FAILED,
+                                projectDocument.id,
+                                IndexingStepType.COMPREHENSIVE_FILES,
+                                IndexingStepStatus.FAILED,
                                 errorMessage = "File-level indexing failed: ${e.message}",
                             )
                             throw e
@@ -198,7 +223,7 @@ class IndexingService(
                 val results = listOf(joernResult, fallbackResult) + parallelResults
 
                 // Complete project indexing monitoring
-                indexingMonitorService.completeProjectIndexing(project.id)
+                indexingMonitorService.completeProjectIndexing(projectDocument.id)
 
                 // Convert main pipeline result to IndexingResult for return value
                 val pipelineResult =
@@ -215,10 +240,10 @@ class IndexingService(
                     operationType = "PIPELINE_COMPREHENSIVE",
                 )
             } catch (e: Exception) {
-                logger.error(e) { "Pipeline indexing failed for project: ${project.name}" }
+                logger.error(e) { "Pipeline indexing failed for project: ${projectDocument.name}" }
 
                 // Fail project indexing monitoring
-                indexingMonitorService.failProjectIndexing(project.id, "Pipeline indexing failed: ${e.message}")
+                indexingMonitorService.failProjectIndexing(projectDocument.id, "Pipeline indexing failed: ${e.message}")
 
                 IndexingResult(0, 0, 1, "PIPELINE_COMPREHENSIVE")
             }
@@ -236,7 +261,7 @@ class IndexingService(
      * Index all projects in the system with sequential execution
      * Projects are processed one by one to avoid resource contention and ensure stable processing
      */
-    override suspend fun indexAllProjects(projects: List<ProjectDocument>) =
+    override suspend fun indexAllProjects(projects: List<ProjectDto>) =
         withContext(Dispatchers.Default) {
             logger.info { "Starting sequential indexing for all ${projects.size} projects" }
 
@@ -256,7 +281,7 @@ class IndexingService(
                     indexProject(project)
 
                     // Collect client IDs for later batch update (don't update individually)
-                    project.clientId.let { clientId ->
+                    org.bson.types.ObjectId(project.clientId).let { clientId ->
                         processedClientIds.add(clientId)
                     }
 
@@ -272,12 +297,12 @@ class IndexingService(
             for (clientId in processedClientIds) {
                 try {
                     // Find a project from this client to get project context for monitoring
-                    val clientProject = enabledProjects.find { it.clientId == clientId }
+                    val clientProject = enabledProjects.find { it.clientId == clientId.toHexString() }
                     if (clientProject != null) {
                         indexingMonitorService.updateStepProgress(
-                            clientProject.id,
-                            com.jervis.service.indexing.monitoring.IndexingStepType.CLIENT_UPDATE,
-                            com.jervis.service.indexing.monitoring.IndexingStepStatus.RUNNING,
+                            org.bson.types.ObjectId(clientProject.id),
+                            IndexingStepType.CLIENT_UPDATE,
+                            IndexingStepStatus.RUNNING,
                             message = "Updating client descriptions for client ID: $clientId",
                             logs = listOf("Starting client description update for client ID: $clientId"),
                         )
@@ -287,9 +312,9 @@ class IndexingService(
 
                     if (clientProject != null) {
                         indexingMonitorService.updateStepProgress(
-                            clientProject.id,
-                            com.jervis.service.indexing.monitoring.IndexingStepType.CLIENT_UPDATE,
-                            com.jervis.service.indexing.monitoring.IndexingStepStatus.COMPLETED,
+                            org.bson.types.ObjectId(clientProject.id),
+                            IndexingStepType.CLIENT_UPDATE,
+                            IndexingStepStatus.COMPLETED,
                             message = "Updated client descriptions (${result.projectCount} projects processed)",
                             logs =
                                 listOf(
@@ -304,12 +329,12 @@ class IndexingService(
                     logger.info { "Updated client descriptions for clientId: $clientId" }
                 } catch (e: Exception) {
                     // Find a project from this client to report the failure
-                    val clientProject = enabledProjects.find { it.clientId == clientId }
+                    val clientProject = enabledProjects.find { it.clientId == clientId.toHexString() }
                     if (clientProject != null) {
                         indexingMonitorService.updateStepProgress(
-                            clientProject.id,
-                            com.jervis.service.indexing.monitoring.IndexingStepType.CLIENT_UPDATE,
-                            com.jervis.service.indexing.monitoring.IndexingStepStatus.FAILED,
+                            org.bson.types.ObjectId(clientProject.id),
+                            IndexingStepType.CLIENT_UPDATE,
+                            IndexingStepStatus.FAILED,
                             errorMessage = "Failed to update client descriptions: ${e.message}",
                             logs = listOf("Error updating client descriptions: ${e.message}"),
                         )
@@ -329,7 +354,7 @@ class IndexingService(
      * Projects are processed one by one to avoid resource contention and ensure stable processing
      */
     override suspend fun indexProjectsForClient(
-        projects: List<ProjectDocument>,
+        projects: List<ProjectDto>,
         clientName: String,
     ) = withContext(Dispatchers.Default) {
         logger.info { "Starting sequential indexing for client '$clientName' with ${projects.size} projects" }
@@ -350,8 +375,8 @@ class IndexingService(
                 indexProject(project)
 
                 // Store clientId for later client description update
-                if (clientId == null && project.clientId != GLOBAL_ID) {
-                    clientId = project.clientId
+                if (clientId == null && org.bson.types.ObjectId(project.clientId) != GLOBAL_ID) {
+                    clientId = org.bson.types.ObjectId(project.clientId)
                 }
 
                 logger.info { "Successfully indexed project: ${project.name} (client: $clientName)" }
@@ -366,12 +391,12 @@ class IndexingService(
         clientId?.let { id ->
             try {
                 // Find a representative project from this client for monitoring context
-                val clientProject = enabledProjects.find { it.clientId == id }
+                val clientProject = enabledProjects.find { it.clientId == id.toHexString() }
                 if (clientProject != null) {
                     indexingMonitorService.updateStepProgress(
-                        clientProject.id,
-                        com.jervis.service.indexing.monitoring.IndexingStepType.CLIENT_UPDATE,
-                        com.jervis.service.indexing.monitoring.IndexingStepStatus.RUNNING,
+                        org.bson.types.ObjectId(clientProject.id),
+                        IndexingStepType.CLIENT_UPDATE,
+                        IndexingStepStatus.RUNNING,
                         message = "Updating client descriptions for '$clientName'",
                         logs = listOf("Starting client description update for client: $clientName"),
                     )
@@ -381,9 +406,9 @@ class IndexingService(
 
                 if (clientProject != null) {
                     indexingMonitorService.updateStepProgress(
-                        clientProject.id,
-                        com.jervis.service.indexing.monitoring.IndexingStepType.CLIENT_UPDATE,
-                        com.jervis.service.indexing.monitoring.IndexingStepStatus.COMPLETED,
+                        org.bson.types.ObjectId(clientProject.id),
+                        IndexingStepType.CLIENT_UPDATE,
+                        IndexingStepStatus.COMPLETED,
                         message = "Updated descriptions for '$clientName' (${result.projectCount} projects)",
                         logs =
                             listOf(
@@ -398,12 +423,12 @@ class IndexingService(
                 logger.info { "Updated client descriptions for client: $clientName" }
             } catch (e: Exception) {
                 // Find a representative project from this client to report the failure
-                val clientProject = enabledProjects.find { it.clientId == id }
+                val clientProject = enabledProjects.find { it.clientId == id.toHexString() }
                 if (clientProject != null) {
                     indexingMonitorService.updateStepProgress(
-                        clientProject.id,
-                        com.jervis.service.indexing.monitoring.IndexingStepType.CLIENT_UPDATE,
-                        com.jervis.service.indexing.monitoring.IndexingStepStatus.FAILED,
+                        org.bson.types.ObjectId(clientProject.id),
+                        IndexingStepType.CLIENT_UPDATE,
+                        IndexingStepStatus.FAILED,
                         errorMessage = "Failed to update client descriptions for '$clientName': ${e.message}",
                         logs = listOf("Error updating client descriptions for $clientName: ${e.message}"),
                     )
@@ -604,7 +629,7 @@ class IndexingService(
         gitCommitHash: String?,
     ) {
         val content = Files.readString(filePath)
-        val relativePath = projectPath.relativize(filePath).toString()
+        projectPath.relativize(filePath).toString()
 
         val ragDocument =
             RagDocument(
@@ -612,7 +637,6 @@ class IndexingService(
                 clientId = project.clientId,
                 ragSourceType = RagSourceType.TEXT_CONTENT,
                 summary = "Configuration file: ${filePath.fileName}",
-                path = relativePath,
                 language = filePath.toString().substringAfterLast('.', ""),
                 gitCommitHash = gitCommitHash,
             )
@@ -631,7 +655,7 @@ class IndexingService(
         gitCommitHash: String?,
     ) {
         val content = Files.readString(filePath)
-        val relativePath = projectPath.relativize(filePath).toString()
+        projectPath.relativize(filePath).toString()
 
         val ragDocument =
             RagDocument(
@@ -639,7 +663,6 @@ class IndexingService(
                 clientId = project.clientId,
                 ragSourceType = RagSourceType.DOCUMENTATION,
                 summary = "Documentation: ${filePath.fileName}",
-                path = relativePath,
                 language = filePath.toString().substringAfterLast('.', ""),
                 gitCommitHash = gitCommitHash,
             )
@@ -658,7 +681,7 @@ class IndexingService(
         gitCommitHash: String?,
     ) {
         val content = Files.readString(filePath)
-        val relativePath = projectPath.relativize(filePath).toString()
+        projectPath.relativize(filePath).toString()
 
         val ragDocument =
             RagDocument(
@@ -666,7 +689,6 @@ class IndexingService(
                 clientId = project.clientId,
                 ragSourceType = RagSourceType.CODE_FALLBACK,
                 summary = "SQL file: ${filePath.fileName}",
-                path = relativePath,
                 language = "sql",
                 gitCommitHash = gitCommitHash,
             )

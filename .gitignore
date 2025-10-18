@@ -16,3 +16,5 @@
 
 # Workspace and temporary analysis files
 /workspace/
+/desktop/logs/
+/server/logs/

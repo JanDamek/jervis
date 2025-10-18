@@ -3,6 +3,7 @@ package com.jervis.service.gateway.clients
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.jervis.configuration.ModelsProperties
+import com.jervis.configuration.prompts.CreativityConfig
 import com.jervis.configuration.prompts.PromptConfigBase
 import com.jervis.configuration.prompts.PromptsConfiguration
 import com.jervis.domain.llm.LlmResponse
@@ -134,7 +135,7 @@ class OllamaClient(
         }
 
     private fun buildOptions(
-        creativityConfig: com.jervis.configuration.prompts.CreativityConfig,
+        creativityConfig: CreativityConfig,
         config: ModelsProperties.ModelDetail,
         estimatedTokens: Int,
     ): Map<String, Any> {

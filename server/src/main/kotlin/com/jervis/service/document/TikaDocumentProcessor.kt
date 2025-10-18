@@ -7,6 +7,9 @@ import mu.KotlinLogging
 import org.apache.tika.exception.TikaException
 import org.apache.tika.metadata.Metadata
 import org.apache.tika.parser.AutoDetectParser
+import org.apache.tika.parser.ParseContext
+import org.apache.tika.parser.ocr.TesseractOCRConfig
+import org.apache.tika.parser.pdf.PDFParserConfig
 import org.apache.tika.sax.BodyContentHandler
 import org.springframework.stereotype.Service
 import java.io.InputStream
@@ -21,9 +24,11 @@ import kotlin.io.path.pathString
 @Service
 class TikaDocumentProcessor(
     private val llmGateway: LlmGateway,
+    private val ocr: com.jervis.configuration.TikaOcrProperties,
 ) {
     private val logger = KotlinLogging.logger {}
     private val parser = AutoDetectParser()
+    private val parseContext: ParseContext by lazy { buildParseContext() }
 
     /**
      * Document processing result with extracted content and metadata
@@ -100,7 +105,10 @@ class TikaDocumentProcessor(
             metadata["resourceName"] = fileName
 
             val handler = BodyContentHandler(-1) // No limit on content length
-            parser.parse(inputStream, handler, metadata)
+
+            // Use OCR-enabled ParseContext when configured
+            val context = parseContext
+            parser.parse(inputStream, handler, metadata, context)
 
             val extractedText = handler.toString()
             val documentMetadata = extractMetadata(metadata, fileName, sourceLocation)
@@ -173,6 +181,63 @@ class TikaDocumentProcessor(
         val text: String,
         val location: SourceLocation,
     )
+
+    private fun buildParseContext(): ParseContext {
+        val ctx = ParseContext()
+        if (!ocr.enabled) return ctx
+
+        val tess = TesseractOCRConfig()
+        // Languages like: eng+ces+spa+slk+fin+nor+dan+pol+deu+hun
+        val langs = ocr.languages.joinToString("+") { it.trim() }.ifBlank { "eng" }
+        try {
+            // Configure Tesseract
+            // Not all Tika versions expose identical setter names; prefer the most common ones.
+            // language
+            try {
+                val m = TesseractOCRConfig::class.java.getMethod("setLanguage", String::class.java)
+                m.invoke(tess, langs)
+            } catch (_: NoSuchMethodException) {
+                try {
+                    val m = TesseractOCRConfig::class.java.getMethod("setTesseractLanguage", String::class.java)
+                    m.invoke(tess, langs)
+                } catch (_: Exception) {
+                    // ignore, rely on defaults
+                }
+            }
+            // timeout in millis or seconds depending on version
+            val timeoutMs = ocr.timeoutMs
+            try {
+                val m = TesseractOCRConfig::class.java.getMethod("setTimeoutMillis", java.lang.Long.TYPE)
+                m.invoke(tess, timeoutMs)
+            } catch (_: NoSuchMethodException) {
+                try {
+                    val m = TesseractOCRConfig::class.java.getMethod("setTimeout", Integer.TYPE)
+                    m.invoke(tess, timeoutMs.toInt())
+                } catch (_: Exception) {
+                    // ignore
+                }
+            }
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to configure TesseractOCRConfig; proceeding with defaults" }
+        }
+
+        // Configure PDF parsing to combine extracted text with OCR results
+        val pdf = PDFParserConfig()
+        try {
+            val enumClass = Class.forName("org.apache.tika.parser.pdf.PDFParserConfig\$OCR_STRATEGY")
+            val ocrAndText = java.lang.Enum.valueOf(enumClass as Class<out Enum<*>>, "OCR_AND_TEXT")
+            val setOcrMethod =
+                PDFParserConfig::class.java.methods.firstOrNull { it.name == "setOcrStrategy" && it.parameterTypes.size == 1 }
+            setOcrMethod?.invoke(pdf, ocrAndText)
+        } catch (e: Exception) {
+            // If OCR_STRATEGY is absent in this Tika version, proceed without explicit strategy
+            logger.debug { "PDFParserConfig OCR_STRATEGY not set explicitly: ${e.message}" }
+        }
+
+        ctx.set(TesseractOCRConfig::class.java, tess)
+        ctx.set(PDFParserConfig::class.java, pdf)
+        return ctx
+    }
 
     /**
      * Extract metadata from Tika Metadata object

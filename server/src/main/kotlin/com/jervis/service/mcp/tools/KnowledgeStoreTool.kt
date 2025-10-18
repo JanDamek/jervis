@@ -106,7 +106,6 @@ class KnowledgeStoreTool(
                 summary = params.content,
                 clientId = context.clientDocument.id,
                 language = null,
-                path = null,
                 packageName = null,
                 className = null,
                 methodName = null,

@@ -8,6 +8,7 @@ import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
+import com.jervis.service.storage.DirectoryStructureService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -24,6 +25,7 @@ class SystemExecuteCommandTool(
     private val llmGateway: LlmGateway,
     private val timeoutsProperties: TimeoutsProperties,
     override val promptRepository: PromptRepository,
+    private val directoryStructureService: DirectoryStructureService,
 ) : McpTool {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -90,7 +92,12 @@ class SystemExecuteCommandTool(
     }
 
     private fun validateWorkingDirectory(context: TaskContext): ToolResult? {
-        val workingDirectory = File(context.projectDocument.projectPath)
+        val workingDirectory =
+            directoryStructureService
+                .getGitDirectory(
+                    context.clientDocument.id,
+                    context.projectDocument.id,
+                ).toFile()
         return when {
             !workingDirectory.exists() -> ToolResult.error("Working directory does not exist: ${workingDirectory.absolutePath}")
             !workingDirectory.isDirectory -> ToolResult.error("Path is not a directory: ${workingDirectory.absolutePath}")
@@ -104,7 +111,12 @@ class SystemExecuteCommandTool(
         params: SystemExecuteCommandParams,
         context: TaskContext,
     ): ToolResult {
-        val workingDirectory = File(context.projectDocument.projectPath)
+        val workingDirectory =
+            directoryStructureService
+                .getGitDirectory(
+                    context.clientDocument.id,
+                    context.projectDocument.id,
+                ).toFile()
         val timeoutSeconds = timeoutsProperties.mcp.terminalToolTimeoutSeconds
 
         return withTimeout(timeoutSeconds.seconds) {

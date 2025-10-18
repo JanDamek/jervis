@@ -7,15 +7,17 @@ import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
+import com.jervis.service.storage.DirectoryStructureService
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.nio.file.Files
-import java.nio.file.Path
+import kotlin.io.path.writeText
 
 @Service
 class CodeModifyTool(
     private val llmGateway: LlmGateway,
+    private val directoryStructureService: DirectoryStructureService,
     override val promptRepository: PromptRepository,
 ) : McpTool {
     companion object {
@@ -69,7 +71,11 @@ class CodeModifyTool(
         params: CodeModifyParams,
         context: TaskContext,
     ): ToolResult {
-        val projectPath = Path.of(context.projectDocument.projectPath)
+        val projectPath =
+            directoryStructureService.getGitDirectory(
+                context.clientDocument.id,
+                context.projectDocument.id,
+            )
         val targetFile = projectPath.resolve(params.targetPath)
 
         // Create parent directories if they don't exist

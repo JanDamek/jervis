@@ -12,7 +12,11 @@ import org.springframework.data.mongodb.repository.config.EnableMongoRepositorie
 
 @SpringBootApplication
 @EnableMongoRepositories(basePackages = ["com.jervis.repository.mongo"])
-@EnableConfigurationProperties(PromptsConfiguration::class, DataRootProperties::class)
+@EnableConfigurationProperties(
+    PromptsConfiguration::class,
+    DataRootProperties::class,
+    com.jervis.configuration.TikaOcrProperties::class,
+)
 @PropertySource(
     value = ["classpath:prompts-tools.yaml", "classpath:prompts-services.yaml"],
     factory = YamlPropertySourceFactory::class,

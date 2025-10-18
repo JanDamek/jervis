@@ -1,7 +1,10 @@
 package com.jervis.controller
 
-import com.jervis.domain.context.TaskContext
-import com.jervis.service.ITaskContextService
+import com.jervis.dto.CreateContextRequestDto
+import com.jervis.dto.TaskContextDto
+import com.jervis.mapper.toDomain
+import com.jervis.mapper.toDto
+import com.jervis.service.agent.context.TaskContextService
 import org.bson.types.ObjectId
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -13,42 +16,68 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
-@RequestMapping("/api/task-context")
+@RequestMapping("/api/task-contexts")
 class TaskContextRestController(
-    private val taskContextService: ITaskContextService,
+    private val taskContextService: TaskContextService,
 ) {
     @PostMapping("/create")
     suspend fun create(
-        @RequestBody request: CreateContextRequest,
-    ): TaskContext =
-        taskContextService.create(
-            clientId = request.clientId,
-            projectId = request.projectId,
-            quick = request.quick,
-            contextName = request.contextName,
-        )
+        @RequestBody requestDto: CreateContextRequestDto,
+    ): TaskContextDto =
+        taskContextService
+            .create(
+                clientId = ObjectId(requestDto.clientId),
+                projectId = ObjectId(requestDto.projectId),
+                quick = requestDto.quick,
+                contextName = requestDto.contextName,
+            ).toDto()
 
     @PostMapping("/save")
     suspend fun save(
-        @RequestBody context: TaskContext,
-    ) {
-        taskContextService.save(context)
+        @RequestBody context: TaskContextDto,
+    ): TaskContextDto {
+        taskContextService.save(context.toDomain())
+        return context
     }
 
     @GetMapping("/{contextId}")
     suspend fun findById(
         @PathVariable contextId: String,
-    ): TaskContext? = taskContextService.findById(ObjectId(contextId))
+    ): TaskContextDto? = taskContextService.findById(ObjectId(contextId))?.toDto()
 
     @GetMapping("/list")
-    suspend fun listFor(
+    suspend fun listForClient(
         @RequestParam clientId: String,
-        @RequestParam(required = false) projectId: String?,
-    ): List<TaskContext> =
-        taskContextService.listFor(
-            ObjectId(clientId),
-            projectId?.let { ObjectId(it) },
-        )
+    ): List<TaskContextDto> =
+        taskContextService
+            .listFor(ObjectId(clientId), null)
+            .map { it.toDto() }
+
+    @GetMapping("/client/{clientId}")
+    suspend fun listForClientPath(
+        @PathVariable clientId: String,
+    ): List<TaskContextDto> =
+        taskContextService
+            .listFor(ObjectId(clientId), null)
+            .map { it.toDto() }
+
+    @GetMapping("/list-for-project")
+    suspend fun listForClientAndProject(
+        @RequestParam clientId: String,
+        @RequestParam projectId: String,
+    ): List<TaskContextDto> =
+        taskContextService
+            .listFor(ObjectId(clientId), ObjectId(projectId))
+            .map { it.toDto() }
+
+    @GetMapping("/client/{clientId}/project/{projectId}")
+    suspend fun listForClientAndProjectPath(
+        @PathVariable clientId: String,
+        @PathVariable projectId: String,
+    ): List<TaskContextDto> =
+        taskContextService
+            .listFor(ObjectId(clientId), ObjectId(projectId))
+            .map { it.toDto() }
 
     @DeleteMapping("/{contextId}")
     suspend fun delete(
@@ -56,11 +85,4 @@ class TaskContextRestController(
     ) {
         taskContextService.delete(ObjectId(contextId))
     }
-
-    data class CreateContextRequest(
-        val clientId: ObjectId,
-        val projectId: ObjectId,
-        val quick: Boolean = false,
-        val contextName: String = "New Context",
-    )
 }

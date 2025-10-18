@@ -63,9 +63,15 @@ class DocumentIndexingService(
         withContext(Dispatchers.IO) {
             logger.info { "Starting unified document indexing for project: ${project.name}" }
 
-            val projectPath = Paths.get(project.projectPath)
+            val projectPathString = project.projectPath
+            if (projectPathString == null) {
+                logger.warn { "Project path not configured for project: ${project.name}" }
+                return@withContext DocumentIndexingResult(0, 0, 1)
+            }
+
+            val projectPath = Paths.get(projectPathString)
             if (!Files.exists(projectPath)) {
-                logger.warn { "Project path does not exist: ${project.projectPath}" }
+                logger.warn { "Project path does not exist: $projectPathString" }
                 return@withContext DocumentIndexingResult(0, 0, 1)
             }
 
@@ -178,7 +184,7 @@ class DocumentIndexingService(
             logger.info { "Starting URL document indexing for ${documentationUrls.size} URLs" }
 
             val gitCommitHash =
-                historicalVersioningService.getCurrentGitCommitHash(Paths.get(project.projectPath))
+                project.projectPath?.let { historicalVersioningService.getCurrentGitCommitHash(Paths.get(it)) }
                     ?: "url-docs-${System.currentTimeMillis()}"
 
             var processedCount = 0
@@ -252,7 +258,6 @@ class DocumentIndexingService(
                     summary = sentence.trim(),
                     ragSourceType = sourceType,
                     language = processingResult.metadata.language ?: documentType,
-                    path = docFile.pathString,
                     gitCommitHash = gitCommitHash,
                     chunkId = index,
                     chunkOf = sentences.size,
@@ -283,7 +288,6 @@ class DocumentIndexingService(
                     clientId = project.clientId,
                     summary = sentence.trim(),
                     ragSourceType = RagSourceType.DOCUMENTATION,
-                    path = url,
                     gitCommitHash = gitCommitHash,
                     chunkId = index,
                     chunkOf = sentences.size,

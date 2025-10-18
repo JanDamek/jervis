@@ -2,7 +2,6 @@ package com.jervis.service.storage
 
 import com.jervis.configuration.DataRootProperties
 import com.jervis.domain.storage.DirectoryStructure
-import com.jervis.service.IDirectoryStructureService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.bson.types.ObjectId
@@ -13,16 +12,16 @@ import java.nio.file.Path
 import java.nio.file.Paths
 
 /**
- * Service implementation for managing the directory structure hierarchy.
+ * Service for managing the directory structure hierarchy (server-internal, domain-first).
  */
 @Service
 class DirectoryStructureService(
     private val dataRootProperties: DataRootProperties,
-) : IDirectoryStructureService {
+) {
     private val logger = LoggerFactory.getLogger(javaClass)
     private val rootPath: Path = Paths.get(dataRootProperties.rootDir)
 
-    override suspend fun ensureProjectDirectories(
+    suspend fun ensureProjectDirectories(
         clientId: ObjectId,
         projectId: ObjectId,
     ) {
@@ -43,7 +42,7 @@ class DirectoryStructureService(
         }
     }
 
-    override suspend fun ensureClientDirectory(clientId: ObjectId) {
+    suspend fun ensureClientDirectory(clientId: ObjectId) {
         withContext(Dispatchers.IO) {
             val clientDir = rootPath.resolve(clientId.toHexString())
             createDirectoryIfNotExists(clientDir)
@@ -52,29 +51,29 @@ class DirectoryStructureService(
         }
     }
 
-    override fun getClientDirectory(clientId: ObjectId): Path = rootPath.resolve(clientId.toHexString())
+    fun getClientDirectory(clientId: ObjectId): Path = rootPath.resolve(clientId.toHexString())
 
-    override fun getProjectDirectory(
+    fun getProjectDirectory(
         clientId: ObjectId,
         projectId: ObjectId,
     ): Path = getClientDirectory(clientId).resolve(projectId.toHexString())
 
-    override fun getGitDirectory(
+    fun getGitDirectory(
         clientId: ObjectId,
         projectId: ObjectId,
     ): Path = getProjectDirectory(clientId, projectId).resolve(DirectoryStructure.GIT_SUBDIR)
 
-    override fun getUploadDirectory(
+    fun getUploadDirectory(
         clientId: ObjectId,
         projectId: ObjectId,
     ): Path = getProjectDirectory(clientId, projectId).resolve(DirectoryStructure.UPLOAD_SUBDIR)
 
-    override fun getMeetingsDirectory(
+    fun getMeetingsDirectory(
         clientId: ObjectId,
         projectId: ObjectId,
     ): Path = getProjectDirectory(clientId, projectId).resolve(DirectoryStructure.MEETINGS_SUBDIR)
 
-    override fun resolveProjectPath(
+    fun resolveProjectPath(
         clientId: ObjectId,
         projectId: ObjectId,
         subdirectory: String,

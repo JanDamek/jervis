@@ -9,6 +9,7 @@ import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
+import com.jervis.service.storage.DirectoryStructureService
 import com.jervis.util.ProcessStreamingUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -21,6 +22,7 @@ class CodeAnalyzeTool(
     private val llmGateway: LlmGateway,
     private val joernAnalysisService: JoernAnalysisService,
     private val timeoutsProperties: TimeoutsProperties,
+    private val directoryStructureService: DirectoryStructureService,
     override val promptRepository: PromptRepository,
 ) : McpTool {
     override val name: PromptTypeEnum = PromptTypeEnum.CODE_ANALYZE_TOOL
@@ -56,14 +58,19 @@ class CodeAnalyzeTool(
     ): ToolResult =
         withContext(Dispatchers.IO) {
             val params = parseTaskDescription(taskDescription, context)
-            val projectDir = File(context.projectDocument.projectPath)
+            val projectPath =
+                directoryStructureService.getGitDirectory(
+                    context.clientDocument.id,
+                    context.projectDocument.id,
+                )
+            val projectDir = projectPath.toFile()
 
             if (!projectDir.exists() || !projectDir.isDirectory) {
                 return@withContext ToolResult.error("Project path does not exist or is not a directory: $projectDir")
             }
 
             try {
-                val allCpgList = joernAnalysisService.ensurePerLanguageCpgs(projectDir.toPath())
+                val allCpgList = joernAnalysisService.ensurePerLanguageCpgs(projectPath)
                 if (allCpgList.isEmpty()) {
                     return@withContext ToolResult.error("No CPG files found in project. Run indexing first to generate CPG files.")
                 }

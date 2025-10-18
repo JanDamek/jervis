@@ -6,7 +6,6 @@ import com.jervis.entity.mongo.ClientDocument
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.mongo.ClientMongoRepository
 import com.jervis.repository.mongo.ProjectMongoRepository
-import com.jervis.service.IClientIndexingService
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.indexing.dto.ClientFullDescriptionResponse
 import com.jervis.service.indexing.dto.ClientShortDescriptionResponse
@@ -29,14 +28,14 @@ class ClientIndexingService(
     private val clientRepository: ClientMongoRepository,
     private val projectRepository: ProjectMongoRepository,
     private val llmGateway: LlmGateway,
-) : IClientIndexingService {
+) {
     private val logger = KotlinLogging.logger {}
 
     /**
      * Update client descriptions by aggregating all project descriptions
      * This should be called whenever any project for the client is reindexed
      */
-    override suspend fun updateClientDescriptions(clientId: ObjectId): ClientDescriptionResult =
+    suspend fun updateClientDescriptions(clientId: ObjectId): ClientDescriptionResult =
         withContext(Dispatchers.Default) {
             try {
                 logger.info { "Updating client descriptions for client: $clientId" }
@@ -170,7 +169,7 @@ class ClientIndexingService(
         shortDescription: String,
     ): String {
         val allLanguages = projects.flatMap { it.languages }.distinct()
-        val projectPaths = projects.map { it.projectPath }.filter { it.isNotBlank() }
+        val projectPaths = projects.mapNotNull { it.projectPath }.filter { it.isNotBlank() }
         val portfolioAnalysis =
             projectDescriptions
                 .mapIndexed { index, desc ->

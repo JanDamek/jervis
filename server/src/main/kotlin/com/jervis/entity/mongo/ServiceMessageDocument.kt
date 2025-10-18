@@ -1,6 +1,6 @@
 package com.jervis.entity.mongo
 
-import com.jervis.dto.ServiceType
+import com.jervis.domain.authentication.ServiceType
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.CompoundIndex

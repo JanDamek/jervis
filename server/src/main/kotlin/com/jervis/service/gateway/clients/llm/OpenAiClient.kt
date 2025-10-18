@@ -3,6 +3,7 @@ package com.jervis.service.gateway.clients
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.jervis.configuration.ModelsProperties
+import com.jervis.configuration.prompts.CreativityConfig
 import com.jervis.configuration.prompts.PromptConfigBase
 import com.jervis.configuration.prompts.PromptsConfiguration
 import com.jervis.domain.llm.LlmResponse
@@ -115,7 +116,7 @@ class OpenAiClient(
     private fun buildRequestBody(
         model: String,
         messages: List<Map<String, Any>>,
-        creativityConfig: com.jervis.configuration.prompts.CreativityConfig,
+        creativityConfig: CreativityConfig,
         config: ModelsProperties.ModelDetail,
     ): Map<String, Any> {
         val baseBody =
@@ -153,7 +154,7 @@ class OpenAiClient(
     private fun buildStreamingRequestBody(
         model: String,
         messages: List<Map<String, Any>>,
-        creativityConfig: com.jervis.configuration.prompts.CreativityConfig,
+        creativityConfig: CreativityConfig,
         config: ModelsProperties.ModelDetail,
     ): Map<String, Any> {
         val baseBody = buildRequestBody(model, messages, creativityConfig, config)

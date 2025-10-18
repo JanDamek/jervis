@@ -64,10 +64,8 @@ class DocumentationIndexingService(
 
             val operations = mutableListOf<suspend () -> DocumentationIndexingResult>()
 
-            // Add local documentation path indexing if configured
-            project.documentationPath?.let { docPath ->
-                operations.add { indexLocalDocumentation(project, docPath) }
-            }
+            // Note: Local documentation path indexing removed as documentationPath field doesn't exist in ProjectDocument
+            // Documentation is indexed through documentationUrls instead
 
             // Add URL-based documentation indexing if configured
             if (project.documentationUrls.isNotEmpty()) {
@@ -218,7 +216,6 @@ class DocumentationIndexingService(
                                         ),
                                     clientId = project.clientId,
                                     ragSourceType = RagSourceType.DOCUMENTATION,
-                                    path = relativePath,
                                     language = processingResult.metadata.language ?: inferDocumentationType(docFile),
                                     gitCommitHash = gitCommitHash,
                                     chunkId = index,
@@ -326,7 +323,6 @@ class DocumentationIndexingService(
                             summary = buildUrlDocumentationContent(url, content),
                             clientId = project.clientId,
                             ragSourceType = RagSourceType.URL,
-                            path = urlPath,
                             language = inferUrlDocumentationType(url),
                             gitCommitHash = gitCommitHash,
                         )

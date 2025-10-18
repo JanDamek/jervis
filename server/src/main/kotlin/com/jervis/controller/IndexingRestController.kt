@@ -2,6 +2,9 @@ package com.jervis.controller
 
 import com.jervis.dto.ProjectDto
 import com.jervis.service.IIndexingService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
@@ -19,17 +22,30 @@ class IndexingRestController(
     ): Any = indexingService.indexProject(project)
 
     @PostMapping("/all-projects")
-    suspend fun indexAllProjects(
+    fun indexAllProjects(
         @RequestBody projects: List<ProjectDto>,
-    ) {
-        indexingService.indexAllProjects(projects)
+    ): Map<String, String> {
+        // Fire-and-forget: start indexing in background and return immediately
+        // Progress will be reported via WebSocket notifications
+        CoroutineScope(Dispatchers.Default).launch {
+            indexingService.indexAllProjects(projects)
+        }
+        return mapOf("status" to "started", "message" to "Indexing ${projects.size} projects started in background")
     }
 
     @PostMapping("/client-projects")
-    suspend fun indexProjectsForClient(
+    fun indexProjectsForClient(
         @RequestBody projects: List<ProjectDto>,
         @RequestParam clientName: String,
-    ) {
-        indexingService.indexProjectsForClient(projects, clientName)
+    ): Map<String, String> {
+        // Fire-and-forget: start indexing in background and return immediately
+        // Progress will be reported via WebSocket notifications
+        CoroutineScope(Dispatchers.Default).launch {
+            indexingService.indexProjectsForClient(projects, clientName)
+        }
+        return mapOf(
+            "status" to "started",
+            "message" to "Indexing ${projects.size} projects for client '$clientName' started in background",
+        )
     }
 }

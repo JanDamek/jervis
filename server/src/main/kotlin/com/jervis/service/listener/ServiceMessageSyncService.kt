@@ -1,8 +1,7 @@
 package com.jervis.service.listener
 
-import com.jervis.domain.rag.RagDocument
+import com.jervis.domain.authentication.ServiceType
 import com.jervis.domain.rag.RagSourceType
-import com.jervis.dto.ServiceType
 import com.jervis.entity.mongo.ServiceMessageDocument
 import com.jervis.repository.vector.VectorStorageRepository
 import kotlinx.coroutines.reactive.awaitFirstOrNull

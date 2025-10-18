@@ -1,6 +1,5 @@
 package com.jervis.service.agent.execution
 
-import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.plan.PlanStatus
@@ -98,8 +97,7 @@ class PlanExecutor(
         try {
             logger.info { "EXECUTOR: Executing step '${step.stepToolName}' (order=${step.order})" }
 
-            val toolEnum = PromptTypeEnum.valueOf(step.stepToolName)
-            val tool = mcpToolRegistry.byName(toolEnum)
+            val tool = mcpToolRegistry.byName(step.stepToolName)
             val stepContext = buildStepContext(plan)
 
             val result =
@@ -109,7 +107,7 @@ class PlanExecutor(
                     taskDescription = step.stepInstruction,
                     stepContext = stepContext,
                 )
-            step.toolResult = result.output
+            step.toolResult = result
 
             logger.info { "EXECUTOR: Step '${step.stepToolName}' completed with result type: ${result.javaClass.simpleName}" }
 
@@ -147,7 +145,7 @@ class PlanExecutor(
             }
         } catch (e: Exception) {
             logger.error(e) { "EXECUTOR: Exception executing step '${step.stepToolName}'" }
-            step.toolResult = "Step execution failed: ${e.message}"
+            step.toolResult = ToolResult.error("Step execution failed: ${e.message}")
             step.status = StepStatus.FAILED
             plan.status = PlanStatus.FAILED
             plan.finalAnswer = "Step execution failed: ${e.message}"
@@ -186,5 +184,5 @@ class PlanExecutor(
     /**
      * Create a brief summary of a tool result for context
      */
-    private fun summarizeToolResult(toolResult: String?): String = toolResult?.take(200) ?: "No result"
+    private fun summarizeToolResult(toolResult: ToolResult?): String = toolResult?.output?.take(200) ?: "No result"
 }

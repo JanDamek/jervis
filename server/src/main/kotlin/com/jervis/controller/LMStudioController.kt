@@ -70,8 +70,7 @@ class LMStudioController(
                 ctx =
                     ChatRequestContext(
                         clientId =
-                            project.clientId
-                                ?: throw IllegalStateException("Default project has no client"),
+                            project.clientId.toString(),
                         projectId = project.id,
                         autoScope = false,
                     ),
@@ -110,9 +109,7 @@ class LMStudioController(
                 text = userPrompt,
                 ctx =
                     ChatRequestContext(
-                        clientId =
-                            defaultProject.clientId
-                                ?: throw IllegalStateException("Default project has no client"),
+                        clientId = requireNotNull(defaultProject.clientId) { "ClientId is required for chat completion" },
                         projectId = defaultProject.id,
                         autoScope = false,
                     ),

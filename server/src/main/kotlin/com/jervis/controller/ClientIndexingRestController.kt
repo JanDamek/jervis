@@ -2,6 +2,7 @@ package com.jervis.controller
 
 import com.jervis.dto.ClientDescriptionResult
 import com.jervis.service.IClientIndexingService
+import com.jervis.service.indexing.ClientIndexingService
 import org.bson.types.ObjectId
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -11,10 +12,10 @@ import org.springframework.web.bind.annotation.RestController
 @RestController
 @RequestMapping("/api/client-indexing")
 class ClientIndexingRestController(
-    private val clientIndexingService: IClientIndexingService,
-) {
+    private val clientIndexingService: ClientIndexingService,
+) : IClientIndexingService {
     @PostMapping("/update-descriptions/{clientId}")
-    suspend fun updateClientDescriptions(
+    override suspend fun updateClientDescriptions(
         @PathVariable clientId: String,
     ): ClientDescriptionResult = clientIndexingService.updateClientDescriptions(ObjectId(clientId))
 }

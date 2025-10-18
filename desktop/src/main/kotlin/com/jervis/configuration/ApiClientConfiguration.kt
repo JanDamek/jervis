@@ -5,13 +5,18 @@ import com.jervis.service.IAgentOrchestratorService
 import com.jervis.service.IClientIndexingService
 import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
+import com.jervis.service.IDebugWindowService
 import com.jervis.service.IIndexingMonitorService
 import com.jervis.service.IIndexingService
 import com.jervis.service.IProjectService
 import com.jervis.service.ITaskContextService
 import com.jervis.service.ITaskQueryService
 import com.jervis.service.ITaskSchedulingService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Primary
@@ -20,6 +25,8 @@ import org.springframework.context.annotation.Primary
 class ApiClientConfiguration {
     @Value("\${jervis.server.url}")
     private lateinit var serverUrl: String
+
+    private val notificationsScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     @Bean
     @Primary
@@ -58,6 +65,13 @@ class ApiClientConfiguration {
     fun taskSchedulingService(): ITaskSchedulingService = ApiClientFactory.createTaskSchedulingService(serverUrl)
 
     @Bean
-    @Primary
     fun indexingMonitorService(): IIndexingMonitorService = ApiClientFactory.createIndexingMonitorService(serverUrl)
+
+    @Bean
+    fun notificationsClient(applicationEventPublisher: ApplicationEventPublisher): com.jervis.client.NotificationsWebSocketClient =
+        ApiClientFactory.createNotificationsClient(serverUrl, applicationEventPublisher).also { it.start() }
+
+    @Bean
+    fun debugClient(debugWindowService: IDebugWindowService): com.jervis.client.DebugWebSocketClient =
+        ApiClientFactory.createDebugClient(serverUrl, debugWindowService).also { it.start() }
 }

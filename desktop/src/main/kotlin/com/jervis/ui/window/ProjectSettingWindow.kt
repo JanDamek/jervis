@@ -1,8 +1,10 @@
 package com.jervis.ui.window
 
-import com.jervis.common.Constants.GLOBAL_ID
-import com.jervis.entity.mongo.ClientDocument
-import com.jervis.entity.mongo.ProjectDocument
+import com.jervis.common.Constants.Companion.GLOBAL_ID_STRING
+import com.jervis.dto.ClientDto
+import com.jervis.dto.IndexingRulesDto
+import com.jervis.dto.ProjectDto
+import com.jervis.dto.ProjectOverridesDto
 import com.jervis.service.IClientIndexingService
 import com.jervis.service.IClientService
 import com.jervis.service.IIndexingService
@@ -333,13 +335,9 @@ class ProjectSettingWindow(
         val result = dialog.result
         if (result != null) {
             val newProject =
-                ProjectDocument(
-                    clientId = GLOBAL_ID,
+                ProjectDto(
+                    clientId = GLOBAL_ID_STRING,
                     name = result.name,
-                    projectPath = result.path,
-                    meetingPath = result.meetingPath,
-                    audioPath = result.audioPath,
-                    documentationPath = result.documentationPath,
                     description = result.description,
                     languages = result.languages,
                     primaryUrl = result.primaryUrl.takeIf { it.isNotBlank() },
@@ -348,7 +346,7 @@ class ProjectSettingWindow(
                     defaultBranch = result.defaultBranch,
                     inspirationOnly = result.inspirationOnly,
                     indexingRules =
-                        com.jervis.domain.project.IndexingRules(
+                        IndexingRulesDto(
                             includeGlobs = result.includeGlobs,
                             excludeGlobs = result.excludeGlobs,
                             maxFileSizeMB = result.maxFileSizeMB,
@@ -377,10 +375,6 @@ class ProjectSettingWindow(
                     this,
                     "Edit Project",
                     project.name,
-                    project.projectPath,
-                    project.meetingPath ?: "",
-                    project.audioPath ?: "",
-                    project.documentationPath ?: "",
                     project.description ?: "",
                     project.primaryUrl ?: "",
                     project.extraUrls.joinToString(", "),
@@ -402,10 +396,6 @@ class ProjectSettingWindow(
                 val updatedProject =
                     project.copy(
                         name = result.name,
-                        projectPath = result.path,
-                        meetingPath = result.meetingPath,
-                        audioPath = result.audioPath,
-                        documentationPath = result.documentationPath,
                         description = result.description,
                         languages = result.languages,
                         primaryUrl = result.primaryUrl.takeIf { it.isNotBlank() },
@@ -414,7 +404,7 @@ class ProjectSettingWindow(
                         defaultBranch = result.defaultBranch,
                         inspirationOnly = result.inspirationOnly,
                         indexingRules =
-                            com.jervis.domain.project.IndexingRules(
+                            IndexingRulesDto(
                                 includeGlobs = result.includeGlobs,
                                 excludeGlobs = result.excludeGlobs,
                                 maxFileSizeMB = result.maxFileSizeMB,
@@ -513,7 +503,7 @@ class ProjectSettingWindow(
                 }
 
                 val dialog = JDialog(this@ProjectSettingWindow, "Assign Client", true)
-                val combo = JComboBox<ClientDocument>()
+                val combo = JComboBox<ClientDto>()
                 clients.forEach { combo.addItem(it) }
                 combo.renderer =
                     object : DefaultListCellRenderer() {
@@ -532,7 +522,7 @@ class ProjectSettingWindow(
                                     isSelected,
                                     cellHasFocus,
                                 ) as JLabel
-                            val c = value as? ClientDocument
+                            val c = value as? ClientDto
                             if (c != null) label.text = c.name
                             return label
                         }
@@ -541,7 +531,7 @@ class ProjectSettingWindow(
                 val cancelBtn = JButton("Cancel")
 
                 okBtn.addActionListener {
-                    val selected = combo.selectedItem as? ClientDocument
+                    val selected = combo.selectedItem as? ClientDto
                     if (selected == null) {
                         JOptionPane.showMessageDialog(
                             dialog,
@@ -661,8 +651,7 @@ class ProjectSettingWindow(
             }
             CoroutineScope(Dispatchers.Main).launch {
                 try {
-                    val client = ClientDocument(name = name)
-                    clientService.create(client)
+                    clientService.create(name)
                     JOptionPane.showMessageDialog(dialog, "Client created.", "Success", JOptionPane.INFORMATION_MESSAGE)
                 } catch (e: Exception) {
                     JOptionPane.showMessageDialog(
@@ -699,7 +688,7 @@ class ProjectSettingWindow(
         CoroutineScope(Dispatchers.Main).launch {
             val allProjects = withContext(Dispatchers.IO) { projectService.getAllProjects() }
             val selectable = allProjects.filter { it.id != project.id }
-            val listModel = javax.swing.DefaultListModel<ProjectDocument>()
+            val listModel = javax.swing.DefaultListModel<ProjectDto>()
             selectable.forEach { listModel.addElement(it) }
             val list = javax.swing.JList(listModel)
             list.selectionMode = ListSelectionModel.MULTIPLE_INTERVAL_SELECTION
@@ -726,7 +715,7 @@ class ProjectSettingWindow(
                                 isSelected,
                                 cellHasFocus,
                             ) as JLabel
-                        val p = value as? ProjectDocument
+                        val p = value as? ProjectDto
                         if (p != null) label.text = p.name
                         return label
                     }
@@ -821,16 +810,16 @@ class ProjectSettingWindow(
      * Table model for projects
      */
     private class ProjectTableModel(
-        private var projectList: List<ProjectDocument>,
+        private var projectList: List<ProjectDto>,
     ) : AbstractTableModel() {
         private val columns = arrayOf("ID", "Name", "Path", "Description", "Client", "Disabled", "Active", "Is Current")
 
-        fun updateProjects(projects: List<ProjectDocument>) {
+        fun updateProjects(projects: List<ProjectDto>) {
             this.projectList = projects
             fireTableDataChanged()
         }
 
-        fun getProjectAt(rowIndex: Int): ProjectDocument = projectList[rowIndex]
+        fun getProjectAt(rowIndex: Int): ProjectDto = projectList[rowIndex]
 
         override fun getRowCount(): Int = projectList.size
 
@@ -845,13 +834,11 @@ class ProjectSettingWindow(
             val project = projectList[rowIndex]
 
             return when (columnIndex) {
-                0 -> project.id.toHexString() ?: ""
+                0 -> project.id
                 1 -> project.name
-                2 -> project.projectPath
-                3 -> project.description ?: ""
-                4 -> project.clientId?.toHexString() ?: ""
-                5 -> project.isDisabled
-                6 -> project.isActive
+                2 -> project.description ?: ""
+                3 -> project.isDisabled
+                4 -> project.isActive
                 else -> ""
             }
         }
@@ -878,10 +865,6 @@ class ProjectSettingWindow(
         owner: JFrame,
         title: String,
         initialName: String = "",
-        initialPath: String = "",
-        initialMeetingPath: String = "",
-        initialAudioPath: String = "",
-        initialDocumentationPath: String = "",
         initialDescription: String = "",
         initialPrimaryUrl: String = "",
         initialExtraUrls: String = "",
@@ -900,32 +883,7 @@ class ProjectSettingWindow(
                 preferredSize = Dimension(480, 30) // Min 480px width as required
                 toolTipText = "Project display name."
             }
-        private val pathField =
-            JTextField(initialPath).apply {
-                preferredSize = Dimension(480, 30) // Min 480px width as required
-                toolTipText = "Absolute path to your project directory."
-            }
-        private val browseButton = JButton("Browse…")
 
-        // Optional paths
-        private val meetingPathField =
-            JTextField(initialMeetingPath).apply {
-                preferredSize = Dimension(480, 30)
-                toolTipText = "Folder with meeting transcripts (text/markdown)."
-            }
-        private val browseMeetingButton = JButton("Browse…")
-        private val audioPathField =
-            JTextField(initialAudioPath).apply {
-                preferredSize = Dimension(480, 30)
-                toolTipText = "Folder with audio files to be transcribed (wav/mp3/m4a/etc.)."
-            }
-        private val browseAudioButton = JButton("Browse…")
-        private val documentationPathField =
-            JTextField(initialDocumentationPath).apply {
-                preferredSize = Dimension(480, 30)
-                toolTipText = "Folder with local documentation (markdown/html/pdf)."
-            }
-        private val browseDocumentationButton = JButton("Browse…")
         private val descriptionArea =
             JTextArea(initialDescription.ifEmpty { "Optional project description" }, 4, 50).apply {
                 // Add placeholder functionality
@@ -1028,10 +986,6 @@ class ProjectSettingWindow(
             // Button actions
             okButton.addActionListener { saveAndClose() }
             cancelButton.addActionListener { dispose() }
-            browseButton.addActionListener { browsePath() }
-            browseMeetingButton.addActionListener { browseDirectoryInto(meetingPathField) }
-            browseAudioButton.addActionListener { browseDirectoryInto(audioPathField) }
-            browseDocumentationButton.addActionListener { browseDirectoryInto(documentationPathField) }
 
             // Build UI with tabs
             val panel = JPanel(BorderLayout())
@@ -1075,7 +1029,7 @@ class ProjectSettingWindow(
 
             // Set focus order: nameField → pathField → browseButton → descriptionArea → defaultCheckbox → okButton → cancelButton
             val focusOrder =
-                arrayOf(nameField, pathField, browseButton, descriptionArea, defaultCheckbox, okButton, cancelButton)
+                arrayOf(nameField, descriptionArea, defaultCheckbox, okButton, cancelButton)
             for (i in 0 until focusOrder.size - 1) {
                 focusOrder[i].nextFocusableComponent = focusOrder[i + 1]
             }
@@ -1135,11 +1089,9 @@ class ProjectSettingWindow(
             gbc.fill =
                 GridBagConstraints.HORIZONTAL
             gbc.weightx = 1.0
-            panel.add(pathField, gbc)
             gbc.gridx = 2
             gbc.fill = GridBagConstraints.NONE
             gbc.weightx = 0.0
-            panel.add(browseButton, gbc)
             row++
 
             // Project description (optional)
@@ -1203,11 +1155,9 @@ class ProjectSettingWindow(
             gbc.anchor = GridBagConstraints.LINE_START
             gbc.fill = GridBagConstraints.HORIZONTAL
             gbc.weightx = 1.0
-            panel.add(meetingPathField, gbc)
             gbc.gridx = 2
             gbc.fill = GridBagConstraints.NONE
             gbc.weightx = 0.0
-            panel.add(browseMeetingButton, gbc)
             row++
 
             // Audio files folder
@@ -1220,11 +1170,9 @@ class ProjectSettingWindow(
             gbc.anchor = GridBagConstraints.LINE_START
             gbc.fill = GridBagConstraints.HORIZONTAL
             gbc.weightx = 1.0
-            panel.add(audioPathField, gbc)
             gbc.gridx = 2
             gbc.fill = GridBagConstraints.NONE
             gbc.weightx = 0.0
-            panel.add(browseAudioButton, gbc)
             row++
 
             // Documentation folder
@@ -1237,11 +1185,9 @@ class ProjectSettingWindow(
             gbc.anchor = GridBagConstraints.LINE_START
             gbc.fill = GridBagConstraints.HORIZONTAL
             gbc.weightx = 1.0
-            panel.add(documentationPathField, gbc)
             gbc.gridx = 2
             gbc.fill = GridBagConstraints.NONE
             gbc.weightx = 0.0
-            panel.add(browseDocumentationButton, gbc)
             row++
 
             // Spacer
@@ -1485,7 +1431,6 @@ class ProjectSettingWindow(
 
         private fun saveAndClose() {
             val name = nameField.text.trim()
-            val path = pathField.text.trim()
             val description =
                 if (descriptionArea.text.trim() == "Optional project description") "" else descriptionArea.text.trim()
             val primaryUrl = primaryUrlField.text.trim()
@@ -1525,29 +1470,9 @@ class ProjectSettingWindow(
             val isDisabled = isDisabledCheckbox.isSelected
             val isDefault = defaultCheckbox.isSelected
 
-            val meetingPath = meetingPathField.text.trim().ifEmpty { null }
-            val audioPath = audioPathField.text.trim().ifEmpty { null }
-            val documentationPath = documentationPathField.text.trim().ifEmpty { null }
-
             // Validate required fields
             if (name.isBlank()) {
                 JOptionPane.showMessageDialog(this, "Project name cannot be empty.", "Error", JOptionPane.ERROR_MESSAGE)
-                return
-            }
-
-            if (path.isBlank()) {
-                JOptionPane.showMessageDialog(this, "Project path cannot be empty.", "Error", JOptionPane.ERROR_MESSAGE)
-                return
-            }
-
-            val file = File(path)
-            if (!file.exists() || !file.isDirectory) {
-                JOptionPane.showMessageDialog(
-                    this,
-                    "Selected path is not a directory.",
-                    "Error",
-                    JOptionPane.ERROR_MESSAGE,
-                )
                 return
             }
 
@@ -1563,7 +1488,7 @@ class ProjectSettingWindow(
 
             // Collect override data from panels
             val overrides =
-                com.jervis.domain.project.ProjectOverrides(
+                ProjectOverridesDto(
                     codingGuidelines = guidelinesPanel.getGuidelines(),
                     reviewPolicy = reviewPolicyPanel.getReviewPolicy(),
                     formatting = formattingPanel.getFormatting(),
@@ -1576,10 +1501,6 @@ class ProjectSettingWindow(
             result =
                 ProjectResult(
                     name,
-                    path,
-                    meetingPath,
-                    audioPath,
-                    documentationPath,
                     description,
                     primaryUrl,
                     extraUrls,
@@ -1596,25 +1517,6 @@ class ProjectSettingWindow(
                 )
             dispose()
         }
-
-        private fun browsePath() {
-            val fileChooser = JFileChooser()
-            fileChooser.fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
-
-            // Set current directory based on pathField content or user home
-            val currentPath = pathField.text.trim()
-            fileChooser.currentDirectory =
-                if (currentPath.isNotEmpty()) {
-                    val pathFile = File(currentPath)
-                    if (pathFile.exists()) pathFile else File(System.getProperty("user.home"))
-                } else {
-                    File(System.getProperty("user.home"))
-                }
-
-            if (fileChooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-                pathField.text = fileChooser.selectedFile.absolutePath
-            }
-        }
     }
 
     /**
@@ -1622,10 +1524,6 @@ class ProjectSettingWindow(
      */
     data class ProjectResult(
         val name: String,
-        val path: String,
-        val meetingPath: String?,
-        val audioPath: String?,
-        val documentationPath: String?,
         val description: String,
         val primaryUrl: String,
         val extraUrls: List<String>,
@@ -1638,7 +1536,7 @@ class ProjectSettingWindow(
         val maxFileSizeMB: Int,
         val isDisabled: Boolean,
         val isDefault: Boolean,
-        val overrides: com.jervis.domain.project.ProjectOverrides,
+        val overrides: ProjectOverridesDto,
     )
 
     /**
@@ -1747,8 +1645,10 @@ class ProjectSettingWindow(
 
                 JOptionPane.showMessageDialog(
                     this@ProjectSettingWindow,
-                    "All projects have been successfully reindexed.\nThe system will now reload project data.",
-                    "Full Reindexing Complete",
+                    "All projects indexing has been started in background.\n" +
+                        "Progress will be reported via notifications in the Indexing Monitor.\n" +
+                        "You can continue working while indexing runs.",
+                    "Indexing Started",
                     JOptionPane.INFORMATION_MESSAGE,
                 )
 
@@ -1757,7 +1657,7 @@ class ProjectSettingWindow(
             } catch (e: Exception) {
                 JOptionPane.showMessageDialog(
                     this@ProjectSettingWindow,
-                    "Error during full system reindexing: ${e.message}",
+                    "Error starting full system reindexing: ${e.message}",
                     "Reindexing Error",
                     JOptionPane.ERROR_MESSAGE,
                 )

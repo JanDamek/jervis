@@ -41,7 +41,7 @@ object ProcessStreamingUtils {
      * @param config Process configuration
      * @return Flow of output lines
      */
-    suspend fun runProcessStreaming(config: ProcessConfig): Flow<String> =
+    fun runProcessStreaming(config: ProcessConfig): Flow<String> =
         flow {
             withContext(Dispatchers.IO) {
                 try {

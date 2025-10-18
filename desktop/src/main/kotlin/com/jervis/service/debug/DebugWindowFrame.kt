@@ -151,30 +151,20 @@ class DebugWindowFrame : JFrame("LLM Debug Window") {
     /**
      * Mark session as completed and show final stats
      */
-    fun completeSession(
-        sessionId: String,
-        response: com.jervis.domain.llm.LlmResponse,
-    ) {
+    fun completeSession(sessionId: String) {
         SwingUtilities.invokeLater {
             if (currentSessionId == sessionId) {
-                // Add completion info to response area
                 val completionInfo =
                     buildString {
                         appendLine()
                         appendLine("=" * 50)
                         appendLine("SESSION COMPLETED")
-                        appendLine("Model: ${response.model}")
-                        appendLine(
-                            "Tokens - Prompt: ${response.promptTokens}, Completion: ${response.completionTokens}, Total: ${response.totalTokens}",
-                        )
-                        appendLine("Finish Reason: ${response.finishReason}")
                         appendLine("=" * 50)
                     }
 
                 responseArea.append(completionInfo)
                 responseArea.caretPosition = responseArea.document.length
 
-                // Update window title to show completed
                 title = "$title - COMPLETED"
             }
         }

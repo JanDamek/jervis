@@ -20,7 +20,7 @@ class StepNotificationService(
                 contextId = contextId,
                 planId = planId,
                 stepId = step.id,
-                stepName = step.stepToolName,
+                stepName = step.stepToolName.name,
                 stepStatus = step.status,
                 timestamp = Instant.now(),
             )

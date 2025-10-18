@@ -1,43 +1,21 @@
 package com.jervis.service
 
-import com.jervis.service.indexing.monitoring.IndexingProgress
-import com.jervis.service.indexing.monitoring.IndexingProgressEvent
-import com.jervis.service.indexing.monitoring.IndexingStepStatus
-import com.jervis.service.indexing.monitoring.IndexingStepType
+import com.jervis.dto.AddLogRequest
+import com.jervis.dto.FailIndexingRequest
+import com.jervis.dto.StartIndexingRequest
+import com.jervis.dto.UpdateStepRequest
 import com.jervis.service.indexing.monitoring.ProjectIndexingState
-import kotlinx.coroutines.flow.Flow
-import org.bson.types.ObjectId
 
 interface IIndexingMonitorService {
-    val progressFlow: Flow<IndexingProgressEvent>
+    suspend fun startProjectIndexing(request: StartIndexingRequest)
 
-    suspend fun startProjectIndexing(
-        projectId: ObjectId,
-        projectName: String,
-    )
+    suspend fun updateStepProgress(request: UpdateStepRequest)
 
-    suspend fun updateStepProgress(
-        projectId: ObjectId,
-        stepType: IndexingStepType,
-        status: IndexingStepStatus,
-        progress: IndexingProgress? = null,
-        message: String? = null,
-        errorMessage: String? = null,
-        logs: List<String> = emptyList(),
-    )
+    suspend fun addStepLog(request: AddLogRequest)
 
-    suspend fun addStepLog(
-        projectId: ObjectId,
-        stepType: IndexingStepType,
-        logMessage: String,
-    )
+    suspend fun completeProjectIndexing(projectId: String)
 
-    suspend fun completeProjectIndexing(projectId: ObjectId)
+    suspend fun failProjectIndexing(request: FailIndexingRequest)
 
-    suspend fun failProjectIndexing(
-        projectId: ObjectId,
-        errorMessage: String,
-    )
-
-    fun getAllProjectStates(): Map<ObjectId, ProjectIndexingState>
+    fun getAllProjectStates(): Map<String, ProjectIndexingState>
 }

@@ -4,6 +4,8 @@ import com.jervis.configuration.ModelsProperties
 import com.jervis.configuration.prompts.PromptConfigBase
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.llm.LlmResponse
+import com.jervis.service.debug.DebugService
+import com.jervis.service.gateway.clients.ProviderClient
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.util.UUID
@@ -14,7 +16,8 @@ import java.util.UUID
  */
 @Service
 class LlmCallExecutor(
-    private val clients: List<com.jervis.service.gateway.clients.ProviderClient>,
+    private val clients: List<ProviderClient>,
+    private val debugService: DebugService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -45,6 +48,14 @@ class LlmCallExecutor(
             // Always use streaming for debug purposes - debug window will be shown automatically
             val debugSessionId = UUID.randomUUID().toString()
 
+            // Send debug session started directly to WebSocket
+            debugService.sessionStarted(
+                sessionId = debugSessionId,
+                promptType = promptType.name,
+                systemPrompt = systemPrompt,
+                userPrompt = userPrompt,
+            )
+
             val response =
                 executeStreamingCall(
                     client,
@@ -54,6 +65,7 @@ class LlmCallExecutor(
                     prompt,
                     estimatedTokens,
                     debugSessionId,
+                    promptType,
                 )
 
             validateResponse(response, provider)
@@ -73,13 +85,14 @@ class LlmCallExecutor(
      * Maintains fail-first approach - no fallback on streaming failure.
      */
     private suspend fun executeStreamingCall(
-        client: com.jervis.service.gateway.clients.ProviderClient,
+        client: ProviderClient,
         candidate: ModelsProperties.ModelDetail,
         systemPrompt: String,
         userPrompt: String,
         prompt: PromptConfigBase,
         estimatedTokens: Int,
         debugSessionId: String,
+        promptType: PromptTypeEnum,
     ): LlmResponse {
         val responseBuilder = StringBuilder()
         var model = candidate.model
@@ -101,6 +114,11 @@ class LlmCallExecutor(
             ).collect { chunk ->
                 if (chunk.content.isNotEmpty()) {
                     responseBuilder.append(chunk.content)
+                    // Send debug chunk directly to WebSocket
+                    debugService.responseChunk(
+                        sessionId = debugSessionId,
+                        chunk = chunk.content,
+                    )
                 }
 
                 if (chunk.isComplete && chunk.metadata.isNotEmpty()) {
@@ -111,6 +129,9 @@ class LlmCallExecutor(
                     finishReason = chunk.metadata["finish_reason"] as? String ?: "stop"
                 }
             }
+
+        // Send debug session completed directly to WebSocket
+        debugService.sessionCompleted(debugSessionId)
 
         val finalResponse =
             LlmResponse(
@@ -128,7 +149,7 @@ class LlmCallExecutor(
     /**
      * Finds the appropriate client for the given provider.
      */
-    private fun findClientForProvider(provider: com.jervis.domain.model.ModelProvider): com.jervis.service.gateway.clients.ProviderClient =
+    private fun findClientForProvider(provider: com.jervis.domain.model.ModelProvider): ProviderClient =
         clients.find { it.provider == provider }
             ?: throw IllegalStateException("No client found for provider $provider")
 

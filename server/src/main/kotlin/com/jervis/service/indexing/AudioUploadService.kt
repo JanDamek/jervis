@@ -41,7 +41,8 @@ class AudioUploadService(
                 projectRepository.findById(projectId)
                     ?: error("Project not found: ${'$'}projectId")
 
-            val audioPath = project.audioPath ?: error("Project has no audio path configured")
+            val audioPath =
+                project.overrides.audioMonitoring?.audioPath ?: error("Project has no audio path configured")
 
             val fileName = filePart.filename()
             val targetPath = Paths.get(audioPath).resolve(fileName)
@@ -104,9 +105,10 @@ class AudioUploadService(
         withContext(Dispatchers.IO) {
             val project: ProjectDocument =
                 projectRepository.findById(projectId)
-                    ?: error("Project not found: ${'$'}projectId")
+                    ?: error("Project not found: $projectId")
 
-            val audioPath = project.audioPath ?: error("Project has no audio path configured")
+            val audioPath =
+                project.overrides.audioMonitoring?.audioPath ?: error("Project has no audio path configured")
 
             val targetPath = Paths.get(audioPath).resolve(fileName)
             Files.createDirectories(targetPath.parent)

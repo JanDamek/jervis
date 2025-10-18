@@ -99,17 +99,20 @@ class AudioTranscriptIndexingService(
             logger.info { "Starting audio indexing for project: ${project.name}" }
             logger.info { "Starting audio transcript indexing for project: ${project.name}" }
 
-            val audioPath = project.audioPath
+            val audioPath = project.overrides.audioMonitoring?.audioPath
             if (audioPath.isNullOrBlank()) {
                 logger.info { "No audio path configured for project: ${project.name}" }
                 return@withContext AudioIndexingResult(0, 0, 0, 0, 0, 0, 0)
             }
 
+            val projectPathString = project.projectPath
+            val projectPath = if (projectPathString != null) Paths.get(projectPathString) else null
+
             indexAudioDirectory(
                 audioPath = audioPath,
                 projectId = project.id,
                 clientId = project.clientId,
-                projectPath = Paths.get(project.projectPath),
+                projectPath = projectPath,
                 scope = Scope.PROJECT,
             )
         }
@@ -145,6 +148,7 @@ class AudioTranscriptIndexingService(
                     IndexingStepType.AUDIO_TRANSCRIPTS,
                     IndexingStepStatus.FAILED,
                     errorMessage = "Audio path does not exist: $audioPath",
+                    logs = listOf("Audio path does not exist: $audioPath"),
                 )
             }
             logger.warn { "Audio path does not exist: $audioPath" }
@@ -245,7 +249,6 @@ class AudioTranscriptIndexingService(
                                     clientId = clientId,
                                     ragSourceType = RagSourceType.AUDIO_TRANSCRIPT,
                                     summary = sentence,
-                                    path = relativePath,
                                     language = metadata.language ?: UNKNOWN,
                                     gitCommitHash = gitCommitHash,
                                     chunkId = sentenceIndex,
