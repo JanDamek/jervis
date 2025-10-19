@@ -14,8 +14,8 @@ import org.springframework.stereotype.Service
 class PromptBuilderService {
     private val prettyObjectMapper =
         ObjectMapper().apply {
-            enable(SerializationFeature.INDENT_OUTPUT) // Pretty formatting for better LLM comprehension
-            enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS) // Consistent field ordering
+            enable(SerializationFeature.INDENT_OUTPUT)
+            enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
         }
 
     /**

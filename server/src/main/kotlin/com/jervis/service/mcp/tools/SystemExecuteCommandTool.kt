@@ -94,7 +94,7 @@ class SystemExecuteCommandTool(
     private fun validateWorkingDirectory(context: TaskContext): ToolResult? {
         val workingDirectory =
             directoryStructureService
-                .getGitDirectory(
+                .projectGitDir(
                     context.clientDocument.id,
                     context.projectDocument.id,
                 ).toFile()
@@ -113,7 +113,7 @@ class SystemExecuteCommandTool(
     ): ToolResult {
         val workingDirectory =
             directoryStructureService
-                .getGitDirectory(
+                .projectGitDir(
                     context.clientDocument.id,
                     context.projectDocument.id,
                 ).toFile()

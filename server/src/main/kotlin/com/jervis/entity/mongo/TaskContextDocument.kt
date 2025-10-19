@@ -14,11 +14,11 @@ data class TaskContextDocument(
     @Id
     val id: ObjectId = ObjectId.get(),
     @Indexed
-    var clientId: ObjectId? = null,
+    var clientId: ObjectId,
     @Indexed
-    var projectId: ObjectId? = null,
-    var clientName: String? = null,
-    var projectName: String? = null,
+    var projectId: ObjectId,
+    var clientName: String,
+    var projectName: String,
     var name: String = "New Context",
     val createdAt: Instant = Instant.now(),
     var updatedAt: Instant = Instant.now(),

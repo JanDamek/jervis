@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.spring)
     alias(libs.plugins.kotlin.serialization)
 }
 
@@ -11,24 +12,29 @@ java {
 
 dependencies {
     implementation(platform("org.springframework.boot:spring-boot-dependencies:${libs.versions.spring.boot.get()}"))
+
     // Common module with interfaces
     implementation(project(":common"))
 
-    // Spring Context for ApplicationEventPublisher
+    // Spring for HTTP Interface client generation
     implementation("org.springframework:spring-context")
+    implementation("org.springframework:spring-web")
+    implementation("org.springframework:spring-webflux")
+    implementation("io.projectreactor.kotlin:reactor-kotlin-extensions")
 
     // Kotlin
     implementation(libs.kotlin.stdlib)
     implementation(libs.kotlin.reflect)
     implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.coroutines.reactor)
+
+    // Kotlinx Serialization for WebSocket clients
     implementation(libs.kotlinx.serialization.json)
 
-    // HTTP Client (Ktor for multiplatform support)
+    // Ktor WebSocket clients
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.cio)
-    implementation(libs.ktor.client.content.negotiation)
-    implementation(libs.ktor.serialization.kotlinx.json)
-    implementation(libs.ktor.client.logging)
+    implementation(libs.ktor.client.websocket)
 
     // Logging
     implementation(libs.kotlin.logging)

@@ -1,9 +1,9 @@
 package com.jervis.ui.window
 
 import com.jervis.common.Constants.Companion.GLOBAL_ID_STRING
-import com.jervis.domain.plan.PlanStatus
-import com.jervis.dto.ChatRequest
+import com.jervis.domain.plan.PlanStatusEnum
 import com.jervis.dto.ChatRequestContext
+import com.jervis.dto.ChatRequestDto
 import com.jervis.dto.ClientDto
 import com.jervis.dto.PlanDto
 import com.jervis.dto.PlanStepDto
@@ -70,7 +70,13 @@ class MainWindow(
     private val indexingMonitorService: IIndexingMonitorService,
     private val applicationWindowManager: ApplicationWindowManager,
     private val debugWindowService: DesktopDebugWindowService,
+    private val notificationsClient: com.jervis.client.NotificationsWebSocketClient,
 ) : JFrame("JERVIS Assistant") {
+    companion object {
+        private val logger = KotlinLogging.logger {}
+        private const val NEW_CONTEXT_LABEL: String = "+ New context"
+    }
+
     private val windowScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     private val clientSelector = JComboBox<SelectorItem>(arrayOf())
@@ -113,10 +119,6 @@ class MainWindow(
     // Project change blocking state
     private var isProjectLoading = false
 
-    companion object {
-        private val logger = KotlinLogging.logger {}
-    }
-
     init {
         // Setup menu bar only on non-macOS systems (macOS uses native menu bar)
         if (!WindowUtils.isMacOS) {
@@ -144,11 +146,11 @@ class MainWindow(
                     when (value) {
                         is TaskContextDto -> {
                             val hasRunningPlans =
-                                value.plans.any { it.status == PlanStatus.RUNNING }
+                                value.plans.any { it.status == PlanStatusEnum.RUNNING }
                             val hasCompletedPlans =
                                 value.plans.any {
-                                    it.status == PlanStatus.COMPLETED ||
-                                        it.status == PlanStatus.FINALIZED
+                                    it.status == PlanStatusEnum.COMPLETED ||
+                                        it.status == PlanStatusEnum.FINALIZED
                                 }
                             val icon =
                                 when {
@@ -461,7 +463,7 @@ class MainWindow(
                 }
 
             // If context has running plans, prevent sending
-            if (selectedTaskContext != null && selectedTaskContext.plans.any { it.status == PlanStatus.RUNNING }) {
+            if (selectedTaskContext != null && selectedTaskContext.plans.any { it.status == PlanStatusEnum.RUNNING }) {
                 chatArea.append(
                     "System: Cannot send to context with running plan. Please wait for completion or select another context.\n\n",
                 )
@@ -513,7 +515,7 @@ class MainWindow(
 
                     // Process the query using the ChatCoordinator (fire-and-forget)
                     // Response will arrive via WebSocket notifications
-                    chatCoordinator.handle(ChatRequest(text, ctx))
+                    chatCoordinator.handle(ChatRequestDto(text, ctx, wsSessionId = notificationsClient.sessionId))
 
                     // Update UI on the EDT
                     withContext(Dispatchers.Swing) {
@@ -546,16 +548,26 @@ class MainWindow(
                         inputField.requestFocus()
                     }
                 } catch (e: Exception) {
-                    // Handle errors
+                    logger.error(e) { "Failed to send chat request: ${e.message}" }
+
                     withContext(Dispatchers.Swing) {
-                        // Remove the "Processing..." message
                         val content = chatArea.text
                         chatArea.text = content.replace("Assistant: Processing...\n", "")
 
-                        // Add the error message
-                        chatArea.append("Assistant: Sorry, an error occurred: ${e.message}\n\n")
+                        val userMessage =
+                            when {
+                                e.message?.contains("Connection refused") == true ->
+                                    "Sorry, could not connect to the server. Please ensure the server is running."
 
-                        // Update send button state and focus input
+                                e.message?.contains("Serializer") == true ->
+                                    "Sorry, there was a technical issue. Please try again or contact support."
+
+                                else ->
+                                    "Sorry, an unexpected error occurred. Please try again."
+                            }
+
+                        chatArea.append("Assistant: $userMessage\n\n")
+
                         updateSendButtonState()
                         inputField.requestFocus()
                     }
@@ -662,9 +674,6 @@ class MainWindow(
         }
     }
 
-    // --- Context list helpers and tool skeletons ---
-    private val NEW_CONTEXT_LABEL = "+ New context"
-
     private fun currentScopeKey(): Pair<String?, String?> =
         Pair(
             (clientSelector.selectedItem as? SelectorItem)?.name,
@@ -687,13 +696,16 @@ class MainWindow(
      * Save current input text as draft for the currently selected context
      */
     private fun saveDraftText() {
-        val selectedContext = contextList.selectedValue as TaskContextDto
-        val key = contextDraftKey(selectedContext)
-        val currentText = inputField.text
-        if (currentText.isNotBlank()) {
-            contextDrafts[key] = currentText
-        } else {
-            contextDrafts.remove(key)
+        val selectedValue = contextList.selectedValue
+        // Only save draft if selected value is TaskContextDto (not String like NEW_CONTEXT_LABEL)
+        if (selectedValue is TaskContextDto) {
+            val key = contextDraftKey(selectedValue)
+            val currentText = inputField.text
+            if (currentText.isNotBlank()) {
+                contextDrafts[key] = currentText
+            } else {
+                contextDrafts.remove(key)
+            }
         }
     }
 
@@ -944,7 +956,7 @@ class MainWindow(
     private fun updateSendButtonState() {
         val selectedContext = contextList.selectedValue as? TaskContextDto
         val hasRunningPlans =
-            selectedContext?.plans?.any { it.status == PlanStatus.RUNNING } == true
+            selectedContext?.plans?.any { it.status == PlanStatusEnum.RUNNING } == true
 
         // Enable send button if:
         // 1. No context is selected (New context mode) - always allow new context creation

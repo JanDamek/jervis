@@ -12,12 +12,16 @@ interface IDebugWindowService {
      * @param promptType Type of prompt being used (e.g., "PLANNER", "EXECUTOR")
      * @param systemPrompt System prompt sent to the LLM
      * @param userPrompt User prompt sent to the LLM
+     * @param clientId Optional client ID for the session
+     * @param clientName Optional client name for the session
      */
     suspend fun startDebugSession(
         sessionId: String,
         promptType: String,
         systemPrompt: String,
         userPrompt: String,
+        clientId: String? = null,
+        clientName: String? = null,
     )
 
     /**

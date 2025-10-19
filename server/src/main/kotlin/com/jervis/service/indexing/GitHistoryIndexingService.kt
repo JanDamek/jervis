@@ -9,7 +9,7 @@ import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.indexing.dto.GitCommitProcessingResponse
-import com.jervis.service.indexing.monitoring.IndexingStepType
+import com.jervis.service.indexing.monitoring.IndexingStepTypeEnum
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -79,7 +79,7 @@ class GitHistoryIndexingService(
                 logger.info { "Found ${newCommits.size} new commits to index for project: ${project.name}" }
                 indexingMonitorService.addStepLog(
                     project.id,
-                    IndexingStepType.GIT_HISTORY,
+                    IndexingStepTypeEnum.GIT_HISTORY,
                     "Found ${newCommits.size} new commits to index (${indexedCommits.size} already indexed)",
                 )
 
@@ -90,7 +90,7 @@ class GitHistoryIndexingService(
                     try {
                         indexingMonitorService.addStepLog(
                             project.id,
-                            IndexingStepType.GIT_HISTORY,
+                            IndexingStepTypeEnum.GIT_HISTORY,
                             "Processing commit (${index + 1}/${newCommits.size}): ${commit.hash.take(8)} by ${commit.author}",
                         )
 
@@ -99,21 +99,21 @@ class GitHistoryIndexingService(
                             processedCommits++
                             indexingMonitorService.addStepLog(
                                 project.id,
-                                IndexingStepType.GIT_HISTORY,
+                                IndexingStepTypeEnum.GIT_HISTORY,
                                 "✓ Successfully indexed commit: ${commit.hash.take(8)} - ${commit.message.take(50)}...",
                             )
                         } else {
                             errorCommits++
                             indexingMonitorService.addStepLog(
                                 project.id,
-                                IndexingStepType.GIT_HISTORY,
+                                IndexingStepTypeEnum.GIT_HISTORY,
                                 "✗ Failed to index commit: ${commit.hash.take(8)}",
                             )
                         }
                     } catch (e: Exception) {
                         indexingMonitorService.addStepLog(
                             project.id,
-                            IndexingStepType.GIT_HISTORY,
+                            IndexingStepTypeEnum.GIT_HISTORY,
                             "✗ Error indexing commit: ${commit.hash.take(8)} - ${e.message}",
                         )
                         logger.warn(e) { "Failed to index commit: ${commit.hash}" }

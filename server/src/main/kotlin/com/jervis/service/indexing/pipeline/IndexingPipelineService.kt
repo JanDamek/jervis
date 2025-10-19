@@ -13,9 +13,9 @@ import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.indexing.dto.TextChunksResponse
 import com.jervis.service.indexing.monitoring.IndexingMonitorService
-import com.jervis.service.indexing.monitoring.IndexingProgress
-import com.jervis.service.indexing.monitoring.IndexingStepStatus
-import com.jervis.service.indexing.monitoring.IndexingStepType
+import com.jervis.service.indexing.monitoring.IndexingProgressDto
+import com.jervis.service.indexing.monitoring.IndexingStepStatusEnum
+import com.jervis.service.indexing.monitoring.IndexingStepTypeEnum
 import com.jervis.service.rag.RagIndexingStatusService
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -62,9 +62,9 @@ class IndexingPipelineService(
             // Report pipeline start UNDER EXISTING STEP: code_files
             indexingMonitorService.updateStepProgress(
                 project.id,
-                IndexingStepType.CODE_FILES,
-                IndexingStepStatus.RUNNING,
-                IndexingProgress(0, 4), // joern, embedding, storage, collect
+                IndexingStepTypeEnum.CODE_FILES,
+                IndexingStepStatusEnum.RUNNING,
+                IndexingProgressDto(0, 4), // joern, embedding, storage, collect
                 "Initializing code files indexing pipeline",
                 logs = listOf("Pipeline indexing started for code files"),
             )
@@ -99,9 +99,9 @@ class IndexingPipelineService(
                 // Update general pipeline progress under code_files
                 indexingMonitorService.updateStepProgress(
                     project.id,
-                    IndexingStepType.CODE_FILES,
-                    IndexingStepStatus.RUNNING,
-                    IndexingProgress(1, 4),
+                    IndexingStepTypeEnum.CODE_FILES,
+                    IndexingStepStatusEnum.RUNNING,
+                    IndexingProgressDto(1, 4),
                     "Executing pipeline stages (joern, embeddings, storage)",
                     logs = listOf("Pipeline stages launched and running"),
                 )
@@ -115,9 +115,9 @@ class IndexingPipelineService(
                 // Report completion under code_files
                 indexingMonitorService.updateStepProgress(
                     project.id,
-                    IndexingStepType.CODE_FILES,
-                    IndexingStepStatus.COMPLETED,
-                    IndexingProgress(4, 4),
+                    IndexingStepTypeEnum.CODE_FILES,
+                    IndexingStepStatusEnum.COMPLETED,
+                    IndexingProgressDto(4, 4),
                     "Code files indexing pipeline completed successfully",
                     logs = listOf("Pipeline completed in ${totalTime}ms"),
                 )
@@ -135,9 +135,9 @@ class IndexingPipelineService(
                 // Report failure to monitoring under code_files
                 indexingMonitorService.updateStepProgress(
                     project.id,
-                    IndexingStepType.CODE_FILES,
-                    IndexingStepStatus.FAILED,
-                    IndexingProgress(0, 4),
+                    IndexingStepTypeEnum.CODE_FILES,
+                    IndexingStepStatusEnum.FAILED,
+                    IndexingProgressDto(0, 4),
                     errorMessage = "Code files pipeline failed: ${e.message}",
                     logs = listOf("Pipeline execution failed", "Error: ${e.message}"),
                 )
@@ -172,7 +172,7 @@ class IndexingPipelineService(
 
             indexingMonitorService.addStepLog(
                 project.id,
-                IndexingStepType.CODE_FILES,
+                IndexingStepTypeEnum.CODE_FILES,
                 "Language-based Joern analysis started",
             )
 
@@ -207,7 +207,7 @@ class IndexingPipelineService(
 
             indexingMonitorService.addStepLog(
                 project.id,
-                IndexingStepType.CODE_FILES,
+                IndexingStepTypeEnum.CODE_FILES,
                 "Language-based Joern analysis completed: $processedSymbols symbols in ${totalTime}ms",
             )
         } catch (e: Exception) {
@@ -215,9 +215,9 @@ class IndexingPipelineService(
 
             indexingMonitorService.updateStepProgress(
                 project.id,
-                IndexingStepType.CODE_FILES,
-                IndexingStepStatus.FAILED,
-                IndexingProgress(0, 4),
+                IndexingStepTypeEnum.CODE_FILES,
+                IndexingStepStatusEnum.FAILED,
+                IndexingProgressDto(0, 4),
                 errorMessage = "Language-based Joern analysis failed: ${e.message}",
                 logs = listOf("Joern analysis stage failed", "Error: ${e.message}"),
             )
@@ -240,7 +240,7 @@ class IndexingPipelineService(
         // Log under code_files instead of unknown step
         indexingMonitorService.addStepLog(
             project.id,
-            IndexingStepType.CODE_FILES,
+            IndexingStepTypeEnum.CODE_FILES,
             "Embedding pipeline started",
         )
 
@@ -372,7 +372,7 @@ class IndexingPipelineService(
 
             indexingMonitorService.addStepLog(
                 project.id,
-                IndexingStepType.CODE_FILES,
+                IndexingStepTypeEnum.CODE_FILES,
                 "Embedding pipeline completed in ${totalTime}ms",
             )
         } catch (e: Exception) {
@@ -380,9 +380,9 @@ class IndexingPipelineService(
 
             indexingMonitorService.updateStepProgress(
                 project.id,
-                IndexingStepType.CODE_FILES,
-                IndexingStepStatus.FAILED,
-                IndexingProgress(0, 5),
+                IndexingStepTypeEnum.CODE_FILES,
+                IndexingStepStatusEnum.FAILED,
+                IndexingProgressDto(0, 5),
                 errorMessage = "Embedding pipeline failed: ${e.message}",
                 logs = listOf("Embedding pipeline stage failed", "Error: ${e.message}"),
             )
@@ -532,7 +532,7 @@ class IndexingPipelineService(
         // Log under code_files
         indexingMonitorService.addStepLog(
             project.id,
-            IndexingStepType.CODE_FILES,
+            IndexingStepTypeEnum.CODE_FILES,
             "Vector storage stage started",
         )
 
@@ -587,7 +587,7 @@ class IndexingPipelineService(
                                 // EXTRA: log where item went
                                 indexingMonitorService.addStepLog(
                                     project.id,
-                                    IndexingStepType.CODE_FILES,
+                                    IndexingStepTypeEnum.CODE_FILES,
                                     "Stored embedding for ${symbolSafeName(item.analysisItem.symbol)} " +
                                         "to vector DB (${item.embeddingType})",
                                 )
@@ -637,7 +637,7 @@ class IndexingPipelineService(
 
             indexingMonitorService.addStepLog(
                 project.id,
-                IndexingStepType.CODE_FILES,
+                IndexingStepTypeEnum.CODE_FILES,
                 "Vector storage completed: processed=$totalProcessed, errors=$totalErrors, time=${totalTime}ms",
             )
         } catch (e: Exception) {
@@ -645,9 +645,9 @@ class IndexingPipelineService(
 
             indexingMonitorService.updateStepProgress(
                 project.id,
-                IndexingStepType.CODE_FILES,
-                IndexingStepStatus.FAILED,
-                IndexingProgress(0, 5),
+                IndexingStepTypeEnum.CODE_FILES,
+                IndexingStepStatusEnum.FAILED,
+                IndexingProgressDto(0, 5),
                 errorMessage = "Vector storage failed: ${e.message}",
                 logs = listOf("Vector storage stage failed", "Error: ${e.message}"),
             )

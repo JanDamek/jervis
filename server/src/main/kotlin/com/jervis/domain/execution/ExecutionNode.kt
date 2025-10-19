@@ -1,6 +1,6 @@
 package com.jervis.domain.execution
 
-import com.jervis.domain.plan.StepStatus
+import com.jervis.domain.plan.StepStatusEnum
 import com.jervis.service.mcp.domain.ToolResult
 import org.bson.types.ObjectId
 import java.time.Instant
@@ -13,7 +13,7 @@ sealed class ExecutionNode {
     abstract val id: ObjectId
     abstract val planId: ObjectId
     abstract val contextId: ObjectId
-    abstract var status: StepStatus
+    abstract var status: StepStatusEnum
     abstract var output: ToolResult?
     abstract val createdAt: Instant
     abstract var updatedAt: Instant
@@ -44,19 +44,18 @@ data class TaskStep(
     val name: String, // MCP tool name
     val taskDescription: String,
     val order: Int = -1, // For backward compatibility and UI display
-    override var status: StepStatus = StepStatus.PENDING,
+    override var status: StepStatusEnum = StepStatusEnum.PENDING,
     override var output: ToolResult? = null,
     override val createdAt: Instant = Instant.now(),
     override var updatedAt: Instant = Instant.now(),
     // Dependencies - this step waits for these nodes to complete
     val dependsOn: List<ObjectId> = emptyList(),
 ) : ExecutionNode() {
-
     override fun getChildren(): List<ExecutionNode> = emptyList()
 
-    override fun canExecute(): Boolean = status == StepStatus.PENDING
+    override fun canExecute(): Boolean = status == StepStatusEnum.PENDING
 
-    override fun isCompleted(): Boolean = status == StepStatus.DONE || status == StepStatus.FAILED
+    override fun isCompleted(): Boolean = status == StepStatusEnum.DONE || status == StepStatusEnum.FAILED
 }
 
 /**
@@ -68,19 +67,16 @@ data class ParallelGroup(
     override val contextId: ObjectId,
     val name: String, // Group description for logging
     val nodes: List<ExecutionNode>,
-    override var status: StepStatus = StepStatus.PENDING,
+    override var status: StepStatusEnum = StepStatusEnum.PENDING,
     override var output: ToolResult? = null,
     override val createdAt: Instant = Instant.now(),
     override var updatedAt: Instant = Instant.now(),
 ) : ExecutionNode() {
-
     override fun getChildren(): List<ExecutionNode> = nodes
 
-    override fun canExecute(): Boolean = 
-        status == StepStatus.PENDING && nodes.any { it.canExecute() }
+    override fun canExecute(): Boolean = status == StepStatusEnum.PENDING && nodes.any { it.canExecute() }
 
-    override fun isCompleted(): Boolean = 
-        nodes.all { it.isCompleted() }
+    override fun isCompleted(): Boolean = nodes.all { it.isCompleted() }
 }
 
 /**
@@ -97,21 +93,19 @@ data class MergeNode(
     val inputNodes: List<ObjectId>,
     // Child nodes that depend on this merge
     val childNodes: List<ExecutionNode> = emptyList(),
-    override var status: StepStatus = StepStatus.PENDING,
+    override var status: StepStatusEnum = StepStatusEnum.PENDING,
     override var output: ToolResult? = null,
     override val createdAt: Instant = Instant.now(),
     override var updatedAt: Instant = Instant.now(),
 ) : ExecutionNode() {
-
     override fun getChildren(): List<ExecutionNode> = childNodes
 
-    override fun canExecute(): Boolean = 
-        status == StepStatus.PENDING && 
-        // Can execute when all input nodes are completed
-        inputNodes.isNotEmpty() // Will be validated against actual tree at runtime
+    override fun canExecute(): Boolean =
+        status == StepStatusEnum.PENDING &&
+            // Can execute when all input nodes are completed
+            inputNodes.isNotEmpty() // Will be validated against actual tree at runtime
 
-    override fun isCompleted(): Boolean = 
-        status == StepStatus.DONE || status == StepStatus.FAILED
+    override fun isCompleted(): Boolean = status == StepStatusEnum.DONE || status == StepStatusEnum.FAILED
 }
 
 /**
@@ -123,19 +117,16 @@ data class SequentialGroup(
     override val contextId: ObjectId,
     val name: String,
     val nodes: List<ExecutionNode>,
-    override var status: StepStatus = StepStatus.PENDING,
+    override var status: StepStatusEnum = StepStatusEnum.PENDING,
     override var output: ToolResult? = null,
     override val createdAt: Instant = Instant.now(),
     override var updatedAt: Instant = Instant.now(),
 ) : ExecutionNode() {
-
     override fun getChildren(): List<ExecutionNode> = nodes
 
-    override fun canExecute(): Boolean =
-        status == StepStatus.PENDING && nodes.firstOrNull()?.canExecute() == true
+    override fun canExecute(): Boolean = status == StepStatusEnum.PENDING && nodes.firstOrNull()?.canExecute() == true
 
-    override fun isCompleted(): Boolean = 
-        nodes.all { it.isCompleted() }
+    override fun isCompleted(): Boolean = nodes.all { it.isCompleted() }
 }
 
 /**
@@ -152,17 +143,14 @@ data class PlanningNode(
     val dependsOn: List<ObjectId> = emptyList(),
     // Nodes that will be created after planning completes
     var plannedNodes: List<ExecutionNode> = emptyList(),
-    override var status: StepStatus = StepStatus.PENDING,
+    override var status: StepStatusEnum = StepStatusEnum.PENDING,
     override var output: ToolResult? = null,
     override val createdAt: Instant = Instant.now(),
     override var updatedAt: Instant = Instant.now(),
 ) : ExecutionNode() {
-
     override fun getChildren(): List<ExecutionNode> = plannedNodes
 
-    override fun canExecute(): Boolean = 
-        status == StepStatus.PENDING && dependsOn.isNotEmpty()
+    override fun canExecute(): Boolean = status == StepStatusEnum.PENDING && dependsOn.isNotEmpty()
 
-    override fun isCompleted(): Boolean = 
-        status == StepStatus.DONE && plannedNodes.all { it.isCompleted() }
+    override fun isCompleted(): Boolean = status == StepStatusEnum.DONE && plannedNodes.all { it.isCompleted() }
 }

@@ -11,8 +11,8 @@ import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.gateway.WhisperGateway
 import com.jervis.service.indexing.monitoring.IndexingMonitorService
-import com.jervis.service.indexing.monitoring.IndexingStepStatus
-import com.jervis.service.indexing.monitoring.IndexingStepType
+import com.jervis.service.indexing.monitoring.IndexingStepStatusEnum
+import com.jervis.service.indexing.monitoring.IndexingStepTypeEnum
 import com.jervis.service.rag.RagIndexingStatusService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -145,8 +145,8 @@ class AudioTranscriptIndexingService(
             projectId?.let {
                 indexingMonitorService.updateStepProgress(
                     it,
-                    IndexingStepType.AUDIO_TRANSCRIPTS,
-                    IndexingStepStatus.FAILED,
+                    IndexingStepTypeEnum.AUDIO_TRANSCRIPTS,
+                    IndexingStepStatusEnum.FAILED,
                     errorMessage = "Audio path does not exist: $audioPath",
                     logs = listOf("Audio path does not exist: $audioPath"),
                 )
@@ -171,7 +171,7 @@ class AudioTranscriptIndexingService(
             projectId?.let {
                 indexingMonitorService.addStepLog(
                     it,
-                    IndexingStepType.MEETING_TRANSCRIPTS,
+                    IndexingStepTypeEnum.MEETING_TRANSCRIPTS,
                     "Found ${audioFiles.size} audio files to transcribe",
                 )
             }
@@ -183,7 +183,7 @@ class AudioTranscriptIndexingService(
                     projectId?.let {
                         indexingMonitorService.addStepLog(
                             it,
-                            IndexingStepType.MEETING_TRANSCRIPTS,
+                            IndexingStepTypeEnum.MEETING_TRANSCRIPTS,
                             "Processing audio file (${index + 1}/${audioFiles.size}): $relativePath",
                         )
                     }
@@ -271,7 +271,7 @@ class AudioTranscriptIndexingService(
                     projectId?.let {
                         indexingMonitorService.addStepLog(
                             it,
-                            IndexingStepType.MEETING_TRANSCRIPTS,
+                            IndexingStepTypeEnum.MEETING_TRANSCRIPTS,
                             "✓ Successfully transcribed and indexed: $relativePath (${sentences.size} sentences, ${elapsedTime}s)",
                         )
                     }
@@ -280,7 +280,7 @@ class AudioTranscriptIndexingService(
                     projectId?.let {
                         indexingMonitorService.addStepLog(
                             it,
-                            IndexingStepType.MEETING_TRANSCRIPTS,
+                            IndexingStepTypeEnum.MEETING_TRANSCRIPTS,
                             "✗ Failed to process audio file: $relativePath - ${e.message}",
                         )
                     }

@@ -2,7 +2,7 @@ package com.jervis.service.scheduling
 
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
-import com.jervis.domain.task.ScheduledTaskStatus
+import com.jervis.domain.task.ScheduledTaskStatusEnum
 import com.jervis.entity.mongo.ScheduledTaskDocument
 import com.jervis.repository.mongo.PlanMongoRepository
 import com.jervis.repository.mongo.PlanStepMongoRepository
@@ -89,8 +89,8 @@ class TaskQueryService(
     suspend fun getTasksForProject(projectId: ObjectId): List<ScheduledTaskDocument> =
         scheduledTaskRepository.findByProjectId(projectId).toList()
 
-    fun getTasksByStatusFlow(status: ScheduledTaskStatus): Flow<ScheduledTaskDocument> = scheduledTaskRepository.findByStatus(status)
+    fun getTasksByStatusFlow(status: ScheduledTaskStatusEnum): Flow<ScheduledTaskDocument> = scheduledTaskRepository.findByStatus(status)
 
-    suspend fun getTasksByStatus(status: ScheduledTaskStatus): List<ScheduledTaskDocument> =
+    suspend fun getTasksByStatus(status: ScheduledTaskStatusEnum): List<ScheduledTaskDocument> =
         scheduledTaskRepository.findByStatus(status).toList()
 }

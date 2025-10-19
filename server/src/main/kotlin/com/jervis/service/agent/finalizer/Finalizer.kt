@@ -3,8 +3,8 @@ package com.jervis.service.agent.finalizer
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
-import com.jervis.domain.plan.PlanStatus
-import com.jervis.domain.plan.StepStatus
+import com.jervis.domain.plan.PlanStatusEnum
+import com.jervis.domain.plan.StepStatusEnum
 import com.jervis.dto.ChatResponse
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.gateway.processing.dto.LlmResponseWrapper
@@ -29,7 +29,7 @@ class Finalizer(
 
         val finalizedPlans =
             context.plans
-                .filter { it.status == PlanStatus.COMPLETED || it.status == PlanStatus.FAILED }
+                .filter { it.status == PlanStatusEnum.COMPLETED || it.status == PlanStatusEnum.FAILED }
                 .map { plan ->
                     logger.debug {
                         "FINALIZER_PLAN: Processing planId=${plan.id}, status=${plan.status}, originalQuestion='${plan.originalQuestion}'"
@@ -51,7 +51,7 @@ class Finalizer(
                                 outputLanguage = userLang,
                             )
                     plan.finalAnswer = answer.result.response
-                    plan.status = PlanStatus.FINALIZED
+                    plan.status = PlanStatusEnum.FINALIZED
                     plan.updatedAt = Instant.now()
                     plan
                 }
@@ -93,7 +93,7 @@ class Finalizer(
             "planContext" to planContextSummary,
             "completedSteps" to
                 plan.steps
-                    .filter { it.status == StepStatus.DONE }
+                    .filter { it.status == StepStatusEnum.DONE }
                     .joinToString("\n") { step ->
                         buildString {
                             append("${step.stepToolName}: ${step.stepInstruction}")
@@ -108,8 +108,8 @@ class Finalizer(
 
     private fun buildPlanContextSummary(plan: Plan): String {
         val totalSteps = plan.steps.size
-        val completedSteps = plan.steps.count { it.status == StepStatus.DONE }
-        val failedSteps = plan.steps.count { it.status == StepStatus.FAILED }
+        val completedSteps = plan.steps.count { it.status == StepStatusEnum.DONE }
+        val failedSteps = plan.steps.count { it.status == StepStatusEnum.FAILED }
 
         return buildString {
             appendLine("Plan ID: ${plan.id}")
@@ -123,7 +123,7 @@ class Finalizer(
             if (completedSteps > 0) {
                 appendLine("\nCompleted Steps:")
                 plan.steps
-                    .filter { it.status == StepStatus.DONE }
+                    .filter { it.status == StepStatusEnum.DONE }
                     .forEachIndexed { index, step ->
                         appendLine("${index + 1}. ${step.stepToolName}: ${step.stepInstruction}")
                         step.toolResult?.let { result ->
@@ -135,7 +135,7 @@ class Finalizer(
             if (failedSteps > 0) {
                 appendLine("\nFailed Steps:")
                 plan.steps
-                    .filter { it.status == StepStatus.FAILED }
+                    .filter { it.status == StepStatusEnum.FAILED }
                     .forEach { step ->
                         appendLine("- ${step.stepToolName}: ${step.stepInstruction}")
                         step.toolResult?.let { result ->

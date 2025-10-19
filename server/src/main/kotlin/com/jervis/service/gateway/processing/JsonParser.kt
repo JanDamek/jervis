@@ -54,11 +54,9 @@ class JsonParser {
         while (startIndex != -1) {
             val endIndex = cleaned.indexOf(thinkEndTag, startIndex)
             if (endIndex != -1) {
-                // Remove the entire think block including tags
                 cleaned = cleaned.substring(0, startIndex) + cleaned.substring(endIndex + thinkEndTag.length)
                 startIndex = cleaned.indexOf(thinkStartTag)
             } else {
-                // Malformed think tag, just remove the start tag
                 cleaned = cleaned.substring(0, startIndex) + cleaned.substring(startIndex + thinkStartTag.length)
                 break
             }
@@ -67,16 +65,13 @@ class JsonParser {
         return cleaned.trim()
     }
 
-    // Nová metoda pro nalezení finálního JSON bloku
     private fun findFinalJsonBlock(rawResponse: String): String {
         val delimiter = "**START_JSON_OUTPUT**"
         val startIndex = rawResponse.indexOf(delimiter)
 
         return if (startIndex != -1) {
-            // Pokud oddělovač existuje, vrátí text po něm
             rawResponse.substring(startIndex + delimiter.length).trim()
         } else {
-            // Jinak vrátí celý text a spoléhá na existující logiku čištění
             rawResponse.trim()
         }
     }
@@ -84,7 +79,6 @@ class JsonParser {
     private fun cleanJsonResponse(response: String): String {
         var cleaned = response.trim()
 
-        // Odstranění markdownu, pokud je stále přítomen
         if (cleaned.startsWith("```")) {
             val firstNewline = cleaned.indexOf('\n')
             if (firstNewline != -1) {
@@ -95,19 +89,16 @@ class JsonParser {
             }
         }
 
-        // Vyčištění textu před parsováním - handle both objects {} and arrays []
         val objectStart = cleaned.indexOf('{')
         val objectEnd = cleaned.lastIndexOf('}')
         val arrayStart = cleaned.indexOf('[')
         val arrayEnd = cleaned.lastIndexOf(']')
 
-        // Determine if we have an object or array and which comes first
         val jsonStart: Int
         val jsonEnd: Int
 
         when {
             objectStart != -1 && (arrayStart == -1 || objectStart < arrayStart) -> {
-                // Object comes first or only object exists
                 jsonStart = objectStart
                 jsonEnd = objectEnd
                 if (jsonEnd == -1) {
@@ -116,7 +107,6 @@ class JsonParser {
             }
 
             arrayStart != -1 -> {
-                // Array comes first or only array exists
                 jsonStart = arrayStart
                 jsonEnd = arrayEnd
                 if (jsonEnd == -1) {
@@ -129,10 +119,8 @@ class JsonParser {
             }
         }
 
-        // Extrahování pouze JSON bloku
         val jsonOnly = cleaned.substring(jsonStart, jsonEnd + 1)
 
-        // Sanitizace speciálních znaků
         return sanitizeControlCharacters(jsonOnly)
     }
 
@@ -161,7 +149,7 @@ class JsonParser {
                     insideString = !insideString
                 }
 
-                insideString && char.code < 32 -> { // Uvnitř řetězce, sanitizuje řídící znaky
+                insideString && char.code < 32 -> {
                     when (char) {
                         '\n' -> result.append("\\n")
                         '\r' -> result.append("\\r")
@@ -181,9 +169,6 @@ class JsonParser {
         return result.toString()
     }
 
-    /**
-     * New method that extracts think content and parses JSON
-     */
     fun <T : Any> validateAndParseWithThink(
         rawResponse: String,
         responseSchema: T,
@@ -191,19 +176,11 @@ class JsonParser {
         model: String,
     ): ParsedResponse<T> {
         try {
-            // Fáze 1: Extrakce think content
             val thinkContent = extractThinkContent(rawResponse)
-
-            // Fáze 2: Odstranění think content pro čištění JSON
             val responseWithoutThink = removeThinkContent(rawResponse)
-
-            // Fáze 3: Nalezení a extrakce JSON bloku
             val finalJson = findFinalJsonBlock(responseWithoutThink)
-
-            // Fáze 4: Vyčištění a parsování
             val trimmedResponse = cleanJsonResponse(finalJson)
 
-            // Pokus o parsování
             val parsedResult =
                 when (responseSchema) {
                     is Collection<*> -> {
@@ -211,7 +188,11 @@ class JsonParser {
                             @Suppress("UNCHECKED_CAST")
                             responseSchema as T
                         } else {
-                            val elementType = responseSchema.first()!!::class.java
+                            val firstElement =
+                                requireNotNull(responseSchema.firstOrNull()) {
+                                    "Collection schema must have at least one element"
+                                }
+                            val elementType = firstElement::class.java
                             val listType =
                                 objectMapper.typeFactory.constructCollectionType(ArrayList::class.java, elementType)
                             @Suppress("UNCHECKED_CAST")
@@ -239,20 +220,20 @@ class JsonParser {
         model: String,
     ): T {
         try {
-            // Fáze 1: Nalezení a extrakce JSON bloku
             val finalJson = findFinalJsonBlock(rawResponse)
-
-            // Fáze 2: Vyčištění a parsování
             val trimmedResponse = cleanJsonResponse(finalJson)
 
-            // Pokus o parsování
             return when (responseSchema) {
                 is Collection<*> -> {
                     if (responseSchema.isEmpty()) {
                         @Suppress("UNCHECKED_CAST")
                         responseSchema as T
                     } else {
-                        val elementType = responseSchema.first()!!::class.java
+                        val firstElement =
+                            requireNotNull(responseSchema.firstOrNull()) {
+                                "Collection schema must have at least one element"
+                            }
+                        val elementType = firstElement::class.java
                         val listType =
                             objectMapper.typeFactory.constructCollectionType(ArrayList::class.java, elementType)
                         @Suppress("UNCHECKED_CAST")

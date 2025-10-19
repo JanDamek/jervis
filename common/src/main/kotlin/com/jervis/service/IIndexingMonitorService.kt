@@ -1,21 +1,35 @@
 package com.jervis.service
 
-import com.jervis.dto.AddLogRequest
-import com.jervis.dto.FailIndexingRequest
-import com.jervis.dto.StartIndexingRequest
-import com.jervis.dto.UpdateStepRequest
-import com.jervis.service.indexing.monitoring.ProjectIndexingState
+import com.jervis.dto.AddLogRequestDto
+import com.jervis.dto.FailIndexingRequestDto
+import com.jervis.dto.StartIndexingRequestDto
+import com.jervis.dto.UpdateStepRequestDto
+import com.jervis.service.indexing.monitoring.ProjectIndexingStateDto
+import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.service.annotation.GetExchange
+import org.springframework.web.service.annotation.HttpExchange
+import org.springframework.web.service.annotation.PostExchange
 
+@HttpExchange("/api/indexing-monitor")
 interface IIndexingMonitorService {
-    suspend fun startProjectIndexing(request: StartIndexingRequest)
+    @PostExchange("/start")
+    suspend fun startProjectIndexing(
+        @RequestBody request: StartIndexingRequestDto,
+    )
 
-    suspend fun updateStepProgress(request: UpdateStepRequest)
+    @PostExchange("/update-step")
+    suspend fun updateStepProgress(@RequestBody request: UpdateStepRequestDto)
 
-    suspend fun addStepLog(request: AddLogRequest)
+    @PostExchange("/add-log")
+    suspend fun addStepLog(@RequestBody request: AddLogRequestDto)
 
-    suspend fun completeProjectIndexing(projectId: String)
+    @PostExchange("/complete/{projectId}")
+    suspend fun completeProjectIndexing(@PathVariable projectId: String)
 
-    suspend fun failProjectIndexing(request: FailIndexingRequest)
+    @PostExchange("/fail")
+    suspend fun failProjectIndexing(@RequestBody request: FailIndexingRequestDto)
 
-    fun getAllProjectStates(): Map<String, ProjectIndexingState>
+    @GetExchange("/states")
+    fun getAllProjectStates(): Map<String, ProjectIndexingStateDto>
 }

@@ -7,7 +7,7 @@ import com.jervis.domain.client.Guidelines
 import com.jervis.domain.client.InspirationPolicy
 import com.jervis.domain.client.ReviewPolicy
 import com.jervis.domain.client.SecretsPolicy
-import com.jervis.domain.language.Language
+import com.jervis.domain.language.LanguageEnum
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.Indexed
@@ -30,7 +30,7 @@ data class ClientDocument(
     val defaultAnonymization: Anonymization = Anonymization(),
     val defaultInspirationPolicy: InspirationPolicy = InspirationPolicy(),
     val tools: ClientTools = ClientTools(),
-    val defaultLanguage: Language = Language.getDefault(), // Default communication language for this client
+    val defaultLanguageEnum: LanguageEnum = LanguageEnum.getDefault(), // Default communication language for this client
     val audioPath: String? = null,
     val dependsOnProjects: List<ObjectId> = emptyList(),
     val isDisabled: Boolean = false,

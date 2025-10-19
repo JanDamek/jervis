@@ -1,9 +1,6 @@
 package com.jervis.service.client
 
-import com.jervis.dto.ClientDto
 import com.jervis.entity.mongo.ClientDocument
-import com.jervis.mapper.toDocument
-import com.jervis.mapper.toDto
 import com.jervis.repository.mongo.ClientMongoRepository
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
@@ -18,43 +15,34 @@ class ClientService(
 ) {
     private val logger = KotlinLogging.logger {}
 
-    suspend fun create(clientName: String): ClientDto {
+    suspend fun create(clientName: String): ClientDocument {
         val document = ClientDocument(name = clientName)
         val saved = clientRepository.save(document)
         logger.info { "Created client ${saved.name}" }
-        return saved.toDto()
+        return saved
     }
 
-    suspend fun create(client: ClientDto): ClientDto {
-        val saved = clientRepository.save(client.toDocument())
+    suspend fun create(client: ClientDocument): ClientDocument {
+        val saved = clientRepository.save(client)
         logger.info { "Created client ${saved.name}" }
-        return saved.toDto()
+        return saved
     }
 
-    suspend fun update(client: ClientDto): ClientDto {
+    suspend fun update(client: ClientDocument): ClientDocument {
         val existing =
-            clientRepository.findById(
-                ObjectId(client.id),
-            ) ?: throw NoSuchElementException("Client not found")
-        val document = client.toDocument()
-        val merged = document.copy(id = existing.id, createdAt = existing.createdAt, updatedAt = Instant.now())
-        return clientRepository.save(merged).toDto()
+            clientRepository.findById(client.id) ?: throw NoSuchElementException("Client not found")
+        val merged = client.copy(id = existing.id, createdAt = existing.createdAt, updatedAt = Instant.now())
+        return clientRepository.save(merged)
     }
 
-    suspend fun delete(id: String) {
+    suspend fun delete(id: ObjectId) {
         val existing =
-            clientRepository.findById(
-                ObjectId(id),
-            ) ?: return
+            clientRepository.findById(id) ?: return
         clientRepository.delete(existing)
         logger.info { "Deleted client ${existing.name}" }
     }
 
-    suspend fun list(): List<ClientDto> = clientRepository.findAll().map { it.toDto() }.toList()
+    suspend fun list(): List<ClientDocument> = clientRepository.findAll().map { it }.toList()
 
-    suspend fun getClientById(id: String): ClientDto? =
-        clientRepository
-            .findById(
-                ObjectId(id),
-            )?.toDto()
+    suspend fun getClientById(id: ObjectId): ClientDocument? = clientRepository.findById(id)
 }

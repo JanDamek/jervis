@@ -2,7 +2,7 @@ package com.jervis.entity.mongo
 
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.plan.PlanStep
-import com.jervis.domain.plan.StepStatus
+import com.jervis.domain.plan.StepStatusEnum
 import com.jervis.service.mcp.domain.ToolResult
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
@@ -20,15 +20,15 @@ data class PlanStepDocument(
     val stepToolName: PromptTypeEnum,
     val stepInstruction: String,
     val stepDependsOn: Int = -1,
-    var status: StepStatus = StepStatus.PENDING,
+    var status: StepStatusEnum = StepStatusEnum.PENDING,
     var toolResult: ToolResult? = null,
 ) {
     fun toDomain(): PlanStep =
         PlanStep(
             id = this.id,
             order = this.order,
-            planId = this.planId!!,
-            contextId = this.contextId!!,
+            planId = requireNotNull(this.planId) { "planId is required for PlanStep domain conversion" },
+            contextId = requireNotNull(this.contextId) { "contextId is required for PlanStep domain conversion" },
             stepToolName = this.stepToolName,
             stepInstruction = this.stepInstruction,
             stepDependsOn = this.stepDependsOn,

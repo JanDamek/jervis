@@ -1,7 +1,7 @@
 package com.jervis.dto
 
 import com.jervis.common.Constants
-import com.jervis.domain.task.ScheduledTaskStatus
+import com.jervis.domain.task.ScheduledTaskStatusEnum
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -9,7 +9,7 @@ data class ScheduledTaskDto(
     val id: String = Constants.GLOBAL_ID_STRING,
     val projectId: String,
     val taskInstruction: String,
-    val status: ScheduledTaskStatus = ScheduledTaskStatus.PENDING,
+    val status: ScheduledTaskStatusEnum = ScheduledTaskStatusEnum.PENDING,
     val taskName: String,
     val taskParameters: Map<String, String> = emptyMap(),
     val scheduledAt: Long,

@@ -11,13 +11,6 @@ java {
     }
 }
 
-repositories {
-    mavenCentral()
-    maven("https://repo.spring.io/milestone")
-    maven("https://repo.spring.io/release")
-    maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
-    maven("https://jitpack.io")
-}
 
 dependencies {
     implementation(platform("org.springframework.boot:spring-boot-dependencies:${libs.versions.spring.boot.get()}"))
@@ -27,6 +20,8 @@ dependencies {
     // Spring Framework
     implementation(libs.spring.boot.starter)
     implementation("org.springframework:spring-context")
+    implementation("org.springframework:spring-webflux")
+    implementation("io.projectreactor.kotlin:reactor-kotlin-extensions")
 
     // UI & Swing
     implementation(libs.kotlinx.coroutines.swing)

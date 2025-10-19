@@ -82,7 +82,7 @@ class ProjectVersionControlTool(
     ): ToolResult {
         val projectDir =
             directoryStructureService
-                .getGitDirectory(
+                .projectGitDir(
                     context.clientDocument.id,
                     context.projectDocument.id,
                 ).toFile()

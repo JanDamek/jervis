@@ -1,7 +1,7 @@
 package com.jervis.dto
 
 import com.jervis.common.Constants
-import com.jervis.domain.plan.PlanStatus
+import com.jervis.domain.plan.PlanStatusEnum
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -13,7 +13,7 @@ data class PlanDto(
     val englishQuestion: String,
     val questionChecklist: List<String> = emptyList(),
     val initialRagQueries: List<String> = emptyList(),
-    val status: PlanStatus = PlanStatus.CREATED,
+    val status: PlanStatusEnum = PlanStatusEnum.CREATED,
     val steps: List<PlanStepDto> = emptyList(),
     val contextSummary: String? = null,
     val finalAnswer: String? = null,

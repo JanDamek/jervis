@@ -135,7 +135,7 @@ class ProjectExploreStructureTool(
         overridePath: String?,
     ): Path {
         val projectGitPath =
-            directoryStructureService.getGitDirectory(
+            directoryStructureService.projectGitDir(
                 context.clientDocument.id,
                 context.projectDocument.id,
             )

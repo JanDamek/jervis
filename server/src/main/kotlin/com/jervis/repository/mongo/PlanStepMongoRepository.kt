@@ -1,6 +1,6 @@
 package com.jervis.repository.mongo
 
-import com.jervis.domain.plan.StepStatus
+import com.jervis.domain.plan.StepStatusEnum
 import com.jervis.entity.mongo.PlanStepDocument
 import kotlinx.coroutines.flow.Flow
 import org.bson.types.ObjectId
@@ -13,6 +13,6 @@ interface PlanStepMongoRepository : CoroutineCrudRepository<PlanStepDocument, St
 
     suspend fun findFirstByPlanIdAndStatusOrderByOrder(
         planId: ObjectId,
-        status: StepStatus,
+        status: StepStatusEnum,
     ): PlanStepDocument?
 }

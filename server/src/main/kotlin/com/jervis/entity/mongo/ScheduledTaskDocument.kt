@@ -1,6 +1,6 @@
 package com.jervis.entity.mongo
 
-import com.jervis.domain.task.ScheduledTaskStatus
+import com.jervis.domain.task.ScheduledTaskStatusEnum
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.CompoundIndex
@@ -28,7 +28,7 @@ data class ScheduledTaskDocument(
     val taskInstruction: String,
     /** Current task status */
     @Indexed
-    val status: ScheduledTaskStatus = ScheduledTaskStatus.PENDING,
+    val status: ScheduledTaskStatusEnum = ScheduledTaskStatusEnum.PENDING,
     /** Task name/description */
     val taskName: String,
     /** Task parameters as JSON string */

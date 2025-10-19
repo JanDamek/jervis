@@ -30,13 +30,13 @@ class StepNotificationService(
     fun notifyPlanStatusChanged(
         contextId: ObjectId,
         planId: ObjectId,
-        planStatus: com.jervis.domain.plan.PlanStatus,
+        planStatusEnum: com.jervis.domain.plan.PlanStatusEnum,
     ) {
         val event =
             PlanStatusChangeEvent(
                 contextId = contextId,
                 planId = planId,
-                planStatus = planStatus,
+                planStatusEnum = planStatusEnum,
                 timestamp = Instant.now(),
             )
         eventPublisher.publishEvent(event)
@@ -48,13 +48,13 @@ data class StepCompletionEvent(
     val planId: ObjectId,
     val stepId: ObjectId,
     val stepName: String,
-    val stepStatus: com.jervis.domain.plan.StepStatus,
+    val stepStatus: com.jervis.domain.plan.StepStatusEnum,
     val timestamp: Instant,
 )
 
 data class PlanStatusChangeEvent(
     val contextId: ObjectId,
     val planId: ObjectId,
-    val planStatus: com.jervis.domain.plan.PlanStatus,
+    val planStatusEnum: com.jervis.domain.plan.PlanStatusEnum,
     val timestamp: Instant,
 )

@@ -1,6 +1,6 @@
 package com.jervis.entity.mongo
 
-import com.jervis.domain.authentication.ServiceType
+import com.jervis.domain.authentication.ServiceTypeEnum
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.CompoundIndex
@@ -22,7 +22,7 @@ data class ServiceCredentialsDocument(
     val id: ObjectId = ObjectId.get(),
     val clientId: ObjectId,
     val projectId: ObjectId? = null,
-    val serviceType: ServiceType,
+    val serviceTypeEnum: ServiceTypeEnum,
     val accessToken: String? = null,
     val refreshToken: String? = null,
     val expiresAt: Instant? = null,

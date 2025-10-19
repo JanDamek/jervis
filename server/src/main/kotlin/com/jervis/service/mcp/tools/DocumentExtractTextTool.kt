@@ -131,14 +131,13 @@ class DocumentExtractTextTool(
             path.isAbsolute -> path
             else -> {
                 val projectPath =
-                    directoryStructureService.getGitDirectory(
+                    directoryStructureService.projectGitDir(
                         context.clientDocument.id,
                         context.projectDocument.id,
                     )
-                if (Files.exists(projectPath) && Files.isDirectory(projectPath)) {
-                    projectPath.resolve(filePath)
-                } else {
-                    Paths.get(System.getProperty("user.dir")).resolve(filePath)
+                when {
+                    Files.exists(projectPath) && Files.isDirectory(projectPath) -> projectPath.resolve(filePath)
+                    else -> Paths.get(System.getProperty("user.dir")).resolve(filePath)
                 }
             }
         }

@@ -9,7 +9,7 @@ import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.indexing.dto.MeetingTranscriptProcessingResponse
-import com.jervis.service.indexing.monitoring.IndexingStepType
+import com.jervis.service.indexing.monitoring.IndexingStepTypeEnum
 import com.jervis.service.rag.RagIndexingStatusService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -102,7 +102,7 @@ class MeetingTranscriptIndexingService(
                 logger.info { "Found ${meetingFiles.size} meeting files to process" }
                 indexingMonitorService.addStepLog(
                     project.id,
-                    IndexingStepType.MEETING_TRANSCRIPTS,
+                    IndexingStepTypeEnum.MEETING_TRANSCRIPTS,
                     "Found ${meetingFiles.size} meeting files to process",
                 )
 
@@ -111,7 +111,7 @@ class MeetingTranscriptIndexingService(
                         val relativePath = meetingDir.relativize(meetingFile).toString()
                         indexingMonitorService.addStepLog(
                             project.id,
-                            IndexingStepType.MEETING_TRANSCRIPTS,
+                            IndexingStepTypeEnum.MEETING_TRANSCRIPTS,
                             "Processing meeting file (${index + 1}/${meetingFiles.size}): $relativePath",
                         )
 
@@ -120,7 +120,7 @@ class MeetingTranscriptIndexingService(
                             skippedTranscripts++
                             indexingMonitorService.addStepLog(
                                 project.id,
-                                IndexingStepType.MEETING_TRANSCRIPTS,
+                                IndexingStepTypeEnum.MEETING_TRANSCRIPTS,
                                 "⚠ Skipped empty meeting file: $relativePath",
                             )
                             continue
@@ -139,7 +139,7 @@ class MeetingTranscriptIndexingService(
                             skippedTranscripts++
                             indexingMonitorService.addStepLog(
                                 project.id,
-                                IndexingStepType.MEETING_TRANSCRIPTS,
+                                IndexingStepTypeEnum.MEETING_TRANSCRIPTS,
                                 "⚠ Skipped already indexed meeting file: $relativePath",
                             )
                             logger.debug { "Skipping already indexed meeting file: $relativePath" }
@@ -200,7 +200,7 @@ class MeetingTranscriptIndexingService(
                         processedTranscripts++
                         indexingMonitorService.addStepLog(
                             project.id,
-                            IndexingStepType.MEETING_TRANSCRIPTS,
+                            IndexingStepTypeEnum.MEETING_TRANSCRIPTS,
                             "✓ Successfully indexed meeting file: $relativePath (${sentences.size} sentences)",
                         )
                         logger.debug { "Successfully indexed meeting file: $relativePath" }
@@ -208,7 +208,7 @@ class MeetingTranscriptIndexingService(
                         val relativePath = meetingDir.relativize(meetingFile).toString()
                         indexingMonitorService.addStepLog(
                             project.id,
-                            IndexingStepType.MEETING_TRANSCRIPTS,
+                            IndexingStepTypeEnum.MEETING_TRANSCRIPTS,
                             "✗ Failed to index meeting file: $relativePath - ${e.message}",
                         )
                         logger.warn(e) { "Failed to index meeting file: ${meetingFile.pathString}" }

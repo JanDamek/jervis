@@ -11,6 +11,10 @@ java {
 
 dependencies {
     implementation(platform("org.springframework.boot:spring-boot-dependencies:${libs.versions.spring.boot.get()}"))
+
+    // Spring Web for HTTP Interface annotations
+    implementation("org.springframework:spring-web")
+
     // Kotlin
     implementation(libs.kotlin.stdlib)
     implementation(libs.kotlin.reflect)

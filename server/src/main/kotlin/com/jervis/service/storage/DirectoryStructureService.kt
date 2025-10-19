@@ -2,6 +2,9 @@ package com.jervis.service.storage
 
 import com.jervis.configuration.DataRootProperties
 import com.jervis.domain.storage.DirectoryStructure
+import com.jervis.domain.storage.ProjectSubdirectory
+import com.jervis.entity.mongo.ClientDocument
+import com.jervis.entity.mongo.ProjectDocument
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.bson.types.ObjectId
@@ -10,16 +13,64 @@ import org.springframework.stereotype.Service
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import kotlin.io.path.exists
 
 /**
- * Service for managing the directory structure hierarchy (server-internal, domain-first).
+ * Service for managing the complete workspace directory structure hierarchy.
+ * All file operations in the server should use this service for path resolution.
+ *
+ * Workspace structure: {workspaceRoot}/
+ *   - clients/{clientId}/
+ *     - audio/
+ *     - projects/{projectId}/
+ *       - git/
+ *       - uploads/
+ *       - audio/
+ *       - documents/
+ *       - meetings/
+ *   - tmp/
+ *     - scraping/
+ *     - processing/
+ *   - storage/
+ *   - cache/
  */
 @Service
 class DirectoryStructureService(
     private val dataRootProperties: DataRootProperties,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
-    private val rootPath: Path = Paths.get(dataRootProperties.rootDir)
+    private val workspaceRoot: Path = Paths.get(dataRootProperties.rootDir).toAbsolutePath()
+
+    init {
+        logger.info("Workspace root initialized at: $workspaceRoot")
+    }
+
+    suspend fun ensureWorkspaceStructure() {
+        withContext(Dispatchers.IO) {
+            val structure = DirectoryStructure.forWorkspace(dataRootProperties.rootDir)
+
+            createDirectoryIfNotExists(structure.clientsRoot)
+            createDirectoryIfNotExists(structure.tmpRoot)
+            createDirectoryIfNotExists(structure.tmpScrapingDir)
+            createDirectoryIfNotExists(structure.tmpProcessingDir)
+            createDirectoryIfNotExists(structure.storageRoot)
+            createDirectoryIfNotExists(structure.cacheRoot)
+
+            logger.info("Ensured base workspace structure at $workspaceRoot")
+        }
+    }
+
+    suspend fun ensureClientDirectories(clientId: ObjectId) {
+        withContext(Dispatchers.IO) {
+            val structure = DirectoryStructure.forClient(dataRootProperties.rootDir, clientId)
+
+            structure.clientDir?.let { createDirectoryIfNotExists(it) }
+            structure.clientAudioDir?.let { createDirectoryIfNotExists(it) }
+            structure.clientProjectsRoot?.let { createDirectoryIfNotExists(it) }
+
+            logger.info("Ensured client directories for client=${clientId.toHexString()}")
+        }
+    }
 
     suspend fun ensureProjectDirectories(
         clientId: ObjectId,
@@ -28,57 +79,131 @@ class DirectoryStructureService(
         withContext(Dispatchers.IO) {
             val structure = DirectoryStructure.forProject(dataRootProperties.rootDir, clientId, projectId)
 
-            createDirectoryIfNotExists(structure.clientDir)
-            createDirectoryIfNotExists(structure.projectDir)
-            createDirectoryIfNotExists(structure.gitDir)
-            createDirectoryIfNotExists(structure.uploadDir)
-            createDirectoryIfNotExists(structure.meetingsDir)
+            structure.clientDir?.let { createDirectoryIfNotExists(it) }
+            structure.clientProjectsRoot?.let { createDirectoryIfNotExists(it) }
+            structure.projectDir?.let { createDirectoryIfNotExists(it) }
+            structure.projectGitDir?.let { createDirectoryIfNotExists(it) }
+            structure.projectUploadsDir?.let { createDirectoryIfNotExists(it) }
+            structure.projectAudioDir?.let { createDirectoryIfNotExists(it) }
+            structure.projectDocumentsDir?.let { createDirectoryIfNotExists(it) }
+            structure.projectMeetingsDir?.let { createDirectoryIfNotExists(it) }
 
             logger.info(
-                "Ensured directory structure for client={}, project={}",
-                clientId.toHexString(),
-                projectId.toHexString(),
+                "Ensured project directories for client=${clientId.toHexString()}, project=${projectId.toHexString()}",
             )
         }
     }
 
-    suspend fun ensureClientDirectory(clientId: ObjectId) {
-        withContext(Dispatchers.IO) {
-            val clientDir = rootPath.resolve(clientId.toHexString())
-            createDirectoryIfNotExists(clientDir)
+    fun workspaceRoot(): Path = workspaceRoot
 
-            logger.info("Ensured client directory for client={}", clientId.toHexString())
-        }
-    }
+    fun clientsRoot(): Path = workspaceRoot.resolve(DirectoryStructure.CLIENTS_DIR)
 
-    fun getClientDirectory(clientId: ObjectId): Path = rootPath.resolve(clientId.toHexString())
+    fun tmpRoot(): Path = workspaceRoot.resolve(DirectoryStructure.TMP_DIR)
 
-    fun getProjectDirectory(
+    fun tmpScrapingDir(): Path = tmpRoot().resolve(DirectoryStructure.SCRAPING_SUBDIR)
+
+    fun tmpProcessingDir(): Path = tmpRoot().resolve(DirectoryStructure.PROCESSING_SUBDIR)
+
+    fun storageRoot(): Path = workspaceRoot.resolve(DirectoryStructure.STORAGE_DIR)
+
+    fun cacheRoot(): Path = workspaceRoot.resolve(DirectoryStructure.CACHE_DIR)
+
+    fun clientDir(clientId: ObjectId): Path = clientsRoot().resolve(clientId.toHexString())
+
+    fun clientDir(client: ClientDocument): Path = clientDir(client.id)
+
+    fun clientAudioDir(clientId: ObjectId): Path = clientDir(clientId).resolve(DirectoryStructure.AUDIO_SUBDIR)
+
+    fun clientAudioDir(client: ClientDocument): Path = clientAudioDir(client.id)
+
+    fun clientProjectsRoot(clientId: ObjectId): Path = clientDir(clientId).resolve(DirectoryStructure.PROJECTS_SUBDIR)
+
+    fun projectDir(
         clientId: ObjectId,
         projectId: ObjectId,
-    ): Path = getClientDirectory(clientId).resolve(projectId.toHexString())
+    ): Path = clientProjectsRoot(clientId).resolve(projectId.toHexString())
 
-    fun getGitDirectory(
+    fun projectDir(project: ProjectDocument): Path = projectDir(project.clientId, project.id)
+
+    fun projectGitDir(
         clientId: ObjectId,
         projectId: ObjectId,
-    ): Path = getProjectDirectory(clientId, projectId).resolve(DirectoryStructure.GIT_SUBDIR)
+    ): Path = projectDir(clientId, projectId).resolve(DirectoryStructure.GIT_SUBDIR)
 
-    fun getUploadDirectory(
+    fun projectGitDir(project: ProjectDocument): Path = projectGitDir(project.clientId, project.id)
+
+    fun projectUploadsDir(
         clientId: ObjectId,
         projectId: ObjectId,
-    ): Path = getProjectDirectory(clientId, projectId).resolve(DirectoryStructure.UPLOAD_SUBDIR)
+    ): Path = projectDir(clientId, projectId).resolve(DirectoryStructure.UPLOADS_SUBDIR)
 
-    fun getMeetingsDirectory(
+    fun projectUploadsDir(project: ProjectDocument): Path = projectUploadsDir(project.clientId, project.id)
+
+    fun projectAudioDir(
         clientId: ObjectId,
         projectId: ObjectId,
-    ): Path = getProjectDirectory(clientId, projectId).resolve(DirectoryStructure.MEETINGS_SUBDIR)
+    ): Path = projectDir(clientId, projectId).resolve(DirectoryStructure.AUDIO_SUBDIR)
+
+    fun projectAudioDir(project: ProjectDocument): Path = projectAudioDir(project.clientId, project.id)
+
+    fun projectDocumentsDir(
+        clientId: ObjectId,
+        projectId: ObjectId,
+    ): Path = projectDir(clientId, projectId).resolve(DirectoryStructure.DOCUMENTS_SUBDIR)
+
+    fun projectDocumentsDir(project: ProjectDocument): Path = projectDocumentsDir(project.clientId, project.id)
+
+    fun projectMeetingsDir(
+        clientId: ObjectId,
+        projectId: ObjectId,
+    ): Path = projectDir(clientId, projectId).resolve(DirectoryStructure.MEETINGS_SUBDIR)
+
+    fun projectMeetingsDir(project: ProjectDocument): Path = projectMeetingsDir(project.clientId, project.id)
 
     fun resolveProjectPath(
         clientId: ObjectId,
         projectId: ObjectId,
-        subdirectory: String,
+        subdirectory: ProjectSubdirectory,
         relativePath: String,
-    ): Path = getProjectDirectory(clientId, projectId).resolve(subdirectory).resolve(relativePath)
+    ): Path = projectDir(clientId, projectId).resolve(subdirectory.dirName).resolve(relativePath)
+
+    fun resolveTmpScrapingPath(fileName: String): Path = tmpScrapingDir().resolve(fileName)
+
+    fun resolveTmpProcessingPath(fileName: String): Path = tmpProcessingDir().resolve(fileName)
+
+    fun resolveStoragePath(relativePath: String): Path = storageRoot().resolve(relativePath)
+
+    fun resolveCachePath(relativePath: String): Path = cacheRoot().resolve(relativePath)
+
+    suspend fun createTempFileInScraping(
+        prefix: String,
+        suffix: String,
+    ): Path =
+        withContext(Dispatchers.IO) {
+            ensureDirectoryExists(tmpScrapingDir())
+            Files.createTempFile(tmpScrapingDir(), prefix, suffix).also {
+                logger.debug("Created temporary file for scraping: {}", it)
+            }
+        }
+
+    suspend fun createTempFileInProcessing(
+        prefix: String,
+        suffix: String,
+    ): Path =
+        withContext(Dispatchers.IO) {
+            ensureDirectoryExists(tmpProcessingDir())
+            Files.createTempFile(tmpProcessingDir(), prefix, suffix).also {
+                logger.debug("Created temporary file for processing: {}", it)
+            }
+        }
+
+    suspend fun ensureDirectoryExists(path: Path) {
+        withContext(Dispatchers.IO) {
+            createDirectoryIfNotExists(path)
+        }
+    }
+
+    fun exists(path: Path): Boolean = path.exists()
 
     private fun createDirectoryIfNotExists(path: Path) {
         if (!Files.exists(path)) {

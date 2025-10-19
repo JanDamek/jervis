@@ -1,40 +1,57 @@
 package com.jervis.service
 
 import com.jervis.dto.ClientProjectLinkDto
+import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.service.annotation.DeleteExchange
+import org.springframework.web.service.annotation.GetExchange
+import org.springframework.web.service.annotation.HttpExchange
+import org.springframework.web.service.annotation.PostExchange
+import org.springframework.web.service.annotation.PutExchange
 
+@HttpExchange("/api/client-project-links")
 interface IClientProjectLinkService {
-    suspend fun listForClient(clientId: String): List<ClientProjectLinkDto>
+    @GetExchange("/client/{clientId}")
+    suspend fun listForClient(
+        @PathVariable clientId: String,
+    ): List<ClientProjectLinkDto>
 
+    @GetExchange("/client/{clientId}/project/{projectId}")
     suspend fun get(
-        clientId: String,
-        projectId: String,
+        @PathVariable clientId: String,
+        @PathVariable projectId: String,
     ): ClientProjectLinkDto?
 
+    @PostExchange("/client/{clientId}/project/{projectId}")
     suspend fun upsert(
-        clientId: String,
-        projectId: String,
-        isDisabled: Boolean?,
-        anonymizationEnabled: Boolean?,
-        historical: Boolean?,
+        @PathVariable clientId: String,
+        @PathVariable projectId: String,
+        @RequestParam(required = false) isDisabled: Boolean?,
+        @RequestParam(required = false) anonymizationEnabled: Boolean?,
+        @RequestParam(required = false) historical: Boolean?,
     ): ClientProjectLinkDto
 
+    @PutExchange("/client/{clientId}/project/{projectId}/toggle-disabled")
     suspend fun toggleDisabled(
-        clientId: String,
-        projectId: String,
+        @PathVariable clientId: String,
+        @PathVariable projectId: String,
     ): ClientProjectLinkDto
 
+    @PutExchange("/client/{clientId}/project/{projectId}/toggle-anonymization")
     suspend fun toggleAnonymization(
-        clientId: String,
-        projectId: String,
+        @PathVariable clientId: String,
+        @PathVariable projectId: String,
     ): ClientProjectLinkDto
 
+    @PutExchange("/client/{clientId}/project/{projectId}/toggle-historical")
     suspend fun toggleHistorical(
-        clientId: String,
-        projectId: String,
+        @PathVariable clientId: String,
+        @PathVariable projectId: String,
     ): ClientProjectLinkDto
 
+    @DeleteExchange("/client/{clientId}/project/{projectId}")
     suspend fun delete(
-        clientId: String,
-        projectId: String,
+        @PathVariable clientId: String,
+        @PathVariable projectId: String,
     )
 }

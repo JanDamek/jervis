@@ -72,12 +72,12 @@ WORKDIR /app
 # Copy the built JAR from builder stage
 COPY --from=builder /app/build/libs/*.jar app.jar
 
-# Create data directory for client/project storage
-RUN mkdir -p /data
+# Create workspace directory structure for all server-managed files
+RUN mkdir -p /opt/jervis/data
 
 # Set environment variables
 ENV JAVA_OPTS="-Xmx2g -Xms512m"
-ENV DATA_ROOT_DIR=/data
+ENV DATA_ROOT_DIR=/opt/jervis/data
 ENV SERVER_PORT=5500
 
 # Expose application port
@@ -87,8 +87,8 @@ EXPOSE 5500
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:${SERVER_PORT}/actuator/health || exit 1
 
-# Volume for data persistence
-VOLUME ["/data"]
+# Volume for workspace persistence (clients, tmp, storage, cache)
+VOLUME ["/opt/jervis/data"]
 
 # Run the application
 ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -Ddata.root.dir=${DATA_ROOT_DIR} -jar /app/app.jar"]

@@ -1,6 +1,6 @@
 package com.jervis.service.listener
 
-import com.jervis.domain.authentication.ServiceType
+import com.jervis.domain.authentication.ServiceTypeEnum
 import com.jervis.entity.mongo.ServiceCredentialsDocument
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -14,7 +14,7 @@ import java.time.Instant
  */
 @Service
 class DiscordListener : ServiceListener {
-    override val serviceType: ServiceType = ServiceType.DISCORD
+    override val serviceTypeEnum: ServiceTypeEnum = ServiceTypeEnum.DISCORD
 
     private val logger = LoggerFactory.getLogger(DiscordListener::class.java)
 
@@ -26,7 +26,7 @@ class DiscordListener : ServiceListener {
             try {
                 logger.info("Polling Discord for client ${credentials.clientId}")
                 ListenerPollResult(
-                    serviceType = serviceType,
+                    serviceTypeEnum = serviceTypeEnum,
                     clientId = credentials.clientId,
                     projectId = credentials.projectId,
                     newMessages = emptyList(),
@@ -34,7 +34,7 @@ class DiscordListener : ServiceListener {
             } catch (e: Exception) {
                 logger.error("Error polling Discord for client ${credentials.clientId}", e)
                 ListenerPollResult(
-                    serviceType = serviceType,
+                    serviceTypeEnum = serviceTypeEnum,
                     clientId = credentials.clientId,
                     projectId = credentials.projectId,
                     newMessages = emptyList(),

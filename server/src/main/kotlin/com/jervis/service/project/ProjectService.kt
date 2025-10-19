@@ -18,21 +18,18 @@ class ProjectService(
         private val logger = KotlinLogging.logger {}
     }
 
-    suspend fun getAllProjects(): List<ProjectDto> = projectRepository.findAll().toList().map { it.toDto() }
+    suspend fun getAllProjects(): List<ProjectDocument> = projectRepository.findAll().toList()
 
-    suspend fun getDefaultProject(): ProjectDto? = projectRepository.findByIsActiveIsTrue()?.toDto()
+    suspend fun getDefaultProject(): ProjectDocument? = projectRepository.findByIsActiveIsTrue()
 
-    suspend fun setActiveProject(project: ProjectDto) {
+    suspend fun setActiveProject(project: ProjectDocument) {
         setDefaultProject(project)
     }
 
-    suspend fun setDefaultProject(project: ProjectDto) {
-        val projectDoc = project.toDocument()
-
-        // First, remove the default status from all projects
+    suspend fun setDefaultProject(project: ProjectDocument) {
         val allProjects = projectRepository.findAll().toList()
         allProjects.forEach { existingProject ->
-            if (existingProject.isActive && existingProject.id != projectDoc.id) {
+            if (existingProject.isActive && existingProject.id != project.id) {
                 val updatedProject =
                     existingProject.copy(
                         isActive = false,
@@ -43,9 +40,9 @@ class ProjectService(
         }
 
         // Set the default status for the selected project
-        if (!projectDoc.isActive) {
+        if (!project.isActive) {
             val updatedProject =
-                projectDoc.copy(
+                project.copy(
                     isActive = true,
                     updatedAt = Instant.now(),
                 )
@@ -54,16 +51,15 @@ class ProjectService(
     }
 
     suspend fun saveProject(
-        project: ProjectDto,
+        project: ProjectDocument,
         makeDefault: Boolean,
     ): ProjectDto {
-        val projectDoc = project.toDocument()
         val isNew = false
-        val updatedProject = projectDoc.copy(updatedAt = Instant.now())
+        val updatedProject = project.copy(updatedAt = Instant.now())
         val savedProject = projectRepository.save(updatedProject)
 
         if (makeDefault) {
-            setDefaultProject(savedProject.toDto())
+            setDefaultProject(savedProject)
         }
 
         if (isNew) {
@@ -85,35 +81,8 @@ class ProjectService(
         logger.info { "Deleted project: ${projectDoc.name}" }
     }
 
-    suspend fun getAllProjectsBlocking(): List<ProjectDocument> = projectRepository.findAll().toList()
-
-    suspend fun getDefaultProjectBlocking(): ProjectDocument? = projectRepository.findByIsActiveIsTrue()
-
-    suspend fun setDefaultProjectBlocking(project: ProjectDocument) {
-        val allProjects = projectRepository.findAll().toList()
-        allProjects.forEach { existingProject ->
-            if (existingProject.isActive && existingProject.id != project.id) {
-                val updatedProject =
-                    existingProject.copy(
-                        isActive = false,
-                        updatedAt = Instant.now(),
-                    )
-                projectRepository.save(updatedProject)
-            }
-        }
-
-        if (!project.isActive) {
-            val updatedProject =
-                project.copy(
-                    isActive = true,
-                    updatedAt = Instant.now(),
-                )
-            projectRepository.save(updatedProject)
-        }
-    }
-
-    suspend fun getProjectByName(name: String?): ProjectDto =
+    suspend fun getProjectByName(name: String?): ProjectDocument =
         requireNotNull(name?.let { projectRepository.findByName(it) }) {
             "Project not found with name: $name"
-        }.toDto()
+        }
 }

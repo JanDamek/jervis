@@ -12,6 +12,6 @@ data class PlanStep(
     val stepToolName: PromptTypeEnum,
     val stepInstruction: String,
     val stepDependsOn: Int = -1,
-    var status: StepStatus = StepStatus.PENDING,
+    var status: StepStatusEnum = StepStatusEnum.PENDING,
     var toolResult: ToolResult? = null,
 )

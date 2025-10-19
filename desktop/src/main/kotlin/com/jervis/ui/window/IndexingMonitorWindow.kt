@@ -1,10 +1,10 @@
 package com.jervis.ui.window
 
 import com.jervis.service.IIndexingMonitorService
-import com.jervis.service.indexing.monitoring.IndexingProgressEvent
-import com.jervis.service.indexing.monitoring.IndexingStep
-import com.jervis.service.indexing.monitoring.IndexingStepStatus
-import com.jervis.service.indexing.monitoring.ProjectIndexingState
+import com.jervis.service.indexing.monitoring.IndexingProgressEventDto
+import com.jervis.service.indexing.monitoring.IndexingStepDto
+import com.jervis.service.indexing.monitoring.IndexingStepStatusEnum
+import com.jervis.service.indexing.monitoring.ProjectIndexingStateDto
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -165,7 +165,7 @@ class IndexingMonitorWindow(
         }
     }
 
-    private fun updateTreeModel(projectStates: Map<String, ProjectIndexingState>) {
+    private fun updateTreeModel(projectStates: Map<String, ProjectIndexingStateDto>) {
         // Save current tree state before update
         val expandedPaths = saveExpandedPaths()
         val selectedPath = projectTree.selectionPath
@@ -195,7 +195,7 @@ class IndexingMonitorWindow(
 
     private fun addStepNode(
         parentNode: DefaultMutableTreeNode,
-        step: IndexingStep,
+        step: IndexingStepDto,
     ) {
         val stepNode = DefaultMutableTreeNode(StepNodeData(step))
         parentNode.add(stepNode)
@@ -390,7 +390,7 @@ class IndexingMonitorWindow(
         }
     }
 
-    private fun updateStatusLabel(projectStates: Map<String, ProjectIndexingState>) {
+    private fun updateStatusLabel(projectStates: Map<String, ProjectIndexingStateDto>) {
         val activeCount = projectStates.values.count { it.isActive }
         val completedCount = projectStates.values.count { it.isCompleted }
         val failedCount = projectStates.values.count { it.hasFailed }
@@ -411,7 +411,7 @@ class IndexingMonitorWindow(
     }
 
     @EventListener
-    suspend fun handleProgressEvent(event: IndexingProgressEvent) {
+    suspend fun handleProgressEvent(event: IndexingProgressEventDto) {
         withContext(Dispatchers.Swing) {
             // Update UI based on event
             // The tree will be updated on next refresh cycle
@@ -421,16 +421,16 @@ class IndexingMonitorWindow(
 
     // Data classes for tree nodes
     data class ProjectNodeData(
-        val state: ProjectIndexingState,
+        val state: ProjectIndexingStateDto,
     ) {
         override fun toString(): String {
             val statusIcon =
                 when (state.status) {
-                    IndexingStepStatus.RUNNING -> "🔄"
-                    IndexingStepStatus.COMPLETED -> "✅"
-                    IndexingStepStatus.FAILED -> "❌"
-                    IndexingStepStatus.PENDING -> "⏳"
-                    IndexingStepStatus.SKIPPED -> "⏭️"
+                    IndexingStepStatusEnum.RUNNING -> "🔄"
+                    IndexingStepStatusEnum.COMPLETED -> "✅"
+                    IndexingStepStatusEnum.FAILED -> "❌"
+                    IndexingStepStatusEnum.PENDING -> "⏳"
+                    IndexingStepStatusEnum.SKIPPED -> "⏭️"
                 }
             val progressText =
                 state.overallProgress?.let {
@@ -441,16 +441,16 @@ class IndexingMonitorWindow(
     }
 
     data class StepNodeData(
-        val step: IndexingStep,
+        val step: IndexingStepDto,
     ) {
         override fun toString(): String {
             val statusIcon =
                 when (step.status) {
-                    IndexingStepStatus.RUNNING -> "🔄"
-                    IndexingStepStatus.COMPLETED -> "✅"
-                    IndexingStepStatus.FAILED -> "❌"
-                    IndexingStepStatus.PENDING -> "⏳"
-                    IndexingStepStatus.SKIPPED -> "⏭️"
+                    IndexingStepStatusEnum.RUNNING -> "🔄"
+                    IndexingStepStatusEnum.COMPLETED -> "✅"
+                    IndexingStepStatusEnum.FAILED -> "❌"
+                    IndexingStepStatusEnum.PENDING -> "⏳"
+                    IndexingStepStatusEnum.SKIPPED -> "⏭️"
                 }
             val progressText =
                 step.progress?.let {
@@ -478,9 +478,9 @@ class IndexingMonitorWindow(
                 is ProjectNodeData -> {
                     foreground =
                         when (userData.state.status) {
-                            IndexingStepStatus.RUNNING -> Color.BLUE
-                            IndexingStepStatus.COMPLETED -> Color.GREEN.darker()
-                            IndexingStepStatus.FAILED -> Color.RED
+                            IndexingStepStatusEnum.RUNNING -> Color.BLUE
+                            IndexingStepStatusEnum.COMPLETED -> Color.GREEN.darker()
+                            IndexingStepStatusEnum.FAILED -> Color.RED
                             else -> Color.BLACK
                         }
                     font = font.deriveFont(Font.BOLD)
@@ -489,11 +489,11 @@ class IndexingMonitorWindow(
                 is StepNodeData -> {
                     foreground =
                         when (userData.step.status) {
-                            IndexingStepStatus.RUNNING -> Color.BLUE
-                            IndexingStepStatus.COMPLETED -> Color.GREEN.darker()
-                            IndexingStepStatus.FAILED -> Color.RED
-                            IndexingStepStatus.PENDING -> Color.GRAY
-                            IndexingStepStatus.SKIPPED -> Color.ORANGE
+                            IndexingStepStatusEnum.RUNNING -> Color.BLUE
+                            IndexingStepStatusEnum.COMPLETED -> Color.GREEN.darker()
+                            IndexingStepStatusEnum.FAILED -> Color.RED
+                            IndexingStepStatusEnum.PENDING -> Color.GRAY
+                            IndexingStepStatusEnum.SKIPPED -> Color.ORANGE
                         }
                     font = font.deriveFont(Font.PLAIN)
                 }

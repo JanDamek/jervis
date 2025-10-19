@@ -1,4 +1,4 @@
-package com.jervis.service.gateway.clients
+package com.jervis.service.gateway.clients.llm
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -8,6 +8,8 @@ import com.jervis.configuration.prompts.PromptConfigBase
 import com.jervis.configuration.prompts.PromptsConfiguration
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProvider
+import com.jervis.service.gateway.clients.ProviderClient
+import com.jervis.service.gateway.clients.StreamChunk
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.reactive.asFlow
@@ -56,7 +58,7 @@ class OllamaClient(
         )
     }
 
-    override suspend fun callWithStreaming(
+    override fun callWithStreaming(
         model: String,
         systemPrompt: String?,
         userPrompt: String,
