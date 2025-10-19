@@ -11,6 +11,7 @@ import com.jervis.service.analysis.JoernAnalysisService
 import com.jervis.service.analysis.JoernResultParser
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.gateway.core.LlmGateway
+import com.jervis.service.git.GitRepositoryService
 import com.jervis.service.indexing.dto.TextChunksResponse
 import com.jervis.service.indexing.monitoring.IndexingMonitorService
 import com.jervis.service.indexing.monitoring.IndexingProgressDto
@@ -41,6 +42,7 @@ class IndexingPipelineService(
     private val llmGateway: LlmGateway,
     private val indexingMonitorService: IndexingMonitorService,
     private val ragIndexingStatusService: RagIndexingStatusService,
+    private val gitRepositoryService: GitRepositoryService,
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -58,6 +60,9 @@ class IndexingPipelineService(
         coroutineScope {
             logger.info { "PIPELINE_START: Starting streaming indexation for project: ${project.name}" }
             val overallStartTime = System.currentTimeMillis()
+
+            // TODO: Git pull will be based on client mono-repo URL configuration
+            // This requires refactoring Git services to work with client-level repository
 
             // Report pipeline start UNDER EXISTING STEP: code_files
             indexingMonitorService.updateStepProgress(

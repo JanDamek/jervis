@@ -1,7 +1,9 @@
 package com.jervis.mapper
 
+import com.jervis.domain.git.GitConfig
 import com.jervis.domain.project.IndexingRules
 import com.jervis.domain.project.ProjectOverrides
+import com.jervis.dto.GitConfigDto
 import com.jervis.dto.IndexingRulesDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ProjectOverridesDto
@@ -13,16 +15,13 @@ fun ProjectDocument.toDto(): ProjectDto =
         id = this.id.toHexString(),
         clientId = this.clientId.toHexString(),
         name = this.name,
+        projectPath = this.projectPath,
         description = this.description,
         shortDescription = this.shortDescription,
         fullDescription = this.fullDescription,
         documentationUrls = this.documentationUrls,
         languages = this.languages,
         communicationLanguageEnum = this.communicationLanguageEnum,
-        primaryUrl = this.primaryUrl,
-        extraUrls = this.extraUrls,
-        credentialsRef = this.credentialsRef,
-        defaultBranch = this.defaultBranch,
         overrides = this.overrides.toDto(),
         inspirationOnly = this.inspirationOnly,
         indexingRules = this.indexingRules.toDto(),
@@ -36,16 +35,13 @@ fun ProjectDto.toDocument(): ProjectDocument =
         id = ObjectId(this.id),
         clientId = ObjectId(this.clientId),
         name = this.name,
+        projectPath = this.projectPath,
         description = this.description,
         shortDescription = this.shortDescription,
         fullDescription = this.fullDescription,
         documentationUrls = this.documentationUrls,
         languages = this.languages,
         communicationLanguageEnum = this.communicationLanguageEnum,
-        primaryUrl = this.primaryUrl,
-        extraUrls = this.extraUrls,
-        credentialsRef = this.credentialsRef,
-        defaultBranch = this.defaultBranch,
         overrides = this.overrides.toDomain(),
         inspirationOnly = this.inspirationOnly,
         indexingRules = this.indexingRules.toDomain(),
@@ -90,4 +86,24 @@ fun ProjectOverridesDto.toDomain(): ProjectOverrides =
         inspirationPolicy = this.inspirationPolicy?.toDomain(),
         tools = this.tools?.toDomain(),
         audioMonitoring = this.audioMonitoring?.toDomain(),
+    )
+
+fun GitConfig.toDto(): GitConfigDto =
+    GitConfigDto(
+        commitMessageTemplate = this.commitMessageTemplate,
+        requireGpgSign = this.requireGpgSign,
+        gpgKeyId = this.gpgKeyId,
+        requireLinearHistory = this.requireLinearHistory,
+        conventionalCommits = this.conventionalCommits,
+        commitRules = this.commitRules,
+    )
+
+fun GitConfigDto.toDomain(): GitConfig =
+    GitConfig(
+        commitMessageTemplate = this.commitMessageTemplate,
+        requireGpgSign = this.requireGpgSign,
+        gpgKeyId = this.gpgKeyId,
+        requireLinearHistory = this.requireLinearHistory,
+        conventionalCommits = this.conventionalCommits,
+        commitRules = this.commitRules,
     )

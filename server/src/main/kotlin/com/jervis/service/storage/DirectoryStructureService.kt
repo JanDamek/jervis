@@ -28,6 +28,9 @@ import kotlin.io.path.exists
  *       - audio/
  *       - documents/
  *       - meetings/
+ *   - keys/
+ *     - ssh/
+ *     - gpg/
  *   - tmp/
  *     - scraping/
  *     - processing/
@@ -50,6 +53,9 @@ class DirectoryStructureService(
             val structure = DirectoryStructure.forWorkspace(dataRootProperties.rootDir)
 
             createDirectoryIfNotExists(structure.clientsRoot)
+            createDirectoryIfNotExists(structure.keysRoot)
+            createDirectoryIfNotExists(structure.sshKeysDir)
+            createDirectoryIfNotExists(structure.gpgKeysDir)
             createDirectoryIfNotExists(structure.tmpRoot)
             createDirectoryIfNotExists(structure.tmpScrapingDir)
             createDirectoryIfNotExists(structure.tmpProcessingDir)
@@ -104,9 +110,24 @@ class DirectoryStructureService(
 
     fun tmpProcessingDir(): Path = tmpRoot().resolve(DirectoryStructure.PROCESSING_SUBDIR)
 
+    fun tempDir(): Path = tmpRoot()
+
     fun storageRoot(): Path = workspaceRoot.resolve(DirectoryStructure.STORAGE_DIR)
 
     fun cacheRoot(): Path = workspaceRoot.resolve(DirectoryStructure.CACHE_DIR)
+
+    fun keysRoot(): Path = workspaceRoot.resolve(DirectoryStructure.KEYS_DIR)
+
+    fun sshKeysDir(): Path = keysRoot().resolve(DirectoryStructure.SSH_KEYS_SUBDIR)
+
+    fun gpgKeysDir(): Path = keysRoot().resolve(DirectoryStructure.GPG_KEYS_SUBDIR)
+
+    fun projectSshKeyDir(
+        clientId: ObjectId,
+        projectId: ObjectId,
+    ): Path = sshKeysDir().resolve(clientId.toHexString()).resolve(projectId.toHexString())
+
+    fun projectSshKeyDir(project: ProjectDocument): Path = projectSshKeyDir(project.clientId, project.id)
 
     fun clientDir(clientId: ObjectId): Path = clientsRoot().resolve(clientId.toHexString())
 
@@ -115,6 +136,8 @@ class DirectoryStructureService(
     fun clientAudioDir(clientId: ObjectId): Path = clientDir(clientId).resolve(DirectoryStructure.AUDIO_SUBDIR)
 
     fun clientAudioDir(client: ClientDocument): Path = clientAudioDir(client.id)
+
+    fun clientGitDir(clientId: ObjectId): Path = clientDir(clientId).resolve("git")
 
     fun clientProjectsRoot(clientId: ObjectId): Path = clientDir(clientId).resolve(DirectoryStructure.PROJECTS_SUBDIR)
 

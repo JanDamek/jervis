@@ -11,7 +11,8 @@ import java.time.Instant
 
 /**
  * MongoDB document representing a project.
- * Extended to support Client/Project configuration per specification while keeping legacy fields for backward compatibility.
+ * Project represents a path within client's mono-repository.
+ * Git settings are stored at client level.
  */
 @Document(collection = "projects")
 data class ProjectDocument(
@@ -21,18 +22,13 @@ data class ProjectDocument(
     val clientId: ObjectId,
     @Indexed(unique = true)
     val name: String,
+    val projectPath: String? = null, // Path within client's mono-repository
     val description: String? = null,
     val shortDescription: String? = null,
     val fullDescription: String? = null,
     val documentationUrls: List<String> = emptyList(),
     val languages: List<String> = emptyList(), // Programming languages used in the project
     val communicationLanguageEnum: LanguageEnum = LanguageEnum.getDefault(), // Communication language for this project
-    // Repository/Git settings (optional - project doesn't have to be in Git)
-    val primaryUrl: String? = null,
-    val extraUrls: List<String> = emptyList(),
-    val credentialsRef: String? = null,
-    val defaultBranch: String = "main",
-    val projectPath: String? = null,
     // Per-project overrides (nullable fields).
     val overrides: ProjectOverrides = ProjectOverrides(),
     // Inspiration-only flag.

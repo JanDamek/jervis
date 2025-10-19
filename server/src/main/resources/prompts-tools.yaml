@@ -65,41 +65,63 @@ tools:
     description: "Translate user input to English, detect language, create context name, split into atomic sub-questions."
     systemPrompt: |
       Analyze the user request and provide structured response:
-      
+
       LANGUAGE DETECTION: Detect the original language of the text carefully:
       - "cs" for Czech (česky)
       - "de" for German (deutsch)
-      - "en" for English 
+      - "en" for English
       - etc
-      
+
       TRANSLATION: Translate the complete text to clear English
-      
+
       CONTEXT NAMING: Create a brief descriptive context name (2-4 words)
       CRITICAL: contextName is REQUIRED and MUST NOT be empty. Extract key concepts from the user's question to create a meaningful name.
-      
+
       QUESTION SPLITTING: Split into atomic, independent sub-questions:
-      - Split by "and"/"or" conjunctions  
+      - Split by "and"/"or" conjunctions
       - Separate different aspects (what/where/how/why)
       - Each question must be answerable independently
       - Avoid compound questions with multiple verbs or subjects
       - Make each question focused on single topic
 
-      INITIAL RAG QUERIES: Generate concrete search queries for the knowledge base (RAG) that will gather information FIRST.
-      CRITICAL: These are the PRIMARY queries that will be executed IMMEDIATELY to populate the context with relevant information.
-      Each query must be formulated as a specific search request targeting:
-      - Knowledge base embeddings (code and documentation)
-      - Project codebase (classes, methods, configurations)
-      - Documentation and comments
-      
-      Query types to generate:
-      - CLASS/METHOD SEARCH: "Find the class that handles authentication", "Locate the authorization filter implementation"
-      - CONFIGURATION SEARCH: "Find database connection configuration", "Search for AWS service configuration"
-      - FEATURE SEARCH: "Check if document-to-text conversion is implemented", "Find existing JWT validation code"
-      - PATTERN SEARCH: "Search for async request handling patterns", "Find examples of error handling in controllers"
-      - DEPENDENCY SEARCH: "Find external API client implementations", "Search for service dependencies"
-      
-      AVOID generic tasks like "Analyze X" or "Implement Y". Generate ONLY concrete search queries that retrieve existing information.
-      These queries will be executed BEFORE any planning or analysis begins.
+      SYSTEM UNDERSTANDING QUERIES: Generate queries to understand the project's CURRENT STATE before planning any actions.
+      CRITICAL: These are EXPLORATORY queries executed FIRST to establish CONTEXT, not to find code to modify.
+
+      PHILOSOPHY: "UNDERSTAND BEFORE ACT"
+      - First understand WHAT EXISTS in the system
+      - Then understand HOW it's currently implemented
+      - Only then determine WHAT TO DO
+
+      Generate queries in this order:
+
+      STAGE 1 - CURRENT STATE (What already exists?)
+      - EXISTENCE: "List all [feature-area] implementations currently in the project"
+      - CAPABILITIES: "What [functionality] is already available in the codebase?"
+      - ARCHITECTURE: "How is [domain-area] currently structured in this project?"
+
+      STAGE 2 - IMPLEMENTATION PATTERNS (How does this project work?)
+      - CONVENTIONS: "Show examples of [pattern-type] in this project"
+      - STYLE: "What patterns does this project use for [technical-concern]?"
+      - INTEGRATION: "How are [component-type] integrated with the rest of the system?"
+
+      STAGE 3 - CONTEXT GATHERING (What's relevant to this request?)
+      - RELATED_CODE: "Find code related to [feature-area] that might be affected"
+      - DEPENDENCIES: "What services/components depend on [target-area]?"
+      - CONSTRAINTS: "What technical constraints exist around [domain-area]?"
+
+      EXAMPLES OF GOOD QUERIES:
+      - "List all authentication mechanisms currently implemented in the project"
+      - "How does this project handle database connections and transactions?"
+      - "Show examples of REST controller patterns used in this codebase"
+      - "What error handling strategies are currently used in service classes?"
+      - "Find all components that interact with the user management system"
+
+      AVOID:
+      - ❌ "Find the class to modify for authentication" (assumes action before understanding)
+      - ❌ "Implement JWT validation" (this is a task, not a query)
+      - ❌ "Analyze the code" (too generic, not exploratory)
+
+      Generate 3-6 queries that progressively build understanding of the system's current state and patterns.
     userPrompt: |
       User input text to analyze: {userText}
     modelParams:
@@ -424,6 +446,35 @@ tools:
     systemPrompt: |
       You are the Reindex Tool parameter resolver. Convert reindexing requests into appropriate reindex parameters.
 
+    modelParams:
+      modelType: GENERIC_TEXT_MODEL
+      creativityLevel: LOW
+
+  PROJECT_GIT_SYNC_TOOL:
+    description: "Synchronize project Git repository. Use for: manual refresh of codebase, recovery from failed sync, forced update after remote changes. Performs git clone (if not exists) or git pull (if exists). Parameters: projectId (optional if context set), action (sync/clone/update/pull, default: sync), validateAccess (boolean, default: false)."
+    systemPrompt: |
+      You are the Git Sync Tool parameter resolver. Convert Git synchronization requests into appropriate parameters.
+
+      ACTIONS:
+      - sync (default): Automatically clones if needed, pulls if exists
+      - clone: Force clone operation
+      - update: Same as sync
+      - pull: Pull changes only (fails if not cloned)
+
+      VALIDATE ACCESS:
+      - true: Validate repository access before sync (slower but safer)
+      - false (default): Skip validation, proceed directly to sync
+
+      EXAMPLES:
+      - "Sync the repository" → { "action": "sync" }
+      - "Pull latest changes" → { "action": "pull" }
+      - "Update Git repo and check access" → { "action": "sync", "validateAccess": true }
+      - "Refresh project ABC123 code" → { "projectId": "ABC123", "action": "sync" }
+    userPrompt: |
+      Task description: {taskDescription}
+      Step context: {stepContext}
+
+      Extract the appropriate Git sync parameters.
     modelParams:
       modelType: GENERIC_TEXT_MODEL
       creativityLevel: LOW
