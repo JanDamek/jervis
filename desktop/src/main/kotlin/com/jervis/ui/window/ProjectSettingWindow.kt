@@ -338,12 +338,9 @@ class ProjectSettingWindow(
                 ProjectDto(
                     clientId = GLOBAL_ID_STRING,
                     name = result.name,
+                    projectPath = result.projectPath,
                     description = result.description,
                     languages = result.languages,
-                    primaryUrl = result.primaryUrl.takeIf { it.isNotBlank() },
-                    extraUrls = result.extraUrls,
-                    credentialsRef = result.credentialsRef,
-                    defaultBranch = result.defaultBranch,
                     inspirationOnly = result.inspirationOnly,
                     indexingRules =
                         IndexingRulesDto(
@@ -376,12 +373,9 @@ class ProjectSettingWindow(
                     "Edit Project",
                     project.name,
                     project.description ?: "",
-                    project.primaryUrl ?: "",
-                    project.extraUrls.joinToString(", "),
-                    project.credentialsRef ?: "",
+                    project.projectPath ?: "",
                     project.languages.joinToString(", "),
                     project.inspirationOnly,
-                    project.defaultBranch,
                     project.indexingRules.includeGlobs.joinToString(", "),
                     project.indexingRules.excludeGlobs.joinToString(", "),
                     project.indexingRules.maxFileSizeMB,
@@ -396,12 +390,9 @@ class ProjectSettingWindow(
                 val updatedProject =
                     project.copy(
                         name = result.name,
+                        projectPath = result.projectPath,
                         description = result.description,
                         languages = result.languages,
-                        primaryUrl = result.primaryUrl.takeIf { it.isNotBlank() },
-                        extraUrls = result.extraUrls,
-                        credentialsRef = result.credentialsRef,
-                        defaultBranch = result.defaultBranch,
                         inspirationOnly = result.inspirationOnly,
                         indexingRules =
                             IndexingRulesDto(
@@ -866,12 +857,9 @@ class ProjectSettingWindow(
         title: String,
         initialName: String = "",
         initialDescription: String = "",
-        initialPrimaryUrl: String = "",
-        initialExtraUrls: String = "",
-        initialCredentialsRef: String = "",
+        initialProjectPath: String = "",
         initialLanguages: String = "",
         initialInspirationOnly: Boolean = false,
-        initialDefaultBranch: String = "main",
         initialIncludeGlobs: String = "**/*.kt, **/*.java, **/*.md",
         initialExcludeGlobs: String = "**/build/**, **/.git/**, **/*.min.*",
         initialMaxFileSizeMB: Int = 5,
@@ -908,20 +896,10 @@ class ProjectSettingWindow(
                     )
                 }
             }
-        private val primaryUrlField =
-            JTextField(initialPrimaryUrl).apply {
+        private val projectPathField =
+            JTextField(initialProjectPath).apply {
                 preferredSize = Dimension(480, 30)
-                toolTipText = "Primary repository URL (Git, HTTP, or SSH)."
-            }
-        private val extraUrlsField =
-            JTextField(initialExtraUrls).apply {
-                preferredSize = Dimension(480, 30)
-                toolTipText = "Additional repository URLs (comma-separated)."
-            }
-        private val credentialsRefField =
-            JTextField(initialCredentialsRef).apply {
-                preferredSize = Dimension(480, 30)
-                toolTipText = "Reference to stored credentials for repository access."
+                toolTipText = "Path within client mono-repository (e.g., services/auth-service)."
             }
         private val languagesField =
             JTextField(initialLanguages).apply {
@@ -931,11 +909,6 @@ class ProjectSettingWindow(
         private val inspirationOnlyCheckbox =
             JCheckBox("Inspiration only", initialInspirationOnly).apply {
                 toolTipText = "If checked, this project is used only for inspiration and not active development."
-            }
-        private val defaultBranchField =
-            JTextField(initialDefaultBranch).apply {
-                preferredSize = Dimension(480, 30)
-                toolTipText = "Default branch name for the repository."
             }
         private val includeGlobsField =
             JTextField(initialIncludeGlobs).apply {
@@ -996,14 +969,6 @@ class ProjectSettingWindow(
             // Basic Information Tab
             val basicPanel = createBasicInfoPanel()
             tabbedPane.addTab("Basic Information", basicPanel)
-
-            // Paths Tab
-            val pathsPanel = createPathsPanel()
-            tabbedPane.addTab("Paths", pathsPanel)
-
-            // Repository Tab
-            val repoPanel = createRepositoryPanel()
-            tabbedPane.addTab("Repository", repoPanel)
 
             // Indexing Tab
             val indexingPanel = createIndexingPanel()
@@ -1075,7 +1040,7 @@ class ProjectSettingWindow(
             panel.add(nameField, gbc)
             row++
 
-            // Project path (required)
+            // Project path in mono-repo
             gbc.gridx = 0
             gbc.gridy = row
             gbc.gridwidth = 1
@@ -1083,15 +1048,14 @@ class ProjectSettingWindow(
             gbc.fill =
                 GridBagConstraints.NONE
             gbc.weightx = 0.0
-            panel.add(JLabel("Local project folder:*"), gbc)
+            panel.add(JLabel("Project path:"), gbc)
             gbc.gridx = 1
+            gbc.gridwidth = 2
             gbc.anchor = GridBagConstraints.LINE_START
             gbc.fill =
                 GridBagConstraints.HORIZONTAL
             gbc.weightx = 1.0
-            gbc.gridx = 2
-            gbc.fill = GridBagConstraints.NONE
-            gbc.weightx = 0.0
+            panel.add(projectPathField, gbc)
             row++
 
             // Project description (optional)
@@ -1135,148 +1099,6 @@ class ProjectSettingWindow(
             gbc.gridwidth = 2
             gbc.fill = GridBagConstraints.HORIZONTAL
             panel.add(defaultCheckbox, gbc)
-
-            return panel
-        }
-
-        private fun createPathsPanel(): JPanel {
-            val panel = JPanel(GridBagLayout())
-            val gbc = GridBagConstraints()
-            gbc.insets = Insets(8, 8, 8, 8)
-            var row = 0
-
-            // Meeting transcripts folder
-            gbc.gridx = 0
-            gbc.gridy = row
-            gbc.gridwidth = 1
-            gbc.anchor = GridBagConstraints.LINE_END
-            panel.add(JLabel("Meeting transcripts folder:"), gbc)
-            gbc.gridx = 1
-            gbc.anchor = GridBagConstraints.LINE_START
-            gbc.fill = GridBagConstraints.HORIZONTAL
-            gbc.weightx = 1.0
-            gbc.gridx = 2
-            gbc.fill = GridBagConstraints.NONE
-            gbc.weightx = 0.0
-            row++
-
-            // Audio files folder
-            gbc.gridx = 0
-            gbc.gridy = row
-            gbc.gridwidth = 1
-            gbc.anchor = GridBagConstraints.LINE_END
-            panel.add(JLabel("Audio files folder:"), gbc)
-            gbc.gridx = 1
-            gbc.anchor = GridBagConstraints.LINE_START
-            gbc.fill = GridBagConstraints.HORIZONTAL
-            gbc.weightx = 1.0
-            gbc.gridx = 2
-            gbc.fill = GridBagConstraints.NONE
-            gbc.weightx = 0.0
-            row++
-
-            // Documentation folder
-            gbc.gridx = 0
-            gbc.gridy = row
-            gbc.gridwidth = 1
-            gbc.anchor = GridBagConstraints.LINE_END
-            panel.add(JLabel("Documentation folder:"), gbc)
-            gbc.gridx = 1
-            gbc.anchor = GridBagConstraints.LINE_START
-            gbc.fill = GridBagConstraints.HORIZONTAL
-            gbc.weightx = 1.0
-            gbc.gridx = 2
-            gbc.fill = GridBagConstraints.NONE
-            gbc.weightx = 0.0
-            row++
-
-            // Spacer
-            gbc.gridx = 0
-            gbc.gridy = row
-            gbc.gridwidth = 3
-            gbc.weighty = 1.0
-            panel.add(JPanel(), gbc)
-
-            return panel
-        }
-
-        private fun createRepositoryPanel(): JPanel {
-            val panel = JPanel(GridBagLayout())
-            val gbc = GridBagConstraints()
-            gbc.insets = Insets(8, 8, 8, 8)
-
-            var row = 0
-
-            // Primary URL (optional)
-            gbc.gridx = 0
-            gbc.gridy = row
-            gbc.anchor = GridBagConstraints.LINE_END
-            gbc.fill =
-                GridBagConstraints.NONE
-            gbc.weightx = 0.0
-            panel.add(JLabel("Primary URL:"), gbc)
-            gbc.gridx = 1
-            gbc.anchor = GridBagConstraints.LINE_START
-            gbc.fill =
-                GridBagConstraints.HORIZONTAL
-            gbc.weightx = 1.0
-            panel.add(primaryUrlField, gbc)
-            row++
-
-            // Extra URLs
-            gbc.gridx = 0
-            gbc.gridy = row
-            gbc.anchor = GridBagConstraints.LINE_END
-            gbc.fill =
-                GridBagConstraints.NONE
-            gbc.weightx = 0.0
-            panel.add(JLabel("Extra URLs:"), gbc)
-            gbc.gridx = 1
-            gbc.anchor = GridBagConstraints.LINE_START
-            gbc.fill =
-                GridBagConstraints.HORIZONTAL
-            gbc.weightx = 1.0
-            panel.add(extraUrlsField, gbc)
-            row++
-
-            // Credentials Reference
-            gbc.gridx = 0
-            gbc.gridy = row
-            gbc.anchor = GridBagConstraints.LINE_END
-            gbc.fill =
-                GridBagConstraints.NONE
-            gbc.weightx = 0.0
-            panel.add(JLabel("Credentials Ref:"), gbc)
-            gbc.gridx = 1
-            gbc.anchor = GridBagConstraints.LINE_START
-            gbc.fill =
-                GridBagConstraints.HORIZONTAL
-            gbc.weightx = 1.0
-            panel.add(credentialsRefField, gbc)
-            row++
-
-            // Default Branch
-            gbc.gridx = 0
-            gbc.gridy = row
-            gbc.anchor = GridBagConstraints.LINE_END
-            gbc.fill =
-                GridBagConstraints.NONE
-            gbc.weightx = 0.0
-            panel.add(JLabel("Default Branch:"), gbc)
-            gbc.gridx = 1
-            gbc.anchor = GridBagConstraints.LINE_START
-            gbc.fill =
-                GridBagConstraints.HORIZONTAL
-            gbc.weightx = 1.0
-            panel.add(defaultBranchField, gbc)
-            row++
-
-            // Add spacer to push content to top
-            gbc.gridx = 0
-            gbc.gridy = row
-            gbc.gridwidth = 2
-            gbc.weighty = 1.0
-            panel.add(JPanel(), gbc)
 
             return panel
         }
@@ -1433,14 +1255,7 @@ class ProjectSettingWindow(
             val name = nameField.text.trim()
             val description =
                 if (descriptionArea.text.trim() == "Optional project description") "" else descriptionArea.text.trim()
-            val primaryUrl = primaryUrlField.text.trim()
-            val extraUrls =
-                extraUrlsField.text
-                    .trim()
-                    .split(",")
-                    .map { it.trim() }
-                    .filter { it.isNotEmpty() }
-            val credentialsRef = credentialsRefField.text.trim().ifEmpty { null }
+            val projectPath = projectPathField.text.trim().ifEmpty { null }
             val languages =
                 languagesField.text
                     .trim()
@@ -1448,7 +1263,6 @@ class ProjectSettingWindow(
                     .map { it.trim() }
                     .filter { it.isNotEmpty() }
             val inspirationOnly = inspirationOnlyCheckbox.isSelected
-            val defaultBranch = defaultBranchField.text.trim()
             val includeGlobs =
                 includeGlobsField.text
                     .trim()
@@ -1502,12 +1316,9 @@ class ProjectSettingWindow(
                 ProjectResult(
                     name,
                     description,
-                    primaryUrl,
-                    extraUrls,
-                    credentialsRef,
+                    projectPath,
                     languages,
                     inspirationOnly,
-                    defaultBranch,
                     includeGlobs,
                     excludeGlobs,
                     maxFileSizeMB,
@@ -1525,12 +1336,9 @@ class ProjectSettingWindow(
     data class ProjectResult(
         val name: String,
         val description: String,
-        val primaryUrl: String,
-        val extraUrls: List<String>,
-        val credentialsRef: String?,
+        val projectPath: String?,
         val languages: List<String>,
         val inspirationOnly: Boolean,
-        val defaultBranch: String,
         val includeGlobs: List<String>,
         val excludeGlobs: List<String>,
         val maxFileSizeMB: Int,

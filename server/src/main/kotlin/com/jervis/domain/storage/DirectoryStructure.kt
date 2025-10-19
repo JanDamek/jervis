@@ -15,6 +15,9 @@ import java.nio.file.Paths
  *       - audio/
  *       - documents/
  *       - meetings/
+ *   - keys/
+ *     - ssh/
+ *     - gpg/
  *   - tmp/
  *     - scraping/
  *     - processing/
@@ -27,9 +30,13 @@ data class DirectoryStructure(
     val projectId: ObjectId?,
 ) {
     val clientsRoot: Path = workspaceRoot.resolve(CLIENTS_DIR)
+    val keysRoot: Path = workspaceRoot.resolve(KEYS_DIR)
     val tmpRoot: Path = workspaceRoot.resolve(TMP_DIR)
     val storageRoot: Path = workspaceRoot.resolve(STORAGE_DIR)
     val cacheRoot: Path = workspaceRoot.resolve(CACHE_DIR)
+
+    val sshKeysDir: Path = keysRoot.resolve(SSH_KEYS_SUBDIR)
+    val gpgKeysDir: Path = keysRoot.resolve(GPG_KEYS_SUBDIR)
 
     val tmpScrapingDir: Path = tmpRoot.resolve(SCRAPING_SUBDIR)
     val tmpProcessingDir: Path = tmpRoot.resolve(PROCESSING_SUBDIR)
@@ -47,10 +54,13 @@ data class DirectoryStructure(
 
     companion object {
         const val CLIENTS_DIR = "clients"
+        const val KEYS_DIR = "keys"
         const val TMP_DIR = "tmp"
         const val STORAGE_DIR = "storage"
         const val CACHE_DIR = "cache"
 
+        const val SSH_KEYS_SUBDIR = "ssh"
+        const val GPG_KEYS_SUBDIR = "gpg"
         const val SCRAPING_SUBDIR = "scraping"
         const val PROCESSING_SUBDIR = "processing"
         const val AUDIO_SUBDIR = "audio"

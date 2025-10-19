@@ -30,6 +30,10 @@ FROM eclipse-temurin:21-jre
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     git \
+    openssh-client \
+    gnupg \
+    gnupg-agent \
+    pinentry-curses \
     curl \
     wget \
     unzip \
@@ -73,7 +77,10 @@ WORKDIR /app
 COPY --from=builder /app/build/libs/*.jar app.jar
 
 # Create workspace directory structure for all server-managed files
-RUN mkdir -p /opt/jervis/data
+RUN mkdir -p /opt/jervis/data/keys/ssh \
+    && mkdir -p /opt/jervis/data/keys/gpg \
+    && chmod 700 /opt/jervis/data/keys/ssh \
+    && chmod 700 /opt/jervis/data/keys/gpg
 
 # Set environment variables
 ENV JAVA_OPTS="-Xmx2g -Xms512m"

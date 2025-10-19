@@ -20,6 +20,7 @@ enum class PromptTypeEnum(
     PROJECT_EXPLORE_STRUCTURE_TOOL(listOf("project_explore_structure", "search_codebase", "repo.tree")),
     PROJECT_REFRESH_INDEX_TOOL(listOf("project_refresh_index", "refresh_index", "reindex_project")),
     PROJECT_VERSION_CONTROL_TOOL(listOf("project_version_control", "git_control", "git")),
+    PROJECT_GIT_SYNC_TOOL(listOf("project_git_sync", "git_sync", "sync_repo")),
 
     // SYSTEM OPERATIONS
     SYSTEM_EXECUTE_COMMAND_TOOL(listOf("system_execute_command", "exec_command", "system.exec")),
@@ -43,6 +44,7 @@ enum class PromptTypeEnum(
     // PLANNING & ORCHESTRATION
     PLANNING_CREATE_PLAN_TOOL(listOf("planning_create_plan", "create_plan", "plan.create")),
     PLANNING_ANALYZE_QUESTION(listOf("planning_analyze_question", "analyze_question", "plan.analyze")),
+    SYSTEM_UNDERSTANDING_ASSESSMENT(listOf("system_understanding_assessment", "system_analysis", "understand_system")),
     EVENT_TRIAGE(listOf("event_triage", "triage", "decide_before_rag")),
     FINALIZER_ANSWER(listOf("finalizer_answer", "final_answer", "answer.final")),
 

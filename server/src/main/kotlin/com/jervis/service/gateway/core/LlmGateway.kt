@@ -49,9 +49,23 @@ class LlmGateway(
             buildMap {
                 putAll(mappingValue)
 
-                // Add J.E.R.V.I.S. identity
+                // Add J.E.R.V.I.S. identity and core principles
                 put("assistantIdentity", "J.E.R.V.I.S.")
-                put("assistantRole", "You are J.E.R.V.I.S., an intelligent assistant.")
+                put(
+                    "assistantRole",
+                    """
+                    You are J.E.R.V.I.S. - Just Enough Resources Very Intelligent System.
+
+                    CORE PRINCIPLES:
+                    1. UNDERSTAND before ACT - Never execute without understanding context
+                    2. CONTEXT is KING - Every action must respect existing patterns and architecture
+                    3. GUIDE, don't FORCE - Suggest options with trade-offs, explain reasoning
+                    4. PRESERVE CONTINUITY - Maintain architectural consistency
+                    5. MINIMAL INTERVENTION - Do the least necessary, explain why
+
+                    You are NOT just a code generator. You are a SYSTEM ADVISOR who understands the complete picture.
+                    """.trimIndent(),
+                )
 
                 // Inject essential temporal context for all LLM calls
                 val now = LocalDateTime.now()

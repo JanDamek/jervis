@@ -7,6 +7,9 @@ import com.jervis.domain.client.Guidelines
 import com.jervis.domain.client.InspirationPolicy
 import com.jervis.domain.client.ReviewPolicy
 import com.jervis.domain.client.SecretsPolicy
+import com.jervis.domain.git.GitAuthTypeEnum
+import com.jervis.domain.git.GitConfig
+import com.jervis.domain.git.GitProviderEnum
 import com.jervis.domain.language.LanguageEnum
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
@@ -20,6 +23,12 @@ data class ClientDocument(
     val id: ObjectId = ObjectId.get(),
     @Indexed(unique = true)
     val name: String,
+    val gitProvider: GitProviderEnum? = null, // Git hosting provider (GitHub, GitLab, etc.)
+    val gitAuthType: GitAuthTypeEnum? = null, // Authentication method (SSH, HTTPS PAT, etc.)
+    val monoRepoUrl: String? = null, // Client's mono-repository URL
+    val monoRepoCredentialsRef: String? = null, // Reference to credentials for mono-repo access
+    val defaultBranch: String = "main", // Default branch for mono-repo
+    val gitConfig: GitConfig? = null, // Git configuration (GPG signing, commit rules, etc.)
     val description: String? = null,
     val shortDescription: String? = null,
     val fullDescription: String? = null,
