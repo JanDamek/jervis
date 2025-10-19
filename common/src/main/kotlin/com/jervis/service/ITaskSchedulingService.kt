@@ -1,34 +1,61 @@
 package com.jervis.service
 
-import com.jervis.domain.task.ScheduledTaskStatus
+import com.jervis.domain.task.ScheduledTaskStatusEnum
 import com.jervis.dto.ScheduledTaskDto
+import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.service.annotation.DeleteExchange
+import org.springframework.web.service.annotation.GetExchange
+import org.springframework.web.service.annotation.HttpExchange
+import org.springframework.web.service.annotation.PostExchange
+import org.springframework.web.service.annotation.PutExchange
 
+@HttpExchange("/api/task-scheduling")
 interface ITaskSchedulingService {
+    @PostExchange
     suspend fun scheduleTask(
-        projectId: String,
-        taskName: String,
-        taskInstruction: String,
-        cronExpression: String?,
-        priority: Int,
+        @RequestParam projectId: String,
+        @RequestParam taskName: String,
+        @RequestParam taskInstruction: String,
+        @RequestParam(required = false) cronExpression: String?,
+        @RequestParam priority: Int,
     ): ScheduledTaskDto
 
-    suspend fun findById(taskId: String): ScheduledTaskDto?
+    @GetExchange("/{taskId}")
+    suspend fun findById(
+        @PathVariable taskId: String,
+    ): ScheduledTaskDto?
 
+    @GetExchange("/list")
     suspend fun listAllTasks(): List<ScheduledTaskDto>
 
-    suspend fun listTasksForProject(projectId: String): List<ScheduledTaskDto>
+    @GetExchange("/project/{projectId}")
+    suspend fun listTasksForProject(
+        @PathVariable projectId: String,
+    ): List<ScheduledTaskDto>
 
+    @GetExchange("/pending")
     suspend fun listPendingTasks(): List<ScheduledTaskDto>
 
-    suspend fun cancelTask(taskId: String)
+    @DeleteExchange("/{taskId}")
+    suspend fun cancelTask(
+        @PathVariable taskId: String,
+    )
 
-    suspend fun retryTask(taskId: String): ScheduledTaskDto
-
-    suspend fun updateTaskStatus(
-        taskId: String,
-        status: String,
-        errorMessage: String?,
+    @PostExchange("/{taskId}/retry")
+    suspend fun retryTask(
+        @PathVariable taskId: String,
     ): ScheduledTaskDto
 
-    fun getTasksByStatus(taskStatus: ScheduledTaskStatus): List<ScheduledTaskDto>
+    @PutExchange("/{taskId}/status")
+    suspend fun updateTaskStatus(
+        @PathVariable taskId: String,
+        @RequestParam status: String,
+        @RequestParam(required = false) errorMessage: String?,
+    ): ScheduledTaskDto
+
+    @GetExchange("/by-status")
+    fun getTasksByStatus(
+        @RequestParam taskStatus: ScheduledTaskStatusEnum,
+    ): List<ScheduledTaskDto>
 }

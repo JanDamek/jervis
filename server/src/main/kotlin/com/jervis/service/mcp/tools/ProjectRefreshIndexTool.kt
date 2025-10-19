@@ -3,7 +3,6 @@ package com.jervis.service.mcp.tools
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
-import com.jervis.mapper.toDto
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.indexing.IndexingService
 import com.jervis.service.mcp.McpTool
@@ -68,14 +67,14 @@ class ProjectRefreshIndexTool(
                 logger.info { "Starting reindex operation for project: ${project.name}" }
 
                 val projectPath =
-                    directoryStructureService.getGitDirectory(
+                    directoryStructureService.projectGitDir(
                         context.clientDocument.id,
                         project.id,
                     )
 
                 // Perform comprehensive reindexing using all available indexing services
                 // Convert ProjectDocument to ProjectDto as required by indexProject()
-                val projectDto = project.toDto()
+                val projectDto = project
                 val result = indexingService.indexProject(projectDto) as IndexingService.IndexingResult
 
                 logger.info { "Successfully completed comprehensive reindex operation for project: ${project.name}" }

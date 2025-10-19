@@ -39,6 +39,8 @@ class DesktopDebugWindowService : IDebugWindowService {
         promptType: String,
         systemPrompt: String,
         userPrompt: String,
+        clientId: String?,
+        clientName: String?,
     ) {
         cleanupOldSessions()
 
@@ -50,6 +52,8 @@ class DesktopDebugWindowService : IDebugWindowService {
                 userPrompt = userPrompt,
                 startTime = LocalDateTime.now(),
                 responseBuffer = StringBuilder(),
+                clientId = clientId,
+                clientName = clientName,
             )
 
         val sessionMemory = estimateSessionMemory(session)
@@ -62,10 +66,13 @@ class DesktopDebugWindowService : IDebugWindowService {
         sessions[sessionId] = session
         currentMemoryUsage.addAndGet(sessionMemory)
 
-        logger.info { "Debug session started: $sessionId ($promptType) - Memory: ${sessionMemory}B" }
+        logger.info { "Debug session started: $sessionId ($promptType) for client: ${clientName ?: "System"} - Memory: ${sessionMemory}B" }
 
-        // Show debug window if not visible
-        ensureDebugWindowVisible(session)
+        // Show debug window and add session tab
+        ensureDebugWindowVisible()
+        SwingUtilities.invokeLater {
+            debugWindow?.displaySession(session)
+        }
 
         // Emit event
         _debugEvents.tryEmit(
@@ -82,9 +89,9 @@ class DesktopDebugWindowService : IDebugWindowService {
             session.responseBuffer.append(chunk)
             currentMemoryUsage.addAndGet(chunkSize)
 
-            // Update UI on Swing thread
+            // Update UI on Swing thread - pass sessionId to target correct tab
             SwingUtilities.invokeLater {
-                debugWindow?.appendResponse(chunk)
+                debugWindow?.appendResponse(sessionId, chunk)
             }
 
             // Emit event
@@ -130,13 +137,12 @@ class DesktopDebugWindowService : IDebugWindowService {
 
     override fun getActiveSessionIds(): List<String> = sessions.keys.toList()
 
-    private fun ensureDebugWindowVisible(session: DebugSession) {
+    private fun ensureDebugWindowVisible() {
         SwingUtilities.invokeLater {
             if (debugWindow == null) {
                 debugWindow = DebugWindowFrame()
             }
             debugWindow?.let { window ->
-                window.displaySession(session)
                 if (!window.isVisible) {
                     window.isVisible = true
                     window.toFront()

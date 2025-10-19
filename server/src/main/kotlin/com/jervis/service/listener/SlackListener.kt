@@ -1,6 +1,6 @@
 package com.jervis.service.listener
 
-import com.jervis.domain.authentication.ServiceType
+import com.jervis.domain.authentication.ServiceTypeEnum
 import com.jervis.entity.mongo.ServiceCredentialsDocument
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -14,7 +14,7 @@ import java.time.Instant
  */
 @Service
 class SlackListener : ServiceListener {
-    override val serviceType: ServiceType = ServiceType.SLACK
+    override val serviceTypeEnum: ServiceTypeEnum = ServiceTypeEnum.SLACK
 
     private val logger = LoggerFactory.getLogger(SlackListener::class.java)
 
@@ -26,7 +26,7 @@ class SlackListener : ServiceListener {
             try {
                 logger.info("Polling Slack for client ${credentials.clientId}")
                 ListenerPollResult(
-                    serviceType = serviceType,
+                    serviceTypeEnum = serviceTypeEnum,
                     clientId = credentials.clientId,
                     projectId = credentials.projectId,
                     newMessages = emptyList(),
@@ -34,7 +34,7 @@ class SlackListener : ServiceListener {
             } catch (e: Exception) {
                 logger.error("Error polling Slack for client ${credentials.clientId}", e)
                 ListenerPollResult(
-                    serviceType = serviceType,
+                    serviceTypeEnum = serviceTypeEnum,
                     clientId = credentials.clientId,
                     projectId = credentials.projectId,
                     newMessages = emptyList(),

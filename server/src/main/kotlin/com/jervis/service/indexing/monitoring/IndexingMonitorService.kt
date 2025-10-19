@@ -16,7 +16,7 @@ class IndexingMonitorService(
 ) {
     private val logger = KotlinLogging.logger {}
 
-    private val projectStates = ConcurrentHashMap<ObjectId, ProjectIndexingState>()
+    private val projectStates = ConcurrentHashMap<ObjectId, ProjectIndexingStateDto>()
 
     /**
      * Start indexing for a project
@@ -28,10 +28,10 @@ class IndexingMonitorService(
         logger.info { "Starting indexing for project: $projectName ($projectId)" }
 
         val state =
-            ProjectIndexingState(
+            ProjectIndexingStateDto(
                 projectId = projectId.toHexString(),
                 projectName = projectName,
-                status = IndexingStepStatus.RUNNING,
+                status = IndexingStepStatusEnum.RUNNING,
                 startTime = Instant.now(),
                 steps = createIndexingSteps().toMutableList(),
             )
@@ -42,8 +42,8 @@ class IndexingMonitorService(
             IndexingProgressUpdate(
                 projectId = projectId,
                 projectName = projectName,
-                stepType = IndexingStepType.PROJECT,
-                status = IndexingStepStatus.RUNNING,
+                stepType = IndexingStepTypeEnum.PROJECT,
+                status = IndexingStepStatusEnum.RUNNING,
                 message = "Starting project indexing process",
             ),
         )
@@ -54,9 +54,9 @@ class IndexingMonitorService(
      */
     suspend fun updateStepProgress(
         projectId: ObjectId,
-        stepType: IndexingStepType,
-        status: IndexingStepStatus,
-        progress: IndexingProgress? = null,
+        stepType: IndexingStepTypeEnum,
+        status: IndexingStepStatusEnum,
+        progress: IndexingProgressDto? = null,
         message: String? = null,
         errorMessage: String? = null,
         logs: List<String> = emptyList(),
@@ -70,12 +70,12 @@ class IndexingMonitorService(
                 progress = progress,
                 message = message,
                 errorMessage = errorMessage,
-                startTime = step.startTime ?: if (status == IndexingStepStatus.RUNNING) Instant.now() else null,
+                startTime = step.startTime ?: if (status == IndexingStepStatusEnum.RUNNING) Instant.now() else null,
                 endTime =
                     if (status in
                         listOf(
-                            IndexingStepStatus.COMPLETED,
-                            IndexingStepStatus.FAILED,
+                            IndexingStepStatusEnum.COMPLETED,
+                            IndexingStepStatusEnum.FAILED,
                         )
                     ) {
                         Instant.now()
@@ -104,9 +104,9 @@ class IndexingMonitorService(
         )
 
         // Check if a project is completed
-        if (state.isCompleted && state.status != IndexingStepStatus.COMPLETED) {
+        if (state.isCompleted && state.status != IndexingStepStatusEnum.COMPLETED) {
             completeProjectIndexing(projectId)
-        } else if (state.hasFailed && state.status != IndexingStepStatus.FAILED) {
+        } else if (state.hasFailed && state.status != IndexingStepStatusEnum.FAILED) {
             failProjectIndexing(projectId, "One or more indexing steps failed")
         }
     }
@@ -116,7 +116,7 @@ class IndexingMonitorService(
      */
     suspend fun addStepLog(
         projectId: ObjectId,
-        stepType: IndexingStepType,
+        stepType: IndexingStepTypeEnum,
         logMessage: String,
     ) {
         val state = projectStates[projectId] ?: return
@@ -143,7 +143,7 @@ class IndexingMonitorService(
         val state = projectStates[projectId] ?: return
         val updatedState =
             state.copy(
-                status = IndexingStepStatus.COMPLETED,
+                status = IndexingStepStatusEnum.COMPLETED,
                 endTime = Instant.now(),
             )
         projectStates[projectId] = updatedState
@@ -154,8 +154,8 @@ class IndexingMonitorService(
             IndexingProgressUpdate(
                 projectId = projectId,
                 projectName = state.projectName,
-                stepType = IndexingStepType.PROJECT,
-                status = IndexingStepStatus.COMPLETED,
+                stepType = IndexingStepTypeEnum.PROJECT,
+                status = IndexingStepStatusEnum.COMPLETED,
                 message = "Project indexing completed successfully",
             ),
         )
@@ -171,7 +171,7 @@ class IndexingMonitorService(
         val state = projectStates[projectId] ?: return
         val updatedState =
             state.copy(
-                status = IndexingStepStatus.FAILED,
+                status = IndexingStepStatusEnum.FAILED,
                 endTime = Instant.now(),
             )
         projectStates[projectId] = updatedState
@@ -182,8 +182,8 @@ class IndexingMonitorService(
             IndexingProgressUpdate(
                 projectId = projectId,
                 projectName = state.projectName,
-                stepType = IndexingStepType.PROJECT,
-                status = IndexingStepStatus.FAILED,
+                stepType = IndexingStepTypeEnum.PROJECT,
+                status = IndexingStepStatusEnum.FAILED,
                 errorMessage = errorMessage,
             ),
         )
@@ -192,27 +192,27 @@ class IndexingMonitorService(
     /**
      * Get all current project states
      */
-    fun getAllProjectStates(): Map<ObjectId, ProjectIndexingState> = projectStates.toMap()
+    fun getAllProjectStates(): Map<ObjectId, ProjectIndexingStateDto> = projectStates.toMap()
 
-    private fun createIndexingSteps(): List<IndexingStep> =
+    private fun createIndexingSteps(): List<IndexingStepDto> =
         listOf(
-            IndexingStep(IndexingStepType.CODE_FILES),
-            IndexingStep(IndexingStepType.TEXT_CONTENT),
-            IndexingStep(IndexingStepType.JOERN_ANALYSIS),
-            IndexingStep(IndexingStepType.GIT_HISTORY),
-            IndexingStep(IndexingStepType.DEPENDENCIES),
-            IndexingStep(IndexingStepType.CLASS_SUMMARIES),
-            IndexingStep(IndexingStepType.COMPREHENSIVE_FILES),
-            IndexingStep(IndexingStepType.DOCUMENTATION),
-            IndexingStep(IndexingStepType.MEETING_TRANSCRIPTS),
-            IndexingStep(IndexingStepType.AUDIO_TRANSCRIPTS),
-            IndexingStep(IndexingStepType.CLIENT_UPDATE),
+            IndexingStepDto(IndexingStepTypeEnum.CODE_FILES),
+            IndexingStepDto(IndexingStepTypeEnum.TEXT_CONTENT),
+            IndexingStepDto(IndexingStepTypeEnum.JOERN_ANALYSIS),
+            IndexingStepDto(IndexingStepTypeEnum.GIT_HISTORY),
+            IndexingStepDto(IndexingStepTypeEnum.DEPENDENCIES),
+            IndexingStepDto(IndexingStepTypeEnum.CLASS_SUMMARIES),
+            IndexingStepDto(IndexingStepTypeEnum.COMPREHENSIVE_FILES),
+            IndexingStepDto(IndexingStepTypeEnum.DOCUMENTATION),
+            IndexingStepDto(IndexingStepTypeEnum.MEETING_TRANSCRIPTS),
+            IndexingStepDto(IndexingStepTypeEnum.AUDIO_TRANSCRIPTS),
+            IndexingStepDto(IndexingStepTypeEnum.CLIENT_UPDATE),
         )
 
     private fun findStep(
-        steps: List<IndexingStep>,
-        stepType: IndexingStepType,
-    ): IndexingStep? {
+        steps: List<IndexingStepDto>,
+        stepType: IndexingStepTypeEnum,
+    ): IndexingStepDto? {
         steps.forEach { step ->
             if (step.stepType == stepType) return step
             val subStep = findStep(step.subSteps, stepType)
@@ -222,9 +222,9 @@ class IndexingMonitorService(
     }
 
     private fun updateStepInState(
-        steps: MutableList<IndexingStep>,
-        stepType: IndexingStepType,
-        updatedStep: IndexingStep,
+        steps: MutableList<IndexingStepDto>,
+        stepType: IndexingStepTypeEnum,
+        updatedStep: IndexingStepDto,
     ) {
         for (i in steps.indices) {
             val step = steps[i]

@@ -1,6 +1,6 @@
 package com.jervis.service.listener
 
-import com.jervis.domain.authentication.ServiceType
+import com.jervis.domain.authentication.ServiceTypeEnum
 import com.jervis.entity.mongo.ServiceCredentialsDocument
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -14,7 +14,7 @@ import java.time.Instant
  */
 @Service
 class EmailListener : ServiceListener {
-    override val serviceType: ServiceType = ServiceType.EMAIL
+    override val serviceTypeEnum: ServiceTypeEnum = ServiceTypeEnum.EMAIL
 
     private val logger = LoggerFactory.getLogger(EmailListener::class.java)
 
@@ -31,7 +31,7 @@ class EmailListener : ServiceListener {
                     else -> {
                         logger.warn("Unsupported email protocol: $protocol")
                         ListenerPollResult(
-                            serviceType = serviceType,
+                            serviceTypeEnum = serviceTypeEnum,
                             clientId = credentials.clientId,
                             projectId = credentials.projectId,
                             newMessages = emptyList(),
@@ -42,7 +42,7 @@ class EmailListener : ServiceListener {
             } catch (e: Exception) {
                 logger.error("Error polling email for client ${credentials.clientId}", e)
                 ListenerPollResult(
-                    serviceType = serviceType,
+                    serviceTypeEnum = serviceTypeEnum,
                     clientId = credentials.clientId,
                     projectId = credentials.projectId,
                     newMessages = emptyList(),
@@ -72,7 +72,7 @@ class EmailListener : ServiceListener {
     ): ListenerPollResult {
         logger.info("Polling IMAP for client ${credentials.clientId}")
         return ListenerPollResult(
-            serviceType = serviceType,
+            serviceTypeEnum = serviceTypeEnum,
             clientId = credentials.clientId,
             projectId = credentials.projectId,
             newMessages = emptyList(),
@@ -85,7 +85,7 @@ class EmailListener : ServiceListener {
     ): ListenerPollResult {
         logger.info("Polling Microsoft Graph for client ${credentials.clientId}")
         return ListenerPollResult(
-            serviceType = serviceType,
+            serviceTypeEnum = serviceTypeEnum,
             clientId = credentials.clientId,
             projectId = credentials.projectId,
             newMessages = emptyList(),

@@ -1,6 +1,7 @@
 package com.jervis
 
 import com.formdev.flatlaf.FlatLightLaf
+import com.jervis.client.NotificationsWebSocketClient
 import com.jervis.service.IAgentOrchestratorService
 import com.jervis.service.IClientIndexingService
 import com.jervis.service.IClientProjectLinkService
@@ -45,6 +46,7 @@ class JervisApplication(
     private val taskSchedulingService: ITaskSchedulingService,
     private val indexingMonitorService: IIndexingMonitorService,
     private val debugWindowService: DesktopDebugWindowService,
+    private val notificationsClient: NotificationsWebSocketClient,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -67,6 +69,7 @@ class JervisApplication(
                     taskSchedulingService,
                     indexingMonitorService,
                     debugWindowService,
+                    notificationsClient,
                 )
 
             EventQueue.invokeLater {

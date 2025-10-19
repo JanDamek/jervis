@@ -1,22 +1,37 @@
 package com.jervis.service
 
 import com.jervis.dto.ProjectDto
+import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.service.annotation.DeleteExchange
+import org.springframework.web.service.annotation.GetExchange
+import org.springframework.web.service.annotation.HttpExchange
+import org.springframework.web.service.annotation.PostExchange
+import org.springframework.web.service.annotation.PutExchange
 
+@HttpExchange("/api/projects")
 interface IProjectService {
+    @GetExchange
     suspend fun getAllProjects(): List<ProjectDto>
 
+    @GetExchange("/default")
     suspend fun getDefaultProject(): ProjectDto?
 
-    suspend fun setActiveProject(project: ProjectDto)
+    @PutExchange("/active")
+    suspend fun setActiveProject(@RequestBody project: ProjectDto)
 
-    suspend fun setDefaultProject(project: ProjectDto)
+    @PutExchange("/default")
+    suspend fun setDefaultProject(@RequestBody project: ProjectDto)
 
+    @PostExchange
     suspend fun saveProject(
-        project: ProjectDto,
-        makeDefault: Boolean = false,
+        @RequestBody project: ProjectDto,
+        @RequestParam(required = false, defaultValue = "false") makeDefault: Boolean = false,
     ): ProjectDto
 
-    suspend fun deleteProject(project: ProjectDto)
+    @DeleteExchange
+    suspend fun deleteProject(@RequestBody project: ProjectDto)
 
-    suspend fun getProjectByName(name: String?): ProjectDto
+    @GetExchange("/by-name")
+    suspend fun getProjectByName(@RequestParam(required = false) name: String?): ProjectDto
 }

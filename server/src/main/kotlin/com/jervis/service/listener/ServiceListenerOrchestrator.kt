@@ -1,6 +1,6 @@
 package com.jervis.service.listener
 
-import com.jervis.domain.authentication.ServiceType
+import com.jervis.domain.authentication.ServiceTypeEnum
 import com.jervis.entity.mongo.ServiceCredentialsDocument
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,7 +30,7 @@ class ServiceListenerOrchestrator(
     private val logger = LoggerFactory.getLogger(ServiceListenerOrchestrator::class.java)
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val lastPollTimes = ConcurrentHashMap<String, Instant>()
-    private val listenerMap: Map<ServiceType, ServiceListener> = listeners.associateBy { it.serviceType }
+    private val listenerMap: Map<ServiceTypeEnum, ServiceListener> = listeners.associateBy { it.serviceTypeEnum }
 
     /**
      * Poll all active service credentials every 5 minutes
@@ -67,7 +67,10 @@ class ServiceListenerOrchestrator(
                 try {
                     pollService(credential)
                 } catch (e: Exception) {
-                    logger.error("Error polling service ${credential.serviceType} for client ${credential.clientId}", e)
+                    logger.error(
+                        "Error polling service ${credential.serviceTypeEnum} for client ${credential.clientId}",
+                        e,
+                    )
                 }
             }
         }
@@ -77,22 +80,22 @@ class ServiceListenerOrchestrator(
      * Poll a specific service
      */
     private suspend fun pollService(credential: ServiceCredentialsDocument) {
-        val listener = listenerMap[credential.serviceType]
+        val listener = listenerMap[credential.serviceTypeEnum]
         if (listener == null) {
-            logger.warn("No listener found for service type ${credential.serviceType}")
+            logger.warn("No listener found for service type ${credential.serviceTypeEnum}")
             return
         }
 
-        val lastPollKey = "${credential.clientId}-${credential.projectId}-${credential.serviceType}"
+        val lastPollKey = "${credential.clientId}-${credential.projectId}-${credential.serviceTypeEnum}"
         val lastPollTime = lastPollTimes[lastPollKey]
 
         try {
-            logger.info("Polling ${credential.serviceType} for client ${credential.clientId}")
+            logger.info("Polling ${credential.serviceTypeEnum} for client ${credential.clientId}")
 
             val result = listener.poll(credential, lastPollTime)
 
             if (result.error != null) {
-                logger.error("Error from ${credential.serviceType} listener: ${result.error}")
+                logger.error("Error from ${credential.serviceTypeEnum} listener: ${result.error}")
                 return
             }
 
@@ -104,11 +107,11 @@ class ServiceListenerOrchestrator(
             updateLastUsed(credential)
 
             logger.info(
-                "Successfully polled ${credential.serviceType} for client ${credential.clientId}: " +
+                "Successfully polled ${credential.serviceTypeEnum} for client ${credential.clientId}: " +
                     "${result.newMessages.size} new, ${result.deletedMessageIds.size} deleted",
             )
         } catch (e: Exception) {
-            logger.error("Error polling ${credential.serviceType} for client ${credential.clientId}", e)
+            logger.error("Error polling ${credential.serviceTypeEnum} for client ${credential.clientId}", e)
         }
     }
 
@@ -118,7 +121,7 @@ class ServiceListenerOrchestrator(
     suspend fun triggerPoll(
         clientId: String,
         projectId: String?,
-        serviceType: ServiceType,
+        serviceTypeEnum: ServiceTypeEnum,
     ) {
         val query =
             Query.query(
@@ -126,7 +129,7 @@ class ServiceListenerOrchestrator(
                     .where("clientId")
                     .`is`(clientId)
                     .and("serviceType")
-                    .`is`(serviceType)
+                    .`is`(serviceTypeEnum)
                     .and("isActive")
                     .`is`(true),
             )

@@ -1,4 +1,4 @@
-package com.jervis.service.gateway.clients
+package com.jervis.service.gateway.clients.llm
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -8,6 +8,8 @@ import com.jervis.configuration.prompts.PromptConfigBase
 import com.jervis.configuration.prompts.PromptsConfiguration
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProvider
+import com.jervis.service.gateway.clients.ProviderClient
+import com.jervis.service.gateway.clients.StreamChunk
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.reactive.asFlow
@@ -47,7 +49,7 @@ class OpenAiClient(
         return parseResponse(response, model)
     }
 
-    override suspend fun callWithStreaming(
+    override fun callWithStreaming(
         model: String,
         systemPrompt: String?,
         userPrompt: String,
@@ -71,31 +73,69 @@ class OpenAiClient(
                     .bodyToFlux(String::class.java)
                     .asFlow()
 
-            val responseBuffer = StringBuilder()
-            var finalMetadata: Map<String, Any> = emptyMap()
+            val responseBuilder = StringBuilder()
+            var totalPromptTokens = 0
+            var totalCompletionTokens = 0
+            var finalModel = model
+            var finishReason = "stop"
 
             responseFlow.collect { sseChunk ->
-                val parsedChunk = parseStreamChunk(sseChunk)
+                if (sseChunk.startsWith("data: ")) {
+                    val jsonPart = sseChunk.substring(6).trim()
 
-                if (parsedChunk.content.isNotEmpty()) {
-                    responseBuffer.append(parsedChunk.content)
+                    // Check for completion signal
+                    if (jsonPart == "[DONE]") {
+                        // Emit final chunk with metadata
+                        emit(
+                            StreamChunk(
+                                content = "",
+                                isComplete = true,
+                                metadata =
+                                    mapOf(
+                                        "model" to finalModel,
+                                        "prompt_tokens" to totalPromptTokens,
+                                        "completion_tokens" to totalCompletionTokens,
+                                        "total_tokens" to (totalPromptTokens + totalCompletionTokens),
+                                        "finish_reason" to finishReason,
+                                    ),
+                            ),
+                        )
+                        return@collect
+                    }
+
+                    try {
+                        val mapper = jacksonObjectMapper()
+                        val jsonNode = mapper.readTree(jsonPart)
+
+                        val choices = jsonNode.get("choices")
+                        if (choices != null && choices.isArray && choices.size() > 0) {
+                            val firstChoice = choices.get(0)
+                            val delta = firstChoice.get("delta")
+                            val content = delta?.get("content")?.asText() ?: ""
+                            val chunkFinishReason = firstChoice.get("finish_reason")?.asText()
+
+                            if (content.isNotEmpty()) {
+                                responseBuilder.append(content)
+                                emit(StreamChunk(content = content, isComplete = false))
+                            }
+
+                            // Extract metadata from usage if present
+                            val usage = jsonNode.get("usage")
+                            if (usage != null) {
+                                totalPromptTokens = usage.get("prompt_tokens")?.asInt() ?: 0
+                                totalCompletionTokens = usage.get("completion_tokens")?.asInt() ?: 0
+                                finalModel = jsonNode.get("model")?.asText() ?: model
+                            }
+
+                            if (chunkFinishReason != null) {
+                                finishReason = chunkFinishReason
+                            }
+                        }
+                    } catch (e: Exception) {
+                        // Log error but continue streaming
+                    }
                 }
-
-                if (parsedChunk.isComplete) {
-                    finalMetadata = parsedChunk.metadata
-                }
-
-                emit(parsedChunk)
             }
-
-            // Emit final chunk with complete response and metadata
-            emit(
-                StreamChunk(
-                    content = "",
-                    isComplete = true,
-                    metadata = finalMetadata + mapOf("full_response" to responseBuffer.toString()),
-                ),
-            )
         }
 
     private fun buildMessagesList(
@@ -159,56 +199,6 @@ class OpenAiClient(
     ): Map<String, Any> {
         val baseBody = buildRequestBody(model, messages, creativityConfig, config)
         return baseBody + mapOf("stream" to true)
-    }
-
-    private fun parseStreamChunk(sseChunk: String): StreamChunk {
-        if (sseChunk.startsWith("data: ")) {
-            val jsonPart = sseChunk.substring(6).trim()
-
-            // Check for completion signal
-            if (jsonPart == "[DONE]") {
-                return StreamChunk("", isComplete = true)
-            }
-
-            return try {
-                val mapper = jacksonObjectMapper()
-                val jsonNode = mapper.readTree(jsonPart)
-
-                val choices = jsonNode.get("choices")
-                if (choices != null && choices.isArray && choices.size() > 0) {
-                    val firstChoice = choices.get(0)
-                    val delta = firstChoice.get("delta")
-                    val content = delta?.get("content")?.asText() ?: ""
-                    val finishReason = firstChoice.get("finish_reason")?.asText()
-
-                    val usage = jsonNode.get("usage")
-                    val metadata =
-                        if (usage != null) {
-                            mapOf(
-                                "model" to (jsonNode.get("model")?.asText() ?: ""),
-                                "prompt_tokens" to (usage.get("prompt_tokens")?.asInt() ?: 0),
-                                "completion_tokens" to (usage.get("completion_tokens")?.asInt() ?: 0),
-                                "total_tokens" to (usage.get("total_tokens")?.asInt() ?: 0),
-                                "finish_reason" to (finishReason ?: ""),
-                            )
-                        } else {
-                            emptyMap()
-                        }
-
-                    StreamChunk(
-                        content = content,
-                        isComplete = finishReason != null,
-                        metadata = metadata,
-                    )
-                } else {
-                    StreamChunk("") // Empty chunk for malformed data
-                }
-            } catch (e: Exception) {
-                // Log error but continue streaming
-                StreamChunk("") // Return empty chunk on parse error
-            }
-        }
-        return StreamChunk("") // Return empty chunk for non-data lines
     }
 
     private fun getCreativityConfig(prompt: PromptConfigBase) =

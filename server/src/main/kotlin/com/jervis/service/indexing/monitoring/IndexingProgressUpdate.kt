@@ -10,9 +10,9 @@ import java.time.Instant
 data class IndexingProgressUpdate(
     val projectId: ObjectId,
     val projectName: String,
-    val stepType: IndexingStepType,
-    val status: IndexingStepStatus,
-    val progress: IndexingProgress? = null,
+    val stepType: IndexingStepTypeEnum,
+    val status: IndexingStepStatusEnum,
+    val progress: IndexingProgressDto? = null,
     val message: String? = null,
     val errorMessage: String? = null,
     val timestamp: Instant = Instant.now(),

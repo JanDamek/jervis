@@ -4,7 +4,7 @@ import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.plan.PlanStep
-import com.jervis.domain.plan.StepStatus
+import com.jervis.domain.plan.StepStatusEnum
 import com.jervis.service.gateway.core.LlmGateway
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
@@ -86,7 +86,7 @@ class Planner(
             stepToolName = validToolName,
             stepInstruction = dto.stepInstruction,
             stepDependsOn = dto.stepDependsOn,
-            status = StepStatus.PENDING,
+            status = StepStatusEnum.PENDING,
         )
     }
 
@@ -123,9 +123,9 @@ class Planner(
 
     private fun buildPlanContextSummary(plan: Plan): String {
         val totalSteps = plan.steps.size
-        val completedSteps = plan.steps.count { it.status == StepStatus.DONE }
-        val failedSteps = plan.steps.count { it.status == StepStatus.FAILED }
-        val pendingSteps = plan.steps.count { it.status == StepStatus.PENDING }
+        val completedSteps = plan.steps.count { it.status == StepStatusEnum.DONE }
+        val failedSteps = plan.steps.count { it.status == StepStatusEnum.FAILED }
+        val pendingSteps = plan.steps.count { it.status == StepStatusEnum.PENDING }
 
         val contextSummary =
             buildString {
@@ -139,7 +139,7 @@ class Planner(
                 if (completedSteps > 0) {
                     appendLine("\nCompleted Steps:")
                     plan.steps
-                        .filter { it.status == StepStatus.DONE }
+                        .filter { it.status == StepStatusEnum.DONE }
                         .forEachIndexed { index, step ->
                             appendLine("${index + 1}. ${step.stepToolName}: ${step.stepInstruction}")
                             step.toolResult?.let { result ->
@@ -151,7 +151,7 @@ class Planner(
                 if (failedSteps > 0) {
                     appendLine("\nFailed Steps:")
                     plan.steps
-                        .filter { it.status == StepStatus.FAILED }
+                        .filter { it.status == StepStatusEnum.FAILED }
                         .forEach { step ->
                             appendLine("- ${step.stepToolName}: ${step.stepInstruction}")
                             step.toolResult?.let { result ->
@@ -163,7 +163,7 @@ class Planner(
                 if (pendingSteps > 0) {
                     appendLine("\nPending Steps:")
                     plan.steps
-                        .filter { it.status == StepStatus.PENDING }
+                        .filter { it.status == StepStatusEnum.PENDING }
                         .forEach { step ->
                             appendLine("- ${step.stepToolName}: ${step.stepInstruction}")
                         }
@@ -182,7 +182,7 @@ class Planner(
             "projectDescription" to (ctx.projectDocument.description ?: "Project: ${ctx.projectDocument.name}"),
             "completedSteps" to
                 plan.steps
-                    .filter { it.status == StepStatus.DONE }
+                    .filter { it.status == StepStatusEnum.DONE }
                     .joinToString("\n") { "${it.stepToolName}:${it.toolResult}" },
             "totalSteps" to plan.steps.size.toString(),
             "questionChecklist" to plan.questionChecklist.joinToString(", "),

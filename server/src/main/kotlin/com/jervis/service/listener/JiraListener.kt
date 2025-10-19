@@ -1,6 +1,6 @@
 package com.jervis.service.listener
 
-import com.jervis.domain.authentication.ServiceType
+import com.jervis.domain.authentication.ServiceTypeEnum
 import com.jervis.entity.mongo.ServiceCredentialsDocument
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -14,7 +14,7 @@ import java.time.Instant
  */
 @Service
 class JiraListener : ServiceListener {
-    override val serviceType: ServiceType = ServiceType.JIRA
+    override val serviceTypeEnum: ServiceTypeEnum = ServiceTypeEnum.JIRA
 
     private val logger = LoggerFactory.getLogger(JiraListener::class.java)
 
@@ -26,7 +26,7 @@ class JiraListener : ServiceListener {
             try {
                 logger.info("Polling Jira for client ${credentials.clientId}")
                 ListenerPollResult(
-                    serviceType = serviceType,
+                    serviceTypeEnum = serviceTypeEnum,
                     clientId = credentials.clientId,
                     projectId = credentials.projectId,
                     newMessages = emptyList(),
@@ -34,7 +34,7 @@ class JiraListener : ServiceListener {
             } catch (e: Exception) {
                 logger.error("Error polling Jira for client ${credentials.clientId}", e)
                 ListenerPollResult(
-                    serviceType = serviceType,
+                    serviceTypeEnum = serviceTypeEnum,
                     clientId = credentials.clientId,
                     projectId = credentials.projectId,
                     newMessages = emptyList(),

@@ -1,6 +1,6 @@
 package com.jervis.repository.mongo
 
-import com.jervis.domain.task.ScheduledTaskStatus
+import com.jervis.domain.task.ScheduledTaskStatusEnum
 import com.jervis.entity.mongo.ScheduledTaskDocument
 import kotlinx.coroutines.flow.Flow
 import org.bson.types.ObjectId
@@ -23,7 +23,7 @@ interface ScheduledTaskMongoRepository : CoroutineCrudRepository<ScheduledTaskDo
     /**
      * Find tasks by status
      */
-    fun findByStatus(status: ScheduledTaskStatus): Flow<ScheduledTaskDocument>
+    fun findByStatus(status: ScheduledTaskStatusEnum): Flow<ScheduledTaskDocument>
 
     /**
      * Find pending tasks scheduled to run before or at the given time
@@ -40,5 +40,5 @@ interface ScheduledTaskMongoRepository : CoroutineCrudRepository<ScheduledTaskDo
     /**
      * Count tasks by status
      */
-    suspend fun countByStatus(status: ScheduledTaskStatus): Long
+    suspend fun countByStatus(status: ScheduledTaskStatusEnum): Long
 }

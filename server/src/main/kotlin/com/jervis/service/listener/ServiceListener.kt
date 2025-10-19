@@ -1,6 +1,6 @@
 package com.jervis.service.listener
 
-import com.jervis.domain.authentication.ServiceType
+import com.jervis.domain.authentication.ServiceTypeEnum
 import com.jervis.entity.mongo.ServiceCredentialsDocument
 import org.bson.types.ObjectId
 import java.time.Instant
@@ -10,7 +10,7 @@ import java.time.Instant
  */
 data class ServiceMessage(
     val id: String,
-    val serviceType: ServiceType,
+    val serviceTypeEnum: ServiceTypeEnum,
     val clientId: ObjectId,
     val projectId: ObjectId?,
     val content: String,
@@ -37,7 +37,7 @@ data class ServiceAttachment(
  * Result of a listener poll operation
  */
 data class ListenerPollResult(
-    val serviceType: ServiceType,
+    val serviceTypeEnum: ServiceTypeEnum,
     val clientId: ObjectId,
     val projectId: ObjectId?,
     val newMessages: List<ServiceMessage>,
@@ -49,7 +49,7 @@ data class ListenerPollResult(
  * Base interface for all service listeners
  */
 interface ServiceListener {
-    val serviceType: ServiceType
+    val serviceTypeEnum: ServiceTypeEnum
 
     /**
      * Poll the service for new messages since the last check

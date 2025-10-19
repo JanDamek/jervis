@@ -1,9 +1,9 @@
 package com.jervis.ui.window
 
 import com.jervis.common.Constants.Companion.GLOBAL_ID_STRING
-import com.jervis.domain.task.ScheduledTaskStatus
-import com.jervis.dto.ChatRequest
+import com.jervis.domain.task.ScheduledTaskStatusEnum
 import com.jervis.dto.ChatRequestContext
+import com.jervis.dto.ChatRequestDto
 import com.jervis.dto.ScheduledTaskDto
 import com.jervis.service.IAgentOrchestratorService
 import com.jervis.service.IClientService
@@ -55,6 +55,7 @@ class SchedulerWindow(
     private val clientService: IClientService,
     private val projectService: IProjectService,
     private val agentOrchestrator: IAgentOrchestratorService,
+    private val notificationsClient: com.jervis.client.NotificationsWebSocketClient,
 ) : JFrame("Plánovač úkolů") {
     private val taskListModel = DefaultListModel<Any>()
     private val taskList = JList(taskListModel)
@@ -327,10 +328,10 @@ class SchedulerWindow(
             try {
                 val tasks =
                     flow {
-                        emitAll(taskSchedulingService.getTasksByStatus(ScheduledTaskStatus.PENDING).asFlow())
-                        emitAll(taskSchedulingService.getTasksByStatus(ScheduledTaskStatus.RUNNING).asFlow())
+                        emitAll(taskSchedulingService.getTasksByStatus(ScheduledTaskStatusEnum.PENDING).asFlow())
+                        emitAll(taskSchedulingService.getTasksByStatus(ScheduledTaskStatusEnum.RUNNING).asFlow())
                         emitAll(
-                            taskSchedulingService.getTasksByStatus(ScheduledTaskStatus.COMPLETED).asFlow(),
+                            taskSchedulingService.getTasksByStatus(ScheduledTaskStatusEnum.COMPLETED).asFlow(),
                         )
                     }
                 // Load projects and clients to enhance display
@@ -482,7 +483,13 @@ class SchedulerWindow(
 
                 // Execute task immediately through AgentOrchestratorService (fire-and-forget)
                 // Response will arrive via WebSocket notifications
-                agentOrchestrator.handle(ChatRequest(description, chatRequestContext))
+                agentOrchestrator.handle(
+                    ChatRequestDto(
+                        description,
+                        chatRequestContext,
+                        wsSessionId = notificationsClient.sessionId,
+                    ),
+                )
 
                 withContext(Dispatchers.Main) {
                     statusLabel.text = "Úkol byl odeslán ke zpracování. Sledujte progress přes WebSocket notifikace."
@@ -585,7 +592,7 @@ class SchedulerWindow(
             }
 
         // Can only execute pending tasks
-        if (task.status != ScheduledTaskStatus.PENDING) {
+        if (task.status != ScheduledTaskStatusEnum.PENDING) {
             statusLabel.text = "Lze spustit pouze čekající úkoly"
             return
         }
@@ -622,7 +629,13 @@ class SchedulerWindow(
 
                 // Execute task immediately through AgentOrchestratorService (fire-and-forget)
                 // Response will arrive via WebSocket notifications
-                agentOrchestrator.handle(ChatRequest(task.taskInstruction, chatRequestContext))
+                agentOrchestrator.handle(
+                    ChatRequestDto(
+                        task.taskInstruction,
+                        chatRequestContext,
+                        wsSessionId = notificationsClient.sessionId,
+                    ),
+                )
 
                 withContext(Dispatchers.Main) {
                     statusLabel.text = "Úkol '${task.taskName}' byl odeslán ke zpracování"
@@ -756,11 +769,11 @@ class SchedulerWindow(
                     val scheduledTime = task.scheduledAt
                     val status =
                         when (task.status) {
-                            ScheduledTaskStatus.PENDING -> "Čekající"
-                            ScheduledTaskStatus.RUNNING -> "Běží"
-                            ScheduledTaskStatus.COMPLETED -> "Dokončeno"
-                            ScheduledTaskStatus.FAILED -> "Selhalo"
-                            ScheduledTaskStatus.CANCELLED -> "Zrušeno"
+                            ScheduledTaskStatusEnum.PENDING -> "Čekající"
+                            ScheduledTaskStatusEnum.RUNNING -> "Běží"
+                            ScheduledTaskStatusEnum.COMPLETED -> "Dokončeno"
+                            ScheduledTaskStatusEnum.FAILED -> "Selhalo"
+                            ScheduledTaskStatusEnum.CANCELLED -> "Zrušeno"
                         }
 
                     val clientInfo = value.clientName?.let { "Klient: $it" } ?: ""
@@ -785,13 +798,13 @@ class SchedulerWindow(
 
                     // Color coding based on status
                     when (task.status) {
-                        ScheduledTaskStatus.RUNNING -> foreground = java.awt.Color.BLUE
-                        ScheduledTaskStatus.FAILED -> foreground = java.awt.Color.RED
-                        ScheduledTaskStatus.CANCELLED -> {
+                        ScheduledTaskStatusEnum.RUNNING -> foreground = java.awt.Color.BLUE
+                        ScheduledTaskStatusEnum.FAILED -> foreground = java.awt.Color.RED
+                        ScheduledTaskStatusEnum.CANCELLED -> {
                             foreground = java.awt.Color.GRAY
                         }
 
-                        ScheduledTaskStatus.COMPLETED ->
+                        ScheduledTaskStatusEnum.COMPLETED ->
                             foreground =
                                 java.awt.Color(0, 128, 0) // Dark green
                         else -> foreground = if (isSelected) list?.selectionForeground else list?.foreground
@@ -803,19 +816,19 @@ class SchedulerWindow(
                     val scheduledTime = value.scheduledAt
                     val status =
                         when (value.status) {
-                            ScheduledTaskStatus.PENDING -> "Čekající"
-                            ScheduledTaskStatus.RUNNING -> "Běží"
-                            ScheduledTaskStatus.COMPLETED -> "Dokončeno"
-                            ScheduledTaskStatus.FAILED -> "Selhalo"
-                            ScheduledTaskStatus.CANCELLED -> "Zrušeno"
+                            ScheduledTaskStatusEnum.PENDING -> "Čekající"
+                            ScheduledTaskStatusEnum.RUNNING -> "Běží"
+                            ScheduledTaskStatusEnum.COMPLETED -> "Dokončeno"
+                            ScheduledTaskStatusEnum.FAILED -> "Selhalo"
+                            ScheduledTaskStatusEnum.CANCELLED -> "Zrušeno"
                         }
 
                     text = "${value.taskName} - $status ($scheduledTime)"
 
                     when (value.status) {
-                        ScheduledTaskStatus.RUNNING -> foreground = java.awt.Color.BLUE
-                        ScheduledTaskStatus.FAILED -> foreground = java.awt.Color.RED
-                        ScheduledTaskStatus.CANCELLED -> foreground = java.awt.Color.GRAY
+                        ScheduledTaskStatusEnum.RUNNING -> foreground = java.awt.Color.BLUE
+                        ScheduledTaskStatusEnum.FAILED -> foreground = java.awt.Color.RED
+                        ScheduledTaskStatusEnum.CANCELLED -> foreground = java.awt.Color.GRAY
                         else -> foreground = if (isSelected) list?.selectionForeground else list?.foreground
                     }
                 }

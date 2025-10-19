@@ -9,7 +9,7 @@ import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.document.TikaDocumentProcessor
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.gateway.core.LlmGateway
-import com.jervis.service.indexing.monitoring.IndexingStepType
+import com.jervis.service.indexing.monitoring.IndexingStepTypeEnum
 import com.jervis.service.rag.RagIndexingStatusService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -77,7 +77,7 @@ class DocumentIndexingService(
 
             indexingMonitorService.addStepLog(
                 project.id,
-                IndexingStepType.DOCUMENTATION,
+                IndexingStepTypeEnum.DOCUMENTATION,
                 "Starting unified document indexing for project: ${project.name}",
             )
 
@@ -97,7 +97,7 @@ class DocumentIndexingService(
                     val relativePath = projectPath.relativize(docFile).toString()
                     indexingMonitorService.addStepLog(
                         project.id,
-                        IndexingStepType.DOCUMENTATION,
+                        IndexingStepTypeEnum.DOCUMENTATION,
                         "Processing document (${index + 1}/${documentFiles.size}): $relativePath",
                     )
 
@@ -107,7 +107,7 @@ class DocumentIndexingService(
                         skippedCount++
                         indexingMonitorService.addStepLog(
                             project.id,
-                            IndexingStepType.DOCUMENTATION,
+                            IndexingStepTypeEnum.DOCUMENTATION,
                             "⚠ Skipped file (extraction failed): $relativePath",
                         )
                         continue
@@ -125,7 +125,7 @@ class DocumentIndexingService(
                         skippedCount++
                         indexingMonitorService.addStepLog(
                             project.id,
-                            IndexingStepType.DOCUMENTATION,
+                            IndexingStepTypeEnum.DOCUMENTATION,
                             "⚠ Skipped already indexed file: $relativePath",
                         )
                         continue
@@ -147,7 +147,7 @@ class DocumentIndexingService(
                     processedCount++
                     indexingMonitorService.addStepLog(
                         project.id,
-                        IndexingStepType.DOCUMENTATION,
+                        IndexingStepTypeEnum.DOCUMENTATION,
                         "✓ Successfully indexed document: $relativePath",
                     )
                 } catch (e: Exception) {
@@ -155,7 +155,7 @@ class DocumentIndexingService(
                     errorCount++
                     indexingMonitorService.addStepLog(
                         project.id,
-                        IndexingStepType.DOCUMENTATION,
+                        IndexingStepTypeEnum.DOCUMENTATION,
                         "✗ Failed to index document: $relativePath - ${e.message}",
                     )
                     logger.error(e) { "Failed to index document: ${docFile.pathString}" }
@@ -164,7 +164,7 @@ class DocumentIndexingService(
 
             indexingMonitorService.addStepLog(
                 project.id,
-                IndexingStepType.DOCUMENTATION,
+                IndexingStepTypeEnum.DOCUMENTATION,
                 "Unified document indexing completed: Processed: $processedCount, Skipped: $skippedCount, Errors: $errorCount",
             )
 

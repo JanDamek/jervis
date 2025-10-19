@@ -39,22 +39,21 @@ class AgentOrchestratorService(
     suspend fun handle(
         text: String,
         ctx: ChatRequestContext,
-    ): ChatResponse {
-        return handle(
+    ): ChatResponse =
+        handle(
             text = text,
-            clientId = org.bson.types.ObjectId(ctx.clientId),
-            projectId = org.bson.types.ObjectId(ctx.projectId),
+            clientId = ObjectId(ctx.clientId),
+            projectId = ObjectId(ctx.projectId),
             quick = ctx.quick,
-            existingContextId = ctx.existingContextId?.let { org.bson.types.ObjectId(it) },
+            existingContextId = ctx.existingContextId?.let { ObjectId(it) },
         )
-    }
 
     suspend fun handle(
         text: String,
-        clientId: org.bson.types.ObjectId,
-        projectId: org.bson.types.ObjectId,
+        clientId: ObjectId,
+        projectId: ObjectId,
         quick: Boolean = false,
-        existingContextId: org.bson.types.ObjectId? = null,
+        existingContextId: ObjectId? = null,
     ): ChatResponse {
         logger.info { "AGENT_START: Handling query for client='${clientId.toHexString()}', project='${projectId.toHexString()}'" }
 
@@ -102,7 +101,7 @@ class AgentOrchestratorService(
             findingInRAG(context, plan)
 
             // Mark plan as RUNNING before entering the planning loop
-            plan.status = com.jervis.domain.plan.PlanStatus.RUNNING
+            plan.status = com.jervis.domain.plan.PlanStatusEnum.RUNNING
             plan.updatedAt = java.time.Instant.now()
             taskContextService.save(context)
             planMongoRepository.save(PlanDocument.fromDomain(plan))
@@ -114,7 +113,7 @@ class AgentOrchestratorService(
                 // First, execute any pending steps across ALL plans in the context
                 val hasPendingSteps =
                     context.plans.any { p ->
-                        p.steps.any { it.status == com.jervis.domain.plan.StepStatus.PENDING }
+                        p.steps.any { it.status == com.jervis.domain.plan.StepStatusEnum.PENDING }
                     }
 
                 if (hasPendingSteps) {
@@ -125,7 +124,7 @@ class AgentOrchestratorService(
 
                 // All steps executed - ask planner for next steps for ALL RUNNING plans
                 logger.debug { "AGENT_LOOP_PLANNING: All steps executed, asking planner for next steps" }
-                val runningPlans = context.plans.filter { it.status == com.jervis.domain.plan.PlanStatus.RUNNING }
+                val runningPlans = context.plans.filter { it.status == com.jervis.domain.plan.PlanStatusEnum.RUNNING }
 
                 if (runningPlans.isEmpty()) {
                     // No running plans - exit loop to finalize
@@ -137,7 +136,7 @@ class AgentOrchestratorService(
                 var anyNewSteps = false
                 for (runningPlan in runningPlans) {
                     // Validate plan is not COMPLETED before adding steps
-                    if (runningPlan.status == com.jervis.domain.plan.PlanStatus.COMPLETED) {
+                    if (runningPlan.status == com.jervis.domain.plan.PlanStatusEnum.COMPLETED) {
                         logger.warn { "AGENT_LOOP_STEPS_REJECTED: Cannot add steps to COMPLETED plan ${runningPlan.id}" }
                         continue
                     }
@@ -154,14 +153,14 @@ class AgentOrchestratorService(
                 if (!anyNewSteps) {
                     logger.info { "AGENT_LOOP_RESOLVED: Task fully resolved, marking plans as COMPLETED" }
                     context.plans
-                        .filter { it.status == com.jervis.domain.plan.PlanStatus.RUNNING }
+                        .filter { it.status == com.jervis.domain.plan.PlanStatusEnum.RUNNING }
                         .forEach { runningPlan ->
                             val hasSteps = runningPlan.steps.isNotEmpty()
                             val noPendingSteps =
-                                runningPlan.steps.none { it.status == com.jervis.domain.plan.StepStatus.PENDING }
+                                runningPlan.steps.none { it.status == com.jervis.domain.plan.StepStatusEnum.PENDING }
 
                             if (hasSteps && noPendingSteps) {
-                                runningPlan.status = com.jervis.domain.plan.PlanStatus.COMPLETED
+                                runningPlan.status = com.jervis.domain.plan.PlanStatusEnum.COMPLETED
                                 runningPlan.updatedAt = java.time.Instant.now()
                                 logger.info { "AGENT_LOOP_PLAN_COMPLETED: Plan ${runningPlan.id} marked as COMPLETED" }
                             } else {
@@ -188,7 +187,7 @@ class AgentOrchestratorService(
 
             // Notify UI about finalization for each plan now marked as FINALIZED
             context.plans
-                .filter { it.status == com.jervis.domain.plan.PlanStatus.FINALIZED }
+                .filter { it.status == com.jervis.domain.plan.PlanStatusEnum.FINALIZED }
                 .forEach { finalizedPlan ->
                     stepNotificationService.notifyPlanStatusChanged(context.id, finalizedPlan.id, finalizedPlan.status)
                 }
@@ -198,7 +197,8 @@ class AgentOrchestratorService(
             return response
         } catch (e: Exception) {
             logger.error(e) {
-                "AGENT_ERROR: Error handling query for client='${clientId.toHexString()}', project='${projectId.toHexString()}': ${e.message}" }
+                "AGENT_ERROR: Error handling query for client='${clientId.toHexString()}', project='${projectId.toHexString()}': ${e.message}"
+            }
             throw e
         }
     }

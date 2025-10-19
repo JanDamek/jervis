@@ -9,6 +9,8 @@ data class DebugSession(
     val userPrompt: String,
     val startTime: LocalDateTime,
     val responseBuffer: StringBuilder,
+    val clientId: String? = null,
+    val clientName: String? = null,
     var completionTime: LocalDateTime? = null,
 ) {
     fun complete() {
@@ -16,4 +18,17 @@ data class DebugSession(
     }
 
     fun isCompleted(): Boolean = completionTime != null
+
+    fun getTabLabel(): String =
+        buildString {
+            if (clientName != null) {
+                append("[$clientName] ")
+            } else {
+                append("[System] ")
+            }
+            append(promptType)
+            if (isCompleted()) {
+                append(" ✓")
+            }
+        }
 }

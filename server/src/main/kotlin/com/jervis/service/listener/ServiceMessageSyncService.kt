@@ -1,6 +1,6 @@
 package com.jervis.service.listener
 
-import com.jervis.domain.authentication.ServiceType
+import com.jervis.domain.authentication.ServiceTypeEnum
 import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.mongo.ServiceMessageDocument
 import com.jervis.repository.vector.VectorStorageRepository
@@ -30,13 +30,13 @@ class ServiceMessageSyncService(
      * Process new messages from a poll result
      */
     suspend fun processNewMessages(result: ListenerPollResult) {
-        logger.info("Processing ${result.newMessages.size} new messages for service ${result.serviceType}")
+        logger.info("Processing ${result.newMessages.size} new messages for service ${result.serviceTypeEnum}")
 
         result.newMessages.forEach { message ->
             try {
                 processMessage(message)
             } catch (e: Exception) {
-                logger.error("Error processing message ${message.id} from ${result.serviceType}", e)
+                logger.error("Error processing message ${message.id} from ${result.serviceTypeEnum}", e)
             }
         }
     }
@@ -54,7 +54,7 @@ class ServiceMessageSyncService(
                         .query(
                             Criteria
                                 .where("serviceType")
-                                .`is`(message.serviceType)
+                                .`is`(message.serviceTypeEnum)
                                 .and("serviceMessageId")
                                 .`is`(message.id),
                         ),
@@ -76,7 +76,7 @@ class ServiceMessageSyncService(
             ServiceMessageDocument(
                 clientId = message.clientId,
                 projectId = message.projectId,
-                serviceType = message.serviceType,
+                serviceTypeEnum = message.serviceTypeEnum,
                 serviceMessageId = message.id,
                 threadId = message.threadId,
                 channelId = message.channelId,
@@ -121,7 +121,7 @@ class ServiceMessageSyncService(
      * Remove deleted messages from RAG
      */
     suspend fun processDeletedMessages(result: ListenerPollResult) {
-        logger.info("Processing ${result.deletedMessageIds.size} deleted messages for service ${result.serviceType}")
+        logger.info("Processing ${result.deletedMessageIds.size} deleted messages for service ${result.serviceTypeEnum}")
 
         result.deletedMessageIds.forEach { messageId ->
             try {
@@ -132,7 +132,7 @@ class ServiceMessageSyncService(
                                 .query(
                                     Criteria
                                         .where("serviceType")
-                                        .`is`(result.serviceType)
+                                        .`is`(result.serviceTypeEnum)
                                         .and("serviceMessageId")
                                         .`is`(messageId),
                                 ),
@@ -144,7 +144,7 @@ class ServiceMessageSyncService(
                     markAsDeleted(message.id)
                 }
             } catch (e: Exception) {
-                logger.error("Error processing deleted message $messageId from ${result.serviceType}", e)
+                logger.error("Error processing deleted message $messageId from ${result.serviceTypeEnum}", e)
             }
         }
     }
@@ -204,13 +204,13 @@ class ServiceMessageSyncService(
     /**
      * Map ServiceType to RagSourceType
      */
-    private fun mapServiceTypeToRagSourceType(serviceType: ServiceType): RagSourceType =
-        when (serviceType) {
-            ServiceType.EMAIL -> RagSourceType.EMAIL
-            ServiceType.SLACK -> RagSourceType.SLACK
-            ServiceType.TEAMS -> RagSourceType.TEAMS
-            ServiceType.DISCORD -> RagSourceType.DISCORD
-            ServiceType.JIRA -> RagSourceType.JIRA
-            ServiceType.GIT -> RagSourceType.GIT_HISTORY
+    private fun mapServiceTypeToRagSourceType(serviceTypeEnum: ServiceTypeEnum): RagSourceType =
+        when (serviceTypeEnum) {
+            ServiceTypeEnum.EMAIL -> RagSourceType.EMAIL
+            ServiceTypeEnum.SLACK -> RagSourceType.SLACK
+            ServiceTypeEnum.TEAMS -> RagSourceType.TEAMS
+            ServiceTypeEnum.DISCORD -> RagSourceType.DISCORD
+            ServiceTypeEnum.JIRA -> RagSourceType.JIRA
+            ServiceTypeEnum.GIT -> RagSourceType.GIT_HISTORY
         }
 }

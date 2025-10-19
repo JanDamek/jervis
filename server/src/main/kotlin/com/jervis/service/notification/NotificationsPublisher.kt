@@ -1,24 +1,19 @@
 package com.jervis.service.notification
 
+import com.jervis.service.websocket.WebSocketChannelType
+import com.jervis.service.websocket.WebSocketSessionManager
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
-import reactor.core.publisher.Flux
-import reactor.core.publisher.Sinks
 import com.jervis.dto.events.PlanStatusChangeEventDto as PlanStatusChangeEventDtoD
 import com.jervis.dto.events.StepCompletionEventDto as StepCompletionEventDtoD
 
 @Component
-class NotificationsPublisher {
+class NotificationsPublisher(
+    private val sessionManager: WebSocketSessionManager,
+) {
     private val json = Json { encodeDefaults = true }
-    private val sink: Sinks.Many<String> = Sinks.many().multicast().onBackpressureBuffer()
-
-    fun stream(): Flux<String> = sink.asFlux()
-
-    private fun emit(message: String) {
-        sink.tryEmitNext(message)
-    }
 
     @EventListener
     fun onStepCompleted(event: StepCompletionEvent) {
@@ -31,7 +26,7 @@ class NotificationsPublisher {
                 stepStatus = event.stepStatus.name,
                 timestamp = event.timestamp.toString(),
             )
-        emit(json.encodeToString(dto))
+        sessionManager.broadcastToChannel(json.encodeToString(dto), WebSocketChannelType.NOTIFICATIONS)
     }
 
     @EventListener
@@ -40,9 +35,9 @@ class NotificationsPublisher {
             PlanStatusChangeEventDtoD(
                 contextId = event.contextId.toHexString(),
                 planId = event.planId.toHexString(),
-                planStatus = event.planStatus.name,
+                planStatus = event.planStatusEnum.name,
                 timestamp = event.timestamp.toString(),
             )
-        emit(json.encodeToString(dto))
+        sessionManager.broadcastToChannel(json.encodeToString(dto), WebSocketChannelType.NOTIFICATIONS)
     }
 }

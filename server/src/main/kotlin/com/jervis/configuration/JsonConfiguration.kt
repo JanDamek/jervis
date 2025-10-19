@@ -1,29 +1,48 @@
 package com.jervis.configuration
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.context.annotation.Primary
+import org.springframework.http.codec.ServerCodecConfigurer
+import org.springframework.http.codec.json.KotlinSerializationJsonDecoder
+import org.springframework.http.codec.json.KotlinSerializationJsonEncoder
+import org.springframework.web.reactive.config.WebFluxConfigurer
 
 /**
- * JsonConfiguration class.
- * <p>
- * This class is a part of the application's core functionality.
- * It was created to provide features such as...
- * </p>
- *
- * @author damekjan
- * @version 1.0
- * @since 28.09.2025
+ * JSON configuration for the application.
+ * Uses Kotlinx Serialization for all JSON serialization/deserialization in REST endpoints.
  */
 @Configuration
-class JsonConfiguration {
+class JsonConfiguration : WebFluxConfigurer {
+    @OptIn(ExperimentalSerializationApi::class)
+    @Bean
+    @Primary
+    fun json(): Json =
+        Json {
+            ignoreUnknownKeys = true
+            prettyPrint = false
+            isLenient = true
+            encodeDefaults = true
+            explicitNulls = false
+            classDiscriminator = "type"
+        }
+
+    override fun configureHttpMessageCodecs(configurer: ServerCodecConfigurer) {
+        val json = json()
+        configurer.defaultCodecs().kotlinSerializationJsonEncoder(KotlinSerializationJsonEncoder(json))
+        configurer.defaultCodecs().kotlinSerializationJsonDecoder(KotlinSerializationJsonDecoder(json))
+    }
+
+    @OptIn(ExperimentalSerializationApi::class)
     @Bean
     fun providerJson(): Json =
         Json {
-            ignoreUnknownKeys = true // ignoruje pole, která nejsou v datové třídě
-            prettyPrint = true // formátuje výstup s odsazením
-            isLenient = true // povolí méně striktní JSON (např. netradiční formát čísel)
-            encodeDefaults = true // zapisuje i defaultní hodnoty
-            explicitNulls = false // null hodnoty se vynechají
+            ignoreUnknownKeys = true
+            prettyPrint = true
+            isLenient = true
+            encodeDefaults = true
+            explicitNulls = false
         }
 }

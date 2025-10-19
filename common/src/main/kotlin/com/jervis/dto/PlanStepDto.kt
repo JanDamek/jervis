@@ -1,7 +1,7 @@
 package com.jervis.dto
 
 import com.jervis.common.Constants
-import com.jervis.domain.plan.StepStatus
+import com.jervis.domain.plan.StepStatusEnum
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -13,6 +13,6 @@ data class PlanStepDto(
     val stepToolName: String,
     val stepInstruction: String,
     val stepDependsOn: Int = -1,
-    val status: StepStatus = StepStatus.PENDING,
+    val status: StepStatusEnum = StepStatusEnum.PENDING,
     val toolResult: String? = null,
 )

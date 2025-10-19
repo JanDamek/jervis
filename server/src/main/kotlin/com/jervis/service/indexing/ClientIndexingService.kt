@@ -1,7 +1,7 @@
 package com.jervis.service.indexing
 
 import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.dto.ClientDescriptionResult
+import com.jervis.dto.ClientDescriptionResultDto
 import com.jervis.entity.mongo.ClientDocument
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.mongo.ClientMongoRepository
@@ -35,7 +35,7 @@ class ClientIndexingService(
      * Update client descriptions by aggregating all project descriptions
      * This should be called whenever any project for the client is reindexed
      */
-    suspend fun updateClientDescriptions(clientId: ObjectId): ClientDescriptionResult =
+    suspend fun updateClientDescriptions(clientId: ObjectId): ClientDescriptionResultDto =
         withContext(Dispatchers.Default) {
             try {
                 logger.info { "Updating client descriptions for client: $clientId" }
@@ -43,14 +43,14 @@ class ClientIndexingService(
                 val client = clientRepository.findById(clientId)
                 if (client == null) {
                     logger.warn { "Client not found: $clientId" }
-                    return@withContext ClientDescriptionResult("", "", 0)
+                    return@withContext ClientDescriptionResultDto("", "", 0)
                 }
 
                 // Get all projects for this client
                 val projects = projectRepository.findByClientId(clientId)
                 if (projects.isEmpty()) {
                     logger.info { "No projects found for client: ${client.name}" }
-                    return@withContext ClientDescriptionResult("", "", 0)
+                    return@withContext ClientDescriptionResultDto("", "", 0)
                 }
 
                 logger.info { "Found ${projects.size} projects for client: ${client.name}" }
@@ -68,14 +68,14 @@ class ClientIndexingService(
                 clientRepository.save(updatedClient)
                 logger.info { "Successfully updated client descriptions for: ${client.name}" }
 
-                ClientDescriptionResult(
+                ClientDescriptionResultDto(
                     clientDescriptions.shortDescription,
                     clientDescriptions.fullDescription,
                     projects.size,
                 )
             } catch (e: Exception) {
                 logger.error(e) { "Failed to update client descriptions for client: $clientId" }
-                ClientDescriptionResult("", "", 0)
+                ClientDescriptionResultDto("", "", 0)
             }
         }
 
@@ -85,7 +85,7 @@ class ClientIndexingService(
     private suspend fun generateClientDescriptions(
         client: ClientDocument,
         projects: List<ProjectDocument>,
-    ): ClientDescriptionResult {
+    ): ClientDescriptionResultDto {
         logger.debug { "Generating client descriptions for: ${client.name} with ${projects.size} projects" }
 
         // Collect all project descriptions
@@ -116,7 +116,7 @@ class ClientIndexingService(
         // Generate full description
         val fullDescription = generateClientFullDescription(client, projects, projectDescriptions, shortDescription)
 
-        return ClientDescriptionResult(shortDescription, fullDescription, projects.size)
+        return ClientDescriptionResultDto(shortDescription, fullDescription, projects.size)
     }
 
     /**

@@ -2,9 +2,9 @@ package com.jervis.service.agent.execution
 
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
-import com.jervis.domain.plan.PlanStatus
+import com.jervis.domain.plan.PlanStatusEnum
 import com.jervis.domain.plan.PlanStep
-import com.jervis.domain.plan.StepStatus
+import com.jervis.domain.plan.StepStatusEnum
 import com.jervis.service.agent.context.TaskContextService
 import com.jervis.service.mcp.McpToolRegistry
 import com.jervis.service.mcp.domain.ToolResult
@@ -33,7 +33,7 @@ class PlanExecutor(
         // Process each plan that is not yet completed or failed concurrently
         val activePlans =
             context.plans
-                .filter { it.status !in listOf(PlanStatus.COMPLETED, PlanStatus.FAILED) }
+                .filter { it.status !in listOf(PlanStatusEnum.COMPLETED, PlanStatusEnum.FAILED) }
 
         if (activePlans.isEmpty()) return
 
@@ -56,7 +56,7 @@ class PlanExecutor(
 
         if (plan.steps.isEmpty()) {
             logger.warn { "EXECUTOR: Plan ${plan.id} has no steps - marking as FAILED" }
-            plan.status = PlanStatus.FAILED
+            plan.status = PlanStatusEnum.FAILED
             plan.finalAnswer = "Plan has no executable steps"
             plan.updatedAt = Instant.now()
             taskContextService.save(context)
@@ -64,7 +64,7 @@ class PlanExecutor(
             return
         }
 
-        plan.status = PlanStatus.RUNNING
+        plan.status = PlanStatusEnum.RUNNING
         plan.updatedAt = Instant.now()
         taskContextService.save(context)
         stepNotificationService.notifyPlanStatusChanged(context.id, plan.id, plan.status)
@@ -72,7 +72,7 @@ class PlanExecutor(
         // Get pending steps sorted by order for flat sequential execution
         val pendingSteps =
             plan.steps
-                .filter { it.status == StepStatus.PENDING }
+                .filter { it.status == StepStatusEnum.PENDING }
                 .sortedBy { it.order }
 
         logger.info { "EXECUTOR: Processing ${pendingSteps.size} pending steps" }
@@ -113,14 +113,14 @@ class PlanExecutor(
 
             when (result) {
                 is ToolResult.Ok, is ToolResult.Ask -> {
-                    step.status = StepStatus.DONE
+                    step.status = StepStatusEnum.DONE
                     stepNotificationService.notifyStepCompleted(context.id, plan.id, step)
                     planFailed = false
                 }
 
                 is ToolResult.Stop -> {
-                    step.status = StepStatus.FAILED
-                    plan.status = PlanStatus.FAILED
+                    step.status = StepStatusEnum.FAILED
+                    plan.status = PlanStatusEnum.FAILED
                     plan.finalAnswer = result.reason
                     planFailed = true
                     logger.info { "EXECUTOR: Plan stopped by tool: ${result.reason}" }
@@ -128,7 +128,7 @@ class PlanExecutor(
                 }
 
                 is ToolResult.Error -> {
-                    step.status = StepStatus.FAILED
+                    step.status = StepStatusEnum.FAILED
                     // Don't mark plan as FAILED - planner may resolve this with alternative steps
                     planFailed = false
                     logger.error { "EXECUTOR: Step '${step.stepToolName}' failed: ${result.errorMessage}" }
@@ -136,7 +136,7 @@ class PlanExecutor(
                 }
 
                 else -> {
-                    step.status = StepStatus.FAILED
+                    step.status = StepStatusEnum.FAILED
                     // Don't mark plan as FAILED - planner may resolve this with alternative steps
                     planFailed = false
                     logger.error { "EXECUTOR: Unsupported result type from step '${step.stepToolName}'" }
@@ -146,8 +146,8 @@ class PlanExecutor(
         } catch (e: Exception) {
             logger.error(e) { "EXECUTOR: Exception executing step '${step.stepToolName}'" }
             step.toolResult = ToolResult.error("Step execution failed: ${e.message}")
-            step.status = StepStatus.FAILED
-            plan.status = PlanStatus.FAILED
+            step.status = StepStatusEnum.FAILED
+            plan.status = PlanStatusEnum.FAILED
             plan.finalAnswer = "Step execution failed: ${e.message}"
             planFailed = true
             stepNotificationService.notifyStepCompleted(context.id, plan.id, step)
@@ -166,7 +166,7 @@ class PlanExecutor(
     private fun buildStepContext(plan: Plan): String {
         val completedSteps =
             plan.steps
-                .filter { it.status == StepStatus.DONE && it.toolResult != null }
+                .filter { it.status == StepStatusEnum.DONE && it.toolResult != null }
                 .sortedBy { it.order }
 
         if (completedSteps.isEmpty()) {

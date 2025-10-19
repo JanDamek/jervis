@@ -48,7 +48,10 @@ class ModelCandidateSelector(
 
         val selectedModels =
             capacityFilteredModels.ifEmpty {
-                listOf(quickFilteredModels.maxByOrNull { it.contextLength ?: 0 }!!)
+                val largestModel =
+                    quickFilteredModels.maxByOrNull { it.contextLength ?: 0 }
+                        ?: error("No models available after filtering")
+                listOf(largestModel)
             }
 
         return selectedModels.asFlow()

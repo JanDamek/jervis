@@ -12,7 +12,6 @@ import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.nio.file.Files
-import kotlin.io.path.writeText
 
 @Service
 class CodeModifyTool(
@@ -72,17 +71,15 @@ class CodeModifyTool(
         context: TaskContext,
     ): ToolResult {
         val projectPath =
-            directoryStructureService.getGitDirectory(
+            directoryStructureService.projectGitDir(
                 context.clientDocument.id,
                 context.projectDocument.id,
             )
         val targetFile = projectPath.resolve(params.targetPath)
 
-        // Create parent directories if they don't exist
         targetFile.parent?.let { Files.createDirectories(it) }
 
-        // Write the patch content to the file
-        targetFile.writeText(params.patch)
+        Files.writeString(targetFile, params.patch)
 
         val action = if (params.createNewFile) "Created" else "Modified"
         val details =

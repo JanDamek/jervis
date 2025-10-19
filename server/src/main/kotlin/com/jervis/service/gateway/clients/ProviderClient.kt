@@ -5,7 +5,6 @@ import com.jervis.configuration.prompts.PromptConfigBase
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProvider
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flowOf
 
 interface ProviderClient {
     val provider: ModelProvider
@@ -23,7 +22,7 @@ interface ProviderClient {
      * Streaming version of the call method. Default implementation falls back to regular call.
      * Providers that support streaming should override this method.
      */
-    suspend fun callWithStreaming(
+    fun callWithStreaming(
         model: String,
         systemPrompt: String?,
         userPrompt: String,
@@ -31,24 +30,7 @@ interface ProviderClient {
         prompt: PromptConfigBase,
         estimatedTokens: Int,
         debugSessionId: String? = null,
-    ): Flow<StreamChunk> {
-        // Default fallback implementation for clients that don't support streaming
-        val response = call(model, systemPrompt, userPrompt, config, prompt, estimatedTokens)
-        return flowOf(
-            StreamChunk(
-                content = response.answer,
-                isComplete = true,
-                metadata =
-                    mapOf(
-                        "model" to response.model,
-                        "prompt_tokens" to response.promptTokens,
-                        "completion_tokens" to response.completionTokens,
-                        "total_tokens" to response.totalTokens,
-                        "finish_reason" to response.finishReason,
-                    ),
-            ),
-        )
-    }
+    ): Flow<StreamChunk>
 }
 
 /**

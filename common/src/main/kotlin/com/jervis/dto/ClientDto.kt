@@ -1,7 +1,7 @@
 package com.jervis.dto
 
 import com.jervis.common.Constants
-import com.jervis.domain.language.Language
+import com.jervis.domain.language.LanguageEnum
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -17,7 +17,7 @@ data class ClientDto(
     val defaultAnonymization: AnonymizationDto = AnonymizationDto(),
     val defaultInspirationPolicy: InspirationPolicyDto = InspirationPolicyDto(),
     val tools: ClientToolsDto = ClientToolsDto(),
-    val defaultLanguage: Language = Language.getDefault(),
+    val defaultLanguageEnum: LanguageEnum = LanguageEnum.getDefault(),
     val dependsOnProjects: List<String> = emptyList(),
     val isDisabled: Boolean = false,
     val disabledProjects: List<String> = emptyList(),

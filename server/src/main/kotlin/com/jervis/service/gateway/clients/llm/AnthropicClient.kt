@@ -45,7 +45,7 @@ class AnthropicClient(
         return parseResponse(response, model)
     }
 
-    override suspend fun callWithStreaming(
+    override fun callWithStreaming(
         model: String,
         systemPrompt: String?,
         userPrompt: String,
@@ -55,13 +55,16 @@ class AnthropicClient(
         debugSessionId: String?,
     ): Flow<StreamChunk> =
         kotlinx.coroutines.flow.flow {
-            // Anthropic streaming not implemented yet, use fallback with debug session updates
+            // Anthropic streaming not implemented yet, use fallback
             val response = call(model, systemPrompt, userPrompt, config, prompt, estimatedTokens)
 
-            // Emit the complete response as a single chunk with debug session update
+            // Emit the complete response as a single chunk
+            emit(StreamChunk(content = response.answer, isComplete = false))
+
+            // Emit final chunk with metadata
             emit(
                 StreamChunk(
-                    content = response.answer,
+                    content = "",
                     isComplete = true,
                     metadata =
                         mapOf(

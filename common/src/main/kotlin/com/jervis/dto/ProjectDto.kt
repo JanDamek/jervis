@@ -1,7 +1,7 @@
 package com.jervis.dto
 
 import com.jervis.common.Constants
-import com.jervis.domain.language.Language
+import com.jervis.domain.language.LanguageEnum
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -14,7 +14,7 @@ data class ProjectDto(
     val fullDescription: String? = null,
     val documentationUrls: List<String> = emptyList(),
     val languages: List<String> = emptyList(),
-    val communicationLanguage: Language = Language.getDefault(),
+    val communicationLanguageEnum: LanguageEnum = LanguageEnum.getDefault(),
     val primaryUrl: String? = null,
     val extraUrls: List<String> = emptyList(),
     val credentialsRef: String? = null,

@@ -5,11 +5,13 @@ logging:
     com.jervis: INFO
     com.jervis.service: DEBUG
     org.springframework.web: INFO
+    org.springframework.web.reactive.socket: INFO
+    org.springframework.web.reactive.handler: INFO
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
     file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
   file:
-    name: logs/jervis-app.log
+    name: ~/.jervis/logs/jervis-app.log
   logback:
     rollingpolicy:
       max-history: 7
@@ -214,6 +216,10 @@ connection-pools:
     max-idle-time-minutes: 30
 
 
+
+# Workspace configuration - central root for all server-managed files
+data:
+  root-dir: ${DATA_ROOT_DIR:~/.jervis/workspace}
 
 # Audio processing configuration
 audio:

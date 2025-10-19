@@ -3,7 +3,7 @@ package com.jervis.service.mcp.tools
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
-import com.jervis.domain.task.ScheduledTaskStatus
+import com.jervis.domain.task.ScheduledTaskStatusEnum
 import com.jervis.entity.mongo.ScheduledTaskDocument
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
@@ -60,13 +60,13 @@ class SystemViewTasksTool(
                 flow<ScheduledTaskDocument> {
                     when {
                         params.status != null && params.projectId != null -> {
-                            val status = ScheduledTaskStatus.valueOf(params.status.uppercase())
+                            val status = ScheduledTaskStatusEnum.valueOf(params.status.uppercase())
                             val projectId = org.bson.types.ObjectId(params.projectId)
                             emitAll(taskQueryService.getTasksForProject(projectId).asFlow().filter { it.status == status })
                         }
 
                         params.status != null -> {
-                            val status = ScheduledTaskStatus.valueOf(params.status.uppercase())
+                            val status = ScheduledTaskStatusEnum.valueOf(params.status.uppercase())
                             emitAll(taskQueryService.getTasksByStatus(status).asFlow())
                         }
 
@@ -79,12 +79,12 @@ class SystemViewTasksTool(
                             // Get all pending and running tasks by default
                             emitAll(
                                 taskQueryService
-                                    .getTasksByStatus(ScheduledTaskStatus.PENDING)
+                                    .getTasksByStatus(ScheduledTaskStatusEnum.PENDING)
                                     .asFlow(),
                             )
                             emitAll(
                                 taskQueryService
-                                    .getTasksByStatus(ScheduledTaskStatus.RUNNING)
+                                    .getTasksByStatus(ScheduledTaskStatusEnum.RUNNING)
                                     .asFlow(),
                             )
                         }

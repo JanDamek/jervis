@@ -1,6 +1,6 @@
 package com.jervis.service.scheduling
 
-import com.jervis.domain.task.ScheduledTaskStatus
+import com.jervis.domain.task.ScheduledTaskStatusEnum
 import com.jervis.entity.mongo.ScheduledTaskDocument
 import com.jervis.repository.mongo.ProjectMongoRepository
 import com.jervis.repository.mongo.ScheduledTaskMongoRepository
@@ -91,7 +91,7 @@ class TaskSchedulingService(
 
             // Mark task as running
             val runningTask =
-                taskManagementService.updateTaskStatus(task, ScheduledTaskStatus.RUNNING)
+                taskManagementService.updateTaskStatus(task, ScheduledTaskStatusEnum.RUNNING)
 
             try {
                 val project =
@@ -119,7 +119,7 @@ class TaskSchedulingService(
                 }
 
                 // Mark task as completed
-                taskManagementService.updateTaskStatus(runningTask, ScheduledTaskStatus.COMPLETED)
+                taskManagementService.updateTaskStatus(runningTask, ScheduledTaskStatusEnum.COMPLETED)
             } catch (e: Exception) {
                 logger.error(e) { "Task execution failed: ${task.taskName}" }
                 markTaskAsFailed(runningTask, e.message ?: "Execution failed")
@@ -136,7 +136,7 @@ class TaskSchedulingService(
         // Mark task as failed using TaskManagementService
         taskManagementService.updateTaskStatus(
             failedTask,
-            ScheduledTaskStatus.FAILED,
+            ScheduledTaskStatusEnum.FAILED,
             errorMessage,
         )
 
@@ -192,5 +192,6 @@ class TaskSchedulingService(
     suspend fun listTasksForProject(projectId: ObjectId): List<ScheduledTaskDocument> =
         scheduledTaskRepository.findByProjectId(projectId).toList()
 
-    suspend fun listPendingTasks(): List<ScheduledTaskDocument> = scheduledTaskRepository.findByStatus(ScheduledTaskStatus.PENDING).toList()
+    suspend fun listPendingTasks(): List<ScheduledTaskDocument> =
+        scheduledTaskRepository.findByStatus(ScheduledTaskStatusEnum.PENDING).toList()
 }

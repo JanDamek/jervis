@@ -59,7 +59,7 @@ class CodeAnalyzeTool(
         withContext(Dispatchers.IO) {
             val params = parseTaskDescription(taskDescription, context)
             val projectPath =
-                directoryStructureService.getGitDirectory(
+                directoryStructureService.projectGitDir(
                     context.clientDocument.id,
                     context.projectDocument.id,
                 )

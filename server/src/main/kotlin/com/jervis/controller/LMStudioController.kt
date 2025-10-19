@@ -71,7 +71,7 @@ class LMStudioController(
                     ChatRequestContext(
                         clientId =
                             project.clientId.toString(),
-                        projectId = project.id,
+                        projectId = project.id.toString(),
                         autoScope = false,
                     ),
             )
@@ -109,8 +109,8 @@ class LMStudioController(
                 text = userPrompt,
                 ctx =
                     ChatRequestContext(
-                        clientId = requireNotNull(defaultProject.clientId) { "ClientId is required for chat completion" },
-                        projectId = defaultProject.id,
+                        clientId = requireNotNull(defaultProject.clientId) { "ClientId is required for chat completion" }.toString(),
+                        projectId = defaultProject.id.toString(),
                         autoScope = false,
                     ),
             )

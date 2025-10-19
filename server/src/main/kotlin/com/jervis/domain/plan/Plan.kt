@@ -11,7 +11,7 @@ data class Plan(
     val englishQuestion: String,
     val questionChecklist: List<String> = emptyList(),
     val initialRagQueries: List<String> = emptyList(),
-    var status: PlanStatus = PlanStatus.CREATED,
+    var status: PlanStatusEnum = PlanStatusEnum.CREATED,
     var steps: List<PlanStep> = emptyList(),
     var contextSummary: String? = null,
     var finalAnswer: String? = null,

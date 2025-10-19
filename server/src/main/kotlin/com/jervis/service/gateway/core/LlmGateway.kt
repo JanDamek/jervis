@@ -107,11 +107,15 @@ class LlmGateway(
                         val response =
                             llmCallExecutor.executeCall(candidate, sysPrompt, usrPrompt, prompt, type, estimatedTokens)
 
+                        val provider =
+                            requireNotNull(candidate.provider) {
+                                "Provider is required for model candidate ${candidate.model}"
+                            }
                         val parsedResponse =
                             jsonParser.validateAndParseWithThink(
                                 response.answer,
                                 responseSchema,
-                                candidate.provider!!,
+                                provider,
                                 candidate.model,
                             )
                         return@executor parsedResponse.result
@@ -154,10 +158,14 @@ class LlmGateway(
                     llmCallExecutor.executeCall(candidate, systemPrompt, finalUserPrompt, prompt, type, estimatedTokens)
 
                 // JSON PARSING WITH THINK EXTRACTION
+                val provider =
+                    requireNotNull(candidate.provider) {
+                        "Provider is required for model candidate ${candidate.model}"
+                    }
                 return jsonParser.validateAndParseWithThink(
                     response.answer,
                     responseSchema,
-                    candidate.provider!!,
+                    provider,
                     candidate.model,
                 )
             } catch (e: Exception) {

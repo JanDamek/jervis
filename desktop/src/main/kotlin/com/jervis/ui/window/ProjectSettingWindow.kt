@@ -651,7 +651,7 @@ class ProjectSettingWindow(
             }
             CoroutineScope(Dispatchers.Main).launch {
                 try {
-                    clientService.create(name)
+                    clientService.createByName(name)
                     JOptionPane.showMessageDialog(dialog, "Client created.", "Success", JOptionPane.INFORMATION_MESSAGE)
                 } catch (e: Exception) {
                     JOptionPane.showMessageDialog(

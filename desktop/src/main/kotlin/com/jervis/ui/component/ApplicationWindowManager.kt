@@ -1,5 +1,6 @@
 package com.jervis.ui.component
 
+import com.jervis.client.NotificationsWebSocketClient
 import com.jervis.service.IAgentOrchestratorService
 import com.jervis.service.IClientIndexingService
 import com.jervis.service.IClientProjectLinkService
@@ -29,6 +30,7 @@ class ApplicationWindowManager(
     private val taskSchedulingService: ITaskSchedulingService,
     private val indexingMonitorService: IIndexingMonitorService,
     private val debugWindowService: DesktopDebugWindowService,
+    private val notificationsClient: NotificationsWebSocketClient,
 ) {
     private val mainWindow: MainWindow by lazy {
         MainWindow(
@@ -40,6 +42,7 @@ class ApplicationWindowManager(
             indexingMonitorService,
             this,
             debugWindowService,
+            notificationsClient,
         )
     }
 
@@ -52,7 +55,7 @@ class ApplicationWindowManager(
     }
 
     private val schedulerWindow: SchedulerWindow by lazy {
-        SchedulerWindow(taskSchedulingService, clientService, projectService, chatCoordinator)
+        SchedulerWindow(taskSchedulingService, clientService, projectService, chatCoordinator, notificationsClient)
     }
 
     private val trayIconManager: TrayIconManager by lazy {

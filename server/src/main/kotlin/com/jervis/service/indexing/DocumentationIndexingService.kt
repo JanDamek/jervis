@@ -7,7 +7,7 @@ import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.document.TikaDocumentProcessor
 import com.jervis.service.gateway.EmbeddingGateway
-import com.jervis.service.indexing.monitoring.IndexingStepType
+import com.jervis.service.indexing.monitoring.IndexingStepTypeEnum
 import com.jervis.service.rag.RagIndexingStatusService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -139,7 +139,7 @@ class DocumentationIndexingService(
                 logger.info { "Found ${documentationFiles.size} documentation files to process" }
                 indexingMonitorService.addStepLog(
                     project.id,
-                    IndexingStepType.DOCUMENTATION,
+                    IndexingStepTypeEnum.DOCUMENTATION,
                     "Found ${documentationFiles.size} documentation files to process",
                 )
 
@@ -148,7 +148,7 @@ class DocumentationIndexingService(
                         val relativePath = docPath.relativize(docFile).toString()
                         indexingMonitorService.addStepLog(
                             project.id,
-                            IndexingStepType.DOCUMENTATION,
+                            IndexingStepTypeEnum.DOCUMENTATION,
                             "Processing documentation file (${index + 1}/${documentationFiles.size}): $relativePath",
                         )
 
@@ -158,7 +158,7 @@ class DocumentationIndexingService(
                             skippedDocs++
                             indexingMonitorService.addStepLog(
                                 project.id,
-                                IndexingStepType.DOCUMENTATION,
+                                IndexingStepTypeEnum.DOCUMENTATION,
                                 "⚠ Skipped file (extraction failed): $relativePath - ${processingResult.errorMessage ?: "Empty content"}",
                             )
                             continue
@@ -177,7 +177,7 @@ class DocumentationIndexingService(
                             skippedDocs++
                             indexingMonitorService.addStepLog(
                                 project.id,
-                                IndexingStepType.DOCUMENTATION,
+                                IndexingStepTypeEnum.DOCUMENTATION,
                                 "⚠ Skipped already indexed file: $relativePath",
                             )
                             logger.debug { "Skipping already indexed documentation file: $relativePath" }
@@ -231,7 +231,7 @@ class DocumentationIndexingService(
                         processedDocs++
                         indexingMonitorService.addStepLog(
                             project.id,
-                            IndexingStepType.DOCUMENTATION,
+                            IndexingStepTypeEnum.DOCUMENTATION,
                             "✓ Successfully indexed documentation file: $relativePath",
                         )
                         logger.debug { "Successfully indexed documentation file: $relativePath" }
@@ -239,7 +239,7 @@ class DocumentationIndexingService(
                         val relativePath = docPath.relativize(docFile).toString()
                         indexingMonitorService.addStepLog(
                             project.id,
-                            IndexingStepType.DOCUMENTATION,
+                            IndexingStepTypeEnum.DOCUMENTATION,
                             "✗ Failed to index documentation file: $relativePath - ${e.message}",
                         )
                         logger.warn(e) { "Failed to index documentation file: ${docFile.pathString}" }

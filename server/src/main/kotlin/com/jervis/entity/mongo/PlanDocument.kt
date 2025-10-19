@@ -1,7 +1,7 @@
 package com.jervis.entity.mongo
 
 import com.jervis.domain.plan.Plan
-import com.jervis.domain.plan.PlanStatus
+import com.jervis.domain.plan.PlanStatusEnum
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.Indexed
@@ -17,7 +17,7 @@ data class PlanDocument(
     val originalQuestion: String,
     val originalLanguage: String,
     val englishQuestion: String,
-    var status: PlanStatus = PlanStatus.CREATED,
+    var status: PlanStatusEnum = PlanStatusEnum.CREATED,
     var contextSummary: String? = null,
     var finalAnswer: String? = null,
     var thinkingSequence: List<String> = emptyList(),

@@ -1,77 +1,74 @@
 package com.jervis.configuration
 
-import com.jervis.client.ApiClientFactory
-import com.jervis.service.IAgentOrchestratorService
-import com.jervis.service.IClientIndexingService
-import com.jervis.service.IClientProjectLinkService
-import com.jervis.service.IClientService
+import com.jervis.client.DebugWebSocketClient
+import com.jervis.client.NotificationsWebSocketClient
+import com.jervis.config.HttpInterfaceClientConfig
 import com.jervis.service.IDebugWindowService
-import com.jervis.service.IIndexingMonitorService
-import com.jervis.service.IIndexingService
-import com.jervis.service.IProjectService
-import com.jervis.service.ITaskContextService
-import com.jervis.service.ITaskQueryService
-import com.jervis.service.ITaskSchedulingService
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
+import mu.KotlinLogging
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
-import org.springframework.context.annotation.Primary
+import org.springframework.context.annotation.Import
+import org.springframework.http.HttpStatus
+import org.springframework.web.reactive.function.client.WebClient
+import org.springframework.web.reactive.function.client.WebClientResponseException
+import reactor.util.retry.Retry
+import java.time.Duration
 
 @Configuration
-class ApiClientConfiguration {
+@Import(HttpInterfaceClientConfig::class)
+class ApiClientConfiguration(
     @Value("\${jervis.server.url}")
-    private lateinit var serverUrl: String
-
-    private val notificationsScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-
-    @Bean
-    @Primary
-    fun projectService(): IProjectService = ApiClientFactory.createProjectService(serverUrl)
+    private val serverUrl: String,
+) {
+    private val logger = KotlinLogging.logger {}
 
     @Bean
-    @Primary
-    fun clientService(): IClientService = ApiClientFactory.createClientService(serverUrl)
+    fun webClient(): WebClient =
+        WebClient
+            .builder()
+            .baseUrl(serverUrl)
+            .filter { request, next ->
+                next
+                    .exchange(request)
+                    .retryWhen(createExponentialBackoffRetry())
+                    .doOnError { error ->
+                        logger.error(error) { "HTTP request failed after all retries: ${request.method()} ${request.url()}" }
+                    }
+            }.build()
+
+    private fun createExponentialBackoffRetry(): Retry =
+        Retry
+            .backoff(Long.MAX_VALUE, Duration.ofSeconds(1))
+            .maxBackoff(Duration.ofMinutes(1))
+            .filter { throwable ->
+                when (throwable) {
+                    is WebClientResponseException -> {
+                        val status = throwable.statusCode
+                        status.is5xxServerError || status == HttpStatus.REQUEST_TIMEOUT || status == HttpStatus.TOO_MANY_REQUESTS
+                    }
+
+                    is java.net.ConnectException -> true
+                    is java.io.IOException -> true
+                    is java.nio.channels.ClosedChannelException -> true
+
+                    else -> false
+                }
+            }.doBeforeRetry { signal ->
+                logger.warn {
+                    "Retrying HTTP request (attempt ${signal.totalRetries() + 1}) after ${signal.failure().message}. " +
+                        "Next retry in ${signal.totalRetriesInARow()}s"
+                }
+            }.onRetryExhaustedThrow { _, signal ->
+                signal.failure()
+            }
 
     @Bean
-    @Primary
-    fun clientProjectLinkService(): IClientProjectLinkService = ApiClientFactory.createClientProjectLinkService(serverUrl)
+    fun notificationsClient(applicationEventPublisher: ApplicationEventPublisher): NotificationsWebSocketClient =
+        NotificationsWebSocketClient(serverUrl, applicationEventPublisher).also { it.start() }
 
     @Bean
-    @Primary
-    fun indexingService(): IIndexingService = ApiClientFactory.createIndexingService(serverUrl)
-
-    @Bean
-    @Primary
-    fun clientIndexingService(): IClientIndexingService = ApiClientFactory.createClientIndexingService(serverUrl)
-
-    @Bean
-    @Primary
-    fun agentOrchestratorService(): IAgentOrchestratorService = ApiClientFactory.createAgentOrchestratorService(serverUrl)
-
-    @Bean
-    @Primary
-    fun taskContextService(): ITaskContextService = ApiClientFactory.createTaskContextService(serverUrl)
-
-    @Bean
-    @Primary
-    fun taskQueryService(): ITaskQueryService = ApiClientFactory.createTaskQueryService(serverUrl)
-
-    @Bean
-    @Primary
-    fun taskSchedulingService(): ITaskSchedulingService = ApiClientFactory.createTaskSchedulingService(serverUrl)
-
-    @Bean
-    fun indexingMonitorService(): IIndexingMonitorService = ApiClientFactory.createIndexingMonitorService(serverUrl)
-
-    @Bean
-    fun notificationsClient(applicationEventPublisher: ApplicationEventPublisher): com.jervis.client.NotificationsWebSocketClient =
-        ApiClientFactory.createNotificationsClient(serverUrl, applicationEventPublisher).also { it.start() }
-
-    @Bean
-    fun debugClient(debugWindowService: IDebugWindowService): com.jervis.client.DebugWebSocketClient =
-        ApiClientFactory.createDebugClient(serverUrl, debugWindowService).also { it.start() }
+    fun debugClient(debugWindowService: IDebugWindowService): DebugWebSocketClient =
+        DebugWebSocketClient(serverUrl, debugWindowService).also { it.start() }
 }
