@@ -254,6 +254,8 @@ class ClientsWindow(
         }
     }
 
+    private fun isSshUrl(url: String?): Boolean = url?.let { it.startsWith("ssh://") || it.contains("@") } == true
+
     private fun fillClientForm(c: ClientDto) {
         nameField.text = c.name
         descriptionField.text = c.fullDescription ?: ""
@@ -282,7 +284,7 @@ class ClientsWindow(
         CoroutineScope(Dispatchers.Main).launch {
             try {
                 val id = selectedClientId
-                if (id == null) {
+                val savedClient: ClientDto = if (id == null) {
                     val c =
                         ClientDto(
                             name = name,
@@ -310,9 +312,17 @@ class ClientsWindow(
                             dependsOnProjects = clientDependencies.toList(),
                         )
                     withContext(Dispatchers.IO) { clientService.update(updated) }
-                    currentClient = updated
                 }
+
+                // Full reload from backend after edit
                 loadClients()
+                // Reselect the saved client and refresh its details and projects
+                selectedClientId = savedClient.id
+                currentClient = withContext(Dispatchers.IO) { clientService.getClientById(savedClient.id) } ?: savedClient
+                // Update form and linked projects list
+                fillClientForm(currentClient!!)
+                loadProjectsForClient(savedClient.id)
+
                 JOptionPane.showMessageDialog(
                     this@ClientsWindow,
                     "Client saved.",
@@ -903,6 +913,23 @@ class ClientsWindow(
 
                     println("ClientsWindow: Client created with ID: ${createdClient.id}")
 
+                    // Optionally test SSH connectivity when URL is known
+                    if (isSshUrl(gitSetupRequest.monoRepoUrl)) {
+                        val testResponse = withContext(Dispatchers.IO) {
+                            clientGitConfigurationService.testConnection(createdClient.id, gitSetupRequest)
+                        }
+                        val success = (testResponse.body?.get("success") as? Boolean) == true
+                        if (!success) {
+                            JOptionPane.showMessageDialog(
+                                this@ClientsWindow,
+                                "SSH connection test failed. Please verify the repository URL and credentials.",
+                                "Git Connection",
+                                JOptionPane.ERROR_MESSAGE,
+                            )
+                            return@launch
+                        }
+                    }
+
                     // Then setup Git configuration with credentials
                     withContext(Dispatchers.IO) {
                         clientGitConfigurationService.setupGitConfiguration(createdClient.id, gitSetupRequest)
@@ -974,6 +1001,23 @@ class ClientsWindow(
                     println("  Has SSH Key: ${gitSetupRequest.sshPrivateKey != null}")
                     println("  Has HTTPS Token: ${gitSetupRequest.httpsToken != null}")
                     println("  Has GPG Key: ${gitSetupRequest.gpgPrivateKey != null}")
+
+                    // Optionally test SSH connectivity when URL is known
+                    if (isSshUrl(gitSetupRequest.monoRepoUrl)) {
+                        val testResponse = withContext(Dispatchers.IO) {
+                            clientGitConfigurationService.testConnection(client.id, gitSetupRequest)
+                        }
+                        val success = (testResponse.body?.get("success") as? Boolean) == true
+                        if (!success) {
+                            JOptionPane.showMessageDialog(
+                                this@ClientsWindow,
+                                "SSH connection test failed. Please verify the repository URL and credentials.",
+                                "Git Connection",
+                                JOptionPane.ERROR_MESSAGE,
+                            )
+                            return@launch
+                        }
+                    }
 
                     // First setup Git configuration with credentials
                     withContext(Dispatchers.IO) {
