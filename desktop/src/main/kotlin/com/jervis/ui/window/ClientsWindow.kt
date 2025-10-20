@@ -4,11 +4,13 @@ import com.jervis.common.Constants.Companion.GLOBAL_ID_STRING
 import com.jervis.dto.ClientDto
 import com.jervis.dto.ClientProjectLinkDto
 import com.jervis.dto.ProjectDto
+import com.jervis.service.IClientGitConfigurationService
 import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
 import com.jervis.service.IIndexingService
 import com.jervis.service.IProjectService
 import com.jervis.ui.component.ClientSettingsComponents
+import com.jervis.ui.component.GitSetupPanel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -39,6 +41,7 @@ import javax.swing.border.EmptyBorder
  */
 class ClientsWindow(
     private val clientService: IClientService,
+    private val clientGitConfigurationService: IClientGitConfigurationService,
     private val projectService: IProjectService,
     private val linkService: IClientProjectLinkService,
     private val indexingService: IIndexingService,
@@ -880,11 +883,32 @@ class ClientsWindow(
         val dialog = NewClientWithSettingsDialog(this)
         dialog.isVisible = true
 
+        val gitSetupRequest = dialog.gitSetupRequest
         val result = dialog.result
-        if (result != null) {
+        if (result != null && gitSetupRequest != null) {
             CoroutineScope(Dispatchers.Main).launch {
                 try {
-                    withContext(Dispatchers.IO) { clientService.create(result) }
+                    println("ClientsWindow: Creating new client with Git configuration")
+                    println("  Client name: ${result.name}")
+                    println("  Provider: ${gitSetupRequest.gitProvider}")
+                    println("  Auth Type: ${gitSetupRequest.gitAuthType}")
+                    println("  Has SSH Key: ${gitSetupRequest.sshPrivateKey != null}")
+
+                    // First create the client
+                    val createdClient =
+                        withContext(Dispatchers.IO) {
+                            clientService.create(result)
+                        }
+
+                    println("ClientsWindow: Client created with ID: ${createdClient.id}")
+
+                    // Then setup Git configuration with credentials
+                    withContext(Dispatchers.IO) {
+                        clientGitConfigurationService.setupGitConfiguration(createdClient.id, gitSetupRequest)
+                    }
+
+                    println("ClientsWindow: Git configuration saved for new client")
+
                     loadClients()
                     JOptionPane.showMessageDialog(
                         this@ClientsWindow,
@@ -911,16 +935,63 @@ class ClientsWindow(
                 return
             }
 
-        val dialog = ClientSettingsDialog(this, client)
-        dialog.isVisible = true
+        // Load existing credentials first
+        var existingCredentials: com.jervis.dto.GitCredentialsDto? = null
+        CoroutineScope(Dispatchers.Main).launch {
+            try {
+                existingCredentials =
+                    withContext(Dispatchers.IO) {
+                        clientGitConfigurationService.getGitCredentials(client.id)
+                    }
+                println("ClientsWindow: Loaded existing credentials for client ${client.id}")
+                println("  Has SSH Key: ${existingCredentials?.sshPrivateKey != null}")
+                println("  Has HTTPS Token: ${existingCredentials?.httpsToken != null}")
 
+                // Create and show dialog with credentials
+                val dialog = ClientSettingsDialog(this@ClientsWindow, client, existingCredentials)
+                dialog.isVisible = true
+                handleDialogResult(client, dialog)
+            } catch (e: Exception) {
+                println("ClientsWindow: Failed to load credentials: ${e.message}")
+                // Create dialog without credentials on error
+                val dialog = ClientSettingsDialog(this@ClientsWindow, client, null)
+                dialog.isVisible = true
+                handleDialogResult(client, dialog)
+            }
+        }
+    }
+
+    private fun handleDialogResult(
+        client: ClientDto,
+        dialog: ClientSettingsDialog,
+    ) {
+        val gitSetupRequest = dialog.gitSetupRequest
         val result = dialog.result
-        if (result != null) {
+        if (result != null && gitSetupRequest != null) {
             CoroutineScope(Dispatchers.Main).launch {
                 try {
-                    withContext(Dispatchers.IO) { clientService.update(result.copy(id = client.id)) }
-                    currentClient = result
-                    fillClientForm(result)
+                    println("ClientsWindow: Saving Git configuration for client ${client.id}")
+                    println("  Provider: ${gitSetupRequest.gitProvider}")
+                    println("  Auth Type: ${gitSetupRequest.gitAuthType}")
+                    println("  Has SSH Key: ${gitSetupRequest.sshPrivateKey != null}")
+                    println("  Has HTTPS Token: ${gitSetupRequest.httpsToken != null}")
+                    println("  Has GPG Key: ${gitSetupRequest.gpgPrivateKey != null}")
+
+                    // First setup Git configuration with credentials
+                    withContext(Dispatchers.IO) {
+                        clientGitConfigurationService.setupGitConfiguration(client.id, gitSetupRequest)
+                    }
+
+                    println("ClientsWindow: Git configuration saved successfully")
+
+                    // Then update other client settings
+                    val finalClient =
+                        withContext(Dispatchers.IO) {
+                            clientService.update(result.copy(id = client.id))
+                        }
+
+                    currentClient = finalClient
+                    fillClientForm(finalClient)
                     JOptionPane.showMessageDialog(
                         this@ClientsWindow,
                         "Nastavení klienta bylo uloženo.",
@@ -1029,11 +1100,13 @@ class ClientsWindow(
         private val anonymizationPanel = ClientSettingsComponents.createAnonymizationPanel()
         private val inspirationPolicyPanel = ClientSettingsComponents.createInspirationPolicyPanel()
         private val clientToolsPanel = ClientSettingsComponents.createClientToolsPanel()
+        private val gitSetupPanel = GitSetupPanel()
 
-        private val okButton = JButton("Vytvořit klienta")
+        private val okButton = JButton("Create Client")
         private val cancelButton = JButton("Zrušit")
 
         var result: ClientDto? = null
+        var gitSetupRequest: com.jervis.dto.GitSetupRequestDto? = null
 
         init {
             preferredSize = Dimension(850, 750)
@@ -1075,6 +1148,9 @@ class ClientsWindow(
 
             // Client Tools Tab
             tabbedPane.addTab("Client Tools", JScrollPane(clientToolsPanel))
+
+            // Git Configuration Tab
+            tabbedPane.addTab("Git Configuration", JScrollPane(gitSetupPanel))
 
             // Button panel
             val buttonPanel = JPanel(FlowLayout(FlowLayout.RIGHT))
@@ -1166,13 +1242,18 @@ class ClientsWindow(
             val description = descriptionField.text.trim().ifEmpty { null }
             val isDisabled = isDisabledCheckbox.isSelected
 
-            // Validation
             if (name.isBlank()) {
-                JOptionPane.showMessageDialog(this, "Název je povinný.", "Validace", JOptionPane.WARNING_MESSAGE)
+                JOptionPane.showMessageDialog(this, "Name is required.", "Validation", JOptionPane.WARNING_MESSAGE)
+                return
+            }
+
+            if (!gitSetupPanel.validateFields()) {
                 return
             }
 
             try {
+                val gitRequest = gitSetupPanel.toGitSetupRequest()
+
                 val newClient =
                     ClientDto(
                         id = GLOBAL_ID_STRING,
@@ -1185,16 +1266,22 @@ class ClientsWindow(
                         defaultAnonymization = anonymizationPanel.getAnonymization(),
                         defaultInspirationPolicy = inspirationPolicyPanel.getInspirationPolicy(),
                         tools = clientToolsPanel.getClientTools(),
+                        gitProvider = gitRequest.gitProvider,
+                        gitAuthType = gitRequest.gitAuthType,
+                        monoRepoUrl = gitRequest.monoRepoUrl,
+                        defaultBranch = gitRequest.defaultBranch,
+                        gitConfig = gitRequest.gitConfig,
                         isDisabled = isDisabled,
                     )
 
+                gitSetupRequest = gitRequest
                 result = newClient
                 dispose()
             } catch (e: Exception) {
                 JOptionPane.showMessageDialog(
                     this,
-                    "Chyba při validaci nastavení: ${e.message}",
-                    "Chyba",
+                    "Error validating settings: ${e.message}",
+                    "Error",
                     JOptionPane.ERROR_MESSAGE,
                 )
             }
@@ -1207,7 +1294,8 @@ class ClientsWindow(
     private class ClientSettingsDialog(
         owner: JFrame,
         private val client: ClientDto,
-    ) : JDialog(owner, "Nastavení klienta: ${client.name}", true) {
+        private val existingCredentials: com.jervis.dto.GitCredentialsDto?,
+    ) : JDialog(owner, "Client Settings: ${client.name}", true) {
         private val guidelinesPanel = ClientSettingsComponents.createGuidelinesPanel(client.defaultCodingGuidelines)
         private val reviewPolicyPanel = ClientSettingsComponents.createReviewPolicyPanel(client.defaultReviewPolicy)
         private val formattingPanel = ClientSettingsComponents.createFormattingPanel(client.defaultFormatting)
@@ -1216,11 +1304,29 @@ class ClientsWindow(
         private val inspirationPolicyPanel =
             ClientSettingsComponents.createInspirationPolicyPanel(client.defaultInspirationPolicy)
         private val clientToolsPanel = ClientSettingsComponents.createClientToolsPanel(client.tools)
+        private val gitSetupPanel =
+            GitSetupPanel(
+                initialProvider = client.gitProvider,
+                initialRepoUrl = client.monoRepoUrl,
+                initialBranch = client.defaultBranch,
+                initialAuthType = client.gitAuthType ?: com.jervis.domain.git.GitAuthTypeEnum.SSH_KEY,
+                initialGitConfig = client.gitConfig,
+                initialSshPrivateKey = existingCredentials?.sshPrivateKey,
+                initialSshPublicKey = existingCredentials?.sshPublicKey,
+                initialSshPassphrase = existingCredentials?.sshPassphrase,
+                initialHttpsToken = existingCredentials?.httpsToken,
+                initialHttpsUsername = existingCredentials?.httpsUsername,
+                initialHttpsPassword = existingCredentials?.httpsPassword,
+                initialGpgPrivateKey = existingCredentials?.gpgPrivateKey,
+                initialGpgPublicKey = existingCredentials?.gpgPublicKey,
+                initialGpgPassphrase = existingCredentials?.gpgPassphrase,
+            )
 
         private val okButton = JButton("OK")
         private val cancelButton = JButton("Cancel")
 
         var result: ClientDto? = null
+        var gitSetupRequest: com.jervis.dto.GitSetupRequestDto? = null
 
         init {
             preferredSize = Dimension(800, 700)
@@ -1259,6 +1365,9 @@ class ClientsWindow(
             // Client Tools Tab
             tabbedPane.addTab("Client Tools", JScrollPane(clientToolsPanel))
 
+            // Git Configuration Tab
+            tabbedPane.addTab("Git Configuration", JScrollPane(gitSetupPanel))
+
             // Button panel
             val buttonPanel = JPanel(FlowLayout(FlowLayout.RIGHT))
             buttonPanel.add(okButton)
@@ -1290,6 +1399,12 @@ class ClientsWindow(
 
         private fun saveAndClose() {
             try {
+                if (!gitSetupPanel.validateFields()) {
+                    return
+                }
+
+                val gitRequest = gitSetupPanel.toGitSetupRequest()
+
                 val updatedClient =
                     client.copy(
                         defaultCodingGuidelines = guidelinesPanel.getGuidelines(),
@@ -1299,15 +1414,21 @@ class ClientsWindow(
                         defaultAnonymization = anonymizationPanel.getAnonymization(),
                         defaultInspirationPolicy = inspirationPolicyPanel.getInspirationPolicy(),
                         tools = clientToolsPanel.getClientTools(),
+                        gitProvider = gitRequest.gitProvider,
+                        gitAuthType = gitRequest.gitAuthType,
+                        monoRepoUrl = gitRequest.monoRepoUrl,
+                        defaultBranch = gitRequest.defaultBranch,
+                        gitConfig = gitRequest.gitConfig,
                     )
 
+                gitSetupRequest = gitRequest
                 result = updatedClient
                 dispose()
             } catch (e: Exception) {
                 JOptionPane.showMessageDialog(
                     this,
-                    "Chyba při validaci nastavení: ${e.message}",
-                    "Chyba",
+                    "Error validating settings: ${e.message}",
+                    "Error",
                     JOptionPane.ERROR_MESSAGE,
                 )
             }

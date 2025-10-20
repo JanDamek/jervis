@@ -1,0 +1,259 @@
+package com.jervis.service.background
+
+import com.jervis.domain.background.BackgroundTask
+import com.jervis.domain.background.BackgroundTaskStatus
+import com.jervis.domain.background.Checkpoint
+import com.jervis.entity.mongo.BackgroundSettingsDocument
+import com.jervis.repository.mongo.BackgroundArtifactMongoRepository
+import com.jervis.repository.mongo.BackgroundSettingsMongoRepository
+import com.jervis.repository.mongo.BackgroundTaskMongoRepository
+import jakarta.annotation.PostConstruct
+import jakarta.annotation.PreDestroy
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import mu.KotlinLogging
+import org.springframework.stereotype.Service
+import java.time.Duration
+import java.time.Instant
+import java.util.concurrent.atomic.AtomicReference
+
+/**
+ * Background cognitive engine that runs idle-time LLM tasks.
+ *
+ * Orchestrates the execution of background tasks when the system is idle,
+ * with immediate interruption capability for foreground requests.
+ */
+@Service
+class BackgroundEngine(
+    private val llmLoadMonitor: LlmLoadMonitor,
+    private val taskRepository: BackgroundTaskMongoRepository,
+    private val artifactRepository: BackgroundArtifactMongoRepository,
+    private val settingsRepository: BackgroundSettingsMongoRepository,
+    private val taskExecutorRegistry: BackgroundTaskExecutorRegistry,
+) {
+    private val logger = KotlinLogging.logger {}
+    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
+    @Volatile
+    private var engineJob: Job? = null
+
+    @Volatile
+    private var settings: BackgroundSettingsDocument = BackgroundSettingsDocument()
+
+    @PostConstruct
+    fun start() {
+        engineJob =
+            scope.launch {
+                logger.info { "Background engine starting..." }
+                loadSettings()
+                runMainLoop()
+            }
+    }
+
+    @PreDestroy
+    fun stop() {
+        logger.info { "Background engine stopping..." }
+        engineJob?.cancel()
+    }
+
+    private suspend fun loadSettings() {
+        settings = settingsRepository.findById("background_engine") ?: BackgroundSettingsDocument()
+        logger.info { "Loaded settings: idleThreshold=${settings.idleThresholdSeconds}s, chunkLimit=${settings.chunkTokenLimit}" }
+    }
+
+    private suspend fun runMainLoop() {
+        while (scope.isActive) {
+            try {
+                val idleThreshold = Duration.ofSeconds(settings.idleThresholdSeconds)
+
+                if (llmLoadMonitor.isIdleFor(idleThreshold)) {
+                    val task = findNextPendingOrPartialTask()
+                    if (task != null) {
+                        executeTask(task)
+                    } else {
+                        logger.debug { "No pending tasks, sleeping..." }
+                        delay(30_000)
+                    }
+                } else {
+                    delay(10_000)
+                }
+            } catch (e: CancellationException) {
+                logger.info { "Background engine cancelled" }
+                throw e
+            } catch (e: Exception) {
+                logger.error(e) { "Error in background engine main loop" }
+                delay(60_000)
+            }
+        }
+    }
+
+    private suspend fun findNextPendingOrPartialTask(): BackgroundTask? =
+        taskRepository
+            .findByStatusInOrderByPriorityAscCreatedAtAsc(
+                listOf(
+                    BackgroundTaskStatus.PENDING.name,
+                    BackgroundTaskStatus.PARTIAL.name,
+                ),
+            ).firstOrNull()
+            ?.toDomain()
+
+    private suspend fun executeTask(task: BackgroundTask) {
+        val taskJob =
+            scope.launch {
+                logger.info { "Starting task: ${task.id} (${task.taskType})" }
+                markTaskRunning(task.id)
+
+                try {
+                    val executor = taskExecutorRegistry.getExecutor(task.taskType)
+                    var currentTask = task
+
+                    while (scope.isActive && llmLoadMonitor.isIdleFor(Duration.ZERO) && currentTask.progress < 1.0) {
+                        val chunkResult =
+                            withTimeout(settings.chunkTimeoutSeconds * 1000) {
+                                executor.executeChunk(currentTask)
+                            }
+
+                        saveArtifacts(currentTask.id, chunkResult.artifacts)
+
+                        val newProgress = (currentTask.progress + chunkResult.progressDelta).coerceAtMost(1.0)
+                        updateTaskProgress(currentTask.id, chunkResult.checkpoint, newProgress)
+
+                        currentTask = currentTask.copy(checkpoint = chunkResult.checkpoint, progress = newProgress)
+
+                        delay(1500)
+                    }
+
+                    if (currentTask.progress >= 1.0) {
+                        markTaskCompleted(currentTask.id)
+                        logger.info { "Task completed: ${currentTask.id}" }
+                    } else {
+                        markTaskPartial(currentTask.id)
+                        logger.info { "Task partial: ${currentTask.id} (progress=${currentTask.progress})" }
+                    }
+                } catch (ce: CancellationException) {
+                    markTaskPartial(task.id)
+                    logger.info { "Task interrupted: ${task.id}" }
+                } catch (e: Exception) {
+                    markTaskFailed(task.id, e.message ?: "unknown")
+                    logger.error(e) { "Task failed: ${task.id}" }
+                }
+            }
+
+        currentTaskJob.set(taskJob)
+        taskJob.join()
+        currentTaskJob.compareAndSet(taskJob, null)
+    }
+
+    private suspend fun markTaskRunning(taskId: org.bson.types.ObjectId) {
+        val task = taskRepository.findById(taskId) ?: return
+        taskRepository.save(
+            task.copy(
+                status = BackgroundTaskStatus.RUNNING.name,
+                updatedAt = Instant.now(),
+            ),
+        )
+    }
+
+    private suspend fun updateTaskProgress(
+        taskId: org.bson.types.ObjectId,
+        checkpoint: Checkpoint?,
+        progress: Double,
+    ) {
+        val task = taskRepository.findById(taskId) ?: return
+        taskRepository.save(
+            task.copy(
+                checkpoint = checkpoint?.let { Json.encodeToString<Checkpoint>(it) },
+                progress = progress,
+                updatedAt = Instant.now(),
+            ),
+        )
+    }
+
+    private suspend fun markTaskPartial(taskId: org.bson.types.ObjectId) {
+        val task = taskRepository.findById(taskId) ?: return
+        taskRepository.save(
+            task.copy(
+                status = BackgroundTaskStatus.PARTIAL.name,
+                updatedAt = Instant.now(),
+            ),
+        )
+    }
+
+    private suspend fun markTaskCompleted(taskId: org.bson.types.ObjectId) {
+        val task = taskRepository.findById(taskId) ?: return
+        taskRepository.save(
+            task.copy(
+                status = BackgroundTaskStatus.COMPLETED.name,
+                progress = 1.0,
+                updatedAt = Instant.now(),
+            ),
+        )
+    }
+
+    private suspend fun markTaskFailed(
+        taskId: org.bson.types.ObjectId,
+        reason: String,
+    ) {
+        val task = taskRepository.findById(taskId) ?: return
+        val newRetryCount = task.retryCount + 1
+        val newStatus =
+            if (newRetryCount >= task.maxRetries) {
+                BackgroundTaskStatus.SUSPENDED
+            } else {
+                BackgroundTaskStatus.PENDING
+            }
+
+        taskRepository.save(
+            task.copy(
+                status = newStatus.name,
+                retryCount = newRetryCount,
+                notes = "Failed: $reason",
+                updatedAt = Instant.now(),
+            ),
+        )
+    }
+
+    private suspend fun saveArtifacts(
+        taskId: org.bson.types.ObjectId,
+        artifacts: List<com.jervis.domain.background.BackgroundArtifact>,
+    ) {
+        artifacts.forEach { artifact ->
+            try {
+                val exists = artifactRepository.existsByContentHash(artifact.contentHash)
+                if (!exists) {
+                    artifactRepository.save(
+                        com.jervis.entity.mongo.BackgroundArtifactDocument
+                            .fromDomain(artifact),
+                    )
+                    logger.debug { "Saved artifact: ${artifact.id} (${artifact.type})" }
+                } else {
+                    logger.debug { "Skipped duplicate artifact with hash: ${artifact.contentHash}" }
+                }
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to save artifact: ${artifact.id}" }
+            }
+        }
+    }
+
+    companion object {
+        private val currentTaskJob = AtomicReference<Job?>(null)
+
+        /**
+         * Immediately interrupts the currently running background task.
+         * Called by LlmLoadMonitor when transitioning to busy state.
+         */
+        fun interruptNow() {
+            currentTaskJob.getAndSet(null)?.cancel(CancellationException("Foreground request"))
+        }
+    }
+}

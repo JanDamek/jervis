@@ -2,11 +2,13 @@ package com.jervis.ui.component
 
 import com.jervis.client.NotificationsWebSocketClient
 import com.jervis.service.IAgentOrchestratorService
+import com.jervis.service.IClientGitConfigurationService
 import com.jervis.service.IClientIndexingService
 import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
 import com.jervis.service.IIndexingMonitorService
 import com.jervis.service.IIndexingService
+import com.jervis.service.IProjectGitConfigurationService
 import com.jervis.service.IProjectService
 import com.jervis.service.ITaskContextService
 import com.jervis.service.ITaskSchedulingService
@@ -23,6 +25,8 @@ class ApplicationWindowManager(
     private val projectService: IProjectService,
     private val chatCoordinator: IAgentOrchestratorService,
     private val clientService: IClientService,
+    private val clientGitConfigurationService: IClientGitConfigurationService,
+    private val projectGitConfigurationService: IProjectGitConfigurationService,
     private val linkService: IClientProjectLinkService,
     private val taskContextService: ITaskContextService,
     private val indexingService: IIndexingService,
@@ -47,11 +51,17 @@ class ApplicationWindowManager(
     }
 
     private val projectSettingsWindow: ProjectSettingWindow by lazy {
-        ProjectSettingWindow(projectService, clientService, indexingService, clientIndexingService)
+        ProjectSettingWindow(
+            projectService,
+            clientService,
+            indexingService,
+            clientIndexingService,
+            projectGitConfigurationService,
+        )
     }
 
     private val clientsWindow: ClientsWindow by lazy {
-        ClientsWindow(clientService, projectService, linkService, indexingService)
+        ClientsWindow(clientService, clientGitConfigurationService, projectService, linkService, indexingService)
     }
 
     private val schedulerWindow: SchedulerWindow by lazy {

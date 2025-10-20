@@ -16,6 +16,7 @@ import com.jervis.domain.client.SecretsPolicy
 import com.jervis.domain.client.SlackConn
 import com.jervis.domain.client.TeamsConn
 import com.jervis.domain.client.TechStackInfo
+import com.jervis.domain.git.GitConfig
 import com.jervis.domain.project.AudioMonitoringConfig
 import com.jervis.dto.AnonymizationDto
 import com.jervis.dto.AudioMonitoringConfigDto
@@ -24,6 +25,7 @@ import com.jervis.dto.CodingGuidelinesDto
 import com.jervis.dto.DiscordConnDto
 import com.jervis.dto.EmailConnDto
 import com.jervis.dto.FormattingDto
+import com.jervis.dto.GitConfigDto
 import com.jervis.dto.GitConnDto
 import com.jervis.dto.GuidelinesDto
 import com.jervis.dto.InspirationPolicyDto
@@ -319,4 +321,28 @@ fun CodingGuidelinesDto.toDomain(): CodingGuidelines =
         projectStandards = this.projectStandards?.toDomain(),
         effectiveGuidelines = this.effectiveGuidelines.toDomain(),
         programmingStyle = this.programmingStyle.toDomain(),
+    )
+
+fun GitConfig.toDto(): GitConfigDto =
+    GitConfigDto(
+        gitUserName = this.gitUserName,
+        gitUserEmail = this.gitUserEmail,
+        commitMessageTemplate = this.commitMessageTemplate,
+        requireGpgSign = this.requireGpgSign,
+        gpgKeyId = this.gpgKeyId,
+        requireLinearHistory = this.requireLinearHistory,
+        conventionalCommits = this.conventionalCommits,
+        commitRules = this.commitRules,
+    )
+
+fun GitConfigDto.toDomain(): GitConfig =
+    GitConfig(
+        gitUserName = this.gitUserName,
+        gitUserEmail = this.gitUserEmail,
+        commitMessageTemplate = this.commitMessageTemplate,
+        requireGpgSign = this.requireGpgSign,
+        gpgKeyId = this.gpgKeyId,
+        requireLinearHistory = this.requireLinearHistory,
+        conventionalCommits = this.conventionalCommits,
+        commitRules = this.commitRules,
     )

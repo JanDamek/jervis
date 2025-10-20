@@ -1,11 +1,13 @@
 package com.jervis.config
 
 import com.jervis.service.IAgentOrchestratorService
+import com.jervis.service.IClientGitConfigurationService
 import com.jervis.service.IClientIndexingService
 import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
 import com.jervis.service.IIndexingMonitorService
 import com.jervis.service.IIndexingService
+import com.jervis.service.IProjectGitConfigurationService
 import com.jervis.service.IProjectService
 import com.jervis.service.ITaskContextService
 import com.jervis.service.ITaskQueryService
@@ -62,4 +64,12 @@ class HttpInterfaceClientConfig {
     @Bean
     fun indexingServiceClient(webClient: WebClient): IIndexingService =
         createHttpServiceProxyFactory(webClient).createClient(IIndexingService::class.java)
+
+    @Bean
+    fun clientGitConfigurationClient(webClient: WebClient): IClientGitConfigurationService =
+        createHttpServiceProxyFactory(webClient).createClient(IClientGitConfigurationService::class.java)
+
+    @Bean
+    fun projectGitConfigurationClient(webClient: WebClient): IProjectGitConfigurationService =
+        createHttpServiceProxyFactory(webClient).createClient(IProjectGitConfigurationService::class.java)
 }

@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.spring.dependency.management)
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.spring)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 java {
@@ -22,6 +23,9 @@ dependencies {
     implementation("org.springframework:spring-context")
     implementation("org.springframework:spring-webflux")
     implementation("io.projectreactor.kotlin:reactor-kotlin-extensions")
+
+    // Serialization
+    implementation(libs.kotlinx.serialization.json)
 
     // UI & Swing
     implementation(libs.kotlinx.coroutines.swing)

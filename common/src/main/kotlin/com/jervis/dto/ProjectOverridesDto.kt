@@ -1,5 +1,6 @@
 package com.jervis.dto
 
+import com.jervis.domain.git.GitAuthTypeEnum
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -12,4 +13,7 @@ data class ProjectOverridesDto(
     val inspirationPolicy: InspirationPolicyDto? = null,
     val tools: ClientToolsDto? = null,
     val audioMonitoring: AudioMonitoringConfigDto? = null,
+    val gitRemoteUrl: String? = null,
+    val gitAuthType: GitAuthTypeEnum? = null,
+    val gitConfig: GitConfigDto? = null,
 )

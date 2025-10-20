@@ -3,11 +3,13 @@ package com.jervis
 import com.formdev.flatlaf.FlatLightLaf
 import com.jervis.client.NotificationsWebSocketClient
 import com.jervis.service.IAgentOrchestratorService
+import com.jervis.service.IClientGitConfigurationService
 import com.jervis.service.IClientIndexingService
 import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
 import com.jervis.service.IIndexingMonitorService
 import com.jervis.service.IIndexingService
+import com.jervis.service.IProjectGitConfigurationService
 import com.jervis.service.IProjectService
 import com.jervis.service.ITaskContextService
 import com.jervis.service.ITaskSchedulingService
@@ -39,6 +41,8 @@ class JervisApplication(
     private val projectService: IProjectService,
     private val chatCoordinator: IAgentOrchestratorService,
     private val clientService: IClientService,
+    private val clientGitConfigurationService: IClientGitConfigurationService,
+    private val projectGitConfigurationService: IProjectGitConfigurationService,
     private val linkService: IClientProjectLinkService,
     private val taskContextService: ITaskContextService,
     private val indexingService: IIndexingService,
@@ -62,6 +66,8 @@ class JervisApplication(
                     projectService,
                     chatCoordinator,
                     clientService,
+                    clientGitConfigurationService,
+                    projectGitConfigurationService,
                     linkService,
                     taskContextService,
                     indexingService,

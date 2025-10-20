@@ -18,6 +18,7 @@ import java.util.UUID
 class LlmCallExecutor(
     private val clients: List<ProviderClient>,
     private val debugService: DebugService,
+    private val llmLoadMonitor: com.jervis.service.background.LlmLoadMonitor,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -41,6 +42,8 @@ class LlmCallExecutor(
 
         logger.info { "Calling LLM type=$promptType provider=$provider model=${candidate.model}" }
         val startTime = System.nanoTime()
+
+        llmLoadMonitor.registerRequestStart()
 
         return try {
             logger.debug { "LLM Request - systemPrompt=$systemPrompt, userPrompt=$userPrompt" }
@@ -77,6 +80,8 @@ class LlmCallExecutor(
             val errorDetail = createErrorDetail(throwable)
             logFailedCall(provider, candidate.model, startTime, errorDetail)
             throw IllegalStateException("LLM call failed for $provider: $errorDetail", throwable)
+        } finally {
+            llmLoadMonitor.registerRequestEnd()
         }
     }
 

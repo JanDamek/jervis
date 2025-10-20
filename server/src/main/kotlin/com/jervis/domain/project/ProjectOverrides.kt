@@ -7,6 +7,8 @@ import com.jervis.domain.client.Guidelines
 import com.jervis.domain.client.InspirationPolicy
 import com.jervis.domain.client.ReviewPolicy
 import com.jervis.domain.client.SecretsPolicy
+import com.jervis.domain.git.GitAuthTypeEnum
+import com.jervis.domain.git.GitConfig
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -19,4 +21,7 @@ data class ProjectOverrides(
     val inspirationPolicy: InspirationPolicy? = null,
     val tools: ClientTools? = null,
     val audioMonitoring: AudioMonitoringConfig? = null,
+    val gitRemoteUrl: String? = null,
+    val gitAuthType: GitAuthTypeEnum? = null,
+    val gitConfig: GitConfig? = null,
 )

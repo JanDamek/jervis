@@ -4,6 +4,7 @@ import com.jervis.client.DebugWebSocketClient
 import com.jervis.client.NotificationsWebSocketClient
 import com.jervis.config.HttpInterfaceClientConfig
 import com.jervis.service.IDebugWindowService
+import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.ApplicationEventPublisher
@@ -11,6 +12,8 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Import
 import org.springframework.http.HttpStatus
+import org.springframework.http.codec.json.KotlinSerializationJsonDecoder
+import org.springframework.http.codec.json.KotlinSerializationJsonEncoder
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.WebClientResponseException
 import reactor.util.retry.Retry
@@ -25,11 +28,28 @@ class ApiClientConfiguration(
     private val logger = KotlinLogging.logger {}
 
     @Bean
-    fun webClient(): WebClient =
+    fun json(): Json =
+        Json {
+            ignoreUnknownKeys = true
+            prettyPrint = false
+            isLenient = true
+            encodeDefaults = true
+            explicitNulls = false
+        }
+
+    @Bean
+    fun webClient(json: Json): WebClient =
         WebClient
             .builder()
             .baseUrl(serverUrl)
-            .filter { request, next ->
+            .codecs { configurer ->
+                configurer.defaultCodecs().kotlinSerializationJsonEncoder(
+                    KotlinSerializationJsonEncoder(json),
+                )
+                configurer.defaultCodecs().kotlinSerializationJsonDecoder(
+                    KotlinSerializationJsonDecoder(json),
+                )
+            }.filter { request, next ->
                 next
                     .exchange(request)
                     .retryWhen(createExponentialBackoffRetry())

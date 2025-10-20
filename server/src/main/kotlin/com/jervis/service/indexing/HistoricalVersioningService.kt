@@ -1,26 +1,25 @@
 package com.jervis.service.indexing
 
+import com.jervis.domain.task.PendingTaskSeverity
+import com.jervis.domain.task.PendingTaskType
 import com.jervis.repository.vector.VectorStorageRepository
+import com.jervis.service.task.PendingTaskService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
+import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.io.path.exists
 
-/**
- * Service for managing historical versioning of RAG documents.
- * Handles marking existing content as historical when reindexing and preserving document history.
- *
- * This addresses the requirement: "zajistí, aby v RAG pokud se něco naidexuje bylo označeno a indexovalo se vše jen nové,
- * co se týče kódu a popisek tak asi vše indexuj podle GITu, tak že co je nové a změněné a není v RAG tak naidexu,
- * co je v RAG tak v RAG v payloadu označ jako historical a standartně toto v RAG nehledej, jen na jasné vyžádání"
- */
 @Service
 class HistoricalVersioningService(
     private val vectorStorage: VectorStorageRepository,
+    private val pendingTaskService: PendingTaskService,
 ) {
     private val logger = KotlinLogging.logger {}
+    private val failedGitAttempts = mutableSetOf<String>()
 
     data class VersioningResult(
         val markedHistorical: Int,
@@ -119,7 +118,88 @@ class HistoricalVersioningService(
                 }
             } catch (e: Exception) {
                 logger.warn(e) { "Error getting Git commit hash for project: $projectPath" }
+                handleGitError(projectPath, null, null, e)
                 null
             }
         }
+
+    private suspend fun handleGitError(
+        projectPath: Path,
+        projectId: ObjectId?,
+        clientId: ObjectId?,
+        error: Exception,
+    ) {
+        val pathKey = projectPath.toString()
+
+        if (failedGitAttempts.contains(pathKey)) {
+            logger.debug { "Skipping Git error handling for already failed path: $pathKey" }
+            return
+        }
+
+        val gitDir = projectPath.resolve(".git")
+        if (!gitDir.exists()) {
+            logger.info { "Git repository not found at $projectPath, attempting to initialize or clone" }
+
+            val autoFixResult = attemptGitAutoFix(projectPath)
+
+            if (!autoFixResult.success) {
+                failedGitAttempts.add(pathKey)
+
+                pendingTaskService.createTask(
+                    taskType = PendingTaskType.GIT_REPOSITORY_MISSING,
+                    severity = PendingTaskSeverity.HIGH,
+                    title = "Git repository missing for project",
+                    description = "Git repository not found at $projectPath. Auto-fix attempt failed.",
+                    context =
+                        mapOf(
+                            "projectPath" to pathKey,
+                            "projectId" to (projectId?.toHexString() ?: "unknown"),
+                            "clientId" to (clientId?.toHexString() ?: "unknown"),
+                        ),
+                    errorDetails = error.stackTraceToString(),
+                    autoFixAttempted = true,
+                    autoFixResult = autoFixResult.message,
+                    projectId = projectId,
+                    clientId = clientId,
+                )
+
+                logger.warn { "Created pending task for Git repository missing at $projectPath" }
+            } else {
+                logger.info { "Successfully initialized Git repository at $projectPath" }
+            }
+        } else {
+            logger.error(error) { "Git command failed for existing repository at $projectPath" }
+        }
+    }
+
+    private suspend fun attemptGitAutoFix(projectPath: Path): AutoFixResult =
+        withContext(Dispatchers.IO) {
+            try {
+                if (!Files.exists(projectPath)) {
+                    Files.createDirectories(projectPath)
+                }
+
+                val initProcess =
+                    ProcessBuilder("git", "init")
+                        .directory(projectPath.toFile())
+                        .redirectErrorStream(true)
+                        .start()
+
+                val exitCode = initProcess.waitFor()
+
+                if (exitCode == 0) {
+                    AutoFixResult(true, "Git repository initialized successfully")
+                } else {
+                    val errorOutput = initProcess.inputStream.bufferedReader().use { it.readText() }
+                    AutoFixResult(false, "Git init failed with exit code $exitCode: $errorOutput")
+                }
+            } catch (e: Exception) {
+                AutoFixResult(false, "Git init failed with exception: ${e.message}")
+            }
+        }
+
+    private data class AutoFixResult(
+        val success: Boolean,
+        val message: String,
+    )
 }

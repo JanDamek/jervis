@@ -4,6 +4,8 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class GitConfigDto(
+    val gitUserName: String? = null,
+    val gitUserEmail: String? = null,
     val commitMessageTemplate: String? = null,
     val requireGpgSign: Boolean = false,
     val gpgKeyId: String? = null,
