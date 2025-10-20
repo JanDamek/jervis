@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController
  * Provides endpoints for setting up Git providers, validating access, and cloning repositories.
  */
 @RestController
+@org.springframework.web.bind.annotation.RequestMapping("/api/v1/git")
 class GitConfigurationRestController(
     private val gitConfigurationService: GitConfigurationService,
     private val clientService: ClientService,
@@ -34,7 +35,8 @@ class GitConfigurationRestController(
     IProjectGitConfigurationService {
     private val logger = KotlinLogging.logger {}
 
-    override suspend fun setupGitConfiguration(
+    @org.springframework.web.bind.annotation.PostMapping("/clients/{clientId}/setup")
+override suspend fun setupGitConfiguration(
         @PathVariable clientId: String,
         @RequestBody request: GitSetupRequestDto,
     ): ClientDto {
@@ -58,7 +60,8 @@ class GitConfigurationRestController(
         return client.toDto(gitCredentials)
     }
 
-    override suspend fun testConnection(
+    @org.springframework.web.bind.annotation.PostMapping("/clients/{clientId}/test-connection")
+override suspend fun testConnection(
         @PathVariable clientId: String,
         @RequestBody request: GitSetupRequestDto,
     ): ResponseEntity<Map<String, Any>> {
@@ -91,7 +94,8 @@ class GitConfigurationRestController(
         }
     }
 
-    override suspend fun cloneRepository(
+    @org.springframework.web.bind.annotation.PostMapping("/clients/{clientId}/clone")
+override suspend fun cloneRepository(
         @PathVariable clientId: String,
     ): ResponseEntity<CloneResultDto> {
         logger.info { "Cloning repository for client: $clientId" }
@@ -120,7 +124,8 @@ class GitConfigurationRestController(
         }
     }
 
-    override suspend fun inheritGitConfig(
+    @org.springframework.web.bind.annotation.PostMapping("/projects/{projectId}/inherit-git")
+override suspend fun inheritGitConfig(
         @PathVariable projectId: String,
         @RequestParam clientId: String,
     ): ResponseEntity<Map<String, Any>> {
@@ -152,7 +157,8 @@ class GitConfigurationRestController(
         }
     }
 
-    override suspend fun setupGitOverrideForProject(
+    @org.springframework.web.bind.annotation.PostMapping("/projects/{projectId}/setup-override")
+override suspend fun setupGitOverrideForProject(
         @PathVariable projectId: String,
         @RequestBody request: ProjectGitOverrideRequestDto,
     ): ProjectDto {
@@ -176,7 +182,8 @@ class GitConfigurationRestController(
         return project.toDto(gitCredentials)
     }
 
-    override suspend fun getGitCredentials(
+    @org.springframework.web.bind.annotation.GetMapping("/clients/{clientId}/credentials")
+override suspend fun getGitCredentials(
         @PathVariable clientId: String,
     ): GitCredentialsDto? {
         logger.info { "Retrieving Git credentials for client: $clientId" }
