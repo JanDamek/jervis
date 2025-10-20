@@ -285,6 +285,9 @@ class GitSetupPanel(
             cardPanel.add(JLabel("No authentication"), "NONE")
             add(JScrollPane(cardPanel), BorderLayout.CENTER)
 
+            // Ensure the correct auth card is visible on initial render
+            (cardPanel.layout as CardLayout).show(cardPanel, (authTypeCombo.selectedItem as GitAuthTypeEnum).name)
+
             authTypeCombo.addActionListener {
                 (cardPanel.layout as CardLayout).show(cardPanel, (authTypeCombo.selectedItem as GitAuthTypeEnum).name)
             }
