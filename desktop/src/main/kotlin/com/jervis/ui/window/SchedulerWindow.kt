@@ -2,7 +2,7 @@ package com.jervis.ui.window
 
 import com.jervis.common.Constants.Companion.GLOBAL_ID_STRING
 import com.jervis.domain.task.ScheduledTaskStatusEnum
-import com.jervis.dto.ChatRequestContext
+import com.jervis.dto.ChatRequestContextDto
 import com.jervis.dto.ChatRequestDto
 import com.jervis.dto.ScheduledTaskDto
 import com.jervis.service.IAgentOrchestratorService
@@ -473,8 +473,8 @@ class SchedulerWindow(
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 // Create ChatRequestContext for immediate execution
-                val chatRequestContext =
-                    ChatRequestContext(
+                val chatRequestContextDto =
+                    ChatRequestContextDto(
                         clientId = selectedClient.id,
                         projectId = selectedProject.id,
                         quick = false, // Default to full processing
@@ -486,7 +486,7 @@ class SchedulerWindow(
                 agentOrchestrator.handle(
                     ChatRequestDto(
                         description,
-                        chatRequestContext,
+                        chatRequestContextDto,
                         wsSessionId = notificationsClient.sessionId,
                     ),
                 )
@@ -619,8 +619,8 @@ class SchedulerWindow(
                 }
 
                 // Create ChatRequestContext for immediate execution
-                val chatRequestContext =
-                    ChatRequestContext(
+                val chatRequestContextDto =
+                    ChatRequestContextDto(
                         clientId = clientId!!,
                         projectId = project.id,
                         quick = false, // Default to full processing
@@ -632,7 +632,7 @@ class SchedulerWindow(
                 agentOrchestrator.handle(
                     ChatRequestDto(
                         task.taskInstruction,
-                        chatRequestContext,
+                        chatRequestContextDto,
                         wsSessionId = notificationsClient.sessionId,
                     ),
                 )

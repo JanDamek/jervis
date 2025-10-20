@@ -16,4 +16,5 @@ data class ProjectOverridesDto(
     val gitRemoteUrl: String? = null,
     val gitAuthType: GitAuthTypeEnum? = null,
     val gitConfig: GitConfigDto? = null,
+    val gitCredentials: GitCredentialsDto? = null,
 )

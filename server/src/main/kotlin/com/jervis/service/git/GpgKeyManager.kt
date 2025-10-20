@@ -32,7 +32,7 @@ class GpgKeyManager(
                     return@withContext null
                 }
 
-                val decryptedKey = keyEncryptionService.decryptGpgKey(gpgPrivateKey)
+                val decryptedKey = keyEncryptionService.decrypt(gpgPrivateKey)
                 val gpgHome = directoryStructureService.gpgKeysDir()
                 directoryStructureService.ensureDirectoryExists(gpgHome)
 

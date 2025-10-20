@@ -3,6 +3,7 @@ package com.jervis.ui.window
 import com.jervis.common.Constants.Companion.GLOBAL_ID_STRING
 import com.jervis.dto.ClientDto
 import com.jervis.dto.ClientProjectLinkDto
+import com.jervis.dto.GitCredentialsDto
 import com.jervis.dto.ProjectDto
 import com.jervis.service.IClientGitConfigurationService
 import com.jervis.service.IClientProjectLinkService
@@ -936,16 +937,13 @@ class ClientsWindow(
             }
 
         // Load existing credentials first
-        var existingCredentials: com.jervis.dto.GitCredentialsDto? = null
+        var existingCredentials: GitCredentialsDto? = null
         CoroutineScope(Dispatchers.Main).launch {
             try {
                 existingCredentials =
                     withContext(Dispatchers.IO) {
                         clientGitConfigurationService.getGitCredentials(client.id)
                     }
-                println("ClientsWindow: Loaded existing credentials for client ${client.id}")
-                println("  Has SSH Key: ${existingCredentials?.sshPrivateKey != null}")
-                println("  Has HTTPS Token: ${existingCredentials?.httpsToken != null}")
 
                 // Create and show dialog with credentials
                 val dialog = ClientSettingsDialog(this@ClientsWindow, client, existingCredentials)
@@ -1294,7 +1292,7 @@ class ClientsWindow(
     private class ClientSettingsDialog(
         owner: JFrame,
         private val client: ClientDto,
-        private val existingCredentials: com.jervis.dto.GitCredentialsDto?,
+        private val existingCredentials: GitCredentialsDto?,
     ) : JDialog(owner, "Client Settings: ${client.name}", true) {
         private val guidelinesPanel = ClientSettingsComponents.createGuidelinesPanel(client.defaultCodingGuidelines)
         private val reviewPolicyPanel = ClientSettingsComponents.createReviewPolicyPanel(client.defaultReviewPolicy)
@@ -1311,15 +1309,15 @@ class ClientsWindow(
                 initialBranch = client.defaultBranch,
                 initialAuthType = client.gitAuthType ?: com.jervis.domain.git.GitAuthTypeEnum.SSH_KEY,
                 initialGitConfig = client.gitConfig,
-                initialSshPrivateKey = existingCredentials?.sshPrivateKey,
+                hasSshPrivateKey = existingCredentials?.hasSshPrivateKey ?: false,
                 initialSshPublicKey = existingCredentials?.sshPublicKey,
-                initialSshPassphrase = existingCredentials?.sshPassphrase,
-                initialHttpsToken = existingCredentials?.httpsToken,
+                hasSshPassphrase = existingCredentials?.hasSshPassphrase ?: false,
+                hasHttpsToken = existingCredentials?.hasHttpsToken ?: false,
                 initialHttpsUsername = existingCredentials?.httpsUsername,
-                initialHttpsPassword = existingCredentials?.httpsPassword,
-                initialGpgPrivateKey = existingCredentials?.gpgPrivateKey,
+                hasHttpsPassword = existingCredentials?.hasHttpsPassword ?: false,
+                hasGpgPrivateKey = existingCredentials?.hasGpgPrivateKey ?: false,
                 initialGpgPublicKey = existingCredentials?.gpgPublicKey,
-                initialGpgPassphrase = existingCredentials?.gpgPassphrase,
+                hasGpgPassphrase = existingCredentials?.hasGpgPassphrase ?: false,
             )
 
         private val okButton = JButton("OK")

@@ -2,13 +2,14 @@ package com.jervis.mapper
 
 import com.jervis.domain.project.IndexingRules
 import com.jervis.domain.project.ProjectOverrides
+import com.jervis.dto.GitCredentialsDto
 import com.jervis.dto.IndexingRulesDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ProjectOverridesDto
 import com.jervis.entity.mongo.ProjectDocument
 import org.bson.types.ObjectId
 
-fun ProjectDocument.toDto(): ProjectDto =
+fun ProjectDocument.toDto(gitCredentials: GitCredentialsDto? = null): ProjectDto =
     ProjectDto(
         id = this.id.toHexString(),
         clientId = this.clientId.toHexString(),
@@ -20,7 +21,7 @@ fun ProjectDocument.toDto(): ProjectDto =
         documentationUrls = this.documentationUrls,
         languages = this.languages,
         communicationLanguageEnum = this.communicationLanguageEnum,
-        overrides = this.overrides.toDto(),
+        overrides = this.overrides.toDto(gitCredentials),
         inspirationOnly = this.inspirationOnly,
         indexingRules = this.indexingRules.toDto(),
         dependsOnProjects = this.dependsOnProjects.map { it.toHexString() },
@@ -62,7 +63,7 @@ fun IndexingRulesDto.toDomain(): IndexingRules =
         maxFileSizeMB = this.maxFileSizeMB,
     )
 
-fun ProjectOverrides.toDto(): ProjectOverridesDto =
+fun ProjectOverrides.toDto(gitCredentials: GitCredentialsDto? = null): ProjectOverridesDto =
     ProjectOverridesDto(
         codingGuidelines = this.codingGuidelines?.toDto(),
         reviewPolicy = this.reviewPolicy?.toDto(),
@@ -75,6 +76,7 @@ fun ProjectOverrides.toDto(): ProjectOverridesDto =
         gitRemoteUrl = this.gitRemoteUrl,
         gitAuthType = this.gitAuthType,
         gitConfig = this.gitConfig?.toDto(),
+        gitCredentials = gitCredentials,
     )
 
 fun ProjectOverridesDto.toDomain(): ProjectOverrides =

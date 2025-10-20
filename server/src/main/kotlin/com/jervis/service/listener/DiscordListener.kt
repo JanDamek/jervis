@@ -2,6 +2,7 @@ package com.jervis.service.listener
 
 import com.jervis.domain.authentication.ServiceTypeEnum
 import com.jervis.entity.mongo.ServiceCredentialsDocument
+import com.jervis.service.listener.domain.ListenerPollResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory

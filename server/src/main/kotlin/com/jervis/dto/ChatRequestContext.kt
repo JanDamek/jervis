@@ -1,7 +1,5 @@
 package com.jervis.dto
 
-import kotlinx.serialization.Serializable
-
 /**
  * Provides the context for a user's chat request.
  *
@@ -11,7 +9,6 @@ import kotlinx.serialization.Serializable
  *
  * When quick is true, routing prefers models marked as quick.
  */
-@Serializable
 data class ChatRequestContext(
     val clientId: String,
     val projectId: String,

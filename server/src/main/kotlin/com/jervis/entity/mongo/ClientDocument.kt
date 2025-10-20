@@ -23,12 +23,11 @@ data class ClientDocument(
     val id: ObjectId = ObjectId.get(),
     @Indexed(unique = true)
     val name: String,
-    val gitProvider: GitProviderEnum? = null, // Git hosting provider (GitHub, GitLab, etc.)
-    val gitAuthType: GitAuthTypeEnum? = null, // Authentication method (SSH, HTTPS PAT, etc.)
-    val monoRepoUrl: String? = null, // Client's mono-repository URL
-    val monoRepoCredentialsRef: String? = null, // Reference to credentials for mono-repo access
-    val defaultBranch: String = "main", // Default branch for mono-repo
-    val gitConfig: GitConfig? = null, // Git configuration (GPG signing, commit rules, etc.)
+    val gitProvider: GitProviderEnum? = null,
+    val gitAuthType: GitAuthTypeEnum? = null,
+    val monoRepoUrl: String? = null,
+    val defaultBranch: String = "main",
+    val gitConfig: GitConfig? = null,
     val description: String? = null,
     val shortDescription: String? = null,
     val fullDescription: String? = null,

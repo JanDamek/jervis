@@ -977,6 +977,15 @@ class ProjectSettingWindow(
                 initialGitRemoteUrl = initialOverrides?.gitRemoteUrl,
                 initialGitAuthType = initialOverrides?.gitAuthType,
                 initialGitConfig = initialOverrides?.gitConfig,
+                hasSshPrivateKey = initialOverrides?.gitCredentials?.hasSshPrivateKey ?: false,
+                initialSshPublicKey = initialOverrides?.gitCredentials?.sshPublicKey,
+                hasSshPassphrase = initialOverrides?.gitCredentials?.hasSshPassphrase ?: false,
+                hasHttpsToken = initialOverrides?.gitCredentials?.hasHttpsToken ?: false,
+                initialHttpsUsername = initialOverrides?.gitCredentials?.httpsUsername,
+                hasHttpsPassword = initialOverrides?.gitCredentials?.hasHttpsPassword ?: false,
+                hasGpgPrivateKey = initialOverrides?.gitCredentials?.hasGpgPrivateKey ?: false,
+                initialGpgPublicKey = initialOverrides?.gitCredentials?.gpgPublicKey,
+                hasGpgPassphrase = initialOverrides?.gitCredentials?.hasGpgPassphrase ?: false,
             )
 
         private val okButton = JButton("OK")

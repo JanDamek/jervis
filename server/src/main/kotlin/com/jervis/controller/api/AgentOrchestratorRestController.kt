@@ -1,6 +1,7 @@
 package com.jervis.controller.api
 
 import com.jervis.dto.ChatRequestDto
+import com.jervis.mapper.toDomain
 import com.jervis.service.IAgentOrchestratorService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import kotlinx.coroutines.CoroutineScope
@@ -17,7 +18,7 @@ class AgentOrchestratorRestController(
     @ResponseStatus(HttpStatus.ACCEPTED)
     override suspend fun handle(request: ChatRequestDto) {
         CoroutineScope(Dispatchers.Default).launch {
-            agentOrchestratorService.handle(request.text, request.context)
+            agentOrchestratorService.handle(request.text, request.context.toDomain())
         }
     }
 }

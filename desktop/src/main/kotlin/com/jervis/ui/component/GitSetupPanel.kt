@@ -36,15 +36,15 @@ class GitSetupPanel(
     initialBranch: String = "main",
     initialAuthType: GitAuthTypeEnum = GitAuthTypeEnum.SSH_KEY,
     initialGitConfig: GitConfigDto? = null,
-    initialSshPrivateKey: String? = null,
+    private val hasSshPrivateKey: Boolean = false,
     initialSshPublicKey: String? = null,
-    initialSshPassphrase: String? = null,
-    initialHttpsToken: String? = null,
+    private val hasSshPassphrase: Boolean = false,
+    private val hasHttpsToken: Boolean = false,
     initialHttpsUsername: String? = null,
-    initialHttpsPassword: String? = null,
-    initialGpgPrivateKey: String? = null,
+    private val hasHttpsPassword: Boolean = false,
+    private val hasGpgPrivateKey: Boolean = false,
     initialGpgPublicKey: String? = null,
-    initialGpgPassphrase: String? = null,
+    private val hasGpgPassphrase: Boolean = false,
 ) : JPanel(BorderLayout()) {
     private val tabbedPane = JTabbedPane()
     private val providerCombo =
@@ -106,25 +106,107 @@ class GitSetupPanel(
                 }
         }
 
-    private val sshPrivateKeyArea = JTextArea(initialSshPrivateKey ?: "", 10, 50).apply { lineWrap = true }
+    private val sshPrivateKeyArea =
+        JTextArea(
+            if (hasSshPrivateKey) "*** (exists - leave empty to keep)" else "",
+            10,
+            50,
+        ).apply {
+            lineWrap = true
+            if (hasSshPrivateKey) {
+                foreground = java.awt.Color.GRAY
+                addFocusListener(
+                    object : java.awt.event.FocusAdapter() {
+                        override fun focusGained(e: java.awt.event.FocusEvent) {
+                            if (text == "*** (exists - leave empty to keep)") {
+                                text = ""
+                                foreground = java.awt.Color.BLACK
+                    }
+                }
+            }
+                    )
+        }
+    }
     private val sshPublicKeyArea = JTextArea(initialSshPublicKey ?: "", 5, 50).apply { lineWrap = true }
-    private val sshPassphraseField =
-        JPasswordField(30).apply {
-            initialSshPassphrase?.let { text = it }
+    private val sshPassphraseField = JPasswordField(30).apply {
+        if (hasSshPassphrase) {
+            text = "*** (exists - leave empty to keep)"
+            foreground = java.awt.Color.GRAY
+            addFocusListener(object : java.awt.event.FocusAdapter() {
+                override fun focusGained(e: java.awt.event.FocusEvent) {
+                    if (String(password) == "*** (exists - leave empty to keep)") {
+                        text = ""
+                        foreground = java.awt.Color.BLACK
+                    }
+                }
+            })
         }
-    private val httpsTokenArea = JTextArea(initialHttpsToken ?: "", 5, 50).apply { lineWrap = true }
+    }
+    private val httpsTokenArea = JTextArea(
+        if (hasHttpsToken) "*** (exists - leave empty to keep)" else "",
+        5, 50
+    ).apply {
+        lineWrap = true
+        if (hasHttpsToken) {
+            foreground = java.awt.Color.GRAY
+            addFocusListener(object : java.awt.event.FocusAdapter() {
+                override fun focusGained(e: java.awt.event.FocusEvent) {
+                    if (text == "*** (exists - leave empty to keep)") {
+                        text = ""
+                        foreground = java.awt.Color.BLACK
+                    }
+                }
+            })
+        }
+    }
     private val httpsUsernameField = JTextField(initialHttpsUsername ?: "", 30)
-    private val httpsPasswordField =
-        JPasswordField(30).apply {
-            initialHttpsPassword?.let { text = it }
+    private val httpsPasswordField = JPasswordField(30).apply {
+        if (hasHttpsPassword) {
+            text = "*** (exists - leave empty to keep)"
+            foreground = java.awt.Color.GRAY
+            addFocusListener(object : java.awt.event.FocusAdapter() {
+                override fun focusGained(e: java.awt.event.FocusEvent) {
+                    if (String(password) == "*** (exists - leave empty to keep)") {
+                        text = ""
+                        foreground = java.awt.Color.BLACK
+                    }
+                }
+            })
         }
-    private val gpgPrivateKeyArea = JTextArea(initialGpgPrivateKey ?: "", 10, 50).apply { lineWrap = true }
+    }
+    private val gpgPrivateKeyArea = JTextArea(
+        if (hasGpgPrivateKey) "*** (exists - leave empty to keep)" else "",
+        10, 50
+    ).apply {
+        lineWrap = true
+        if (hasGpgPrivateKey) {
+            foreground = java.awt.Color.GRAY
+            addFocusListener(object : java.awt.event.FocusAdapter() {
+                override fun focusGained(e: java.awt.event.FocusEvent) {
+                    if (text == "*** (exists - leave empty to keep)") {
+                        text = ""
+                        foreground = java.awt.Color.BLACK
+                    }
+                }
+            })
+        }
+    }
     private val gpgPublicKeyArea = JTextArea(initialGpgPublicKey ?: "", 5, 50).apply { lineWrap = true }
     private val gpgKeyIdField = JTextField(initialGitConfig?.gpgKeyId ?: "", 30)
-    private val gpgPassphraseField =
-        JPasswordField(30).apply {
-            initialGpgPassphrase?.let { text = it }
+    private val gpgPassphraseField = JPasswordField(30).apply {
+        if (hasGpgPassphrase) {
+            text = "*** (exists - leave empty to keep)"
+            foreground = java.awt.Color.GRAY
+            addFocusListener(object : java.awt.event.FocusAdapter() {
+                override fun focusGained(e: java.awt.event.FocusEvent) {
+                    if (String(password) == "*** (exists - leave empty to keep)") {
+                        text = ""
+                        foreground = java.awt.Color.BLACK
+                    }
+                }
+            })
         }
+    }
     private val gitUserNameField = JTextField(initialGitConfig?.gitUserName ?: "", 30)
     private val gitUserEmailField = JTextField(initialGitConfig?.gitUserEmail ?: "", 30)
     private val requireGpgSignCheckbox = JCheckBox("Require GPG signatures", initialGitConfig?.requireGpgSign ?: false)
@@ -425,48 +507,87 @@ class GitSetupPanel(
         }
         val authType = authTypeCombo.selectedItem as GitAuthTypeEnum
         when (authType) {
-            GitAuthTypeEnum.SSH_KEY ->
-                if (sshPrivateKeyArea.text.isBlank()) {
-                    JOptionPane.showMessageDialog(this, "SSH private key is required", "Error", JOptionPane.ERROR_MESSAGE)
-                    tabbedPane.selectedIndex = 1
-                    return false
+            GitAuthTypeEnum.SSH_KEY -> {
+                val sshKeyText = sshPrivateKeyArea.text
+                if (sshKeyText.isBlank() || sshKeyText == "*** (exists - leave empty to keep)") {
+                    if (!hasSshPrivateKey) {
+                        JOptionPane.showMessageDialog(
+                            this,
+                            "SSH private key is required",
+                            "Error",
+                            JOptionPane.ERROR_MESSAGE
+                        )
+                        tabbedPane.selectedIndex = 1
+                        return false
+                    }
                 }
+            }
 
-            GitAuthTypeEnum.HTTPS_PAT ->
-                if (httpsTokenArea.text.isBlank()) {
-                    JOptionPane.showMessageDialog(this, "HTTPS token is required", "Error", JOptionPane.ERROR_MESSAGE)
-                    tabbedPane.selectedIndex = 1
-                    return false
+            GitAuthTypeEnum.HTTPS_PAT -> {
+                val tokenText = httpsTokenArea.text
+                if (tokenText.isBlank() || tokenText == "*** (exists - leave empty to keep)") {
+                    if (!hasHttpsToken) {
+                        JOptionPane.showMessageDialog(
+                            this,
+                            "HTTPS token is required",
+                            "Error",
+                            JOptionPane.ERROR_MESSAGE
+                        )
+                        tabbedPane.selectedIndex = 1
+                        return false
+                    }
                 }
+            }
 
-            GitAuthTypeEnum.HTTPS_BASIC ->
-                if (httpsUsernameField.text.isBlank() || httpsPasswordField.password.isEmpty()) {
+            GitAuthTypeEnum.HTTPS_BASIC -> {
+                val passwordText = String(httpsPasswordField.password)
+                if (httpsUsernameField.text.isBlank() ||
+                    (passwordText.isEmpty() || passwordText == "*** (exists - leave empty to keep)") && !hasHttpsPassword
+                ) {
                     JOptionPane.showMessageDialog(this, "Username/password required", "Error", JOptionPane.ERROR_MESSAGE)
                     tabbedPane.selectedIndex = 1
                     return false
                 }
+            }
 
             GitAuthTypeEnum.NONE -> {}
         }
         return true
     }
 
-    fun toGitSetupRequest() =
-        GitSetupRequestDto(
+    fun toGitSetupRequest(): GitSetupRequestDto {
+        // Helper function to get credential value - returns null to preserve existing if placeholder is present
+        fun getCredentialValue(text: String, hasExisting: Boolean): String? {
+            return when {
+                text.isBlank() || text == "*** (exists - leave empty to keep)" ->
+                    if (hasExisting) null else null
+
+                else -> text
+            }
+        }
+
+        val sshPrivateKeyText = sshPrivateKeyArea.text
+        val sshPassphraseText = String(sshPassphraseField.password)
+        val httpsTokenText = httpsTokenArea.text
+        val httpsPasswordText = String(httpsPasswordField.password)
+        val gpgPrivateKeyText = gpgPrivateKeyArea.text
+        val gpgPassphraseText = String(gpgPassphraseField.password)
+
+        return GitSetupRequestDto(
             gitProvider = providerCombo.selectedItem as GitProviderEnum,
             monoRepoUrl = repoUrlField.text.trim(),
             defaultBranch = defaultBranchField.text.trim(),
             gitAuthType = authTypeCombo.selectedItem as GitAuthTypeEnum,
-            sshPrivateKey = sshPrivateKeyArea.text.takeIf { it.isNotBlank() },
+            sshPrivateKey = getCredentialValue(sshPrivateKeyText, hasSshPrivateKey),
             sshPublicKey = sshPublicKeyArea.text.takeIf { it.isNotBlank() },
-            sshPassphrase = String(sshPassphraseField.password).takeIf { it.isNotBlank() },
-            httpsToken = httpsTokenArea.text.takeIf { it.isNotBlank() },
+            sshPassphrase = getCredentialValue(sshPassphraseText, hasSshPassphrase),
+            httpsToken = getCredentialValue(httpsTokenText, hasHttpsToken),
             httpsUsername = httpsUsernameField.text.takeIf { it.isNotBlank() },
-            httpsPassword = String(httpsPasswordField.password).takeIf { it.isNotBlank() },
-            gpgPrivateKey = gpgPrivateKeyArea.text.takeIf { it.isNotBlank() },
+            httpsPassword = getCredentialValue(httpsPasswordText, hasHttpsPassword),
+            gpgPrivateKey = getCredentialValue(gpgPrivateKeyText, hasGpgPrivateKey),
             gpgPublicKey = gpgPublicKeyArea.text.takeIf { it.isNotBlank() },
             gpgKeyId = gpgKeyIdField.text.takeIf { it.isNotBlank() },
-            gpgPassphrase = String(gpgPassphraseField.password).takeIf { it.isNotBlank() },
+            gpgPassphrase = getCredentialValue(gpgPassphraseText, hasGpgPassphrase),
             gitConfig =
                 GitConfigDto(
                     gitUserName = gitUserNameField.text.trim(),
@@ -479,4 +600,5 @@ class GitSetupPanel(
                     commitRules = emptyMap(),
                 ),
         )
+    }
 }

@@ -9,6 +9,7 @@ import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
 import com.jervis.service.rag.RagService
 import com.jervis.service.rag.domain.RagQuery
+import com.jervis.service.rag.domain.RagResult
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
@@ -83,7 +84,7 @@ class KnowledgeSearchTool(
         return llmResponse.result
     }
 
-    private fun buildSummary(ragResult: com.jervis.service.rag.domain.RagResult): String =
+    private fun buildSummary(ragResult: RagResult): String =
         "Knowledge search completed: ${ragResult.queriesProcessed} queries processed, " +
             "${ragResult.totalChunksFound} chunks found, " +
             "${ragResult.totalChunksFiltered} relevant chunks selected"

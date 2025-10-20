@@ -1,6 +1,8 @@
 package com.jervis.service.notification
 
 import com.jervis.domain.plan.PlanStep
+import com.jervis.service.notification.domain.PlanStatusChangeEvent
+import com.jervis.service.notification.domain.StepCompletionEvent
 import org.bson.types.ObjectId
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
@@ -42,19 +44,3 @@ class StepNotificationService(
         eventPublisher.publishEvent(event)
     }
 }
-
-data class StepCompletionEvent(
-    val contextId: ObjectId,
-    val planId: ObjectId,
-    val stepId: ObjectId,
-    val stepName: String,
-    val stepStatus: com.jervis.domain.plan.StepStatusEnum,
-    val timestamp: Instant,
-)
-
-data class PlanStatusChangeEvent(
-    val contextId: ObjectId,
-    val planId: ObjectId,
-    val planStatusEnum: com.jervis.domain.plan.PlanStatusEnum,
-    val timestamp: Instant,
-)

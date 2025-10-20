@@ -1,8 +1,5 @@
 package com.jervis.domain.client
 
-import kotlinx.serialization.Serializable
-
-@Serializable
 data class InspirationPolicy(
     val allowCrossClientInspiration: Boolean = true,
     val allowedClientSlugs: List<String> = emptyList(),

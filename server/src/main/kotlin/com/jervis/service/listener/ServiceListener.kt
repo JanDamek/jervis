@@ -2,48 +2,8 @@ package com.jervis.service.listener
 
 import com.jervis.domain.authentication.ServiceTypeEnum
 import com.jervis.entity.mongo.ServiceCredentialsDocument
-import org.bson.types.ObjectId
+import com.jervis.service.listener.domain.ListenerPollResult
 import java.time.Instant
-
-/**
- * Represents a message or item retrieved from an external service
- */
-data class ServiceMessage(
-    val id: String,
-    val serviceTypeEnum: ServiceTypeEnum,
-    val clientId: ObjectId,
-    val projectId: ObjectId?,
-    val content: String,
-    val author: String?,
-    val timestamp: Instant,
-    val metadata: Map<String, String> = emptyMap(),
-    val threadId: String? = null,
-    val channelId: String? = null,
-    val attachments: List<ServiceAttachment> = emptyList(),
-)
-
-/**
- * Represents an attachment from an external service
- */
-data class ServiceAttachment(
-    val id: String,
-    val name: String,
-    val contentType: String?,
-    val size: Long?,
-    val url: String?,
-)
-
-/**
- * Result of a listener poll operation
- */
-data class ListenerPollResult(
-    val serviceTypeEnum: ServiceTypeEnum,
-    val clientId: ObjectId,
-    val projectId: ObjectId?,
-    val newMessages: List<ServiceMessage>,
-    val deletedMessageIds: List<String> = emptyList(),
-    val error: String? = null,
-)
 
 /**
  * Base interface for all service listeners

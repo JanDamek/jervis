@@ -38,7 +38,7 @@ class SshKeyManager(
                 val keyDir = directoryStructureService.projectSshKeyDir(project)
                 directoryStructureService.ensureDirectoryExists(keyDir)
 
-                val decryptedKey = keyEncryptionService.decryptSshKey(sshPrivateKey)
+                val decryptedKey = keyEncryptionService.decrypt(sshPrivateKey)
                 val privateKeyPath = keyDir.resolve("id_rsa")
                 Files.writeString(privateKeyPath, decryptedKey)
                 setFilePermissions(privateKeyPath, "600")
@@ -167,5 +167,39 @@ class SshKeyManager(
             setFilePermissions(sshConfigPath, "600")
 
             createSshWrapper(sshConfigPath, tempDir)
+        }
+
+    /**
+     * Prepare SSH authentication with decrypted private key.
+     * Returns path to SSH config file.
+     */
+    suspend fun prepareSshAuthenticationWithKey(
+        project: ProjectDocument,
+        decryptedPrivateKey: String,
+        publicKey: String? = null,
+    ): Path? =
+        withContext(Dispatchers.IO) {
+            try {
+                val keyDir = directoryStructureService.projectSshKeyDir(project)
+                directoryStructureService.ensureDirectoryExists(keyDir)
+
+                val privateKeyPath = keyDir.resolve("id_rsa")
+                Files.writeString(privateKeyPath, decryptedPrivateKey)
+                setFilePermissions(privateKeyPath, "600")
+
+                publicKey?.let { pubKey ->
+                    val publicKeyPath = keyDir.resolve("id_rsa.pub")
+                    Files.writeString(publicKeyPath, pubKey)
+                    setFilePermissions(publicKeyPath, "644")
+                }
+
+                val sshConfigPath = createSshConfig(keyDir, privateKeyPath, project)
+                logger.info { "SSH authentication prepared for project ${project.name} at $keyDir" }
+
+                sshConfigPath
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to prepare SSH authentication for project ${project.name}" }
+                null
+            }
         }
 }

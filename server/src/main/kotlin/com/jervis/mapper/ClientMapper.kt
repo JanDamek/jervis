@@ -1,19 +1,21 @@
 package com.jervis.mapper
 
 import com.jervis.dto.ClientDto
+import com.jervis.dto.GitCredentialsDto
 import com.jervis.entity.mongo.ClientDocument
 import org.bson.types.ObjectId
 
-fun ClientDocument.toDto(): ClientDto =
+fun ClientDocument.toDto(gitCredentials: GitCredentialsDto? = null): ClientDto =
     ClientDto(
         id = this.id.toHexString(),
         name = this.name,
         gitProvider = this.gitProvider,
         gitAuthType = this.gitAuthType,
         monoRepoUrl = this.monoRepoUrl,
-        monoRepoCredentialsRef = this.monoRepoCredentialsRef,
+        monoRepoCredentialsRef = null, // Deprecated - credentials now embedded in ClientDocument
         defaultBranch = this.defaultBranch,
         gitConfig = this.gitConfig?.toDto(),
+        gitCredentials = gitCredentials,
         shortDescription = this.shortDescription,
         fullDescription = this.fullDescription,
         defaultCodingGuidelines = this.defaultCodingGuidelines.toDto(),
@@ -36,7 +38,6 @@ fun ClientDto.toDocument(): ClientDocument =
         gitProvider = this.gitProvider,
         gitAuthType = this.gitAuthType,
         monoRepoUrl = this.monoRepoUrl,
-        monoRepoCredentialsRef = this.monoRepoCredentialsRef,
         defaultBranch = this.defaultBranch,
         gitConfig = this.gitConfig?.toDomain(),
         shortDescription = this.shortDescription,

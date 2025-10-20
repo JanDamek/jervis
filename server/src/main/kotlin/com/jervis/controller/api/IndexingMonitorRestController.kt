@@ -1,14 +1,14 @@
 package com.jervis.controller.api
 
+import com.jervis.domain.IndexingStepStatusEnum
+import com.jervis.domain.IndexingStepTypeEnum
 import com.jervis.dto.AddLogRequestDto
 import com.jervis.dto.FailIndexingRequestDto
 import com.jervis.dto.StartIndexingRequestDto
 import com.jervis.dto.UpdateStepRequestDto
+import com.jervis.dto.monitoring.ProjectIndexingStateDto
 import com.jervis.service.IIndexingMonitorService
 import com.jervis.service.indexing.monitoring.IndexingMonitorService
-import com.jervis.service.indexing.monitoring.IndexingStepStatusEnum
-import com.jervis.service.indexing.monitoring.IndexingStepTypeEnum
-import com.jervis.service.indexing.monitoring.ProjectIndexingStateDto
 import org.bson.types.ObjectId
 import org.springframework.web.bind.annotation.RestController
 

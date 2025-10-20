@@ -17,5 +17,8 @@ data class ProjectGitOverrideRequestDto(
     val httpsToken: String? = null,
     val httpsUsername: String? = null,
     val httpsPassword: String? = null,
+    val gpgPrivateKey: String? = null,
+    val gpgPublicKey: String? = null,
+    val gpgPassphrase: String? = null,
     val gitConfig: GitConfigDto? = null,
 )

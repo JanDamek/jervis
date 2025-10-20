@@ -1,6 +1,6 @@
 package com.jervis.dto
 
-import com.jervis.service.indexing.monitoring.IndexingProgressDto
+import com.jervis.dto.monitoring.IndexingProgressDto
 
 data class UpdateStepRequestDto(
     val projectId: String,

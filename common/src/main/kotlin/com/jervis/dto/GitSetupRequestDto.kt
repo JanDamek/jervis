@@ -26,13 +26,3 @@ data class GitSetupRequestDto(
     val gpgPassphrase: String? = null,
     val gitConfig: GitConfigDto? = null,
 )
-
-/**
- * Result DTO from Git clone operation.
- */
-@Serializable
-data class CloneResultDto(
-    val success: Boolean,
-    val repositoryPath: String? = null,
-    val message: String,
-)

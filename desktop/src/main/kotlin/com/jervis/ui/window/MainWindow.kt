@@ -2,7 +2,7 @@ package com.jervis.ui.window
 
 import com.jervis.common.Constants.Companion.GLOBAL_ID_STRING
 import com.jervis.domain.plan.PlanStatusEnum
-import com.jervis.dto.ChatRequestContext
+import com.jervis.dto.ChatRequestContextDto
 import com.jervis.dto.ChatRequestDto
 import com.jervis.dto.ClientDto
 import com.jervis.dto.PlanDto
@@ -505,7 +505,7 @@ class MainWindow(
                         }
 
                     val ctx =
-                        ChatRequestContext(
+                        ChatRequestContextDto(
                             clientId = selectedClient.id,
                             projectId = selectedProject.id,
                             autoScope = false,

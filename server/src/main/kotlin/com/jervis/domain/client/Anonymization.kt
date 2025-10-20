@@ -1,8 +1,5 @@
 package com.jervis.domain.client
 
-import kotlinx.serialization.Serializable
-
-@Serializable
 data class Anonymization(
     val enabled: Boolean = false,
     val rules: List<String> =

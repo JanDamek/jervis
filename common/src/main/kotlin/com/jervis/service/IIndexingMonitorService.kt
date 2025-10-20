@@ -4,7 +4,7 @@ import com.jervis.dto.AddLogRequestDto
 import com.jervis.dto.FailIndexingRequestDto
 import com.jervis.dto.StartIndexingRequestDto
 import com.jervis.dto.UpdateStepRequestDto
-import com.jervis.service.indexing.monitoring.ProjectIndexingStateDto
+import com.jervis.dto.monitoring.ProjectIndexingStateDto
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.service.annotation.GetExchange
@@ -19,16 +19,24 @@ interface IIndexingMonitorService {
     )
 
     @PostExchange("/update-step")
-    suspend fun updateStepProgress(@RequestBody request: UpdateStepRequestDto)
+    suspend fun updateStepProgress(
+        @RequestBody request: UpdateStepRequestDto,
+    )
 
     @PostExchange("/add-log")
-    suspend fun addStepLog(@RequestBody request: AddLogRequestDto)
+    suspend fun addStepLog(
+        @RequestBody request: AddLogRequestDto,
+    )
 
     @PostExchange("/complete/{projectId}")
-    suspend fun completeProjectIndexing(@PathVariable projectId: String)
+    suspend fun completeProjectIndexing(
+        @PathVariable projectId: String,
+    )
 
     @PostExchange("/fail")
-    suspend fun failProjectIndexing(@RequestBody request: FailIndexingRequestDto)
+    suspend fun failProjectIndexing(
+        @RequestBody request: FailIndexingRequestDto,
+    )
 
     @GetExchange("/states")
     fun getAllProjectStates(): Map<String, ProjectIndexingStateDto>

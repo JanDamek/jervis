@@ -1,8 +1,5 @@
 package com.jervis.domain.client
 
-import kotlinx.serialization.Serializable
-
-@Serializable
 data class TechStackInfo(
     val framework: String, // "Spring Boot", "Spring WebFlux"
     val language: String, // "Kotlin", "Java"

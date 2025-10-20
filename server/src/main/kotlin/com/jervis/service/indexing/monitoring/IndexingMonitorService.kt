@@ -1,5 +1,10 @@
 package com.jervis.service.indexing.monitoring
 
+import com.jervis.domain.IndexingStepStatusEnum
+import com.jervis.domain.IndexingStepTypeEnum
+import com.jervis.dto.monitoring.IndexingProgressDto
+import com.jervis.dto.monitoring.IndexingStepDto
+import com.jervis.dto.monitoring.ProjectIndexingStateDto
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.context.ApplicationEventPublisher

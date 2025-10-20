@@ -1,0 +1,11 @@
+package com.jervis.dto.monitoring
+
+/**
+ * Represents progress information for an indexing step
+ */
+data class IndexingProgressDto(
+    val current: Int,
+    val total: Int,
+    val percentage: Double = if (total > 0) (current.toDouble() / total * 100) else 0.0,
+    val estimatedTimeRemaining: Long? = null, // milliseconds
+)
