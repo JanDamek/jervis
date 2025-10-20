@@ -21,6 +21,7 @@ data class GitSetupRequestDto(
     val httpsUsername: String? = null,
     val httpsPassword: String? = null,
     val gpgPrivateKey: String? = null,
+    val gpgPublicKey: String? = null,
     val gpgKeyId: String? = null,
     val gpgPassphrase: String? = null,
     val gitConfig: GitConfigDto? = null,

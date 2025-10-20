@@ -1,12 +1,20 @@
 package com.jervis.controller.api
 
+import com.jervis.dto.ClientDto
 import com.jervis.dto.CloneResultDto
+import com.jervis.dto.GitCredentialsDto
 import com.jervis.dto.GitSetupRequestDto
+import com.jervis.dto.ProjectDto
+import com.jervis.dto.ProjectGitOverrideRequestDto
+import com.jervis.mapper.toDto
+import com.jervis.repository.mongo.ProjectMongoRepository
+import com.jervis.service.client.ClientService
 import com.jervis.service.git.GitConfigurationService
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -22,39 +30,38 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/v1/git")
 class GitConfigurationRestController(
     private val gitConfigurationService: GitConfigurationService,
+    private val clientService: ClientService,
+    private val projectRepository: ProjectMongoRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
     /**
      * Setup Git configuration for a client.
      * Includes provider selection, authentication credentials, and workflow rules.
+     * Returns updated ClientDto after successful configuration.
      */
     @PostMapping("/clients/{clientId}/setup")
     suspend fun setupGitForClient(
         @PathVariable clientId: String,
         @RequestBody request: GitSetupRequestDto,
-    ): ResponseEntity<Map<String, Any>> {
+    ): ClientDto {
         logger.info { "Setting up Git configuration for client: $clientId" }
 
         val result = gitConfigurationService.setupGitForClient(ObjectId(clientId), request)
 
-        return if (result.isSuccess) {
-            logger.info { "Git setup successful for client: $clientId" }
-            ResponseEntity.ok(
-                mapOf(
-                    "success" to true,
-                    "message" to "Git configuration saved successfully",
-                ),
-            )
-        } else {
+        if (result.isFailure) {
             logger.error { "Git setup failed for client: $clientId - ${result.exceptionOrNull()?.message}" }
-            ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-                mapOf(
-                    "success" to false,
-                    "message" to (result.exceptionOrNull()?.message ?: "Unknown error"),
-                ),
-            )
+            throw IllegalStateException("Git configuration failed: ${result.exceptionOrNull()?.message}")
         }
+
+        logger.info { "Git setup successful for client: $clientId" }
+
+        // Fetch and return updated client
+        val client =
+            clientService.getClientById(ObjectId(clientId))
+                ?: throw IllegalStateException("Client not found after Git setup: $clientId")
+
+        return client.toDto()
     }
 
     /**
@@ -164,5 +171,53 @@ class GitConfigurationRestController(
                 ),
             )
         }
+    }
+
+    /**
+     * Setup Git override configuration for a project.
+     * Allows projects to use different Git credentials, remote URL, and auth type than the client.
+     */
+    @PostMapping("/projects/{projectId}/setup-override")
+    suspend fun setupGitOverrideForProject(
+        @PathVariable projectId: String,
+        @RequestBody request: ProjectGitOverrideRequestDto,
+    ): ProjectDto {
+        logger.info { "Setting up Git override for project: $projectId" }
+
+        val result = gitConfigurationService.setupGitOverrideForProject(ObjectId(projectId), request)
+
+        if (result.isFailure) {
+            logger.error { "Git override setup failed for project: $projectId - ${result.exceptionOrNull()?.message}" }
+            throw IllegalStateException("Git override configuration failed: ${result.exceptionOrNull()?.message}")
+        }
+
+        logger.info { "Git override setup successful for project: $projectId" }
+
+        // Fetch and return updated project
+        val project =
+            projectRepository.findById(ObjectId(projectId))
+                ?: throw IllegalStateException("Project not found after Git override setup: $projectId")
+
+        return project.toDto()
+    }
+
+    /**
+     * Retrieve existing Git credentials for a client (decrypted).
+     * Returns null if client has no Git credentials configured.
+     */
+    @GetMapping("/clients/{clientId}/credentials")
+    suspend fun getGitCredentials(
+        @PathVariable clientId: String,
+    ): GitCredentialsDto? {
+        logger.info { "Retrieving Git credentials for client: $clientId" }
+
+        val credentials = gitConfigurationService.getGitCredentials(ObjectId(clientId))
+
+        logger.info {
+            "Git credentials retrieved for client: $clientId, " +
+                "hasCredentials=${credentials != null}"
+        }
+
+        return credentials
     }
 }

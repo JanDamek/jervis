@@ -587,6 +587,82 @@ class VectorStorageRepository(
         } ?: 0
 
     /**
+     * Search documents by filter without vector query (for background tasks).
+     * Returns documents matching the filter criteria, paginated by offset/limit.
+     */
+    suspend fun searchByFilter(
+        filter: Map<String, Any>,
+        limit: Int = 10,
+        offset: Int = 0,
+    ): kotlinx.coroutines.flow.Flow<RagDocument> =
+        kotlinx.coroutines.flow.flow {
+            val collection = getCollectionNameForModelType(ModelType.EMBEDDING_TEXT)
+            val qdrantFilter = if (filter.isNotEmpty()) createQdrantFilter(filter) else null
+
+            val scrollRequest =
+                Points.ScrollPoints
+                    .newBuilder()
+                    .setCollectionName(collection)
+                    .setLimit(limit)
+                    .setOffset(
+                        Points.PointId
+                            .newBuilder()
+                            .setNum(offset.toLong())
+                            .build(),
+                    ).setWithPayload(
+                        Points.WithPayloadSelector
+                            .newBuilder()
+                            .setEnable(true)
+                            .build(),
+                    ).apply {
+                        if (qdrantFilter != null) this.filter = qdrantFilter
+                    }.build()
+
+            val results =
+                executeQdrantOperation("Scroll in $collection") { client ->
+                    client.scrollAsync(scrollRequest).get()
+                }?.resultList.orEmpty()
+
+            results.forEach { point ->
+                val payload = point.payloadMap
+                val ragDocument =
+                    RagDocument(
+                        projectId =
+                            org.bson.types.ObjectId(
+                                extractStringFromPayload(payload, "projectId") ?: "000000000000000000000000",
+                            ),
+                        clientId =
+                            org.bson.types.ObjectId(
+                                extractStringFromPayload(payload, "clientId") ?: "000000000000000000000000",
+                            ),
+                        summary = extractStringFromPayload(payload, "summary") ?: "",
+                        ragSourceType =
+                            RagSourceType.valueOf(
+                                extractStringFromPayload(payload, "ragSourceType") ?: "CODE",
+                            ),
+                        language = extractStringFromPayload(payload, "language"),
+                        packageName = extractStringFromPayload(payload, "packageName"),
+                        className = extractStringFromPayload(payload, "className"),
+                        methodName = extractStringFromPayload(payload, "methodName"),
+                    )
+                emit(ragDocument)
+            }
+        }
+
+    private fun extractStringFromPayload(
+        payload: Map<String, JsonWithInt.Value>,
+        key: String,
+    ): String? =
+        payload[key]?.let { value ->
+            when {
+                value.hasStringValue() -> value.stringValue
+                value.hasIntegerValue() -> value.integerValue.toString()
+                value.hasDoubleValue() -> value.doubleValue.toString()
+                else -> null
+            }
+        }
+
+    /**
      * Health check result for vector storage
      */
     data class HealthCheckResult(

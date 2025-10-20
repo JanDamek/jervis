@@ -3,14 +3,19 @@ package com.jervis.service.git
 import com.jervis.domain.authentication.ServiceTypeEnum
 import com.jervis.domain.git.GitAuthTypeEnum
 import com.jervis.domain.git.GitConfig
+import com.jervis.domain.project.ProjectOverrides
+import com.jervis.dto.GitCredentialsDto
 import com.jervis.dto.GitSetupRequestDto
+import com.jervis.dto.ProjectGitOverrideRequestDto
 import com.jervis.entity.mongo.ServiceCredentialsDocument
 import com.jervis.repository.mongo.ClientMongoRepository
+import com.jervis.repository.mongo.ProjectMongoRepository
 import com.jervis.repository.mongo.ServiceCredentialsMongoRepository
 import com.jervis.service.security.KeyEncryptionService
 import com.jervis.service.storage.DirectoryStructureService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.reactor.awaitSingle
+import kotlinx.coroutines.reactor.awaitSingleOrNull
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -24,6 +29,7 @@ import java.nio.file.Path
 @Service
 class GitConfigurationService(
     private val clientRepository: ClientMongoRepository,
+    private val projectRepository: ProjectMongoRepository,
     private val credentialsRepository: ServiceCredentialsMongoRepository,
     private val keyEncryptionService: KeyEncryptionService,
     private val sshKeyManager: SshKeyManager,
@@ -60,6 +66,8 @@ class GitConfigurationService(
                         gitConfig =
                             request.gitConfig?.let {
                                 GitConfig(
+                                    gitUserName = it.gitUserName,
+                                    gitUserEmail = it.gitUserEmail,
                                     commitMessageTemplate = it.commitMessageTemplate,
                                     requireGpgSign = it.requireGpgSign,
                                     gpgKeyId = it.gpgKeyId,
@@ -71,7 +79,12 @@ class GitConfigurationService(
                     )
 
                 clientRepository.save(updatedClient)
-                logger.info { "Git configuration saved successfully for client: $clientId" }
+                logger.info {
+                    "Git configuration saved successfully for client: $clientId, " +
+                        "provider=${request.gitProvider}, " +
+                        "monoRepoUrl=${request.monoRepoUrl}, " +
+                        "credentialsRef=${credentialsId.toHexString()}"
+                }
 
                 Result.success(Unit)
             } catch (e: Exception) {
@@ -88,6 +101,14 @@ class GitConfigurationService(
         request: GitSetupRequestDto,
     ): ObjectId =
         withContext(Dispatchers.IO) {
+            logger.info {
+                "Saving Git credentials for client $clientId: " +
+                    "authType=${request.gitAuthType}, " +
+                    "hasSshKey=${request.sshPrivateKey != null}, " +
+                    "hasHttpsToken=${request.httpsToken != null}, " +
+                    "hasGpgKey=${request.gpgPrivateKey != null}"
+            }
+
             val encryptedSshPrivateKey =
                 request.sshPrivateKey?.let {
                     keyEncryptionService.encryptSshKey(it)
@@ -118,13 +139,18 @@ class GitConfigurationService(
                     sshPublicKey = request.sshPublicKey,
                     sshPassphrase = request.sshPassphrase,
                     gpgPrivateKey = encryptedGpgPrivateKey,
-                    gpgPublicKey = null,
+                    gpgPublicKey = request.gpgPublicKey,
                     gpgPassphrase = request.gpgPassphrase,
                     personalAccessToken = encryptedToken,
                     additionalData = if (encryptedPassword != null) mapOf("password" to encryptedPassword) else emptyMap(),
                 )
 
             val saved = credentialsRepository.save(credentials).awaitSingle()
+            logger.info {
+                "Git credentials saved successfully: " +
+                    "credentialsId=${saved.id.toHexString()}, " +
+                    "clientId=$clientId"
+            }
             saved.id
         }
 
@@ -234,6 +260,204 @@ class GitConfigurationService(
                 logger.error(e) { "Failed to inherit Git config for project: $projectId" }
                 Result.failure(e)
             }
+        }
+
+    /**
+     * Setup Git override configuration for a project.
+     * Allows project to use different credentials, remote URL, and auth type than the client.
+     */
+    suspend fun setupGitOverrideForProject(
+        projectId: ObjectId,
+        request: ProjectGitOverrideRequestDto,
+    ): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            try {
+                logger.info { "Setting up Git override for project: $projectId" }
+
+                val project = projectRepository.findById(projectId)
+                if (project == null) {
+                    return@withContext Result.failure(IllegalArgumentException("Project not found: $projectId"))
+                }
+
+                // Save project-specific credentials if provided
+                val credentialsId =
+                    if (hasCredentials(request)) {
+                        saveProjectGitCredentials(project.clientId, projectId, request)
+                    } else {
+                        null
+                    }
+
+                // Build ProjectOverrides with Git configuration
+                val currentOverrides = project.overrides ?: ProjectOverrides()
+                val updatedOverrides =
+                    currentOverrides.copy(
+                        gitRemoteUrl = request.gitRemoteUrl,
+                        gitAuthType = request.gitAuthType,
+                        gitConfig =
+                            request.gitConfig?.let {
+                                GitConfig(
+                                    gitUserName = it.gitUserName,
+                                    gitUserEmail = it.gitUserEmail,
+                                    commitMessageTemplate = it.commitMessageTemplate,
+                                    requireGpgSign = it.requireGpgSign,
+                                    gpgKeyId = it.gpgKeyId,
+                                    requireLinearHistory = it.requireLinearHistory,
+                                    conventionalCommits = it.conventionalCommits,
+                                    commitRules = it.commitRules,
+                                )
+                            },
+                    )
+
+                val updatedProject =
+                    project.copy(
+                        overrides = updatedOverrides,
+                    )
+
+                projectRepository.save(updatedProject)
+                logger.info {
+                    "Git override saved successfully for project: $projectId, " +
+                        "hasRemoteUrl=${request.gitRemoteUrl != null}, " +
+                        "hasAuthType=${request.gitAuthType != null}, " +
+                        "hasCredentials=${credentialsId != null}"
+                }
+
+                Result.success(Unit)
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to setup Git override for project: $projectId" }
+                Result.failure(e)
+            }
+        }
+
+    /**
+     * Check if request contains any credentials.
+     */
+    private fun hasCredentials(request: ProjectGitOverrideRequestDto): Boolean =
+        request.sshPrivateKey != null ||
+            request.httpsToken != null ||
+            request.httpsUsername != null ||
+            request.httpsPassword != null
+
+    /**
+     * Save project-specific Git credentials (SSH keys, HTTPS tokens).
+     */
+    private suspend fun saveProjectGitCredentials(
+        clientId: ObjectId,
+        projectId: ObjectId,
+        request: ProjectGitOverrideRequestDto,
+    ): ObjectId =
+        withContext(Dispatchers.IO) {
+            logger.info {
+                "Saving project Git credentials for project $projectId: " +
+                    "authType=${request.gitAuthType}, " +
+                    "hasSshKey=${request.sshPrivateKey != null}, " +
+                    "hasHttpsToken=${request.httpsToken != null}"
+            }
+
+            val encryptedSshPrivateKey =
+                request.sshPrivateKey?.let {
+                    keyEncryptionService.encryptSshKey(it)
+                }
+
+            val encryptedToken =
+                request.httpsToken?.let {
+                    keyEncryptionService.encryptToken(it)
+                }
+
+            val encryptedPassword =
+                request.httpsPassword?.let {
+                    keyEncryptionService.encryptPassword(it)
+                }
+
+            val credentials =
+                ServiceCredentialsDocument(
+                    clientId = clientId,
+                    projectId = projectId,
+                    serviceTypeEnum = ServiceTypeEnum.GIT,
+                    username = request.httpsUsername,
+                    sshPrivateKey = encryptedSshPrivateKey,
+                    sshPublicKey = request.sshPublicKey,
+                    sshPassphrase = request.sshPassphrase,
+                    gpgPrivateKey = null,
+                    gpgPublicKey = null,
+                    gpgPassphrase = null,
+                    personalAccessToken = encryptedToken,
+                    additionalData = if (encryptedPassword != null) mapOf("password" to encryptedPassword) else emptyMap(),
+                )
+
+            val saved = credentialsRepository.save(credentials).awaitSingle()
+            logger.info {
+                "Project Git credentials saved successfully: " +
+                    "credentialsId=${saved.id.toHexString()}, " +
+                    "projectId=$projectId"
+            }
+            saved.id
+        }
+
+    /**
+     * Retrieve existing Git credentials for a client (decrypted).
+     * Returns null if client has no Git credentials configured.
+     */
+    suspend fun getGitCredentials(clientId: ObjectId): GitCredentialsDto? =
+        withContext(Dispatchers.IO) {
+            logger.info { "Retrieving Git credentials for client: $clientId" }
+
+            val client = clientRepository.findById(clientId) ?: return@withContext null
+
+            val credentialsRef = client.monoRepoCredentialsRef ?: return@withContext null
+
+            val credentials =
+                credentialsRepository.findById(ObjectId(credentialsRef)).awaitSingleOrNull()
+                    ?: return@withContext null
+
+            logger.info { "Found credentials for client: $clientId, decrypting..." }
+
+            val decryptedSshPrivateKey =
+                if (credentials.sshPrivateKey != null) {
+                    keyEncryptionService.decryptSshKey(credentials.sshPrivateKey)
+                } else {
+                    null
+                }
+
+            val decryptedGpgPrivateKey =
+                if (credentials.gpgPrivateKey != null) {
+                    keyEncryptionService.decryptGpgKey(credentials.gpgPrivateKey)
+                } else {
+                    null
+                }
+
+            val decryptedToken =
+                if (credentials.personalAccessToken != null) {
+                    keyEncryptionService.decryptToken(credentials.personalAccessToken)
+                } else {
+                    null
+                }
+
+            val decryptedPassword =
+                credentials.additionalData["password"]?.let {
+                    keyEncryptionService.decryptPassword(it)
+                }
+
+            val result =
+                GitCredentialsDto(
+                    sshPrivateKey = decryptedSshPrivateKey,
+                    sshPublicKey = credentials.sshPublicKey,
+                    sshPassphrase = credentials.sshPassphrase,
+                    httpsToken = decryptedToken,
+                    httpsUsername = credentials.username,
+                    httpsPassword = decryptedPassword,
+                    gpgPrivateKey = decryptedGpgPrivateKey,
+                    gpgPublicKey = credentials.gpgPublicKey,
+                    gpgPassphrase = credentials.gpgPassphrase,
+                )
+
+            logger.info {
+                "Successfully decrypted credentials for client: $clientId, " +
+                    "hasSshKey=${decryptedSshPrivateKey != null}, " +
+                    "hasHttpsToken=${decryptedToken != null}, " +
+                    "hasGpgKey=${decryptedGpgPrivateKey != null}"
+            }
+
+            result
         }
 
     private fun executeGitValidation(

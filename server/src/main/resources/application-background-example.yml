@@ -1,0 +1,125 @@
+# Example configuration for JERVIS Background Cognitive Engine
+# Copy relevant sections to your application.yml or application-local.yml
+
+spring:
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/jervis
+      # MongoDB indexes are created automatically by MongoIndexInitializer on application startup
+
+jervis:
+  background:
+    # Enable/disable background cognitive engine
+    enabled: true
+
+    # Idle threshold: how long to wait (in seconds) after last foreground LLM request
+    # before starting background tasks
+    # Default: 120 seconds (2 minutes)
+    # Recommendation: 120-300 seconds for production, 60 for development
+    idleThresholdSeconds: 120
+
+    # Maximum tokens per chunk for background LLM analysis
+    # Lower values = faster interruption, higher values = more context per chunk
+    # Default: 1200 tokens
+    # Recommendation: 800-1500 depending on GPU performance
+    chunkTokenLimit: 1200
+
+    # Timeout for each chunk processing (in seconds)
+    # Should be tuned based on your LLM inference speed
+    # Default: 45 seconds
+    # Calculation: (chunkTokenLimit / tokensPerSecond) + safetyMargin
+    # Example: P40 GPU with qwen3-coder:30b ≈ 22 tok/s → 1200/22 ≈ 55s, use 45s with early timeout
+    chunkTimeoutSeconds: 45
+
+    # Maximum concurrent CPU-only background tasks
+    # GPU tasks are always limited to 1 (to avoid VRAM contention)
+    # Default: 2
+    # Recommendation: 1-2 for single instance, adjust based on CPU cores
+    maxCpuBgTasks: 2
+
+    # Coverage calculation weights (must sum to ~1.0)
+    # Determines relative importance of each knowledge domain
+    coverageWeights:
+      docs: 0.3      # Documentation coverage weight
+      tasks: 0.2     # Task/ticket coverage weight
+      code: 0.4      # Code coverage weight (highest priority)
+      meetings: 0.1  # Meeting/transcript coverage weight
+
+# Ollama configuration for background tasks
+# IMPORTANT: Set OLLAMA_KEEP_ALIVE=-1 in environment to keep model loaded
+ollama:
+  baseUrl: http://localhost:11434
+  model: qwen3-coder:30b
+  # Context window for background tasks (input + output)
+  numCtx: 32768
+  # Maximum output tokens per background LLM call
+  numPredict: 4096
+
+# Qdrant configuration (vector storage)
+qdrant:
+  host: localhost
+  port: 6334
+
+# Logging configuration for background engine
+logging:
+  level:
+    com.jervis.service.background: INFO
+    com.jervis.service.gateway.core: INFO
+    # Set to DEBUG for detailed chunk execution logs
+    # com.jervis.service.background: DEBUG
+
+# Spring scheduling (for coverage calculation)
+spring:
+  task:
+    scheduling:
+      pool:
+        size: 2
+
+---
+# Development profile with more aggressive settings
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+jervis:
+  background:
+    enabled: true
+    idleThresholdSeconds: 60  # Start background tasks faster in dev
+    chunkTokenLimit: 800       # Smaller chunks for faster iteration
+    chunkTimeoutSeconds: 30    # Shorter timeout for dev
+    maxCpuBgTasks: 1
+
+logging:
+  level:
+    com.jervis.service.background: DEBUG
+
+---
+# Production profile with conservative settings
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+jervis:
+  background:
+    enabled: true
+    idleThresholdSeconds: 180  # Wait longer before starting background work
+    chunkTokenLimit: 1500      # Larger chunks for efficiency
+    chunkTimeoutSeconds: 60    # Longer timeout for stability
+    maxCpuBgTasks: 2
+
+logging:
+  level:
+    com.jervis.service.background: INFO
+
+---
+# Disable background engine (for testing or low-resource environments)
+spring:
+  config:
+    activate:
+      on-profile: no-background
+
+jervis:
+  background:
+    enabled: false

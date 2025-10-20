@@ -1,9 +1,7 @@
 package com.jervis.mapper
 
-import com.jervis.domain.git.GitConfig
 import com.jervis.domain.project.IndexingRules
 import com.jervis.domain.project.ProjectOverrides
-import com.jervis.dto.GitConfigDto
 import com.jervis.dto.IndexingRulesDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ProjectOverridesDto
@@ -74,6 +72,9 @@ fun ProjectOverrides.toDto(): ProjectOverridesDto =
         inspirationPolicy = this.inspirationPolicy?.toDto(),
         tools = this.tools?.toDto(),
         audioMonitoring = this.audioMonitoring?.toDto(),
+        gitRemoteUrl = this.gitRemoteUrl,
+        gitAuthType = this.gitAuthType,
+        gitConfig = this.gitConfig?.toDto(),
     )
 
 fun ProjectOverridesDto.toDomain(): ProjectOverrides =
@@ -86,24 +87,7 @@ fun ProjectOverridesDto.toDomain(): ProjectOverrides =
         inspirationPolicy = this.inspirationPolicy?.toDomain(),
         tools = this.tools?.toDomain(),
         audioMonitoring = this.audioMonitoring?.toDomain(),
-    )
-
-fun GitConfig.toDto(): GitConfigDto =
-    GitConfigDto(
-        commitMessageTemplate = this.commitMessageTemplate,
-        requireGpgSign = this.requireGpgSign,
-        gpgKeyId = this.gpgKeyId,
-        requireLinearHistory = this.requireLinearHistory,
-        conventionalCommits = this.conventionalCommits,
-        commitRules = this.commitRules,
-    )
-
-fun GitConfigDto.toDomain(): GitConfig =
-    GitConfig(
-        commitMessageTemplate = this.commitMessageTemplate,
-        requireGpgSign = this.requireGpgSign,
-        gpgKeyId = this.gpgKeyId,
-        requireLinearHistory = this.requireLinearHistory,
-        conventionalCommits = this.conventionalCommits,
-        commitRules = this.commitRules,
+        gitRemoteUrl = this.gitRemoteUrl,
+        gitAuthType = this.gitAuthType,
+        gitConfig = this.gitConfig?.toDomain(),
     )

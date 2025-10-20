@@ -8,8 +8,10 @@ import com.jervis.dto.ProjectOverridesDto
 import com.jervis.service.IClientIndexingService
 import com.jervis.service.IClientService
 import com.jervis.service.IIndexingService
+import com.jervis.service.IProjectGitConfigurationService
 import com.jervis.service.IProjectService
 import com.jervis.ui.component.ClientSettingsComponents
+import com.jervis.ui.component.ProjectGitOverridePanel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -56,6 +58,7 @@ class ProjectSettingWindow(
     private val clientService: IClientService,
     private val indexingService: IIndexingService,
     private val clientIndexingService: IClientIndexingService,
+    private val projectGitConfigurationService: IProjectGitConfigurationService,
 ) : JFrame("Project Management") {
     private val projectTableModel = ProjectTableModel(emptyList())
     private val projectTable = JTable(projectTableModel)
@@ -381,32 +384,61 @@ class ProjectSettingWindow(
                     project.indexingRules.maxFileSizeMB,
                     project.isDisabled,
                     project.isActive,
+                    project.overrides,
                 )
             dialog.isVisible = true
 
             val result = dialog.result
+            val gitOverrideRequest = dialog.gitOverrideRequest
             if (result != null) {
-                // Create updated project
-                val updatedProject =
-                    project.copy(
-                        name = result.name,
-                        projectPath = result.projectPath,
-                        description = result.description,
-                        languages = result.languages,
-                        inspirationOnly = result.inspirationOnly,
-                        indexingRules =
-                            IndexingRulesDto(
-                                includeGlobs = result.includeGlobs,
-                                excludeGlobs = result.excludeGlobs,
-                                maxFileSizeMB = result.maxFileSizeMB,
-                            ),
-                        isDisabled = result.isDisabled,
-                    )
-
-                // Save project and optionally set as default
                 CoroutineScope(Dispatchers.Main).launch {
-                    projectService.saveProject(updatedProject, result.isDefault)
-                    loadProjects()
+                    try {
+                        // First, setup Git override with credentials if provided
+                        if (gitOverrideRequest != null) {
+                            println("ProjectSettingWindow: Saving Git override for project ${project.id}")
+                            println("  Has SSH Key: ${gitOverrideRequest.sshPrivateKey != null}")
+                            println("  Has HTTPS Token: ${gitOverrideRequest.httpsToken != null}")
+
+                            withContext(Dispatchers.IO) {
+                                projectGitConfigurationService.setupGitOverrideForProject(
+                                    project.id,
+                                    gitOverrideRequest,
+                                )
+                            }
+
+                            println("ProjectSettingWindow: Git override saved successfully")
+                        }
+
+                        // Then update project with other settings
+                        val updatedProject =
+                            project.copy(
+                                name = result.name,
+                                projectPath = result.projectPath,
+                                description = result.description,
+                                languages = result.languages,
+                                inspirationOnly = result.inspirationOnly,
+                                indexingRules =
+                                    IndexingRulesDto(
+                                        includeGlobs = result.includeGlobs,
+                                        excludeGlobs = result.excludeGlobs,
+                                        maxFileSizeMB = result.maxFileSizeMB,
+                                    ),
+                                isDisabled = result.isDisabled,
+                                overrides = result.overrides,
+                            )
+
+                        // Save project and optionally set as default
+                        projectService.saveProject(updatedProject, result.isDefault)
+                        loadProjects()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        JOptionPane.showMessageDialog(
+                            this@ProjectSettingWindow,
+                            "Failed to save project: ${e.message}",
+                            "Error",
+                            JOptionPane.ERROR_MESSAGE,
+                        )
+                    }
                 }
             }
         }
@@ -865,6 +897,7 @@ class ProjectSettingWindow(
         initialMaxFileSizeMB: Int = 5,
         initialIsDisabled: Boolean = false,
         initialDefault: Boolean = false,
+        initialOverrides: ProjectOverridesDto? = null,
     ) : JDialog(owner, title, true) {
         private val nameField =
             JTextField(initialName).apply {
@@ -939,11 +972,18 @@ class ProjectSettingWindow(
         private val anonymizationPanel = ClientSettingsComponents.createAnonymizationPanel()
         private val inspirationPolicyPanel = ClientSettingsComponents.createInspirationPolicyPanel()
         private val clientToolsPanel = ClientSettingsComponents.createClientToolsPanel()
+        private val gitOverridePanel =
+            ProjectGitOverridePanel(
+                initialGitRemoteUrl = initialOverrides?.gitRemoteUrl,
+                initialGitAuthType = initialOverrides?.gitAuthType,
+                initialGitConfig = initialOverrides?.gitConfig,
+            )
 
         private val okButton = JButton("OK")
         private val cancelButton = JButton("Cancel")
 
         var result: ProjectResult? = null
+        var gitOverrideRequest: com.jervis.dto.ProjectGitOverrideRequestDto? = null
 
         init {
             // Basic dialog setup
@@ -1230,6 +1270,9 @@ class ProjectSettingWindow(
             // Client Tools Override Tab
             tabbedPane.addTab("Client Tools", JScrollPane(clientToolsPanel))
 
+            // Git Configuration Override Tab
+            tabbedPane.addTab("Git Configuration", JScrollPane(gitOverridePanel))
+
             panel.add(tabbedPane, BorderLayout.CENTER)
 
             return panel
@@ -1300,6 +1343,17 @@ class ProjectSettingWindow(
                 return
             }
 
+            // Validate Git override fields
+            if (!gitOverridePanel.validateFields()) {
+                JOptionPane.showMessageDialog(
+                    this,
+                    "Git configuration validation failed. Check your Git override settings.",
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE,
+                )
+                return
+            }
+
             // Collect override data from panels
             val overrides =
                 ProjectOverridesDto(
@@ -1310,7 +1364,13 @@ class ProjectSettingWindow(
                     anonymization = anonymizationPanel.getAnonymization(),
                     inspirationPolicy = inspirationPolicyPanel.getInspirationPolicy(),
                     tools = clientToolsPanel.getClientTools(),
+                    gitRemoteUrl = gitOverridePanel.getGitRemoteUrl(),
+                    gitAuthType = gitOverridePanel.getGitAuthType(),
+                    gitConfig = gitOverridePanel.getGitConfig(),
                 )
+
+            // Collect Git override request with credentials
+            gitOverrideRequest = gitOverridePanel.toProjectGitOverrideRequest()
 
             result =
                 ProjectResult(
