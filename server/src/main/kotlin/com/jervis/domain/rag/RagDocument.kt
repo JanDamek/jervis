@@ -31,4 +31,8 @@ data class RagDocument(
     val chunkId: Int? = null,
     val chunkOf: Int? = null,
     val branch: String = "main",
+    /** Backlink to original content for retrieval in backend (e.g., email://<accountId>/<messageId> or url) */
+    val sourceUri: String? = null,
+    /** Optional email provider-specific message identifier for precise lookup */
+    val emailMessageId: String? = null,
 )
