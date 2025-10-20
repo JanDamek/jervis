@@ -1,5 +1,8 @@
 package com.jervis.service.indexing.monitoring
 
+import com.jervis.domain.IndexingStepStatusEnum
+import com.jervis.domain.IndexingStepTypeEnum
+import com.jervis.dto.monitoring.IndexingProgressDto
 import org.bson.types.ObjectId
 import java.time.Instant
 

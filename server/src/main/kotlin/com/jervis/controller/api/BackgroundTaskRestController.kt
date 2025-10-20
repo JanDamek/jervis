@@ -11,15 +11,13 @@ import com.jervis.entity.mongo.CoverageSnapshotDocument
 import com.jervis.repository.mongo.BackgroundArtifactMongoRepository
 import com.jervis.repository.mongo.BackgroundTaskMongoRepository
 import com.jervis.repository.mongo.CoverageSnapshotMongoRepository
+import com.jervis.service.IBackgroundTaskService
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.bson.types.ObjectId
-import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
-import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
-import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
@@ -27,18 +25,16 @@ import org.springframework.web.bind.annotation.RestController
  * REST API for managing background cognitive tasks.
  */
 @RestController
-@RequestMapping("/api/background")
 class BackgroundTaskRestController(
     private val taskRepository: BackgroundTaskMongoRepository,
     private val artifactRepository: BackgroundArtifactMongoRepository,
     private val coverageRepository: CoverageSnapshotMongoRepository,
-) {
+) : IBackgroundTaskService {
     private val logger = KotlinLogging.logger {}
 
-    @GetMapping("/tasks")
-    suspend fun listTasks(
+    override suspend fun listTasks(
         @RequestParam(required = false) status: String?,
-    ): List<BackgroundTaskDto> {
+    ): List<Map<String, Any>> {
         val tasks =
             if (status != null) {
                 taskRepository.findByStatusOrderByCreatedAtDesc(status)
@@ -53,33 +49,31 @@ class BackgroundTaskRestController(
                     )
             }
 
-        return tasks.map { it.toDto() }.toList()
+        return tasks.map { it.toMap() }.toList()
     }
 
-    @GetMapping("/tasks/{taskId}")
-    suspend fun getTask(
+    override suspend fun getTask(
         @PathVariable taskId: String,
-    ): BackgroundTaskDto? {
+    ): Map<String, Any>? {
         val task = taskRepository.findById(ObjectId(taskId))
-        return task?.toDto()
+        return task?.toMap()
     }
 
-    @PostMapping("/tasks")
-    suspend fun createTask(
-        @RequestBody request: CreateTaskRequest,
-    ): BackgroundTaskDto {
+    override suspend fun createTask(
+        @RequestBody request: Map<String, Any>,
+    ): Map<String, Any> {
         val task =
             BackgroundTask(
-                taskType = request.taskType,
+                taskType = BackgroundTaskType.valueOf(request["taskType"] as String),
                 targetRef =
                     TargetRef(
-                        type = request.targetRefType,
-                        id = request.targetRefId,
+                        type = TargetRefType.valueOf(request["targetRefType"] as String),
+                        id = request["targetRefId"] as String,
                     ),
-                priority = request.priority ?: 3,
+                priority = (request["priority"] as? Int) ?: 3,
                 status = BackgroundTaskStatus.PENDING,
-                labels = request.labels ?: emptyList(),
-                notes = request.notes,
+                labels = (request["labels"] as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
+                notes = request["notes"] as? String,
             )
 
         val document = BackgroundTaskDocument.fromDomain(task)
@@ -87,14 +81,13 @@ class BackgroundTaskRestController(
 
         logger.info { "Created background task: ${saved.id} (${saved.taskType})" }
 
-        return saved.toDto()
+        return saved.toMap()
     }
 
-    @GetMapping("/artifacts")
-    suspend fun listArtifacts(
+    override suspend fun listArtifacts(
         @RequestParam(required = false) taskId: String?,
         @RequestParam(required = false) type: String?,
-    ): List<BackgroundArtifactDto> {
+    ): List<Map<String, Any>> {
         val artifacts =
             when {
                 taskId != null -> artifactRepository.findByTaskIdOrderByCreatedAtDesc(ObjectId(taskId))
@@ -102,133 +95,79 @@ class BackgroundTaskRestController(
                 else -> throw IllegalArgumentException("Either taskId or type must be specified")
             }
 
-        return artifacts.map { it.toDto() }.toList()
+        return artifacts.map { it.toMap() }.toList()
     }
 
-    @GetMapping("/coverage/{projectKey}")
-    suspend fun getCoverage(
+    override suspend fun getCoverage(
         @PathVariable projectKey: String,
-    ): CoverageSnapshotDto? {
+    ): Map<String, Any>? {
         val snapshot = coverageRepository.findFirstByProjectKeyOrderByCreatedAtDesc(projectKey)
-        return snapshot?.toDto()
+        return snapshot?.toMap()
     }
 
-    @GetMapping("/coverage")
-    suspend fun listCoverage(
+    override suspend fun listCoverage(
         @RequestParam projectKey: String,
         @RequestParam(defaultValue = "10") limit: Int,
-    ): List<CoverageSnapshotDto> {
+    ): List<Map<String, Any>> {
         val snapshots =
             coverageRepository
                 .findByProjectKeyOrderByCreatedAtDesc(projectKey)
                 .toList()
                 .take(limit)
 
-        return snapshots.map { it.toDto() }
+        return snapshots.map { it.toMap() }
     }
 
-    @GetMapping("/stats")
-    suspend fun getStats(): BackgroundStatsDto {
+    override suspend fun getStats(): Map<String, Any> {
         val pending = taskRepository.countByStatus(BackgroundTaskStatus.PENDING.name)
         val running = taskRepository.countByStatus(BackgroundTaskStatus.RUNNING.name)
         val partial = taskRepository.countByStatus(BackgroundTaskStatus.PARTIAL.name)
         val completed = taskRepository.countByStatus(BackgroundTaskStatus.COMPLETED.name)
         val failed = taskRepository.countByStatus(BackgroundTaskStatus.SUSPENDED.name)
 
-        return BackgroundStatsDto(
-            pendingTasks = pending,
-            runningTasks = running,
-            partialTasks = partial,
-            completedTasks = completed,
-            failedTasks = failed,
+        return mapOf(
+            "pendingTasks" to pending,
+            "runningTasks" to running,
+            "partialTasks" to partial,
+            "completedTasks" to completed,
+            "failedTasks" to failed,
         )
     }
 
-    data class CreateTaskRequest(
-        val taskType: BackgroundTaskType,
-        val targetRefType: TargetRefType,
-        val targetRefId: String,
-        val priority: Int? = null,
-        val labels: List<String>? = null,
-        val notes: String? = null,
-    )
-
-    data class BackgroundTaskDto(
-        val id: String,
-        val taskType: String,
-        val targetRef: String,
-        val priority: Int,
-        val status: String,
-        val progress: Double,
-        val retryCount: Int,
-        val labels: List<String>,
-        val notes: String?,
-        val createdAt: String,
-        val updatedAt: String,
-    )
-
-    data class BackgroundArtifactDto(
-        val id: String,
-        val taskId: String,
-        val type: String,
-        val payload: Map<String, Any>,
-        val confidence: Double,
-        val createdAt: String,
-    )
-
-    data class CoverageSnapshotDto(
-        val id: String,
-        val projectKey: String,
-        val docs: Double,
-        val tasks: Double,
-        val code: Double,
-        val meetings: Double,
-        val overall: Double,
-        val createdAt: String,
-    )
-
-    data class BackgroundStatsDto(
-        val pendingTasks: Long,
-        val runningTasks: Long,
-        val partialTasks: Long,
-        val completedTasks: Long,
-        val failedTasks: Long,
-    )
-
-    private fun BackgroundTaskDocument.toDto() =
-        BackgroundTaskDto(
-            id = id.toHexString(),
-            taskType = taskType,
-            targetRef = targetRef,
-            priority = priority,
-            status = status,
-            progress = progress,
-            retryCount = retryCount,
-            labels = labels,
-            notes = notes,
-            createdAt = createdAt.toString(),
-            updatedAt = updatedAt.toString(),
+    private fun BackgroundTaskDocument.toMap(): Map<String, Any> =
+        mapOf(
+            "id" to id.toHexString(),
+            "taskType" to taskType,
+            "targetRef" to targetRef,
+            "priority" to priority,
+            "status" to status,
+            "progress" to progress,
+            "retryCount" to retryCount,
+            "labels" to labels,
+            "notes" to (notes ?: ""),
+            "createdAt" to createdAt.toString(),
+            "updatedAt" to updatedAt.toString(),
         )
 
-    private fun BackgroundArtifactDocument.toDto() =
-        BackgroundArtifactDto(
-            id = id.toHexString(),
-            taskId = taskId.toHexString(),
-            type = type,
-            payload = payload,
-            confidence = confidence,
-            createdAt = createdAt.toString(),
+    private fun BackgroundArtifactDocument.toMap(): Map<String, Any> =
+        mapOf(
+            "id" to id.toHexString(),
+            "taskId" to taskId.toHexString(),
+            "type" to type,
+            "payload" to payload,
+            "confidence" to confidence,
+            "createdAt" to createdAt.toString(),
         )
 
-    private fun CoverageSnapshotDocument.toDto() =
-        CoverageSnapshotDto(
-            id = id.toHexString(),
-            projectKey = projectKey,
-            docs = docs,
-            tasks = tasks,
-            code = code,
-            meetings = meetings,
-            overall = overall,
-            createdAt = createdAt.toString(),
+    private fun CoverageSnapshotDocument.toMap(): Map<String, Any> =
+        mapOf(
+            "id" to id.toHexString(),
+            "projectKey" to projectKey,
+            "docs" to docs,
+            "tasks" to tasks,
+            "code" to code,
+            "meetings" to meetings,
+            "overall" to overall,
+            "createdAt" to createdAt.toString(),
         )
 }

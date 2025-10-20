@@ -7,8 +7,8 @@ import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.mongo.ClientMongoRepository
 import com.jervis.repository.mongo.ProjectMongoRepository
 import com.jervis.service.gateway.core.LlmGateway
-import com.jervis.service.indexing.dto.ClientFullDescriptionResponse
-import com.jervis.service.indexing.dto.ClientShortDescriptionResponse
+import com.jervis.service.indexing.domain.ClientFullDescriptionResponse
+import com.jervis.service.indexing.domain.ClientShortDescriptionResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging

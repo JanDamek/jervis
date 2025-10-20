@@ -1,9 +1,12 @@
 package com.jervis.service.indexing.pipeline
 
 import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.domain.IndexingStepStatusEnum
+import com.jervis.domain.IndexingStepTypeEnum
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
+import com.jervis.dto.monitoring.IndexingProgressDto
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.entity.mongo.RagIndexingStatusDocument
 import com.jervis.repository.vector.VectorStorageRepository
@@ -12,11 +15,17 @@ import com.jervis.service.analysis.JoernResultParser
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.git.GitRepositoryService
-import com.jervis.service.indexing.dto.TextChunksResponse
+import com.jervis.service.indexing.domain.TextChunksResponse
 import com.jervis.service.indexing.monitoring.IndexingMonitorService
-import com.jervis.service.indexing.monitoring.IndexingProgressDto
-import com.jervis.service.indexing.monitoring.IndexingStepStatusEnum
-import com.jervis.service.indexing.monitoring.IndexingStepTypeEnum
+import com.jervis.service.indexing.pipeline.domain.ClassAnalysisTask
+import com.jervis.service.indexing.pipeline.domain.CodeEmbeddingTask
+import com.jervis.service.indexing.pipeline.domain.EmbeddingPipelineItem
+import com.jervis.service.indexing.pipeline.domain.IndexingPipelineResult
+import com.jervis.service.indexing.pipeline.domain.JoernAnalysisItem
+import com.jervis.service.indexing.pipeline.domain.JoernSymbol
+import com.jervis.service.indexing.pipeline.domain.JoernSymbolType
+import com.jervis.service.indexing.pipeline.domain.StoragePipelineItem
+import com.jervis.service.indexing.pipeline.domain.TextEmbeddingTask
 import com.jervis.service.rag.RagIndexingStatusService
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll

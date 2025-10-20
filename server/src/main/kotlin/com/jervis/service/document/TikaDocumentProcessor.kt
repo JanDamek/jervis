@@ -2,7 +2,7 @@ package com.jervis.service.document
 
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.service.gateway.core.LlmGateway
-import com.jervis.service.indexing.dto.ContentSentenceSplittingResponse
+import com.jervis.service.indexing.domain.ContentSentenceSplittingResponse
 import mu.KotlinLogging
 import org.apache.tika.exception.TikaException
 import org.apache.tika.metadata.Metadata

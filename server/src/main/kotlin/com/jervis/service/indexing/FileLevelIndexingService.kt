@@ -10,7 +10,7 @@ import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.gateway.processing.ParsedResponse
-import com.jervis.service.indexing.dto.FileAnalysisChunk
+import com.jervis.service.indexing.domain.FileAnalysisChunk
 import com.jervis.service.rag.RagIndexingStatusService
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll

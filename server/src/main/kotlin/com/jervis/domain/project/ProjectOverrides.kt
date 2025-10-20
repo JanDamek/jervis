@@ -9,9 +9,7 @@ import com.jervis.domain.client.ReviewPolicy
 import com.jervis.domain.client.SecretsPolicy
 import com.jervis.domain.git.GitAuthTypeEnum
 import com.jervis.domain.git.GitConfig
-import kotlinx.serialization.Serializable
 
-@Serializable
 data class ProjectOverrides(
     val codingGuidelines: Guidelines? = null,
     val reviewPolicy: ReviewPolicy? = null,

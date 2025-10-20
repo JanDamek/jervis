@@ -1,11 +1,11 @@
 package com.jervis.service.background
 
+import com.jervis.configuration.BackgroundEngineProperties
+import com.jervis.domain.background.BackgroundArtifact
 import com.jervis.domain.background.BackgroundTask
 import com.jervis.domain.background.BackgroundTaskStatus
 import com.jervis.domain.background.Checkpoint
-import com.jervis.entity.mongo.BackgroundSettingsDocument
 import com.jervis.repository.mongo.BackgroundArtifactMongoRepository
-import com.jervis.repository.mongo.BackgroundSettingsMongoRepository
 import com.jervis.repository.mongo.BackgroundTaskMongoRepository
 import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
@@ -22,6 +22,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
+import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 import java.time.Duration
 import java.time.Instant
@@ -38,24 +39,19 @@ class BackgroundEngine(
     private val llmLoadMonitor: LlmLoadMonitor,
     private val taskRepository: BackgroundTaskMongoRepository,
     private val artifactRepository: BackgroundArtifactMongoRepository,
-    private val settingsRepository: BackgroundSettingsMongoRepository,
+    private val properties: BackgroundEngineProperties,
     private val taskExecutorRegistry: BackgroundTaskExecutorRegistry,
 ) {
     private val logger = KotlinLogging.logger {}
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
-    @Volatile
     private var engineJob: Job? = null
-
-    @Volatile
-    private var settings: BackgroundSettingsDocument = BackgroundSettingsDocument()
 
     @PostConstruct
     fun start() {
         engineJob =
             scope.launch {
                 logger.info { "Background engine starting..." }
-                loadSettings()
                 runMainLoop()
             }
     }
@@ -66,15 +62,10 @@ class BackgroundEngine(
         engineJob?.cancel()
     }
 
-    private suspend fun loadSettings() {
-        settings = settingsRepository.findById("background_engine") ?: BackgroundSettingsDocument()
-        logger.info { "Loaded settings: idleThreshold=${settings.idleThresholdSeconds}s, chunkLimit=${settings.chunkTokenLimit}" }
-    }
-
     private suspend fun runMainLoop() {
         while (scope.isActive) {
             try {
-                val idleThreshold = Duration.ofSeconds(settings.idleThresholdSeconds)
+                val idleThreshold = Duration.ofSeconds(properties.idleThresholdSeconds)
 
                 if (llmLoadMonitor.isIdleFor(idleThreshold)) {
                     val task = findNextPendingOrPartialTask()
@@ -119,7 +110,7 @@ class BackgroundEngine(
 
                     while (scope.isActive && llmLoadMonitor.isIdleFor(Duration.ZERO) && currentTask.progress < 1.0) {
                         val chunkResult =
-                            withTimeout(settings.chunkTimeoutSeconds * 1000) {
+                            withTimeout(properties.chunkTimeoutSeconds * 1000) {
                                 executor.executeChunk(currentTask)
                             }
 
@@ -140,7 +131,7 @@ class BackgroundEngine(
                         markTaskPartial(currentTask.id)
                         logger.info { "Task partial: ${currentTask.id} (progress=${currentTask.progress})" }
                     }
-                } catch (ce: CancellationException) {
+                } catch (_: CancellationException) {
                     markTaskPartial(task.id)
                     logger.info { "Task interrupted: ${task.id}" }
                 } catch (e: Exception) {
@@ -154,7 +145,7 @@ class BackgroundEngine(
         currentTaskJob.compareAndSet(taskJob, null)
     }
 
-    private suspend fun markTaskRunning(taskId: org.bson.types.ObjectId) {
+    private suspend fun markTaskRunning(taskId: ObjectId) {
         val task = taskRepository.findById(taskId) ?: return
         taskRepository.save(
             task.copy(
@@ -165,7 +156,7 @@ class BackgroundEngine(
     }
 
     private suspend fun updateTaskProgress(
-        taskId: org.bson.types.ObjectId,
+        taskId: ObjectId,
         checkpoint: Checkpoint?,
         progress: Double,
     ) {
@@ -179,7 +170,7 @@ class BackgroundEngine(
         )
     }
 
-    private suspend fun markTaskPartial(taskId: org.bson.types.ObjectId) {
+    private suspend fun markTaskPartial(taskId: ObjectId) {
         val task = taskRepository.findById(taskId) ?: return
         taskRepository.save(
             task.copy(
@@ -189,7 +180,7 @@ class BackgroundEngine(
         )
     }
 
-    private suspend fun markTaskCompleted(taskId: org.bson.types.ObjectId) {
+    private suspend fun markTaskCompleted(taskId: ObjectId) {
         val task = taskRepository.findById(taskId) ?: return
         taskRepository.save(
             task.copy(
@@ -201,7 +192,7 @@ class BackgroundEngine(
     }
 
     private suspend fun markTaskFailed(
-        taskId: org.bson.types.ObjectId,
+        taskId: ObjectId,
         reason: String,
     ) {
         val task = taskRepository.findById(taskId) ?: return
@@ -224,8 +215,8 @@ class BackgroundEngine(
     }
 
     private suspend fun saveArtifacts(
-        taskId: org.bson.types.ObjectId,
-        artifacts: List<com.jervis.domain.background.BackgroundArtifact>,
+        taskId: ObjectId,
+        artifacts: List<BackgroundArtifact>,
     ) {
         artifacts.forEach { artifact ->
             try {

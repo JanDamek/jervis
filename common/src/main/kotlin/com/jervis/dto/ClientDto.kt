@@ -16,6 +16,7 @@ data class ClientDto(
     val monoRepoCredentialsRef: String? = null,
     val defaultBranch: String = "main",
     val gitConfig: GitConfigDto? = null,
+    val gitCredentials: GitCredentialsDto? = null,
     val shortDescription: String? = null,
     val fullDescription: String? = null,
     val defaultCodingGuidelines: GuidelinesDto = GuidelinesDto(),

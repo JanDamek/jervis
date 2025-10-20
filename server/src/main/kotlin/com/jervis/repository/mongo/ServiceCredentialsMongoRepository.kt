@@ -24,4 +24,9 @@ interface ServiceCredentialsMongoRepository : ReactiveMongoRepository<ServiceCre
         clientId: ObjectId,
         serviceTypeEnum: ServiceTypeEnum,
     ): Flux<ServiceCredentialsDocument>
+
+    fun findByProjectIdAndServiceTypeEnum(
+        projectId: ObjectId,
+        serviceTypeEnum: ServiceTypeEnum,
+    ): Flux<ServiceCredentialsDocument>
 }

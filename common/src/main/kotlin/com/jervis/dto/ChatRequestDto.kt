@@ -5,6 +5,6 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class ChatRequestDto(
     val text: String,
-    val context: ChatRequestContext,
+    val context: ChatRequestContextDto,
     val wsSessionId: String? = null,
 )

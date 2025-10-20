@@ -1,6 +1,6 @@
 package com.jervis.service.analysis
 
-import com.jervis.service.indexing.pipeline.JoernSymbol
+import com.jervis.service.indexing.pipeline.domain.JoernSymbol
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.Json

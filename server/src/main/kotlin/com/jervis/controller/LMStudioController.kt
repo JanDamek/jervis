@@ -9,32 +9,20 @@ import com.jervis.dto.completion.ChatCompletionResponse
 import com.jervis.dto.completion.CompletionChoice
 import com.jervis.dto.completion.CompletionRequest
 import com.jervis.dto.completion.CompletionResponse
+import com.jervis.service.ILMStudioService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.project.ProjectService
-import org.springframework.http.MediaType
-import org.springframework.web.bind.annotation.CrossOrigin
-import org.springframework.web.bind.annotation.GetMapping
-import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
-import org.springframework.web.bind.annotation.RequestMapping
-import org.springframework.web.bind.annotation.RequestMethod
 import org.springframework.web.bind.annotation.RestController
 import java.time.Instant
 import java.util.UUID
 
 @RestController
-@RequestMapping("/api/v0")
-@CrossOrigin(
-    origins = ["*"],
-    allowedHeaders = ["*"],
-    methods = [RequestMethod.GET, RequestMethod.POST, RequestMethod.OPTIONS],
-)
 class LMStudioController(
     private val agentOrchestrator: AgentOrchestratorService,
     private val projectService: ProjectService,
-) {
-    @GetMapping("/models", produces = [MediaType.APPLICATION_JSON_VALUE])
-    suspend fun getModels(): Map<String, Any> {
+) : ILMStudioService {
+    override suspend fun getModels(): Map<String, Any> {
         val models =
             projectService.getAllProjects().map { project ->
                 mapOf(
@@ -53,12 +41,7 @@ class LMStudioController(
         return mapOf("data" to models, "object" to "list")
     }
 
-    @PostMapping(
-        "/completions",
-        consumes = [MediaType.APPLICATION_JSON_VALUE],
-        produces = [MediaType.APPLICATION_JSON_VALUE],
-    )
-    suspend fun getCompletion(
+    override suspend fun getCompletion(
         @RequestBody request: CompletionRequest,
     ): CompletionResponse {
         val userPrompt = request.prompt
@@ -89,16 +72,11 @@ class LMStudioController(
                         finishReason = "stop",
                     ),
                 ),
-            usage = Usage(promptTokens = 0, completionTokens = 0, totalTokens = 0),
+            usageDto = Usage(promptTokens = 0, completionTokens = 0, totalTokens = 0),
         )
     }
 
-    @PostMapping(
-        "/chat/completions",
-        consumes = [MediaType.APPLICATION_JSON_VALUE],
-        produces = [MediaType.APPLICATION_JSON_VALUE],
-    )
-    suspend fun getChatCompletion(
+    override suspend fun getChatCompletion(
         @RequestBody chatRequest: ChatCompletionRequest,
     ): ChatCompletionResponse {
         val userPrompt = chatRequest.messages.lastOrNull()?.content ?: ""
@@ -109,7 +87,7 @@ class LMStudioController(
                 text = userPrompt,
                 ctx =
                     ChatRequestContext(
-                        clientId = requireNotNull(defaultProject.clientId) { "ClientId is required for chat completion" }.toString(),
+                        clientId = defaultProject.clientId.toString(),
                         projectId = defaultProject.id.toString(),
                         autoScope = false,
                     ),

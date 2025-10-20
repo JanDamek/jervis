@@ -1,10 +1,10 @@
 package com.jervis.ui.window
 
+import com.jervis.domain.IndexingStepStatusEnum
+import com.jervis.dto.monitoring.IndexingProgressEventDto
+import com.jervis.dto.monitoring.IndexingStepDto
+import com.jervis.dto.monitoring.ProjectIndexingStateDto
 import com.jervis.service.IIndexingMonitorService
-import com.jervis.service.indexing.monitoring.IndexingProgressEventDto
-import com.jervis.service.indexing.monitoring.IndexingStepDto
-import com.jervis.service.indexing.monitoring.IndexingStepStatusEnum
-import com.jervis.service.indexing.monitoring.ProjectIndexingStateDto
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob

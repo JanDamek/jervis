@@ -1,6 +1,6 @@
 package com.jervis.service.analysis
 
-import com.jervis.service.indexing.pipeline.JoernSymbol
+import com.jervis.service.indexing.pipeline.domain.JoernSymbol
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll

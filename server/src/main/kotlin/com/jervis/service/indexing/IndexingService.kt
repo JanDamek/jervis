@@ -1,6 +1,8 @@
 package com.jervis.service.indexing
 
 import com.jervis.common.Constants.GLOBAL_ID
+import com.jervis.domain.IndexingStepStatusEnum
+import com.jervis.domain.IndexingStepTypeEnum
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.project.IndexingRules
 import com.jervis.domain.rag.RagDocument
@@ -9,9 +11,8 @@ import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.indexing.monitoring.IndexingMonitorService
-import com.jervis.service.indexing.monitoring.IndexingStepStatusEnum
-import com.jervis.service.indexing.monitoring.IndexingStepTypeEnum
 import com.jervis.service.indexing.pipeline.IndexingPipelineService
+import com.jervis.service.indexing.pipeline.domain.IndexingPipelineResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -225,7 +226,7 @@ class IndexingService(
                 // Convert main pipeline result to IndexingResult for return value
                 val pipelineResult =
                     results
-                        .filterIsInstance<com.jervis.service.indexing.pipeline.IndexingPipelineResult>()
+                        .filterIsInstance<IndexingPipelineResult>()
                         .firstOrNull()
                 val processed = pipelineResult?.totalProcessed ?: 0
                 val errors = pipelineResult?.totalErrors ?: 0

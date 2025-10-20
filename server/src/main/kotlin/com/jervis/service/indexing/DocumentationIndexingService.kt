@@ -1,5 +1,6 @@
 package com.jervis.service.indexing
 
+import com.jervis.domain.IndexingStepTypeEnum
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
@@ -7,7 +8,6 @@ import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.document.TikaDocumentProcessor
 import com.jervis.service.gateway.EmbeddingGateway
-import com.jervis.service.indexing.monitoring.IndexingStepTypeEnum
 import com.jervis.service.rag.RagIndexingStatusService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
