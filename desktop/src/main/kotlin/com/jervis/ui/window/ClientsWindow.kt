@@ -8,9 +8,11 @@ import com.jervis.dto.ProjectDto
 import com.jervis.service.IClientGitConfigurationService
 import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
+import com.jervis.service.IEmailAccountService
 import com.jervis.service.IIndexingService
 import com.jervis.service.IProjectService
 import com.jervis.ui.component.ClientSettingsComponents
+import com.jervis.ui.component.EmailConfigPanel
 import com.jervis.ui.component.GitSetupPanel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +48,7 @@ class ClientsWindow(
     private val projectService: IProjectService,
     private val linkService: IClientProjectLinkService,
     private val indexingService: IIndexingService,
+    private val emailAccountService: IEmailAccountService,
 ) : JFrame("Client Management") {
     private val clientsList = JList<ClientDto>()
     private val listModel = javax.swing.DefaultListModel<ClientDto>()
@@ -284,41 +287,43 @@ class ClientsWindow(
         CoroutineScope(Dispatchers.Main).launch {
             try {
                 val id = selectedClientId
-                val savedClient: ClientDto = if (id == null) {
-                    val c =
-                        ClientDto(
-                            name = name,
-                            fullDescription = desc,
-                            isDisabled = disabled,
-                            dependsOnProjects = clientDependencies.toList(),
-                        )
-                    withContext(Dispatchers.IO) { clientService.create(c) }
-                } else {
-                    val existing = withContext(Dispatchers.IO) { clientService.getClientById(id) }
-                    if (existing == null) {
-                        JOptionPane.showMessageDialog(
-                            this@ClientsWindow,
-                            "Client not found.",
-                            "Error",
-                            JOptionPane.ERROR_MESSAGE,
-                        )
-                        return@launch
+                val savedClient: ClientDto =
+                    if (id == null) {
+                        val c =
+                            ClientDto(
+                                name = name,
+                                fullDescription = desc,
+                                isDisabled = disabled,
+                                dependsOnProjects = clientDependencies.toList(),
+                            )
+                        withContext(Dispatchers.IO) { clientService.create(c) }
+                    } else {
+                        val existing = withContext(Dispatchers.IO) { clientService.getClientById(id) }
+                        if (existing == null) {
+                            JOptionPane.showMessageDialog(
+                                this@ClientsWindow,
+                                "Client not found.",
+                                "Error",
+                                JOptionPane.ERROR_MESSAGE,
+                            )
+                            return@launch
+                        }
+                        val updated =
+                            existing.copy(
+                                name = name,
+                                fullDescription = desc,
+                                isDisabled = disabled,
+                                dependsOnProjects = clientDependencies.toList(),
+                            )
+                        withContext(Dispatchers.IO) { clientService.update(updated) }
                     }
-                    val updated =
-                        existing.copy(
-                            name = name,
-                            fullDescription = desc,
-                            isDisabled = disabled,
-                            dependsOnProjects = clientDependencies.toList(),
-                        )
-                    withContext(Dispatchers.IO) { clientService.update(updated) }
-                }
 
                 // Full reload from backend after edit
                 loadClients()
                 // Reselect the saved client and refresh its details and projects
                 selectedClientId = savedClient.id
-                currentClient = withContext(Dispatchers.IO) { clientService.getClientById(savedClient.id) } ?: savedClient
+                currentClient =
+                    withContext(Dispatchers.IO) { clientService.getClientById(savedClient.id) } ?: savedClient
                 // Update form and linked projects list
                 fillClientForm(currentClient!!)
                 loadProjectsForClient(savedClient.id)
@@ -915,9 +920,10 @@ class ClientsWindow(
 
                     // Optionally test SSH connectivity when URL is known
                     if (isSshUrl(gitSetupRequest.monoRepoUrl)) {
-                        val testResponse = withContext(Dispatchers.IO) {
-                            clientGitConfigurationService.testConnection(createdClient.id, gitSetupRequest)
-                        }
+                        val testResponse =
+                            withContext(Dispatchers.IO) {
+                                clientGitConfigurationService.testConnection(createdClient.id, gitSetupRequest)
+                            }
                         val success = (testResponse.body?.get("success") as? Boolean) == true
                         if (!success) {
                             JOptionPane.showMessageDialog(
@@ -973,13 +979,13 @@ class ClientsWindow(
                     }
 
                 // Create and show dialog with credentials
-                val dialog = ClientSettingsDialog(this@ClientsWindow, client, existingCredentials)
+                val dialog = ClientSettingsDialog(this@ClientsWindow, client, existingCredentials, emailAccountService)
                 dialog.isVisible = true
                 handleDialogResult(client, dialog)
             } catch (e: Exception) {
                 println("ClientsWindow: Failed to load credentials: ${e.message}")
                 // Create dialog without credentials on error
-                val dialog = ClientSettingsDialog(this@ClientsWindow, client, null)
+                val dialog = ClientSettingsDialog(this@ClientsWindow, client, null, emailAccountService)
                 dialog.isVisible = true
                 handleDialogResult(client, dialog)
             }
@@ -1004,9 +1010,10 @@ class ClientsWindow(
 
                     // Optionally test SSH connectivity when URL is known
                     if (isSshUrl(gitSetupRequest.monoRepoUrl)) {
-                        val testResponse = withContext(Dispatchers.IO) {
-                            clientGitConfigurationService.testConnection(client.id, gitSetupRequest)
-                        }
+                        val testResponse =
+                            withContext(Dispatchers.IO) {
+                                clientGitConfigurationService.testConnection(client.id, gitSetupRequest)
+                            }
                         val success = (testResponse.body?.get("success") as? Boolean) == true
                         if (!success) {
                             JOptionPane.showMessageDialog(
@@ -1141,7 +1148,6 @@ class ClientsWindow(
         private val secretsPolicyPanel = ClientSettingsComponents.createSecretsPolicyPanel()
         private val anonymizationPanel = ClientSettingsComponents.createAnonymizationPanel()
         private val inspirationPolicyPanel = ClientSettingsComponents.createInspirationPolicyPanel()
-        private val clientToolsPanel = ClientSettingsComponents.createClientToolsPanel()
         private val gitSetupPanel = GitSetupPanel()
 
         private val okButton = JButton("Create Client")
@@ -1187,9 +1193,6 @@ class ClientsWindow(
 
             // Inspiration Policy Tab
             tabbedPane.addTab("Inspiration Policy", JScrollPane(inspirationPolicyPanel))
-
-            // Client Tools Tab
-            tabbedPane.addTab("Client Tools", JScrollPane(clientToolsPanel))
 
             // Git Configuration Tab
             tabbedPane.addTab("Git Configuration", JScrollPane(gitSetupPanel))
@@ -1307,7 +1310,6 @@ class ClientsWindow(
                         defaultSecretsPolicy = secretsPolicyPanel.getSecretsPolicy(),
                         defaultAnonymization = anonymizationPanel.getAnonymization(),
                         defaultInspirationPolicy = inspirationPolicyPanel.getInspirationPolicy(),
-                        tools = clientToolsPanel.getClientTools(),
                         gitProvider = gitRequest.gitProvider,
                         gitAuthType = gitRequest.gitAuthType,
                         monoRepoUrl = gitRequest.monoRepoUrl,
@@ -1337,6 +1339,7 @@ class ClientsWindow(
         owner: JFrame,
         private val client: ClientDto,
         private val existingCredentials: GitCredentialsDto?,
+        private val emailAccountService: IEmailAccountService,
     ) : JDialog(owner, "Client Settings: ${client.name}", true) {
         private val guidelinesPanel = ClientSettingsComponents.createGuidelinesPanel(client.defaultCodingGuidelines)
         private val reviewPolicyPanel = ClientSettingsComponents.createReviewPolicyPanel(client.defaultReviewPolicy)
@@ -1345,7 +1348,6 @@ class ClientsWindow(
         private val anonymizationPanel = ClientSettingsComponents.createAnonymizationPanel(client.defaultAnonymization)
         private val inspirationPolicyPanel =
             ClientSettingsComponents.createInspirationPolicyPanel(client.defaultInspirationPolicy)
-        private val clientToolsPanel = ClientSettingsComponents.createClientToolsPanel(client.tools)
         private val gitSetupPanel =
             GitSetupPanel(
                 initialProvider = client.gitProvider,
@@ -1353,17 +1355,18 @@ class ClientsWindow(
                 initialBranch = client.defaultBranch,
                 initialAuthType = client.gitAuthType ?: com.jervis.domain.git.GitAuthTypeEnum.SSH_KEY,
                 initialGitConfig = client.gitConfig,
-                hasSshPrivateKey = existingCredentials?.hasSshPrivateKey ?: false,
+                initialSshPrivateKey = existingCredentials?.sshPrivateKey,
                 initialSshPublicKey = existingCredentials?.sshPublicKey,
-                hasSshPassphrase = existingCredentials?.hasSshPassphrase ?: false,
-                hasHttpsToken = existingCredentials?.hasHttpsToken ?: false,
+                initialSshPassphrase = existingCredentials?.sshPassphrase,
+                initialHttpsToken = existingCredentials?.httpsToken,
                 initialHttpsUsername = existingCredentials?.httpsUsername,
-                hasHttpsPassword = existingCredentials?.hasHttpsPassword ?: false,
-                hasGpgPrivateKey = existingCredentials?.hasGpgPrivateKey ?: false,
+                initialHttpsPassword = existingCredentials?.httpsPassword,
+                initialGpgPrivateKey = existingCredentials?.gpgPrivateKey,
                 initialGpgPublicKey = existingCredentials?.gpgPublicKey,
-                hasGpgPassphrase = existingCredentials?.hasGpgPassphrase ?: false,
+                initialGpgPassphrase = existingCredentials?.gpgPassphrase,
             )
 
+        private val emailConfigPanel by lazy { EmailConfigPanel(emailAccountService, client) }
         private val okButton = JButton("OK")
         private val cancelButton = JButton("Cancel")
 
@@ -1404,11 +1407,11 @@ class ClientsWindow(
             // Inspiration Policy Tab
             tabbedPane.addTab("Inspiration Policy", JScrollPane(inspirationPolicyPanel))
 
-            // Client Tools Tab
-            tabbedPane.addTab("Client Tools", JScrollPane(clientToolsPanel))
-
             // Git Configuration Tab
             tabbedPane.addTab("Git Configuration", JScrollPane(gitSetupPanel))
+
+            // Email Accounts Tab
+            tabbedPane.addTab("Email Accounts", JScrollPane(emailConfigPanel))
 
             // Button panel
             val buttonPanel = JPanel(FlowLayout(FlowLayout.RIGHT))
@@ -1455,7 +1458,6 @@ class ClientsWindow(
                         defaultSecretsPolicy = secretsPolicyPanel.getSecretsPolicy(),
                         defaultAnonymization = anonymizationPanel.getAnonymization(),
                         defaultInspirationPolicy = inspirationPolicyPanel.getInspirationPolicy(),
-                        tools = clientToolsPanel.getClientTools(),
                         gitProvider = gitRequest.gitProvider,
                         gitAuthType = gitRequest.gitAuthType,
                         monoRepoUrl = gitRequest.monoRepoUrl,

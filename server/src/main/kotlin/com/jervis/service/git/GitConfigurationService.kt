@@ -7,7 +7,6 @@ import com.jervis.dto.GitSetupRequestDto
 import com.jervis.dto.ProjectGitOverrideRequestDto
 import com.jervis.repository.mongo.ClientMongoRepository
 import com.jervis.repository.mongo.ProjectMongoRepository
-import com.jervis.service.security.KeyEncryptionService
 import com.jervis.service.storage.DirectoryStructureService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -24,7 +23,6 @@ import java.nio.file.Path
 class GitConfigurationService(
     private val clientRepository: ClientMongoRepository,
     private val projectRepository: ProjectMongoRepository,
-    private val keyEncryptionService: KeyEncryptionService,
     private val sshKeyManager: SshKeyManager,
     private val gpgKeyManager: GpgKeyManager,
     private val directoryStructureService: DirectoryStructureService,
@@ -47,7 +45,7 @@ class GitConfigurationService(
                     return@withContext Result.failure(IllegalArgumentException("Client not found: $clientId"))
                 }
 
-                // Create GitConfig object with both workflow settings AND encrypted credentials
+                // Create GitConfig object with workflow settings and raw credentials (no encryption)
                 val gitConfig =
                     GitConfig(
                         gitUserName = request.gitConfig?.gitUserName,
@@ -58,36 +56,31 @@ class GitConfigurationService(
                         requireLinearHistory = request.gitConfig?.requireLinearHistory ?: false,
                         conventionalCommits = request.gitConfig?.conventionalCommits ?: false,
                         commitRules = request.gitConfig?.commitRules ?: emptyMap(),
-                        // Encrypt and add credentials
-                        encryptedSshPrivateKey =
-                            request.sshPrivateKey?.takeIf { it.isNotBlank() }?.let {
-                                keyEncryptionService.encrypt(it)
-                            } ?: client.gitConfig?.encryptedSshPrivateKey,
-                        sshPublicKey = request.sshPublicKey?.takeIf { it.isNotBlank() } ?: client.gitConfig?.sshPublicKey,
-                        encryptedSshPassphrase =
-                            request.sshPassphrase?.takeIf { it.isNotBlank() }?.let {
-                                keyEncryptionService.encrypt(it)
-                            } ?: client.gitConfig?.encryptedSshPassphrase,
-                        encryptedHttpsToken =
-                            request.httpsToken?.takeIf { it.isNotBlank() }?.let {
-                                keyEncryptionService.encrypt(it)
-                            } ?: client.gitConfig?.encryptedHttpsToken,
+                        sshPrivateKey =
+                            request.sshPrivateKey?.takeIf { it.isNotBlank() }
+                                ?: client.gitConfig?.sshPrivateKey,
+                        sshPublicKey =
+                            request.sshPublicKey?.takeIf { it.isNotBlank() }
+                                ?: client.gitConfig?.sshPublicKey,
+                        sshPassphrase =
+                            request.sshPassphrase?.takeIf { it.isNotBlank() }
+                                ?: client.gitConfig?.sshPassphrase,
+                        httpsToken = request.httpsToken?.takeIf { it.isNotBlank() } ?: client.gitConfig?.httpsToken,
                         httpsUsername =
                             request.httpsUsername?.takeIf { it.isNotBlank() }
                                 ?: client.gitConfig?.httpsUsername,
-                        encryptedHttpsPassword =
-                            request.httpsPassword?.takeIf { it.isNotBlank() }?.let {
-                                keyEncryptionService.encrypt(it)
-                            } ?: client.gitConfig?.encryptedHttpsPassword,
-                        encryptedGpgPrivateKey =
-                            request.gpgPrivateKey?.takeIf { it.isNotBlank() }?.let {
-                                keyEncryptionService.encrypt(it)
-                            } ?: client.gitConfig?.encryptedGpgPrivateKey,
-                        gpgPublicKey = request.gpgPublicKey?.takeIf { it.isNotBlank() } ?: client.gitConfig?.gpgPublicKey,
-                        encryptedGpgPassphrase =
-                            request.gpgPassphrase?.takeIf { it.isNotBlank() }?.let {
-                                keyEncryptionService.encrypt(it)
-                            } ?: client.gitConfig?.encryptedGpgPassphrase,
+                        httpsPassword =
+                            request.httpsPassword?.takeIf { it.isNotBlank() }
+                                ?: client.gitConfig?.httpsPassword,
+                        gpgPrivateKey =
+                            request.gpgPrivateKey?.takeIf { it.isNotBlank() }
+                                ?: client.gitConfig?.gpgPrivateKey,
+                        gpgPublicKey =
+                            request.gpgPublicKey?.takeIf { it.isNotBlank() }
+                                ?: client.gitConfig?.gpgPublicKey,
+                        gpgPassphrase =
+                            request.gpgPassphrase?.takeIf { it.isNotBlank() }
+                                ?: client.gitConfig?.gpgPassphrase,
                     )
 
                 val updatedClient =
@@ -126,13 +119,12 @@ class GitConfigurationService(
             try {
                 logger.info { "Validating Git access for client: $clientId" }
 
-                val command = listOf("git", "ls-remote", repoUrl, "HEAD")
                 val envVars = mutableMapOf<String, String>()
 
                 when (authType) {
                     GitAuthTypeEnum.SSH_KEY -> {
                         val privateKey = credentials.sshPrivateKey
-                        if (privateKey != null) {
+                        if (!privateKey.isNullOrBlank()) {
                             val tempKeyDir = directoryStructureService.tempDir().resolve("git-validation-$clientId")
                             val sshWrapper = sshKeyManager.createTemporarySshKey(tempKeyDir, privateKey)
                             envVars["GIT_SSH"] = sshWrapper.toAbsolutePath().toString()
@@ -148,11 +140,82 @@ class GitConfigurationService(
                     }
                 }
 
-                executeGitValidation(command, envVars)
-                logger.info { "Git access validation successful for client: $clientId" }
+                val repoDir = directoryStructureService.clientGitDir(clientId)
+                val gitDirExists = repoDir.resolve(".git").toFile().exists()
+
+                if (gitDirExists) {
+                    logger.info { "Existing repository detected at $repoDir; updating origin and fetching" }
+                    executeGitValidation(
+                        listOf(
+                            "git",
+                            "-C",
+                            repoDir.toString(),
+                            "remote",
+                            "set-url",
+                            "origin",
+                            repoUrl,
+                        ),
+                        envVars,
+                    )
+                    executeGitValidation(
+                        listOf(
+                            "git",
+                            "-C",
+                            repoDir.toString(),
+                            "fetch",
+                            "--prune",
+                            "--all",
+                            "--tags",
+                            "-f",
+                        ),
+                        envVars,
+                    )
+                } else {
+                    logger.info { "No repository at $repoDir; cloning from $repoUrl" }
+                    directoryStructureService.ensureDirectoryExists(repoDir.parent)
+                    executeGitValidation(listOf("git", "clone", repoUrl, repoDir.toString()), envVars)
+                }
+
+                // Apply git config based on settings
+                val gitUserName = credentials.gitConfig?.gitUserName
+                val gitUserEmail = credentials.gitConfig?.gitUserEmail
+                val requireGpgSign = credentials.gitConfig?.requireGpgSign ?: false
+                val gpgKeyId = credentials.gitConfig?.gpgKeyId
+
+                if (!gitUserName.isNullOrBlank()) {
+                    executeGitValidation(
+                        listOf("git", "-C", repoDir.toString(), "config", "user.name", gitUserName),
+                        envVars,
+                    )
+                }
+                if (!gitUserEmail.isNullOrBlank()) {
+                    executeGitValidation(
+                        listOf("git", "-C", repoDir.toString(), "config", "user.email", gitUserEmail),
+                        envVars,
+                    )
+                }
+                executeGitValidation(
+                    listOf(
+                        "git",
+                        "-C",
+                        repoDir.toString(),
+                        "config",
+                        "commit.gpgsign",
+                        if (requireGpgSign) "true" else "false",
+                    ),
+                    envVars,
+                )
+                if (!gpgKeyId.isNullOrBlank()) {
+                    executeGitValidation(
+                        listOf("git", "-C", repoDir.toString(), "config", "user.signingkey", gpgKeyId),
+                        envVars,
+                    )
+                }
+
+                logger.info { "Git access validation and configuration successful for client: $clientId" }
                 Result.success(true)
             } catch (e: Exception) {
-                logger.warn(e) { "Git access validation failed for client: $clientId" }
+                logger.warn(e) { "Git access validation/config failed for client: $clientId" }
                 Result.success(false)
             }
         }
@@ -241,7 +304,7 @@ class GitConfigurationService(
                 // Build ProjectOverrides with Git configuration and credentials
                 val currentOverrides = project.overrides
 
-                // Create GitConfig object with both workflow settings AND encrypted credentials
+                // Create GitConfig object with workflow settings and raw credentials (no encryption)
                 val gitConfig =
                     GitConfig(
                         gitUserName = request.gitConfig?.gitUserName,
@@ -252,40 +315,33 @@ class GitConfigurationService(
                         requireLinearHistory = request.gitConfig?.requireLinearHistory ?: false,
                         conventionalCommits = request.gitConfig?.conventionalCommits ?: false,
                         commitRules = request.gitConfig?.commitRules ?: emptyMap(),
-                        // Encrypt and add credentials
-                        encryptedSshPrivateKey =
-                            request.sshPrivateKey?.takeIf { it.isNotBlank() }?.let {
-                                keyEncryptionService.encrypt(it)
-                            } ?: currentOverrides.gitConfig?.encryptedSshPrivateKey,
+                        sshPrivateKey =
+                            request.sshPrivateKey?.takeIf { it.isNotBlank() }
+                                ?: currentOverrides.gitConfig?.sshPrivateKey,
                         sshPublicKey =
                             request.sshPublicKey?.takeIf { it.isNotBlank() }
                                 ?: currentOverrides.gitConfig?.sshPublicKey,
-                        encryptedSshPassphrase =
-                            request.sshPassphrase?.takeIf { it.isNotBlank() }?.let {
-                                keyEncryptionService.encrypt(it)
-                            } ?: currentOverrides.gitConfig?.encryptedSshPassphrase,
-                        encryptedHttpsToken =
-                            request.httpsToken?.takeIf { it.isNotBlank() }?.let {
-                                keyEncryptionService.encrypt(it)
-                            } ?: currentOverrides.gitConfig?.encryptedHttpsToken,
+                        sshPassphrase =
+                            request.sshPassphrase?.takeIf { it.isNotBlank() }
+                                ?: currentOverrides.gitConfig?.sshPassphrase,
+                        httpsToken =
+                            request.httpsToken?.takeIf { it.isNotBlank() }
+                                ?: currentOverrides.gitConfig?.httpsToken,
                         httpsUsername =
                             request.httpsUsername?.takeIf { it.isNotBlank() }
                                 ?: currentOverrides.gitConfig?.httpsUsername,
-                        encryptedHttpsPassword =
-                            request.httpsPassword?.takeIf { it.isNotBlank() }?.let {
-                                keyEncryptionService.encrypt(it)
-                            } ?: currentOverrides.gitConfig?.encryptedHttpsPassword,
-                        encryptedGpgPrivateKey =
-                            request.gpgPrivateKey?.takeIf { it.isNotBlank() }?.let {
-                                keyEncryptionService.encrypt(it)
-                            } ?: currentOverrides.gitConfig?.encryptedGpgPrivateKey,
+                        httpsPassword =
+                            request.httpsPassword?.takeIf { it.isNotBlank() }
+                                ?: currentOverrides.gitConfig?.httpsPassword,
+                        gpgPrivateKey =
+                            request.gpgPrivateKey?.takeIf { it.isNotBlank() }
+                                ?: currentOverrides.gitConfig?.gpgPrivateKey,
                         gpgPublicKey =
                             request.gpgPublicKey?.takeIf { it.isNotBlank() }
                                 ?: currentOverrides.gitConfig?.gpgPublicKey,
-                        encryptedGpgPassphrase =
-                            request.gpgPassphrase?.takeIf { it.isNotBlank() }?.let {
-                                keyEncryptionService.encrypt(it)
-                            } ?: currentOverrides.gitConfig?.encryptedGpgPassphrase,
+                        gpgPassphrase =
+                            request.gpgPassphrase?.takeIf { it.isNotBlank() }
+                                ?: currentOverrides.gitConfig?.gpgPassphrase,
                     )
 
                 val updatedOverrides =
@@ -326,26 +382,20 @@ class GitConfigurationService(
             val project = projectRepository.findById(projectId) ?: return@withContext null
             val gitConfig = project.overrides.gitConfig ?: return@withContext null
 
-            logger.info { "Found project: $projectId, preparing masked response..." }
+            logger.info { "Found project: $projectId, returning raw project credentials (internal mode)" }
 
             val result =
                 GitCredentialsDto(
-                    hasSshPrivateKey = gitConfig.encryptedSshPrivateKey != null,
+                    sshPrivateKey = gitConfig.sshPrivateKey,
                     sshPublicKey = gitConfig.sshPublicKey,
-                    hasSshPassphrase = gitConfig.encryptedSshPassphrase != null,
-                    hasHttpsToken = gitConfig.encryptedHttpsToken != null,
+                    sshPassphrase = gitConfig.sshPassphrase,
+                    httpsToken = gitConfig.httpsToken,
                     httpsUsername = gitConfig.httpsUsername,
-                    hasHttpsPassword = gitConfig.encryptedHttpsPassword != null,
-                    hasGpgPrivateKey = gitConfig.encryptedGpgPrivateKey != null,
+                    httpsPassword = gitConfig.httpsPassword,
+                    gpgPrivateKey = gitConfig.gpgPrivateKey,
                     gpgPublicKey = gitConfig.gpgPublicKey,
-                    hasGpgPassphrase = gitConfig.encryptedGpgPassphrase != null,
+                    gpgPassphrase = gitConfig.gpgPassphrase,
                 )
-
-            logger.info {
-                "Returning masked project credentials for project: $projectId, " +
-                    "hasSshKey=${result.hasSshPrivateKey}, " +
-                    "hasHttpsToken=${result.hasHttpsToken}"
-            }
 
             result
         }
@@ -362,27 +412,20 @@ class GitConfigurationService(
             val client = clientRepository.findById(clientId) ?: return@withContext null
             val gitConfig = client.gitConfig ?: return@withContext null
 
-            logger.info { "Found client: $clientId, preparing masked response..." }
+            logger.info { "Found client: $clientId, returning raw credentials (internal mode)" }
 
             val result =
                 GitCredentialsDto(
-                    hasSshPrivateKey = gitConfig.encryptedSshPrivateKey != null,
+                    sshPrivateKey = gitConfig.sshPrivateKey,
                     sshPublicKey = gitConfig.sshPublicKey,
-                    hasSshPassphrase = gitConfig.encryptedSshPassphrase != null,
-                    hasHttpsToken = gitConfig.encryptedHttpsToken != null,
+                    sshPassphrase = gitConfig.sshPassphrase,
+                    httpsToken = gitConfig.httpsToken,
                     httpsUsername = gitConfig.httpsUsername,
-                    hasHttpsPassword = gitConfig.encryptedHttpsPassword != null,
-                    hasGpgPrivateKey = gitConfig.encryptedGpgPrivateKey != null,
+                    httpsPassword = gitConfig.httpsPassword,
+                    gpgPrivateKey = gitConfig.gpgPrivateKey,
                     gpgPublicKey = gitConfig.gpgPublicKey,
-                    hasGpgPassphrase = gitConfig.encryptedGpgPassphrase != null,
+                    gpgPassphrase = gitConfig.gpgPassphrase,
                 )
-
-            logger.info {
-                "Returning masked credentials for client: $clientId, " +
-                    "hasSshKey=${result.hasSshPrivateKey}, " +
-                    "hasHttpsToken=${result.hasHttpsToken}, " +
-                    "hasGpgKey=${result.hasGpgPrivateKey}"
-            }
 
             result
         }

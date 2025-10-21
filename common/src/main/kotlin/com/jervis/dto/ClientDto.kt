@@ -25,7 +25,6 @@ data class ClientDto(
     val defaultSecretsPolicy: SecretsPolicyDto = SecretsPolicyDto(),
     val defaultAnonymization: AnonymizationDto = AnonymizationDto(),
     val defaultInspirationPolicy: InspirationPolicyDto = InspirationPolicyDto(),
-    val tools: ClientToolsDto = ClientToolsDto(),
     val defaultLanguageEnum: LanguageEnum = LanguageEnum.getDefault(),
     val dependsOnProjects: List<String> = emptyList(),
     val isDisabled: Boolean = false,

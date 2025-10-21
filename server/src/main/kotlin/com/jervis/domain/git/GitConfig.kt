@@ -2,7 +2,8 @@ package com.jervis.domain.git
 
 /**
  * Git workflow configuration including authentication credentials.
- * Contains both workflow rules (commit conventions, signing) and encrypted authentication credentials.
+ * Contains workflow rules (commit conventions, signing) and raw (unencrypted) auth credentials.
+ * Intended for internal deployments only.
  */
 data class GitConfig(
     val gitUserName: String? = null,
@@ -13,13 +14,13 @@ data class GitConfig(
     val requireLinearHistory: Boolean = false,
     val conventionalCommits: Boolean = false,
     val commitRules: Map<String, String> = emptyMap(),
-    val encryptedSshPrivateKey: String? = null,
+    val sshPrivateKey: String? = null,
     val sshPublicKey: String? = null,
-    val encryptedSshPassphrase: String? = null,
-    val encryptedHttpsToken: String? = null,
+    val sshPassphrase: String? = null,
+    val httpsToken: String? = null,
     val httpsUsername: String? = null,
-    val encryptedHttpsPassword: String? = null,
-    val encryptedGpgPrivateKey: String? = null,
+    val httpsPassword: String? = null,
+    val gpgPrivateKey: String? = null,
     val gpgPublicKey: String? = null,
-    val encryptedGpgPassphrase: String? = null,
+    val gpgPassphrase: String? = null,
 )

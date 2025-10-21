@@ -30,15 +30,15 @@ class ProjectGitOverridePanel(
     initialGitRemoteUrl: String? = null,
     initialGitAuthType: GitAuthTypeEnum? = null,
     initialGitConfig: GitConfigDto? = null,
-    private val hasSshPrivateKey: Boolean = false,
+    initialSshPrivateKey: String? = null,
     initialSshPublicKey: String? = null,
-    private val hasSshPassphrase: Boolean = false,
-    private val hasHttpsToken: Boolean = false,
+    initialSshPassphrase: String? = null,
+    initialHttpsToken: String? = null,
     initialHttpsUsername: String? = null,
-    private val hasHttpsPassword: Boolean = false,
-    private val hasGpgPrivateKey: Boolean = false,
+    initialHttpsPassword: String? = null,
+    initialGpgPrivateKey: String? = null,
     initialGpgPublicKey: String? = null,
-    private val hasGpgPassphrase: Boolean = false,
+    initialGpgPassphrase: String? = null,
 ) : JPanel(BorderLayout()) {
     // Override checkboxes
     private val overrideRemoteUrlCheckbox = JCheckBox("Override Git Remote URL")
@@ -63,26 +63,13 @@ class ProjectGitOverridePanel(
     // SSH credential fields
     private val sshPrivateKeyArea =
         JTextArea(
-            if (hasSshPrivateKey) "*** (exists - leave empty to keep)" else "",
+            initialSshPrivateKey ?: "",
             5,
             40,
         ).apply {
             lineWrap = true
             wrapStyleWord = true
             toolTipText = "SSH private key for Git authentication"
-            if (hasSshPrivateKey) {
-                foreground = java.awt.Color.GRAY
-                addFocusListener(
-                    object : java.awt.event.FocusAdapter() {
-                        override fun focusGained(e: java.awt.event.FocusEvent) {
-                            if (text == "*** (exists - leave empty to keep)") {
-                                text = ""
-                                foreground = java.awt.Color.BLACK
-                            }
-                        }
-                }
-                        )
-            }
         }
 
     private val sshPublicKeyArea =
@@ -96,42 +83,18 @@ class ProjectGitOverridePanel(
         JPasswordField().apply {
             preferredSize = Dimension(300, 30)
             toolTipText = "Passphrase for SSH private key (if required)"
-            if (hasSshPassphrase) {
-                text = "*** (exists - leave empty to keep)"
-                foreground = java.awt.Color.GRAY
-                addFocusListener(
-                    object : java.awt.event.FocusAdapter() {
-                        override fun focusGained(e: java.awt.event.FocusEvent) {
-                            if (String(password) == "*** (exists - leave empty to keep)") {
-                                text = ""
-                                foreground = java.awt.Color.BLACK
-                        }
-                    }
-                    },
-                )
-            }
+            text = initialSshPassphrase ?: ""
         }
 
     // HTTPS PAT credential fields
     private val httpsTokenArea =
         JTextArea(
-            if (hasHttpsToken) "*** (exists - leave empty to keep)" else "",
+            initialHttpsToken ?: "",
             3, 40
         ).apply {
             lineWrap = true
             wrapStyleWord = true
             toolTipText = "Personal Access Token for HTTPS authentication"
-            if (hasHttpsToken) {
-                foreground = java.awt.Color.GRAY
-                addFocusListener(object : java.awt.event.FocusAdapter() {
-                    override fun focusGained(e: java.awt.event.FocusEvent) {
-                        if (text == "*** (exists - leave empty to keep)") {
-                            text = ""
-                            foreground = java.awt.Color.BLACK
-                        }
-                    }
-                })
-            }
         }
 
     // HTTPS Basic credential fields
@@ -145,40 +108,25 @@ class ProjectGitOverridePanel(
         JPasswordField().apply {
             preferredSize = Dimension(300, 30)
             toolTipText = "Password for HTTPS Basic authentication"
-            if (hasHttpsPassword) {
-                text = "*** (exists - leave empty to keep)"
-                foreground = java.awt.Color.GRAY
-                addFocusListener(object : java.awt.event.FocusAdapter() {
-                    override fun focusGained(e: java.awt.event.FocusEvent) {
-                        if (String(password) == "*** (exists - leave empty to keep)") {
-                            text = ""
-                            foreground = java.awt.Color.BLACK
-                        }
-                    }
-                })
-            }
+            text = initialHttpsPassword ?: ""
         }
+
+    // Presence flags for existing credentials derived from initial values
+    private val hasSshPrivateKey = !initialSshPrivateKey.isNullOrBlank()
+    private val hasHttpsToken = !initialHttpsToken.isNullOrBlank()
+    private val hasHttpsPassword = !initialHttpsPassword.isNullOrBlank()
+    private val hasGpgPrivateKey = !initialGpgPrivateKey.isNullOrBlank()
+    private val hasGpgPassphrase = !initialGpgPassphrase.isNullOrBlank()
 
     // GPG configuration fields
     private val gpgPrivateKeyArea =
         JTextArea(
-            if (hasGpgPrivateKey) "*** (exists - leave empty to keep)" else "",
+            initialGpgPrivateKey ?: "",
             5, 40
         ).apply {
             lineWrap = true
             wrapStyleWord = true
             toolTipText = "GPG private key for signing commits (overrides client settings)"
-            if (hasGpgPrivateKey) {
-                foreground = java.awt.Color.GRAY
-                addFocusListener(object : java.awt.event.FocusAdapter() {
-                    override fun focusGained(e: java.awt.event.FocusEvent) {
-                        if (text == "*** (exists - leave empty to keep)") {
-                            text = ""
-                            foreground = java.awt.Color.BLACK
-                        }
-                    }
-                })
-            }
         }
 
     private val gpgPublicKeyArea =
@@ -680,7 +628,7 @@ class ProjectGitOverridePanel(
                 if (overrideAuthCheckbox.isSelected &&
                     authTypeCombo.selectedItem == GitAuthTypeEnum.SSH_KEY
                 ) {
-                    getCredentialValue(sshPrivateKeyArea.text.trim(), hasSshPrivateKey)
+                    sshPrivateKeyArea.text.trim().takeIf { it.isNotBlank() }
                 } else {
                     null
                 },
@@ -696,7 +644,7 @@ class ProjectGitOverridePanel(
                 if (overrideAuthCheckbox.isSelected &&
                     authTypeCombo.selectedItem == GitAuthTypeEnum.SSH_KEY
                 ) {
-                    getCredentialValue(String(sshPassphraseField.password), hasSshPassphrase)
+                    String(sshPassphraseField.password).takeIf { it.isNotBlank() }
                 } else {
                     null
                 },
@@ -704,7 +652,7 @@ class ProjectGitOverridePanel(
                 if (overrideAuthCheckbox.isSelected &&
                     authTypeCombo.selectedItem == GitAuthTypeEnum.HTTPS_PAT
                 ) {
-                    getCredentialValue(httpsTokenArea.text.trim(), hasHttpsToken)
+                    httpsTokenArea.text.trim().takeIf { it.isNotBlank() }
                 } else {
                     null
                 },
@@ -720,13 +668,13 @@ class ProjectGitOverridePanel(
                 if (overrideAuthCheckbox.isSelected &&
                     authTypeCombo.selectedItem == GitAuthTypeEnum.HTTPS_BASIC
                 ) {
-                    getCredentialValue(String(httpsPasswordField.password), hasHttpsPassword)
+                    String(httpsPasswordField.password).takeIf { it.isNotBlank() }
                 } else {
                     null
                 },
             gpgPrivateKey =
                 if (overrideGpgCheckbox.isSelected) {
-                    getCredentialValue(gpgPrivateKeyArea.text.trim(), hasGpgPrivateKey)
+                    gpgPrivateKeyArea.text.trim().takeIf { it.isNotBlank() }
                 } else {
                     null
                 },
@@ -738,7 +686,7 @@ class ProjectGitOverridePanel(
                 },
             gpgPassphrase =
                 if (overrideGpgCheckbox.isSelected) {
-                    getCredentialValue(String(gpgPassphraseField.password), hasGpgPassphrase)
+                    String(gpgPassphraseField.password).takeIf { it.isNotBlank() }
                 } else {
                     null
                 },

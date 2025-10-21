@@ -43,7 +43,8 @@ class BackgroundEngine(
     private val taskExecutorRegistry: BackgroundTaskExecutorRegistry,
 ) {
     private val logger = KotlinLogging.logger {}
-    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val supervisor = SupervisorJob()
+    private val scope = CoroutineScope(Dispatchers.Default + supervisor)
 
     private var engineJob: Job? = null
 
@@ -59,7 +60,18 @@ class BackgroundEngine(
     @PreDestroy
     fun stop() {
         logger.info { "Background engine stopping..." }
+        // Interrupt any running task immediately and cancel the whole scope
+        runCatching { interruptNow() }
         engineJob?.cancel()
+        supervisor.cancel(CancellationException("Application shutdown"))
+        // Best-effort wait for the engine to finish quickly
+        try {
+            kotlinx.coroutines.runBlocking {
+                withTimeout(3000) { engineJob?.join() }
+            }
+        } catch (_: Exception) {
+            // Ignore timeout or cancellation here
+        }
     }
 
     private suspend fun runMainLoop() {

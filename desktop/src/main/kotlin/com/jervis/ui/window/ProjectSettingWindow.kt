@@ -26,14 +26,12 @@ import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
-import java.io.File
 import javax.swing.BorderFactory
 import javax.swing.DefaultListCellRenderer
 import javax.swing.JButton
 import javax.swing.JCheckBox
 import javax.swing.JComboBox
 import javax.swing.JDialog
-import javax.swing.JFileChooser
 import javax.swing.JFrame
 import javax.swing.JLabel
 import javax.swing.JMenuItem
@@ -971,21 +969,20 @@ class ProjectSettingWindow(
         private val secretsPolicyPanel = ClientSettingsComponents.createSecretsPolicyPanel()
         private val anonymizationPanel = ClientSettingsComponents.createAnonymizationPanel()
         private val inspirationPolicyPanel = ClientSettingsComponents.createInspirationPolicyPanel()
-        private val clientToolsPanel = ClientSettingsComponents.createClientToolsPanel()
         private val gitOverridePanel =
             ProjectGitOverridePanel(
                 initialGitRemoteUrl = initialOverrides?.gitRemoteUrl,
                 initialGitAuthType = initialOverrides?.gitAuthType,
                 initialGitConfig = initialOverrides?.gitConfig,
-                hasSshPrivateKey = initialOverrides?.gitCredentials?.hasSshPrivateKey ?: false,
+                initialSshPrivateKey = initialOverrides?.gitCredentials?.sshPrivateKey,
                 initialSshPublicKey = initialOverrides?.gitCredentials?.sshPublicKey,
-                hasSshPassphrase = initialOverrides?.gitCredentials?.hasSshPassphrase ?: false,
-                hasHttpsToken = initialOverrides?.gitCredentials?.hasHttpsToken ?: false,
+                initialSshPassphrase = initialOverrides?.gitCredentials?.sshPassphrase,
+                initialHttpsToken = initialOverrides?.gitCredentials?.httpsToken,
                 initialHttpsUsername = initialOverrides?.gitCredentials?.httpsUsername,
-                hasHttpsPassword = initialOverrides?.gitCredentials?.hasHttpsPassword ?: false,
-                hasGpgPrivateKey = initialOverrides?.gitCredentials?.hasGpgPrivateKey ?: false,
+                initialHttpsPassword = initialOverrides?.gitCredentials?.httpsPassword,
+                initialGpgPrivateKey = initialOverrides?.gitCredentials?.gpgPrivateKey,
                 initialGpgPublicKey = initialOverrides?.gitCredentials?.gpgPublicKey,
-                hasGpgPassphrase = initialOverrides?.gitCredentials?.hasGpgPassphrase ?: false,
+                initialGpgPassphrase = initialOverrides?.gitCredentials?.gpgPassphrase,
             )
 
         private val okButton = JButton("OK")
@@ -1276,31 +1273,12 @@ class ProjectSettingWindow(
             // Inspiration Policy Override Tab
             tabbedPane.addTab("Inspiration Policy", JScrollPane(inspirationPolicyPanel))
 
-            // Client Tools Override Tab
-            tabbedPane.addTab("Client Tools", JScrollPane(clientToolsPanel))
-
             // Git Configuration Override Tab
             tabbedPane.addTab("Git Configuration", JScrollPane(gitOverridePanel))
 
             panel.add(tabbedPane, BorderLayout.CENTER)
 
             return panel
-        }
-
-        private fun browseDirectoryInto(target: JTextField) {
-            val fileChooser = JFileChooser()
-            fileChooser.fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
-            val currentPath = target.text.trim()
-            fileChooser.currentDirectory =
-                if (currentPath.isNotEmpty()) {
-                    val pathFile = File(currentPath)
-                    if (pathFile.exists()) pathFile else File(System.getProperty("user.home"))
-                } else {
-                    File(System.getProperty("user.home"))
-                }
-            if (fileChooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-                target.text = fileChooser.selectedFile.absolutePath
-            }
         }
 
         private fun saveAndClose() {
@@ -1330,7 +1308,7 @@ class ProjectSettingWindow(
             val maxFileSizeMB =
                 try {
                     maxFileSizeMBField.text.trim().toInt()
-                } catch (e: NumberFormatException) {
+                } catch (_: NumberFormatException) {
                     5 // default value
                 }
             val isDisabled = isDisabledCheckbox.isSelected
@@ -1372,7 +1350,6 @@ class ProjectSettingWindow(
                     secretsPolicy = secretsPolicyPanel.getSecretsPolicy(),
                     anonymization = anonymizationPanel.getAnonymization(),
                     inspirationPolicy = inspirationPolicyPanel.getInspirationPolicy(),
-                    tools = clientToolsPanel.getClientTools(),
                     gitRemoteUrl = gitOverridePanel.getGitRemoteUrl(),
                     gitAuthType = gitOverridePanel.getGitAuthType(),
                     gitConfig = gitOverridePanel.getGitConfig(),

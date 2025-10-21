@@ -11,7 +11,6 @@ data class ProjectOverridesDto(
     val secretsPolicy: SecretsPolicyDto? = null,
     val anonymization: AnonymizationDto? = null,
     val inspirationPolicy: InspirationPolicyDto? = null,
-    val tools: ClientToolsDto? = null,
     val audioMonitoring: AudioMonitoringConfigDto? = null,
     val gitRemoteUrl: String? = null,
     val gitAuthType: GitAuthTypeEnum? = null,

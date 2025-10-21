@@ -59,6 +59,10 @@ dependencies {
     // Jakarta annotation API
     implementation(libs.jakarta.annotation.api)
 
+    // Jakarta Mail (API + implementation)
+    implementation(libs.jakarta.mail.api)
+    implementation(libs.angus.mail)
+
     // Text processing and parsers
     implementation(libs.commons.text)
     implementation(libs.springdoc.openapi.webflux.ui)

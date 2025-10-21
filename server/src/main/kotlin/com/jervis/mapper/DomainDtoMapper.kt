@@ -1,40 +1,26 @@
 package com.jervis.mapper
 
 import com.jervis.domain.client.Anonymization
-import com.jervis.domain.client.ClientTools
 import com.jervis.domain.client.CodingGuidelines
-import com.jervis.domain.client.DiscordConn
-import com.jervis.domain.client.EmailConn
 import com.jervis.domain.client.Formatting
-import com.jervis.domain.client.GitConn
 import com.jervis.domain.client.Guidelines
 import com.jervis.domain.client.InspirationPolicy
-import com.jervis.domain.client.JiraConn
 import com.jervis.domain.client.ProgrammingStyle
 import com.jervis.domain.client.ReviewPolicy
 import com.jervis.domain.client.SecretsPolicy
-import com.jervis.domain.client.SlackConn
-import com.jervis.domain.client.TeamsConn
 import com.jervis.domain.client.TechStackInfo
 import com.jervis.domain.git.GitConfig
 import com.jervis.domain.project.AudioMonitoringConfig
 import com.jervis.dto.AnonymizationDto
 import com.jervis.dto.AudioMonitoringConfigDto
-import com.jervis.dto.ClientToolsDto
 import com.jervis.dto.CodingGuidelinesDto
-import com.jervis.dto.DiscordConnDto
-import com.jervis.dto.EmailConnDto
 import com.jervis.dto.FormattingDto
 import com.jervis.dto.GitConfigDto
-import com.jervis.dto.GitConnDto
 import com.jervis.dto.GuidelinesDto
 import com.jervis.dto.InspirationPolicyDto
-import com.jervis.dto.JiraConnDto
 import com.jervis.dto.ProgrammingStyleDto
 import com.jervis.dto.ReviewPolicyDto
 import com.jervis.dto.SecretsPolicyDto
-import com.jervis.dto.SlackConnDto
-import com.jervis.dto.TeamsConnDto
 import com.jervis.dto.TechStackInfoDto
 
 fun Guidelines.toDto(): GuidelinesDto =
@@ -135,116 +121,6 @@ fun InspirationPolicyDto.toDomain(): InspirationPolicy =
         disallowedClientSlugs = this.disallowedClientSlugs,
         enforceFullAnonymization = this.enforceFullAnonymization,
         maxSnippetsPerForeignClient = this.maxSnippetsPerForeignClient,
-    )
-
-fun GitConn.toDto(): GitConnDto =
-    GitConnDto(
-        provider = this.provider,
-        baseUrl = this.baseUrl,
-        authType = this.authType,
-        credentialsRef = this.credentialsRef,
-    )
-
-fun GitConnDto.toDomain(): GitConn =
-    GitConn(
-        provider = this.provider,
-        baseUrl = this.baseUrl,
-        authType = this.authType,
-        credentialsRef = this.credentialsRef,
-    )
-
-fun JiraConn.toDto(): JiraConnDto =
-    JiraConnDto(
-        baseUrl = this.baseUrl,
-        tenant = this.tenant,
-        scopes = this.scopes,
-        credentialsRef = this.credentialsRef,
-    )
-
-fun JiraConnDto.toDomain(): JiraConn =
-    JiraConn(
-        baseUrl = this.baseUrl,
-        tenant = this.tenant,
-        scopes = this.scopes,
-        credentialsRef = this.credentialsRef,
-    )
-
-fun SlackConn.toDto(): SlackConnDto =
-    SlackConnDto(
-        workspace = this.workspace,
-        scopes = this.scopes,
-        credentialsRef = this.credentialsRef,
-    )
-
-fun SlackConnDto.toDomain(): SlackConn =
-    SlackConn(
-        workspace = this.workspace,
-        scopes = this.scopes,
-        credentialsRef = this.credentialsRef,
-    )
-
-fun TeamsConn.toDto(): TeamsConnDto =
-    TeamsConnDto(
-        tenant = this.tenant,
-        scopes = this.scopes,
-        credentialsRef = this.credentialsRef,
-    )
-
-fun TeamsConnDto.toDomain(): TeamsConn =
-    TeamsConn(
-        tenant = this.tenant,
-        scopes = this.scopes,
-        credentialsRef = this.credentialsRef,
-    )
-
-fun DiscordConn.toDto(): DiscordConnDto =
-    DiscordConnDto(
-        serverId = this.serverId,
-        scopes = this.scopes,
-        credentialsRef = this.credentialsRef,
-    )
-
-fun DiscordConnDto.toDomain(): DiscordConn =
-    DiscordConn(
-        serverId = this.serverId,
-        scopes = this.scopes,
-        credentialsRef = this.credentialsRef,
-    )
-
-fun EmailConn.toDto(): EmailConnDto =
-    EmailConnDto(
-        protocol = this.protocol,
-        server = this.server,
-        username = this.username,
-        credentialsRef = this.credentialsRef,
-    )
-
-fun EmailConnDto.toDomain(): EmailConn =
-    EmailConn(
-        protocol = this.protocol,
-        server = this.server,
-        username = this.username,
-        credentialsRef = this.credentialsRef,
-    )
-
-fun ClientTools.toDto(): ClientToolsDto =
-    ClientToolsDto(
-        git = this.git?.toDto(),
-        jira = this.jira?.toDto(),
-        slack = this.slack?.toDto(),
-        teams = this.teams?.toDto(),
-        discord = this.discord?.toDto(),
-        email = this.email?.toDto(),
-    )
-
-fun ClientToolsDto.toDomain(): ClientTools =
-    ClientTools(
-        git = this.git?.toDomain(),
-        jira = this.jira?.toDomain(),
-        slack = this.slack?.toDomain(),
-        teams = this.teams?.toDomain(),
-        discord = this.discord?.toDomain(),
-        email = this.email?.toDomain(),
     )
 
 fun AudioMonitoringConfig.toDto(): AudioMonitoringConfigDto =
