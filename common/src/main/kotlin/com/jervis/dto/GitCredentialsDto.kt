@@ -3,19 +3,19 @@ package com.jervis.dto
 import kotlinx.serialization.Serializable
 
 /**
- * DTO for Git credentials display.
- * Sensitive fields (private keys, passphrases, tokens) are masked - only presence is indicated.
- * Public keys can be displayed in full.
+ * DTO carrying raw (unencrypted) Git credentials for internal use.
+ * This project intentionally stores and returns credential values as-is.
+ * Use only in trusted environments.
  */
 @Serializable
 data class GitCredentialsDto(
-    val hasSshPrivateKey: Boolean = false,
+    val sshPrivateKey: String? = null,
     val sshPublicKey: String? = null,
-    val hasSshPassphrase: Boolean = false,
-    val hasHttpsToken: Boolean = false,
+    val sshPassphrase: String? = null,
+    val httpsToken: String? = null,
     val httpsUsername: String? = null,
-    val hasHttpsPassword: Boolean = false,
-    val hasGpgPrivateKey: Boolean = false,
+    val httpsPassword: String? = null,
+    val gpgPrivateKey: String? = null,
     val gpgPublicKey: String? = null,
-    val hasGpgPassphrase: Boolean = false,
+    val gpgPassphrase: String? = null,
 )

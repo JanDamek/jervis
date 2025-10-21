@@ -1,10 +1,10 @@
 package com.jervis.service.listener
 
 import com.jervis.domain.authentication.ServiceTypeEnum
-import com.jervis.entity.mongo.ServiceCredentialsDocument
 import com.jervis.service.listener.domain.ListenerPollResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.bson.types.ObjectId
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.Instant
@@ -20,7 +20,7 @@ class DiscordListener : ServiceListener {
     private val logger = LoggerFactory.getLogger(DiscordListener::class.java)
 
     override suspend fun poll(
-        credentials: ServiceCredentialsDocument,
+        credentials: ServiceCredentials,
         lastCheckTime: Instant?,
     ): ListenerPollResult =
         withContext(Dispatchers.IO) {
@@ -28,23 +28,23 @@ class DiscordListener : ServiceListener {
                 logger.info("Polling Discord for client ${credentials.clientId}")
                 ListenerPollResult(
                     serviceTypeEnum = serviceTypeEnum,
-                    clientId = credentials.clientId,
-                    projectId = credentials.projectId,
+                    clientId = ObjectId(credentials.clientId),
+                    projectId = credentials.projectId?.let { ObjectId(it) },
                     newMessages = emptyList(),
                 )
             } catch (e: Exception) {
                 logger.error("Error polling Discord for client ${credentials.clientId}", e)
                 ListenerPollResult(
                     serviceTypeEnum = serviceTypeEnum,
-                    clientId = credentials.clientId,
-                    projectId = credentials.projectId,
+                    clientId = ObjectId(credentials.clientId),
+                    projectId = credentials.projectId?.let { ObjectId(it) },
                     newMessages = emptyList(),
                     error = e.message,
                 )
             }
         }
 
-    override suspend fun verifyCredentials(credentials: ServiceCredentialsDocument): Boolean =
+    override suspend fun verifyCredentials(credentials: ServiceCredentials): Boolean =
         withContext(Dispatchers.IO) {
             try {
                 logger.info("Verifying Discord credentials for client ${credentials.clientId}")
@@ -58,7 +58,7 @@ class DiscordListener : ServiceListener {
     override fun supportsWebhooks(): Boolean = true
 
     override suspend fun registerWebhook(
-        credentials: ServiceCredentialsDocument,
+        credentials: ServiceCredentials,
         webhookUrl: String,
     ): String? =
         withContext(Dispatchers.IO) {
@@ -72,7 +72,7 @@ class DiscordListener : ServiceListener {
         }
 
     override suspend fun handleWebhookEvent(
-        credentials: ServiceCredentialsDocument,
+        credentials: ServiceCredentials,
         payload: String,
     ): ListenerPollResult? =
         withContext(Dispatchers.IO) {

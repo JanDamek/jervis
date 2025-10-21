@@ -2,7 +2,6 @@ package com.jervis.service.git
 
 import com.jervis.entity.mongo.ProjectDocument
 import com.jervis.repository.mongo.ClientMongoRepository
-import com.jervis.service.security.KeyEncryptionService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -16,7 +15,6 @@ import java.nio.file.Path
 @Service
 class GitCredentialsManager(
     private val clientMongoRepository: ClientMongoRepository,
-    private val keyEncryptionService: KeyEncryptionService,
     private val sshKeyManager: SshKeyManager,
     private val gpgKeyManager: GpgKeyManager,
 ) {
@@ -50,8 +48,9 @@ class GitCredentialsManager(
 
                 // Check if any credentials are configured
                 val hasCredentials =
-                    gitConfig.encryptedSshPrivateKey != null ||
-                        gitConfig.encryptedHttpsToken != null
+                    gitConfig.sshPrivateKey != null ||
+                        gitConfig.httpsToken != null ||
+                        gitConfig.httpsPassword != null
 
                 if (!hasCredentials) {
                     logger.info { "No Git credentials found for project ${project.name}, assuming public repository" }
@@ -61,14 +60,10 @@ class GitCredentialsManager(
                 val sshWrapperPath = prepareSSH(project, gitConfig)
                 val gpgKeyId = prepareGPG(gitConfig)
 
-                // Decrypt HTTPS credentials if present
-                val decryptedHttpsToken =
-                    gitConfig.encryptedHttpsToken
-                        ?.let { keyEncryptionService.decrypt(it) }
+                // HTTPS credentials if present
+                val decryptedHttpsToken = gitConfig.httpsToken
                 val httpsUsername = gitConfig.httpsUsername
-                val decryptedHttpsPassword =
-                    gitConfig.encryptedHttpsPassword
-                        ?.let { keyEncryptionService.decrypt(it) }
+                val decryptedHttpsPassword = gitConfig.httpsPassword
 
                 GitAuthContext(
                     sshWrapperPath = sshWrapperPath,
@@ -87,21 +82,18 @@ class GitCredentialsManager(
         project: ProjectDocument,
         gitConfig: com.jervis.domain.git.GitConfig,
     ): Path? {
-        val encryptedSshPrivateKey = gitConfig.encryptedSshPrivateKey
-        if (encryptedSshPrivateKey.isNullOrBlank()) {
+        val sshPrivateKey = gitConfig.sshPrivateKey
+        if (sshPrivateKey.isNullOrBlank()) {
             return null
         }
 
         return try {
-            // Decrypt the SSH private key
-            val decryptedKey = keyEncryptionService.decrypt(encryptedSshPrivateKey)
             val publicKey = gitConfig.sshPublicKey
 
-            // Prepare SSH authentication with decrypted key
             val sshConfigPath =
                 sshKeyManager.prepareSshAuthenticationWithKey(
                     project = project,
-                    decryptedPrivateKey = decryptedKey,
+                    decryptedPrivateKey = sshPrivateKey,
                     publicKey = publicKey,
                 )
 
@@ -134,13 +126,8 @@ class GitCredentialsManager(
                         val gitConfig = overrideGitConfig ?: clientGitConfig
 
                         if (gitConfig != null) {
-                            // Get GPG private key from gitConfig
-                            val encryptedGpgPrivateKey = gitConfig.encryptedGpgPrivateKey
-
-                            encryptedGpgPrivateKey?.let {
-                                keyEncryptionService.decrypt(it)
-                            }
-
+                            gitConfig.gpgPrivateKey
+                            // Optionally, the private key can be imported before enabling signing (not handled here)
                             gpgKeyManager.configureGitGpgSigning(
                                 gitDir = gitDir,
                                 keyId = authContext.gpgKeyId,

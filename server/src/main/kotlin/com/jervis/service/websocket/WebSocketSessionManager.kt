@@ -1,7 +1,9 @@
 package com.jervis.service.websocket
 
+import jakarta.annotation.PreDestroy
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
+import org.springframework.web.reactive.socket.CloseStatus
 import org.springframework.web.reactive.socket.WebSocketSession
 import reactor.core.publisher.Mono
 import java.util.concurrent.ConcurrentHashMap
@@ -75,4 +77,28 @@ class WebSocketSessionManager {
     fun getActiveSessionIds(): Set<String> = sessions.keys.toSet()
 
     fun isSessionActive(sessionId: String): Boolean = sessions[sessionId]?.session?.isOpen == true
+
+    /**
+     * Close all active WebSocket sessions to avoid blocking graceful shutdown.
+     */
+    fun closeAll() {
+        val snapshot = sessions.values.toList()
+        snapshot.forEach { info ->
+            if (info.session.isOpen) {
+                runCatching {
+                    info.session.close(CloseStatus.GOING_AWAY).subscribe()
+                }.onFailure { ex ->
+                    logger.warn(ex) { "Failed closing WebSocket session ${info.session.id}" }
+                }
+            }
+        }
+        sessions.clear()
+        logger.info { "All WebSocket sessions have been closed" }
+    }
+
+    @PreDestroy
+    fun onShutdown() {
+        logger.info { "Application shutdown: closing all WebSocket sessions" }
+        closeAll()
+    }
 }

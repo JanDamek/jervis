@@ -8,6 +8,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 enum class GitProviderEnum {
+    NONE,
     GITHUB,
     GITLAB,
     BITBUCKET,

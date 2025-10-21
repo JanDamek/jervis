@@ -5,6 +5,7 @@ import com.jervis.service.IClientGitConfigurationService
 import com.jervis.service.IClientIndexingService
 import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
+import com.jervis.service.IEmailAccountService
 import com.jervis.service.IIndexingMonitorService
 import com.jervis.service.IIndexingService
 import com.jervis.service.IProjectGitConfigurationService
@@ -72,4 +73,8 @@ class HttpInterfaceClientConfig {
     @Bean
     fun projectGitConfigurationClient(webClient: WebClient): IProjectGitConfigurationService =
         createHttpServiceProxyFactory(webClient).createClient(IProjectGitConfigurationService::class.java)
+
+    @Bean
+    fun emailAccountClient(webClient: WebClient): IEmailAccountService =
+        createHttpServiceProxyFactory(webClient).createClient(IEmailAccountService::class.java)
 }

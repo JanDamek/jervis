@@ -6,6 +6,7 @@ import com.jervis.service.IClientGitConfigurationService
 import com.jervis.service.IClientIndexingService
 import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
+import com.jervis.service.IEmailAccountService
 import com.jervis.service.IIndexingMonitorService
 import com.jervis.service.IIndexingService
 import com.jervis.service.IProjectGitConfigurationService
@@ -35,6 +36,7 @@ class ApplicationWindowManager(
     private val indexingMonitorService: IIndexingMonitorService,
     private val debugWindowService: DesktopDebugWindowService,
     private val notificationsClient: NotificationsWebSocketClient,
+    private val emailAccountService: IEmailAccountService,
 ) {
     private val mainWindow: MainWindow by lazy {
         MainWindow(
@@ -61,7 +63,14 @@ class ApplicationWindowManager(
     }
 
     private val clientsWindow: ClientsWindow by lazy {
-        ClientsWindow(clientService, clientGitConfigurationService, projectService, linkService, indexingService)
+        ClientsWindow(
+            clientService,
+            clientGitConfigurationService,
+            projectService,
+            linkService,
+            indexingService,
+            emailAccountService,
+        )
     }
 
     private val schedulerWindow: SchedulerWindow by lazy {

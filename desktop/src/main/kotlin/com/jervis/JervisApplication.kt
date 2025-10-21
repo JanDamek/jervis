@@ -7,6 +7,7 @@ import com.jervis.service.IClientGitConfigurationService
 import com.jervis.service.IClientIndexingService
 import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
+import com.jervis.service.IEmailAccountService
 import com.jervis.service.IIndexingMonitorService
 import com.jervis.service.IIndexingService
 import com.jervis.service.IProjectGitConfigurationService
@@ -29,7 +30,6 @@ import org.springframework.context.annotation.ComponentScan
 import java.awt.EventQueue
 import javax.swing.UIManager
 
-@SpringBootApplication
 @ComponentScan(
     basePackages = [
         "com.jervis.service.debug",
@@ -37,6 +37,7 @@ import javax.swing.UIManager
         "com.jervis.configuration",
     ],
 )
+@SpringBootApplication
 class JervisApplication(
     private val projectService: IProjectService,
     private val chatCoordinator: IAgentOrchestratorService,
@@ -51,6 +52,7 @@ class JervisApplication(
     private val indexingMonitorService: IIndexingMonitorService,
     private val debugWindowService: DesktopDebugWindowService,
     private val notificationsClient: NotificationsWebSocketClient,
+    private val emailAccountService: IEmailAccountService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -76,6 +78,7 @@ class JervisApplication(
                     indexingMonitorService,
                     debugWindowService,
                     notificationsClient,
+                    emailAccountService,
                 )
 
             EventQueue.invokeLater {

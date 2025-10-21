@@ -1,7 +1,6 @@
 package com.jervis.entity.mongo
 
 import com.jervis.domain.client.Anonymization
-import com.jervis.domain.client.ClientTools
 import com.jervis.domain.client.Formatting
 import com.jervis.domain.client.Guidelines
 import com.jervis.domain.client.InspirationPolicy
@@ -37,7 +36,6 @@ data class ClientDocument(
     val defaultSecretsPolicy: SecretsPolicy = SecretsPolicy(),
     val defaultAnonymization: Anonymization = Anonymization(),
     val defaultInspirationPolicy: InspirationPolicy = InspirationPolicy(),
-    val tools: ClientTools = ClientTools(),
     val defaultLanguageEnum: LanguageEnum = LanguageEnum.getDefault(), // Default communication language for this client
     val audioPath: String? = null,
     val dependsOnProjects: List<ObjectId> = emptyList(),

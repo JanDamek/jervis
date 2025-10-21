@@ -4,6 +4,7 @@ import com.jervis.client.DebugWebSocketClient
 import com.jervis.client.NotificationsWebSocketClient
 import com.jervis.config.HttpInterfaceClientConfig
 import com.jervis.service.IDebugWindowService
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.springframework.beans.factory.annotation.Value
@@ -28,6 +29,7 @@ class ApiClientConfiguration(
     private val logger = KotlinLogging.logger {}
 
     @Bean
+    @OptIn(ExperimentalSerializationApi::class)
     fun json(): Json =
         Json {
             ignoreUnknownKeys = true
@@ -70,8 +72,8 @@ class ApiClientConfiguration(
                     }
 
                     is java.net.ConnectException -> true
-                    is java.io.IOException -> true
                     is java.nio.channels.ClosedChannelException -> true
+                    is java.io.IOException -> true
 
                     else -> false
                 }

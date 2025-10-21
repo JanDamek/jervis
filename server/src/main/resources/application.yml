@@ -241,3 +241,15 @@ audio:
     max-retries: 3
 encryption:
   master-key: 12abcd5479632cbf5e3a25c6d9a5f77s
+
+# Email configuration
+email:
+  oauth:
+    google:
+      client-id: ${GOOGLE_CLIENT_ID:}
+      client-secret: ${GOOGLE_CLIENT_SECRET:}
+      redirect-uri: http://localhost:5500/api/v1/email/oauth/google/callback
+    microsoft:
+      client-id: ${MICROSOFT_CLIENT_ID:}
+      client-secret: ${MICROSOFT_CLIENT_SECRET:}
+      redirect-uri: http://localhost:5500/api/v1/email/oauth/microsoft/callback

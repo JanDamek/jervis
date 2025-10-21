@@ -1,8 +1,6 @@
 package com.jervis.service.git
 
 import com.jervis.entity.mongo.ProjectDocument
-import com.jervis.entity.mongo.ServiceCredentialsDocument
-import com.jervis.service.security.KeyEncryptionService
 import com.jervis.service.storage.DirectoryStructureService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -19,45 +17,8 @@ import java.nio.file.attribute.PosixFilePermission
 @Service
 class SshKeyManager(
     private val directoryStructureService: DirectoryStructureService,
-    private val keyEncryptionService: KeyEncryptionService,
 ) {
     private val logger = KotlinLogging.logger {}
-
-    suspend fun prepareSshAuthentication(
-        project: ProjectDocument,
-        credentials: ServiceCredentialsDocument,
-    ): Path? =
-        withContext(Dispatchers.IO) {
-            try {
-                val sshPrivateKey = credentials.sshPrivateKey
-                if (sshPrivateKey.isNullOrBlank()) {
-                    logger.warn { "No SSH private key found for project ${project.name}" }
-                    return@withContext null
-                }
-
-                val keyDir = directoryStructureService.projectSshKeyDir(project)
-                directoryStructureService.ensureDirectoryExists(keyDir)
-
-                val decryptedKey = keyEncryptionService.decrypt(sshPrivateKey)
-                val privateKeyPath = keyDir.resolve("id_rsa")
-                Files.writeString(privateKeyPath, decryptedKey)
-                setFilePermissions(privateKeyPath, "600")
-
-                credentials.sshPublicKey?.let { publicKey ->
-                    val publicKeyPath = keyDir.resolve("id_rsa.pub")
-                    Files.writeString(publicKeyPath, publicKey)
-                    setFilePermissions(publicKeyPath, "644")
-                }
-
-                val sshConfigPath = createSshConfig(keyDir, privateKeyPath, project)
-                logger.info { "SSH authentication prepared for project ${project.name} at $keyDir" }
-
-                sshConfigPath
-            } catch (e: Exception) {
-                logger.error(e) { "Failed to prepare SSH authentication for project ${project.name}" }
-                null
-            }
-        }
 
     private fun createSshConfig(
         keyDir: Path,
