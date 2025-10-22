@@ -46,6 +46,12 @@ enum class RagSourceType {
     /** Email messages */
     EMAIL,
 
+    /** Email attachment content extracted via Tika */
+    EMAIL_ATTACHMENT,
+
+    /** Link content from emails */
+    EMAIL_LINK_CONTENT,
+
     /** Slack messages */
     SLACK,
 

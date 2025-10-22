@@ -67,13 +67,10 @@ class EmailListener(
         lastCheckTime: Instant?,
     ): List<ServiceMessage> {
         logger.info { "Polling with password for account ${account.id} (IMAP)" }
-        return pollImap(account, lastCheckTime)
+        return pollImap(account)
     }
 
-    private suspend fun pollImap(
-        account: EmailAccountDocument,
-        lastCheckTime: Instant?,
-    ): List<ServiceMessage> {
+    private suspend fun pollImap(account: EmailAccountDocument): List<ServiceMessage> {
         if (account.serverHost == null || account.serverPort == null || account.password == null) {
             logger.warn { "IMAP credentials incomplete for account ${account.id}" }
             return emptyList()
@@ -93,38 +90,17 @@ class EmailListener(
 
             store.connect(account.serverHost, username, account.password)
 
-            val folderNames =
-                listOf(
-                    "INBOX",
-                    "[Gmail]/Trash",
-                    "[Gmail]/Bin",
-                    "Trash",
-                    "Deleted",
-                    "Deleted Items",
-                    "Bin",
-                )
+            val defaultFolder = store.defaultFolder
+            val inbox = defaultFolder.getFolder("INBOX")
+            inbox.open(Folder.READ_ONLY)
 
-            val allMessages = mutableListOf<Message>()
-
-            folderNames.forEach { folderName ->
-                try {
-                    val folder = store.getFolder(folderName)
-                    if (folder.exists()) {
-                        folder.open(Folder.READ_ONLY)
-                        allMessages.addAll(folder.messages.toList())
-                        folder.close(false)
-                        logger.debug { "Fetched ${folder.messages.size} messages from folder: $folderName" }
-                    }
-                } catch (e: Exception) {
-                    logger.debug { "Could not access folder $folderName: ${e.message}" }
-                }
-            }
-
+            val messages = inbox.messages
             val serviceMessages =
-                allMessages.map { message ->
+                messages.map { message ->
                     parseImapMessage(message, account)
                 }
 
+            inbox.close(false)
             store.close()
 
             logger.info { "Polled ${serviceMessages.size} total emails from IMAP for account ${account.id}" }

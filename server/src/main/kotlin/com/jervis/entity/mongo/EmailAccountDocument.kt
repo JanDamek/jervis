@@ -17,6 +17,7 @@ import java.time.Instant
 @CompoundIndexes(
     CompoundIndex(name = "client_project_provider_idx", def = "{'clientId':1,'projectId':1,'provider':1}"),
     CompoundIndex(name = "client_active_idx", def = "{'clientId':1,'isActive':1}"),
+    CompoundIndex(name = "active_lastIndexed_idx", def = "{'isActive':1,'lastIndexedAt':1}"),
 )
 data class EmailAccountDocument(
     @Id val id: ObjectId = ObjectId.get(),
@@ -37,6 +38,7 @@ data class EmailAccountDocument(
     val oauthScopes: List<String> = emptyList(),
     val isActive: Boolean = true,
     val lastPolledAt: Instant? = null,
+    val lastIndexedAt: Instant? = null,
     val createdAt: Instant = Instant.now(),
     val updatedAt: Instant = Instant.now(),
 )

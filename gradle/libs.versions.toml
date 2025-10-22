@@ -17,6 +17,7 @@ guava = "33.4.1-jre"
 flatlaf = "3.6.1"
 springdoc = "2.8.9"
 joern = "2.0.0"
+langchain4j = "1.7.1"
 
 [libraries]
 # Kotlin
@@ -80,6 +81,7 @@ java-diff-utils = { module = "io.github.java-diff-utils:java-diff-utils", versio
 guava = { module = "com.google.guava:guava", version.ref = "guava" }
 jakarta-annotation-api = { module = "jakarta.annotation:jakarta.annotation-api" }
 flatlaf = { module = "com.formdev:flatlaf", version.ref = "flatlaf" }
+langchain4j = { module = "dev.langchain4j:langchain4j", version.ref = "langchain4j" }
 
 # Testing
 junit-bom = { module = "org.junit:junit-bom" }

@@ -242,6 +242,12 @@ audio:
 encryption:
   master-key: 12abcd5479632cbf5e3a25c6d9a5f77s
 
+# Text chunking configuration
+text:
+  chunking:
+    max-tokens: 300
+    overlap-percentage: 10
+
 # Email configuration
 email:
   oauth:
@@ -253,3 +259,10 @@ email:
       client-id: ${MICROSOFT_CLIENT_ID:}
       client-secret: ${MICROSOFT_CLIENT_SECRET:}
       redirect-uri: http://localhost:5500/api/v1/email/oauth/microsoft/callback
+  indexing:
+    link-extraction:
+      enabled: true
+      max-links-per-email: 10
+    attachment-processing:
+      enabled: true
+      max-attachment-size-mb: 10
