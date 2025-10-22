@@ -3,6 +3,7 @@ package com.jervis.client
 import com.jervis.dto.events.AgentResponseEventDto
 import com.jervis.dto.events.PlanStatusChangeEventDto
 import com.jervis.dto.events.StepCompletionEventDto
+import com.jervis.dto.monitoring.IndexingProgressEventDto
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.websocket.WebSockets
@@ -106,6 +107,14 @@ class NotificationsWebSocketClient(
         // Try to decode as AgentResponseEventDto
         runCatching {
             json.decodeFromString(AgentResponseEventDto.serializer(), text)
+        }.onSuccess {
+            eventPublisher.publishEvent(it)
+            return
+        }
+
+        // Try to decode as IndexingProgressEventDto
+        runCatching {
+            json.decodeFromString(IndexingProgressEventDto.serializer(), text)
         }.onSuccess {
             eventPublisher.publishEvent(it)
             return

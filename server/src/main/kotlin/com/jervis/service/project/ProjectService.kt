@@ -58,18 +58,91 @@ class ProjectService(
         project: ProjectDocument,
         makeDefault: Boolean,
     ): ProjectDto {
-        val isNew = false
-        val updatedProject = project.copy(updatedAt = Instant.now())
-        val savedProject = projectRepository.save(updatedProject)
+        val existing = projectRepository.findById(project.id)
+        val isNew = existing == null
+
+        val savedProject =
+            if (isNew) {
+                val newProject = project.copy(createdAt = Instant.now(), updatedAt = Instant.now())
+                projectRepository.save(newProject)
+            } else {
+                val mergedGitConfig =
+                    when {
+                        project.overrides.gitConfig != null && existing.overrides.gitConfig != null -> {
+                            existing.overrides.gitConfig.copy(
+                                gitUserName =
+                                    project.overrides.gitConfig.gitUserName
+                                        ?: existing.overrides.gitConfig.gitUserName,
+                                gitUserEmail =
+                                    project.overrides.gitConfig.gitUserEmail
+                                        ?: existing.overrides.gitConfig.gitUserEmail,
+                                commitMessageTemplate =
+                                    project.overrides.gitConfig.commitMessageTemplate
+                                        ?: existing.overrides.gitConfig.commitMessageTemplate,
+                                requireGpgSign = project.overrides.gitConfig.requireGpgSign,
+                                gpgKeyId =
+                                    project.overrides.gitConfig.gpgKeyId
+                                        ?: existing.overrides.gitConfig.gpgKeyId,
+                                requireLinearHistory = project.overrides.gitConfig.requireLinearHistory,
+                                conventionalCommits = project.overrides.gitConfig.conventionalCommits,
+                                commitRules =
+                                    if (project.overrides.gitConfig.commitRules
+                                            .isNotEmpty()
+                                    ) {
+                                        project.overrides.gitConfig.commitRules
+                                    } else {
+                                        existing.overrides.gitConfig.commitRules
+                                    },
+                                sshPrivateKey =
+                                    project.overrides.gitConfig.sshPrivateKey
+                                        ?: existing.overrides.gitConfig.sshPrivateKey,
+                                sshPublicKey =
+                                    project.overrides.gitConfig.sshPublicKey
+                                        ?: existing.overrides.gitConfig.sshPublicKey,
+                                sshPassphrase =
+                                    project.overrides.gitConfig.sshPassphrase
+                                        ?: existing.overrides.gitConfig.sshPassphrase,
+                                httpsToken =
+                                    project.overrides.gitConfig.httpsToken
+                                        ?: existing.overrides.gitConfig.httpsToken,
+                                httpsUsername =
+                                    project.overrides.gitConfig.httpsUsername
+                                        ?: existing.overrides.gitConfig.httpsUsername,
+                                httpsPassword =
+                                    project.overrides.gitConfig.httpsPassword
+                                        ?: existing.overrides.gitConfig.httpsPassword,
+                                gpgPrivateKey =
+                                    project.overrides.gitConfig.gpgPrivateKey
+                                        ?: existing.overrides.gitConfig.gpgPrivateKey,
+                                gpgPublicKey =
+                                    project.overrides.gitConfig.gpgPublicKey
+                                        ?: existing.overrides.gitConfig.gpgPublicKey,
+                                gpgPassphrase =
+                                    project.overrides.gitConfig.gpgPassphrase
+                                        ?: existing.overrides.gitConfig.gpgPassphrase,
+                            )
+                        }
+
+                        project.overrides.gitConfig != null -> project.overrides.gitConfig
+                        else -> existing.overrides.gitConfig
+                    }
+
+                val mergedOverrides = project.overrides.copy(gitConfig = mergedGitConfig)
+
+                val updatedProject =
+                    project.copy(
+                        createdAt = existing.createdAt,
+                        updatedAt = Instant.now(),
+                        overrides = mergedOverrides,
+                    )
+                projectRepository.save(updatedProject)
+            }
 
         if (makeDefault) {
             setDefaultProject(savedProject)
         }
 
         directoryStructureService.ensureProjectDirectories(savedProject.clientId, savedProject.id)
-
-        // TODO: Git clone will be triggered based on client mono-repo URL + project path
-        // This requires fetching client document to check mono-repo configuration
 
         if (isNew) {
             logger.info { "Created new project: ${savedProject.name}" }

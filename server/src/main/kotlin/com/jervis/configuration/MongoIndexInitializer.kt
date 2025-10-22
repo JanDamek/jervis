@@ -19,8 +19,9 @@ class MongoIndexInitializer(
     @PostConstruct
     fun initializeIndexes() {
         runBlocking {
-            logger.info { "Initializing MongoDB indexes for Background Cognitive Engine..." }
+            logger.info { "Initializing MongoDB indexes..." }
 
+            cleanupOrphanedIndexes()
             createBackgroundTasksIndexes()
             createBackgroundArtifactsIndexes()
             createCoverageSnapshotsIndexes()
@@ -164,6 +165,23 @@ class MongoIndexInitializer(
         )
 
         logger.debug { "Created indexes for $collection" }
+    }
+
+    private suspend fun cleanupOrphanedIndexes() {
+        try {
+            val clientsCollection = "clients"
+            val indexOps = mongoTemplate.indexOps(clientsCollection)
+            val existingIndexes = indexOps.indexInfo.collectList().awaitSingleOrNull() ?: emptyList()
+
+            val slugIndex = existingIndexes.find { it.name == "slug" }
+            if (slugIndex != null) {
+                logger.info { "Dropping orphaned 'slug' index from $clientsCollection collection" }
+                indexOps.dropIndex("slug").awaitSingleOrNull()
+                logger.info { "Successfully dropped orphaned 'slug' index" }
+            }
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to cleanup orphaned indexes: ${e.message}" }
+        }
     }
 
     private suspend fun createIndex(

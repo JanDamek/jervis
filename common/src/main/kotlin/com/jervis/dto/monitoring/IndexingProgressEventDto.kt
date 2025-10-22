@@ -2,12 +2,14 @@ package com.jervis.dto.monitoring
 
 import com.jervis.domain.IndexingStepStatusEnum
 import com.jervis.domain.IndexingStepTypeEnum
-import java.time.Instant
+import kotlinx.serialization.Serializable
 
 /**
  * Event published when indexing progress changes for a project
  */
+@Serializable
 data class IndexingProgressEventDto(
+    val eventType: String = "INDEXING_PROGRESS",
     val projectId: String,
     val projectName: String,
     val stepType: IndexingStepTypeEnum,
@@ -15,6 +17,6 @@ data class IndexingProgressEventDto(
     val progress: IndexingProgressDto? = null,
     val message: String? = null,
     val errorMessage: String? = null,
-    val timestamp: Instant = Instant.now(),
+    val timestamp: String,
     val logs: List<String> = emptyList(),
 )

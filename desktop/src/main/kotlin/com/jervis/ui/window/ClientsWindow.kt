@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import mu.KotlinLogging
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.FlowLayout
@@ -50,6 +51,10 @@ class ClientsWindow(
     private val indexingService: IIndexingService,
     private val emailAccountService: IEmailAccountService,
 ) : JFrame("Client Management") {
+    companion object {
+        private val logger = KotlinLogging.logger {}
+    }
+
     private val clientsList = JList<ClientDto>()
     private val listModel = javax.swing.DefaultListModel<ClientDto>()
 
@@ -169,8 +174,8 @@ class ClientsWindow(
             gbc.gridy++
         }
 
-        addRow("Název:*", nameField)
-        addRow("Popis:", descriptionField)
+        addRow("Name:*", nameField)
+        addRow("Description:", descriptionField)
         // Anonymization toggle
         gbc.gridx = 1
         gbc.weightx = 1.0
@@ -281,7 +286,7 @@ class ClientsWindow(
         val desc = descriptionField.text.trim().ifEmpty { null }
         val disabled = anonymizeCheckbox.isSelected
         if (name.isBlank()) {
-            JOptionPane.showMessageDialog(this, "Název je povinný.", "Validace", JOptionPane.WARNING_MESSAGE)
+            JOptionPane.showMessageDialog(this, "Name is required.", "Validation", JOptionPane.WARNING_MESSAGE)
             return
         }
         CoroutineScope(Dispatchers.Main).launch {
@@ -802,14 +807,14 @@ class ClientsWindow(
             gbc.weightx = 1.0
             form.add(comp.apply { preferredSize = Dimension(420, 28) }, gbc)
         }
-        add("Název:*", nameField, 0, 0)
+        add("Name:*", nameField, 0, 0)
         add("Slug:*", slugField, 0, 1)
-        add("Cesta (legacy):", pathField, 0, 2)
+        add("Path (legacy):", pathField, 0, 2)
         add("Repo primaryUrl:*", urlField, 0, 3)
-        add("Popis:", descField, 0, 4)
+        add("Description:", descField, 0, 4)
 
-        val ok = JButton("Vytvořit")
-        val cancel = JButton("Zrušit")
+        val ok = JButton("Create")
+        val cancel = JButton("Cancel")
         val buttons =
             JPanel(FlowLayout(FlowLayout.RIGHT)).apply {
                 add(ok)
@@ -835,8 +840,8 @@ class ClientsWindow(
             if (name.isBlank()) {
                 JOptionPane.showMessageDialog(
                     dialog,
-                    "Název je povinný.",
-                    "Validace",
+                    "Name is required.",
+                    "Validation",
                     JOptionPane.WARNING_MESSAGE,
                 )
                 return@addActionListener
@@ -844,8 +849,8 @@ class ClientsWindow(
             if (!regex.matches(slug)) {
                 JOptionPane.showMessageDialog(
                     dialog,
-                    "Slug musí odpovídat ^[a-z0-9-]+$",
-                    "Validace",
+                    "Slug must match ^[a-z0-9-]+$",
+                    "Validation",
                     JOptionPane.WARNING_MESSAGE,
                 )
                 return@addActionListener
@@ -853,8 +858,8 @@ class ClientsWindow(
             if (url.isBlank()) {
                 JOptionPane.showMessageDialog(
                     dialog,
-                    "Repo primaryUrl je povinné.",
-                    "Validace",
+                    "Repo primaryUrl is required.",
+                    "Validation",
                     JOptionPane.WARNING_MESSAGE,
                 )
                 return@addActionListener
@@ -904,11 +909,11 @@ class ClientsWindow(
         if (result != null && gitSetupRequest != null) {
             CoroutineScope(Dispatchers.Main).launch {
                 try {
-                    println("ClientsWindow: Creating new client with Git configuration")
-                    println("  Client name: ${result.name}")
-                    println("  Provider: ${gitSetupRequest.gitProvider}")
-                    println("  Auth Type: ${gitSetupRequest.gitAuthType}")
-                    println("  Has SSH Key: ${gitSetupRequest.sshPrivateKey != null}")
+                    logger.info { "Creating new client with Git configuration" }
+                    logger.debug { "  Client name: ${result.name}" }
+                    logger.debug { "  Provider: ${gitSetupRequest.gitProvider}" }
+                    logger.debug { "  Auth Type: ${gitSetupRequest.gitAuthType}" }
+                    logger.debug { "  Has SSH Key: ${gitSetupRequest.sshPrivateKey != null}" }
 
                     // First create the client
                     val createdClient =
@@ -916,7 +921,7 @@ class ClientsWindow(
                             clientService.create(result)
                         }
 
-                    println("ClientsWindow: Client created with ID: ${createdClient.id}")
+                    logger.info { "Client created with ID: ${createdClient.id}" }
 
                     // Optionally test SSH connectivity when URL is known
                     if (isSshUrl(gitSetupRequest.monoRepoUrl)) {
@@ -941,7 +946,7 @@ class ClientsWindow(
                         clientGitConfigurationService.setupGitConfiguration(createdClient.id, gitSetupRequest)
                     }
 
-                    println("ClientsWindow: Git configuration saved for new client")
+                    logger.info { "Git configuration saved for new client" }
 
                     loadClients()
                     JOptionPane.showMessageDialog(
@@ -983,7 +988,7 @@ class ClientsWindow(
                 dialog.isVisible = true
                 handleDialogResult(client, dialog)
             } catch (e: Exception) {
-                println("ClientsWindow: Failed to load credentials: ${e.message}")
+                logger.warn { "Failed to load credentials: ${e.message}" }
                 // Create dialog without credentials on error
                 val dialog = ClientSettingsDialog(this@ClientsWindow, client, null, emailAccountService)
                 dialog.isVisible = true
@@ -1001,12 +1006,12 @@ class ClientsWindow(
         if (result != null && gitSetupRequest != null) {
             CoroutineScope(Dispatchers.Main).launch {
                 try {
-                    println("ClientsWindow: Saving Git configuration for client ${client.id}")
-                    println("  Provider: ${gitSetupRequest.gitProvider}")
-                    println("  Auth Type: ${gitSetupRequest.gitAuthType}")
-                    println("  Has SSH Key: ${gitSetupRequest.sshPrivateKey != null}")
-                    println("  Has HTTPS Token: ${gitSetupRequest.httpsToken != null}")
-                    println("  Has GPG Key: ${gitSetupRequest.gpgPrivateKey != null}")
+                    logger.info { "Saving Git configuration for client ${client.id}" }
+                    logger.debug { "  Provider: ${gitSetupRequest.gitProvider}" }
+                    logger.debug { "  Auth Type: ${gitSetupRequest.gitAuthType}" }
+                    logger.debug { "  Has SSH Key: ${gitSetupRequest.sshPrivateKey != null}" }
+                    logger.debug { "  Has HTTPS Token: ${gitSetupRequest.httpsToken != null}" }
+                    logger.debug { "  Has GPG Key: ${gitSetupRequest.gpgPrivateKey != null}" }
 
                     // Optionally test SSH connectivity when URL is known
                     if (isSshUrl(gitSetupRequest.monoRepoUrl)) {
@@ -1031,7 +1036,7 @@ class ClientsWindow(
                         clientGitConfigurationService.setupGitConfiguration(client.id, gitSetupRequest)
                     }
 
-                    println("ClientsWindow: Git configuration saved successfully")
+                    logger.info { "Git configuration saved successfully" }
 
                     // Then update other client settings
                     val finalClient =
@@ -1128,7 +1133,7 @@ class ClientsWindow(
         private val nameField =
             JTextField().apply {
                 preferredSize = Dimension(400, 30)
-                toolTipText = "Název klienta (povinné)"
+                toolTipText = "Client name (required)"
             }
 
         private val descriptionField =
@@ -1220,7 +1225,7 @@ class ClientsWindow(
             gbc.fill =
                 GridBagConstraints.NONE
             gbc.weightx = 0.0
-            panel.add(JLabel("Název:*"), gbc)
+            panel.add(JLabel("Name:*"), gbc)
             gbc.gridx = 1
             gbc.anchor = GridBagConstraints.LINE_START
             gbc.fill =
