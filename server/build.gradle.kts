@@ -79,6 +79,9 @@ dependencies {
     // Diff utils
     implementation(libs.java.diff.utils)
 
+    // LangChain4j for text chunking
+    implementation(libs.langchain4j)
+
     testImplementation(libs.junit.jupiter)
 }
 

@@ -17,6 +17,8 @@ import org.springframework.data.mongodb.repository.config.EnableMongoRepositorie
     DataRootProperties::class,
     com.jervis.configuration.TikaOcrProperties::class,
     com.jervis.configuration.EmailOAuth2Properties::class,
+    com.jervis.configuration.EmailIndexingProperties::class,
+    com.jervis.configuration.TextChunkingProperties::class,
 )
 @PropertySource(
     value = ["classpath:prompts-tools.yaml", "classpath:prompts-services.yaml"],
