@@ -13,8 +13,6 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Import
 import org.springframework.http.HttpStatus
-import org.springframework.http.codec.json.KotlinSerializationJsonDecoder
-import org.springframework.http.codec.json.KotlinSerializationJsonEncoder
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.WebClientResponseException
 import reactor.util.retry.Retry
@@ -44,14 +42,9 @@ class ApiClientConfiguration(
         WebClient
             .builder()
             .baseUrl(serverUrl)
-            .codecs { configurer ->
-                configurer.defaultCodecs().kotlinSerializationJsonEncoder(
-                    KotlinSerializationJsonEncoder(json),
-                )
-                configurer.defaultCodecs().kotlinSerializationJsonDecoder(
-                    KotlinSerializationJsonDecoder(json),
-                )
-            }.filter { request, next ->
+            // Use default codecs (Jackson) for REST endpoints to ensure compatibility with server responses.
+            // Kotlinx is still used explicitly for WebSocket payloads via the Ktor client.
+            .filter { request, next ->
                 next
                     .exchange(request)
                     .retryWhen(createExponentialBackoffRetry())

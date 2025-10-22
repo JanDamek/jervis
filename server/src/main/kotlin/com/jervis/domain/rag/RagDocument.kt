@@ -35,4 +35,10 @@ data class RagDocument(
     val sourceUri: String? = null,
     /** Optional email provider-specific message identifier for precise lookup */
     val emailMessageId: String? = null,
+    /**
+     * List of vector store IDs where this document is indexed.
+     * Used for tracking and cleanup when the source document is deleted.
+     * Each entry corresponds to an embedding stored in the vector database.
+     */
+    val vectorStoreIds: List<String> = emptyList(),
 )

@@ -54,6 +54,6 @@ class IndexingMonitorRestController(
         )
     }
 
-    override fun getAllProjectStates(): Map<String, ProjectIndexingStateDto> =
+    override suspend fun getAllProjectStates(): Map<String, ProjectIndexingStateDto> =
         indexingMonitorService.getAllProjectStates().mapKeys { it.key.toHexString() }
 }

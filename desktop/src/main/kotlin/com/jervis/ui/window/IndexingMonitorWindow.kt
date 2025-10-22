@@ -30,7 +30,6 @@ import javax.swing.JScrollPane
 import javax.swing.JSplitPane
 import javax.swing.JTextArea
 import javax.swing.JTree
-import javax.swing.Timer
 import javax.swing.event.TreeSelectionEvent
 import javax.swing.event.TreeSelectionListener
 import javax.swing.tree.DefaultMutableTreeNode
@@ -53,7 +52,6 @@ class IndexingMonitorWindow(
     // UI Components
     private val projectTree = JTree()
     private val logArea = JTextArea()
-    private val refreshTimer: Timer
     private val statusLabel = JLabel("Ready")
 
     // Tree model and nodes
@@ -64,10 +62,6 @@ class IndexingMonitorWindow(
     init {
         initializeUI()
         setupEventHandling()
-
-        // Start periodic refresh
-        refreshTimer = Timer(1000) { refreshDisplay() }
-        refreshTimer.start()
 
         // Load initial data
         refreshDisplay()
@@ -142,7 +136,6 @@ class IndexingMonitorWindow(
         addWindowListener(
             object : WindowAdapter() {
                 override fun windowClosing(e: WindowEvent) {
-                    refreshTimer.stop()
                     coroutineScope.launch {
                         // Cancel coroutines if needed
                     }
@@ -411,11 +404,12 @@ class IndexingMonitorWindow(
     }
 
     @EventListener
-    suspend fun handleProgressEvent(event: IndexingProgressEventDto) {
-        withContext(Dispatchers.Swing) {
-            // Update UI based on event
-            // The tree will be updated on next refresh cycle
-            logger.debug { "Received progress event: ${event.stepType.stepName} - ${event.status}" }
+    fun handleProgressEvent(event: IndexingProgressEventDto) {
+        logger.debug { "Received indexing progress: ${event.projectName} ${event.stepType.stepName} - ${event.status}" }
+        // Trigger a refresh of the tree and status based on the latest server state.
+        // This avoids active polling; updates happen only when events arrive.
+        coroutineScope.launch {
+            refreshDisplay()
         }
     }
 

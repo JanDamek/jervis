@@ -39,5 +39,5 @@ interface IIndexingMonitorService {
     )
 
     @GetExchange("/states")
-    fun getAllProjectStates(): Map<String, ProjectIndexingStateDto>
+    suspend fun getAllProjectStates(): Map<String, ProjectIndexingStateDto>
 }

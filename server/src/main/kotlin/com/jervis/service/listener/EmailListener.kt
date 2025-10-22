@@ -16,7 +16,6 @@ import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.awaitBody
 import java.time.Instant
-import java.time.format.DateTimeFormatter
 import java.util.Properties
 
 private val logger = KotlinLogging.logger {}
@@ -94,23 +93,41 @@ class EmailListener(
 
             store.connect(account.serverHost, username, account.password)
 
-            val inbox: Folder = store.getFolder("INBOX")
-            inbox.open(Folder.READ_ONLY)
+            val folderNames =
+                listOf(
+                    "INBOX",
+                    "[Gmail]/Trash",
+                    "[Gmail]/Bin",
+                    "Trash",
+                    "Deleted",
+                    "Deleted Items",
+                    "Bin",
+                )
 
-            val messages =
-                inbox.messages.filter { message ->
-                    message.sentDate?.toInstant()?.isAfter(lastCheckTime ?: Instant.EPOCH) == true
+            val allMessages = mutableListOf<Message>()
+
+            folderNames.forEach { folderName ->
+                try {
+                    val folder = store.getFolder(folderName)
+                    if (folder.exists()) {
+                        folder.open(Folder.READ_ONLY)
+                        allMessages.addAll(folder.messages.toList())
+                        folder.close(false)
+                        logger.debug { "Fetched ${folder.messages.size} messages from folder: $folderName" }
+                    }
+                } catch (e: Exception) {
+                    logger.debug { "Could not access folder $folderName: ${e.message}" }
                 }
+            }
 
             val serviceMessages =
-                messages.map { message ->
+                allMessages.map { message ->
                     parseImapMessage(message, account)
                 }
 
-            inbox.close(false)
             store.close()
 
-            logger.info { "Polled ${serviceMessages.size} new emails from IMAP for account ${account.id}" }
+            logger.info { "Polled ${serviceMessages.size} total emails from IMAP for account ${account.id}" }
             serviceMessages
         } catch (e: Exception) {
             logger.error(e) { "Failed to poll IMAP for account ${account.id}" }
@@ -174,12 +191,10 @@ class EmailListener(
         logger.info { "Polling Gmail API for account ${account.id}" }
 
         return try {
-            val query = lastCheckTime?.let { "after:${it.epochSecond}" } ?: ""
-
             val response =
                 webClient
                     .get()
-                    .uri("https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=50&q=$query")
+                    .uri("https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=500&includeSpamTrash=true")
                     .header(HttpHeaders.AUTHORIZATION, "Bearer ${account.accessToken}")
                     .retrieve()
                     .awaitBody<GmailMessagesResponse>()
@@ -265,16 +280,10 @@ class EmailListener(
         logger.info { "Polling Microsoft Graph for account ${account.id}" }
 
         return try {
-            val filterQuery =
-                lastCheckTime?.let {
-                    val formatter = DateTimeFormatter.ISO_INSTANT
-                    "&\$filter=receivedDateTime ge ${formatter.format(it)}"
-                } ?: ""
-
             val response =
                 webClient
                     .get()
-                    .uri("https://graph.microsoft.com/v1.0/me/messages?\$top=50$filterQuery")
+                    .uri("https://graph.microsoft.com/v1.0/me/messages?\$top=500")
                     .header(HttpHeaders.AUTHORIZATION, "Bearer ${account.accessToken}")
                     .retrieve()
                     .awaitBody<GraphMessagesResponse>()

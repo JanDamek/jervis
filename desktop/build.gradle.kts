@@ -24,6 +24,10 @@ dependencies {
     implementation("org.springframework:spring-webflux")
     implementation("io.projectreactor.kotlin:reactor-kotlin-extensions")
 
+    // JSON (Jackson) for REST client
+    implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
+    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
+
     // Serialization
     implementation(libs.kotlinx.serialization.json)
 
