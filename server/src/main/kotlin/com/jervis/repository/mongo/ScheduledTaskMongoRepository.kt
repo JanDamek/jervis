@@ -1,7 +1,7 @@
 package com.jervis.repository.mongo
 
 import com.jervis.domain.task.ScheduledTaskStatusEnum
-import com.jervis.entity.mongo.ScheduledTaskDocument
+import com.jervis.entity.ScheduledTaskDocument
 import kotlinx.coroutines.flow.Flow
 import org.bson.types.ObjectId
 import org.springframework.data.mongodb.repository.Query

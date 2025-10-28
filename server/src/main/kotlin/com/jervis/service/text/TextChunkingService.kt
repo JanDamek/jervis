@@ -9,16 +9,22 @@ import org.springframework.stereotype.Service
 
 @Service
 class TextChunkingService(
-    private val textChunkingProperties: TextChunkingProperties,
+    textChunkingProperties: TextChunkingProperties,
 ) {
-    fun splitText(text: String): List<TextSegment> {
-        if (text.isBlank()) return emptyList()
+    private val maxChars: Int =
+        (textChunkingProperties.maxTokens * textChunkingProperties.charsPerToken).toInt()
 
-        val maxTokens = textChunkingProperties.maxTokens
-        val overlapTokens = (maxTokens * textChunkingProperties.overlapPercentage) / 100
+    private val overlapChars: Int =
+        (maxChars * textChunkingProperties.overlapPercentage) / 100
 
-        val splitter: DocumentSplitter = DocumentSplitters.recursive(maxTokens, overlapTokens)
-        val document = Document.from(text)
-        return splitter.split(document)
-    }
+    private val splitter: DocumentSplitter =
+        DocumentSplitters.recursive(maxChars, overlapChars)
+
+    fun splitText(text: String): List<TextSegment> =
+        text
+            .takeIf { it.isNotBlank() }
+            ?.let { splitDocument(it) }
+            ?: emptyList()
+
+    private fun splitDocument(text: String): List<TextSegment> = Document.from(text).let { splitter.split(it) }
 }

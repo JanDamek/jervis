@@ -21,12 +21,23 @@ import org.springframework.web.reactive.function.client.WebClient
 
 @Service
 class OllamaClient(
-    @Qualifier("ollamaWebClient") private val webClient: WebClient,
+    @Qualifier("ollamaWebClient") private val primaryWebClient: WebClient,
+    @Qualifier("ollamaQualifierWebClient") private val qualifierWebClient: WebClient,
     private val promptsConfiguration: PromptsConfiguration,
 ) : ProviderClient {
     private val logger = KotlinLogging.logger {}
 
     override val provider: ModelProvider = ModelProvider.OLLAMA
+
+    /**
+     * Select appropriate WebClient based on ModelType from prompt config.
+     * QUALIFIER type uses separate endpoint (CPU server), others use primary (GPU server).
+     */
+    private fun selectWebClient(prompt: PromptConfigBase): WebClient =
+        when (prompt.modelParams.modelType) {
+            com.jervis.domain.model.ModelType.QUALIFIER -> qualifierWebClient
+            else -> primaryWebClient
+        }
 
     override suspend fun call(
         model: String,
@@ -36,11 +47,26 @@ class OllamaClient(
         prompt: PromptConfigBase,
         estimatedTokens: Int,
     ): LlmResponse {
-        // Use streaming implementation and collect the full response
+        val webClient = selectWebClient(prompt)
+        return callWithWebClient(webClient, model, systemPrompt, userPrompt, config, prompt, estimatedTokens)
+    }
+
+    /**
+     * Internal implementation with explicit WebClient for reuse by OllamaQualifierClient
+     */
+    suspend fun callWithWebClient(
+        webClient: WebClient,
+        model: String,
+        systemPrompt: String?,
+        userPrompt: String,
+        config: ModelsProperties.ModelDetail,
+        prompt: PromptConfigBase,
+        estimatedTokens: Int,
+    ): LlmResponse {
         val responseBuilder = StringBuilder()
         var finalMetadata: Map<String, Any> = emptyMap()
 
-        callWithStreaming(model, systemPrompt, userPrompt, config, prompt, estimatedTokens, null)
+        callWithStreamingWebClient(webClient, model, systemPrompt, userPrompt, config, prompt, estimatedTokens)
             .collect { chunk ->
                 responseBuilder.append(chunk.content)
                 if (chunk.isComplete) {
@@ -66,13 +92,29 @@ class OllamaClient(
         prompt: PromptConfigBase,
         estimatedTokens: Int,
         debugSessionId: String?,
+    ): Flow<StreamChunk> {
+        val webClient = selectWebClient(prompt)
+        return callWithStreamingWebClient(webClient, model, systemPrompt, userPrompt, config, prompt, estimatedTokens)
+    }
+
+    /**
+     * Internal implementation with explicit WebClient for reuse by OllamaQualifierClient
+     */
+    fun callWithStreamingWebClient(
+        webClient: WebClient,
+        model: String,
+        systemPrompt: String?,
+        userPrompt: String,
+        config: ModelsProperties.ModelDetail,
+        prompt: PromptConfigBase,
+        estimatedTokens: Int,
     ): Flow<StreamChunk> =
         flow {
             val creativityConfig = getCreativityConfig(prompt)
             val options = buildOptions(creativityConfig, config, estimatedTokens)
             val requestBody = buildRequestBody(model, userPrompt, systemPrompt, options)
 
-            logger.debug { "Sending streaming request to ollama: $requestBody" }
+            logger.debug { "Sending streaming request to ollama (${prompt.modelParams.modelType}): $requestBody" }
 
             val responseFlow =
                 webClient

@@ -1,11 +1,7 @@
 package com.jervis.service.rag.pipeline
 
-import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.domain.context.TaskContext
-import com.jervis.service.gateway.core.LlmGateway
-import com.jervis.service.gateway.processing.TokenEstimationService
+import com.jervis.domain.plan.Plan
 import com.jervis.service.rag.RagService
-import com.jervis.service.rag.domain.AnswerResponse
 import com.jervis.service.rag.domain.DocumentChunk
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
@@ -15,20 +11,15 @@ import org.springframework.stereotype.Component
  * Combines all filtered chunks from multiple queries into a comprehensive response.
  */
 @Component
-class LlmContentSynthesisStrategy(
-    private val llmGateway: LlmGateway,
-    private val tokenEstimationService: TokenEstimationService,
-) : ContentSynthesisStrategy {
+class LlmContentSynthesisStrategy : ContentSynthesisStrategy {
     companion object {
         private val logger = KotlinLogging.logger {}
-        private const val MAX_TOKENS_LIMIT = 128000
-        private const val RESPONSE_RESERVE_TOKENS = 10000
     }
 
     override suspend fun synthesize(
         queryResults: List<RagService.QueryResult>,
         originalQuery: String,
-        context: TaskContext,
+        plan: Plan,
     ): String {
         logger.info { "SYNTHESIS: Synthesizing ${queryResults.size} query results" }
 
@@ -38,76 +29,68 @@ class LlmContentSynthesisStrategy(
             return "No relevant information found in the knowledge base for this query."
         }
 
-        val content = buildContentWithinTokenLimit(allFilteredChunks, originalQuery)
-        return requestSynthesis(content, originalQuery, context)
+        logger.info { "SYNTHESIS: Found ${allFilteredChunks.size} relevant chunks, formatting for LLM" }
+        return formatChunksForLlm(allFilteredChunks)
     }
 
-    private fun buildContentWithinTokenLimit(
-        chunks: List<DocumentChunk>,
-        query: String,
-    ): String {
-        val availableTokens = MAX_TOKENS_LIMIT - estimateTokens(query) - RESPONSE_RESERVE_TOKENS
+    private fun formatChunksForLlm(chunks: List<DocumentChunk>): String =
+        buildString {
+            append("KB_RESULTS (${chunks.size} chunks, relevance-sorted):\n")
 
-        data class ChunkAccumulator(
-            val content: List<String>,
-            val tokens: Int,
-            val shouldStop: Boolean,
-        )
+            chunks.sortedByDescending { it.score }.forEachIndexed { index, chunk ->
+                append("\n[${index + 1}]")
 
-        val result =
-            chunks
-                .withIndex()
-                .fold(ChunkAccumulator(emptyList(), 0, false)) { acc, (index, chunk) ->
-                    acc.shouldStop.takeIf { it }?.let { acc } ?: run {
-                        val chunkContent = formatChunk(chunk, index)
-                        val chunkTokens = estimateTokens(chunkContent)
-                        val newTokens = acc.tokens + chunkTokens
-
-                        (newTokens > availableTokens).takeIf { it }?.let {
-                            logger.warn { "Token limit reached: including ${acc.content.size}/${chunks.size} chunks" }
-                            acc.copy(shouldStop = true)
-                        } ?: acc.copy(
-                            content = acc.content + chunkContent,
-                            tokens = newTokens,
-                        )
-                    }
+                val sources = extractRelevantMetadata(chunk.metadata)
+                if (sources.isNotEmpty()) {
+                    val sourceStr = sources.entries.joinToString("; ") { "${it.key}=${it.value}" }
+                    append(" src={$sourceStr}")
                 }
+                append("\n")
+                append(chunk.content.trim())
+                append("\n")
+            }
+        }
 
-        require(result.content.isNotEmpty()) { "No chunks fit within token limit" }
-        return result.content.joinToString("\n\n${"=".repeat(50)}\n\n")
-    }
+    private fun extractRelevantMetadata(metadata: Map<String, String>): Map<String, String> =
+        buildMap {
+            // Type discrimination with specific formatting
+            metadata["ragSourceType"]?.let { type ->
+                when (type) {
+                    "EMAIL" -> put("type", "email")
+                    "EMAIL_ATTACHMENT" -> {
+                        val fileName = metadata["fileName"] ?: "unknown"
+                        val index = metadata["indexInParent"] ?: "?"
+                        put("type", "attachment[$index]:$fileName")
+                    }
 
-    private fun formatChunk(
-        chunk: DocumentChunk,
-        index: Int,
-    ): String =
-        "Result ${index + 1}:\n" +
-            "Content: ${chunk.content}\n" +
-            "Score: ${String.format("%.3f", chunk.score)}\n" +
-            "Source: ${chunk.metadata["path"] ?: "unknown"}"
+                    "GIT_HISTORY" -> put("type", "commit")
+                    "MEETING_TRANSCRIPT" -> put("type", "meeting")
+                    "AUDIO_TRANSCRIPT" -> put("type", "audio")
+                    "AGENT" -> put("type", "conversation")
+                    "DOCUMENTATION" -> put("type", "doc")
+                    "JOERN", "CODE_FALLBACK" -> put("type", "code")
+                    else -> put("type", type.lowercase().replace("_", "-"))
+                }
+            }
 
-    private suspend fun requestSynthesis(
-        content: String,
-        query: String,
-        context: TaskContext,
-    ): String {
-        val mappingValue =
-            mapOf(
-                "originalQuery" to query,
-                "clusteredContent" to content,
-                "contextInfo" to "${context.clientDocument.name} - ${context.projectDocument.name}",
-            )
+            // Universal context metadata
+            metadata["from"]?.let { put("from", it) }
+            metadata["subject"]?.let { put("subj", it.take(50)) }
+            metadata["timestamp"]?.let { put("when", it.substringBefore('T')) }
 
-        val response =
-            llmGateway.callLlm(
-                type = PromptTypeEnum.KNOWLEDGE_FINALIZE_ANSWER,
-                responseSchema = AnswerResponse(),
-                mappingValue = mappingValue,
-                quick = false,
-            )
+            // Relationship metadata
+            metadata["totalSiblings"]?.takeIf { it != "0" }?.let { put("related", it) }
+            metadata["indexInParent"]?.let { put("index", it) }
+            metadata["parentRef"]?.let { put("parent", it.take(12)) }
 
-        return response.result.answer
-    }
+            // Source references
+            metadata["sourceUri"]?.let { put("uri", it) }
+            metadata["fileName"]?.let { put("file", it) }
 
-    private fun estimateTokens(text: String): Int = tokenEstimationService.estimateTokens(text)
+            // Code-specific
+            metadata["gitCommitHash"]?.let { put("commit", it.take(8)) }
+            metadata["className"]?.let { put("class", it) }
+            metadata["methodName"]?.let { put("method", it) }
+            metadata["language"]?.let { put("lang", it) }
+        }
 }

@@ -5,13 +5,11 @@ import com.jervis.dto.ClientDto
 import com.jervis.dto.ClientProjectLinkDto
 import com.jervis.dto.GitCredentialsDto
 import com.jervis.dto.ProjectDto
-import com.jervis.service.IClientGitConfigurationService
 import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
 import com.jervis.service.IEmailAccountService
-import com.jervis.service.IIndexingService
+import com.jervis.service.IGitConfigurationService
 import com.jervis.service.IProjectService
-import com.jervis.ui.component.ClientSettingsComponents
 import com.jervis.ui.component.EmailConfigPanel
 import com.jervis.ui.component.GitSetupPanel
 import kotlinx.coroutines.CoroutineScope
@@ -45,10 +43,9 @@ import javax.swing.border.EmptyBorder
  */
 class ClientsWindow(
     private val clientService: IClientService,
-    private val clientGitConfigurationService: IClientGitConfigurationService,
+    private val gitConfigurationService: IGitConfigurationService,
     private val projectService: IProjectService,
     private val linkService: IClientProjectLinkService,
-    private val indexingService: IIndexingService,
     private val emailAccountService: IEmailAccountService,
 ) : JFrame("Client Management") {
     companion object {
@@ -70,7 +67,6 @@ class ClientsWindow(
     private val addProjectBtn = JButton("Add New Project…")
     private val assignExistingBtn = JButton("Assign Existing Projects…")
     private val dependenciesBtn = JButton("Dependencies…")
-    private val reindexBtn = JButton("Reindex Client Projects")
 
     private val projectsList = JList<ProjectDto>()
     private val projectsModel = javax.swing.DefaultListModel<ProjectDto>()
@@ -191,7 +187,6 @@ class ClientsWindow(
                 add(addProjectBtn)
                 add(assignExistingBtn)
                 add(dependenciesBtn)
-                add(reindexBtn)
             }
 
         val formWrapper =
@@ -244,7 +239,6 @@ class ClientsWindow(
         addProjectBtn.addActionListener { showAddProjectDialog() }
         assignExistingBtn.addActionListener { showAssignExistingProjectsDialog() }
         dependenciesBtn.addActionListener { showClientDependenciesDialog() }
-        reindexBtn.addActionListener { reindexClientProjects() }
         removeProjectBtn.addActionListener { removeSelectedProjectFromClient() }
         toggleDisableForClientBtn.addActionListener { toggleDisableForClientForSelectedProject() }
         toggleAnonymizeForClientBtn.addActionListener { toggleAnonymizeForClientForSelectedProject() }
@@ -927,7 +921,7 @@ class ClientsWindow(
                     if (isSshUrl(gitSetupRequest.monoRepoUrl)) {
                         val testResponse =
                             withContext(Dispatchers.IO) {
-                                clientGitConfigurationService.testConnection(createdClient.id, gitSetupRequest)
+                                gitConfigurationService.testConnection(createdClient.id, gitSetupRequest)
                             }
                         val success = (testResponse.body?.get("success") as? Boolean) == true
                         if (!success) {
@@ -943,7 +937,7 @@ class ClientsWindow(
 
                     // Then setup Git configuration with credentials
                     withContext(Dispatchers.IO) {
-                        clientGitConfigurationService.setupGitConfiguration(createdClient.id, gitSetupRequest)
+                        gitConfigurationService.setupGitConfiguration(createdClient.id, gitSetupRequest)
                     }
 
                     logger.info { "Git configuration saved for new client" }
@@ -980,7 +974,7 @@ class ClientsWindow(
             try {
                 existingCredentials =
                     withContext(Dispatchers.IO) {
-                        clientGitConfigurationService.getGitCredentials(client.id)
+                        gitConfigurationService.getGitCredentials(client.id)
                     }
 
                 // Create and show dialog with credentials
@@ -1017,7 +1011,7 @@ class ClientsWindow(
                     if (isSshUrl(gitSetupRequest.monoRepoUrl)) {
                         val testResponse =
                             withContext(Dispatchers.IO) {
-                                clientGitConfigurationService.testConnection(client.id, gitSetupRequest)
+                                gitConfigurationService.testConnection(client.id, gitSetupRequest)
                             }
                         val success = (testResponse.body?.get("success") as? Boolean) == true
                         if (!success) {
@@ -1033,7 +1027,7 @@ class ClientsWindow(
 
                     // First setup Git configuration with credentials
                     withContext(Dispatchers.IO) {
-                        clientGitConfigurationService.setupGitConfiguration(client.id, gitSetupRequest)
+                        gitConfigurationService.setupGitConfiguration(client.id, gitSetupRequest)
                     }
 
                     logger.info { "Git configuration saved successfully" }
@@ -1064,66 +1058,6 @@ class ClientsWindow(
         }
     }
 
-    private fun reindexClientProjects() {
-        val clientId =
-            selectedClientId ?: run {
-                JOptionPane.showMessageDialog(this, "Vyberte nejprve klienta.", "Info", JOptionPane.INFORMATION_MESSAGE)
-                return
-            }
-
-        val currentClient =
-            this.currentClient ?: run {
-                JOptionPane.showMessageDialog(this, "Klient nebyl nalezen.", "Chyba", JOptionPane.ERROR_MESSAGE)
-                return
-            }
-
-        val confirm =
-            JOptionPane.showConfirmDialog(
-                this,
-                "Opravdu chcete reindexovat všechny projekty klienta '${currentClient.name}'?\nTato operace může trvat několik minut.",
-                "Potvrzení reindexace",
-                JOptionPane.YES_NO_OPTION,
-            )
-
-        if (confirm != JOptionPane.YES_OPTION) return
-
-        // Disable the button to prevent multiple clicks
-        reindexBtn.isEnabled = false
-        reindexBtn.text = "Probíhá reindexace..."
-
-        CoroutineScope(Dispatchers.Main).launch {
-            try {
-                withContext(Dispatchers.IO) {
-                    val links = linkService.listForClient(clientId)
-                    val allProjects = projectService.getAllProjects()
-                    val clientProjects =
-                        allProjects.filter { project ->
-                            links.any { link -> link.projectId == project.id && !link.isDisabled }
-                        }
-                    indexingService.indexProjectsForClient(clientProjects, currentClient.name)
-                }
-
-                JOptionPane.showMessageDialog(
-                    this@ClientsWindow,
-                    "Reindexace projektů klienta '${currentClient.name}' byla úspěšně dokončena.",
-                    "Reindexace dokončena",
-                    JOptionPane.INFORMATION_MESSAGE,
-                )
-            } catch (e: Exception) {
-                JOptionPane.showMessageDialog(
-                    this@ClientsWindow,
-                    "Chyba při reindexaci: ${e.message}",
-                    "Chyba reindexace",
-                    JOptionPane.ERROR_MESSAGE,
-                )
-            } finally {
-                // Re-enable the button
-                reindexBtn.isEnabled = true
-                reindexBtn.text = "Reindexace projektů klienta"
-            }
-        }
-    }
-
     /**
      * Dialog for creating a new client with comprehensive settings
      */
@@ -1147,12 +1081,6 @@ class ClientsWindow(
                 toolTipText = "Pokud je zaškrtnuto, klient je dočasně zakázán"
             }
 
-        private val guidelinesPanel = ClientSettingsComponents.createGuidelinesPanel()
-        private val reviewPolicyPanel = ClientSettingsComponents.createReviewPolicyPanel()
-        private val formattingPanel = ClientSettingsComponents.createFormattingPanel()
-        private val secretsPolicyPanel = ClientSettingsComponents.createSecretsPolicyPanel()
-        private val anonymizationPanel = ClientSettingsComponents.createAnonymizationPanel()
-        private val inspirationPolicyPanel = ClientSettingsComponents.createInspirationPolicyPanel()
         private val gitSetupPanel = GitSetupPanel()
 
         private val okButton = JButton("Create Client")
@@ -1180,24 +1108,6 @@ class ClientsWindow(
             // Basic Information Tab
             val basicPanel = createBasicInfoPanel()
             tabbedPane.addTab("Základní informace", basicPanel)
-
-            // Guidelines Tab
-            tabbedPane.addTab("Coding Guidelines", JScrollPane(guidelinesPanel))
-
-            // Review Policy Tab
-            tabbedPane.addTab("Review Policy", JScrollPane(reviewPolicyPanel))
-
-            // Formatting Tab
-            tabbedPane.addTab("Formatting", JScrollPane(formattingPanel))
-
-            // Secrets Policy Tab
-            tabbedPane.addTab("Secrets Policy", JScrollPane(secretsPolicyPanel))
-
-            // Anonymization Tab
-            tabbedPane.addTab("Anonymization", JScrollPane(anonymizationPanel))
-
-            // Inspiration Policy Tab
-            tabbedPane.addTab("Inspiration Policy", JScrollPane(inspirationPolicyPanel))
 
             // Git Configuration Tab
             tabbedPane.addTab("Git Configuration", JScrollPane(gitSetupPanel))
@@ -1309,12 +1219,6 @@ class ClientsWindow(
                         id = GLOBAL_ID_STRING,
                         name = name,
                         fullDescription = description,
-                        defaultCodingGuidelines = guidelinesPanel.getGuidelines(),
-                        defaultReviewPolicy = reviewPolicyPanel.getReviewPolicy(),
-                        defaultFormatting = formattingPanel.getFormatting(),
-                        defaultSecretsPolicy = secretsPolicyPanel.getSecretsPolicy(),
-                        defaultAnonymization = anonymizationPanel.getAnonymization(),
-                        defaultInspirationPolicy = inspirationPolicyPanel.getInspirationPolicy(),
                         gitProvider = gitRequest.gitProvider,
                         gitAuthType = gitRequest.gitAuthType,
                         monoRepoUrl = gitRequest.monoRepoUrl,
@@ -1346,13 +1250,6 @@ class ClientsWindow(
         private val existingCredentials: GitCredentialsDto?,
         private val emailAccountService: IEmailAccountService,
     ) : JDialog(owner, "Client Settings: ${client.name}", true) {
-        private val guidelinesPanel = ClientSettingsComponents.createGuidelinesPanel(client.defaultCodingGuidelines)
-        private val reviewPolicyPanel = ClientSettingsComponents.createReviewPolicyPanel(client.defaultReviewPolicy)
-        private val formattingPanel = ClientSettingsComponents.createFormattingPanel(client.defaultFormatting)
-        private val secretsPolicyPanel = ClientSettingsComponents.createSecretsPolicyPanel(client.defaultSecretsPolicy)
-        private val anonymizationPanel = ClientSettingsComponents.createAnonymizationPanel(client.defaultAnonymization)
-        private val inspirationPolicyPanel =
-            ClientSettingsComponents.createInspirationPolicyPanel(client.defaultInspirationPolicy)
         private val gitSetupPanel =
             GitSetupPanel(
                 initialProvider = client.gitProvider,
@@ -1393,24 +1290,6 @@ class ClientsWindow(
             panel.border = EmptyBorder(16, 16, 16, 16)
 
             val tabbedPane = javax.swing.JTabbedPane()
-
-            // Guidelines Tab
-            tabbedPane.addTab("Coding Guidelines", JScrollPane(guidelinesPanel))
-
-            // Review Policy Tab
-            tabbedPane.addTab("Review Policy", JScrollPane(reviewPolicyPanel))
-
-            // Formatting Tab
-            tabbedPane.addTab("Formatting", JScrollPane(formattingPanel))
-
-            // Secrets Policy Tab
-            tabbedPane.addTab("Secrets Policy", JScrollPane(secretsPolicyPanel))
-
-            // Anonymization Tab
-            tabbedPane.addTab("Anonymization", JScrollPane(anonymizationPanel))
-
-            // Inspiration Policy Tab
-            tabbedPane.addTab("Inspiration Policy", JScrollPane(inspirationPolicyPanel))
 
             // Git Configuration Tab
             tabbedPane.addTab("Git Configuration", JScrollPane(gitSetupPanel))
@@ -1457,12 +1336,6 @@ class ClientsWindow(
 
                 val updatedClient =
                     client.copy(
-                        defaultCodingGuidelines = guidelinesPanel.getGuidelines(),
-                        defaultReviewPolicy = reviewPolicyPanel.getReviewPolicy(),
-                        defaultFormatting = formattingPanel.getFormatting(),
-                        defaultSecretsPolicy = secretsPolicyPanel.getSecretsPolicy(),
-                        defaultAnonymization = anonymizationPanel.getAnonymization(),
-                        defaultInspirationPolicy = inspirationPolicyPanel.getInspirationPolicy(),
                         gitProvider = gitRequest.gitProvider,
                         gitAuthType = gitRequest.gitAuthType,
                         monoRepoUrl = gitRequest.monoRepoUrl,

@@ -1,6 +1,6 @@
 package com.jervis.service.client
 
-import com.jervis.entity.mongo.ClientDocument
+import com.jervis.entity.ClientDocument
 import com.jervis.repository.mongo.ClientMongoRepository
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
@@ -79,12 +79,6 @@ class ClientService(
                 description = client.description,
                 shortDescription = client.shortDescription,
                 fullDescription = client.fullDescription,
-                defaultCodingGuidelines = client.defaultCodingGuidelines,
-                defaultReviewPolicy = client.defaultReviewPolicy,
-                defaultFormatting = client.defaultFormatting,
-                defaultSecretsPolicy = client.defaultSecretsPolicy,
-                defaultAnonymization = client.defaultAnonymization,
-                defaultInspirationPolicy = client.defaultInspirationPolicy,
                 defaultLanguageEnum = client.defaultLanguageEnum,
                 audioPath = client.audioPath,
                 dependsOnProjects = client.dependsOnProjects,

@@ -2,18 +2,14 @@ package com.jervis.service.indexing
 
 import com.jervis.configuration.AudioMonitoringProperties
 import com.jervis.configuration.AudioTranscriptionProperties
-import com.jervis.domain.IndexingStepStatusEnum
-import com.jervis.domain.IndexingStepTypeEnum
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
-import com.jervis.entity.mongo.ClientDocument
-import com.jervis.entity.mongo.ProjectDocument
+import com.jervis.entity.ClientDocument
+import com.jervis.entity.ProjectDocument
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.gateway.WhisperGateway
-import com.jervis.service.indexing.monitoring.IndexingMonitorService
-import com.jervis.service.rag.RagIndexingStatusService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -45,9 +41,6 @@ class AudioTranscriptIndexingService(
     private val whisperGateway: WhisperGateway,
     private val embeddingGateway: EmbeddingGateway,
     private val vectorStorage: VectorStorageRepository,
-    private val ragIndexingStatusService: RagIndexingStatusService,
-    private val historicalVersioningService: HistoricalVersioningService,
-    private val indexingMonitorService: IndexingMonitorService,
     private val audioProps: AudioTranscriptionProperties,
     private val audioMonitoringProps: AudioMonitoringProperties,
 ) {
@@ -99,22 +92,20 @@ class AudioTranscriptIndexingService(
             logger.info { "Starting audio indexing for project: ${project.name}" }
             logger.info { "Starting audio transcript indexing for project: ${project.name}" }
 
-            val audioPath = project.overrides.audioMonitoring?.audioPath
-            if (audioPath.isNullOrBlank()) {
-                logger.info { "No audio path configured for project: ${project.name}" }
-                return@withContext AudioIndexingResult(0, 0, 0, 0, 0, 0, 0)
-            }
+            // TODO: Audio monitoring was in project.overrides which is removed
+            // Audio monitoring configuration needs to be redesigned
+            logger.warn { "Audio monitoring configuration removed - needs redesign" }
+            return@withContext AudioIndexingResult(0, 0, 0, 0, 0, 0, 0)
 
-            val projectPathString = project.projectPath
-            val projectPath = if (projectPathString != null) Paths.get(projectPathString) else null
-
+            /* DISABLED - needs redesign without project.overrides
             indexAudioDirectory(
                 audioPath = audioPath,
                 projectId = project.id,
                 clientId = project.clientId,
-                projectPath = projectPath,
+                projectPath = null,
                 scope = Scope.PROJECT,
             )
+             */
         }
 
     suspend fun indexClientAudioFiles(
@@ -142,22 +133,9 @@ class AudioTranscriptIndexingService(
     ): AudioIndexingResult {
         val audioDir = Paths.get(audioPath)
         if (!Files.exists(audioDir)) {
-            projectId?.let {
-                indexingMonitorService.updateStepProgress(
-                    it,
-                    IndexingStepTypeEnum.AUDIO_TRANSCRIPTS,
-                    IndexingStepStatusEnum.FAILED,
-                    errorMessage = "Audio path does not exist: $audioPath",
-                    logs = listOf("Audio path does not exist: $audioPath"),
-                )
-            }
             logger.warn { "Audio path does not exist: $audioPath" }
             return AudioIndexingResult(0, 0, 1, 0, 0, 0, 1)
         }
-
-        val gitCommitHash =
-            projectPath?.let { historicalVersioningService.getCurrentGitCommitHash(it) }
-                ?: "audio-${System.currentTimeMillis()}"
 
         var processedFiles = 0
         var skippedFiles = 0
@@ -168,53 +146,23 @@ class AudioTranscriptIndexingService(
             val audioFiles = findSupportedAudioFiles(audioDir)
 
             logger.info { "Found ${audioFiles.size} audio files to process in ${scope.label} scope" }
-            projectId?.let {
-                indexingMonitorService.addStepLog(
-                    it,
-                    IndexingStepTypeEnum.MEETING_TRANSCRIPTS,
-                    "Found ${audioFiles.size} audio files to transcribe",
-                )
-            }
 
-            for ((index, audioFile) in audioFiles.withIndex()) {
+            for ((_, audioFile) in audioFiles.withIndex()) {
                 val startTime = System.currentTimeMillis()
                 try {
                     val relativePath = audioDir.relativize(audioFile).toString()
-                    projectId?.let {
-                        indexingMonitorService.addStepLog(
-                            it,
-                            IndexingStepTypeEnum.MEETING_TRANSCRIPTS,
-                            "Processing audio file (${index + 1}/${audioFiles.size}): $relativePath",
-                        )
-                    }
 
-                    val fileBytes = Files.readAllBytes(audioFile)
+                    Files.readAllBytes(audioFile)
 
-                    val projectOrClientId = projectId ?: clientId
-                    val virtualPath = "audio/${scope.label}/$relativePath"
+                    "audio/${scope.label}/$relativePath"
 
-                    val shouldIndex =
-                        ragIndexingStatusService.shouldIndexFile(
-                            projectId = projectOrClientId,
-                            filePath = virtualPath,
-                            gitCommitHash = gitCommitHash,
-                            fileContent = fileBytes,
-                        )
+                    val shouldIndex = false // TODO implement vectorstore indexing service
 
                     if (!shouldIndex) {
                         skippedFiles++
                         logger.debug { "Skipping already indexed audio file: $relativePath" }
                         continue
                     }
-
-                    ragIndexingStatusService.startIndexing(
-                        projectId = projectOrClientId,
-                        filePath = virtualPath,
-                        gitCommitHash = gitCommitHash,
-                        fileContent = fileBytes,
-                        language = AUDIO_MODULE,
-                        module = AUDIO_MODULE,
-                    )
 
                     val transcription =
                         whisperGateway.transcribeAudioFile(
@@ -223,11 +171,17 @@ class AudioTranscriptIndexingService(
                             language = audioProps.language,
                         )
 
+                    val sourceId =
+                        when (scope) {
+                            Scope.PROJECT -> projectId?.toHexString() ?: "unknown"
+                            Scope.CLIENT -> clientId.toHexString()
+                        }
+
                     val metadata =
                         AudioMetadata(
                             fileName = audioFile.fileName.toString(),
                             filePath = audioFile,
-                            source = "${scope.label}:$projectOrClientId",
+                            source = "${scope.label}:$sourceId",
                             format = audioFile.extension,
                             durationSeconds = transcription.duration,
                             language = transcription.language,
@@ -245,12 +199,11 @@ class AudioTranscriptIndexingService(
 
                             val ragDocument =
                                 RagDocument(
-                                    projectId = projectOrClientId,
+                                    projectId = projectId,
                                     clientId = clientId,
                                     ragSourceType = RagSourceType.AUDIO_TRANSCRIPT,
                                     summary = sentence,
                                     language = metadata.language ?: UNKNOWN,
-                                    gitCommitHash = gitCommitHash,
                                     chunkId = sentenceIndex,
                                     symbolName = "audio-${audioFile.nameWithoutExtension}",
                                 )
@@ -267,23 +220,8 @@ class AudioTranscriptIndexingService(
                     processedFiles++
                     val elapsedTime = (System.currentTimeMillis() - startTime) / 1000
                     totalTranscriptionTime += elapsedTime
-
-                    projectId?.let {
-                        indexingMonitorService.addStepLog(
-                            it,
-                            IndexingStepTypeEnum.MEETING_TRANSCRIPTS,
-                            "✓ Successfully transcribed and indexed: $relativePath (${sentences.size} sentences, ${elapsedTime}s)",
-                        )
-                    }
                 } catch (e: Exception) {
-                    val relativePath = audioDir.relativize(audioFile).toString()
-                    projectId?.let {
-                        indexingMonitorService.addStepLog(
-                            it,
-                            IndexingStepTypeEnum.MEETING_TRANSCRIPTS,
-                            "✗ Failed to process audio file: $relativePath - ${e.message}",
-                        )
-                    }
+                    audioDir.relativize(audioFile).toString()
                     logger.warn(e) { "Failed to process audio file: ${audioFile.pathString}" }
                     errorFiles++
                 }

@@ -1,7 +1,6 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.service.agent.planner.Planner
 import com.jervis.service.mcp.McpTool
@@ -17,7 +16,6 @@ class PlanningCreatePlanTool(
     override val name: PromptTypeEnum = PromptTypeEnum.PLANNING_CREATE_PLAN_TOOL
 
     override suspend fun execute(
-        context: TaskContext,
         plan: Plan,
         taskDescription: String,
         stepContext: String,
@@ -26,7 +24,7 @@ class PlanningCreatePlanTool(
             return ToolResult.error("Task description cannot be empty")
         }
 
-        val nextSteps = planner.suggestNextSteps(context, plan)
+        val nextSteps = planner.suggestNextSteps(plan)
 
         return ToolResult.success(
             toolName = "PLANNER",

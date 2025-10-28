@@ -1,31 +1,30 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.domain.context.TaskContext
 import com.jervis.domain.model.ModelType
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
-import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
-import kotlinx.serialization.Serializable
+import com.jervis.service.text.TextChunkingService
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.time.Instant
 
 /**
  * Knowledge Store tool for storing content into the vector database.
- * Supports both client/project-scoped and global insertion modes.
+ * This is a PARAMETRIC tool (NO LLM) - accepts PLAIN TEXT directly.
+ * Uses TextChunkingService for automatic chunking of large content.
  */
 @Service
 class KnowledgeStoreTool(
     private val embeddingGateway: EmbeddingGateway,
     private val vectorStorage: VectorStorageRepository,
-    private val llmGateway: LlmGateway,
+    private val textChunkingService: TextChunkingService,
     override val promptRepository: PromptRepository,
 ) : McpTool {
     companion object {
@@ -34,93 +33,76 @@ class KnowledgeStoreTool(
 
     override val name: PromptTypeEnum = PromptTypeEnum.KNOWLEDGE_STORE_TOOL
 
-    @Serializable
-    data class KnowledgeStoreParams(
-        val content: String = "",
-        val embedding: String = "text",
-        val global: Boolean? = null,
-    )
-
-    private suspend fun parseTaskDescription(
-        taskDescription: String,
-        context: TaskContext,
-        stepContext: String = "",
-    ): KnowledgeStoreParams {
-        val llmResponse =
-            llmGateway.callLlm(
-                type = PromptTypeEnum.KNOWLEDGE_STORE_TOOL,
-                mappingValue =
-                    mapOf(
-                        "taskDescription" to taskDescription,
-                        "stepContext" to stepContext,
-                    ),
-                quick = context.quick,
-                responseSchema = KnowledgeStoreParams(),
-            )
-        return llmResponse.result
-    }
-
     override suspend fun execute(
-        context: TaskContext,
         plan: Plan,
         taskDescription: String,
         stepContext: String,
     ): ToolResult {
-        val parsed = parseTaskDescription(taskDescription, context, stepContext)
+        logger.info { "KNOWLEDGE_STORE_START: Storing content (${taskDescription.length} chars)" }
 
-        return executeKnowledgeStoreOperation(parsed, context)
+        if (taskDescription.isBlank()) {
+            return ToolResult.error("Content cannot be blank")
+        }
+
+        return executeKnowledgeStoreOperation(taskDescription, plan)
     }
 
     private suspend fun executeKnowledgeStoreOperation(
-        params: KnowledgeStoreParams,
-        context: TaskContext,
+        content: String,
+        plan: Plan,
     ): ToolResult {
         logger.debug {
-            "KNOWLEDGE_STORE_START: Storing content with length=${params.content.length}, embedding=${params.embedding}"
+            "KNOWLEDGE_STORE_OPERATION: content_length=${content.length}"
         }
 
-        val modelType =
-            when (params.embedding.lowercase()) {
-                "text" -> ModelType.EMBEDDING_TEXT
-                "code" -> ModelType.EMBEDDING_CODE
-                else -> {
-                    logger.error { "KNOWLEDGE_STORE_UNSUPPORTED_EMBEDDING: ${params.embedding}" }
-                    return ToolResult.error("Unsupported embedding type: ${params.embedding}")
-                }
-            }
+        val modelType = ModelType.EMBEDDING_TEXT
 
-        logger.debug { "KNOWLEDGE_STORE_MODEL_TYPE: Using modelType=$modelType" }
+        // Chunk the content if it's large
+        val chunks = textChunkingService.splitText(content).map { it.text() }
 
-        val embedding = embeddingGateway.callEmbedding(modelType, params.content)
+        logger.info { "KNOWLEDGE_STORE_CHUNKS: Processing ${chunks.size} chunk(s)" }
 
-        logger.debug { "KNOWLEDGE_STORE_EMBEDDING_SUCCESS: Generated embedding with ${embedding.size} dimensions" }
-
+        val storedIds = mutableListOf<String>()
         val sourceType = RagSourceType.AGENT
 
-        // Create RAG document with structured metadata
-        // Note: Global storage is handled at the vector storage level
-        val ragDocument =
-            RagDocument(
-                projectId = context.projectDocument.id,
-                ragSourceType = sourceType,
-                summary = params.content,
-                clientId = context.clientDocument.id,
-                language = null,
-                packageName = null,
-                className = null,
-                methodName = null,
-                createdAt = Instant.now(),
-            )
+        chunks.forEach { chunk ->
+            // Generate embedding for this chunk
+            val embedding = embeddingGateway.callEmbedding(modelType, chunk)
 
-        // Store the document
-        logger.debug { "KNOWLEDGE_STORE_STORE_START: Storing document (global=${params.global})" }
-        val pointId = vectorStorage.store(modelType, ragDocument, embedding)
+            // Create RAG document
+            val ragDocument =
+                RagDocument(
+                    projectId = plan.projectDocument?.id,
+                    ragSourceType = sourceType,
+                    summary = chunk,
+                    clientId = plan.clientDocument.id,
+                    language = null,
+                    packageName = null,
+                    className = null,
+                    methodName = null,
+                    createdAt = Instant.now(),
+                )
 
-        val contextInfo = "client=${context.clientDocument.name}, project=${context.projectDocument.name}"
+            // Store in a vector database
+            val pointId = vectorStorage.store(modelType, ragDocument, embedding)
+            storedIds.add(pointId)
+        }
+
+        val contextInfo = "client=${plan.clientDocument.name}, project=${plan.projectDocument?.name ?: "none"}"
         val result =
-            "Successfully stored document with ID $pointId (${params.content.length} chars, $contextInfo, source=${sourceType.name})"
+            buildString {
+                appendLine("Successfully stored ${chunks.size} chunk(s) to knowledge base")
+                appendLine("Total content: ${content.length} chars")
+                appendLine("Context: $contextInfo")
+                appendLine("IDs: ${storedIds.joinToString(", ")}")
+            }
 
-        logger.info { "KNOWLEDGE_STORE_SUCCESS: $result" }
-        return ToolResult.ok(result)
+        logger.info { "KNOWLEDGE_STORE_SUCCESS: Stored ${chunks.size} chunks, IDs: ${storedIds.joinToString()}" }
+
+        return ToolResult.success(
+            toolName = name.name,
+            summary = "Stored ${chunks.size} chunk(s) in knowledge base",
+            content = result,
+        )
     }
 }

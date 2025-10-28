@@ -1,8 +1,6 @@
 package com.jervis.service.document
 
-import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.service.gateway.core.LlmGateway
-import com.jervis.service.indexing.domain.ContentSentenceSplittingResponse
+import com.jervis.configuration.TikaOcrProperties
 import mu.KotlinLogging
 import org.apache.tika.exception.TikaException
 import org.apache.tika.metadata.Metadata
@@ -23,8 +21,7 @@ import kotlin.io.path.pathString
  */
 @Service
 class TikaDocumentProcessor(
-    private val llmGateway: LlmGateway,
-    private val ocr: com.jervis.configuration.TikaOcrProperties,
+    private val ocr: TikaOcrProperties,
 ) {
     private val logger = KotlinLogging.logger {}
     private val parser = AutoDetectParser()
@@ -99,8 +96,19 @@ class TikaDocumentProcessor(
         inputStream: InputStream,
         fileName: String,
         sourceLocation: SourceLocation? = null,
-    ): DocumentProcessingResult =
-        try {
+    ): DocumentProcessingResult {
+        // Check if input stream is empty before passing to Tika
+        if (inputStream.available() == 0) {
+            logger.debug { "Empty input stream for document: $fileName, returning empty result" }
+            return DocumentProcessingResult(
+                plainText = "",
+                metadata = DocumentMetadata(),
+                success = true,
+                errorMessage = "Empty input stream",
+            )
+        }
+
+        return try {
             val metadata = Metadata()
             metadata["resourceName"] = fileName
 
@@ -137,106 +145,57 @@ class TikaDocumentProcessor(
                 errorMessage = e.message,
             )
         }
-
-    /**
-     * Split extracted text into sentences with location tracking using LLM-based processing.
-     * Uses CONTENT_SPLIT_SENTENCES prompt for intelligent sentence splitting optimized for RAG.
-     */
-    suspend fun splitIntoSentencesWithLocation(
-        text: String,
-        metadata: DocumentMetadata,
-    ): List<SentenceWithLocation> {
-        val response =
-            llmGateway.callLlm(
-                type = PromptTypeEnum.CONTENT_SPLIT_SENTENCES,
-                quick = false,
-                responseSchema = ContentSentenceSplittingResponse(),
-                mappingValue =
-                    mapOf(
-                        "content" to text,
-                    ),
-            )
-
-        // Map LLM sentences to SentenceWithLocation objects with metadata
-        return response.result.sentences
-            .mapIndexed { index, sentence ->
-                SentenceWithLocation(
-                    text = sentence,
-                    location =
-                        SourceLocation(
-                            documentPath = metadata.sourceLocation?.documentPath ?: "unknown",
-                            paragraphIndex = index,
-                            characterOffset = calculateCharacterOffset(text, sentence),
-                            sectionTitle = extractNearestSectionTitle(text, sentence),
-                            pageNumber = metadata.sourceLocation?.pageNumber,
-                        ),
-                )
-            }.filter { it.text.trim().isNotEmpty() && it.text.length >= 10 }
     }
-
-    /**
-     * Sentence with its location within the document
-     */
-    data class SentenceWithLocation(
-        val text: String,
-        val location: SourceLocation,
-    )
 
     private fun buildParseContext(): ParseContext {
         val ctx = ParseContext()
-        if (!ocr.enabled) return ctx
 
-        val tess = TesseractOCRConfig()
-        // Languages like: eng+ces+spa+slk+fin+nor+dan+pol+deu+hun
-        val langs = ocr.languages.joinToString("+") { it.trim() }.ifBlank { "eng" }
-        try {
-            // Configure Tesseract
-            // Not all Tika versions expose identical setter names; prefer the most common ones.
-            // language
-            try {
-                val m = TesseractOCRConfig::class.java.getMethod("setLanguage", String::class.java)
-                m.invoke(tess, langs)
-            } catch (_: NoSuchMethodException) {
-                try {
-                    val m = TesseractOCRConfig::class.java.getMethod("setTesseractLanguage", String::class.java)
-                    m.invoke(tess, langs)
-                } catch (_: Exception) {
-                    // ignore, rely on defaults
-                }
-            }
-            // timeout in millis or seconds depending on version
-            val timeoutMs = ocr.timeoutMs
-            try {
-                val m = TesseractOCRConfig::class.java.getMethod("setTimeoutMillis", java.lang.Long.TYPE)
-                m.invoke(tess, timeoutMs)
-            } catch (_: NoSuchMethodException) {
-                try {
-                    val m = TesseractOCRConfig::class.java.getMethod("setTimeout", Integer.TYPE)
-                    m.invoke(tess, timeoutMs.toInt())
-                } catch (_: Exception) {
-                    // ignore
-                }
-            }
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to configure TesseractOCRConfig; proceeding with defaults" }
-        }
-
-        // Configure PDF parsing to combine extracted text with OCR results
-        val pdf = PDFParserConfig()
-        try {
-            val enumClass = Class.forName("org.apache.tika.parser.pdf.PDFParserConfig\$OCR_STRATEGY")
-            val ocrAndText = java.lang.Enum.valueOf(enumClass as Class<out Enum<*>>, "OCR_AND_TEXT")
-            val setOcrMethod =
-                PDFParserConfig::class.java.methods.firstOrNull { it.name == "setOcrStrategy" && it.parameterTypes.size == 1 }
-            setOcrMethod?.invoke(pdf, ocrAndText)
-        } catch (e: Exception) {
-            // If OCR_STRATEGY is absent in this Tika version, proceed without explicit strategy
-            logger.debug { "PDFParserConfig OCR_STRATEGY not set explicitly: ${e.message}" }
-        }
+        val tess = createTesseractConfig()
+        val pdf = createPdfConfig()
 
         ctx.set(TesseractOCRConfig::class.java, tess)
         ctx.set(PDFParserConfig::class.java, pdf)
         return ctx
+    }
+
+    private fun createTesseractConfig(): TesseractOCRConfig {
+        val tess = TesseractOCRConfig()
+        runCatching {
+            val timeoutMs = ocr.timeoutMs
+            setTesseractTimeout(tess, timeoutMs)
+        }.onFailure { e ->
+            logger.warn(e) { "Failed to configure TesseractOCRConfig; proceeding with defaults" }
+        }
+        return tess
+    }
+
+    private fun setTesseractTimeout(
+        tess: TesseractOCRConfig,
+        timeoutMs: Long,
+    ) {
+        runCatching {
+            val m = TesseractOCRConfig::class.java.getMethod("setTimeoutMillis", java.lang.Long.TYPE)
+            m.invoke(tess, timeoutMs)
+        }.recoverCatching {
+            val m = TesseractOCRConfig::class.java.getMethod("setTimeout", Integer.TYPE)
+            m.invoke(tess, timeoutMs.toInt())
+        }
+    }
+
+    private fun createPdfConfig(): PDFParserConfig {
+        val pdf = PDFParserConfig()
+        runCatching {
+            val enumClass = Class.forName("org.apache.tika.parser.pdf.PDFParserConfig\$OCR_STRATEGY")
+            val ocrAndText = java.lang.Enum.valueOf(enumClass as Class<out Enum<*>>, "OCR_AND_TEXT")
+            val setOcrMethod =
+                PDFParserConfig::class.java.methods.firstOrNull {
+                    it.name == "setOcrStrategy" && it.parameterTypes.size == 1
+                }
+            setOcrMethod?.invoke(pdf, ocrAndText)
+        }.onFailure { e ->
+            logger.debug { "PDFParserConfig OCR_STRATEGY not set explicitly: ${e.message}" }
+        }
+        return pdf
     }
 
     /**
@@ -296,37 +255,4 @@ class TikaDocumentProcessor(
      * Extract title from filename if no title metadata is available
      */
     private fun extractTitleFromFileName(fileName: String): String = fileName.substringBeforeLast('.').replace("[_-]".toRegex(), " ").trim()
-
-    /**
-     * Calculate approximate character offset for a sentence in the text
-     */
-    private fun calculateCharacterOffset(
-        fullText: String,
-        sentence: String,
-    ): Int = fullText.indexOf(sentence).takeIf { it >= 0 } ?: 0
-
-    /**
-     * Extract the nearest section title for context (simplified implementation)
-     */
-    private fun extractNearestSectionTitle(
-        fullText: String,
-        sentence: String,
-    ): String? {
-        val sentenceIndex = fullText.indexOf(sentence)
-        if (sentenceIndex < 0) return null
-
-        // Look for headers/titles in the 1000 characters before the sentence
-        val contextStart = maxOf(0, sentenceIndex - 1000)
-        val context = fullText.substring(contextStart, sentenceIndex)
-
-        // Simple regex to find potential section titles (lines that start with caps or are short)
-        val titlePattern = Regex("^([A-Z][^.!?\\n]{5,50})$", RegexOption.MULTILINE)
-        val matches = titlePattern.findAll(context).toList()
-
-        return matches
-            .lastOrNull()
-            ?.groupValues
-            ?.get(1)
-            ?.trim()
-    }
 }

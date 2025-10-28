@@ -2,7 +2,6 @@ package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.TimeoutsProperties
 import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
@@ -40,7 +39,7 @@ class SystemExecuteCommandTool(
 
     private suspend fun parseTaskDescription(
         taskDescription: String,
-        context: TaskContext,
+        plan: Plan,
         stepContext: String = "",
     ): SystemExecuteCommandParams {
         val llmResponse =
@@ -51,22 +50,22 @@ class SystemExecuteCommandTool(
                         "taskDescription" to taskDescription,
                         "stepContext" to stepContext,
                     ),
-                quick = context.quick,
+                quick = plan.quick,
                 responseSchema = SystemExecuteCommandParams(),
+                backgroundMode = plan.backgroundMode,
             )
 
         return llmResponse.result
     }
 
     override suspend fun execute(
-        context: TaskContext,
         plan: Plan,
         taskDescription: String,
         stepContext: String,
     ): ToolResult {
-        val parsed = parseTaskDescription(taskDescription, context, stepContext)
+        val parsed = parseTaskDescription(taskDescription, plan, stepContext)
 
-        return executeSystemExecuteCommandOperation(parsed, context)
+        return executeSystemExecuteCommandOperation(parsed, plan)
     }
 
     private fun validateCommand(params: SystemExecuteCommandParams): ToolResult? =
@@ -83,20 +82,20 @@ class SystemExecuteCommandTool(
 
     private suspend fun executeSystemExecuteCommandOperation(
         params: SystemExecuteCommandParams,
-        context: TaskContext,
+        plan: Plan,
     ): ToolResult {
-        val workingDirectory = validateWorkingDirectory(context)
+        val workingDirectory = validateWorkingDirectory(plan)
         workingDirectory?.let { return it }
 
-        return executeProcessWithTimeout(params, context)
+        return executeProcessWithTimeout(params, plan)
     }
 
-    private fun validateWorkingDirectory(context: TaskContext): ToolResult? {
+    private fun validateWorkingDirectory(plan: Plan): ToolResult? {
         val workingDirectory =
             directoryStructureService
                 .projectGitDir(
-                    context.clientDocument.id,
-                    context.projectDocument.id,
+                    plan.clientDocument.id,
+                    plan.projectDocument!!.id,
                 ).toFile()
         return when {
             !workingDirectory.exists() -> ToolResult.error("Working directory does not exist: ${workingDirectory.absolutePath}")
@@ -109,13 +108,13 @@ class SystemExecuteCommandTool(
 
     private suspend fun executeProcessWithTimeout(
         params: SystemExecuteCommandParams,
-        context: TaskContext,
+        plan: Plan,
     ): ToolResult {
         val workingDirectory =
             directoryStructureService
                 .projectGitDir(
-                    context.clientDocument.id,
-                    context.projectDocument.id,
+                    plan.clientDocument.id,
+                    plan.projectDocument!!.id,
                 ).toFile()
         val timeoutSeconds = timeoutsProperties.mcp.terminalToolTimeoutSeconds
 

@@ -1,22 +1,15 @@
 package com.jervis.ui.window
 
-import com.jervis.common.Constants.Companion.GLOBAL_ID_STRING
-import com.jervis.domain.plan.PlanStatusEnum
 import com.jervis.dto.ChatRequestContextDto
 import com.jervis.dto.ChatRequestDto
-import com.jervis.dto.ClientDto
 import com.jervis.dto.PlanDto
 import com.jervis.dto.PlanStepDto
-import com.jervis.dto.ProjectDto
-import com.jervis.dto.TaskContextDto
 import com.jervis.dto.events.PlanStatusChangeEventDto
 import com.jervis.dto.events.StepCompletionEventDto
 import com.jervis.service.IAgentOrchestratorService
 import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
-import com.jervis.service.IIndexingMonitorService
 import com.jervis.service.IProjectService
-import com.jervis.service.ITaskContextService
 import com.jervis.service.debug.DesktopDebugWindowService
 import com.jervis.ui.component.ApplicationWindowManager
 import kotlinx.coroutines.CoroutineScope
@@ -30,8 +23,6 @@ import org.springframework.context.event.EventListener
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.EventQueue
-import java.awt.event.ComponentAdapter
-import java.awt.event.ComponentEvent
 import java.awt.event.InputEvent
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
@@ -56,7 +47,6 @@ import javax.swing.JScrollPane
 import javax.swing.JSplitPane
 import javax.swing.JTextArea
 import javax.swing.KeyStroke
-import javax.swing.ListSelectionModel
 import javax.swing.border.EmptyBorder
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
@@ -66,15 +56,12 @@ class MainWindow(
     private val chatCoordinator: IAgentOrchestratorService,
     private val clientService: IClientService,
     private val linkService: IClientProjectLinkService,
-    private val taskContextService: ITaskContextService,
-    private val indexingMonitorService: IIndexingMonitorService,
     private val applicationWindowManager: ApplicationWindowManager,
     private val debugWindowService: DesktopDebugWindowService,
     private val notificationsClient: com.jervis.client.NotificationsWebSocketClient,
 ) : JFrame("JERVIS Assistant") {
     companion object {
         private val logger = KotlinLogging.logger {}
-        private const val NEW_CONTEXT_LABEL: String = "+ New context"
     }
 
     private val windowScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -84,19 +71,12 @@ class MainWindow(
     private val quickCheckbox = JCheckBox("Quick response", false)
     private val showPlansCheckbox = JCheckBox("Show Plans", false)
 
-    // Chat UI (right side)
+    // Chat UI
     private val chatArea = JTextArea()
     private val inputField = JTextArea()
     private val sendButton = JButton("Send")
 
-    // Text persistence for different contexts
-    private val contextDrafts = mutableMapOf<String, String>()
-
-    // Context list UI (left side)
-    private val contextListModel = DefaultListModel<Any>()
-    private val contextList = JList<Any>(contextListModel)
-
-    // Plan display UI (right side when enabled)
+    // Plan display UI (shown when enabled)
     private val planListModel = DefaultListModel<PlanDto>()
     private val planList = JList<PlanDto>(planListModel)
     private val planScroll = JScrollPane(planList)
@@ -112,62 +92,11 @@ class MainWindow(
 
     private val projectNameById = mutableMapOf<String, String>()
 
-    // In-memory context storage, grouped by (client, project)
-    private val contextsByScope =
-        mutableMapOf<Pair<String?, String?>, MutableList<TaskContextDto>>()
-
-    // Project change blocking state
-    private var isProjectLoading = false
-
     init {
         // Setup menu bar only on non-macOS systems (macOS uses native menu bar)
         if (!WindowUtils.isMacOS) {
             setupMenuBar()
         }
-        // initialize context list defaults
-        contextList.selectionMode = ListSelectionModel.SINGLE_SELECTION
-        contextList.visibleRowCount = -1
-
-        // Set opaque cell renderer to prevent text overlap issues and add status icons
-        contextList.cellRenderer =
-            object : DefaultListCellRenderer() {
-                init {
-                    // Ensure renderer is opaque to prevent background from painting over text
-                    isOpaque = true
-                }
-
-                override fun getListCellRendererComponent(
-                    list: JList<*>?,
-                    value: Any?,
-                    index: Int,
-                    isSelected: Boolean,
-                    cellHasFocus: Boolean,
-                ) = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus).apply {
-                    when (value) {
-                        is TaskContextDto -> {
-                            val hasRunningPlans =
-                                value.plans.any { it.status == PlanStatusEnum.RUNNING }
-                            val hasCompletedPlans =
-                                value.plans.any {
-                                    it.status == PlanStatusEnum.COMPLETED ||
-                                        it.status == PlanStatusEnum.FINALIZED
-                                }
-                            val icon =
-                                when {
-                                    hasRunningPlans -> "⚡ "
-                                    hasCompletedPlans -> "✅ "
-                                    else -> ""
-                                }
-                            text = "$icon${value.name}"
-                        }
-
-                        else -> {
-                            // Handle "New context" label and other items
-                            text = value?.toString() ?: ""
-                        }
-                    }
-                }
-            }
     }
 
     // UI selector models
@@ -222,9 +151,6 @@ class MainWindow(
                 if (defaultItem != null) {
                     projectSelector.selectedItem = defaultItem
                 }
-
-                // Load contexts after both selectors are properly initialized
-                refreshContextsFromDbForCurrentSelection(selectFirst = true)
             }
         }
         defaultCloseOperation = HIDE_ON_CLOSE
@@ -246,15 +172,11 @@ class MainWindow(
         topPanel.add(row1, BorderLayout.NORTH)
         topPanel.add(row2, BorderLayout.SOUTH)
 
-        // Center area: split pane with left context list and right chat/plan display
+        // Center area: chat/plan display
         chatArea.isEditable = false
         chatArea.lineWrap = true
         val chatScroll = JScrollPane(chatArea)
         chatScroll.border = EmptyBorder(10, 10, 10, 10)
-
-        val contextScroll = JScrollPane(contextList)
-        contextScroll.border = EmptyBorder(10, 5, 10, 5)
-        contextScroll.preferredSize = Dimension(200, 500)
 
         // Set up plan display panel with two lists
         planScroll.border = EmptyBorder(5, 5, 5, 5)
@@ -276,7 +198,7 @@ class MainWindow(
                     cellHasFocus: Boolean,
                 ) = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus).apply {
                     if (value is PlanDto) {
-                        text = "${value.originalQuestion.take(50)}... (${value.status})"
+                        text = "${value.taskInstruction.take(50)}... (${value.status})"
                     }
                 }
             }
@@ -316,10 +238,6 @@ class MainWindow(
                 }
             },
         )
-
-        val split = JSplitPane(JSplitPane.HORIZONTAL_SPLIT, contextScroll, chatScroll)
-        split.resizeWeight = 0.0
-        split.dividerLocation = 200
 
         // Configure input field as multi-line text area
         inputField.lineWrap = true
@@ -392,23 +310,12 @@ class MainWindow(
         bottomPanel.add(sendButton, BorderLayout.EAST)
 
         add(topPanel, BorderLayout.NORTH)
-        add(split, BorderLayout.CENTER)
+        add(chatScroll, BorderLayout.CENTER)
         add(bottomPanel, BorderLayout.SOUTH)
 
         // Refresh projects when client changes
         clientSelector.addActionListener {
             refreshProjectsForSelectedClient()
-            refreshContextsFromDbForCurrentSelection(selectFirst = true)
-        }
-        // Refresh context list when project changes
-        projectSelector.addActionListener {
-            // Block context list and send functionality during project change
-            isProjectLoading = true
-            contextList.isEnabled = false
-            sendButton.isEnabled = false
-            // Note: inputField is never disabled per requirements
-
-            refreshContextsFromDbForCurrentSelection(selectFirst = true)
         }
 
         // Show Plans checkbox handler
@@ -432,18 +339,6 @@ class MainWindow(
 
         // Make sure the window can receive key events
         isFocusable = true
-
-        // Setup context list UI and populate for current scope
-        installContextListHandlers()
-
-        // Refresh contexts whenever the window is shown
-        addComponentListener(
-            object : ComponentAdapter() {
-                override fun componentShown(e: ComponentEvent) {
-                    refreshContextsFromDbForCurrentSelection(selectFirst = true)
-                }
-            },
-        )
     }
 
     /**
@@ -452,31 +347,8 @@ class MainWindow(
     private fun sendMessage() {
         val text = inputField.text.trim()
         if (text.isNotEmpty()) {
-            // Check if selected context has running plans (should only block running plans)
-            val selectedContextIndex = contextList.selectedIndex
-            val selectedTaskContext =
-                if (selectedContextIndex >= 0) {
-                    val item = contextListModel.getElementAt(selectedContextIndex)
-                    item as? TaskContextDto
-                } else {
-                    null
-                }
-
-            // If context has running plans, prevent sending
-            if (selectedTaskContext != null && selectedTaskContext.plans.any { it.status == PlanStatusEnum.RUNNING }) {
-                chatArea.append(
-                    "System: Cannot send to context with running plan. Please wait for completion or select another context.\n\n",
-                )
-                return
-            }
-
             chatArea.append("Me: $text\n")
             inputField.text = ""
-
-            // Clear draft text after sending
-            val selectedContext = contextList.selectedValue as? TaskContextDto
-            val key = contextDraftKey(selectedContext)
-            contextDrafts.remove(key)
 
             // Disable send button while processing (input field stays enabled)
             sendButton.isEnabled = false
@@ -494,23 +366,13 @@ class MainWindow(
                         throw IllegalStateException("Client and project must be selected")
                     }
 
-                    // Check if user has selected an existing context
-                    val selectedContextIndex = contextList.selectedIndex
-                    val selectedTaskContext =
-                        if (selectedContextIndex >= 0) {
-                            val item = contextListModel.getElementAt(selectedContextIndex)
-                            item as? TaskContextDto
-                        } else {
-                            null
-                        }
-
                     val ctx =
                         ChatRequestContextDto(
                             clientId = selectedClient.id,
                             projectId = selectedProject.id,
                             autoScope = false,
                             quick = quickCheckbox.isSelected,
-                            existingContextId = selectedTaskContext?.id, // Pass existing context ID if selected
+                            existingContextId = null,
                         )
 
                     // Process the query using the ChatCoordinator (fire-and-forget)
@@ -524,27 +386,8 @@ class MainWindow(
                         // Reset Quick response checkbox as one-time setting
                         quickCheckbox.isSelected = false
 
-                        // Refresh contexts from database to get updated plans and newly created contexts
-                        refreshContextsFromDbForCurrentSelection(selectFirst = false) {
-                            // If no context was selected (new context created), select the most recent one
-                            if (selectedTaskContext == null) {
-                                if (contextListModel.size() > 1) {
-                                    // Select the first actual context (index 1, after "New context" item)
-                                    contextList.selectedIndex = 1
-                                    val selectedContext = contextListModel.getElementAt(1)
-                                    if (selectedContext is TaskContextDto) {
-                                        displayContextInChatArea(selectedContext)
-                                        updateSendButtonState()
-                                    }
-                                }
-                            } else {
-                                // Update send button state for existing context
-                                updateSendButtonState()
-                            }
-                        }
-
-                        // Update send button state and focus input
-                        updateSendButtonState()
+                        // Re-enable send button and focus input
+                        sendButton.isEnabled = true
                         inputField.requestFocus()
                     }
                 } catch (e: Exception) {
@@ -568,7 +411,7 @@ class MainWindow(
 
                         chatArea.append("Assistant: $userMessage\n\n")
 
-                        updateSendButtonState()
+                        sendButton.isEnabled = true
                         inputField.requestFocus()
                     }
                 }
@@ -613,386 +456,32 @@ class MainWindow(
         }
     }
 
-    private fun refreshContextsFromDbForCurrentSelection(selectFirst: Boolean = false) {
-        refreshContextsFromDbForCurrentSelection(selectFirst) { }
-    }
-
-    private fun refreshContextsFromDbForCurrentSelection(
-        selectFirst: Boolean = false,
-        onComplete: () -> Unit,
-    ) {
-        val selectedClient =
-            clientSelector.selectedItem as? SelectorItem ?: run {
-                contextsByScope[currentScopeKey()] = mutableListOf()
-                rebuildContextList(selectFirst)
-                onComplete()
-                return
-            }
-        selectedClient.name
-        val clientId = selectedClient.id
-        val selectedProject =
-            projectSelector.selectedItem as? SelectorItem ?: run {
-                contextsByScope[currentScopeKey()] = mutableListOf()
-                rebuildContextList(selectFirst)
-                onComplete()
-                return
-            }
-        val projectId = selectedProject.id
-
-        coroutineScope.launch {
-            try {
-                val docs = taskContextService.listForClientAndProject(clientId, projectId)
-                // Use TaskContext objects directly instead of converting to custom UI objects
-                withContext(Dispatchers.Swing) {
-                    contextsByScope[currentScopeKey()] = docs.toMutableList()
-                    rebuildContextList(selectFirst)
-
-                    // Unblock UI after loading completes
-                    isProjectLoading = false
-                    contextList.isEnabled = true
-                    // Note: inputField stays always enabled per requirements
-                    updateSendButtonState()
-
-                    // Call completion callback
-                    onComplete()
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Swing) {
-                    contextsByScope[currentScopeKey()] = mutableListOf()
-                    rebuildContextList(selectFirst)
-
-                    // Unblock UI even if loading fails
-                    isProjectLoading = false
-                    contextList.isEnabled = true
-                    // Note: inputField stays always enabled per requirements
-                    updateSendButtonState()
-
-                    // Call completion callback even on error
-                    onComplete()
-                }
-            }
-        }
-    }
-
-    private fun currentScopeKey(): Pair<String?, String?> =
-        Pair(
-            (clientSelector.selectedItem as? SelectorItem)?.name,
-            (projectSelector.selectedItem as? SelectorItem)?.name,
-        )
-
-    private fun contextsForCurrentScope(): MutableList<TaskContextDto> = contextsByScope.getOrPut(currentScopeKey()) { mutableListOf() }
-
-    /**
-     * Generate a unique key for draft text storage
-     */
-    private fun contextDraftKey(context: TaskContextDto?): String =
-        if (context != null) {
-            "${context.client.name}:${context.project.name}:${context.id}"
-        } else {
-            "${currentScopeKey().first}:${currentScopeKey().second}:NEW"
-        }
-
-    /**
-     * Save current input text as draft for the currently selected context
-     */
-    private fun saveDraftText() {
-        val selectedValue = contextList.selectedValue
-        // Only save draft if selected value is TaskContextDto (not String like NEW_CONTEXT_LABEL)
-        if (selectedValue is TaskContextDto) {
-            val key = contextDraftKey(selectedValue)
-            val currentText = inputField.text
-            if (currentText.isNotBlank()) {
-                contextDrafts[key] = currentText
-            } else {
-                contextDrafts.remove(key)
-            }
-        }
-    }
-
-    /**
-     * Restore draft text for the specified context
-     */
-    private fun restoreDraftText(context: TaskContextDto?) {
-        val key = contextDraftKey(context)
-        val draftText = contextDrafts[key] ?: ""
-        inputField.text = draftText
-    }
-
-    private fun installContextListHandlers() {
-        contextList.addMouseListener(
-            object : MouseAdapter() {
-                override fun mouseClicked(e: MouseEvent) {
-                    val index = contextList.locationToIndex(e.point)
-                    if (index >= 0) {
-                        // Save current draft text before switching contexts
-                        saveDraftText()
-
-                        when (val item = contextListModel.getElementAt(index)) {
-                            is String ->
-                                if (item == NEW_CONTEXT_LABEL && e.clickCount == 1) {
-                                    // Clear chat area for new context - context will be created on send
-                                    chatArea.text = ""
-                                    // Clear selection to indicate new context mode
-                                    contextList.clearSelection()
-                                    // Restore draft text for new context
-                                    restoreDraftText(null)
-                                }
-
-                            is TaskContextDto -> {
-                                if (e.clickCount == 1) {
-                                    // Single click - display conversation in chat area
-                                    displayContextInChatArea(item)
-                                    updateSendButtonState()
-                                    // Restore draft text for selected context
-                                    restoreDraftText(item)
-                                    // Update plan list if plans are shown
-                                    if (showPlansCheckbox.isSelected) {
-                                        updatePlanList()
-                                    }
-                                } else if (e.clickCount == 2) {
-                                    // Double click - also display conversation (same behavior)
-                                    displayContextInChatArea(item)
-                                    updateSendButtonState()
-                                    // Restore draft text for selected context
-                                    restoreDraftText(item)
-                                    if (showPlansCheckbox.isSelected) {
-                                        updatePlanList()
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                override fun mousePressed(e: MouseEvent) = maybeShowPopup(e)
-
-                override fun mouseReleased(e: MouseEvent) = maybeShowPopup(e)
-
-                private fun maybeShowPopup(e: MouseEvent) {
-                    if (e.isPopupTrigger) {
-                        val index = contextList.locationToIndex(e.point)
-                        if (index >= 0) {
-                            contextList.selectedIndex = index
-                            val item = contextListModel.getElementAt(index)
-                            if (item is TaskContextDto) {
-                                val menu = JPopupMenu()
-                                val renameItem = JMenuItem("Rename…")
-                                val deleteItem = JMenuItem("Delete…")
-                                renameItem.addActionListener {
-                                    promptRename(item)
-                                }
-                                deleteItem.addActionListener {
-                                    promptDelete(item)
-                                }
-                                menu.add(renameItem)
-                                menu.addSeparator()
-                                menu.add(deleteItem)
-                                menu.show(contextList, e.x, e.y)
-                            }
-                        }
-                    }
-                }
-            },
-        )
-    }
-
-    private fun promptRename(ctx: TaskContextDto) {
-        val newName = JOptionPane.showInputDialog(this, "Context name:", ctx.name)
-        if (newName != null && newName.isNotBlank()) {
-            val ctxToSave =
-                ctx.copy(
-                    name = newName.trim(),
-                )
-
-            // Save the updated context to database
-            coroutineScope.launch {
-                try {
-                    taskContextService.save(ctxToSave)
-                } catch (e: Exception) {
-                    // Handle save error silently or log
-                }
-            }
-            rebuildContextList()
-        }
-    }
-
-    private fun promptDelete(ctx: TaskContextDto) {
-        val result =
-            JOptionPane.showConfirmDialog(
-                this,
-                "Are you sure you want to delete context '${ctx.name}'?\nThis will also delete all associated plans and steps.",
-                "Delete Context",
-                JOptionPane.YES_NO_OPTION,
-                JOptionPane.WARNING_MESSAGE,
-            )
-
-        if (result == JOptionPane.YES_OPTION) {
-            coroutineScope.launch {
-                try {
-                    taskContextService.delete(ctx.id)
-                    withContext(Dispatchers.Swing) {
-                        // Remove from local list and refresh UI
-                        contextsByScope[currentScopeKey()]?.remove(ctx)
-                        rebuildContextList()
-                    }
-                } catch (e: Exception) {
-                    withContext(Dispatchers.Swing) {
-                        JOptionPane.showMessageDialog(
-                            this@MainWindow,
-                            "Failed to delete context: ${e.message}",
-                            "Error",
-                            JOptionPane.ERROR_MESSAGE,
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    private fun rebuildContextList(selectFirst: Boolean = false) {
-        val items = mutableListOf<Any>()
-        items.add(NEW_CONTEXT_LABEL)
-        val contexts = contextsForCurrentScope()
-        items.addAll(contexts)
-        EventQueue.invokeLater {
-            contextListModel.removeAllElements()
-            items.forEach { contextListModel.addElement(it) }
-            if (selectFirst) {
-                contextList.selectedIndex = 0
-            }
-        }
-    }
-
-    private fun createAndSelectNewContext(defaultNameFromText: String? = null): TaskContextDto {
-        val key = currentScopeKey()
-        val name = (defaultNameFromText?.take(40)?.ifBlank { null }) ?: "New context"
-
-        // Create TaskContext using TaskContextService
-        val selectedClient = clientSelector.selectedItem as SelectorItem
-        val selectedProject = projectSelector.selectedItem as SelectorItem
-
-        val ctx =
-            TaskContextDto(
-                id = GLOBAL_ID_STRING,
-                client =
-                    ClientDto(
-                        id = selectedClient.id,
-                        name = key.first ?: "Unknown Client",
-                    ),
-                project =
-                    ProjectDto(
-                        id =
-                            selectedProject.id,
-                        clientId = GLOBAL_ID_STRING,
-                        name = key.second ?: "Unknown Project",
-                    ),
-                name = name,
-                plans = emptyList(),
-                quick = false,
-            )
-
-        val list = contextsByScope.getOrPut(key) { mutableListOf() }
-        list.add(ctx)
-        rebuildContextList()
-        // select just-created context (index 1: under the NEW item)
-        EventQueue.invokeLater {
-            for (i in 0 until contextListModel.size()) {
-                val item = contextListModel.getElementAt(i)
-                if (item is TaskContextDto && item.id == ctx.id) {
-                    contextList.selectedIndex = i
-                    break
-                }
-            }
-        }
-        return ctx
-    }
-
-    private fun ensureSelectedContextForCurrentScope(defaultNameFromText: String?): TaskContextDto {
-        val selected = contextList.selectedValue
-        return if (selected is TaskContextDto) {
-            selected
-        } else {
-            createAndSelectNewContext(
-                defaultNameFromText,
-            )
-        }
-    }
-
-    private fun displayContextInChatArea(ctx: TaskContextDto) {
-        val sb = StringBuilder()
-
-        if (ctx.plans.isEmpty()) {
-            sb.appendLine("No conversation history in this context yet.")
-        } else {
-            ctx.plans.forEach { plan ->
-                sb.appendLine("Me: ${plan.originalQuestion}")
-
-                // Extract the assistant's response from finalAnswer, removing duplicate question text
-                plan.finalAnswer?.let { answer ->
-                    val cleanAnswer =
-                        if (answer.startsWith("Question: ${plan.originalQuestion}")) {
-                            // Remove the duplicate question part and "Answer:" prefix if present
-                            val withoutQuestion = answer.substringAfter("Question: ${plan.originalQuestion}").trim()
-                            if (withoutQuestion.startsWith("Answer:")) {
-                                withoutQuestion.substringAfter("Answer:").trim()
-                            } else {
-                                withoutQuestion
-                            }
-                        } else {
-                            answer
-                        }
-                    if (cleanAnswer.isNotBlank()) {
-                        sb.appendLine("Assistant: $cleanAnswer")
-                    }
-                }
-                sb.appendLine()
-            }
-        }
-
-        chatArea.text = sb.toString()
-        chatArea.caretPosition = 0 // Scroll to top
-    }
-
-    private fun updateSendButtonState() {
-        val selectedContext = contextList.selectedValue as? TaskContextDto
-        val hasRunningPlans =
-            selectedContext?.plans?.any { it.status == PlanStatusEnum.RUNNING } == true
-
-        // Enable send button if:
-        // 1. No context is selected (New context mode) - always allow new context creation
-        // 2. Context is selected but has no running plans
-        sendButton.isEnabled = selectedContext == null || !hasRunningPlans
-    }
-
     private fun togglePlanDisplay() {
-        val split = contentPane.getComponent(1) as JSplitPane
         if (showPlansCheckbox.isSelected) {
-            // Show plan display with two lists
-            split.rightComponent = planDisplayPanel
+            // Show plan display with two lists - replace center component with plan display
+            val chatScroll = contentPane.getComponent(1) as JScrollPane
+            contentPane.remove(chatScroll)
+            contentPane.add(planDisplayPanel, BorderLayout.CENTER)
             updatePlanList()
         } else {
-            // Show chat area
-            split.rightComponent =
+            // Show chat area - replace center component with chat
+            contentPane.remove(planDisplayPanel)
+            val chatScroll =
                 JScrollPane(chatArea).apply {
                     border = EmptyBorder(10, 10, 10, 10)
                 }
+            contentPane.add(chatScroll, BorderLayout.CENTER)
         }
-        split.revalidate()
-        split.repaint()
+        contentPane.revalidate()
+        contentPane.repaint()
     }
 
     private fun updatePlanList() {
         // Clear existing data
         planListModel.clear()
 
-        // Get selected context
-        val selectedContext = contextList.selectedValue as? TaskContextDto
-
-        if (selectedContext != null && selectedContext.plans.isNotEmpty()) {
-            selectedContext.plans.forEach { plan ->
-                planListModel.addElement(plan)
-            }
-        }
+        // Note: Plan list is now independent - could be populated from service if needed
+        // For now, just clear it since we don't have context selection
 
         // Clear step list when plan list is updated
         stepListModel.clear()
@@ -1065,81 +554,6 @@ class MainWindow(
         dialog.isVisible = true
     }
 
-    private fun showPlanDetails(row: Int) {
-        val selectedContext = contextList.selectedValue as? TaskContextDto ?: return
-
-        if (selectedContext.plans.isEmpty() || row >= selectedContext.plans.size) return
-
-        val plan = selectedContext.plans[row]
-
-        val dialog = JDialog(this, "Plan Details: ${plan.originalQuestion.take(50)}...", true)
-        dialog.size = Dimension(600, 400)
-        dialog.setLocationRelativeTo(this)
-
-        val content = JPanel(BorderLayout())
-
-        // Plan information
-        val planInfo = StringBuilder()
-        planInfo.appendLine("Original Question: ${plan.originalQuestion}")
-        planInfo.appendLine("English Question: ${plan.englishQuestion}")
-        planInfo.appendLine("Status: ${plan.status}")
-        planInfo.appendLine()
-
-        if (plan.contextSummary != null) {
-            planInfo.appendLine("Context Summary:")
-            planInfo.appendLine(plan.contextSummary)
-            planInfo.appendLine()
-        }
-
-        if (plan.finalAnswer != null) {
-            planInfo.appendLine("Final Answer:")
-            planInfo.appendLine(plan.finalAnswer)
-            planInfo.appendLine()
-        }
-
-        planInfo.appendLine("Steps:")
-        if (plan.steps.isEmpty()) {
-            planInfo.appendLine("No steps available")
-        } else {
-            plan.steps.sortedBy { it.order }.forEach { step ->
-                planInfo.appendLine("- ${step.stepToolName} (${step.status}): ${step.stepInstruction}")
-                step.toolResult?.let { output ->
-                    planInfo.appendLine("  Output: ${output.take(200)}...")
-                }
-            }
-        }
-
-        val textArea = JTextArea(planInfo.toString())
-        textArea.isEditable = false
-        textArea.lineWrap = true
-        textArea.wrapStyleWord = true
-
-        content.add(JScrollPane(textArea), BorderLayout.CENTER)
-
-        val closeButton = JButton("Close")
-        closeButton.addActionListener { dialog.dispose() }
-        val buttonPanel = JPanel()
-        buttonPanel.add(closeButton)
-        content.add(buttonPanel, BorderLayout.SOUTH)
-
-        // Add ESC key handling to close dialog
-        dialog.addKeyListener(
-            object : KeyAdapter() {
-                override fun keyPressed(e: KeyEvent) {
-                    if (e.keyCode == KeyEvent.VK_ESCAPE) {
-                        dialog.dispose()
-                    }
-                }
-            },
-        )
-
-        // Make sure the dialog can receive key events
-        dialog.isFocusable = true
-
-        dialog.contentPane = content
-        dialog.isVisible = true
-    }
-
     private fun setupMenuBar() {
         val menuBar = JMenuBar()
 
@@ -1156,13 +570,6 @@ class MainWindow(
 
         // Tools menu
         val toolsMenu = JMenu("Tools")
-
-        // Indexing Monitor
-        val indexingMonitorItem = JMenuItem("Indexing Monitor")
-        indexingMonitorItem.accelerator =
-            KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.META_DOWN_MASK or InputEvent.SHIFT_DOWN_MASK)
-        indexingMonitorItem.addActionListener { showIndexingMonitor() }
-        toolsMenu.add(indexingMonitorItem)
 
         // Debug Window
         val debugWindowItem = JMenuItem("Show Debug Window")
@@ -1206,21 +613,6 @@ class MainWindow(
         )
     }
 
-    fun showIndexingMonitor() {
-        try {
-            val monitorWindow = IndexingMonitorWindow(indexingMonitorService, this)
-            monitorWindow.isVisible = true
-        } catch (e: Exception) {
-            logger.error(e) { "Failed to open indexing monitor window" }
-            JOptionPane.showMessageDialog(
-                this,
-                "Failed to open indexing monitor: ${e.message}",
-                "Error",
-                JOptionPane.ERROR_MESSAGE,
-            )
-        }
-    }
-
     private fun showDebugWindow() {
         try {
             debugWindowService.showDebugWindow()
@@ -1257,15 +649,9 @@ class MainWindow(
             applicationWindowManager.showSchedulerWindow()
         }
 
-        val indexingMonitorItem = JMenuItem("Indexing Monitor")
-        indexingMonitorItem.addActionListener {
-            applicationWindowManager.showIndexingMonitor()
-        }
-
         contextMenu.add(projectSettingsItem)
         contextMenu.add(clientManagementItem)
         contextMenu.add(schedulerItem)
-        contextMenu.add(indexingMonitorItem)
 
         // Add mouse listener to project selector for right-click context menu
         projectSelector.addMouseListener(
@@ -1287,52 +673,15 @@ class MainWindow(
 
     @EventListener
     fun handleStepCompletionDto(event: StepCompletionEventDto) {
-        val selectedContext = contextList.selectedValue as? TaskContextDto
-        if (selectedContext != null && selectedContext.id == event.contextId && showPlansCheckbox.isSelected) {
-            coroutineScope.launch {
-                try {
-                    val updatedContext = taskContextService.findById(event.contextId)
-                    if (updatedContext != null) {
-                        withContext(Dispatchers.Swing) {
-                            val currentScope = currentScopeKey()
-                            val list = contextsByScope[currentScope]
-                            val index = list?.indexOfFirst { it.id == updatedContext.id }
-                            if (index != null && index >= 0) {
-                                list[index] = updatedContext
-                                updatePlanList()
-                            }
-                        }
-                    }
-                } catch (_: Exception) {
-                    // ignore
-                }
-            }
-        }
+        // Step completion events are logged but no longer update UI
+        // since we don't maintain context list
+        logger.debug { "Step completion event received for context ${event.contextId}" }
     }
 
     @EventListener
     fun handlePlanStatusChangeDto(event: PlanStatusChangeEventDto) {
-        coroutineScope.launch {
-            try {
-                val updatedContext = taskContextService.findById(event.contextId)
-                if (updatedContext != null) {
-                    withContext(Dispatchers.Swing) {
-                        val currentScope = currentScopeKey()
-                        val list = contextsByScope[currentScope]
-                        val index = list?.indexOfFirst { it.id == updatedContext.id }
-                        if (index != null && index >= 0) {
-                            list[index] = updatedContext
-                            rebuildContextList()
-                            updateSendButtonState()
-                            if (showPlansCheckbox.isSelected) {
-                                updatePlanList()
-                            }
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                logger.error(e) { "Error in handlePlanStatusChangeDto" }
-            }
-        }
+        // Plan status change events are logged but no longer update UI
+        // since we don't maintain context list
+        logger.debug { "Plan status change event received for context ${event.contextId}" }
     }
 }

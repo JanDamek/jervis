@@ -7,19 +7,15 @@ import com.jervis.dto.email.ValidateResponse
 import com.jervis.service.IEmailAccountService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.swing.Swing
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
 import java.awt.BorderLayout
-import java.awt.Desktop
 import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
 import java.awt.Insets
-import java.net.URI
 import javax.swing.BorderFactory
 import javax.swing.JButton
 import javax.swing.JCheckBox
@@ -40,7 +36,6 @@ class EmailConfigPanel(
     private val client: ClientDto,
 ) : JPanel(BorderLayout()) {
     private val scope = CoroutineScope(Dispatchers.IO)
-    private val json = Json { ignoreUnknownKeys = true }
 
     private val providerCombo = JComboBox(arrayOf("GMAIL", "SEZNAM", "MICROSOFT", "IMAP"))
     private val displayNameField = JTextField(20)
@@ -53,7 +48,6 @@ class EmailConfigPanel(
     private val useSslCheckbox = JCheckBox("Use SSL/TLS", true)
 
     private val imapFieldsPanel = JPanel(GridBagLayout())
-    private val oauthButtonsPanel = JPanel(FlowLayout(FlowLayout.LEFT))
 
     private val accountsTableModel =
         object : DefaultTableModel(arrayOf("ID", "Provider", "Email", "Display Name", "Description", "Status"), 0) {
@@ -211,55 +205,32 @@ class EmailConfigPanel(
         imapFieldsPanel.add(portPanel, gbc)
     }
 
-    private fun setupOAuthButtons() {
-        oauthButtonsPanel.removeAll()
-
-        val googleButton = JButton("Authorize with Google (optional)")
-        googleButton.addActionListener { initiateGoogleOAuth() }
-
-        val microsoftButton = JButton("Authorize with Microsoft (optional)")
-        microsoftButton.addActionListener { initiateMicrosoftOAuth() }
-
-        val hint =
-            JLabel(
-                "You can also enter IMAP username/password and server details below. For Google, use an App Password. Microsoft tenants often require OAuth2.",
-            )
-
-        oauthButtonsPanel.add(googleButton)
-        oauthButtonsPanel.add(microsoftButton)
-        oauthButtonsPanel.add(hint)
-    }
-
     private fun updateFieldsVisibility() {
-        val provider = providerCombo.selectedItem.toString()
-
-        imapFieldsPanel.isVisible = true
+        val provider = providerCombo.selectedItem?.toString() ?: "IMAP"
 
         when (provider) {
             "SEZNAM" -> {
                 serverHostField.text = "imap.seznam.cz"
                 serverPortField.text = "993"
-                useSslCheckbox.isSelected = true
-            }
-
-            "IMAP" -> {
-                serverHostField.text = ""
-                serverPortField.text = "993"
-                useSslCheckbox.isSelected = true
             }
 
             "GMAIL" -> {
-                if (serverHostField.text.isBlank()) serverHostField.text = "imap.gmail.com"
-                if (serverPortField.text.isBlank()) serverPortField.text = "993"
-                useSslCheckbox.isSelected = true
+                serverHostField.text = "imap.gmail.com"
+                serverPortField.text = "993"
             }
 
             "MICROSOFT" -> {
-                if (serverHostField.text.isBlank()) serverHostField.text = "outlook.office365.com"
-                if (serverPortField.text.isBlank()) serverPortField.text = "993"
-                useSslCheckbox.isSelected = true
+                serverHostField.text = "outlook.office365.com"
+                serverPortField.text = "993"
+            }
+
+            "IMAP" -> {
+                if (serverHostField.text.isEmpty()) serverHostField.text = ""
+                if (serverPortField.text.isEmpty()) serverPortField.text = "993"
             }
         }
+
+        useSslCheckbox.isSelected = true
 
         revalidate()
         repaint()
@@ -314,7 +285,7 @@ class EmailConfigPanel(
     private fun saveAccount() {
         scope.launch {
             try {
-                val provider = providerCombo.selectedItem.toString()
+                val provider = providerCombo.selectedItem?.toString() ?: "IMAP"
                 val displayName = displayNameField.text.trim()
                 val description = descriptionArea.text.trim().ifEmpty { null }
                 val email = emailField.text.trim()
@@ -362,7 +333,7 @@ class EmailConfigPanel(
     private fun validateAccount() {
         scope.launch {
             try {
-                val provider = providerCombo.selectedItem.toString()
+                val provider = providerCombo.selectedItem?.toString() ?: "IMAP"
                 val displayName = displayNameField.text.trim()
                 val email = emailField.text.trim()
 
@@ -371,10 +342,10 @@ class EmailConfigPanel(
                     return@launch
                 }
 
-                val hasImapCreds =
-                    usernameField.text.isNotBlank() &&
-                        passwordField.password.isNotEmpty() &&
-                        serverHostField.text.isNotBlank()
+                if (usernameField.text.isBlank() || passwordField.password.isEmpty() || serverHostField.text.isBlank()) {
+                    showError("Username, password, and IMAP server are required")
+                    return@launch
+                }
 
                 val tempRequest =
                     CreateOrUpdateEmailAccountRequestDto(
@@ -386,9 +357,9 @@ class EmailConfigPanel(
                         displayName = displayName,
                         description = null,
                         email = email,
-                        username = usernameField.text.trim().ifEmpty { null },
-                        password = String(passwordField.password).ifEmpty { null },
-                        serverHost = serverHostField.text.trim().ifEmpty { null },
+                        username = usernameField.text.trim(),
+                        password = String(passwordField.password),
+                        serverHost = serverHostField.text.trim(),
                         serverPort = serverPortField.text.trim().toIntOrNull(),
                         useSsl = useSslCheckbox.isSelected,
                     )
@@ -396,121 +367,18 @@ class EmailConfigPanel(
                 val tempAccount = emailService.createEmailAccount(tempRequest)
 
                 try {
-                    if ((provider == "GMAIL" || provider == "MICROSOFT") && !hasImapCreds) {
-                        val authResponse =
-                            if (provider == "GMAIL") {
-                                emailService.initiateGoogleOAuth(accountId = requireNotNull(tempAccount.id))
-                            } else {
-                                emailService.initiateMicrosoftOAuth(accountId = requireNotNull(tempAccount.id))
-                            }
-
-                        val authUrl = authResponse["authorizationUrl"]
-                        if (authUrl != null && Desktop.isDesktopSupported()) {
-                            Desktop.getDesktop().browse(URI(authUrl))
-                            withContext(Dispatchers.Swing) {
-                                showInfo(
-                                    "A browser window was opened for $provider authorization. Complete the process there, then return to this window.",
-                                )
-                            }
-                        } else {
-                            showError("Failed to initiate $provider authorization. Please check server configuration.")
-                            return@launch
-                        }
-
-                        var completed = false
-                        repeat(90) {
-                            val refreshed = emailService.getEmailAccount(requireNotNull(tempAccount.id))
-                            if (refreshed?.hasOAuthToken == true) {
-                                completed = true
-                                return@repeat
-                            }
-                            delay(2000)
-                        }
-
-                        if (!completed) {
-                            showError("Authorization timed out. Please try again.")
-                            return@launch
-                        }
-
-                        val validation: ValidateResponse =
-                            emailService.validateEmailAccount(requireNotNull(tempAccount.id))
-                        if (validation.ok) {
-                            showInfo("Connection successful!\n${validation.message ?: ""}")
-                        } else {
-                            showError("Connection failed:\n${validation.message ?: "Unknown error"}")
-                        }
+                    val validation: ValidateResponse =
+                        emailService.validateEmailAccount(requireNotNull(tempAccount.id))
+                    if (validation.ok) {
+                        showInfo("Connection successful!\n${validation.message ?: ""}")
                     } else {
-                        val validation: ValidateResponse =
-                            emailService.validateEmailAccount(requireNotNull(tempAccount.id))
-                        if (validation.ok) {
-                            showInfo("Connection successful!\n${validation.message ?: ""}")
-                        } else {
-                            showError("Connection failed:\n${validation.message ?: "Unknown error"}")
-                        }
+                        showError("Connection failed:\n${validation.message ?: "Unknown error"}")
                     }
                 } finally {
                     emailService.deleteEmailAccount(requireNotNull(tempAccount.id))
                 }
             } catch (e: Exception) {
                 showError("Validation failed: ${e.message}")
-            }
-        }
-    }
-
-    private fun initiateGoogleOAuth() {
-        scope.launch {
-            try {
-                val tempAccount =
-                    emailService.createEmailAccount(
-                        CreateOrUpdateEmailAccountRequestDto(
-                            clientId = client.id,
-                            projectId = null,
-                            provider = com.jervis.domain.email.EmailProviderEnum.GMAIL,
-                            displayName = displayNameField.text.trim().ifEmpty { "Gmail Account" },
-                            description = descriptionArea.text.trim().ifEmpty { null },
-                            email = emailField.text.trim().ifEmpty { "user@gmail.com" },
-                        ),
-                    )
-
-                val response =
-                    emailService.initiateGoogleOAuth(accountId = requireNotNull(tempAccount.id))
-
-                val authUrl = response["authorizationUrl"]
-                if (authUrl != null && Desktop.isDesktopSupported()) {
-                    Desktop.getDesktop().browse(URI(authUrl))
-                    showInfo("Browser opened for Google authorization. Complete the process there.")
-                }
-            } catch (e: Exception) {
-                showError("Failed to initiate Google OAuth: ${e.message}")
-            }
-        }
-    }
-
-    private fun initiateMicrosoftOAuth() {
-        scope.launch {
-            try {
-                val tempAccount =
-                    emailService.createEmailAccount(
-                        CreateOrUpdateEmailAccountRequestDto(
-                            clientId = client.id,
-                            projectId = null,
-                            provider = com.jervis.domain.email.EmailProviderEnum.MICROSOFT,
-                            displayName = displayNameField.text.trim().ifEmpty { "Microsoft Account" },
-                            description = descriptionArea.text.trim().ifEmpty { null },
-                            email = emailField.text.trim().ifEmpty { "user@outlook.com" },
-                        ),
-                    )
-
-                val response =
-                    emailService.initiateMicrosoftOAuth(accountId = requireNotNull(tempAccount.id))
-
-                val authUrl = response["authorizationUrl"]
-                if (authUrl != null && Desktop.isDesktopSupported()) {
-                    Desktop.getDesktop().browse(URI(authUrl))
-                    showInfo("Browser opened for Microsoft authorization. Complete the process there.")
-                }
-            } catch (e: Exception) {
-                showError("Failed to initiate Microsoft OAuth: ${e.message}")
             }
         }
     }
@@ -525,12 +393,7 @@ class EmailConfigPanel(
                     accountsTableModel.rowCount = 0
 
                     accounts.forEach { account ->
-                        val status =
-                            when {
-                                account.hasOAuthToken -> "OAuth Configured"
-                                account.hasPassword -> "Password Configured"
-                                else -> "Not Configured"
-                            }
+                        val status = if (account.hasPassword) "Configured" else "Not Configured"
 
                         accountsTableModel.addRow(
                             arrayOf(
@@ -635,7 +498,6 @@ class EmailConfigPanel(
     }
 
     private fun setupWebSocketListener() {
-        // TODO: Implement WebSocket listener for OAuth callback notifications
     }
 
     private fun showInfo(message: String) {

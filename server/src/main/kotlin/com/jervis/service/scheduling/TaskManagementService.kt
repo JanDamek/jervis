@@ -1,7 +1,7 @@
 package com.jervis.service.scheduling
 
 import com.jervis.domain.task.ScheduledTaskStatusEnum
-import com.jervis.entity.mongo.ScheduledTaskDocument
+import com.jervis.entity.ScheduledTaskDocument
 import com.jervis.repository.mongo.ScheduledTaskMongoRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

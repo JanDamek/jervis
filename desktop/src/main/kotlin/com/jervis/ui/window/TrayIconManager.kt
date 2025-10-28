@@ -71,11 +71,6 @@ class TrayIconManager {
             windowManager.showSchedulerWindow()
         }
 
-        val indexingMonitorItem = MenuItem("Indexing Monitor")
-        indexingMonitorItem.addActionListener {
-            windowManager.showIndexingMonitor()
-        }
-
         val debugWindowItem = MenuItem("Show Debug Window")
         debugWindowItem.addActionListener {
             windowManager.showDebugWindow()
@@ -91,7 +86,6 @@ class TrayIconManager {
         popup.add(openProjectSettingsItem)
         popup.add(openClientsItem)
         popup.add(openSchedulerItem)
-        popup.add(indexingMonitorItem)
         popup.add(debugWindowItem)
         popup.addSeparator()
         popup.add(exitItem)

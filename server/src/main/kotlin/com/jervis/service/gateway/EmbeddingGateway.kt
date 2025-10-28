@@ -12,6 +12,7 @@ import kotlin.math.sqrt
 class EmbeddingGateway(
     private val modelsProperties: ModelsProperties,
     private val clients: List<EmbeddingProviderClient>,
+    private val rateLimiter: EmbeddingRateLimiter,
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -54,11 +55,12 @@ class EmbeddingGateway(
         provider: ModelProvider,
         model: String,
         text: String,
-    ): List<Float> {
-        val client = clients.first { it.provider == provider }
-        val rawEmbedding = client.call(model, text)
-        return normalizeL2(rawEmbedding)
-    }
+    ): List<Float> =
+        rateLimiter.execute {
+            val client = clients.first { it.provider == provider }
+            val rawEmbedding = client.call(model, text)
+            normalizeL2(rawEmbedding)
+        }
 
     /**
      * Applies L2 normalization to the embedding vector.

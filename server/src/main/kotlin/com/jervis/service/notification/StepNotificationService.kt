@@ -1,5 +1,6 @@
 package com.jervis.service.notification
 
+import com.jervis.domain.plan.PlanStatusEnum
 import com.jervis.domain.plan.PlanStep
 import com.jervis.service.notification.domain.PlanStatusChangeEvent
 import com.jervis.service.notification.domain.StepCompletionEvent
@@ -32,7 +33,7 @@ class StepNotificationService(
     fun notifyPlanStatusChanged(
         contextId: ObjectId,
         planId: ObjectId,
-        planStatusEnum: com.jervis.domain.plan.PlanStatusEnum,
+        planStatusEnum: PlanStatusEnum,
     ) {
         val event =
             PlanStatusChangeEvent(

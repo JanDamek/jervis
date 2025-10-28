@@ -19,6 +19,9 @@ enum class RagSourceType {
     /** Git history and commit information */
     GIT_HISTORY,
 
+    /** Git code changes (diffs) */
+    CODE_CHANGE,
+
     /** Meeting transcripts and recorded sessions */
     MEETING_TRANSCRIPT,
 

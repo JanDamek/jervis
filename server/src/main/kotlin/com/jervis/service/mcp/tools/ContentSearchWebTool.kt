@@ -1,7 +1,6 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
@@ -52,7 +51,7 @@ class ContentSearchWebTool(
 
     private suspend fun parseTaskDescription(
         taskDescription: String,
-        context: TaskContext,
+        plan: Plan,
         stepContext: String = "",
     ): ContentSearchWebParams {
         val llmResponse =
@@ -63,26 +62,26 @@ class ContentSearchWebTool(
                         "taskDescription" to taskDescription,
                         "stepContext" to stepContext,
                     ),
-                quick = context.quick,
+                quick = plan.quick,
                 responseSchema = ContentSearchWebParams(),
+                backgroundMode = plan.backgroundMode,
             )
         return llmResponse.result
     }
 
     override suspend fun execute(
-        context: TaskContext,
         plan: Plan,
         taskDescription: String,
         stepContext: String,
     ): ToolResult {
-        val parsed = parseTaskDescription(taskDescription, context, stepContext)
+        val parsed = parseTaskDescription(taskDescription, plan, stepContext)
 
-        return executeContentSearchWebOperation(parsed, context)
+        return executeContentSearchWebOperation(parsed, plan)
     }
 
     private suspend fun executeContentSearchWebOperation(
         params: ContentSearchWebParams,
-        context: TaskContext,
+        plan: Plan,
     ): ToolResult {
         logger.info { "CONTENT_SEARCH_WEB_START: Executing web search for query='${params.query}'" }
 

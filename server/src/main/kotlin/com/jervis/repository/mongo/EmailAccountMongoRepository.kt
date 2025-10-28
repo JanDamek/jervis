@@ -1,6 +1,6 @@
 package com.jervis.repository.mongo
 
-import com.jervis.entity.mongo.EmailAccountDocument
+import com.jervis.entity.EmailAccountDocument
 import org.bson.types.ObjectId
 import org.springframework.data.mongodb.repository.ReactiveMongoRepository
 import org.springframework.stereotype.Repository

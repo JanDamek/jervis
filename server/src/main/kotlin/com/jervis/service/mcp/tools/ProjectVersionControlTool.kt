@@ -2,7 +2,6 @@ package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.TimeoutsProperties
 import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
@@ -47,7 +46,7 @@ class ProjectVersionControlTool(
 
     private suspend fun parseTaskDescription(
         taskDescription: String,
-        context: TaskContext,
+        plan: Plan,
         stepContext: String = "",
     ): ProjectVersionControlParams {
         val llmResponse =
@@ -58,33 +57,33 @@ class ProjectVersionControlTool(
                         "taskDescription" to taskDescription,
                         "stepContext" to stepContext,
                     ),
-                quick = context.quick,
+                quick = plan.quick,
                 responseSchema = ProjectVersionControlParams(),
+                backgroundMode = plan.backgroundMode,
             )
 
         return llmResponse.result
     }
 
     override suspend fun execute(
-        context: TaskContext,
         plan: Plan,
         taskDescription: String,
         stepContext: String,
     ): ToolResult {
-        val parsed = parseTaskDescription(taskDescription, context, stepContext)
+        val parsed = parseTaskDescription(taskDescription, plan, stepContext)
 
-        return executeProjectVersionControlOperation(parsed, context)
+        return executeProjectVersionControlOperation(parsed, plan)
     }
 
     private suspend fun executeProjectVersionControlOperation(
         params: ProjectVersionControlParams,
-        context: TaskContext,
+        plan: Plan,
     ): ToolResult {
         val projectDir =
             directoryStructureService
                 .projectGitDir(
-                    context.clientDocument.id,
-                    context.projectDocument.id,
+                    plan.clientDocument.id,
+                    plan.projectDocument!!.id,
                 ).toFile()
         val command = buildGitCommand(params)
 

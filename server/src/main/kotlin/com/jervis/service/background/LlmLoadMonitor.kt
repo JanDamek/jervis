@@ -18,7 +18,7 @@ class LlmLoadMonitor {
     private val activeForegroundRequests = AtomicInteger(0)
 
     @Volatile
-    private var lastActivityTimestamp = Instant.now()
+    private var lastActivityTimestamp = Instant.EPOCH
 
     /**
      * Registers the start of a foreground LLM request.

@@ -42,18 +42,6 @@ server:
 
 tika:
   ocr:
-    enabled: true
-    languages:
-      - eng
-      - ces
-      - spa
-      - slk
-      - fin
-      - nor
-      - dan
-      - pol
-      - deu
-      - hun
     timeout-ms: 120000
 
 models: # embedding dimensions configured per model
@@ -79,14 +67,8 @@ models: # embedding dimensions configured per model
 
   QUESTION_INTERPRETER:
     - provider: OLLAMA
-      model: qwen3-coder:30b
+      model: qwen3:30b
       context-length: 32768
-      num-predict: 4096
-
-  RAG:
-    - provider: OLLAMA
-      model: qwen3-coder:30b
-      context-length: 131072
       num-predict: 4096
 
   CODER:
@@ -108,7 +90,7 @@ models: # embedding dimensions configured per model
 
   JOERN:
     - provider: OLLAMA
-      model: qwen3-coder:30b
+      model: qwen3:30b
       context-length: 32768
       num-predict: 4096
 
@@ -117,20 +99,20 @@ models: # embedding dimensions configured per model
       model: qwen3:30b
       context-length: 32768
       num-predict: 4096
-    - provider: OPENAI
-      model: gpt-4o-mini
-      context-length: 8192
-      quick: true
+  #    - provider: OPENAI
+  #      model: gpt-4o-mini
+  #      context-length: 8192
+  #      quick: true
 
   GENERIC_CODE_MODEL:
     - provider: OLLAMA
       model: qwen3-coder:30b
       context-length: 32768
       num-predict: 8192
-    - provider: ANTHROPIC
-      model: claude-3-5-haiku-20241022
-      context-length: 8192
-      quick: true
+  #    - provider: ANTHROPIC
+  #      model: claude-3-5-haiku-20241022
+  #      context-length: 8192
+  #      quick: true
 
   # Heavy models - BATCH PROCESSING ONLY due to P40 VRAM limitations
   HEAVY_TEXT_MODEL:
@@ -154,14 +136,25 @@ models: # embedding dimensions configured per model
       model: claude-3-5-sonnet-20241022
       context-length: 32768
       quick: false
-#    - provider: OPENAI
-#      model: gpt-4o
-#      maxTokens: 8196
-#      quick: true
-#    - provider: ANTHROPIC
-#      model: claude-3-5-sonnet
-#      maxTokens: 8196
-#      quick: true
+  #    - provider: OPENAI
+  #      model: gpt-4o
+  #      maxTokens: 8196
+  #      quick: true
+  #    - provider: ANTHROPIC
+  #      model: claude-3-5-sonnet
+  #      maxTokens: 8196
+  #      quick: true
+  QUICK:
+    - provider: OLLAMA_QUALIFIER
+      model: qwen2.5:3b-instruct-q4_K_M
+      context-length: 8196
+      quick: false
+
+  QUALIFIER:
+    - provider: OLLAMA_QUALIFIER
+      model: qwen2.5:3b-instruct-q4_K_M
+      context-length: 32768
+      concurrency: 4
 
 endpoints:
   openai:
@@ -169,11 +162,20 @@ endpoints:
   anthropic:
     api-key: ${ANTHROPIC_API_KEY}
   ollama:
-    base-url: ${OLLAMA_BASE_URL:http://192.168.100.117:11434/}
+    primary:
+      base-url: ${OLLAMA_BASE_URL:http://192.168.100.117:11434/}
+    qualifier:
+      base-url: ${OLLAMA_QUALIFIER_BASE_URL:http://192.168.100.117:11435/}
   lmStudio:
     base-url: ${LMSTUDIO_BASE_URL:http://192.168.101.249:1234/}
   searxng:
     base-url: ${SEARXNG_BASE_URL:http://192.168.100.117:30053/}
+
+qualifier:
+  # Increased from 4 to 8 - small model can handle more parallel requests
+  # qwen2.5:3b on CPU can easily process 8+ parallel requests
+  concurrency: 8
+  timeout: 10000 # Increased from 5s to 10s for safety
 
 # Service-specific timeout configurations
 timeouts:
@@ -215,8 +217,6 @@ connection-pools:
     max-life-time-minutes: 60
     max-idle-time-minutes: 30
 
-
-
 # Workspace configuration - central root for all server-managed files
 data:
   root-dir: ${DATA_ROOT_DIR:~/.jervis/workspace}
@@ -239,30 +239,36 @@ audio:
     api-url: http://192.168.100.117:9000/
     timeout-seconds: 300
     max-retries: 3
-encryption:
-  master-key: 12abcd5479632cbf5e3a25c6d9a5f77s
 
 # Text chunking configuration
 text:
   chunking:
-    max-tokens: 300
+    max-tokens: 400
     overlap-percentage: 10
+    chars-per-token: 4.0
 
 # Email configuration
 email:
-  oauth:
-    google:
-      client-id: ${GOOGLE_CLIENT_ID:}
-      client-secret: ${GOOGLE_CLIENT_SECRET:}
-      redirect-uri: http://localhost:5500/api/v1/email/oauth/google/callback
-    microsoft:
-      client-id: ${MICROSOFT_CLIENT_ID:}
-      client-secret: ${MICROSOFT_CLIENT_SECRET:}
-      redirect-uri: http://localhost:5500/api/v1/email/oauth/microsoft/callback
   indexing:
     link-extraction:
       enabled: true
-      max-links-per-email: 10
     attachment-processing:
       enabled: true
-      max-attachment-size-mb: 10
+
+# Link indexing configuration
+link:
+  indexing:
+    # ISO-8601 duration or simplified forms (e.g., 30d, 12h)
+    reindex-interval: 30d
+  safety:
+    # Enable LLM-based link qualification for uncertain links
+    enable-llm-qualification: true
+    # Conservative mode: block uncertain links (if false, allows uncertain links)
+    block-uncertain: true
+
+# Git synchronization configuration
+git:
+  sync:
+    # Interval for checking and syncing Git repositories (in milliseconds)
+    polling-interval-ms: 300000 # 5 minutes
+    initial-delay-ms: 60000 # 1 minute after startup

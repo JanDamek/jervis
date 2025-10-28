@@ -2,7 +2,6 @@ package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.TimeoutsProperties
 import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.service.analysis.JoernAnalysisService
 import com.jervis.service.gateway.core.LlmGateway
@@ -38,30 +37,30 @@ class CodeAnalyzeTool(
 
     private suspend fun parseTaskDescription(
         taskDescription: String,
-        context: TaskContext,
+        plan: Plan,
     ): CodeAnalyzeParams {
         val llmResponse =
             llmGateway.callLlm(
                 type = PromptTypeEnum.CODE_ANALYZE_TOOL,
                 responseSchema = CodeAnalyzeParams(),
-                quick = context.quick,
+                quick = plan.quick,
                 mappingValue = mapOf("taskDescription" to taskDescription),
+                backgroundMode = plan.backgroundMode,
             )
         return llmResponse.result
     }
 
     override suspend fun execute(
-        context: TaskContext,
         plan: Plan,
         taskDescription: String,
         stepContext: String,
     ): ToolResult =
         withContext(Dispatchers.IO) {
-            val params = parseTaskDescription(taskDescription, context)
+            val params = parseTaskDescription(taskDescription, plan)
             val projectPath =
                 directoryStructureService.projectGitDir(
-                    context.clientDocument.id,
-                    context.projectDocument.id,
+                    plan.clientDocument.id,
+                    plan.projectDocument!!.id,
                 )
             val projectDir = projectPath.toFile()
 
@@ -70,38 +69,34 @@ class CodeAnalyzeTool(
             }
 
             try {
-                val allCpgList = joernAnalysisService.ensurePerLanguageCpgs(projectPath)
-                if (allCpgList.isEmpty()) {
+                // Detect language buckets and ensure CPG files exist
+                val languageBuckets = joernAnalysisService.detectLanguageBuckets(projectPath)
+                val allCpgMap = joernAnalysisService.ensurePerLanguageCpg(projectPath, languageBuckets)
+
+                if (allCpgMap.isEmpty()) {
                     return@withContext ToolResult.error("No CPG files found in project. Run indexing first to generate CPG files.")
                 }
 
-                val cpgList =
+                val cpgMap =
                     if (params.targetLanguage.isNotBlank()) {
-                        allCpgList.filter { cpgPath ->
-                            val languageName = extractLanguageFromCpgPath(cpgPath)
-                            languageName.equals(params.targetLanguage, ignoreCase = true)
+                        allCpgMap.filterKeys { language ->
+                            language.equals(params.targetLanguage, ignoreCase = true)
                         }
                     } else {
-                        allCpgList
+                        allCpgMap
                     }
 
-                if (cpgList.isEmpty()) {
+                if (cpgMap.isEmpty()) {
                     return@withContext ToolResult.error(
                         "No CPG files found for language '${params.targetLanguage}'. Available languages: ${
-                            allCpgList.map {
-                                extractLanguageFromCpgPath(
-                                    it,
-                                )
-                            }.joinToString(", ")
+                            allCpgMap.keys.joinToString(", ")
                         }",
                     )
                 }
 
                 val results = mutableListOf<String>()
 
-                for (cpgPath in cpgList) {
-                    val languageName = extractLanguageFromCpgPath(cpgPath)
-
+                for ((languageName, cpgPath) in cpgMap) {
                     try {
                         val script = loadAndPrepareScript(params, cpgPath, languageName)
                         val scriptFile = createTempScriptFile(script, languageName)
@@ -125,7 +120,7 @@ class CodeAnalyzeTool(
                 ToolResult.analysisResult(
                     toolName = "CODE_ANALYZE",
                     analysisType = "Code Analysis: ${params.analysisQuery}",
-                    count = cpgList.size,
+                    count = cpgMap.size,
                     unit = "language",
                     results = formatJoernOutput(combinedResults),
                 )

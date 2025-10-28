@@ -1,7 +1,6 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
@@ -49,7 +48,6 @@ class SystemScheduleTaskTool(
     )
 
     override suspend fun execute(
-        context: TaskContext,
         plan: Plan,
         taskDescription: String,
         stepContext: String,
@@ -57,12 +55,12 @@ class SystemScheduleTaskTool(
         try {
             logger.info { "Executing scheduler management with description: $taskDescription" }
 
-            val params = parseTaskDescription(taskDescription, context, stepContext)
+            val params = parseTaskDescription(taskDescription, plan, stepContext)
             logger.debug { "Parsed schedule parameters: $params" }
 
             when (params.action) {
                 "cancel" -> handleCancelTask(params)
-                "schedule" -> handleScheduleTask(params, context)
+                "schedule" -> handleScheduleTask(params, plan)
                 else -> ToolResult.error("Unknown action: ${params.action}")
             }
         } catch (e: Exception) {
@@ -89,7 +87,7 @@ class SystemScheduleTaskTool(
 
     private suspend fun handleScheduleTask(
         params: ScheduleParams,
-        context: TaskContext,
+        plan: Plan,
     ): ToolResult {
         try {
             val projectId =
@@ -100,14 +98,14 @@ class SystemScheduleTaskTool(
                         return ToolResult.error("Invalid project ID format: ${params.projectId}")
                     }
                 } else {
-                    context.projectDocument.id
+                    plan.projectDocument!!.id
                 }
 
             val scheduledTime =
                 parseScheduledTime(params.scheduledDateTime)
                     ?: return ToolResult.error("Invalid or missing scheduled time: ${params.scheduledDateTime}")
 
-            val taskName = params.taskName ?: generateTaskName(params.taskInstruction, context.projectDocument.name)
+            val taskName = params.taskName ?: generateTaskName(params.taskInstruction, plan.projectDocument?.name)
 
             val scheduledTask =
                 taskManagementService.scheduleTask(
@@ -260,7 +258,7 @@ class SystemScheduleTaskTool(
 
     private fun generateTaskName(
         taskInstruction: String,
-        projectName: String,
+        projectName: String?,
     ): String {
         // Generate a concise task name from the instruction, limited to 100 characters
         val baseInstruction = taskInstruction.take(60).trim()
@@ -269,15 +267,15 @@ class SystemScheduleTaskTool(
 
     private suspend fun parseTaskDescription(
         taskDescription: String,
-        context: TaskContext,
+        plan: Plan,
         stepContext: String = "",
     ): ScheduleParams {
         val mappingValues =
             mapOf(
-                "projectName" to context.projectDocument.name,
+                "projectName" to (plan.projectDocument?.name ?: ""),
                 "clientDescription" to (
-                    context.projectDocument.description
-                        ?: "Development team working on ${context.projectDocument.name}"
+                    plan.projectDocument?.description
+                        ?: "Development team working on ${plan.projectDocument?.name}"
                 ),
             )
 
@@ -285,13 +283,14 @@ class SystemScheduleTaskTool(
             .callLlm(
                 type = PromptTypeEnum.SYSTEM_SCHEDULE_TASK_TOOL,
                 responseSchema = ScheduleParams(),
-                quick = context.quick,
+                quick = plan.quick,
                 mappingValue =
                     mappingValues +
                         mapOf(
                             "taskDescription" to taskDescription,
                             "stepContext" to stepContext,
                         ),
+                backgroundMode = plan.backgroundMode,
             ).result
     }
 }

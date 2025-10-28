@@ -8,8 +8,7 @@ import com.jervis.dto.ProjectDto
 import com.jervis.dto.ProjectGitOverrideRequestDto
 import com.jervis.mapper.toDto
 import com.jervis.repository.mongo.ProjectMongoRepository
-import com.jervis.service.IClientGitConfigurationService
-import com.jervis.service.IProjectGitConfigurationService
+import com.jervis.service.IGitConfigurationService
 import com.jervis.service.client.ClientService
 import com.jervis.service.git.GitConfigurationService
 import mu.KotlinLogging
@@ -24,19 +23,17 @@ import org.springframework.web.bind.annotation.RestController
 /**
  * REST API controller for Git configuration operations.
  * Provides endpoints for setting up Git providers, validating access, and cloning repositories.
+ * Handles both client-level and project-level Git configuration.
  */
 @RestController
-@org.springframework.web.bind.annotation.RequestMapping("/api/v1/git")
 class GitConfigurationRestController(
     private val gitConfigurationService: GitConfigurationService,
     private val clientService: ClientService,
     private val projectRepository: ProjectMongoRepository,
-) : IClientGitConfigurationService,
-    IProjectGitConfigurationService {
+) : IGitConfigurationService {
     private val logger = KotlinLogging.logger {}
 
-    @org.springframework.web.bind.annotation.PostMapping("/clients/{clientId}/setup")
-override suspend fun setupGitConfiguration(
+    override suspend fun setupGitConfiguration(
         @PathVariable clientId: String,
         @RequestBody request: GitSetupRequestDto,
     ): ClientDto {
@@ -55,13 +52,10 @@ override suspend fun setupGitConfiguration(
             clientService.getClientById(ObjectId(clientId))
                 ?: throw IllegalStateException("Client not found after Git setup: $clientId")
 
-        val gitCredentials = gitConfigurationService.getGitCredentials(ObjectId(clientId))
-
-        return client.toDto(gitCredentials)
+        return client.toDto()
     }
 
-    @org.springframework.web.bind.annotation.PostMapping("/clients/{clientId}/test-connection")
-override suspend fun testConnection(
+    override suspend fun testConnection(
         @PathVariable clientId: String,
         @RequestBody request: GitSetupRequestDto,
     ): ResponseEntity<Map<String, Any>> {
@@ -94,8 +88,7 @@ override suspend fun testConnection(
         }
     }
 
-    @org.springframework.web.bind.annotation.PostMapping("/clients/{clientId}/clone")
-override suspend fun cloneRepository(
+    override suspend fun cloneRepository(
         @PathVariable clientId: String,
     ): ResponseEntity<CloneResultDto> {
         logger.info { "Cloning repository for client: $clientId" }
@@ -124,8 +117,7 @@ override suspend fun cloneRepository(
         }
     }
 
-    @org.springframework.web.bind.annotation.PostMapping("/projects/{projectId}/inherit-git")
-override suspend fun inheritGitConfig(
+    override suspend fun inheritGitConfig(
         @PathVariable projectId: String,
         @RequestParam clientId: String,
     ): ResponseEntity<Map<String, Any>> {
@@ -157,8 +149,7 @@ override suspend fun inheritGitConfig(
         }
     }
 
-    @org.springframework.web.bind.annotation.PostMapping("/projects/{projectId}/setup-override")
-override suspend fun setupGitOverrideForProject(
+    override suspend fun setupGitOverrideForProject(
         @PathVariable projectId: String,
         @RequestBody request: ProjectGitOverrideRequestDto,
     ): ProjectDto {
@@ -177,13 +168,10 @@ override suspend fun setupGitOverrideForProject(
             projectRepository.findById(ObjectId(projectId))
                 ?: throw IllegalStateException("Project not found after Git override setup: $projectId")
 
-        val gitCredentials = gitConfigurationService.getProjectGitCredentials(ObjectId(projectId))
-
-        return project.toDto(gitCredentials)
+        return project.toDto()
     }
 
-    @org.springframework.web.bind.annotation.GetMapping("/clients/{clientId}/credentials")
-override suspend fun getGitCredentials(
+    override suspend fun getGitCredentials(
         @PathVariable clientId: String,
     ): GitCredentialsDto? {
         logger.info { "Retrieving Git credentials for client: $clientId" }

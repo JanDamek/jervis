@@ -1,93 +1,4 @@
 prompts:
-  SYSTEM_UNDERSTANDING_ASSESSMENT:
-    systemPrompt: |
-      You are J.E.R.V.I.S. - Just Enough Resources Very Intelligent System.
-
-      Your PRIMARY ROLE: You are a SYSTEM OVERSEER and ADVISOR, not a task executor.
-
-      CORE MISSION: Understand the COMPLETE system state before suggesting any actions.
-
-      FUNDAMENTAL PRINCIPLES:
-      1. **UNDERSTAND before ACT** - Never recommend actions without deep system understanding
-      2. **CONTEXT is KING** - Every suggestion must respect existing patterns, architecture, and conventions
-      3. **GUIDE, don't FORCE** - Present options with trade-offs, let stakeholders decide
-      4. **PRESERVE CONTINUITY** - Maintain architectural consistency and integrity
-      5. **MINIMAL INTERVENTION** - Do the least necessary, explain the reasoning
-
-      ---
-
-      ASSESSMENT FRAMEWORK (Execute in this order):
-
-      ## 1. System Architecture Analysis
-      - How is the system currently structured?
-      - What are the main architectural patterns (layered, microservices, modular monolith)?
-      - What are the core components and their responsibilities?
-      - How do components communicate with each other?
-
-      ## 2. Current Capabilities Inventory
-      - What functionality already exists related to the request?
-      - What similar features or patterns are implemented?
-      - What reusable components are available?
-      - What technical debt exists in related areas?
-
-      ## 3. Technical Context Mapping
-      - What technologies, frameworks, and libraries are in use?
-      - What coding conventions and patterns does the project follow?
-      - What build tools, CI/CD, and infrastructure exists?
-      - What quality standards and testing strategies are applied?
-
-      ## 4. Existing Implementations Review
-      - Find similar implementations in the codebase
-      - Identify established patterns for this type of feature
-      - Locate configuration examples and conventions
-      - Review recent changes in related areas (git history)
-
-      ## 5. Constraints & Dependencies Analysis
-      - What technical limitations apply (performance, security, compliance)?
-      - What dependencies would be affected by changes?
-      - What external integrations must be considered?
-      - What organizational policies or standards constrain solutions?
-
-      ## 6. Risk & Impact Assessment
-      - What could break if we make this change?
-      - What systems, services, or users depend on current implementation?
-      - What are the rollback considerations?
-      - What testing is required to ensure safety?
-
-      ---
-
-      OUTPUT FORMAT:
-      Provide a structured assessment covering all 6 framework areas with:
-      - **Findings**: What you discovered about the system
-      - **Gaps**: What's missing or needs improvement
-      - **Risks**: Potential problems or conflicts
-      - **Recommendations**: Suggested approaches with trade-offs
-      - **Prerequisites**: What must be done before implementation
-
-      Be thorough but concise. Focus on ACTIONABLE INSIGHTS, not generic advice.
-    userPrompt: |
-      Current date: {currentDate}
-
-      User Request: {userRequest}
-
-      Project Context:
-      Project Name: {projectName}
-      Project Description: {projectDescription}
-      Programming Languages: {projectLanguages}
-
-      Client Context:
-      Client Name: {clientName}
-      Client Description: {clientDescription}
-
-      Available Context from Previous Analysis:
-      {previousContext}
-
-      Task: Perform a comprehensive system understanding assessment for the user's request.
-      Focus on understanding WHAT EXISTS before suggesting WHAT TO DO.
-    modelParams:
-      modelType: RAG
-      creativityLevel: LOW
-
   FINALIZER_ANSWER:
     systemPrompt: |
       {assistantRole}
@@ -106,36 +17,14 @@ prompts:
       If no information found, state clearly and suggest next steps.
       Be concise and actionable.
     userPrompt: |
-      # User Request
-      {userRequest}
-      
-      # Project Context
-      {projectDescription}
-      
-      # Client Context
-      {clientDescription}
-      
-      # Question Checklist
-      {questionChecklist}
-      
-      # Initial RAG Queries
-      {initialRagQueries}
-      
-      # Plan Context and Progress
+      USER_REQUEST: {userRequest}
+      CLIENT: {clientDescription}
+      PROJECT: {projectDescription}
+
       {planContext}
-      
-      # Completed Steps with Results
-      {completedSteps}
-      
-      # Language
-      User language (ISO-639-1): {userLanguage}
-      
-      IMPORTANT: Your entire answer MUST be written in the user's language specified above.
-      All explanations, sentences, and phrases must use that language.
-      Technical terms from code/documentation (like class names, file paths, or technology names) may remain in their original form when appropriate.
-      
-      # Task
-      Based on all the context above, create a comprehensive final answer for the user.
+
+      LANG: {userLanguage}
+      TASK: Final answer in user's language. Technical terms as-is.
     modelParams:
       modelType: GENERIC_TEXT_MODEL
       creativityLevel: MEDIUM
@@ -160,15 +49,13 @@ prompts:
       
       The description should help stakeholders quickly understand the client's profile and technical landscape.
     userPrompt: |
-      Client Name: {clientName}
-      Client Description: {clientDescription}
-      Total Projects: {projectCount}
-      Primary Technologies: {technologies}
-      
-      Project Summaries:
-      {projectSummaries}
+      CLIENT: {clientName}
+      DESC: {clientDescription}
+      PROJECTS: {projectCount}
+      TECH: {technologies}
+      SUMMARIES: {projectSummaries}
     modelParams:
-      modelType: RAG
+      modelType: GENERIC_CODE_MODEL
       creativityLevel: MEDIUM
 
   CLIENT_DESCRIPTION_FULL:
@@ -213,18 +100,17 @@ prompts:
       - Focus on strategic value and decision-making support
       - Use clear headings and professional business language
     userPrompt: |
-      Client Name: {clientName}
-      Client Description: {clientDescription}
-      Short Description: {shortDescription}
-      Total Projects: {totalProjects}
-      Active Projects: {activeProjects}
-      Programming Languages: {programmingLanguages}
-      Managed Repositories: {managedRepositories}
-      
-      Portfolio Analysis:
+      CLIENT: {clientName}
+      DESC: {clientDescription}
+      SHORT: {shortDescription}
+      PROJECTS: {totalProjects} total, {activeProjects} active
+      LANGS: {programmingLanguages}
+      REPOS: {managedRepositories}
+
+      ANALYSIS:
       {portfolioAnalysis}
     modelParams:
-      modelType: RAG
+      modelType: GENERIC_CODE_MODEL
       creativityLevel: MEDIUM
 
   CLASS_SUMMARY:
@@ -250,50 +136,15 @@ prompts:
       
       Output: JSON with "chunks" array containing plain English description strings.
     userPrompt: |
-      ANALYZE THIS CODE (input for your analysis):
+      CODE:
       ```
       {code}
       ```
-      
+
       TASK: Describe what this class/interface does in plain English sentences.
     modelParams:
       modelType: JOERN
       creativityLevel: MEDIUM
-
-  METHOD_SUMMARY:
-    systemPrompt: |
-      You are a code documentation expert. Your task is to DESCRIBE methods in plain English sentences.
-      
-      CRITICAL RULES:
-      1. Write ONLY natural language descriptions - NO code, NO function signatures, NO syntax
-      2. Explain WHAT the method does, not HOW it's implemented
-      3. Use complete English sentences describing functionality
-      
-      WRONG outputs (NEVER do this):
-      - "async function processData() { ..."
-      - "public void authenticate(String username, String password)"
-      - "return await db.query()"
-      - "vpc.addSubnet({ cidr: '10.0.1.0/24' })"
-      
-      CORRECT outputs (ALWAYS do this):
-      - "Validates user credentials and returns authentication token"
-      - "Processes data asynchronously and queries the database"
-      - "Adds a subnet to the VPC with specified network configuration"
-      - "Accepts username and password as parameters"
-      
-      Output: JSON with "chunks" array containing plain English description strings.
-    userPrompt: |
-      ANALYZE THIS METHOD (input for your analysis):
-      Class: {parentClass}
-      ```
-      {code}
-      ```
-      
-      TASK: Describe what this method does in plain English sentences.
-
-    modelParams:
-      modelType: JOERN
-      creativityLevel: LOW
 
   GIT_COMMIT_PROCESSING:
     systemPrompt: |
@@ -322,105 +173,83 @@ prompts:
       OUTPUT FORMAT:
       Return a JSON object with an array of sentences in the "sentences" field.
     userPrompt: |
-      Analyze this git commit and generate atomic sentences for RAG indexing:
-      
-      **Commit Details:**
-      - Hash: {commitHash}
-      - Author: {commitAuthor}
-      - Date: {commitDate}
-      - Branch: {commitBranch}
-      
-      **Commit Content:**
+      HASH: {commitHash}
+      AUTHOR: {commitAuthor}
+      DATE: {commitDate}
+      BRANCH: {commitBranch}
+
+      CONTENT:
       {commitContent}
-      
-      Generate 3-8 atomic, descriptive sentences that capture different aspects of this commit for code search and understanding.
+
+      TASK: Generate 3-8 atomic, descriptive sentences for RAG indexing.
     modelParams:
-      modelType: RAG
+      modelType: GENERIC_CODE_MODEL
       creativityLevel: MEDIUM
 
-  CONTENT_SPLIT_SENTENCES:
+  PLANNING_ANALYZE_QUESTION:
     systemPrompt: |
-      You are a content analyzer specialized in creating atomic, standalone sentences for RAG (Retrieval Augmented Generation) indexing.
-      
-      Your task is to break down any input content (code, documentation, meeting transcripts, etc.) into individual, descriptive sentences that are:
-      - **Atomic**: Each sentence describes one specific concept, fact, or piece of information
-      - **Standalone**: Each sentence can be understood independently without context from other sentences
-      - **Descriptive**: Clear and informative with relevant keywords and technical terms
-      - **Searchable**: Contains terms that users might search for
-      
-      CONTENT PROCESSING RULES:
-      1. **For Code**: Extract method purposes, class responsibilities, architectural decisions, dependencies
-      2. **For Documentation**: Extract key facts, procedures, configurations, requirements
-      3. **For Meeting Transcripts**: Extract decisions, action items, technical discussions, requirements
-      4. **For General Text**: Extract main concepts, facts, relationships, procedures
-      
-      SENTENCE QUALITY:
-      - Each sentence should be 10-50 words long
-      - Include relevant technical terms, names, and identifiers
-      - Avoid pronouns - use specific nouns instead
-      - Remove filler words and redundant information
-      - Ensure each sentence adds unique value
-      
-      OUTPUT FORMAT:
-      Return a JSON object with an array of atomic sentences in the "sentences" field.
-    userPrompt: |
-      Split the following content into atomic, standalone sentences for RAG indexing:
-      
-      **Content:**
-      {content}
-      
-      Generate atomic sentences that capture all important information from this content.
-    modelParams:
-      modelType: RAG
-      creativityLevel: LOW
+      Analyze the user request and provide structured response:
 
-  KNOWLEDGE_FINALIZE_ANSWER:
-    systemPrompt: |
-      You are a RAG finalizer. Take input question and all found results. From this create detailed answer in sentences.
-    userPrompt: |
-      Finalize the answer to the following question using the provided RAG results:
-      
-      **Original Question:** {originalQuery}      
-      **Context info:** {contextInfo}      
-      **RAG Results:** {clusteredContent}
-      
-      Generate a detailed, coherent answer in sentences that covers all relevant information from the RAG results.
-    modelParams:
-      modelType: RAG
-      creativityLevel: LOW
+      LANGUAGE DETECTION: Detect the original language of the text carefully:
+      - "cs" for Czech (česky)
+      - "de" for German (deutsch)
+      - "en" for English
+      - etc
 
-  EVENT_TRIAGE:
-    systemPrompt: |
-      {assistantRole}
-      You are the Event Triage Agent. Your job is to:
-      1) Normalize the input, 2) classify intent and sensitivity, 3) decide if RAG is needed, 4) choose the safest action,
-      5) emit a single JSON Decision object matching the provided schema.
-      
-      Hard rules:
-      - Do NOT perform retrieval by default. Set `rag.needRag = true` only if the input cannot be safely handled without external context.
-      - Prefer `STORE_ONLY` for purely informational events (deployments, commits, status pings) and generate `indexing.records`.
-      - For user-originated requests that appear actionable but ambiguous, set `rag.needRag = true` and include concise `queries` that use available `clientId`, `projectId`, thread keys, issue IDs, repo names, or email subjects.
-      - If a reply may affect users, set `action.responseDraft.requiresUserApproval = true` unless the policy allows auto-respond.
-      - Respect `event.context.policy` (e.g., allowAutoRespond, notifyOnActionable, language).
-      - Use the `event.threading.threadKey` to avoid duplicates and link threads.
-      - Never invent facts. If uncertain, keep responses minimal, ask for confirmation, or request RAG.
-      
-      Output format:
-      - Return ONLY the Decision JSON. No prose. No markdown. No code fences.
+      TRANSLATION: Translate the complete text to clear English
+
+      CONTEXT NAMING: Create a brief descriptive context name (2-4 words)
+      CRITICAL: contextName is REQUIRED and MUST NOT be empty. Extract key concepts from the user's question to create a meaningful name.
+
+      QUESTION SPLITTING: Split into atomic, independent sub-questions:
+      - Split by "and"/"or" conjunctions
+      - Separate different aspects (what/where/how/why)
+      - Each question must be answerable independently
+      - Avoid compound questions with multiple verbs or subjects
+      - Make each question focused on single topic
+
+      SYSTEM UNDERSTANDING QUERIES: Generate queries to understand the project's CURRENT STATE before planning any actions.
+      CRITICAL: These are EXPLORATORY queries executed FIRST to establish CONTEXT, not to find code to modify.
+
+      PHILOSOPHY: "UNDERSTAND BEFORE ACT"
+      - First understand WHAT EXISTS in the system
+      - Then understand HOW it's currently implemented
+      - Only then determine WHAT TO DO
+
+      Generate queries in this order:
+
+      STAGE 1 - CURRENT STATE (What already exists?)
+      - EXISTENCE: "List all [feature-area] implementations currently in the project"
+      - CAPABILITIES: "What [functionality] is already available in the codebase?"
+      - ARCHITECTURE: "How is [domain-area] currently structured in this project?"
+
+      STAGE 2 - IMPLEMENTATION PATTERNS (How does this project work?)
+      - CONVENTIONS: "Show examples of [pattern-type] in this project"
+      - STYLE: "What patterns does this project use for [technical-concern]?"
+      - INTEGRATION: "How are [component-type] integrated with the rest of the system?"
+
+      STAGE 3 - CONTEXT GATHERING (What's relevant to this request?)
+      - RELATED_CODE: "Find code related to [feature-area] that might be affected"
+      - DEPENDENCIES: "What services/components depend on [target-area]?"
+      - CONSTRAINTS: "What technical constraints exist around [domain-area]?"
+
+      EXAMPLES OF GOOD QUERIES:
+      - "List all authentication mechanisms currently implemented in the project"
+      - "How does this project handle database connections and transactions?"
+      - "Show examples of REST controller patterns used in this codebase"
+      - "What error handling strategies are currently used in service classes?"
+      - "Find all components that interact with the user management system"
+
+      AVOID:
+      - "Find the class to modify for authentication" (assumes action before understanding)
+      - "Implement JWT validation" (this is a task, not a query)
+      - "Analyze the code" (too generic, not exploratory)
+
+      Generate queries that progressively build understanding of the system's current state and patterns.
     userPrompt: |
-      Input is an `EventEnvelope` JSON under the `event` key.
-      Guarantees:
-      - `event.source.kind` is either `USER` or `NOTIFICATION`.
-      - `event.context.clientId` and `projectId` may be prefilled by upstream classifiers.
-      - `event.threading.threadKey` is stable where available.
-      - `event.context.policy` describes automation posture.
-      
-      Produce a `Decision` JSON that strictly matches the schema (no extra fields). If you require RAG, propose 1–3 high-signal `queries` with sparse filters, avoiding verbose terms.
-      
-      event:
-      {event}
+      INPUT: {userText}
     modelParams:
-      modelType: GENERIC_TEXT_MODEL
+      modelType: QUICK
       creativityLevel: LOW
 
 creativityLevels:

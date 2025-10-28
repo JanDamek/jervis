@@ -1,7 +1,6 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
@@ -95,26 +94,25 @@ class ProjectExploreStructureTool(
     }
 
     override suspend fun execute(
-        context: TaskContext,
         plan: Plan,
         taskDescription: String,
         stepContext: String,
     ): ToolResult {
         val parsed = parseTaskDescription(taskDescription)
 
-        return executeProjectExploreStructureOperation(parsed, context)
+        return executeProjectExploreStructureOperation(parsed, plan)
     }
 
     private suspend fun executeProjectExploreStructureOperation(
         params: ProjectExploreStructureParams,
-        context: TaskContext,
+        plan: Plan,
     ): ToolResult =
         withContext(Dispatchers.IO) {
             logger.debug {
                 "PROJECT_EXPLORE_STRUCTURE_START: Executing file listing for maxDepth=${params.maxDepth}, includeHidden=${params.includeHidden}, pathOverride=${params.path ?: "<none>"}"
             }
 
-            val projectPath = determineProjectPath(context, params.path)
+            val projectPath = determineProjectPath(plan, params.path)
 
             logger.debug { "PROJECT_EXPLORE_STRUCTURE_PROJECT_PATH: Using project path: $projectPath" }
 
@@ -131,13 +129,13 @@ class ProjectExploreStructureTool(
         }
 
     private fun determineProjectPath(
-        context: TaskContext,
+        plan: Plan,
         overridePath: String?,
     ): Path {
         val projectGitPath =
             directoryStructureService.projectGitDir(
-                context.clientDocument.id,
-                context.projectDocument.id,
+                plan.clientDocument.id,
+                plan.projectDocument!!.id,
             )
 
         val candidates =

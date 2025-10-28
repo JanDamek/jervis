@@ -1,14 +1,15 @@
 package com.jervis.domain.plan
 
+import com.jervis.domain.project.ProjectContextInfo
+import com.jervis.entity.ClientDocument
+import com.jervis.entity.ProjectDocument
 import org.bson.types.ObjectId
-import java.time.Instant
 
 data class Plan(
     val id: ObjectId,
-    var contextId: ObjectId,
-    val originalQuestion: String,
+    val taskInstruction: String,
     val originalLanguage: String,
-    val englishQuestion: String,
+    val englishInstruction: String,
     val questionChecklist: List<String> = emptyList(),
     val initialRagQueries: List<String> = emptyList(),
     var status: PlanStatusEnum = PlanStatusEnum.CREATED,
@@ -16,6 +17,23 @@ data class Plan(
     var contextSummary: String? = null,
     var finalAnswer: String? = null,
     var thinkingSequence: List<String> = emptyList(),
-    val createdAt: Instant = Instant.now(),
-    var updatedAt: Instant = Instant.now(),
-)
+    val clientDocument: ClientDocument,
+    val projectDocument: ProjectDocument? = null,
+    val quick: Boolean,
+    val backgroundMode: Boolean = false,
+    var projectContextInfo: ProjectContextInfo? = null,
+    val originPendingTaskId: ObjectId? = null,
+) {
+    val clientId: ObjectId
+        get() = clientDocument.id
+
+    val projectId: ObjectId?
+        get() = projectDocument?.id
+
+    override fun toString(): String =
+        when {
+            backgroundMode -> "🔄 $taskInstruction (background)"
+            quick -> "⚡ $taskInstruction"
+            else -> taskInstruction
+        }
+}

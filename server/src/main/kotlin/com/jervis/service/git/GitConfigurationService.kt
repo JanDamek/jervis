@@ -286,119 +286,29 @@ class GitConfigurationService(
 
     /**
      * Setup Git override configuration for a project.
-     * Allows project to use different credentials, remote URL, and auth type than the client.
+     * TODO: Git config moved to client level, simplify to repository URL only
+     * DEPRECATED - will be redesigned according to new architecture
      */
+    @Deprecated("Git config moved to client level")
     suspend fun setupGitOverrideForProject(
         projectId: ObjectId,
         request: ProjectGitOverrideRequestDto,
     ): Result<Unit> =
         withContext(Dispatchers.IO) {
-            try {
-                logger.info { "Setting up Git override for project: $projectId" }
-
-                val project = projectRepository.findById(projectId)
-                if (project == null) {
-                    return@withContext Result.failure(IllegalArgumentException("Project not found: $projectId"))
-                }
-
-                // Build ProjectOverrides with Git configuration and credentials
-                val currentOverrides = project.overrides
-
-                // Create GitConfig object with workflow settings and raw credentials (no encryption)
-                val gitConfig =
-                    GitConfig(
-                        gitUserName = request.gitConfig?.gitUserName,
-                        gitUserEmail = request.gitConfig?.gitUserEmail,
-                        commitMessageTemplate = request.gitConfig?.commitMessageTemplate,
-                        requireGpgSign = request.gitConfig?.requireGpgSign ?: false,
-                        gpgKeyId = request.gitConfig?.gpgKeyId,
-                        requireLinearHistory = request.gitConfig?.requireLinearHistory ?: false,
-                        conventionalCommits = request.gitConfig?.conventionalCommits ?: false,
-                        commitRules = request.gitConfig?.commitRules ?: emptyMap(),
-                        sshPrivateKey =
-                            request.sshPrivateKey?.takeIf { it.isNotBlank() }
-                                ?: currentOverrides.gitConfig?.sshPrivateKey,
-                        sshPublicKey =
-                            request.sshPublicKey?.takeIf { it.isNotBlank() }
-                                ?: currentOverrides.gitConfig?.sshPublicKey,
-                        sshPassphrase =
-                            request.sshPassphrase?.takeIf { it.isNotBlank() }
-                                ?: currentOverrides.gitConfig?.sshPassphrase,
-                        httpsToken =
-                            request.httpsToken?.takeIf { it.isNotBlank() }
-                                ?: currentOverrides.gitConfig?.httpsToken,
-                        httpsUsername =
-                            request.httpsUsername?.takeIf { it.isNotBlank() }
-                                ?: currentOverrides.gitConfig?.httpsUsername,
-                        httpsPassword =
-                            request.httpsPassword?.takeIf { it.isNotBlank() }
-                                ?: currentOverrides.gitConfig?.httpsPassword,
-                        gpgPrivateKey =
-                            request.gpgPrivateKey?.takeIf { it.isNotBlank() }
-                                ?: currentOverrides.gitConfig?.gpgPrivateKey,
-                        gpgPublicKey =
-                            request.gpgPublicKey?.takeIf { it.isNotBlank() }
-                                ?: currentOverrides.gitConfig?.gpgPublicKey,
-                        gpgPassphrase =
-                            request.gpgPassphrase?.takeIf { it.isNotBlank() }
-                                ?: currentOverrides.gitConfig?.gpgPassphrase,
-                    )
-
-                val updatedOverrides =
-                    currentOverrides.copy(
-                        gitRemoteUrl = request.gitRemoteUrl,
-                        gitAuthType = request.gitAuthType,
-                        gitConfig = gitConfig,
-                    )
-
-                val updatedProject =
-                    project.copy(
-                        overrides = updatedOverrides,
-                    )
-
-                projectRepository.save(updatedProject)
-                logger.info {
-                    "Git override saved successfully for project: $projectId, " +
-                        "hasRemoteUrl=${request.gitRemoteUrl != null}, " +
-                        "hasAuthType=${request.gitAuthType != null}"
-                }
-
-                Result.success(Unit)
-            } catch (e: Exception) {
-                logger.error(e) { "Failed to setup Git override for project: $projectId" }
-                Result.failure(e)
-            }
+            logger.warn { "setupGitOverrideForProject is deprecated - Git config moved to client level" }
+            Result.success(Unit) // No-op for now
         }
 
     /**
      * Retrieve existing Git credentials for a project override.
-     * Returns null if project has no Git override credentials configured.
-     * Sensitive fields are masked - only their presence is indicated.
+     * TODO: Git config moved to client level
+     * DEPRECATED - will be redesigned according to new architecture
      */
-    suspend fun getProjectGitCredentials(projectId: ObjectId): GitCredentialsDto? =
-        withContext(Dispatchers.IO) {
-            logger.info { "Retrieving project Git credentials for project: $projectId" }
-
-            val project = projectRepository.findById(projectId) ?: return@withContext null
-            val gitConfig = project.overrides.gitConfig ?: return@withContext null
-
-            logger.info { "Found project: $projectId, returning raw project credentials (internal mode)" }
-
-            val result =
-                GitCredentialsDto(
-                    sshPrivateKey = gitConfig.sshPrivateKey,
-                    sshPublicKey = gitConfig.sshPublicKey,
-                    sshPassphrase = gitConfig.sshPassphrase,
-                    httpsToken = gitConfig.httpsToken,
-                    httpsUsername = gitConfig.httpsUsername,
-                    httpsPassword = gitConfig.httpsPassword,
-                    gpgPrivateKey = gitConfig.gpgPrivateKey,
-                    gpgPublicKey = gitConfig.gpgPublicKey,
-                    gpgPassphrase = gitConfig.gpgPassphrase,
-                )
-
-            result
-        }
+    @Deprecated("Git config moved to client level")
+    suspend fun getProjectGitCredentials(projectId: ObjectId): GitCredentialsDto? {
+        logger.warn { "getProjectGitCredentials is deprecated - Git config moved to client level" }
+        return null // No project-level git credentials anymore
+    }
 
     /**
      * Retrieve existing Git credentials for a client.

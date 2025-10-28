@@ -41,6 +41,7 @@ class LlmGateway(
         quick: Boolean = false,
         mappingValue: Map<String, String> = emptyMap(),
         outputLanguage: String? = null,
+        backgroundMode: Boolean,
     ): ParsedResponse<T> {
         require((responseSchema is String).not()) { "Response schema must be a object not string." }
         val prompt = promptRepository.getPrompt(type)
@@ -119,7 +120,15 @@ class LlmGateway(
                 for (candidate in candidates) {
                     try {
                         val response =
-                            llmCallExecutor.executeCall(candidate, sysPrompt, usrPrompt, prompt, type, estimatedTokens)
+                            llmCallExecutor.executeCall(
+                                candidate,
+                                sysPrompt,
+                                usrPrompt,
+                                prompt,
+                                type,
+                                estimatedTokens,
+                                backgroundMode,
+                            )
 
                         val provider =
                             requireNotNull(candidate.provider) {
@@ -133,6 +142,9 @@ class LlmGateway(
                                 candidate.model,
                             )
                         return@executor parsedResponse.result
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        logger.info { "Chunk processing cancelled (background task interrupted)" }
+                        throw e
                     } catch (e: Exception) {
                         logger.error { "LLM call failed for provider=${candidate.provider} model=${candidate.model}: ${e.message}" }
                         logger.error { "Full error details: ${e.stackTraceToString()}" }
@@ -169,7 +181,15 @@ class LlmGateway(
         for (candidate in candidates) {
             try {
                 val response =
-                    llmCallExecutor.executeCall(candidate, systemPrompt, finalUserPrompt, prompt, type, estimatedTokens)
+                    llmCallExecutor.executeCall(
+                        candidate,
+                        systemPrompt,
+                        finalUserPrompt,
+                        prompt,
+                        type,
+                        estimatedTokens,
+                        backgroundMode,
+                    )
 
                 // JSON PARSING WITH THINK EXTRACTION
                 val provider =
@@ -182,6 +202,9 @@ class LlmGateway(
                     provider,
                     candidate.model,
                 )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                logger.info { "LLM call cancelled (background task interrupted)" }
+                throw e
             } catch (e: Exception) {
                 logger.error { "LLM call failed for provider=${candidate.provider} model=${candidate.model}: ${e.message}" }
                 logger.error { "Full error details: ${e.stackTraceToString()}" }

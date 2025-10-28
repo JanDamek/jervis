@@ -1,9 +1,10 @@
 package com.jervis.repository.mongo
 
-import com.jervis.entity.mongo.ProjectDocument
+import com.jervis.entity.ProjectDocument
 import org.bson.types.ObjectId
 import org.springframework.data.repository.kotlin.CoroutineCrudRepository
 import org.springframework.stereotype.Repository
+import reactor.core.publisher.Mono
 
 /**
  * MongoDB repository for project documents.
@@ -15,10 +16,11 @@ interface ProjectMongoRepository : CoroutineCrudRepository<ProjectDocument, Obje
      */
     suspend fun findByIsActiveIsTrue(): ProjectDocument?
 
-    /**
-     * Finds all projects belonging to a specific client.
-     */
-    suspend fun findByClientId(clientId: ObjectId): List<ProjectDocument>
-
     suspend fun findByName(name: String): ProjectDocument?
+
+    /**
+     * Finds the project with oldest Git sync timestamp (or never synced).
+     * Used for sequential Git synchronization scheduling.
+     */
+    fun findFirstByOrderByLastGitSyncAtAscCreatedAtAsc(): Mono<ProjectDocument>
 }

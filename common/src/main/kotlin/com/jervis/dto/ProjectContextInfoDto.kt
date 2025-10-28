@@ -6,6 +6,5 @@ import kotlinx.serialization.Serializable
 data class ProjectContextInfoDto(
     val projectDescription: String?,
     val techStack: TechStackInfoDto,
-    val codingGuidelines: CodingGuidelinesDto,
     val dependencyInfo: List<String>,
 )

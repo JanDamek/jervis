@@ -33,6 +33,7 @@ class LlmCallExecutor(
         prompt: PromptConfigBase,
         promptType: PromptTypeEnum,
         estimatedTokens: Int,
+        backgroundMode: Boolean = false,
     ): LlmResponse {
         val provider =
             candidate.provider
@@ -40,10 +41,13 @@ class LlmCallExecutor(
 
         val client = findClientForProvider(provider)
 
-        logger.info { "Calling LLM type=$promptType provider=$provider model=${candidate.model}" }
+        logger.info { "Calling LLM type=$promptType provider=$provider model=${candidate.model} background=$backgroundMode" }
         val startTime = System.nanoTime()
 
-        llmLoadMonitor.registerRequestStart()
+        // Always register requests (foreground or background) to track total LLM load
+        if (!backgroundMode) {
+            llmLoadMonitor.registerRequestStart()
+        }
 
         return try {
             logger.debug { "LLM Request - systemPrompt=$systemPrompt, userPrompt=$userPrompt" }
@@ -68,7 +72,6 @@ class LlmCallExecutor(
                     prompt,
                     estimatedTokens,
                     debugSessionId,
-                    promptType,
                 )
 
             validateResponse(response, provider)
@@ -76,12 +79,18 @@ class LlmCallExecutor(
             logger.debug { "LLM Response - $response" }
 
             response
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            logger.info { "LLM call cancelled for $provider (background task interrupted)" }
+            throw e
         } catch (throwable: Throwable) {
             val errorDetail = createErrorDetail(throwable)
             logFailedCall(provider, candidate.model, startTime, errorDetail)
             throw IllegalStateException("LLM call failed for $provider: $errorDetail", throwable)
         } finally {
-            llmLoadMonitor.registerRequestEnd()
+            // Always unregister requests (foreground or background)
+            if (!backgroundMode) {
+                llmLoadMonitor.registerRequestEnd()
+            }
         }
     }
 
@@ -97,7 +106,6 @@ class LlmCallExecutor(
         prompt: PromptConfigBase,
         estimatedTokens: Int,
         debugSessionId: String,
-        promptType: PromptTypeEnum,
     ): LlmResponse {
         val responseBuilder = StringBuilder()
         var model = candidate.model

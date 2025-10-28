@@ -57,6 +57,7 @@ class LMStudioController(
                         projectId = project.id.toString(),
                         autoScope = false,
                     ),
+                background = false,
             )
         return CompletionResponse(
             id = "cmpl-${UUID.randomUUID()}",
@@ -91,6 +92,7 @@ class LMStudioController(
                         projectId = defaultProject.id.toString(),
                         autoScope = false,
                     ),
+                background = false,
             )
         return ChatCompletionResponse(
             id = "chat-${UUID.randomUUID()}",

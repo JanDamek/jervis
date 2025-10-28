@@ -1,32 +1,34 @@
 package com.jervis.mapper
 
-import com.jervis.domain.project.IndexingRules
-import com.jervis.domain.project.ProjectOverrides
-import com.jervis.dto.GitCredentialsDto
 import com.jervis.dto.IndexingRulesDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ProjectOverridesDto
-import com.jervis.entity.mongo.ProjectDocument
+import com.jervis.entity.ProjectDocument
 import org.bson.types.ObjectId
 
-fun ProjectDocument.toDto(gitCredentials: GitCredentialsDto? = null): ProjectDto =
+fun ProjectDocument.toDto(): ProjectDto =
     ProjectDto(
         id = this.id.toHexString(),
         clientId = this.clientId.toHexString(),
         name = this.name,
-        projectPath = this.projectPath,
         description = this.description,
         shortDescription = this.shortDescription,
         fullDescription = this.fullDescription,
+        projectPath = this.projectPath,
         documentationUrls = this.documentationUrls,
         languages = this.languages,
         communicationLanguageEnum = this.communicationLanguageEnum,
-        overrides = this.overrides.toDto(gitCredentials),
-        inspirationOnly = this.inspirationOnly,
-        indexingRules = this.indexingRules.toDto(),
         dependsOnProjects = this.dependsOnProjects.map { it.toHexString() },
+        inspirationOnly = this.inspirationOnly,
+        indexingRules =
+            IndexingRulesDto(
+                includeGlobs = this.indexingRules.includeGlobs,
+                excludeGlobs = this.indexingRules.excludeGlobs,
+                maxFileSizeMB = this.indexingRules.maxFileSizeMB,
+            ),
         isDisabled = this.isDisabled,
         isActive = this.isActive,
+        overrides = this.overrides?.toDto(),
     )
 
 fun ProjectDto.toDocument(): ProjectDocument =
@@ -34,59 +36,35 @@ fun ProjectDto.toDocument(): ProjectDocument =
         id = ObjectId(this.id),
         clientId = ObjectId(this.clientId),
         name = this.name,
-        projectPath = this.projectPath,
         description = this.description,
         shortDescription = this.shortDescription,
         fullDescription = this.fullDescription,
+        projectPath = this.projectPath,
         documentationUrls = this.documentationUrls,
         languages = this.languages,
         communicationLanguageEnum = this.communicationLanguageEnum,
-        overrides = this.overrides.toDomain(),
-        inspirationOnly = this.inspirationOnly,
-        indexingRules = this.indexingRules.toDomain(),
         dependsOnProjects = this.dependsOnProjects.map { ObjectId(it) },
+        inspirationOnly = this.inspirationOnly,
+        indexingRules =
+            com.jervis.domain.project.IndexingRules(
+                includeGlobs = this.indexingRules.includeGlobs,
+                excludeGlobs = this.indexingRules.excludeGlobs,
+                maxFileSizeMB = this.indexingRules.maxFileSizeMB,
+            ),
         isDisabled = this.isDisabled,
         isActive = this.isActive,
+        overrides = this.overrides?.toDomain(),
     )
 
-fun IndexingRules.toDto(): IndexingRulesDto =
-    IndexingRulesDto(
-        includeGlobs = this.includeGlobs,
-        excludeGlobs = this.excludeGlobs,
-        maxFileSizeMB = this.maxFileSizeMB,
-    )
-
-fun IndexingRulesDto.toDomain(): IndexingRules =
-    IndexingRules(
-        includeGlobs = this.includeGlobs,
-        excludeGlobs = this.excludeGlobs,
-        maxFileSizeMB = this.maxFileSizeMB,
-    )
-
-fun ProjectOverrides.toDto(gitCredentials: GitCredentialsDto? = null): ProjectOverridesDto =
+fun com.jervis.domain.project.ProjectOverrides.toDto(): ProjectOverridesDto =
     ProjectOverridesDto(
-        codingGuidelines = this.codingGuidelines?.toDto(),
-        reviewPolicy = this.reviewPolicy?.toDto(),
-        formatting = this.formatting?.toDto(),
-        secretsPolicy = this.secretsPolicy?.toDto(),
-        anonymization = this.anonymization?.toDto(),
-        inspirationPolicy = this.inspirationPolicy?.toDto(),
-        audioMonitoring = this.audioMonitoring?.toDto(),
         gitRemoteUrl = this.gitRemoteUrl,
         gitAuthType = this.gitAuthType,
         gitConfig = this.gitConfig?.toDto(),
-        gitCredentials = gitCredentials,
     )
 
-fun ProjectOverridesDto.toDomain(): ProjectOverrides =
-    ProjectOverrides(
-        codingGuidelines = this.codingGuidelines?.toDomain(),
-        reviewPolicy = this.reviewPolicy?.toDomain(),
-        formatting = this.formatting?.toDomain(),
-        secretsPolicy = this.secretsPolicy?.toDomain(),
-        anonymization = this.anonymization?.toDomain(),
-        inspirationPolicy = this.inspirationPolicy?.toDomain(),
-        audioMonitoring = this.audioMonitoring?.toDomain(),
+fun ProjectOverridesDto.toDomain(): com.jervis.domain.project.ProjectOverrides =
+    com.jervis.domain.project.ProjectOverrides(
         gitRemoteUrl = this.gitRemoteUrl,
         gitAuthType = this.gitAuthType,
         gitConfig = this.gitConfig?.toDomain(),

@@ -1,7 +1,6 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
@@ -34,14 +33,14 @@ class CodeModifyTool(
 
     private suspend fun parseTaskDescription(
         taskDescription: String,
-        context: TaskContext,
+        plan: Plan,
         stepContext: String,
     ): CodeModifyParams {
         val llmResponse =
             llmGateway.callLlm(
                 type = PromptTypeEnum.CODE_MODIFY_TOOL,
                 responseSchema = CodeModifyParams(),
-                quick = context.quick,
+                quick = plan.quick,
                 mappingValue =
                     mapOf(
                         "taskDescription" to taskDescription,
@@ -50,30 +49,30 @@ class CodeModifyTool(
                         "requirements" to "", // Additional requirements will be extracted from taskDescription
                         "stepContext" to stepContext,
                     ),
+                backgroundMode = plan.backgroundMode,
             )
 
         return llmResponse.result
     }
 
     override suspend fun execute(
-        context: TaskContext,
         plan: Plan,
         taskDescription: String,
         stepContext: String,
     ): ToolResult {
-        val parsed = parseTaskDescription(taskDescription, context, stepContext)
+        val parsed = parseTaskDescription(taskDescription, plan, stepContext)
 
-        return executeCodeModifyOperation(parsed, context)
+        return executeCodeModifyOperation(parsed, plan)
     }
 
     private suspend fun executeCodeModifyOperation(
         params: CodeModifyParams,
-        context: TaskContext,
+        plan: Plan,
     ): ToolResult {
         val projectPath =
             directoryStructureService.projectGitDir(
-                context.clientDocument.id,
-                context.projectDocument.id,
+                plan.clientDocument.id,
+                plan.projectDocument!!.id,
             )
         val targetFile = projectPath.resolve(params.targetPath)
 

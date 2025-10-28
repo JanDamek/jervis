@@ -18,7 +18,7 @@ class AgentOrchestratorRestController(
     @ResponseStatus(HttpStatus.ACCEPTED)
     override suspend fun handle(request: ChatRequestDto) {
         CoroutineScope(Dispatchers.Default).launch {
-            agentOrchestratorService.handle(request.text, request.context.toDomain())
+            agentOrchestratorService.handle(request.text, request.context.toDomain(), background = false)
         }
     }
 }

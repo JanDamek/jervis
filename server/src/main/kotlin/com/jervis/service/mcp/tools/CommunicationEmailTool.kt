@@ -1,7 +1,6 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
@@ -29,38 +28,38 @@ class CommunicationEmailTool(
 
     private suspend fun parseTaskDescription(
         taskDescription: String,
-        context: TaskContext,
+        plan: Plan,
         stepContext: String,
     ): CommunicationEmailParams {
         val llmResponse =
             llmGateway.callLlm(
                 type = PromptTypeEnum.COMMUNICATION_EMAIL_TOOL,
                 responseSchema = CommunicationEmailParams(),
-                quick = context.quick,
+                quick = plan.quick,
                 mappingValue =
                     mapOf(
                         "taskDescription" to taskDescription,
                         "stepContext" to stepContext,
                     ),
+                backgroundMode = plan.backgroundMode,
             )
 
         return llmResponse.result
     }
 
     override suspend fun execute(
-        context: TaskContext,
         plan: Plan,
         taskDescription: String,
         stepContext: String,
     ): ToolResult {
-        val parsed = parseTaskDescription(taskDescription, context, stepContext)
+        val parsed = parseTaskDescription(taskDescription, plan, stepContext)
 
-        return executeEmailOperation(parsed, context)
+        return executeEmailOperation(parsed, plan)
     }
 
     private suspend fun executeEmailOperation(
         params: CommunicationEmailParams,
-        context: TaskContext,
+        plan: Plan,
     ): ToolResult {
         // Note: This is a mock implementation. In production, you would integrate with an actual email service
         // such as SendGrid, Amazon SES, SMTP server, etc.

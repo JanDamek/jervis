@@ -106,10 +106,6 @@ object MacOSAppUtils {
 
             toolsMenu.addSeparator()
 
-            val indexingMonitorItem = JMenuItem("Indexing Monitor")
-            indexingMonitorItem.addActionListener { applicationWindowManager.showIndexingMonitor() }
-            toolsMenu.add(indexingMonitorItem)
-
             val debugWindowItem = JMenuItem("Show Debug Window")
             debugWindowItem.addActionListener { applicationWindowManager.showDebugWindow() }
             toolsMenu.add(debugWindowItem)
@@ -167,10 +163,6 @@ object MacOSAppUtils {
                     val schedulerItem = java.awt.MenuItem("Scheduler")
                     schedulerItem.addActionListener { applicationWindowManager.showSchedulerWindow() }
                     dockMenu.add(schedulerItem)
-
-                    val indexingMonitorItem = java.awt.MenuItem("Indexing Monitor")
-                    indexingMonitorItem.addActionListener { applicationWindowManager.showIndexingMonitor() }
-                    dockMenu.add(indexingMonitorItem)
 
                     val debugWindowItem = java.awt.MenuItem("Show Debug Window")
                     debugWindowItem.addActionListener { applicationWindowManager.showDebugWindow() }

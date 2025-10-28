@@ -1,7 +1,7 @@
 package com.jervis.service.project
 
 import com.jervis.dto.ProjectDto
-import com.jervis.entity.mongo.ProjectDocument
+import com.jervis.entity.ProjectDocument
 import com.jervis.mapper.toDocument
 import com.jervis.mapper.toDto
 import com.jervis.repository.mongo.ProjectMongoRepository
@@ -66,74 +66,11 @@ class ProjectService(
                 val newProject = project.copy(createdAt = Instant.now(), updatedAt = Instant.now())
                 projectRepository.save(newProject)
             } else {
-                val mergedGitConfig =
-                    when {
-                        project.overrides.gitConfig != null && existing.overrides.gitConfig != null -> {
-                            existing.overrides.gitConfig.copy(
-                                gitUserName =
-                                    project.overrides.gitConfig.gitUserName
-                                        ?: existing.overrides.gitConfig.gitUserName,
-                                gitUserEmail =
-                                    project.overrides.gitConfig.gitUserEmail
-                                        ?: existing.overrides.gitConfig.gitUserEmail,
-                                commitMessageTemplate =
-                                    project.overrides.gitConfig.commitMessageTemplate
-                                        ?: existing.overrides.gitConfig.commitMessageTemplate,
-                                requireGpgSign = project.overrides.gitConfig.requireGpgSign,
-                                gpgKeyId =
-                                    project.overrides.gitConfig.gpgKeyId
-                                        ?: existing.overrides.gitConfig.gpgKeyId,
-                                requireLinearHistory = project.overrides.gitConfig.requireLinearHistory,
-                                conventionalCommits = project.overrides.gitConfig.conventionalCommits,
-                                commitRules =
-                                    if (project.overrides.gitConfig.commitRules
-                                            .isNotEmpty()
-                                    ) {
-                                        project.overrides.gitConfig.commitRules
-                                    } else {
-                                        existing.overrides.gitConfig.commitRules
-                                    },
-                                sshPrivateKey =
-                                    project.overrides.gitConfig.sshPrivateKey
-                                        ?: existing.overrides.gitConfig.sshPrivateKey,
-                                sshPublicKey =
-                                    project.overrides.gitConfig.sshPublicKey
-                                        ?: existing.overrides.gitConfig.sshPublicKey,
-                                sshPassphrase =
-                                    project.overrides.gitConfig.sshPassphrase
-                                        ?: existing.overrides.gitConfig.sshPassphrase,
-                                httpsToken =
-                                    project.overrides.gitConfig.httpsToken
-                                        ?: existing.overrides.gitConfig.httpsToken,
-                                httpsUsername =
-                                    project.overrides.gitConfig.httpsUsername
-                                        ?: existing.overrides.gitConfig.httpsUsername,
-                                httpsPassword =
-                                    project.overrides.gitConfig.httpsPassword
-                                        ?: existing.overrides.gitConfig.httpsPassword,
-                                gpgPrivateKey =
-                                    project.overrides.gitConfig.gpgPrivateKey
-                                        ?: existing.overrides.gitConfig.gpgPrivateKey,
-                                gpgPublicKey =
-                                    project.overrides.gitConfig.gpgPublicKey
-                                        ?: existing.overrides.gitConfig.gpgPublicKey,
-                                gpgPassphrase =
-                                    project.overrides.gitConfig.gpgPassphrase
-                                        ?: existing.overrides.gitConfig.gpgPassphrase,
-                            )
-                        }
-
-                        project.overrides.gitConfig != null -> project.overrides.gitConfig
-                        else -> existing.overrides.gitConfig
-                    }
-
-                val mergedOverrides = project.overrides.copy(gitConfig = mergedGitConfig)
-
+                // TODO: Project overrides removed - simplified update
                 val updatedProject =
                     project.copy(
                         createdAt = existing.createdAt,
                         updatedAt = Instant.now(),
-                        overrides = mergedOverrides,
                     )
                 projectRepository.save(updatedProject)
             }

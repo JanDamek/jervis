@@ -45,26 +45,4 @@ interface IEmailAccountService {
     suspend fun validateEmailAccount(
         @PathVariable accountId: String,
     ): ValidateResponse
-
-    @GetExchange("/oauth/google/authorize")
-    suspend fun initiateGoogleOAuth(
-        @RequestParam accountId: String,
-    ): Map<String, String>
-
-    @GetExchange("/oauth/google/callback")
-    suspend fun handleGoogleOAuthCallback(
-        @RequestParam code: String,
-        @RequestParam state: String,
-    ): String
-
-    @GetExchange("/oauth/microsoft/authorize")
-    suspend fun initiateMicrosoftOAuth(
-        @RequestParam accountId: String,
-    ): Map<String, String>
-
-    @GetExchange("/oauth/microsoft/callback")
-    suspend fun handleMicrosoftOAuthCallback(
-        @RequestParam code: String,
-        @RequestParam state: String,
-    ): String
 }

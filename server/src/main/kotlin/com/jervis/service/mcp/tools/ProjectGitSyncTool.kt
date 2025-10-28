@@ -1,7 +1,6 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.git.GitRepositoryService
@@ -40,7 +39,7 @@ class ProjectGitSyncTool(
 
     private suspend fun parseTaskDescription(
         taskDescription: String,
-        context: TaskContext,
+        plan: Plan,
         stepContext: String,
     ): ProjectGitSyncParams {
         val llmResponse =
@@ -51,21 +50,21 @@ class ProjectGitSyncTool(
                         "taskDescription" to taskDescription,
                         "stepContext" to stepContext,
                     ),
-                quick = context.quick,
+                quick = plan.quick,
                 responseSchema = ProjectGitSyncParams(),
+                backgroundMode = plan.backgroundMode,
             )
         return llmResponse.result
     }
 
     override suspend fun execute(
-        context: TaskContext,
         plan: Plan,
         taskDescription: String,
         stepContext: String,
     ): ToolResult =
         withContext(Dispatchers.IO) {
             try {
-                val syncParams = parseTaskDescription(taskDescription, context, stepContext)
+                val syncParams = parseTaskDescription(taskDescription, plan, stepContext)
                 logger.info { "PROJECT_GIT_SYNC: Starting Git sync with params: $syncParams" }
 
                 // TODO: Check client mono-repo URL instead of project URL

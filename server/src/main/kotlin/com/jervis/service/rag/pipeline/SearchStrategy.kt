@@ -1,6 +1,6 @@
 package com.jervis.service.rag.pipeline
 
-import com.jervis.domain.context.TaskContext
+import com.jervis.domain.plan.Plan
 import com.jervis.service.rag.domain.DocumentChunk
 import com.jervis.service.rag.domain.RagQuery
 
@@ -10,6 +10,6 @@ import com.jervis.service.rag.domain.RagQuery
 fun interface SearchStrategy {
     suspend fun search(
         query: RagQuery,
-        context: TaskContext,
+        plan: Plan,
     ): List<DocumentChunk>
 }

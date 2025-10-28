@@ -1,7 +1,6 @@
 package com.jervis.service.agent.planner
 
 import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.plan.PlanStep
 import com.jervis.domain.plan.StepStatusEnum
@@ -12,7 +11,7 @@ import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 
 /**
- * Simplified iterative Planner that suggests next steps based on the current context.
+ * Simplified iterative Planner that suggests next steps based on the current plan.
  * Replaces complex multiphase planning with a dynamic, context-driven approach.
  */
 @Service
@@ -32,21 +31,19 @@ class Planner(
     )
 
     /**
-     * Suggests next steps based on current context and plan progress.
+     * Suggests next steps based on current plan progress.
      * Uses iterative approach instead of complex goal-based planning.
      */
-    suspend fun suggestNextSteps(
-        context: TaskContext,
-        plan: Plan,
-    ): List<PlanStep> {
+    suspend fun suggestNextSteps(plan: Plan): List<PlanStep> {
         logger.info { "Suggesting next steps for plan ${plan.id}" }
 
         val parsedResponse =
             llmGateway.callLlm(
                 type = PromptTypeEnum.PLANNING_CREATE_PLAN_TOOL,
-                quick = context.quick,
+                quick = plan.quick,
                 responseSchema = listOf(StepDto()),
-                mappingValue = buildStepsContext(context, plan),
+                mappingValue = buildStepsContext(plan),
+                backgroundMode = plan.backgroundMode,
             )
 
         // Store think content if present
@@ -57,7 +54,7 @@ class Planner(
 
         val newSteps =
             parsedResponse.result.mapIndexed { index, dto ->
-                createPlanStep(dto, plan.id, context.id, plan.steps.size + index + 1)
+                createPlanStep(dto, plan.id, plan.steps.size + index + 1)
             }
 
         logger.info { "Suggested ${newSteps.size} next steps for plan ${plan.id}" }
@@ -67,7 +64,6 @@ class Planner(
     private fun createPlanStep(
         dto: StepDto,
         planId: ObjectId,
-        contextId: ObjectId,
         order: Int,
     ): PlanStep {
         val validToolName =
@@ -80,8 +76,6 @@ class Planner(
 
         return PlanStep(
             id = ObjectId(),
-            planId = planId,
-            contextId = contextId,
             order = order,
             stepToolName = validToolName,
             stepInstruction = dto.stepInstruction,
@@ -129,39 +123,37 @@ class Planner(
 
         val contextSummary =
             buildString {
-                appendLine("Plan ID: ${plan.id}")
-                appendLine("Original Question: ${plan.originalQuestion}")
-                appendLine("Progress: $completedSteps/$totalSteps steps completed")
-                if (failedSteps > 0) {
-                    appendLine("Failed Steps: $failedSteps")
-                }
+                append("PLAN_CONTEXT: id=${plan.id} progress=$completedSteps/$totalSteps")
+                if (failedSteps > 0) append(" failed=$failedSteps")
+                if (pendingSteps > 0) append(" pending=$pendingSteps")
+                appendLine()
 
                 if (completedSteps > 0) {
-                    appendLine("\nCompleted Steps:")
+                    appendLine("\nCOMPLETED_STEPS:")
                     plan.steps
                         .filter { it.status == StepStatusEnum.DONE }
                         .forEachIndexed { index, step ->
-                            appendLine("${index + 1}. ${step.stepToolName}: ${step.stepInstruction}")
+                            appendLine("\n[${index + 1}] ${step.stepToolName}: ${step.stepInstruction}")
                             step.toolResult?.let { result ->
-                                appendLine("   Result: ${result.output.take(200)}")
+                                appendLine(result.output)
                             }
                         }
                 }
 
                 if (failedSteps > 0) {
-                    appendLine("\nFailed Steps:")
+                    appendLine("\nFAILED_STEPS:")
                     plan.steps
                         .filter { it.status == StepStatusEnum.FAILED }
                         .forEach { step ->
                             appendLine("- ${step.stepToolName}: ${step.stepInstruction}")
                             step.toolResult?.let { result ->
-                                appendLine("   Error: ${result.output.take(200)}")
+                                appendLine("  ERROR: ${result.output.take(500)}")
                             }
                         }
                 }
 
                 if (pendingSteps > 0) {
-                    appendLine("\nPending Steps:")
+                    appendLine("\nPENDING_STEPS:")
                     plan.steps
                         .filter { it.status == StepStatusEnum.PENDING }
                         .forEach { step ->
@@ -173,13 +165,10 @@ class Planner(
         return contextSummary
     }
 
-    private fun buildStepsContext(
-        ctx: TaskContext,
-        plan: Plan,
-    ): Map<String, String> =
+    private fun buildStepsContext(plan: Plan): Map<String, String> =
         mapOf(
-            "userRequest" to plan.englishQuestion,
-            "projectDescription" to (ctx.projectDocument.description ?: "Project: ${ctx.projectDocument.name}"),
+            "userRequest" to plan.englishInstruction,
+            "projectDescription" to (plan.projectDocument?.description ?: "Project: ${plan.projectDocument?.name}"),
             "completedSteps" to
                 plan.steps
                     .filter { it.status == StepStatusEnum.DONE }
@@ -190,8 +179,8 @@ class Planner(
             "toolDescriptions" to toolDescriptions,
             // Add missing placeholders for PLANNING_CREATE_PLAN userPrompt
             "clientDescription" to (
-                ctx.clientDocument.description
-                    ?: "Client: ${ctx.clientDocument.name}"
+                plan.clientDocument.description
+                    ?: "Client: ${plan.clientDocument.name}"
             ),
             "previousConversations" to "", // Empty for now - could be enhanced later
             "planHistory" to "", // Empty for now - could be enhanced later
