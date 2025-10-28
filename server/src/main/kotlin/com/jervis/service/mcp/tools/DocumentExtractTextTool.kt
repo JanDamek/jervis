@@ -1,7 +1,6 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.service.document.TikaDocumentProcessor
 import com.jervis.service.gateway.core.LlmGateway
@@ -44,7 +43,7 @@ class DocumentExtractTextTool(
 
     private suspend fun parseTaskDescription(
         taskDescription: String,
-        context: TaskContext,
+        plan: Plan,
         stepContext: String = "",
     ): DocumentExtractTextParams {
         val llmResponse =
@@ -55,31 +54,31 @@ class DocumentExtractTextTool(
                         "taskDescription" to taskDescription,
                         "stepContext" to stepContext,
                     ),
-                quick = context.quick,
+                quick = plan.quick,
                 responseSchema = DocumentExtractTextParams(),
+                backgroundMode = plan.backgroundMode,
             )
         return llmResponse.result
     }
 
     override suspend fun execute(
-        context: TaskContext,
         plan: Plan,
         taskDescription: String,
         stepContext: String,
     ): ToolResult {
-        val parsed = parseTaskDescription(taskDescription, context, stepContext)
+        val parsed = parseTaskDescription(taskDescription, plan, stepContext)
 
-        return executeDocumentExtractTextOperation(parsed, context)
+        return executeDocumentExtractTextOperation(parsed, plan)
     }
 
     private suspend fun executeDocumentExtractTextOperation(
         params: DocumentExtractTextParams,
-        context: TaskContext,
+        plan: Plan,
     ): ToolResult =
         withContext(Dispatchers.IO) {
             logger.debug { "DOCUMENT_EXTRACT_TEXT_START: Processing document at path: ${params.filePath}" }
 
-            val documentPath = resolvePath(params.filePath, context)
+            val documentPath = resolvePath(params.filePath, plan)
 
             // Validate file exists and is supported
             if (!documentPath.exists()) {
@@ -123,7 +122,7 @@ class DocumentExtractTextTool(
 
     private fun resolvePath(
         filePath: String,
-        context: TaskContext,
+        plan: Plan,
     ): Path {
         val path = Paths.get(filePath)
 
@@ -132,8 +131,8 @@ class DocumentExtractTextTool(
             else -> {
                 val projectPath =
                     directoryStructureService.projectGitDir(
-                        context.clientDocument.id,
-                        context.projectDocument.id,
+                        plan.clientDocument.id,
+                        plan.projectDocument!!.id,
                     )
                 when {
                     Files.exists(projectPath) && Files.isDirectory(projectPath) -> projectPath.resolve(filePath)

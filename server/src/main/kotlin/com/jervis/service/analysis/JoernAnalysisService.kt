@@ -1,13 +1,6 @@
 package com.jervis.service.analysis
 
-import com.jervis.service.indexing.pipeline.domain.JoernSymbol
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emitAll
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -18,13 +11,11 @@ import kotlin.io.path.extension
 import kotlin.io.path.pathString
 
 /**
- * Service dedicated to Joern static code analysis operations.
- * Handles Joern installation checks, command execution, and result storage.
+ * Service for Joern static code analysis operations.
+ * Handles CPG (Code Property Graph) creation for supported programming languages.
  */
 @Service
-class JoernAnalysisService(
-    private val joernResultParser: JoernResultParser,
-) {
+class JoernAnalysisService {
     private val logger = KotlinLogging.logger {}
 
     /**
@@ -38,10 +29,9 @@ class JoernAnalysisService(
     )
 
     /**
-     * Runs a process and streams its output during execution:
-     * - STDOUT to logger.debug (line by line)
-     * - STDERR to logger.error (line by line)
-     * Simultaneously collects outputs in StringBuilders for further use.
+     * Runs a process and streams its output during execution.
+     * STDOUT is logged at debug level, STDERR at error level.
+     * Outputs are collected for further processing.
      */
     private fun runProcessStreaming(
         displayName: String,
@@ -103,7 +93,7 @@ class JoernAnalysisService(
                 process.waitFor(timeout, unit)
             } else {
                 process.waitFor()
-                true // waitFor() without timeout always returns when process completes
+                true
             }
 
         if (!completed) {
@@ -111,7 +101,6 @@ class JoernAnalysisService(
             process.destroyForcibly()
         }
 
-        // wait for streams to be read (short join)
         runCatching { stdoutThread.join(1000) }
         runCatching { stderrThread?.join(1000) }
 
@@ -143,7 +132,7 @@ class JoernAnalysisService(
                 logger.warn(e) { "Failed to create .joern directory at: ${joernDir.pathString}" }
                 throw e
             }
-            return@withContext joernDir
+            joernDir
         }
 
     /**
@@ -157,12 +146,11 @@ class JoernAnalysisService(
             }
 
             val fileSize = Files.size(cpgPath)
-            if (fileSize < 1024) { // CPG files should be at least 1KB
+            if (fileSize < 1024) {
                 logger.debug { "CPG file is too small ($fileSize bytes): ${cpgPath.pathString}" }
                 return false
             }
 
-            // Try to read the first few bytes to check if it's a binary file
             Files.newInputStream(cpgPath).use { inputStream ->
                 val buffer = ByteArray(16)
                 val bytesRead = inputStream.read(buffer)
@@ -171,7 +159,6 @@ class JoernAnalysisService(
                     return false
                 }
 
-                // Check if it looks like a valid binary file (not all zeros or all text)
                 val hasNonAscii =
                     buffer.take(bytesRead).any { byte ->
                         byte < 0 || (byte in 1..8) || (byte in 14..31)
@@ -264,7 +251,8 @@ class JoernAnalysisService(
         }
 
     /**
-     * Ensures per-language CPG files exist and are up to date
+     * Ensures per-language CPG files exist and are up to date.
+     * Creates or regenerates CPG files for each language when source files have changed.
      */
     suspend fun ensurePerLanguageCpg(
         projectPath: Path,
@@ -272,261 +260,85 @@ class JoernAnalysisService(
     ): Map<String, Path> =
         withContext(Dispatchers.IO) {
             val joernDir = setupJoernDirectory(projectPath)
+            val result = mutableMapOf<String, Path>()
 
-            try {
-                // Process all languages in parallel
-                coroutineScope {
-                    val cpgTasks =
-                        languageBuckets.map { (language, files) ->
-                            async {
-                                if (files.isEmpty()) return@async null
+            languageBuckets.forEach { (language, files) ->
+                if (files.isEmpty()) return@forEach
 
-                                val cpgPath = joernDir.resolve("cpg_$language.bin")
+                val cpgPath = joernDir.resolve("cpg_$language.bin")
 
-                                // Check if CPG exists and is up to date with source files
-                                val needsRegeneration =
-                                    if (Files.exists(cpgPath)) {
-                                        val cpgLastModified = cpgPath.toFile().lastModified()
-                                        val hasNewerFiles =
-                                            files.any { sourceFile ->
-                                                sourceFile.toFile().lastModified() > cpgLastModified
-                                            }
-
-                                        if (hasNewerFiles) {
-                                            logger.info {
-                                                "CPG for $language is outdated - source files have been modified since CPG creation"
-                                            }
-                                            true
-                                        } else {
-                                            logger.debug { "CPG for $language is up to date, skipping regeneration" }
-                                            false
-                                        }
-                                    } else {
-                                        logger.debug { "CPG for $language does not exist, creating new one" }
-                                        true
-                                    }
-
-                                // Skip CPG generation if not needed
-                                if (!needsRegeneration) {
-                                    return@async language to cpgPath
-                                }
-
-                                // Create temporary directory with only files for this language
-                                val tempLanguageDir = Files.createTempDirectory("joern-$language-")
-                                try {
-                                    // Copy files for this language to temp directory
-                                    files.forEach { sourceFile ->
-                                        val relativePath = projectPath.relativize(sourceFile)
-                                        val targetFile = tempLanguageDir.resolve(relativePath)
-                                        Files.createDirectories(targetFile.parent)
-                                        Files.copy(sourceFile, targetFile)
-                                    }
-
-                                    logger.info { "Creating CPG for language: $language with ${files.size} files" }
-
-                                    val res =
-                                        runProcessStreaming(
-                                            displayName = "joern-parse-$language",
-                                            command =
-                                                listOf(
-                                                    "joern-parse",
-                                                    tempLanguageDir.pathString,
-                                                    "-o",
-                                                    cpgPath.pathString,
-                                                ),
-                                            workingDir = projectPath.parent ?: projectPath,
-                                        )
-
-                                    if (res.exitCode == 0 && Files.exists(cpgPath) && validateCpgIntegrity(cpgPath)) {
-                                        val cpgCreationTime =
-                                            java.time.Instant.ofEpochMilli(cpgPath.toFile().lastModified())
-                                        logger.info {
-                                            "CPG created successfully for $language: ${cpgPath.pathString} at $cpgCreationTime"
-                                        }
-                                        language to cpgPath
-                                    } else {
-                                        logger.warn { "Failed to create CPG for language $language (exit=${res.exitCode})" }
-                                        null
-                                    }
-                                } finally {
-                                    // Clean up temporary directory
-                                    runCatching {
-                                        Files
-                                            .walk(tempLanguageDir)
-                                            .sorted { a, b -> b.compareTo(a) }
-                                            .forEach { Files.deleteIfExists(it) }
-                                    }
-                                }
+                val needsRegeneration =
+                    if (Files.exists(cpgPath)) {
+                        val cpgLastModified = cpgPath.toFile().lastModified()
+                        val hasNewerFiles =
+                            files.any { sourceFile ->
+                                sourceFile.toFile().lastModified() > cpgLastModified
                             }
+
+                        if (hasNewerFiles) {
+                            logger.info {
+                                "CPG for $language is outdated - source files have been modified since CPG creation"
+                            }
+                            true
+                        } else {
+                            logger.debug { "CPG for $language is up to date, skipping regeneration" }
+                            false
                         }
-
-                    // Collect successful results
-                    cpgTasks.awaitAll().filterNotNull().toMap()
-                }
-            } catch (e: Exception) {
-                logger.error(e) { "Error ensuring per-language CPGs: ${e.message}" }
-                emptyMap()
-            }
-        }
-
-    /**
-     * Returns existing per-language CPG files from .joern directory without creating new ones
-     * Used by MCP tools that should only work with already generated CPGs
-     */
-    suspend fun ensurePerLanguageCpgs(projectPath: Path): List<Path> =
-        withContext(Dispatchers.IO) {
-            try {
-                val joernDir = setupJoernDirectory(projectPath)
-                val cpgFiles = mutableListOf<Path>()
-
-                if (Files.exists(joernDir)) {
-                    Files.list(joernDir).use { stream ->
-                        stream
-                            .filter { Files.isRegularFile(it) }
-                            .filter {
-                                it.fileName.toString().startsWith("cpg_") && it.fileName.toString().endsWith(".bin")
-                            }.filter { validateCpgIntegrity(it) }
-                            .forEach { cpgFiles.add(it) }
+                    } else {
+                        logger.debug { "CPG for $language does not exist, creating new one" }
+                        true
                     }
 
-                    logger.info { "Found ${cpgFiles.size} existing CPG files: ${cpgFiles.map { it.fileName }}" }
-                } else {
-                    logger.warn { "No .joern directory found at: ${joernDir.pathString}" }
+                if (!needsRegeneration) {
+                    result[language] = cpgPath
+                    return@forEach
                 }
 
-                cpgFiles.toList()
-            } catch (e: Exception) {
-                logger.error(e) { "Error scanning for existing CPG files: ${e.message}" }
-                emptyList()
-            }
-        }
-
-    /**
-     * Extracts all symbols from language-specific CPGs with parallel processing
-     */
-    fun extractAllSymbolsFromCpGs(
-        projectPath: Path,
-        cpgPaths: Map<String, Path>,
-    ): Flow<JoernSymbol> =
-        flow {
-            // Process all languages in parallel
-            coroutineScope {
-                val flows =
-                    cpgPaths.map { (language, cpgPath) ->
-                        async {
-                            try {
-                                logger.info { "Extracting symbols from $language CPG: ${cpgPath.pathString}" }
-
-                                val script = createUniversalSymbolExtractionScript(cpgPath, language)
-                                val joernDir = cpgPath.parent
-                                val scriptFile = joernDir.resolve("extract_symbols_$language.sc")
-
-                                withContext(Dispatchers.IO) {
-                                    Files.writeString(scriptFile, script)
-                                }
-
-                                val result = executeJoernScript(joernDir, scriptFile)
-                                val symbolFlow =
-                                    joernResultParser.parseJoernSymbolResults(result, projectPath, language)
-
-                                // Clean up script file
-                                withContext(Dispatchers.IO) {
-                                    Files.deleteIfExists(scriptFile)
-                                }
-
-                                symbolFlow
-                            } catch (e: Exception) {
-                                logger.error(e) { "Error extracting symbols from $language CPG: ${e.message}" }
-                                flow<JoernSymbol> { /* empty flow for failed language */ }
-                            }
-                        }
+                val tempLanguageDir = Files.createTempDirectory("joern-$language-")
+                try {
+                    files.forEach { sourceFile ->
+                        val relativePath = projectPath.relativize(sourceFile)
+                        val targetFile = tempLanguageDir.resolve(relativePath)
+                        Files.createDirectories(targetFile.parent)
+                        Files.copy(sourceFile, targetFile)
                     }
 
-                // Collect results from all parallel flows
-                flows.awaitAll().forEach { symbolFlow ->
-                    emitAll(symbolFlow)
+                    logger.info { "Creating CPG for language: $language with ${files.size} files" }
+
+                    val res =
+                        runProcessStreaming(
+                            displayName = "joern-parse-$language",
+                            command =
+                                listOf(
+                                    "joern-parse",
+                                    tempLanguageDir.pathString,
+                                    "-o",
+                                    cpgPath.pathString,
+                                ),
+                            workingDir = projectPath.parent ?: projectPath,
+                        )
+
+                    if (res.exitCode == 0 && Files.exists(cpgPath) && validateCpgIntegrity(cpgPath)) {
+                        val cpgCreationTime =
+                            java.time.Instant.ofEpochMilli(cpgPath.toFile().lastModified())
+                        logger.info {
+                            "CPG created successfully for $language: ${cpgPath.pathString} at $cpgCreationTime"
+                        }
+                        result[language] = cpgPath
+                    } else {
+                        logger.warn { "Failed to create CPG for language $language (exit=${res.exitCode})" }
+                    }
+                } finally {
+                    runCatching {
+                        Files
+                            .walk(tempLanguageDir)
+                            .sorted { a, b -> b.compareTo(a) }
+                            .forEach { Files.deleteIfExists(it) }
+                    }
                 }
             }
-        }
 
-    /**
-     * Creates universal symbol extraction script without file filtering
-     */
-    private fun createUniversalSymbolExtractionScript(
-        cpgPath: Path,
-        language: String,
-    ): String =
-        try {
-            // Read template from resources
-            val templateResource =
-                this::class.java.getResourceAsStream("/joern/universal_symbol_extraction.sc")
-                    ?: throw RuntimeException("Universal symbol extraction template not found in resources")
-
-            val template = templateResource.bufferedReader().use { it.readText() }
-
-            // Replace placeholders
-            template
-                .replace("{{CPG_PATH}}", cpgPath.pathString)
-                .replace("{{LANGUAGE}}", language)
-        } catch (e: Exception) {
-            logger.error(e) { "Error reading universal symbol extraction template: ${e.message}" }
-            throw RuntimeException("Failed to create universal symbol extraction script", e)
-        }
-
-    /**
-     * Main orchestrator for Joern-based project indexing using language-grouped CPGs
-     */
-    fun indexProjectWithJoern(projectPath: Path): Flow<JoernSymbol> =
-        flow {
-            try {
-                logger.info { "Starting Joern analysis for project: ${projectPath.pathString}" }
-
-                // Step 1: Detect language buckets
-                val languageBuckets = detectLanguageBuckets(projectPath)
-                if (languageBuckets.isEmpty()) {
-                    logger.warn { "No supported source files found in project: ${projectPath.pathString}" }
-                    return@flow
-                }
-
-                // Step 2: Ensure per-language CPGs exist
-                val cpgPaths = ensurePerLanguageCpg(projectPath, languageBuckets)
-                if (cpgPaths.isEmpty()) {
-                    logger.error { "Failed to create any CPG files for project: ${projectPath.pathString}" }
-                    return@flow
-                }
-
-                // Step 3: Extract all symbols from CPGs
-                emitAll(extractAllSymbolsFromCpGs(projectPath, cpgPaths))
-
-                logger.info { "Completed Joern analysis for project: ${projectPath.pathString}" }
-            } catch (e: Exception) {
-                logger.error(e) { "Error in Joern project indexing: ${e.message}" }
-            }
-        }
-
-    /**
-     * Execute Joern script and return output
-     */
-    private suspend fun executeJoernScript(
-        joernDir: Path,
-        scriptFile: Path,
-    ): String =
-        withContext(Dispatchers.IO) {
-            val res =
-                runProcessStreaming(
-                    displayName = "joern-script",
-                    command = listOf("joern", "--script", scriptFile.pathString),
-                    workingDir = joernDir,
-                    timeout = 300,
-                    unit = TimeUnit.SECONDS,
-                )
-
-            if (res.exitCode != 0) {
-                logger.error { "Joern script execution failed (exit=${res.exitCode}): ${res.stderr}" }
-                throw RuntimeException("Joern script execution failed: ${res.stderr}")
-            }
-
-            res.stdout
+            return@withContext result
         }
 
     companion object {

@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component
 class EndpointProperties {
     var openai: Api = Api()
     var anthropic: Api = Api()
-    var ollama: Host = Host()
+    var ollama: OllamaConfig = OllamaConfig()
     var lmStudio: Host = Host()
     var searxng: Host = Host()
 
@@ -23,5 +23,10 @@ class EndpointProperties {
 
     class Host {
         var baseUrl: String? = null
+    }
+
+    class OllamaConfig {
+        var primary: Host = Host()
+        var qualifier: Host = Host()
     }
 }

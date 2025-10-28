@@ -1,7 +1,7 @@
 package com.jervis.service.client
 
 import com.jervis.dto.ClientProjectLinkDto
-import com.jervis.entity.mongo.ClientProjectLinkDocument
+import com.jervis.entity.ClientProjectLinkDocument
 import com.jervis.mapper.toDto
 import com.jervis.repository.mongo.ClientProjectLinkMongoRepository
 import kotlinx.coroutines.flow.map

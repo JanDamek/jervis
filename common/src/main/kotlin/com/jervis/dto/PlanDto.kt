@@ -8,9 +8,9 @@ import kotlinx.serialization.Serializable
 data class PlanDto(
     val id: String = Constants.GLOBAL_ID_STRING,
     val contextId: String,
-    val originalQuestion: String,
+    val taskInstruction: String,
     val originalLanguage: String,
-    val englishQuestion: String,
+    val englishInstruction: String,
     val questionChecklist: List<String> = emptyList(),
     val initialRagQueries: List<String> = emptyList(),
     val status: PlanStatusEnum = PlanStatusEnum.CREATED,

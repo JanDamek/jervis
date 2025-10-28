@@ -1,7 +1,7 @@
 package com.jervis.util
 
-import com.jervis.entity.mongo.ClientDocument
-import com.jervis.entity.mongo.ProjectDocument
+import com.jervis.entity.ClientDocument
+import com.jervis.entity.ProjectDocument
 import com.jervis.service.storage.DirectoryStructureService
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Component

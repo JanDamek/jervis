@@ -2,38 +2,28 @@ package com.jervis.ui.component
 
 import com.jervis.client.NotificationsWebSocketClient
 import com.jervis.service.IAgentOrchestratorService
-import com.jervis.service.IClientGitConfigurationService
-import com.jervis.service.IClientIndexingService
 import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
 import com.jervis.service.IEmailAccountService
-import com.jervis.service.IIndexingMonitorService
-import com.jervis.service.IIndexingService
-import com.jervis.service.IProjectGitConfigurationService
+import com.jervis.service.IGitConfigurationService
 import com.jervis.service.IProjectService
-import com.jervis.service.ITaskContextService
 import com.jervis.service.ITaskSchedulingService
 import com.jervis.service.debug.DesktopDebugWindowService
 import com.jervis.ui.utils.MacOSAppUtils
 import com.jervis.ui.window.ClientsWindow
 import com.jervis.ui.window.MainWindow
-import com.jervis.ui.window.ProjectSettingWindow
 import com.jervis.ui.window.SchedulerWindow
 import com.jervis.ui.window.TrayIconManager
+import com.jervis.ui.window.project.ProjectSettingWindow
 import javax.swing.UIManager
 
 class ApplicationWindowManager(
     private val projectService: IProjectService,
     private val chatCoordinator: IAgentOrchestratorService,
     private val clientService: IClientService,
-    private val clientGitConfigurationService: IClientGitConfigurationService,
-    private val projectGitConfigurationService: IProjectGitConfigurationService,
+    private val gitConfigurationService: IGitConfigurationService,
     private val linkService: IClientProjectLinkService,
-    private val taskContextService: ITaskContextService,
-    private val indexingService: IIndexingService,
-    private val clientIndexingService: IClientIndexingService,
     private val taskSchedulingService: ITaskSchedulingService,
-    private val indexingMonitorService: IIndexingMonitorService,
     private val debugWindowService: DesktopDebugWindowService,
     private val notificationsClient: NotificationsWebSocketClient,
     private val emailAccountService: IEmailAccountService,
@@ -44,8 +34,6 @@ class ApplicationWindowManager(
             chatCoordinator,
             clientService,
             linkService,
-            taskContextService,
-            indexingMonitorService,
             this,
             debugWindowService,
             notificationsClient,
@@ -56,19 +44,16 @@ class ApplicationWindowManager(
         ProjectSettingWindow(
             projectService,
             clientService,
-            indexingService,
-            clientIndexingService,
-            projectGitConfigurationService,
+            gitConfigurationService,
         )
     }
 
     private val clientsWindow: ClientsWindow by lazy {
         ClientsWindow(
             clientService,
-            clientGitConfigurationService,
+            gitConfigurationService,
             projectService,
             linkService,
-            indexingService,
             emailAccountService,
         )
     }
@@ -147,10 +132,6 @@ class ApplicationWindowManager(
 
     fun showSchedulerWindow() {
         schedulerWindow.isVisible = true
-    }
-
-    fun showIndexingMonitor() {
-        mainWindow.showIndexingMonitor()
     }
 
     fun showDebugWindow() {

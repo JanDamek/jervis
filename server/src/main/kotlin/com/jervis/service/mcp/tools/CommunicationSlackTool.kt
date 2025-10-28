@@ -1,7 +1,6 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
@@ -28,38 +27,38 @@ class CommunicationSlackTool(
 
     private suspend fun parseTaskDescription(
         taskDescription: String,
-        context: TaskContext,
+        plan: Plan,
         stepContext: String,
     ): CommunicationSlackParams {
         val llmResponse =
             llmGateway.callLlm(
                 type = PromptTypeEnum.COMMUNICATION_SLACK_TOOL,
                 responseSchema = CommunicationSlackParams(),
-                quick = context.quick,
+                quick = plan.quick,
                 mappingValue =
                     mapOf(
                         "taskDescription" to taskDescription,
                         "stepContext" to stepContext,
                     ),
+                backgroundMode = plan.backgroundMode,
             )
 
         return llmResponse.result
     }
 
     override suspend fun execute(
-        context: TaskContext,
         plan: Plan,
         taskDescription: String,
         stepContext: String,
     ): ToolResult {
-        val parsed = parseTaskDescription(taskDescription, context, stepContext)
+        val parsed = parseTaskDescription(taskDescription, plan, stepContext)
 
-        return executeSlackOperation(parsed, context)
+        return executeSlackOperation(parsed, plan)
     }
 
     private suspend fun executeSlackOperation(
         params: CommunicationSlackParams,
-        context: TaskContext,
+        plan: Plan,
     ): ToolResult {
         val output =
             buildString {

@@ -1,7 +1,7 @@
 package com.jervis.service.rag.pipeline
 
-import com.jervis.domain.context.TaskContext
 import com.jervis.domain.model.ModelType
+import com.jervis.domain.plan.Plan
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.rag.domain.DocumentChunk
@@ -22,17 +22,17 @@ class VectorSearchStrategy(
 ) : SearchStrategy {
     companion object {
         private val logger = KotlinLogging.logger {}
-        private const val MAX_INITIAL_RESULTS = 10000
+        private const val MAX_INITIAL_RESULTS = 100
         private const val MAX_HIT_CONTENT_LENGTH = 2000
     }
 
     override suspend fun search(
         query: RagQuery,
-        context: TaskContext,
+        plan: Plan,
     ): List<DocumentChunk> {
         logger.debug { "VECTOR_SEARCH: Starting for '${query.searchTerms}'" }
 
-        val (projectId, clientId) = resolveScope(!query.filterByProject, context)
+        val (projectId, clientId) = resolveScope(plan)
 
         return coroutineScope {
             val textResults = async { searchByModelType(ModelType.EMBEDDING_TEXT, query, projectId, clientId) }
@@ -42,14 +42,16 @@ class VectorSearchStrategy(
         }
     }
 
-    private fun resolveScope(
-        global: Boolean,
-        context: TaskContext,
-    ): Pair<String?, String?> =
-        global
-            .takeIf { it }
-            ?.let { null to null }
-            ?: (context.projectDocument.id.toString() to context.clientDocument.id.toString())
+    private fun resolveScope(plan: Plan): Pair<String?, String?> {
+        val clientId = plan.clientDocument.id.toString()
+        val projectId =
+            plan.projectDocument
+                ?.id
+                .takeIf { it != plan.clientDocument.id }
+                ?.toString()
+
+        return projectId to clientId
+    }
 
     private suspend fun searchByModelType(
         modelType: ModelType,

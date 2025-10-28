@@ -1,7 +1,7 @@
 package com.jervis.mapper
 
 import com.jervis.dto.ScheduledTaskDto
-import com.jervis.entity.mongo.ScheduledTaskDocument
+import com.jervis.entity.ScheduledTaskDocument
 import org.bson.types.ObjectId
 import java.time.Instant
 

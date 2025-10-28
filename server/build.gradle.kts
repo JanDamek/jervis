@@ -12,6 +12,12 @@ java {
     }
 }
 
+configurations.configureEach {
+    exclude(group = "javax.activation", module = "activation")
+    exclude(group = "com.sun.mail", module = "javax.mail")
+    exclude(group = "com.sun.mail", module = "mail")
+}
+
 dependencies {
     implementation(platform("org.springframework.boot:spring-boot-dependencies:${libs.versions.spring.boot.get()}"))
 
@@ -62,6 +68,8 @@ dependencies {
     // Jakarta Mail (API + implementation)
     implementation(libs.jakarta.mail.api)
     implementation(libs.angus.mail)
+    // Explicitly use matching Angus Activation to avoid javax.activation handlers
+    implementation(libs.angus.activation)
 
     // Text processing and parsers
     implementation(libs.commons.text)
@@ -69,9 +77,13 @@ dependencies {
     implementation(libs.javaparser.core)
     implementation(libs.jsoup)
 
-    // Apache Tika
+    // Apache Tika 3.x (uses Jakarta instead of javax)
     implementation(libs.tika.core)
-    implementation(libs.tika.parsers.standardpkg)
+    implementation(libs.tika.parsers.standardpkg) {
+        // Tika 3.x transitively brings jakarta.activation, ensure no javax leaks
+        exclude(group = "javax.activation", module = "activation")
+        exclude(group = "javax.activation", module = "javax.activation-api")
+    }
 
     // Kotlin compiler embeddable
     implementation(libs.kotlin.compiler.embeddable)

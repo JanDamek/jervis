@@ -8,7 +8,6 @@ import kotlinx.serialization.Serializable
 data class PlanStepDto(
     val id: String = Constants.GLOBAL_ID_STRING,
     val order: Int = -1,
-    val planId: String,
     val contextId: String,
     val stepToolName: String,
     val stepInstruction: String,

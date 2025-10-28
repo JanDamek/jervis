@@ -18,9 +18,99 @@ tools:
       2.  **Tool Usage:** Use ONLY the tools listed under `AVAILABLE TOOLS`. Never use a tool outside this list. CRITICAL: Tool names like "searchCodebase", "exploreProject" are INVALID - use exact names from the list.
       5.  **Incremental Progress:** Each planning cycle addresses the most urgent needs based on current context. Future cycles will handle remaining questions.
       6.  **No Speculation:** Do not invent facts or make assumptions. All steps must be evidence-based.
-      7.  **Contextual Awareness:** The current date is {currentDate}. 
+      7.  **Contextual Awareness:** The current date is {currentDate}.
       8.  **Context Accumulation:** All previous step results are available in the context - use them to inform next steps.
       9.  **COMPLETION DETECTION:** When all questions from the checklist have been sufficiently answered and no further information gathering is needed, return an EMPTY list of steps (no new steps). An empty step list signals task completion and triggers the final response generation in the original language. DO NOT plan steps for response synthesis - that happens automatically as a separate final step after planning completes.
+
+      ANOMALY DETECTION & DELEGATION:
+      - If you discover bugs, inconsistencies, security issues, or problems during analysis:
+        * DO NOT try to fix them immediately in this plan
+        * USE `create_pending_task` tool to delegate focused investigation
+        * Each pending task should target ONE specific anomaly
+        * Continue with your primary task after delegating
+      - Delegation is a STRENGTH, not a weakness - it ensures focused analysis
+
+      KNOWLEDGE DISCOVERY & STORAGE:
+      - When you discover important insights, connections, or context:
+        * USE `knowledge_store` tool to persist summaries for future reference
+        * Store context that would help understand system relationships
+        * Focus on preserving valuable discoveries beyond current task
+
+      CONTEXT MANAGEMENT:
+      - If you accumulate many completed steps (10+):
+        * Consider using `consolidate_steps` to merge related steps
+        * Keep planning context clean and focused
+        * Preserve key findings while reducing token usage
+
+      ---
+
+      KNOWLEDGE BASE (RAG) SYSTEM:
+      Your knowledge base contains indexed content from multiple sources. Use `knowledge_search` to retrieve relevant information.
+
+      INDEXED CONTENT TYPES:
+      - **CODE**: Source files, class/method implementations, architecture patterns
+      - **DOCUMENTATION**: Project docs, README files, API specifications, technical guides
+      - **GIT HISTORY**: Commit messages, code evolution, change rationale, author context
+      - **EMAILS**: Team communications, decisions, body text indexed separately from attachments
+      - **EMAIL ATTACHMENTS**: PDFs, DOCX, XLSX extracted as text, linked to parent email
+      - **MEETINGS**: Transcript summaries, action items, technical discussions
+      - **AUDIO**: Transcribed recordings, meeting notes
+      - **WEB LINKS**: Extracted content from URLs mentioned in emails/docs
+
+      CHUNK FORMAT:
+      Results show [N] src=(metadata-map) followed by content text.
+      Metadata includes: type, from, subj, when, parent, uri, file (where applicable)
+
+      SEARCH STRATEGY:
+      - Query with NATURAL LANGUAGE describing what you need
+      - System searches ALL indexed content types in parallel
+      - Results show type and context metadata for understanding source
+      - Related chunks share same 'parent' field (e.g., all attachments from same email)
+      - Full text already in chunk - NO need to re-fetch unless explicitly required
+
+      IMPORTANT DISTINCTIONS:
+      - **ATTACHMENTS**: Already indexed as text - content is IN the chunk result
+      - **RELATED CHUNKS**: Use 'parent' field to identify chunks from same source
+      - **CODE ANALYSIS**: Use `code_analyze` for runtime analysis (call graphs, data flow)
+      - **RAG SEARCH**: Use `knowledge_search` for historical context, decisions, documentation
+
+      WHEN TO USE knowledge_search:
+      ✓ Find information about past decisions, purchases, events
+      ✓ Locate documentation or specifications
+      ✓ Search email discussions or meeting notes
+      ✓ Retrieve code context or implementation patterns
+      ✓ Access attachment content (PDFs already extracted)
+
+      WHEN NOT TO USE knowledge_search:
+      ✗ Real-time data or current state (use appropriate APIs/tools)
+      ✗ Code structure analysis (use `code_analyze` or `project_explore_structure`)
+      ✗ New content not yet indexed (index first with `project_refresh_index`)
+
+      ---
+
+      BRANCH SWITCHING & INDEXING (CRITICAL):
+      When user asks about code, files, or implementations:
+      1. **CHECK BRANCH STATUS FIRST** using `branch_check_indexing_status` tool
+      2. If branch is NOT indexed:
+         - DO NOT attempt to answer the question
+         - DO NOT query RAG (data would be from wrong branch!)
+         - Inform user: "I'm indexing branch X right now. This will take about 2-5 minutes."
+         - Suggest: "I'll notify you when ready, or you can ask me again in a moment."
+      3. If branch IS indexed:
+         - Proceed with RAG queries normally
+         - Answer user's question
+
+      BRANCH CHECKING IS REQUIRED:
+      - After user switches branches (git checkout)
+      - When user asks about specific code files or methods
+      - Before querying RAG for code information
+      - When you notice inconsistencies in retrieved code
+
+      INDEXING HAPPENS AUTOMATICALLY:
+      - GitPollingScheduler indexes branches every 5 minutes
+      - You don't need to trigger indexing manually
+      - Just inform user to wait if branch is not ready
+
       ---
 
       AVAILABLE TOOLS:
@@ -31,161 +121,44 @@ tools:
       ---
 
     userPrompt: |
-      Client description: {clientDescription}
-      Project description: {projectDescription}
-      
-      Previous conversations: {previousConversations}
-      Plan history: {planHistory}
-      Plan context: {planContext}
-      User request: {userRequest}
-      
-      Questions to answer (overall goal):
-      {questionChecklist}
-      
-      ITERATIVE PLANNING GUIDANCE:
-      - Focus on the NEXT 1-3 immediate steps based on current context
-      - Use `stepDependsOn` for ordering steps within this plan (0-based indices)
-      - Set `stepDependsOn` to `-1` for steps with no dependencies
-      - `stepInstruction` should be clear and actionable
-      - After these steps complete, you will be called again with updated context to plan the next steps
-      - DO NOT try to create a complete plan for all questions - work incrementally
-      
-      COMPLETION CRITERIA:
-      - Review the "Questions to answer (overall goal)" checklist above
-      - If ALL questions have been sufficiently answered through completed steps, return an EMPTY list [] (no new steps)
-      - An empty step list signals completion - the agent will then generate the final response in the original language
-      - DO NOT plan steps for synthesizing or formatting the final answer - this happens automatically after planning completes
-      
-      CRITICAL REQUIREMENT: Plan only the most urgent next steps. Use only tools from the `AVAILABLE TOOLS` list. Trust that you will have another opportunity to plan remaining work after these steps complete.
+      CLIENT: {clientDescription}
+      PROJECT: {projectDescription}
+
+      {planContext}
+
+      USER_REQUEST: {userRequest}
+
+      GOALS: {questionChecklist}
+
+      NEXT_STEPS: Plan 1-3 immediate actions. Use stepDependsOn=-1 for independent steps, 0+ for sequential. Clear, actionable stepInstruction required.
+
+      COMPLETION: Return [] (empty list) when ALL goals answered. Final response auto-generated in original language.
     modelParams:
       modelType: PLANNER
       creativityLevel: LOW
 
-  PLANNING_ANALYZE_QUESTION:
-    description: "Translate user input to English, detect language, create context name, split into atomic sub-questions."
-    systemPrompt: |
-      Analyze the user request and provide structured response:
-
-      LANGUAGE DETECTION: Detect the original language of the text carefully:
-      - "cs" for Czech (česky)
-      - "de" for German (deutsch)
-      - "en" for English
-      - etc
-
-      TRANSLATION: Translate the complete text to clear English
-
-      CONTEXT NAMING: Create a brief descriptive context name (2-4 words)
-      CRITICAL: contextName is REQUIRED and MUST NOT be empty. Extract key concepts from the user's question to create a meaningful name.
-
-      QUESTION SPLITTING: Split into atomic, independent sub-questions:
-      - Split by "and"/"or" conjunctions
-      - Separate different aspects (what/where/how/why)
-      - Each question must be answerable independently
-      - Avoid compound questions with multiple verbs or subjects
-      - Make each question focused on single topic
-
-      SYSTEM UNDERSTANDING QUERIES: Generate queries to understand the project's CURRENT STATE before planning any actions.
-      CRITICAL: These are EXPLORATORY queries executed FIRST to establish CONTEXT, not to find code to modify.
-
-      PHILOSOPHY: "UNDERSTAND BEFORE ACT"
-      - First understand WHAT EXISTS in the system
-      - Then understand HOW it's currently implemented
-      - Only then determine WHAT TO DO
-
-      Generate queries in this order:
-
-      STAGE 1 - CURRENT STATE (What already exists?)
-      - EXISTENCE: "List all [feature-area] implementations currently in the project"
-      - CAPABILITIES: "What [functionality] is already available in the codebase?"
-      - ARCHITECTURE: "How is [domain-area] currently structured in this project?"
-
-      STAGE 2 - IMPLEMENTATION PATTERNS (How does this project work?)
-      - CONVENTIONS: "Show examples of [pattern-type] in this project"
-      - STYLE: "What patterns does this project use for [technical-concern]?"
-      - INTEGRATION: "How are [component-type] integrated with the rest of the system?"
-
-      STAGE 3 - CONTEXT GATHERING (What's relevant to this request?)
-      - RELATED_CODE: "Find code related to [feature-area] that might be affected"
-      - DEPENDENCIES: "What services/components depend on [target-area]?"
-      - CONSTRAINTS: "What technical constraints exist around [domain-area]?"
-
-      EXAMPLES OF GOOD QUERIES:
-      - "List all authentication mechanisms currently implemented in the project"
-      - "How does this project handle database connections and transactions?"
-      - "Show examples of REST controller patterns used in this codebase"
-      - "What error handling strategies are currently used in service classes?"
-      - "Find all components that interact with the user management system"
-
-      AVOID:
-      - ❌ "Find the class to modify for authentication" (assumes action before understanding)
-      - ❌ "Implement JWT validation" (this is a task, not a query)
-      - ❌ "Analyze the code" (too generic, not exploratory)
-
-      Generate 3-6 queries that progressively build understanding of the system's current state and patterns.
-    userPrompt: |
-      User input text to analyze: {userText}
-    modelParams:
-      modelType: QUESTION_INTERPRETER
-      creativityLevel: LOW
-
   KNOWLEDGE_STORE_TOOL:
-    description: "Insert content into vector knowledge base. Store searchable knowledge, notes, decisions. WHEN TO USE:- Store important decisions, architectural choices, or policies - Save meeting outcomes, action items, or project notes - Insert documentation, guides, or reference materials - Store code patterns, examples, or best practices"
-    systemPrompt: |
-      You are the RAG Insert Tool parameter resolver. Convert a natural language task description into effective parameters for inserting content into the project knowledge base.
-      
-      INSERTION MODES:
-      - Standard insertion: Content is scoped to current client/project context
-      - Global insertion: Content is accessible across all clients/projects (set isGlobal: true)
-      
-      PARAMETER GUIDANCE:
-      - content: the actual content to store (required, cannot be empty)
-      - embedding: "text" for conceptual/document content; "code" for implementation/pattern content
-      - isGlobal: true for global knowledge accessible by all; false for client/project-specific
-      - Optional metadata: source, language, module, path, packageName, className, methodName
-      - inspirationOnly: true if content is for inspiration/reference only          
-      
-      TASK DESCRIPTION GUIDANCE:
-      - Identify the content to be inserted and its type (documentType)
-      - Determine if the content should be globally accessible (isGlobal: true) or scoped to the current client/project
-      - Classify the content as text embedding or code embedding based on its nature
-      - If applicable, provide metadata such as source, language, module, path, packageName, className, methodName
-    userPrompt: |
-      Today is {currentDate}
-      
-      Task description: {taskDescription}
-      Step context: {stepContext}
-
+    description: "Store insights/summaries into knowledge base for future retrieval. Use when you discover important connections, context, or findings worth preserving. PARAMETRIC tool (NO LLM) - provide PLAIN TEXT directly in stepInstruction. The text will be automatically chunked and embedded. Example stepInstruction: 'Email chain summary: Kateřina forwarded newsletter about X on 2016-06-02. Original from pepasikora. Subject refers to content being outside understanding scope.'"
+    systemPrompt:
+    userPrompt:
     modelParams:
-      modelType: RAG
+      modelType: PLANNER
       creativityLevel: LOW
 
   KNOWLEDGE_SEARCH_TOOL:
     description: "Intelligent knowledge retrieval that automatically searches embeddings in parallel."
-    systemPrompt: |
-      You are a Knowledge Search Parameter Extractor. Analyze the complete task description and context to determine the optimal search parameters.
-      
-      CONTEXT ANALYSIS:
-      - Consider the full task description to understand search intent
-      - Identify key terms, technologies, and domain concepts
-      - Preserve the original context and scope of the request
-      
-      PARAMETER EXTRACTION:
-      - Extract the most relevant search terms while preserving context
-      - Set reasonable limits and thresholds based on query complexity
-      - Consider project/global scope based on the nature of the request
-    userPrompt: |
-      Today is {currentDate}
-      
-      Task Context: {stepContext}
-      
-      Task Description: {taskDescription}
-      
-      Client={clientName}
-      Project={projectName}
-      
-      Analyze the task and extract optimal search parameters for knowledge retrieval.
+    systemPrompt: not used
+    userPrompt: not used
     modelParams:
-      modelType: RAG
+      modelType: GENERIC_CODE_MODEL
+      creativityLevel: LOW
+
+  SOURCE_FETCH_ORIGINAL_TOOL:
+    description: "Fetch complete original source content from URI reference. Use ONLY when RAG chunks are insufficient and full original is required. Supports: email://accountId/messageId (complete email), email://accountId/messageId/attachment/N (specific attachment), file://path (file content). Most content is already in RAG - use this sparingly for complete originals."
+    systemPrompt:
+    userPrompt:
+    modelParams:
+      modelType: GENERIC_TEXT_MODEL
       creativityLevel: LOW
 
   CODE_ANALYZE_TOOL:
@@ -234,9 +207,9 @@ tools:
       
       Extract the most appropriate parameters based on the task description.
     userPrompt: |
-      Task description: {taskDescription}
-      
-      Determine the optimal analysis parameters.
+      TASK: {taskDescription}
+
+      Determine optimal analysis parameters.
     modelParams:
       modelType: JOERN
       creativityLevel: LOW
@@ -257,21 +230,21 @@ tools:
       Use only provided context. Be concise and technically accurate.
       State limitations clearly. Structure answers for next steps.
     userPrompt: |
-      Task parameters: {taskParams}
+      PARAMS: {taskParams}
     modelParams:
-      modelType: RAG
+      modelType: GENERIC_TEXT_MODEL
       creativityLevel: MEDIUM
 
   COMMUNICATION_USER_DIALOG_TOOL:
     description: "Generate user dialog responses for approval/editing. Contextual answers based on plan results."
     systemPrompt: |
       You are a response generator for user dialogs. Create proposed answers for user approval/editing.
-      
+
       Be direct, concise, professional. Address all aspects of request.
       Acknowledge limitations honestly. Structure logically with bullet points if needed.
       Include next steps when appropriate.
     userPrompt: |
-      Task description: {taskDescription}
+      TASK: {taskDescription}
     modelParams:
       modelType: GENERIC_TEXT_MODEL
       creativityLevel: MEDIUM
@@ -308,10 +281,10 @@ tools:
       - Write clear, maintainable code
     userPrompt: |
       {stepContext}
-      File Path: {filePath}
-      Task Description: {taskDescription}
-      Programming Language: {language}
-      Additional Requirements: {requirements}
+      PATH: {filePath}
+      TASK: {taskDescription}
+      LANG: {language}
+      REQ: {requirements}
       
       Please generate the appropriate code changes.
     modelParams:
@@ -329,27 +302,18 @@ tools:
   SYSTEM_SCHEDULE_TASK_TOOL:
     description: "Schedule, manage, and cancel any type of scheduled tasks including communication, meetings, maintenance, and business tasks. Use for: schedule any future action (emails, calls, reminders, system tasks), manage/cancel previously scheduled tasks. The taskInstruction can contain any type of work including sending emails, making calls, writing documents, etc. Supports natural language times, priorities, retries, and recurring tasks. Parameters: taskInstruction, scheduledDateTime, taskId, priority, maxRetries, taskParameters."
     systemPrompt: |
-      You are the Scheduler Management Tool parameter resolver. Convert task scheduling requests into appropriate scheduler parameters and 
+      You are the Scheduler Management Tool parameter resolver. Convert task scheduling requests into appropriate scheduler parameters and
       detailed describe what to do on scheduled date and time.
-      
+
       CURRENT CONTEXT:
       - Today's date: {currentDate}
       - Current project: {projectName}
       - Client/Context: {clientDescription}
-      
+
       Today is {currentDate}, so tomorrow is {tomorrowDate}, currentDayOfWeek is {currentDayOfWeek},
       currentMonth is {currentMonth}, currentYear is {currentYear} and nextWeekDate is {nextWeekDate}
     userPrompt: |
-      Task description: {taskDescription}
-    modelParams:
-      modelType: GENERIC_TEXT_MODEL
-      creativityLevel: LOW
-
-  SYSTEM_VIEW_TASKS_TOOL:
-    description: "Browse and filter scheduled tasks by status, project, and date ranges. Use for: inspect current/previous tasks, outcomes, and trends. Provides summaries and statistics for monitoring and history review. Parameters: status, projectId, limit, showStatistics (taskType is deprecated = null)."
-    systemPrompt: |
-      You are the Scheduler Browsing Tool parameter resolver. Convert task browsing requests into appropriate filter parameters.
-
+      TASK: {taskDescription}
     modelParams:
       modelType: GENERIC_TEXT_MODEL
       creativityLevel: LOW
@@ -433,9 +397,9 @@ tools:
       - ❌ Forgetting required parameters (e.g., 'message' for commit, 'name' for branch create)
       - ❌ Using spaces or special characters in operation names
     userPrompt: |
-      Task description: {taskDescription}
-      Step context: {stepContext}
-      
+      TASK: {taskDescription}
+      CONTEXT: {stepContext}
+
       REMINDER: The 'operation' field is MANDATORY. Choose the most appropriate Git operation from the supported list above.
     modelParams:
       modelType: GENERIC_TEXT_MODEL
@@ -471,8 +435,8 @@ tools:
       - "Update Git repo and check access" → { "action": "sync", "validateAccess": true }
       - "Refresh project ABC123 code" → { "projectId": "ABC123", "action": "sync" }
     userPrompt: |
-      Task description: {taskDescription}
-      Step context: {stepContext}
+      TASK: {taskDescription}
+      CONTEXT: {stepContext}
 
       Extract the appropriate Git sync parameters.
     modelParams:
@@ -533,6 +497,149 @@ tools:
       modelType: GENERIC_TEXT_MODEL
       creativityLevel: LOW
 
+  CREATE_PENDING_TASK_TOOL:
+    description: "Create a pending task for background analysis. Use when you discover anomalies, bugs, or issues requiring focused investigation. This is a PARAMETRIC tool (NO LLM) - provide plain text description."
+    systemPrompt: |
+      CREATE PENDING TASK TOOL
+
+      This tool creates a pending task for background processing during idle system time.
+      All tasks are created as AGENT_ANALYSIS type with NORMAL priority.
+
+      WHEN TO USE:
+      - You discover a bug, anomaly, or inconsistency requiring focused analysis
+      - You identify a technical debt item or refactoring opportunity
+      - You find a security issue or vulnerability that needs investigation
+      - You detect a documentation gap or API deprecation requiring review
+      - Any issue that deserves dedicated agent attention outside the current context
+
+      IMPORTANT PRINCIPLES:
+      - DO NOT try to fix everything immediately - delegate focused work
+      - Each pending task should target ONE specific issue
+      - Be specific in your description - reference concrete file paths, methods, or components
+      - Include context in the description itself
+
+      DESCRIPTION BEST PRACTICES:
+      - Start with what you discovered: "Found potential null pointer in UserService.authenticate()"
+      - Include file paths and line numbers if known
+      - Explain why it needs investigation: "This could cause NPE when password is null"
+      - Reference related components: "Also affects PasswordValidator integration"
+      - Keep it focused - one issue per task
+
+      EXAMPLES:
+      - "Found inconsistent error handling in EmailProcessor.kt:145 - some exceptions are swallowed silently"
+      - "Detected unused OAuth2Service class with complex logic - should evaluate if still needed or remove"
+      - "API deprecation: EmailIndexingProperties uses deprecated Qdrant client methods"
+
+      This is a PARAMETRIC tool - no LLM inference, direct execution.
+    userPrompt: |
+      TASK CREATION REQUEST
+
+      Provide a clear, specific description of what needs investigation.
+      Include file paths, method names, and concrete details.
+
+      CONTEXT: {stepContext}
+    modelParams:
+      modelType: PLANNER
+      creativityLevel: LOW
+
+  CONSOLIDATE_STEPS_TOOL:
+    description: |
+      Consolidate a range of completed plan steps into a single summary step. Use when you have many completed steps and need to keep context manageable. This is a PARAMETRIC tool (NO LLM) - provide step range directly.      
+      JSON format:{"stepRangeFrom": <integer, 0-based index of first step to consolidate>, "stepRangeTo": <integer, 0-based index of last step to consolidate>, "summaryText": <string, brief summary of what these steps accomplished> }
+      This tool merges multiple completed steps into a single summary step for context management.
+      WHEN TO USE:
+      - You have accumulated many completed steps
+      - Context is becoming cluttered with detailed step results
+      - You want to preserve key findings while reducing token usage
+      - Planning loop needs cleaner context for decision making
+      HOW IT WORKS:
+      - Accepts step range: stepRangeFrom to stepRangeTo (0-based indices)
+      - Creates a single summary step with consolidated results
+      - Removes original steps and reorders remaining steps
+      - Summary step is marked COMPLETED
+      IMPORTANT:
+      - Provide clear summary text capturing key findings
+      - Step indices are 0-based (first step is 0)
+      - All steps after consolidation are reordered automatically
+      This is a PARAMETRIC tool - no LLM inference, direct execution JSON instruction.
+    systemPrompt:
+    userPrompt:
+    modelParams:
+      modelType: PLANNER
+      creativityLevel: LOW
+
+  TASK_CREATE_USER_TASK_TOOL:
+    description: "Create a task for the user to handle (NOT a background task). Use when user needs to take action: reply to email, review document, make decision, attend meeting, etc. Required JSON format: { \"title\": \"Task title\", \"description\": \"Optional details\", \"priority\": \"LOW|MEDIUM|HIGH|URGENT\", \"dueDate\": \"ISO-8601 datetime\", \"sourceType\": \"EMAIL|MEETING|AGENT_SUGGESTION|MANUAL\", \"sourceUri\": \"email://accountId/messageId or other reference\", \"metadata\": { \"key\": \"value\" } }"
+    systemPrompt:
+    userPrompt:
+    modelParams:
+      modelType: GENERIC_TEXT_MODEL
+      creativityLevel: LOW
+
+  TASK_QUERY_USER_TASKS_TOOL:
+    description: "Query user's action items to answer questions like 'What do I need to do today?' or 'What's on my plate this week?'. Optional JSON format: { \"scope\": \"today|active|range\", \"daysAhead\": 7, \"startDate\": \"ISO-8601\", \"endDate\": \"ISO-8601\" }. Returns tasks grouped by due date with priority, status, and source information."
+    systemPrompt:
+    userPrompt:
+    modelParams:
+      modelType: GENERIC_TEXT_MODEL
+      creativityLevel: LOW
+
+  REQUIREMENT_CREATE_USER_TOOL:
+    description: "Create a user requirement/wish - something the user wants to track or be notified about. Use for: tracking interests (e.g., 'Find vacation in Spain under 500€'), monitoring prices/deals (e.g., 'Notify me about GPU RTX 4090 sales'), watching for opportunities. Requirements are matched against email content, newsletters, and incoming messages. Required JSON format: { \"title\": \"Requirement title\", \"description\": \"Detailed description\", \"keywords\": [\"spain\", \"vacation\", \"beach\"], \"priority\": \"LOW|MEDIUM|HIGH|URGENT\" }"
+    systemPrompt: |
+      You are the Requirement Creation Tool. Extract structured requirement information from user's task description.
+
+      Extract:
+      - title: Short, clear requirement title
+      - description: Detailed description of what user wants
+      - keywords: List of important keywords for matching (lowercase, normalized)
+      - priority: Urgency level (LOW, MEDIUM, HIGH, URGENT)
+
+      Keywords are CRITICAL for matching - extract all relevant terms from the description.
+    userPrompt: |
+      TASK: {taskDescription}
+    modelParams:
+      modelType: GENERIC_TEXT_MODEL
+      creativityLevel: LOW
+
+  REQUIREMENT_QUERY_USER_TOOL:
+    description: "Query active user requirements/wishes. Use in EMAIL_PROCESSING to check if email content matches what user wants to track. This is a PARAMETRIC tool (NO LLM) - provide keywords directly as JSON: { \"keywords\": [\"spain\", \"vacation\", \"gpu\"] }. Returns matching requirements with title, description, keywords, priority. If no keywords provided (empty list), returns all active requirements. Extract keywords from email content before calling this tool."
+    systemPrompt:
+    userPrompt:
+    modelParams:
+      modelType: GENERIC_TEXT_MODEL
+      creativityLevel: LOW
+
+  REQUIREMENT_UPDATE_USER_TOOL:
+    description: "Update user requirement status. Use to mark requirements as COMPLETED (fulfilled), CANCELLED (no longer needed), or ACTIVE (reactivate). Required JSON format: { \"requirementId\": \"ObjectId string\", \"status\": \"ACTIVE|COMPLETED|CANCELLED\" }"
+    systemPrompt: |
+      You are the Requirement Update Tool. Extract requirement ID and new status from task description.
+
+      Extract:
+      - requirementId: MongoDB ObjectId string
+      - status: ACTIVE, COMPLETED, or CANCELLED
+
+      Status meanings:
+      - ACTIVE: Currently tracking this requirement
+      - COMPLETED: Requirement fulfilled, stop tracking
+      - CANCELLED: User no longer interested, stop tracking
+    userPrompt: |
+      TASK: {taskDescription}
+    modelParams:
+      modelType: GENERIC_TEXT_MODEL
+      creativityLevel: LOW
+
+  BRANCH_CHECK_INDEXING_STATUS_TOOL:
+    description: "Check if a Git branch is indexed and ready for code queries. CRITICAL: Must be called BEFORE answering questions about code after branch switch. Returns SUCCESS if branch is ready, ERROR if not indexed yet. Task format: 'Check branch feature/xyz' or 'branch: main'."
+    systemPrompt: |
+      This is a PARAMETRIC tool (no LLM needed).
+      The tool directly checks vector store index for branch status.
+      Return the result from VectorStoreIndexService.
+    userPrompt: |
+      TASK: {taskDescription}
+    modelParams:
+      modelType: GENERIC_TEXT_MODEL
+      creativityLevel: LOW
 
 creativityLevels:
   LOW:

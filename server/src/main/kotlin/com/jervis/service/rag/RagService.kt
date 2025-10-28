@@ -1,6 +1,6 @@
 package com.jervis.service.rag
 
-import com.jervis.domain.context.TaskContext
+import com.jervis.domain.plan.Plan
 import com.jervis.service.rag.domain.DocumentChunk
 import com.jervis.service.rag.domain.RagQuery
 import com.jervis.service.rag.domain.RagResult
@@ -42,12 +42,12 @@ class RagService(
     suspend fun executeRagPipeline(
         queries: List<RagQuery>,
         originalQuery: String,
-        context: TaskContext,
+        plan: Plan,
     ): RagResult {
         logger.info { "RAG_PIPELINE_START: Processing ${queries.size} queries" }
 
-        val queryResults = executeParallelQueries(queries, context)
-        val synthesizedAnswer = synthesisStrategy.synthesize(queryResults, originalQuery, context)
+        val queryResults = executeParallelQueries(queries, plan)
+        val synthesizedAnswer = synthesisStrategy.synthesize(queryResults, originalQuery, plan)
 
         logger.info { "RAG_PIPELINE_COMPLETE: Processed ${queryResults.size} queries" }
 
@@ -59,33 +59,82 @@ class RagService(
         )
     }
 
+    /**
+     * Execute direct vector search for multiple queries without LLM synthesis.
+     * Returns raw deduplicated chunks from vector store.
+     */
+    suspend fun executeDirectSearch(
+        queries: List<RagQuery>,
+        plan: Plan,
+    ): List<DocumentChunk> {
+        logger.info { "RAG_DIRECT_SEARCH_START: Processing ${queries.size} queries" }
+
+        val queryResults = executeParallelQueries(queries, plan)
+        val allChunks = queryResults.flatMap { it.filteredChunks }
+        val deduplicated = deduplicationStrategy.deduplicate(allChunks)
+
+        logger.info { "RAG_DIRECT_SEARCH_COMPLETE: Retrieved ${deduplicated.size} unique chunks" }
+
+        return deduplicated
+    }
+
+    /**
+     * Execute direct vector search with per-query results.
+     * Returns map of query text to its specific chunks (parallel execution).
+     */
+    suspend fun executeDirectSearchWithQueryMapping(
+        queries: List<RagQuery>,
+        plan: Plan,
+    ): Map<String, List<DocumentChunk>> {
+        logger.info { "RAG_DIRECT_SEARCH_MAPPED_START: Processing ${queries.size} queries in parallel" }
+
+        val queryResults = executeParallelQueries(queries, plan)
+
+        val resultMap =
+            queryResults.associate { result ->
+                result.query to result.filteredChunks
+            }
+
+        logger.info {
+            "RAG_DIRECT_SEARCH_MAPPED_COMPLETE: Retrieved ${queryResults.sumOf { it.filteredChunks.size }} total chunks"
+        }
+
+        return resultMap
+    }
+
     private suspend fun executeParallelQueries(
         queries: List<RagQuery>,
-        context: TaskContext,
+        plan: Plan,
     ): List<QueryResult> =
         coroutineScope {
             queries
                 .map { query ->
                     async {
                         logger.debug { "Processing query: '${query.searchTerms}'" }
-                        executeSingleQuery(query, context)
+                        executeSingleQuery(query, plan)
                     }
                 }.awaitAll()
         }
 
     private suspend fun executeSingleQuery(
         query: RagQuery,
-        context: TaskContext,
+        plan: Plan,
     ): QueryResult {
-        val chunks = searchStrategy.search(query, context)
+        val chunks = searchStrategy.search(query, plan)
         val deduplicatedChunks = deduplicationStrategy.deduplicate(chunks)
+
+        val topScores = deduplicatedChunks.take(10).map { "%.3f".format(it.score) }.joinToString(", ")
+        val belowThreshold = deduplicatedChunks.count { it.score < query.minSimilarityThreshold }
+
         val filteredChunks =
             deduplicatedChunks
+                .filter { it.score >= query.minSimilarityThreshold }
                 .sortedByDescending { it.score }
-                .take(MAX_CHUNKS_PER_QUERY)
+                .take(query.maxChunks)
 
-        logger.debug {
-            "Query '${query.searchTerms}': ${chunks.size} → ${deduplicatedChunks.size} → ${filteredChunks.size} chunks"
+        logger.info {
+            "Query '${query.searchTerms}': ${chunks.size} raw → ${deduplicatedChunks.size} dedup → ${filteredChunks.size} filtered (threshold=${query.minSimilarityThreshold}). " +
+                "Top scores: [$topScores]. Filtered out: $belowThreshold chunks"
         }
 
         return QueryResult(

@@ -1,7 +1,7 @@
 package com.jervis.service.scheduling
 
 import com.jervis.domain.task.ScheduledTaskStatusEnum
-import com.jervis.entity.mongo.ScheduledTaskDocument
+import com.jervis.entity.ScheduledTaskDocument
 import com.jervis.repository.mongo.ProjectMongoRepository
 import com.jervis.repository.mongo.ScheduledTaskMongoRepository
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
@@ -109,13 +109,13 @@ class TaskSchedulingService(
                         text = task.taskInstruction,
                         clientId = clientId,
                         projectId = project.id,
+                        background = false,
                         quick = task.taskParameters["quick"]?.toBoolean() ?: false,
-                        existingContextId = null,
                     )
 
                 logger.info {
                     "Task completed successfully: ${task.taskName}. " +
-                        "Response message length: ${response.message.length} characters"
+                        "Response: ${response.message.take(100)}..."
                 }
 
                 // Mark task as completed

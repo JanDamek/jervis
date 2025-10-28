@@ -3,8 +3,8 @@ package com.jervis.service.storage
 import com.jervis.configuration.DataRootProperties
 import com.jervis.domain.storage.DirectoryStructure
 import com.jervis.domain.storage.ProjectSubdirectory
-import com.jervis.entity.mongo.ClientDocument
-import com.jervis.entity.mongo.ProjectDocument
+import com.jervis.entity.ClientDocument
+import com.jervis.entity.ProjectDocument
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking

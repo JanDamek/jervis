@@ -1,7 +1,7 @@
 package com.jervis.mapper
 
 import com.jervis.dto.ClientProjectLinkDto
-import com.jervis.entity.mongo.ClientProjectLinkDocument
+import com.jervis.entity.ClientProjectLinkDocument
 import org.bson.types.ObjectId
 
 fun ClientProjectLinkDocument.toDto(): ClientProjectLinkDto =

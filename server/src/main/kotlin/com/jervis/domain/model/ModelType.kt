@@ -8,7 +8,6 @@ enum class ModelType {
     EMBEDDING_TEXT,
     EMBEDDING_CODE,
     QUESTION_INTERPRETER,
-    RAG,
     CODER,
     PLANNER,
     JOERN,
@@ -16,4 +15,6 @@ enum class ModelType {
     HEAVY_TEXT_MODEL,
     GENERIC_CODE_MODEL,
     HEAVY_CODE_MODEL,
+    QUICK,
+    QUALIFIER,
 }

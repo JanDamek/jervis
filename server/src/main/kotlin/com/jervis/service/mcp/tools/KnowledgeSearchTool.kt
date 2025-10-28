@@ -1,33 +1,32 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
-import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
 import com.jervis.service.rag.RagService
 import com.jervis.service.rag.domain.RagQuery
 import com.jervis.service.rag.domain.RagResult
+import com.jervis.service.text.TextChunkingService
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
 /**
- * Knowledge search tool implementing RAG (Retrieval Augmented Generation) strategy.
+ * Knowledge search tool for direct vector store queries.
  *
  * Responsibilities:
  * - Parse task description into structured search queries using LLM
- * - Delegate RAG pipeline execution to RagService
- * - Format and return results
+ * - Execute direct vector store searches
+ * - Return raw deduplicated chunks without LLM synthesis
  *
- * The RAG processing (search, deduplication, filtering, synthesis) is handled by RagService.
+ * The calling LLM formulates exact queries and receives raw data for processing.
  */
 @Service
 class KnowledgeSearchTool(
-    private val llmGateway: LlmGateway,
     private val ragService: RagService,
     override val promptRepository: PromptRepository,
+    private val textChunkingService: TextChunkingService,
 ) : McpTool {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -36,17 +35,14 @@ class KnowledgeSearchTool(
     override val name: PromptTypeEnum = PromptTypeEnum.KNOWLEDGE_SEARCH_TOOL
 
     override suspend fun execute(
-        context: TaskContext,
         plan: Plan,
         taskDescription: String,
         stepContext: String,
     ): ToolResult {
         logger.info { "KNOWLEDGE_SEARCH_START: Executing knowledge search" }
 
-        val searchQueries = parseSearchQueries(taskDescription, context, stepContext)
-        require(searchQueries.isNotEmpty()) { "No search queries generated from task description" }
-
-        val ragResult = ragService.executeRagPipeline(searchQueries, taskDescription, context)
+        val searchQueries = parseSearchQueries(taskDescription)
+        val ragResult = ragService.executeRagPipeline(searchQueries, taskDescription, plan)
 
         logger.info { "KNOWLEDGE_SEARCH_COMPLETE: Processed ${ragResult.queriesProcessed} queries" }
 
@@ -57,31 +53,11 @@ class KnowledgeSearchTool(
         )
     }
 
-    private suspend fun parseSearchQueries(
-        taskDescription: String,
-        context: TaskContext,
-        stepContext: String,
-    ): List<RagQuery> {
+    private suspend fun parseSearchQueries(taskDescription: String): List<RagQuery> {
         logger.debug { "Parsing search queries from task description" }
-
-        val mappingValue =
-            mapOf(
-                "taskDescription" to taskDescription,
-                "stepContext" to stepContext,
-                "clientName" to context.clientDocument.name,
-                "projectName" to context.projectDocument.name,
-            )
-
-        val llmResponse =
-            llmGateway.callLlm(
-                type = PromptTypeEnum.KNOWLEDGE_SEARCH_TOOL,
-                responseSchema = listOf(RagQuery(searchTerms = "")),
-                quick = context.quick,
-                mappingValue = mappingValue,
-            )
-
-        require(llmResponse.result.isNotEmpty()) { "LLM returned empty search queries list" }
-        return llmResponse.result
+        return textChunkingService.splitText(taskDescription).map {
+            RagQuery(searchTerms = it.text())
+        }
     }
 
     private fun buildSummary(ragResult: RagResult): String =

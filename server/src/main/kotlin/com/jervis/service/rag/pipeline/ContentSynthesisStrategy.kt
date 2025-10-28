@@ -1,6 +1,6 @@
 package com.jervis.service.rag.pipeline
 
-import com.jervis.domain.context.TaskContext
+import com.jervis.domain.plan.Plan
 import com.jervis.service.rag.RagService
 
 /**
@@ -10,6 +10,6 @@ fun interface ContentSynthesisStrategy {
     suspend fun synthesize(
         queryResults: List<RagService.QueryResult>,
         originalQuery: String,
-        context: TaskContext,
+        plan: Plan,
     ): String
 }

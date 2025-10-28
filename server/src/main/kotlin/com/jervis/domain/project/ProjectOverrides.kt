@@ -1,22 +1,9 @@
 package com.jervis.domain.project
 
-import com.jervis.domain.client.Anonymization
-import com.jervis.domain.client.Formatting
-import com.jervis.domain.client.Guidelines
-import com.jervis.domain.client.InspirationPolicy
-import com.jervis.domain.client.ReviewPolicy
-import com.jervis.domain.client.SecretsPolicy
 import com.jervis.domain.git.GitAuthTypeEnum
 import com.jervis.domain.git.GitConfig
 
 data class ProjectOverrides(
-    val codingGuidelines: Guidelines? = null,
-    val reviewPolicy: ReviewPolicy? = null,
-    val formatting: Formatting? = null,
-    val secretsPolicy: SecretsPolicy? = null,
-    val anonymization: Anonymization? = null,
-    val inspirationPolicy: InspirationPolicy? = null,
-    val audioMonitoring: AudioMonitoringConfig? = null,
     val gitRemoteUrl: String? = null,
     val gitAuthType: GitAuthTypeEnum? = null,
     val gitConfig: GitConfig? = null,

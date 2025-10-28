@@ -3,7 +3,6 @@ pluginManagement {
         gradlePluginPortal()
         mavenCentral()
         maven("https://repo.spring.io/milestone")
-        maven("https://repo.spring.io/release")
         maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
         maven("https://jitpack.io")
     }
@@ -14,7 +13,6 @@ dependencyResolutionManagement {
     repositories {
         mavenCentral()
         maven("https://repo.spring.io/milestone")
-        maven("https://repo.spring.io/release")
         maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
         maven("https://jitpack.io")
     }

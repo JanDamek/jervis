@@ -1,22 +1,16 @@
 package com.jervis.service.indexing
 
-import com.jervis.entity.mongo.ClientDocument
-import com.jervis.entity.mongo.ProjectDocument
+import com.jervis.entity.ProjectDocument
 import com.jervis.repository.mongo.ClientMongoRepository
 import com.jervis.repository.mongo.ProjectMongoRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.fold
-import kotlinx.coroutines.reactive.awaitFirstOrNull
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.http.codec.multipart.FilePart
 import org.springframework.stereotype.Service
-import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.Paths
-import java.nio.file.StandardOpenOption
 
 @Service
 class AudioUploadService(
@@ -37,65 +31,20 @@ class AudioUploadService(
         filePart: FilePart,
     ): UploadResult =
         withContext(Dispatchers.IO) {
-            val project: ProjectDocument =
-                projectRepository.findById(projectId)
-                    ?: error("Project not found: ${'$'}projectId")
+            projectRepository.findById(projectId)
+                ?: error("Project not found: $projectId")
 
-            val audioPath =
-                project.overrides.audioMonitoring?.audioPath ?: error("Project has no audio path configured")
-
-            val fileName = filePart.filename()
-            val targetPath = Paths.get(audioPath).resolve(fileName)
-
-            Files.createDirectories(targetPath.parent)
-
-            // Save the uploaded file using reactive -> coroutine bridge
-            filePart.transferTo(targetPath).awaitFirstOrNull()
-
-            val fileSize = Files.size(targetPath)
-            logger.info { "Uploaded audio file for project ${'$'}{project.name}: ${'$'}fileName (${'$'}fileSize bytes)" }
-
-            audioTranscriptIndexingService.enqueueTranscription(
-                AudioTranscriptIndexingService.TranscriptionJob(
-                    fileName = fileName,
-                    filePath = targetPath,
-                    source = "project:${'$'}{project.id}",
-                ),
-            )
-
-            UploadResult(fileName, fileSize, targetPath)
+            // TODO: Audio monitoring was in project.overrides which is removed
+            error("Audio monitoring configuration removed - needs redesign")
         }
 
     suspend fun uploadClientAudio(
         clientId: ObjectId,
         filePart: FilePart,
-    ): UploadResult =
-        withContext(Dispatchers.IO) {
-            val client: ClientDocument =
-                clientRepository.findById(clientId)
-                    ?: error("Client not found: ${'$'}clientId")
-
-            val audioPath = client.audioPath ?: error("Client has no audio path configured")
-
-            val fileName = filePart.filename()
-            val targetPath = Paths.get(audioPath).resolve(fileName)
-
-            Files.createDirectories(targetPath.parent)
-            filePart.transferTo(targetPath).awaitFirstOrNull()
-
-            val fileSize = Files.size(targetPath)
-            logger.info { "Uploaded audio file for client ${'$'}{client.name}: ${'$'}fileName (${'$'}fileSize bytes)" }
-
-            audioTranscriptIndexingService.enqueueTranscription(
-                AudioTranscriptIndexingService.TranscriptionJob(
-                    fileName = fileName,
-                    filePath = targetPath,
-                    source = "client:${'$'}{client.id}",
-                ),
-            )
-
-            UploadResult(fileName, fileSize, targetPath)
-        }
+    ): UploadResult {
+        // TODO: Audio monitoring needs redesign
+        error("Audio monitoring configuration removed - needs redesign")
+    }
 
     suspend fun streamProjectAudio(
         projectId: ObjectId,
@@ -103,37 +52,10 @@ class AudioUploadService(
         audioData: Flow<ByteArray>,
     ): UploadResult =
         withContext(Dispatchers.IO) {
-            val project: ProjectDocument =
-                projectRepository.findById(projectId)
-                    ?: error("Project not found: $projectId")
+            projectRepository.findById(projectId)
+                ?: error("Project not found: $projectId")
 
-            val audioPath =
-                project.overrides.audioMonitoring?.audioPath ?: error("Project has no audio path configured")
-
-            val targetPath = Paths.get(audioPath).resolve(fileName)
-            Files.createDirectories(targetPath.parent)
-
-            val fileSize =
-                audioData.fold(0L) { totalBytes, chunk ->
-                    Files.write(
-                        targetPath,
-                        chunk,
-                        StandardOpenOption.CREATE,
-                        StandardOpenOption.APPEND,
-                    )
-                    totalBytes + chunk.size
-                }
-
-            logger.info { "Streamed audio file for project ${'$'}{project.name}: ${'$'}fileName (${'$'}fileSize bytes)" }
-
-            audioTranscriptIndexingService.enqueueTranscription(
-                AudioTranscriptIndexingService.TranscriptionJob(
-                    fileName = fileName,
-                    filePath = targetPath,
-                    source = "project:${'$'}{project.id}",
-                ),
-            )
-
-            UploadResult(fileName, fileSize, targetPath)
+            // TODO: Audio monitoring configuration removed - needs redesign
+            error("Audio monitoring configuration removed - needs redesign")
         }
 }

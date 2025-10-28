@@ -1,10 +1,9 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
-import com.jervis.entity.mongo.ClientDocument
-import com.jervis.entity.mongo.ProjectDocument
+import com.jervis.entity.ClientDocument
+import com.jervis.entity.ProjectDocument
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.gateway.processing.dto.LlmResponseWrapper
 import com.jervis.service.mcp.McpTool
@@ -41,7 +40,6 @@ class CommunicationUserDialogTool(
     override val name = PromptTypeEnum.COMMUNICATION_USER_DIALOG_TOOL
 
     override suspend fun execute(
-        context: TaskContext,
         plan: Plan,
         taskDescription: String,
         stepContext: String,
@@ -51,9 +49,10 @@ class CommunicationUserDialogTool(
                 .callLlm(
                     type = PromptTypeEnum.COMMUNICATION_USER_DIALOG_TOOL,
                     responseSchema = LlmResponseWrapper(),
-                    quick = context.quick,
+                    quick = plan.quick,
                     mappingValue = mapOf("taskDescription" to taskDescription),
                     outputLanguage = plan.originalLanguage.lowercase().ifBlank { "en" },
+                    backgroundMode = plan.backgroundMode,
                 )
 
         plan.finalAnswer ?: plan.contextSummary
@@ -62,8 +61,8 @@ class CommunicationUserDialogTool(
 //            withContext(Dispatchers.Swing) {
 //                showUserAwaitDialog(
 //                    owner = null,
-//                    client = context.clientDocument,
-//                    project = context.projectDocument,
+//                    client = plan.clientDocument,
+//                    project = plan.projectDocument,
 //                    previousOutput = previousOutput,
 //                    questionOriginal = taskDescription,
 //                    questionTranslated = taskDescription,
@@ -91,8 +90,9 @@ class CommunicationUserDialogTool(
                 .callLlm(
                     type = PromptTypeEnum.PLANNING_ANALYZE_QUESTION,
                     responseSchema = LlmResponseWrapper(),
-                    quick = context.quick,
+                    quick = plan.quick,
                     mappingValue = mapOf("userText" to finalAnswerOriginal),
+                    backgroundMode = plan.backgroundMode,
                 )
 
         val summary =

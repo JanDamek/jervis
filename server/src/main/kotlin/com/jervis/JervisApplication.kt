@@ -1,6 +1,10 @@
 package com.jervis
 
 import com.jervis.configuration.DataRootProperties
+import com.jervis.configuration.LinkIndexingProperties
+import com.jervis.configuration.LinkSafetyProperties
+import com.jervis.configuration.TextChunkingProperties
+import com.jervis.configuration.TikaOcrProperties
 import com.jervis.configuration.YamlPropertySourceFactory
 import com.jervis.configuration.prompts.PromptsConfiguration
 import org.springframework.boot.autoconfigure.SpringBootApplication
@@ -15,10 +19,10 @@ import org.springframework.data.mongodb.repository.config.EnableMongoRepositorie
 @EnableConfigurationProperties(
     PromptsConfiguration::class,
     DataRootProperties::class,
-    com.jervis.configuration.TikaOcrProperties::class,
-    com.jervis.configuration.EmailOAuth2Properties::class,
-    com.jervis.configuration.EmailIndexingProperties::class,
-    com.jervis.configuration.TextChunkingProperties::class,
+    TikaOcrProperties::class,
+    TextChunkingProperties::class,
+    LinkIndexingProperties::class,
+    LinkSafetyProperties::class,
 )
 @PropertySource(
     value = ["classpath:prompts-tools.yaml", "classpath:prompts-services.yaml"],

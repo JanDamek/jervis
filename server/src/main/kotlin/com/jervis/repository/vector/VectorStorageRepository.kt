@@ -332,7 +332,7 @@ class VectorStorageRepository(
     suspend fun search(
         collectionType: ModelType,
         query: List<Float>,
-        limit: Int = 10000,
+        limit: Int = 100,
         minScore: Float = 0.0f,
         projectId: String? = null,
         clientId: String? = null,

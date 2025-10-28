@@ -1,202 +1,210 @@
-# AI Assistant Guidelines for Code Refactoring (Kotlin-first)
+# AI Assistant Guidelines for Code (Kotlin-first)
 
-This document defines the standard instructions for using AI code assistants (e.g., GitHub Copilot Chat, IntelliJ AI
-Assistant, Junie) when analyzing and improving Kotlin/Java code in this project.
+This document defines strict rules for how AI assistants must generate and modify code in this project.  
+The goal is **maximum architecture correctness, readability, and consistency**.
 
 ---
 
-## Objectives
+## 0️⃣ Architectural Safety Rules
 
-### 1. **Main language**
+### 0.1 Follow Existing Architecture First
 
-- Always use **Kotlin** (not Java-style code written in Kotlin syntax).
-- Framework: **Spring Boot** (Jetty, WebFlux client).
-- Reactive programming: **Coroutines first**, with `reactor-kotlin-extensions` used only for interop.
+- Inspect existing patterns and reuse them.
+- Do **NOT** introduce new frameworks, abstractions, or parameter additions unless explicitly required.
 
-### 2. **Use English**
+### 0.2 Fail Fast — Do Not Guess
 
-- Use **English only** for code, variables, methods, classes, and comments.
-- Any non-English text (comments, variables, log messages) **must be immediately translated into English**.
-- Do not mix languages within the same source file or method.
+- Do not swallow exceptions.
+- Do not attempt fallback logic unless explicitly required.
+- Unexpected states **must throw clear errors**.
 
-### 2.1 **Language & Comments Rules**
+### 0.3 Do Not Invent Anything
 
-- **Code must be entirely in English.**  
-  Any non-English text in code, comments, or logs must be immediately translated into English.
-- **Inline comments (`// ...`) are treated as a design smell.**  
-  Their presence indicates that the code is not self-explanatory.
-- When an inline comment is found, the AI assistant **must evaluate whether the comment reveals a readability problem**.
-    - If yes → **refactor the code** (rename variables, extract methods, simplify logic) so the comment is no longer
-      needed.
-    - If no (rare exception) → keep the comment only if it provides **critical context** (e.g., algorithm rationale,
-      regulatory reference).
-- Comments describing “what” the code does (e.g., `// check if null`, `// increment counter`) **must always be removed
-  **.
-- Comments describing “why” something is done in a non-obvious way should be moved into a **KDoc** placed above the
-  declaration.
-- Inline comments are allowed **only in exceptional cases**, and their existence should trigger a code review to
-  evaluate whether refactoring is possible.
+- No new config values, no new annotations or parameters.
+- No new utility classes unless already used elsewhere.
+- No unused DTOs, methods, or entities — **no dead code**.
 
-### 3. **SOLID Principles**
+### 0.4 No Auto-Generated Tests
 
-- Apply Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, and Dependency Inversion.
+- Write/update tests **only when explicitly requested**.
 
-### 4. **Favor If-less Programming**
+---
 
-- **Goal**: reduce deeply nested `if/else` and imperative branching by using **sealed classes, polymorphism, strategy
-  pattern, or map-based dispatch**.
-- **Enums and sealed hierarchies**:
-    - For small, well-defined sets of states, `when` is idiomatic and clear.
-    - Prefer exhaustive `when` with sealed classes/enums (compiler guarantees exhaustiveness).
-- **When to replace with polymorphism**:
-    - If logic grows complex or is spread across multiple places → extract into strategy classes or sealed types with
-      overridden behavior.
-- **General principle**:
-    - Use `when`/`if` where they are the **clearest choice**.
-    - Use polymorphism or strategies when you expect **extension and evolution** of behavior.
+## 1️⃣ Main Language Rules
 
-### 5. **Naming**
+- **Always write idiomatic Kotlin**, not Java-style Kotlin.
+- Main stack:
+    - **Spring Boot**
+    - **Coroutines first**
+    - Reactor only for interop at context boundaries
 
-- Classes/interfaces: **PascalCase**.
-- Variables/methods: **camelCase**.
-- Avoid abbreviations, use clear English names.
+---
 
-### 6. **Constants & Immutability**
+## 2️⃣ English-Only Code
 
-- Replace magic values with `const val` / `val`.
-- Use `val` by default, `var` only if mutation is required.
+- All code, logs, comments **must be in English**.
+- Any Czech text must be **immediately translated**.
+- Inline comments (`//`) indicate bad code readability.
+    - Remove them if they state “what”
+    - Move to KDoc if they state “why”
 
-### 7. **Immutability Rules**
+---
 
-- **Domain objects**
-    - Always use `val` for fields.
-    - Model updates using `.copy()` instead of `var` mutations.
-    - Each `.copy()` creates a new version of the object → easier reasoning, safe concurrency, clear versioning.
+## 3️⃣ SOLID Principles
 
-- **DTOs (API contracts)**
-    - Always immutable (`val`).
-    - Represent snapshots of data going in/out of APIs.
+- Enforce proper abstractions and separation.
+- Eliminate business logic spreading across layers.
 
-- **Persistence entities (R2DBC / DocumentDB)**
-    - Prefer immutable models with `val` + `.copy()`.
-    - Treat each persisted object as a snapshot of state.
-    - Use optimistic versioning (`version`, `syncUid`, or `contextUid`) to track changes.
+---
 
-- **Runtime state holders (context/session/workflow)**
-    - `var` is allowed only here, where objects represent mutable, long-lived runtime state.
-    - These objects should not be persisted directly, only mapped into immutable documents.
+## 4️⃣ Favor If-less Programming
 
-### 8. **Null-safety Rules**
+- Prefer sealed types, polymorphism, strategies.
+- Use exhaustive `when` for small state sets.
+- Use branching only when it is the **clearest** solution.
 
-- **Never use `!!`** in domain, DTO, entity, or service code.
-- Use safe alternatives:
-    - Elvis operator `?:`
-    - Safe call `?.`
-    - `requireNotNull()` or `checkNotNull()` with meaningful messages
-    - `lateinit var` only for DI or lifecycle-initialized properties
-    - Sealed types or `Result` instead of nullable values for error states
-- `!!` is allowed only in rare interop with Java libraries or framework limitations, and must be documented with a clear
-  reason.
+---
 
-### 9. **Variable Lifecycle**
+## 5️⃣ Naming Conventions
 
-- Limit scope, initialize at the latest valid point.
-- Prefer expression style functions (`fun x() = …`).
+- PascalCase: Classes, Interfaces, Enums
+- camelCase: Methods, Variables
+- No unnecessary abbreviations
 
-### 10. **Readability & Structure**
+---
 
-- Extract reusable code into extension functions.
+## 6️⃣ Constants & Immutability
+
+- Prefer `val`
+- Replace values with `const val` where possible
+
+---
+
+## 7️⃣ Object Modeling Rules
+
+### 7.1 Domain Objects (Business models)
+
+- Immutable (`val` fields + `.copy()`)
+- Used in **Service and use-case logic**
+- Represent real business rules
+- ❌ Not allowed in REST or external APIs
+
+### 7.2 Entities (Persistence layer models)
+
+- Used in **Repository only** and **service persistence logic**
+- Can be mutated if storage requires it
+- **Never exposed outside business internals**
+
+### 7.3 DTOs (API contracts)
+
+- Used **only** for:
+    - REST controllers
+    - Messaging / API boundaries
+- Immutable
+- Annotated with `@Serializable`
+
+---
+
+## 8️⃣ Object Boundary Enforcement ✅
+
+| Layer      | Allowed Input | Allowed Output | Can call            | Forbidden                        |
+|------------|:-------------:|:--------------:|---------------------|----------------------------------|
+| Controller |      DTO      |      DTO       | Service             | Repository, Entity               |
+| Service    |    Domain     |     Domain     | Repository, Service | Controller, DTO                  |
+| Repository |    Entity     |     Entity     | Database            | Controller, Service, Domain, DTO |
+
+---
+
+### ✅ Mapping Rules
+
+| Convert         | Where      |
+|-----------------|------------|
+| DTO → Domain    | Controller |
+| Domain → DTO    | Controller |
+| Domain → Entity | Service    |
+| Entity → Domain | Service    |
+
+---
+
+### ❌ Hard Prohibitions
+
+- Controllers returning Entities → ❌
+- Services receiving DTOs → ❌
+- Controllers accessing Repositories → ❌
+- Domain models with persistence annotations → ❌
+- DTOs in domain logic → ❌
+
+Failure to respect these rules must be corrected before any other work proceeds.
+
+---
+
+## 9️⃣ Null Safety
+
+- ❌ Never use `!!` (except documented Java interop)
+- Prefer:
+    - `?.`
+    - `?:`
+    - `requireNotNull()`, `checkNotNull()`
+    - sealed results or `Result`
+
+---
+
+## 🔟 Readability & Structure
+
 - Keep functions small and single-purpose.
-- Eliminate duplication.
-
-### 11. **Reusability**
-
-- Generalize shared logic.
-- Prefer **extension functions**, **inline functions**, or **sealed hierarchies**.
-
-### 12. **Data Structures & Generics**
-
-- Use **Kotlin collections** (`listOf`, `mapOf`, etc.) by default.
-- Use mutable collections only when modification is required.
-- Prefer `Map`/`Set` over manual parallel structures.
-
-### 13. **Serialization Rules**
-
-- Default: **Kotlinx Serialization (`@Serializable`)** for all DTOs and entities.
-- Do not rely on reflection-based Jackson unless required for interop.
-- Prefer non-nullable fields with default values instead of nullable types.
-- Always annotate explicitly if field names differ.
-
-### 14. **Documentation**
-
-- Use **KDoc** (`/** … */`).
-- Document **intent**, not trivial implementation.
-- No line comments (`//`).
-
-### 15. **Always Fix**
-
-- Typos, naming inconsistencies.
-- Java-style patterns in Kotlin (e.g., `== true`, `!!`, `Optional`, builder setters).
-- Replace verbose `if/else` with idiomatic `?:`, `?.let`, `takeIf`.
-
-### 16. **Coroutines First**
-
-- Write new code as `suspend fun` where async is expected.
-- Prefer coroutines over Reactor APIs, but support interop.
-- Controller methods must be `suspend fun`.
-
-### 17. **Reactive Programming**
-
-- Use `Flow<T>` for streams (0–N).
-- Use `suspend fun` for single results (0–1).
-- Convert to Reactor types (`Mono`, `Flux`) only at integration boundaries.
-- **Never** call `.block()` in production.
-
-### 18. **Coroutine Integration**
-
-- Use `reactor-kotlin-extensions`.
-- Prefer flows and suspend functions in controllers.
-- Use structured concurrency (`withContext`, `SupervisorJob`).
-
-### 19. **Performance & Resource Management**
-
-- Configure `WebClient` connection pools.
-- Use correct schedulers.
-- Implement backpressure, retry, circuit breakers.
-
-### 20. **Testing**
-
-- Use **kotlinx.coroutines.test.runTest** for coroutine testing.
-- For flows, test with `collect` assertions.
-- Use Reactor StepVerifier only if explicitly testing interop.
-- Test error and edge cases.
-
-### 21. **Production Readiness**
-
-- Circuit breakers, retries, timeouts.
-- Observability: metrics, tracing, logging.
-- Propagate security context in reactive chains.
-
-### 22. **Dependency Injection**
-
-- Always prefer **constructor injection**.
-- Avoid field injection (`@Autowired var`).
-- Never use manual singletons, rely on Spring context.
-- Use `lateinit var` only for framework-managed beans.
-
-### 23. **Logging Rules**
-
-- Always use structured logging (`logger.info { "message with $var" }`).
-- Never use `System.out.println` or `printStackTrace`.
-- Always include correlation IDs (MDC/trace IDs) if available.
+- Extract shared code into extension functions.
+- No duplication.
 
 ---
 
-## Output Requirements
+## 1️⃣1️⃣ Collections
 
-- Write **idiomatic Kotlin** (not Java with Kotlin syntax).
-- Always refactor **directly in code**, not as suggestions.
-- Formatting must follow Kotlin style guidelines (official Kotlin coding conventions).
-- Avoid null-safety hacks (`!!`). Prefer `?:`, `?.let`, safe casts, or sealed types.
+- Prefer immutable Kotlin collections (`listOf`, `mapOf`)
 
 ---
+
+## 1️⃣2️⃣ Serialization
+
+- Default: **Kotlinx Serialization**
+- Avoid reflection-based Jackson unless interop needed
+
+---
+
+## 1️⃣3️⃣ Coroutines First
+
+- Use `suspend fun` where async is expected.
+- Use `Flow<T>` for streams > 1 element.
+- **Never call `.block()`** in production.
+
+---
+
+## 1️⃣4️⃣ Observability & Logging
+
+- Always use structured logging (`logger.info {}`)
+- Include **correlation IDs (trace/MDC IDs)** where available
+
+---
+
+## 1️⃣5️⃣ Dependency Injection
+
+- Use constructor injection only
+- No field injection or manual singletons
+
+---
+
+## ✅ Output Requirements for AI
+
+- Modify code directly — not suggestions only.
+- Follow Kotlin style guidelines.
+- Enforce all rules above automatically when writing code.
+- If a rule cannot be followed → **ask before proceeding**.
+- When unsure → **choose the simplest approach aligned with existing patterns**.
+
+---
+
+## ✅ Final Rule
+
+> **The domain model is the source of truth.  
+> Controllers handle communication.  
+> Repositories handle persistence.**  
+> No crossing of responsibilities.

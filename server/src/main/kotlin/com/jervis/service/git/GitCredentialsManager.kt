@@ -1,6 +1,6 @@
 package com.jervis.service.git
 
-import com.jervis.entity.mongo.ProjectDocument
+import com.jervis.entity.ProjectDocument
 import com.jervis.repository.mongo.ClientMongoRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -38,8 +38,8 @@ class GitCredentialsManager(
                 }
 
                 val clientGitConfig = client.gitConfig
-                val overrideGitConfig = project.overrides.gitConfig
-                val gitConfig = overrideGitConfig ?: clientGitConfig
+                // TODO: Project overrides removed - git config now only at client level
+                val gitConfig = clientGitConfig
 
                 if (gitConfig == null) {
                     logger.info { "No Git configuration found for project ${project.name}" }
@@ -122,8 +122,8 @@ class GitCredentialsManager(
                     val client = clientMongoRepository.findById(project.clientId)
                     if (client != null) {
                         val clientGitConfig = client.gitConfig
-                        val overrideGitConfig = project.overrides.gitConfig
-                        val gitConfig = overrideGitConfig ?: clientGitConfig
+                        // TODO: Project overrides removed - git config now only at client level
+                        val gitConfig = clientGitConfig
 
                         if (gitConfig != null) {
                             gitConfig.gpgPrivateKey

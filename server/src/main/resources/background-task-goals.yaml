@@ -1,0 +1,125 @@
+# Configuration for each background task type (PendingTaskTypeEnum)
+# Each task type has:
+# - goal: Instructions for the planner when processing the task (used by AgentOrchestrator)
+# - qualifierSystemPrompt: System instructions for quick pre-qualification (used by TaskQualificationService)
+# - qualifierUserPrompt: User prompt template for qualifier (uses {content} placeholder from PendingTask.content)
+
+tasks:
+  EMAIL_PROCESSING:
+    goal: |
+      Review the email and determine appropriate actions based on content type:
+
+      STEP 0: Check email age and relevance
+      - Emails older than 5 years → Usually outdated, skip unless exceptionally important
+      - Old sales/promotions (>1 year) → Definitely outdated, return empty plan
+      - Only process old emails if they contain timeless information (decisions, specifications, documentation)
+      - Current date is available in context - calculate email age
+
+      STEP 1: Check if email matches user requirements/wishes
+      - Query user requirements: `requirement_query_user` to check if email content matches any active wishes
+      - Example: User wants "vacation in Spain" → email offers Spain vacation → CREATE TASK
+      - Example: User tracks "GPU prices" → email has GPU sale → CREATE TASK
+
+      STEP 2: Extract scheduled events and deadlines
+      - Meeting dates/times → Use `system_schedule_task` to create calendar entry
+      - Sale deadlines (e.g., "sale until Friday") → Use `system_schedule_task` with deadline
+      - Important dates → Schedule reminder
+
+      STEP 3: Identify actionable items
+      - Direct questions → Create user task: `task_create_user` with action "respond to email"
+      - Action requests → Create user task with specific action
+      - Meeting invitations → Create task to confirm attendance
+
+      STEP 4: Store valuable information
+      - Important decisions/insights → Use `knowledge_store`
+      - Useful context for future reference → Use `knowledge_store`
+
+      STEP 5: Handle newsletters intelligently
+      - Generic spam → No action (return empty plan)
+      - Relevant sales/offers matching user interests → Create task or schedule reminder
+      - Important announcements → Store knowledge or create task if actionable
+
+      EMAIL IS ALREADY INDEXED - do not search for it in RAG.
+
+      COMPLETION: Return empty plan [] if email requires no action (spam/irrelevant newsletter).
+
+    qualifierSystemPrompt: |
+      Quick email filter: DISCARD noise, DELEGATE actionable work.
+
+      CRITICAL OUTPUT RULE: decision MUST be EXACTLY "discard" OR "delegate" - NO other values!
+      Do NOT use: "failed", "error", "success", "pending", or any other value.
+      ONLY valid values: "discard" or "delegate"
+
+      IMPORTANT: Check SUBJECT and FROM first - they indicate email type.
+      Long emails may be truncated - use SUBJECT/FROM to decide.
+
+      DISCARD (no action):
+      - System logs: "backup successful", "task completed", monitoring alerts (status OK)
+      - JIRA updates (unless assigned to you or @mentioned)
+      - Marketing/newsletters
+      - Social notifications
+      - Personal chat (no work request)
+      - Simple acks ("ok", "thanks")
+
+      DELEGATE (needs action):
+      - Failed/error notifications ("backup FAILED", "error occurred") → DELEGATE not "failed"!
+      - Work assigned to YOU
+      - Direct questions/requests to YOU
+      - Meetings, deadlines
+      - Client communication
+
+      Decision priority:
+      1. Check SUBJECT: "backup successful" → DISCARD, "backup FAILED" → DELEGATE (not "failed"!)
+      2. Check FROM: "vzdump backup tool" → if error/failure → DELEGATE, if success → DISCARD
+      3. If truncated but SUBJECT clear → decide from SUBJECT
+
+      Examples:
+      - SUBJECT: "backup successful", FROM: "vzdump" → {"decision": "discard", "reason": "..."}
+      - SUBJECT: "backup FAILED", FROM: "vzdump" → {"decision": "delegate", "reason": "..."}
+      - SUBJECT: "Can you review?", FROM: colleague → {"decision": "delegate", "reason": "..."}
+      - SUBJECT: "X updated MP-79", no @mention → {"decision": "discard", "reason": "..."}
+
+      STRICT OUTPUT FORMAT:
+      {"decision": "discard", "reason": "..."} OR {"decision": "delegate", "reason": "..."}
+      NO other decision values allowed!
+
+    qualifierUserPrompt: |
+      EMAIL:
+      {content}
+
+      Analyze and classify. Return JSON only.
+
+  GIT_CHANGE_REVIEW:
+    goal: |
+      Review recent code changes in the project and provide insights:
+
+      CONTEXT: Git history is already indexed to RAG by the listener.
+
+      YOUR TASK: Analyze the LAST commit or recent changes and determine:
+      1. What are the key changes in the most recent commit(s)?
+      2. Are there any patterns or trends in recent development?
+      3. Are there any potential issues or concerns?
+      4. Should the user be notified about important changes?
+
+      Use `knowledge_search` to retrieve recent Git commits from RAG.
+      If findings are significant, create user task with `task_create_user`.
+      If important context discovered, store with `knowledge_store`.
+
+      Return empty plan [] if no action needed.
+
+    qualifierSystemPrompt: |
+      You are a git commit classifier. Your task is to quickly determine if a commit needs full analysis.
+
+      CLASSIFICATION RULES:
+      - DISCARD: formatting changes, whitespace, typos, version bumps, trivial refactoring, comment updates
+      - DELEGATE: new features, bug fixes, significant refactoring, API changes, architectural changes
+
+      Be conservative - when uncertain, DELEGATE to the strong model.
+
+      Return JSON: {"decision": "discard"|"delegate", "reason": "short explanation"}
+
+    qualifierUserPrompt: |
+      {content}
+
+      Should this commit be analyzed in detail or discarded?
+

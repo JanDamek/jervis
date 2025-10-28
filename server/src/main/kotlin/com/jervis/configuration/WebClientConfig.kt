@@ -45,7 +45,28 @@ class WebClientConfig(
         endpoints: EndpointProperties,
     ): WebClient =
         builder
-            .baseUrl(endpoints.ollama.baseUrl?.trimEnd('/') ?: DEFAULT_OLLAMA_URL)
+            .baseUrl(
+                endpoints.ollama.primary.baseUrl
+                    ?.trimEnd('/') ?: DEFAULT_OLLAMA_URL,
+            ).defaultHeaders { headers ->
+                headers.contentType = MediaType.APPLICATION_JSON
+                headers.accept = listOf(MediaType.APPLICATION_JSON)
+            }.exchangeStrategies(defaultExchangeStrategies())
+            .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
+            .filter(createRetryFilter())
+            .build()
+
+    @Bean
+    @Qualifier("ollamaQualifierWebClient")
+    fun ollamaQualifierWebClient(
+        builder: WebClient.Builder,
+        endpoints: EndpointProperties,
+    ): WebClient =
+        builder
+            .baseUrl(
+                endpoints.ollama.qualifier.baseUrl
+                ?.trimEnd('/') ?: DEFAULT_OLLAMA_URL
+                    )
             .defaultHeaders { headers ->
                 headers.contentType = MediaType.APPLICATION_JSON
                 headers.accept = listOf(MediaType.APPLICATION_JSON)

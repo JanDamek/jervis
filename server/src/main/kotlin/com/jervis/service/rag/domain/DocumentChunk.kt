@@ -11,4 +11,9 @@ data class DocumentChunk(
     val score: Double,
     val metadata: Map<String, String>,
     val embedding: List<Float> = emptyList(),
-)
+) {
+    override fun toString(): String {
+        val metaString = metadata.entries.joinToString(", ") { "${it.key}->${it.value}" }
+        return "$content { $metaString }"
+    }
+}

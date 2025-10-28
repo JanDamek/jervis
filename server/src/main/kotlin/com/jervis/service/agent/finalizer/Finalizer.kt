@@ -1,7 +1,6 @@
 package com.jervis.service.agent.finalizer
 
 import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.domain.context.TaskContext
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.plan.PlanStatusEnum
 import com.jervis.domain.plan.StepStatusEnum
@@ -10,13 +9,11 @@ import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.gateway.processing.dto.LlmResponseWrapper
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
-import java.time.Instant
 
 /**
- * Finalizer produces the final user-facing response based on the task context.
- * It goes through all context plans that are COMPLETED or FAILED and finalizes them
- * with an LLM call. The LLM result is stored in the plan as a finalAnswer and
- * the plan is marked as FINALIZED. The response aggregates summaries of all processed plans.
+ * Finalizer produces the final user-facing response based on a plan.
+ * It processes a COMPLETED or FAILED plan and finalizes it with an LLM call.
+ * The LLM result is stored in the plan as a finalAnswer and the plan is marked as FINALIZED.
  */
 @Service
 class Finalizer(
@@ -24,70 +21,65 @@ class Finalizer(
 ) {
     private val logger = KotlinLogging.logger {}
 
-    suspend fun finalize(context: TaskContext): ChatResponse {
-        logger.debug { "FINALIZER_START: Processing context=${context.id} with ${context.plans.size} plans" }
+    suspend fun finalize(plan: Plan): ChatResponse {
+        logger.debug {
+            "FINALIZER_START: Processing planId=${plan.id}, status=${plan.status}, taskInstruction='${plan.taskInstruction}'"
+        }
+        logger.debug { "FINALIZER_PLAN_CONTEXT: contextSummary='${plan.contextSummary}', finalAnswer='${plan.finalAnswer}'" }
 
-        val finalizedPlans =
-            context.plans
-                .filter { it.status == PlanStatusEnum.COMPLETED || it.status == PlanStatusEnum.FAILED }
-                .map { plan ->
-                    logger.debug {
-                        "FINALIZER_PLAN: Processing planId=${plan.id}, status=${plan.status}, originalQuestion='${plan.originalQuestion}'"
-                    }
-                    logger.debug { "FINALIZER_PLAN_CONTEXT: contextSummary='${plan.contextSummary}', finalAnswer='${plan.finalAnswer}'" }
+        // If plan already has a final answer, use it; otherwise generate one via LLM
+        val finalAnswer =
+            if (plan.finalAnswer != null) {
+                logger.debug { "FINALIZER_EXISTING_ANSWER: Using existing finalAnswer from plan" }
+                plan.finalAnswer!!
+            } else {
+                val userLang = plan.originalLanguage.ifBlank { "EN" }
+                val mappingValues = buildFinalizerContext(plan, userLang)
 
-                    val userLang = plan.originalLanguage.ifBlank { "EN" }
-                    val mappingValues = buildFinalizerContext(context, plan, userLang)
+                logger.debug { "FINALIZER_MAPPING_VALUES: $mappingValues" }
 
-                    logger.debug { "FINALIZER_MAPPING_VALUES: $mappingValues" }
+                val answer =
+                    gateway
+                        .callLlm(
+                            type = PromptTypeEnum.FINALIZER_ANSWER,
+                            responseSchema = LlmResponseWrapper(),
+                            quick = plan.quick,
+                            mappingValue = mappingValues,
+                            outputLanguage = userLang,
+                            backgroundMode = plan.backgroundMode,
+                        )
 
-                    val answer =
-                        gateway
-                            .callLlm(
-                                type = PromptTypeEnum.FINALIZER_ANSWER,
-                                responseSchema = LlmResponseWrapper(),
-                                quick = context.quick,
-                                mappingValue = mappingValues,
-                                outputLanguage = userLang,
-                            )
-                    plan.finalAnswer = answer.result.response
-                    plan.status = PlanStatusEnum.FINALIZED
-                    plan.updatedAt = Instant.now()
-                    plan
-                }
-
-        val planAnswers =
-            finalizedPlans
-                .joinToString(separator = "\n\n") { plan ->
-                    val title = plan.originalQuestion.ifBlank { plan.englishQuestion }
-                    buildList {
-                        title.takeIf { it.isNotBlank() }?.let { add("Question: $it") }
-                        plan.finalAnswer?.let { add("Answer: $it") }
-                    }.joinToString("\n")
-                }.ifBlank { "No plans were finalized." }
-
-        // Include missing requirements if checklist validation shows incomplete coverage
-        val aggregatedMessage =
-            buildString {
-                append(planAnswers)
+                plan.finalAnswer = answer.result.response
+                answer.result.response
             }
 
+        plan.status = PlanStatusEnum.FINALIZED
+
+        val title = plan.taskInstruction.ifBlank { plan.englishInstruction }
+        val responseMessage =
+            buildList {
+                title.takeIf { it.isNotBlank() }?.let { add("Question: $it") }
+                add("Answer: $finalAnswer")
+        }.joinToString("\n")
+
         return ChatResponse(
-            message = aggregatedMessage,
+            message = responseMessage,
         )
     }
 
     private fun buildFinalizerContext(
-        context: TaskContext,
         plan: Plan,
         userLanguage: String,
     ): Map<String, String> {
         val planContextSummary = buildPlanContextSummary(plan)
 
         return mapOf(
-            "userRequest" to plan.englishQuestion,
-            "projectDescription" to (context.projectDocument.description ?: "Project: ${context.projectDocument.name}"),
-            "clientDescription" to (context.clientDocument.description ?: "Client: ${context.clientDocument.name}"),
+            "userRequest" to plan.englishInstruction,
+            "projectDescription" to (
+                plan.projectDocument?.description
+                    ?: "Project: ${plan.projectDocument?.name}"
+            ),
+            "clientDescription" to (plan.clientDocument.description ?: "Client: ${plan.clientDocument.name}"),
             "questionChecklist" to plan.questionChecklist.joinToString(", "),
             "initialRagQueries" to plan.initialRagQueries.joinToString(", "),
             "planContext" to planContextSummary,
@@ -112,34 +104,30 @@ class Finalizer(
         val failedSteps = plan.steps.count { it.status == StepStatusEnum.FAILED }
 
         return buildString {
-            appendLine("Plan ID: ${plan.id}")
-            appendLine("Original Question: ${plan.originalQuestion}")
-            appendLine("English Question: ${plan.englishQuestion}")
-            appendLine("Progress: $completedSteps/$totalSteps steps completed")
-            if (failedSteps > 0) {
-                appendLine("Failed Steps: $failedSteps")
-            }
+            append("PLAN_SUMMARY: id=${plan.id} progress=$completedSteps/$totalSteps")
+            if (failedSteps > 0) append(" failed=$failedSteps")
+            appendLine()
 
             if (completedSteps > 0) {
-                appendLine("\nCompleted Steps:")
+                appendLine("\nCOMPLETED_STEPS:")
                 plan.steps
                     .filter { it.status == StepStatusEnum.DONE }
                     .forEachIndexed { index, step ->
-                        appendLine("${index + 1}. ${step.stepToolName}: ${step.stepInstruction}")
+                        appendLine("\n[${index + 1}] ${step.stepToolName}: ${step.stepInstruction}")
                         step.toolResult?.let { result ->
-                            appendLine("   Result: ${result.output.take(200)}")
+                            appendLine(result.output)
                         }
                     }
             }
 
             if (failedSteps > 0) {
-                appendLine("\nFailed Steps:")
+                appendLine("\nFAILED_STEPS:")
                 plan.steps
                     .filter { it.status == StepStatusEnum.FAILED }
                     .forEach { step ->
                         appendLine("- ${step.stepToolName}: ${step.stepInstruction}")
                         step.toolResult?.let { result ->
-                            appendLine("   Error: ${result.output.take(200)}")
+                            appendLine("  ERROR: ${result.output.take(500)}")
                         }
                     }
             }

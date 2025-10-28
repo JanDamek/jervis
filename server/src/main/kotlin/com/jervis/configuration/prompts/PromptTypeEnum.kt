@@ -6,7 +6,7 @@ enum class PromptTypeEnum(
     // KNOWLEDGE MANAGEMENT
     KNOWLEDGE_SEARCH_TOOL(listOf("knowledge_search", "rag.search", "search_knowledge")),
     KNOWLEDGE_STORE_TOOL(listOf("knowledge_store", "rag.store", "store_knowledge")),
-    KNOWLEDGE_FINALIZE_ANSWER(listOf("knowledge_finalize_answer")),
+    SOURCE_FETCH_ORIGINAL_TOOL(listOf("source_fetch_original", "fetch_original", "fetch_source")),
 
     // DOCUMENT PROCESSING
     DOCUMENT_EXTRACT_TEXT_TOOL(listOf("document_extract_text", "doc.extract", "extract_document")),
@@ -21,11 +21,22 @@ enum class PromptTypeEnum(
     PROJECT_REFRESH_INDEX_TOOL(listOf("project_refresh_index", "refresh_index", "reindex_project")),
     PROJECT_VERSION_CONTROL_TOOL(listOf("project_version_control", "git_control", "git")),
     PROJECT_GIT_SYNC_TOOL(listOf("project_git_sync", "git_sync", "sync_repo")),
+    BRANCH_CHECK_INDEXING_STATUS_TOOL(listOf("branch_check_indexing_status", "check_branch", "branch.status")),
 
     // SYSTEM OPERATIONS
     SYSTEM_EXECUTE_COMMAND_TOOL(listOf("system_execute_command", "exec_command", "system.exec")),
     SYSTEM_SCHEDULE_TASK_TOOL(listOf("system_schedule_task", "schedule_task", "task.schedule")),
-    SYSTEM_VIEW_TASKS_TOOL(listOf("system_view_tasks", "view_tasks", "tasks.view")),
+    CREATE_PENDING_TASK_TOOL(listOf("create_pending_task", "pending_task", "delegate_task")),
+    CONSOLIDATE_STEPS_TOOL(listOf("consolidate_steps", "merge_steps", "steps.consolidate")),
+
+    // USER TASK MANAGEMENT
+    TASK_CREATE_USER_TASK_TOOL(listOf("task_create_user", "create_user_task", "add_task")),
+    TASK_QUERY_USER_TASKS_TOOL(listOf("task_query_user", "query_tasks", "list_tasks")),
+
+    // USER REQUIREMENT MANAGEMENT
+    REQUIREMENT_CREATE_USER_TOOL(listOf("requirement_create_user", "create_requirement", "add_requirement")),
+    REQUIREMENT_QUERY_USER_TOOL(listOf("requirement_query_user", "query_requirements", "list_requirements")),
+    REQUIREMENT_UPDATE_USER_TOOL(listOf("requirement_update_user", "update_requirement", "complete_requirement")),
 
     // COMMUNICATION
     COMMUNICATION_EMAIL_TOOL(listOf("communication_email", "send_email", "email")),
@@ -35,29 +46,25 @@ enum class PromptTypeEnum(
 
     // ANALYSIS & REASONING
     ANALYSIS_REASONING_TOOL(listOf("analysis_reasoning", "analysis", "reasoning")),
-    TASK_RESOLUTION_CHECKER(listOf("task_resolution_checker", "task.checker", "verify_result")),
 
     // CONTENT PROCESSING
     CONTENT_SEARCH_WEB_TOOL(listOf("content_search_web", "search_web", "web.search")),
-    CONTENT_SPLIT_SENTENCES(listOf("content_split_sentences", "split_sentences", "sentence_split")),
 
     // PLANNING & ORCHESTRATION
     PLANNING_CREATE_PLAN_TOOL(listOf("planning_create_plan", "create_plan", "plan.create")),
     PLANNING_ANALYZE_QUESTION(listOf("planning_analyze_question", "analyze_question", "plan.analyze")),
-    SYSTEM_UNDERSTANDING_ASSESSMENT(listOf("system_understanding_assessment", "system_analysis", "understand_system")),
-    EVENT_TRIAGE(listOf("event_triage", "triage", "decide_before_rag")),
     FINALIZER_ANSWER(listOf("finalizer_answer", "final_answer", "answer.final")),
 
     // INTERNAL/ANALYSIS PROMPTS
     CLIENT_DESCRIPTION_SHORT(listOf("client_description_short")),
     CLIENT_DESCRIPTION_FULL(listOf("client_description_full")),
-    COMPREHENSIVE_FILE_ANALYSIS(listOf("comprehensive_file_analysis")),
     MEETING_TRANSCRIPT_PROCESSING(listOf("meeting_transcript_processing")),
     GIT_COMMIT_PROCESSING(listOf("git_commit_processing")),
-    DOCUMENTATION_PROCESSING(listOf("documentation_processing")),
     CLASS_SUMMARY(listOf("class_summary")),
-    METHOD_SUMMARY(listOf("method_summary")),
-    AGENT_TOOL_SUFFIX(listOf("agent_tool_suffix")),
+
+    // QUALIFIER PROMPTS (small model pre-filtering)
+    EMAIL_QUALIFIER(listOf("email_qualifier", "qualify_email", "email.qualify")),
+    LINK_QUALIFIER(listOf("link_qualifier", "qualify_link", "link.qualify")),
     ;
 
     companion object {

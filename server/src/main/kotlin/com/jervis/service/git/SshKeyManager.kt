@@ -1,6 +1,6 @@
 package com.jervis.service.git
 
-import com.jervis.entity.mongo.ProjectDocument
+import com.jervis.entity.ProjectDocument
 import com.jervis.service.storage.DirectoryStructureService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
