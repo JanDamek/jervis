@@ -48,7 +48,7 @@ class Planner(
 
         // Store think content if present
         parsedResponse.thinkContent?.let { thinkContent ->
-            logger.info { "[PLANNER_THINK] Think content for plan ${plan.id}: $thinkContent" }
+            logger.info { "[PLANNER_THINK] Plan ${plan.id}: think content captured (${thinkContent.length} chars)" }
             plan.thinkingSequence += thinkContent
         }
 

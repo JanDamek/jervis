@@ -7,6 +7,14 @@
 tasks:
   EMAIL_PROCESSING:
     goal: |
+      ENRICHED CONTEXT PROVIDED: enrichedContext contains sender profile, conversation thread, and RAG excerpts.
+      DO NOT search RAG for basic sender info or conversation history - it's already provided in enrichedContext!
+
+      AVAILABLE CONTEXT:
+      - enrichedContext.sender: {name, relationship, organization, conversationSummary, recentTopics}
+      - enrichedContext.thread: {subject, messageCount, summary, requiresResponse, previousMessages, status}
+      - enrichedContext.ragContext: {relevantPastMessages, keyExcerpts}
+
       Review the email and determine appropriate actions based on content type:
 
       STEP 0: Check email age and relevance
@@ -15,31 +23,43 @@ tasks:
       - Only process old emails if they contain timeless information (decisions, specifications, documentation)
       - Current date is available in context - calculate email age
 
-      STEP 1: Check if email matches user requirements/wishes
+      STEP 1: Use enriched context for quick decisions
+      - Check sender.relationship: SYSTEM emails rarely need action unless they contain failures/errors
+      - Check thread.requiresResponse: If true, this conversation needs attention
+      - Check thread.previousMessages: Understand conversation history without RAG search
+      - Check sender.conversationSummary: Understand what this sender typically discusses
+
+      STEP 2: Check if email matches user requirements/wishes
       - Query user requirements: `requirement_query_user` to check if email content matches any active wishes
       - Example: User wants "vacation in Spain" → email offers Spain vacation → CREATE TASK
       - Example: User tracks "GPU prices" → email has GPU sale → CREATE TASK
 
-      STEP 2: Extract scheduled events and deadlines
+      STEP 3: Extract scheduled events and deadlines
       - Meeting dates/times → Use `system_schedule_task` to create calendar entry
       - Sale deadlines (e.g., "sale until Friday") → Use `system_schedule_task` with deadline
       - Important dates → Schedule reminder
 
-      STEP 3: Identify actionable items
+      STEP 4: Identify actionable items
       - Direct questions → Create user task: `task_create_user` with action "respond to email"
       - Action requests → Create user task with specific action
       - Meeting invitations → Create task to confirm attendance
+      - Ongoing conversations (thread.messageCount > 1) → Consider conversation context
 
-      STEP 4: Store valuable information
+      STEP 5: Store valuable information
       - Important decisions/insights → Use `knowledge_store`
       - Useful context for future reference → Use `knowledge_store`
 
-      STEP 5: Handle newsletters intelligently
+      STEP 6: Handle newsletters intelligently
       - Generic spam → No action (return empty plan)
       - Relevant sales/offers matching user interests → Create task or schedule reminder
       - Important announcements → Store knowledge or create task if actionable
 
-      EMAIL IS ALREADY INDEXED - do not search for it in RAG.
+      EMAIL IS ALREADY INDEXED - do not search for it in RAG unless you need deep history beyond enrichedContext.
+
+      USE MCP TOOLS FOR DEEP INVESTIGATION (only if needed):
+      - sender_query_profile: Get full sender profile details
+      - conversation_search_history: Search specific conversation history
+      - knowledge_search: Deep RAG search beyond provided excerpts
 
       COMPLETION: Return empty plan [] if email requires no action (spam/irrelevant newsletter).
 

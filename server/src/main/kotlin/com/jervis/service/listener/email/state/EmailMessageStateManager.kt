@@ -1,9 +1,14 @@
 package com.jervis.service.listener.email.state
 
 import com.jervis.service.listener.email.imap.ImapMessageId
+import com.jervis.util.chunked
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.reactive.asFlow
-import kotlinx.coroutines.reactor.awaitSingleOrNull
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.isActive
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -19,63 +24,83 @@ class EmailMessageStateManager(
         messageIds: Flow<ImapMessageId>,
     ) {
         logger.info { "Starting batch message ID sync for account $accountId" }
+        var totalProcessed = 0
+        var totalSaved = 0
 
-        val imapMessages = mutableListOf<ImapMessageId>()
-        messageIds.collect { imapMessages.add(it) }
+        messageIds
+            .buffer(200)
+            .chunked(100)
+            .collect { batch ->
+                totalProcessed += batch.size
 
-        logger.info { "Found ${imapMessages.size} messages in IMAP for account $accountId" }
+                val batchMessageIds = batch.map { it.messageId }
 
-        if (imapMessages.isEmpty()) {
-            logger.info { "No messages to process for account $accountId" }
-            return
-        }
+                // Find existing in single query (batch lookup, avoiding N+1)
+                val existingSet = mutableSetOf<String>()
+                emailMessageRepository
+                    .findAllByAccountIdAndMessageIdIn(accountId, batchMessageIds)
+                    .collect { existingSet.add(it.messageId) }
 
-        val existingMessageIds = loadExistingMessageIds(accountId)
-        logger.info { "Found ${existingMessageIds.size} existing messages in DB for account $accountId" }
+                // Filter only new messages
+                val newDocs =
+                    batch
+                        .filter { it.messageId !in existingSet }
+                        .map {
+                            EmailMessageDocument(
+                                accountId = accountId,
+                                messageId = it.messageId,
+                                uid = it.uid,
+                                state = EmailMessageState.NEW,
+                                subject = it.subject,
+                                from = it.from,
+                                receivedAt = it.receivedAt,
+                            )
+                        }
 
-        val newMessages = imapMessages.filterNot { existingMessageIds.contains(it.messageId) }
-        logger.info { "Identified ${newMessages.size} new messages to save for account $accountId" }
+                if (newDocs.isNotEmpty()) {
+                    newDocs.forEach { emailMessageRepository.save(it) }
+                    totalSaved += newDocs.size
+                    logger.info { "Saved ${newDocs.size} new messages (total: $totalProcessed processed, $totalSaved saved)" }
+                }
+            }
 
-        newMessages.forEach { saveNewMessage(accountId, it) }
-        logger.info { "Batch sync completed for account $accountId" }
-    }
-
-    private suspend fun loadExistingMessageIds(accountId: ObjectId): Set<String> {
-        val existingMessages = mutableListOf<EmailMessageDocument>()
-
-        emailMessageRepository
-            .findByAccountId(accountId)
-            .asFlow()
-            .collect { existingMessages.add(it) }
-
-        return existingMessages.map { it.messageId }.toSet()
-    }
-
-    private suspend fun saveNewMessage(
-        accountId: ObjectId,
-        imapMessageId: ImapMessageId,
-    ) {
-        val newMessage =
-            EmailMessageDocument(
-                accountId = accountId,
-                messageId = imapMessageId.messageId,
-                state = EmailMessageState.NEW,
-                subject = imapMessageId.subject,
-                from = imapMessageId.from,
-                receivedAt = imapMessageId.receivedAt,
-            )
-        emailMessageRepository.save(newMessage).awaitSingleOrNull()
-        logger.debug { "Saved new message for ${imapMessageId.from} of messageId:${imapMessageId.messageId} with state NEW" }
+        logger.info { "Batch sync completed for account $accountId: saved $totalSaved new messages (processed $totalProcessed total)" }
     }
 
     fun findNewMessages(accountId: ObjectId): Flow<EmailMessageDocument> =
         emailMessageRepository
             .findByAccountIdAndStateOrderByReceivedAtAsc(accountId, EmailMessageState.NEW)
-            .asFlow()
+
+    /**
+     * Continuous polling Flow that never ends.
+     * Reads NEW messages until exhausted, then waits 30s and repeats.
+     */
+    fun continuousNewMessages(accountId: ObjectId): Flow<EmailMessageDocument> =
+        flow {
+            while (currentCoroutineContext().isActive) {
+                var foundAny = false
+
+                findNewMessages(accountId)
+                    .onEach { foundAny = true }
+                    .collect { emit(it) }
+
+                if (!foundAny) {
+                    delay(30_000) // No new messages, wait 30s
+                } else {
+                    logger.debug { "Batch of NEW messages processed, checking for more immediately" }
+                }
+            }
+        }
 
     suspend fun markAsIndexed(messageDocument: EmailMessageDocument) {
         val updated = messageDocument.copy(state = EmailMessageState.INDEXED)
-        emailMessageRepository.save(updated).awaitSingleOrNull()
+        emailMessageRepository.save(updated)
         logger.debug { "Marked messageId ${messageDocument.messageId} as INDEXED" }
+    }
+
+    suspend fun markAsFailed(messageDocument: EmailMessageDocument) {
+        val updated = messageDocument.copy(state = EmailMessageState.FAILED)
+        emailMessageRepository.save(updated)
+        logger.warn { "Marked messageId ${messageDocument.messageId} as FAILED (could not fetch from IMAP)" }
     }
 }

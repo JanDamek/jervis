@@ -629,18 +629,6 @@ tools:
       modelType: GENERIC_TEXT_MODEL
       creativityLevel: LOW
 
-  BRANCH_CHECK_INDEXING_STATUS_TOOL:
-    description: "Check if a Git branch is indexed and ready for code queries. CRITICAL: Must be called BEFORE answering questions about code after branch switch. Returns SUCCESS if branch is ready, ERROR if not indexed yet. Task format: 'Check branch feature/xyz' or 'branch: main'."
-    systemPrompt: |
-      This is a PARAMETRIC tool (no LLM needed).
-      The tool directly checks vector store index for branch status.
-      Return the result from VectorStoreIndexService.
-    userPrompt: |
-      TASK: {taskDescription}
-    modelParams:
-      modelType: GENERIC_TEXT_MODEL
-      creativityLevel: LOW
-
 creativityLevels:
   LOW:
     temperature: 0.1

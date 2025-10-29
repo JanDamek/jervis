@@ -21,7 +21,6 @@ enum class PromptTypeEnum(
     PROJECT_REFRESH_INDEX_TOOL(listOf("project_refresh_index", "refresh_index", "reindex_project")),
     PROJECT_VERSION_CONTROL_TOOL(listOf("project_version_control", "git_control", "git")),
     PROJECT_GIT_SYNC_TOOL(listOf("project_git_sync", "git_sync", "sync_repo")),
-    BRANCH_CHECK_INDEXING_STATUS_TOOL(listOf("branch_check_indexing_status", "check_branch", "branch.status")),
 
     // SYSTEM OPERATIONS
     SYSTEM_EXECUTE_COMMAND_TOOL(listOf("system_execute_command", "exec_command", "system.exec")),

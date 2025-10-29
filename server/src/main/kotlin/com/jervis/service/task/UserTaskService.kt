@@ -46,37 +46,15 @@ class UserTaskService(
             )
 
         val document = UserTaskDocument.fromDomain(task)
-        val saved = userTaskRepository.save(document).block()!!
+        val saved = userTaskRepository.save(document)
 
         logger.info { "Created user task: ${saved.id} - $title" }
         return saved.toDomain()
     }
 
-    suspend fun updateTaskStatus(
-        taskId: ObjectId,
-        newStatus: TaskStatus,
-    ): UserTask? {
-        val document = userTaskRepository.findById(taskId).block() ?: return null
-
-        val updated =
-            document.copy(
-                status = newStatus.name,
-                completedAt = if (newStatus == TaskStatus.COMPLETED) Instant.now() else null,
-            )
-
-        val saved = userTaskRepository.save(updated).block()!!
-        logger.info { "Updated task $taskId status to $newStatus" }
-        return saved.toDomain()
-    }
-
-    suspend fun deleteTask(taskId: ObjectId) {
-        userTaskRepository.deleteById(taskId)
-        logger.info { "Deleted user task: $taskId" }
-    }
-
     fun findActiveTasksByClient(clientId: ObjectId): Flow<UserTask> =
         userTaskRepository
-            .findActiveTasksByClient(
+            .findActiveTasksByClientIdAndStatusIn(
                 clientId = clientId,
                 statuses = listOf(TaskStatus.TODO.name, TaskStatus.IN_PROGRESS.name),
             ).map { it.toDomain() }

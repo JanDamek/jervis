@@ -2,7 +2,7 @@ package com.jervis.service
 
 import com.jervis.dto.email.CreateOrUpdateEmailAccountRequestDto
 import com.jervis.dto.email.EmailAccountDto
-import com.jervis.dto.email.ValidateResponse
+import com.jervis.dto.email.ValidateResponseDto
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestParam
@@ -44,5 +44,5 @@ interface IEmailAccountService {
     @PostExchange("/accounts/{accountId}/validate")
     suspend fun validateEmailAccount(
         @PathVariable accountId: String,
-    ): ValidateResponse
+    ): ValidateResponseDto
 }

@@ -114,8 +114,6 @@ class OllamaClient(
             val options = buildOptions(creativityConfig, config, estimatedTokens)
             val requestBody = buildRequestBody(model, userPrompt, systemPrompt, options)
 
-            logger.debug { "Sending streaming request to ollama (${prompt.modelParams.modelType}): $requestBody" }
-
             val responseFlow =
                 webClient
                     .post()

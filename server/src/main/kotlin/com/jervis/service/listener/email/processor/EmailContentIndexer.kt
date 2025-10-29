@@ -29,31 +29,36 @@ class EmailContentIndexer(
         accountId: ObjectId,
         clientId: ObjectId,
         projectId: ObjectId?,
-    ) {
+    ): String? {
         logger.info { "Indexing email content ${message.messageId}" }
 
-        runCatching {
+        return runCatching {
             val plainText = extractPlainText(message.content)
             val chunks = splitEmailContent(plainText)
             logger.debug { "Split email ${message.messageId} into ${chunks.size} chunks" }
 
+            var firstDocumentId: String? = null
             chunks.forEachIndexed { index, chunk ->
-                storeChunkWithEmbedding(
-                    chunk = chunk,
-                    message = message,
-                    accountId = accountId,
-                    clientId = clientId,
-                    projectId = projectId,
-                    chunkIndex = index,
-                    totalChunks = chunks.size,
-                )
+                val docId =
+                    storeChunkWithEmbedding(
+                        chunk = chunk,
+                        message = message,
+                        accountId = accountId,
+                        clientId = clientId,
+                        projectId = projectId,
+                        chunkIndex = index,
+                        totalChunks = chunks.size,
+                    )
+                if (index == 0) {
+                    firstDocumentId = docId
+                }
             }
 
             logger.info { "Indexed email body ${message.messageId} with ${chunks.size} chunks" }
+            firstDocumentId
         }.onFailure { e ->
             logger.error(e) { "Failed to index email content ${message.messageId}" }
-            throw e
-        }
+        }.getOrNull()
     }
 
     private suspend fun extractPlainText(content: String): String =
@@ -82,10 +87,10 @@ class EmailContentIndexer(
         projectId: ObjectId?,
         chunkIndex: Int,
         totalChunks: Int,
-    ) {
+    ): String {
         val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, chunk.text())
 
-        vectorStorage.store(
+        return vectorStorage.store(
             EmbeddingType.EMBEDDING_TEXT,
             RagDocument(
                 projectId = projectId,
@@ -94,14 +99,12 @@ class EmailContentIndexer(
                 ragSourceType = RagSourceType.EMAIL,
                 createdAt = message.receivedAt,
                 sourceUri = "email://${accountId.toHexString()}/${message.messageId}",
-                // Universal metadata fields
                 from = message.from,
                 subject = message.subject,
                 timestamp = message.receivedAt.toString(),
                 parentRef = message.messageId,
                 totalSiblings = message.attachments.size,
                 contentType = "text/html",
-                // Chunking
                 chunkId = chunkIndex,
                 chunkOf = totalChunks,
             ),

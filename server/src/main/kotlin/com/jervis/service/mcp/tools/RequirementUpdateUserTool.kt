@@ -8,8 +8,6 @@ import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
-import kotlinx.coroutines.reactor.awaitSingle
-import kotlinx.coroutines.reactor.awaitSingleOrNull
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -60,7 +58,7 @@ class RequirementUpdateUserTool(
 
         // Update requirement
         val document =
-            requirementRepository.findById(requirementId).awaitSingleOrNull()
+            requirementRepository.findById(requirementId)
                 ?: return ToolResult.error("Requirement not found: $requirementId")
 
         val updatedDocument =
@@ -74,7 +72,7 @@ class RequirementUpdateUserTool(
                     },
             )
 
-        val updated = requirementRepository.save(updatedDocument).awaitSingle()
+        val updated = requirementRepository.save(updatedDocument)
 
         val content =
             buildString {

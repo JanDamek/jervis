@@ -32,13 +32,7 @@ data class EmailAccountDocument(
     val serverHost: String? = null,
     val serverPort: Int? = null,
     val useSsl: Boolean = true,
-    val accessToken: String? = null,
-    val refreshToken: String? = null,
-    val tokenExpiresAt: Instant? = null,
-    val oauthScopes: List<String> = emptyList(),
     val isActive: Boolean = true,
     val lastPolledAt: Instant? = null,
-    val lastIndexedAt: Instant? = null,
-    val createdAt: Instant = Instant.now(),
-    val updatedAt: Instant = Instant.now(),
+    val highestSeenUid: Long? = null, // Last seen IMAP UID for delta sync
 )

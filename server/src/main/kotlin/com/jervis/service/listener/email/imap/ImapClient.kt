@@ -8,8 +8,8 @@ import jakarta.mail.Message
 import jakarta.mail.Multipart
 import jakarta.mail.Session
 import jakarta.mail.Store
-import jakarta.mail.search.MessageIDTerm
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.flow
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
@@ -59,46 +59,50 @@ class ImapClient {
             }.getOrElse { e ->
                 logger.error(e) { "Failed to fetch message IDs for account ${account.id}" }
             }
-        }
+        }.buffer(50) // Buffer maxes 50 message IDs to prevent overwhelming downstream processing
 
     suspend fun fetchMessage(
         account: EmailAccountDocument,
-        messageId: String,
+        uid: Long,
     ): ImapMessage? =
         runCatching {
-            logger.debug { "Fetching message $messageId for account ${account.id}" }
+            logger.debug { "Fetching message by UID $uid for account ${account.id}" }
             val startTime = System.currentTimeMillis()
 
             createSession(account).use { store ->
                 openInbox(store).use { inbox ->
-                    // Use IMAP SEARCH to find message by Message-ID (server-side search, much faster)
-                    val searchTerm = MessageIDTerm(messageId)
-                    val foundMessages = inbox.search(searchTerm)
+                    val uidFolder =
+                        inbox as? jakarta.mail.UIDFolder
+                            ?: throw IllegalStateException("Folder doesn't support UID")
+
+                    val message = uidFolder.getMessageByUID(uid)
 
                     val elapsed = System.currentTimeMillis() - startTime
-                    logger.debug { "IMAP search for $messageId completed in ${elapsed}ms, found ${foundMessages.size} messages" }
+                    logger.debug { "IMAP UID fetch completed in ${elapsed}ms, found=${message != null}" }
 
-                    foundMessages.firstOrNull()?.let { parseMessage(it) }
+                    message?.let { parseMessage(it) }
                 }
             }
         }.getOrElse { e ->
-            logger.error(e) { "Failed to fetch message $messageId for account ${account.id}" }
+            logger.error(e) { "Failed to fetch message by UID $uid for account ${account.id}" }
             null
         }
 
     private suspend fun extractMessageId(message: Message): ImapMessageId? =
         try {
+            val uid = (message.folder as? jakarta.mail.UIDFolder)?.getUID(message) ?: return null
             message.getHeader(MESSAGE_ID)?.firstOrNull()?.let { id ->
                 ImapMessageId(
                     messageId = id,
+                    uid = uid,
                     subject = message.subject,
                     from = message.from?.firstOrNull()?.toString(),
                     receivedAt = message.receivedDate?.toInstant(),
                 )
             }
-        } catch (_: Exception) {
-            // logger.warn { "Failed to extract messageId. Error:$e" }
-            // ignore message that is not is box or is disconnected
+        } catch (e: Exception) {
+            logger.warn { "Failed to extract messageId. Error:${e.message}" }
+            // ignore a message that is not box or is disconnected
             null
         }
 
@@ -177,13 +181,13 @@ class ImapClient {
             // If charset found, re-encode to UTF-8
             if (charset != null && !charset.equals("UTF-8", ignoreCase = true)) {
                 val bytes = text.toByteArray(Charsets.ISO_8859_1) // Get original bytes
-                String(bytes, charset(charset)) // Decode with correct charset
+                String(bytes, charset(charset)) // Decode with the correct charset
             } else {
                 // Try MimeUtility decode for encoded-word format (=?charset?encoding?text?=)
                 jakarta.mail.internet.MimeUtility
                     .decodeText(text)
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             // Fallback: return original text
             text
         }

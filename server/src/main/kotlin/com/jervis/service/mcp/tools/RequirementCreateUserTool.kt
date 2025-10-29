@@ -9,7 +9,6 @@ import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
-import kotlinx.coroutines.reactor.awaitSingle
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -64,7 +63,7 @@ class RequirementCreateUserTool(
                 priority = request.priority,
             )
 
-        val created = requirementRepository.save(document).awaitSingle()
+        val created = requirementRepository.save(document)
 
         val content =
             buildString {

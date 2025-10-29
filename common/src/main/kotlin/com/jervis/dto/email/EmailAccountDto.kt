@@ -17,8 +17,6 @@ data class EmailAccountDto(
     val serverPort: Int? = null,
     val useSsl: Boolean = true,
     val hasPassword: Boolean = false,
-    val hasOAuthToken: Boolean = false,
-    val tokenExpiresAt: String? = null,
     val isActive: Boolean = true,
     val lastPolledAt: String? = null,
 )

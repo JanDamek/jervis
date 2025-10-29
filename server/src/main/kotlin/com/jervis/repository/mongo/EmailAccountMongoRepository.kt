@@ -1,17 +1,18 @@
 package com.jervis.repository.mongo
 
 import com.jervis.entity.EmailAccountDocument
+import kotlinx.coroutines.flow.Flow
 import org.bson.types.ObjectId
-import org.springframework.data.mongodb.repository.ReactiveMongoRepository
+import org.springframework.data.repository.kotlin.CoroutineCrudRepository
 import org.springframework.stereotype.Repository
-import reactor.core.publisher.Flux
-import reactor.core.publisher.Mono
 
 @Repository
-interface EmailAccountMongoRepository : ReactiveMongoRepository<EmailAccountDocument, ObjectId> {
-    fun findByClientId(clientId: ObjectId): Flux<EmailAccountDocument>
+interface EmailAccountMongoRepository : CoroutineCrudRepository<EmailAccountDocument, ObjectId> {
+    fun findByClientId(clientId: ObjectId): Flow<EmailAccountDocument>
 
-    fun findByProjectId(projectId: ObjectId): Flux<EmailAccountDocument>
+    fun findByProjectId(projectId: ObjectId): Flow<EmailAccountDocument>
 
-    fun findFirstByIsActiveTrueOrderByLastIndexedAtAscCreatedAtAsc(): Mono<EmailAccountDocument>
+    suspend fun findFirstByIsActiveTrueOrderByLastPolledAtAsc(): EmailAccountDocument?
+
+    fun findAllByIsActiveTrue(): Flow<EmailAccountDocument>
 }

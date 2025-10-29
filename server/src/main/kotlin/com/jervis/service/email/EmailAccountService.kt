@@ -1,19 +1,19 @@
 package com.jervis.service.email
 
-import com.jervis.dto.email.CreateOrUpdateEmailAccountRequestDto
-import com.jervis.dto.email.EmailAccountDto
-import com.jervis.dto.email.ValidateResponse
+import com.jervis.domain.email.CreateEmailAccountRequest
+import com.jervis.domain.email.EmailAccount
+import com.jervis.domain.email.EmailValidationResult
+import com.jervis.domain.email.UpdateEmailAccountRequest
 import com.jervis.entity.EmailAccountDocument
+import com.jervis.mapper.toDomain
 import com.jervis.repository.mongo.EmailAccountMongoRepository
 import jakarta.mail.Session
 import jakarta.mail.Store
-import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.reactive.asFlow
-import kotlinx.coroutines.reactive.awaitFirstOrNull
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
-import java.time.Instant
 import java.util.Properties
 
 private val logger = KotlinLogging.logger {}
@@ -22,13 +22,13 @@ private val logger = KotlinLogging.logger {}
 class EmailAccountService(
     private val emailAccountRepository: EmailAccountMongoRepository,
 ) {
-    suspend fun createEmailAccount(request: CreateOrUpdateEmailAccountRequestDto): EmailAccountDto {
+    suspend fun createEmailAccount(request: CreateEmailAccountRequest): EmailAccount {
         logger.info { "Creating email account for client ${request.clientId}, provider ${request.provider}" }
 
         val document =
             EmailAccountDocument(
-                clientId = ObjectId(request.clientId),
-                projectId = request.projectId?.let { ObjectId(it) },
+                clientId = request.clientId,
+                projectId = request.projectId,
                 provider = request.provider,
                 displayName = request.displayName,
                 description = request.description,
@@ -39,28 +39,23 @@ class EmailAccountService(
                 serverPort = request.serverPort,
                 useSsl = request.useSsl,
                 isActive = true,
-                createdAt = Instant.now(),
-                updatedAt = Instant.now(),
             )
 
         val saved =
-            emailAccountRepository.save(document).awaitFirstOrNull()
+            emailAccountRepository.save(document)
                 ?: throw IllegalStateException("Failed to save email account")
 
         logger.info { "Email account created: ${saved.id}" }
 
-        return saved.toDto()
+        return saved.toDomain()
     }
 
-    suspend fun updateEmailAccount(
-        accountId: String,
-        request: CreateOrUpdateEmailAccountRequestDto,
-    ): EmailAccountDto {
-        logger.info { "Updating email account $accountId" }
+    suspend fun updateEmailAccount(request: UpdateEmailAccountRequest): EmailAccount {
+        logger.info { "Updating email account ${request.accountId}" }
 
         val existing =
-            emailAccountRepository.findById(ObjectId(accountId)).awaitFirstOrNull()
-                ?: throw IllegalArgumentException("Email account not found: $accountId")
+            emailAccountRepository.findById(request.accountId)
+                ?: throw IllegalArgumentException("Email account not found: ${request.accountId}")
 
         val updated =
             existing.copy(
@@ -73,71 +68,69 @@ class EmailAccountService(
                 serverHost = request.serverHost,
                 serverPort = request.serverPort,
                 useSsl = request.useSsl,
-                updatedAt = Instant.now(),
             )
 
-        val saved =
-            emailAccountRepository.save(updated).awaitFirstOrNull()
-                ?: throw IllegalStateException("Failed to update email account")
+        val saved = emailAccountRepository.save(updated)
 
         logger.info { "Email account updated: ${saved.id}" }
 
-        return saved.toDto()
+        return saved.toDomain()
     }
 
-    suspend fun getEmailAccount(accountId: String): EmailAccountDto? {
-        val document = emailAccountRepository.findById(ObjectId(accountId)).awaitFirstOrNull()
-        return document?.toDto()
+    suspend fun getEmailAccount(accountId: ObjectId): EmailAccount? {
+        val document = emailAccountRepository.findById(accountId)
+        return document?.toDomain()
     }
 
-    suspend fun listEmailAccounts(
-        clientId: String?,
-        projectId: String?,
-    ): List<EmailAccountDto> {
+    fun listEmailAccounts(
+        clientId: ObjectId?,
+        projectId: ObjectId?,
+    ): Flow<EmailAccount> {
         val accounts =
             when {
-                projectId != null -> emailAccountRepository.findByProjectId(ObjectId(projectId)).asFlow().toList()
-                clientId != null -> emailAccountRepository.findByClientId(ObjectId(clientId)).asFlow().toList()
-                else -> emailAccountRepository.findAll().asFlow().toList()
+                projectId != null -> emailAccountRepository.findByProjectId(projectId)
+                clientId != null -> emailAccountRepository.findByClientId(clientId)
+                else -> emailAccountRepository.findAll()
             }
 
-        return accounts.map { it.toDto() }
+        return accounts.map { it.toDomain() }
     }
 
-    suspend fun deleteEmailAccount(accountId: String) {
+    suspend fun deleteEmailAccount(accountId: ObjectId) {
         logger.info { "Deleting email account $accountId" }
-        emailAccountRepository.deleteById(ObjectId(accountId)).awaitFirstOrNull()
+        emailAccountRepository.deleteById(accountId)
         logger.info { "Email account deleted: $accountId" }
     }
 
-    suspend fun validateEmailAccount(accountId: String): ValidateResponse {
+    suspend fun validateEmailAccount(accountId: ObjectId): EmailValidationResult {
         val account =
-            emailAccountRepository.findById(ObjectId(accountId)).awaitFirstOrNull()
-                ?: return ValidateResponse(ok = false, message = "Account not found")
+            emailAccountRepository.findById(accountId)
+                ?: return EmailValidationResult(isValid = false, message = "Account not found")
 
-        return validateImapConnection(account)
+        return validateImapConnection(account.toDomain())
     }
 
-    private suspend fun validateImapConnection(account: EmailAccountDocument): ValidateResponse {
-        if (account.serverHost == null || account.serverPort == null) {
-            return ValidateResponse(ok = false, message = "Server host and port are required for IMAP")
+    private suspend fun validateImapConnection(account: EmailAccount): EmailValidationResult {
+        if (!account.hasValidImapConfig()) {
+            return EmailValidationResult(
+                isValid = false,
+                message = "Invalid IMAP configuration: missing server host, port, or password",
+            )
         }
 
-        if (account.password == null) {
-            return ValidateResponse(ok = false, message = "Password not configured")
-        }
+        val username = account.getImapUsername()
 
-        val username = account.username ?: account.email
-
-        try {
-            val props = Properties()
-            props["mail.store.protocol"] = "imap"
-            props["mail.imap.host"] = account.serverHost
-            props["mail.imap.port"] = account.serverPort.toString()
-            props["mail.imap.ssl.enable"] = account.useSsl.toString()
-            props["mail.imap.starttls.enable"] = "true"
-            props["mail.imap.connectiontimeout"] = "10000"
-            props["mail.imap.timeout"] = "10000"
+        return try {
+            val props =
+                Properties().apply {
+                    put("mail.store.protocol", "imap")
+                    put("mail.imap.host", account.serverHost)
+                    put("mail.imap.port", account.serverPort.toString())
+                    put("mail.imap.ssl.enable", account.useSsl.toString())
+                    put("mail.imap.starttls.enable", "true")
+                    put("mail.imap.connectiontimeout", "10000")
+                    put("mail.imap.timeout", "10000")
+                }
 
             val session = Session.getInstance(props)
             val store: Store = session.getStore("imap")
@@ -146,30 +139,10 @@ class EmailAccountService(
             store.close()
 
             logger.info { "IMAP connection validated for account ${account.id}" }
-            ValidateResponse(ok = true, message = "Connection successful")
+            EmailValidationResult(isValid = true, message = "Connection successful")
         } catch (e: Exception) {
-            return ValidateResponse(ok = false, message = e.message)
+            logger.warn(e) { "IMAP validation failed for account ${account.id}" }
+            EmailValidationResult(isValid = false, message = e.message)
         }
-        return ValidateResponse(ok = true, message = "Email account validated")
     }
-
-    private fun EmailAccountDocument.toDto(): EmailAccountDto =
-        EmailAccountDto(
-            id = this.id.toHexString(),
-            clientId = this.clientId.toHexString(),
-            projectId = this.projectId?.toHexString(),
-            provider = this.provider,
-            displayName = this.displayName,
-            description = this.description,
-            email = this.email,
-            username = this.username,
-            serverHost = this.serverHost,
-            serverPort = this.serverPort,
-            useSsl = this.useSsl,
-            hasPassword = this.password != null,
-            hasOAuthToken = this.accessToken != null,
-            tokenExpiresAt = this.tokenExpiresAt?.toString(),
-            isActive = this.isActive,
-            lastPolledAt = this.lastPolledAt?.toString(),
-        )
 }
