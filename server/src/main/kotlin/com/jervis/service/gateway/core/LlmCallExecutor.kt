@@ -19,12 +19,14 @@ class LlmCallExecutor(
     private val clients: List<ProviderClient>,
     private val debugService: DebugService,
     private val llmLoadMonitor: com.jervis.service.background.LlmLoadMonitor,
+    private val modelConcurrencyManager: ModelConcurrencyManager,
 ) {
     private val logger = KotlinLogging.logger {}
 
     /**
      * Executes LLM call for the given candidate model with proper reactive patterns.
      * Routes to streaming if debug window is active.
+     * Respects per-model concurrency limits - will suspend if model is at capacity.
      */
     suspend fun executeCall(
         candidate: ModelsProperties.ModelDetail,
@@ -34,65 +36,63 @@ class LlmCallExecutor(
         promptType: PromptTypeEnum,
         estimatedTokens: Int,
         backgroundMode: Boolean = false,
-    ): LlmResponse {
-        val provider =
-            candidate.provider
-                ?: throw IllegalStateException("Provider not specified for candidate")
+    ): LlmResponse =
+        modelConcurrencyManager.withConcurrencyControl(candidate) {
+            val provider =
+                candidate.provider
+                    ?: throw IllegalStateException("Provider not specified for candidate")
 
-        val client = findClientForProvider(provider)
+            val client = findClientForProvider(provider)
 
-        logger.info { "Calling LLM type=$promptType provider=$provider model=${candidate.model} background=$backgroundMode" }
-        val startTime = System.nanoTime()
+            logger.info { "Calling LLM type=$promptType provider=$provider model=${candidate.model} background=$backgroundMode" }
+            val startTime = System.nanoTime()
 
-        // Always register requests (foreground or background) to track total LLM load
-        if (!backgroundMode) {
-            llmLoadMonitor.registerRequestStart()
-        }
+            // Always register requests (foreground or background) to track total LLM load
+            if (!backgroundMode) {
+                llmLoadMonitor.registerRequestStart()
+            }
 
-        return try {
-            logger.debug { "LLM Request - systemPrompt=$systemPrompt, userPrompt=$userPrompt" }
+            try {
+                // Always use streaming for debug purposes - debug window will be shown automatically
+                val debugSessionId = UUID.randomUUID().toString()
 
-            // Always use streaming for debug purposes - debug window will be shown automatically
-            val debugSessionId = UUID.randomUUID().toString()
-
-            // Send debug session started directly to WebSocket
-            debugService.sessionStarted(
-                sessionId = debugSessionId,
-                promptType = promptType.name,
-                systemPrompt = systemPrompt,
-                userPrompt = userPrompt,
-            )
-
-            val response =
-                executeStreamingCall(
-                    client,
-                    candidate,
-                    systemPrompt,
-                    userPrompt,
-                    prompt,
-                    estimatedTokens,
-                    debugSessionId,
+                // Send debug session started directly to WebSocket
+                debugService.sessionStarted(
+                    sessionId = debugSessionId,
+                    promptType = promptType.name,
+                    systemPrompt = systemPrompt,
+                    userPrompt = userPrompt,
                 )
 
-            validateResponse(response, provider)
-            logSuccessfulCall(provider, candidate.model, startTime)
-            logger.debug { "LLM Response - $response" }
+                val response =
+                    executeStreamingCall(
+                        client,
+                        candidate,
+                        systemPrompt,
+                        userPrompt,
+                        prompt,
+                        estimatedTokens,
+                        debugSessionId,
+                    )
 
-            response
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            logger.info { "LLM call cancelled for $provider (background task interrupted)" }
-            throw e
-        } catch (throwable: Throwable) {
-            val errorDetail = createErrorDetail(throwable)
-            logFailedCall(provider, candidate.model, startTime, errorDetail)
-            throw IllegalStateException("LLM call failed for $provider: $errorDetail", throwable)
-        } finally {
-            // Always unregister requests (foreground or background)
-            if (!backgroundMode) {
-                llmLoadMonitor.registerRequestEnd()
+                validateResponse(response, provider)
+                logSuccessfulCall(provider, candidate.model, startTime)
+
+                response
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                logger.info { "LLM call cancelled for $provider (background task interrupted)" }
+                throw e
+            } catch (throwable: Throwable) {
+                val errorDetail = createErrorDetail(throwable)
+                logFailedCall(provider, candidate.model, startTime, errorDetail)
+                throw IllegalStateException("LLM call failed for $provider: $errorDetail", throwable)
+            } finally {
+                // Always unregister requests (foreground or background)
+                if (!backgroundMode) {
+                    llmLoadMonitor.registerRequestEnd()
+                }
             }
         }
-    }
 
     /**
      * Executes streaming LLM call and converts to regular LlmResponse.

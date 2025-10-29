@@ -6,9 +6,9 @@ import java.time.Instant
 /**
  * Represents a pending background task awaiting processing.
  *
- * @property context Dynamic key-value pairs for prompt template substitution.
- *                   Used by qualifier and orchestrator to fill {placeholder} variables in YAML prompts.
- *                   Common keys: from, to, subject, body, date, etc.
+ * @property context Dynamic key-value pairs for prompt template substitution and resource references.
+ *                   Common keys: from, to, subject, body, date
+ *                   Resource IDs: senderProfileId, threadId, sourceUri (for fetching original content)
  */
 data class PendingTask(
     val id: ObjectId = ObjectId(),

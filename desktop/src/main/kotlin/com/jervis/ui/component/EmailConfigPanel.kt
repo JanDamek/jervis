@@ -3,7 +3,7 @@ package com.jervis.ui.component
 import com.jervis.dto.ClientDto
 import com.jervis.dto.email.CreateOrUpdateEmailAccountRequestDto
 import com.jervis.dto.email.EmailAccountDto
-import com.jervis.dto.email.ValidateResponse
+import com.jervis.dto.email.ValidateResponseDto
 import com.jervis.service.IEmailAccountService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -367,7 +367,7 @@ class EmailConfigPanel(
                 val tempAccount = emailService.createEmailAccount(tempRequest)
 
                 try {
-                    val validation: ValidateResponse =
+                    val validation: ValidateResponseDto =
                         emailService.validateEmailAccount(requireNotNull(tempAccount.id))
                     if (validation.ok) {
                         showInfo("Connection successful!\n${validation.message ?: ""}")

@@ -3,7 +3,7 @@ package com.jervis.dto.email
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class ValidateResponse(
+data class ValidateResponseDto(
     val ok: Boolean,
     val message: String? = null,
 )

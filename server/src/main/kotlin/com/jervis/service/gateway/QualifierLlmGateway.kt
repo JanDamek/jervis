@@ -109,7 +109,7 @@ class QualifierLlmGateway(
 
             val parsed = mapper.readValue(cleanedAnswer, QualifierResult::class.java)
 
-            when (parsed.decision.lowercase()) {
+            when (parsed.decision?.lowercase()) {
                 "discard" -> {
                     logger.debug { "Qualifier decision: DISCARD - ${parsed.reason}" }
                     QualifierDecision.Discard
@@ -133,8 +133,8 @@ class QualifierLlmGateway(
 
     @Serializable
     data class QualifierResult(
-        val decision: String = "",
-        val reason: String = "",
+        val decision: String? = "",
+        val reason: String? = "",
     )
 
     /**

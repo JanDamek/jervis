@@ -1,22 +1,24 @@
 package com.jervis.service.listener.email.state
 
+import kotlinx.coroutines.flow.Flow
 import org.bson.types.ObjectId
-import org.springframework.data.mongodb.repository.ReactiveMongoRepository
+import org.springframework.data.repository.kotlin.CoroutineCrudRepository
 import org.springframework.stereotype.Repository
-import reactor.core.publisher.Flux
-import reactor.core.publisher.Mono
 
 @Repository
-interface EmailMessageRepository : ReactiveMongoRepository<EmailMessageDocument, ObjectId> {
-    fun findByAccountId(accountId: ObjectId): Flux<EmailMessageDocument>
-
+interface EmailMessageRepository : CoroutineCrudRepository<EmailMessageDocument, ObjectId> {
     fun findByAccountIdAndStateOrderByReceivedAtAsc(
         accountId: ObjectId,
         state: EmailMessageState,
-    ): Flux<EmailMessageDocument>
+    ): Flow<EmailMessageDocument>
 
     fun findByAccountIdAndMessageId(
         accountId: ObjectId,
         messageId: String,
-    ): Mono<EmailMessageDocument>
+    ): EmailMessageDocument?
+
+    fun findAllByAccountIdAndMessageIdIn(
+        accountId: ObjectId,
+        messageIds: Collection<String>,
+    ): Flow<EmailMessageDocument>
 }

@@ -1,11 +1,17 @@
 package com.jervis.controller.api
 
+import com.jervis.controller.mapper.toCreateDomain
+import com.jervis.controller.mapper.toDto
+import com.jervis.controller.mapper.toUpdateDomain
 import com.jervis.dto.email.CreateOrUpdateEmailAccountRequestDto
 import com.jervis.dto.email.EmailAccountDto
-import com.jervis.dto.email.ValidateResponse
+import com.jervis.dto.email.ValidateResponseDto
 import com.jervis.service.IEmailAccountService
 import com.jervis.service.email.EmailAccountService
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
+import org.bson.types.ObjectId
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestParam
@@ -21,14 +27,19 @@ class EmailAccountRestController(
         @RequestBody request: CreateOrUpdateEmailAccountRequestDto,
     ): EmailAccountDto {
         logger.info { "Creating email account for client ${request.clientId}" }
-        val account = emailAccountService.createEmailAccount(request)
 
-        val validation = emailAccountService.validateEmailAccount(account.id ?: "")
-        if (!validation.ok) {
+        // DTO → Domain conversion happens in controller
+        val domainRequest = request.toCreateDomain()
+        val account = emailAccountService.createEmailAccount(domainRequest)
+
+        // Validate and log warning if invalid
+        val validation = emailAccountService.validateEmailAccount(account.id)
+        if (!validation.isValid) {
             logger.warn { "Created account ${account.id} failed validation: ${validation.message}" }
         }
 
-        return account
+        // Domain → DTO conversion for response
+        return account.toDto()
     }
 
     override suspend fun updateEmailAccount(
@@ -36,33 +47,58 @@ class EmailAccountRestController(
         @RequestBody request: CreateOrUpdateEmailAccountRequestDto,
     ): EmailAccountDto {
         logger.info { "Updating email account $accountId" }
-        val account = emailAccountService.updateEmailAccount(accountId, request)
 
-        val validation = emailAccountService.validateEmailAccount(accountId)
-        if (!validation.ok) {
+        // DTO → Domain conversion happens in controller
+        val objectId = ObjectId(accountId)
+        val domainRequest = request.toUpdateDomain(objectId)
+        val account = emailAccountService.updateEmailAccount(domainRequest)
+
+        // Validate and log warning if invalid
+        val validation = emailAccountService.validateEmailAccount(objectId)
+        if (!validation.isValid) {
             logger.warn { "Updated account $accountId failed validation: ${validation.message}" }
         }
 
-        return account
+        // Domain → DTO conversion for response
+        return account.toDto()
     }
 
     override suspend fun getEmailAccount(
         @PathVariable accountId: String,
-    ): EmailAccountDto? = emailAccountService.getEmailAccount(accountId)
+    ): EmailAccountDto? {
+        val objectId = ObjectId(accountId)
+        // Service returns Domain, map to DTO
+        return emailAccountService.getEmailAccount(objectId)?.toDto()
+    }
 
     override suspend fun listEmailAccounts(
         @RequestParam(required = false) clientId: String?,
         @RequestParam(required = false) projectId: String?,
-    ): List<EmailAccountDto> = emailAccountService.listEmailAccounts(clientId, projectId)
+    ): List<EmailAccountDto> {
+        val clientObjectId = clientId?.let { ObjectId(it) }
+        val projectObjectId = projectId?.let { ObjectId(it) }
+
+        // Service returns Flow<Domain>, map to List<DTO>
+        return emailAccountService
+            .listEmailAccounts(clientObjectId, projectObjectId)
+            .map { it.toDto() }
+            .toList()
+    }
 
     override suspend fun deleteEmailAccount(
         @PathVariable accountId: String,
     ) {
         logger.info { "Deleting email account $accountId" }
-        emailAccountService.deleteEmailAccount(accountId)
+        val objectId = ObjectId(accountId)
+        emailAccountService.deleteEmailAccount(objectId)
     }
 
     override suspend fun validateEmailAccount(
         @PathVariable accountId: String,
-    ): ValidateResponse = emailAccountService.validateEmailAccount(accountId)
+    ): ValidateResponseDto {
+        val objectId = ObjectId(accountId)
+        // Service returns Domain, map to DTO
+        val result = emailAccountService.validateEmailAccount(objectId)
+        return result.toDto()
+    }
 }

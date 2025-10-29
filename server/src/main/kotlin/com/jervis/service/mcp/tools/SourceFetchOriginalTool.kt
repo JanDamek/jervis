@@ -4,6 +4,7 @@ import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.repository.mongo.EmailAccountMongoRepository
 import com.jervis.service.listener.email.imap.ImapClient
+import com.jervis.service.listener.email.state.EmailMessageRepository
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -27,6 +28,7 @@ import java.nio.file.Paths
 class SourceFetchOriginalTool(
     private val imapClient: ImapClient,
     private val emailAccountRepository: EmailAccountMongoRepository,
+    private val emailMessageRepository: EmailMessageRepository,
     override val promptRepository: PromptRepository,
 ) : McpTool {
     companion object {
@@ -90,12 +92,21 @@ class SourceFetchOriginalTool(
         val messageId = parts[1]
 
         val account =
-            emailAccountRepository.findById(accountId).block()
+            emailAccountRepository.findById(accountId)
                 ?: throw IllegalArgumentException("Email account not found: $accountId")
 
+        // Find UID from database by messageId
+        val emailDoc =
+            emailMessageRepository.findByAccountIdAndMessageId(accountId, messageId)
+                ?: throw IllegalArgumentException("Email message not found in database: $messageId")
+
+        val uid =
+            emailDoc.uid
+                ?: throw IllegalArgumentException("Email message has no UID in database: $messageId")
+
         val message =
-            imapClient.fetchMessage(account, messageId)
-                ?: throw IllegalArgumentException("Email message not found: $messageId")
+            imapClient.fetchMessage(account, uid)
+                ?: throw IllegalArgumentException("Email message not found in IMAP: UID=$uid")
 
         return if (parts.size >= 4 && parts[2] == "attachment") {
             // Fetch specific attachment

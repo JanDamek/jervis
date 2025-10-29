@@ -4,11 +4,11 @@ import com.jervis.domain.requirement.RequirementStatus
 import com.jervis.entity.UserRequirementDocument
 import kotlinx.coroutines.flow.Flow
 import org.bson.types.ObjectId
-import org.springframework.data.mongodb.repository.ReactiveMongoRepository
+import org.springframework.data.repository.kotlin.CoroutineCrudRepository
 import org.springframework.stereotype.Repository
 
 @Repository
-interface UserRequirementMongoRepository : ReactiveMongoRepository<UserRequirementDocument, ObjectId> {
+interface UserRequirementMongoRepository : CoroutineCrudRepository<UserRequirementDocument, ObjectId> {
     fun findByClientIdAndStatus(
         clientId: ObjectId,
         status: RequirementStatus,

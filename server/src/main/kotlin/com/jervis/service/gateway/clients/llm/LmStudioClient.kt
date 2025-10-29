@@ -72,8 +72,6 @@ class LmStudioClient(
             val messages = buildMessagesList(systemPrompt, userPrompt)
             val requestBody = buildRequestBody(model, messages, creativityConfig, config)
 
-            logger.debug { "Sending streaming request to LM Studio: $requestBody" }
-
             val responseFlow =
                 webClient
                     .post()
