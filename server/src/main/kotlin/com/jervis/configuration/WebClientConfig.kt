@@ -1,5 +1,8 @@
 package com.jervis.configuration
 
+import com.jervis.configuration.properties.EndpointProperties
+import com.jervis.configuration.properties.RetryProperties
+import com.jervis.configuration.properties.WebClientProperties
 import io.netty.channel.ChannelOption
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.context.annotation.Bean
@@ -8,7 +11,6 @@ import org.springframework.http.MediaType
 import org.springframework.http.client.reactive.ReactorClientHttpConnector
 import org.springframework.web.reactive.function.client.ExchangeStrategies
 import org.springframework.web.reactive.function.client.WebClient
-import org.springframework.web.reactive.function.client.WebClientResponseException
 import reactor.netty.http.client.HttpClient
 import reactor.netty.resources.ConnectionProvider
 import reactor.util.retry.Retry
@@ -18,8 +20,7 @@ import java.time.Duration
 
 @Configuration
 class WebClientConfig(
-    private val connectionPoolProperties: ConnectionPoolProperties,
-    private val timeoutsProperties: TimeoutsProperties,
+    private val webClientProperties: WebClientProperties,
     private val retryProperties: RetryProperties,
 ) {
     @Bean
@@ -29,7 +30,7 @@ class WebClientConfig(
         endpoints: EndpointProperties,
     ): WebClient =
         builder
-            .baseUrl(endpoints.lmStudio.baseUrl?.trimEnd('/') ?: DEFAULT_LM_STUDIO_URL)
+            .baseUrl(endpoints.lmStudio.baseUrl.trimEnd('/'))
             .defaultHeaders { headers ->
                 headers.contentType = MediaType.APPLICATION_JSON
                 headers.accept = listOf(MediaType.APPLICATION_JSON)
@@ -47,7 +48,7 @@ class WebClientConfig(
         builder
             .baseUrl(
                 endpoints.ollama.primary.baseUrl
-                    ?.trimEnd('/') ?: DEFAULT_OLLAMA_URL,
+                    .trimEnd('/'),
             ).defaultHeaders { headers ->
                 headers.contentType = MediaType.APPLICATION_JSON
                 headers.accept = listOf(MediaType.APPLICATION_JSON)
@@ -65,9 +66,8 @@ class WebClientConfig(
         builder
             .baseUrl(
                 endpoints.ollama.qualifier.baseUrl
-                ?.trimEnd('/') ?: DEFAULT_OLLAMA_URL
-                    )
-            .defaultHeaders { headers ->
+                    .trimEnd('/'),
+            ).defaultHeaders { headers ->
                 headers.contentType = MediaType.APPLICATION_JSON
                 headers.accept = listOf(MediaType.APPLICATION_JSON)
             }.exchangeStrategies(defaultExchangeStrategies())
@@ -82,12 +82,12 @@ class WebClientConfig(
         endpoints: EndpointProperties,
     ): WebClient =
         builder
-            .baseUrl(endpoints.openai.baseUrl?.trimEnd('/') ?: DEFAULT_OPENAI_API)
+            .baseUrl(endpoints.openai.baseUrl.trimEnd('/'))
             .defaultHeaders { headers ->
                 headers.contentType = MediaType.APPLICATION_JSON
                 headers.accept = listOf(MediaType.APPLICATION_JSON)
                 val key = endpoints.openai.apiKey
-                if (!key.isNullOrBlank()) headers["Authorization"] = "Bearer $key"
+                if (key.isNotBlank()) headers["Authorization"] = "Bearer $key"
             }.exchangeStrategies(defaultExchangeStrategies())
             .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
             .filter(createRetryFilter())
@@ -100,13 +100,31 @@ class WebClientConfig(
         endpoints: EndpointProperties,
     ): WebClient =
         builder
-            .baseUrl(endpoints.anthropic.baseUrl?.trimEnd('/') ?: DEFAULT_ANTHROPIC_API)
+            .baseUrl(endpoints.anthropic.baseUrl.trimEnd('/'))
             .defaultHeaders { headers ->
                 headers.contentType = MediaType.APPLICATION_JSON
                 headers.accept = listOf(MediaType.APPLICATION_JSON)
                 val key = endpoints.anthropic.apiKey
-                if (!key.isNullOrBlank()) headers["x-api-key"] = key
+                if (key.isNotBlank()) headers["x-api-key"] = key
                 headers["anthropic-version"] = ANTHROPIC_VERSION
+            }.exchangeStrategies(defaultExchangeStrategies())
+            .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
+            .filter(createRetryFilter())
+            .build()
+
+    @Bean
+    @Qualifier("googleWebClient")
+    fun googleWebClient(
+        builder: WebClient.Builder,
+        endpoints: EndpointProperties,
+    ): WebClient =
+        builder
+            .baseUrl(endpoints.google.baseUrl.trimEnd('/'))
+            .defaultHeaders { headers ->
+                headers.contentType = MediaType.APPLICATION_JSON
+                headers.accept = listOf(MediaType.APPLICATION_JSON)
+                val key = endpoints.google.apiKey
+                if (key.isNotBlank()) headers["x-goog-api-key"] = key
             }.exchangeStrategies(defaultExchangeStrategies())
             .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
             .filter(createRetryFilter())
@@ -119,9 +137,57 @@ class WebClientConfig(
         endpoints: EndpointProperties,
     ): WebClient =
         builder
-            .baseUrl(endpoints.searxng.baseUrl?.trimEnd('/') ?: DEFAULT_SEARXNG_URL)
+            .baseUrl(endpoints.searxng.baseUrl.trimEnd('/'))
             .defaultHeaders { headers ->
                 headers.accept = listOf(MediaType.APPLICATION_JSON, MediaType.TEXT_HTML)
+            }.exchangeStrategies(defaultExchangeStrategies())
+            .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
+            .filter(createRetryFilter())
+            .build()
+
+    @Bean
+    @Qualifier("tikaWebClient")
+    fun ocrWebClient(
+        builder: WebClient.Builder,
+        clients: EndpointProperties,
+    ): WebClient =
+        builder
+            .baseUrl(clients.tika.baseUrl.trimEnd('/'))
+            .defaultHeaders { headers ->
+                headers.contentType = MediaType.APPLICATION_JSON
+                headers.accept = listOf(MediaType.APPLICATION_JSON)
+            }.exchangeStrategies(defaultExchangeStrategies())
+            .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
+            .filter(createRetryFilter())
+            .build()
+
+    @Bean
+    @Qualifier("joernWebClient")
+    fun joernWebClient(
+        builder: WebClient.Builder,
+        clients: EndpointProperties,
+    ): WebClient =
+        builder
+            .baseUrl(clients.joern.baseUrl.trimEnd('/'))
+            .defaultHeaders { headers ->
+                headers.contentType = MediaType.APPLICATION_JSON
+                headers.accept = listOf(MediaType.APPLICATION_JSON)
+            }.exchangeStrategies(defaultExchangeStrategies())
+            .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
+            .filter(createRetryFilter())
+            .build()
+
+    @Bean
+    @Qualifier("whisperWebClient")
+    fun whisperWebClient(
+        builder: WebClient.Builder,
+        clients: EndpointProperties,
+    ): WebClient =
+        builder
+            .baseUrl(clients.whisper.baseUrl.trimEnd('/'))
+            .defaultHeaders { headers ->
+                headers.contentType = MediaType.APPLICATION_JSON
+                headers.accept = listOf(MediaType.APPLICATION_JSON)
             }.exchangeStrategies(defaultExchangeStrategies())
             .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
             .filter(createRetryFilter())
@@ -137,22 +203,20 @@ class WebClientConfig(
         val connectionProvider =
             ConnectionProvider
                 .builder("embedding-pool")
-                .maxConnections(connectionPoolProperties.getWebClientMaxConnections())
-                .maxIdleTime(connectionPoolProperties.getWebClientMaxIdleTime())
-                .maxLifeTime(connectionPoolProperties.getWebClientMaxLifeTime())
-                .pendingAcquireTimeout(connectionPoolProperties.getWebClientPendingAcquireTimeout())
-                .pendingAcquireMaxCount(connectionPoolProperties.webclient.pendingAcquireMaxCount)
-                .evictInBackground(connectionPoolProperties.getWebClientEvictInBackground())
+                .maxConnections(webClientProperties.connectionPool.maxConnections)
+                .maxIdleTime(webClientProperties.connectionPool.maxIdleTime)
+                .maxLifeTime(webClientProperties.connectionPool.maxLifeTime)
+                .pendingAcquireTimeout(webClientProperties.connectionPool.pendingAcquireTimeout)
+                .pendingAcquireMaxCount(webClientProperties.connectionPool.pendingAcquireMaxCount)
+                .evictInBackground(webClientProperties.connectionPool.evictInBackground)
                 .build()
 
         return HttpClient
             .create(connectionProvider)
             .option(
                 ChannelOption.CONNECT_TIMEOUT_MILLIS,
-                (timeoutsProperties.webclient.connectTimeoutSeconds * 1000).toInt(),
+                webClientProperties.timeouts.connectTimeoutMillis,
             )
-        // Removed ReadTimeoutHandler and WriteTimeoutHandler to eliminate timeouts for long-running LLM operations
-        // Removed responseTimeout to allow unlimited response time for heavy model processing
     }
 
     private fun createRetryFilter() =
@@ -167,18 +231,13 @@ class WebClientConfig(
                         Duration.ofMillis(retryProperties.webclient.initialBackoffMillis),
                     ).maxBackoff(Duration.ofMillis(retryProperties.webclient.maxBackoffMillis))
                     .filter { throwable ->
-                        throwable is ConnectException || throwable is IOException && throwable !is WebClientResponseException
+                        throwable is ConnectException || throwable is IOException
                     },
             )
         }
 
     companion object {
         private const val DEFAULT_MAX_IN_MEMORY_BYTES = 8 * 1024 * 1024 // 8 MB
-        private const val DEFAULT_OLLAMA_URL = "http://localhost:11434"
-        private const val DEFAULT_LM_STUDIO_URL = "http://localhost:1234"
-        private const val DEFAULT_OPENAI_API = "https://api.openai.com/v1"
-        private const val DEFAULT_ANTHROPIC_API = "https://api.anthropic.com"
-        private const val DEFAULT_SEARXNG_URL = "http://192.168.100.117:30053"
         private const val ANTHROPIC_VERSION = "2023-06-01"
     }
 }

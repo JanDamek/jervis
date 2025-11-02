@@ -22,6 +22,9 @@ enum class RagSourceType {
     /** Git code changes (diffs) */
     CODE_CHANGE,
 
+    /** AI-generated file/class structure descriptions */
+    FILE_DESCRIPTION,
+
     /** Meeting transcripts and recorded sessions */
     MEETING_TRANSCRIPT,
 
@@ -66,4 +69,7 @@ enum class RagSourceType {
 
     /** Jira issues and comments */
     JIRA,
+
+    /** Confluence documentation pages */
+    CONFLUENCE_PAGE,
 }

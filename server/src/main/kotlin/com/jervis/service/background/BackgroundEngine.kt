@@ -202,25 +202,60 @@ class BackgroundEngine(
                 } catch (_: CancellationException) {
                     logger.info { "Task interrupted: ${task.id}" }
                 } catch (e: Exception) {
-                    consecutiveFailures++
-                    val backoffDelay = minOf(30_000L * consecutiveFailures, maxRetryDelay)
-
+                    // Classify error type for appropriate handling
                     val errorType =
                         when {
                             e.message?.contains("Connection prematurely closed") == true -> "LLM_CONNECTION_FAILED"
                             e.message?.contains("LLM call failed") == true -> "LLM_UNAVAILABLE"
-                            else -> "UNKNOWN_ERROR"
+                            e.message?.contains("timeout", ignoreCase = true) == true -> "LLM_TIMEOUT"
+                            e.message?.contains("Connection refused") == true -> "LLM_UNREACHABLE"
+                            e is java.net.SocketException -> "NETWORK_ERROR"
+                            e is java.net.SocketTimeoutException -> "NETWORK_TIMEOUT"
+                            else -> "TASK_EXECUTION_ERROR"
                         }
 
-                    logger.error(e) { "Task failed: ${task.id}, errorType=$errorType, consecutiveFailures=$consecutiveFailures" }
-                    pendingTaskService.deleteTask(task.id)
-                    logger.warn {
-                        "Failed task deleted to prevent retry loop: ${task.id}. Backing off for ${backoffDelay / 1000}" +
-                            "s before next attempt."
+                    // Only increment consecutive failures for communication errors
+                    val isCommunicationError =
+                        errorType in
+                            setOf(
+                                "LLM_CONNECTION_FAILED",
+                                "LLM_UNAVAILABLE",
+                                "LLM_TIMEOUT",
+                                "LLM_UNREACHABLE",
+                                "NETWORK_ERROR",
+                                "NETWORK_TIMEOUT",
+                            )
+
+                    if (isCommunicationError) {
+                        consecutiveFailures++
+                    } else {
+                        // Non-communication errors don't affect backoff (logic errors, data issues, etc.)
+                        logger.warn { "Non-communication error detected, not incrementing failure counter" }
                     }
 
-                    // Apply backoff delay to prevent rapid failure loops
-                    delay(backoffDelay)
+                    val backoffDelay =
+                        if (isCommunicationError) {
+                            minOf(30_000L * consecutiveFailures, maxRetryDelay)
+                        } else {
+                            0L // No delay for logic errors - continue immediately
+                        }
+
+                    logger.error(e) {
+                        "Task failed: ${task.id}, errorType=$errorType, " +
+                            "consecutiveFailures=$consecutiveFailures, isCommunication=$isCommunicationError"
+                    }
+
+                    // Delete failed task to prevent retry loop
+                    pendingTaskService.deleteTask(task.id)
+
+                    if (backoffDelay > 0) {
+                        logger.warn {
+                            "Communication error detected, backing off for ${backoffDelay / 1000}s before next attempt"
+                        }
+                        delay(backoffDelay)
+                    } else {
+                        logger.info { "Continuing immediately to next task (non-communication error)" }
+                    }
                 }
             }
 

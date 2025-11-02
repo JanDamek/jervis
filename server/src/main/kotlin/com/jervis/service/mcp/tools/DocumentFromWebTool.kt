@@ -1,9 +1,10 @@
 package com.jervis.service.mcp.tools
 
+import com.jervis.common.client.ITikaClient
+import com.jervis.common.dto.TikaProcessRequest
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.rag.RagSourceType
-import com.jervis.service.document.TikaDocumentProcessor
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.link.LinkIndexer
 import com.jervis.service.mcp.McpTool
@@ -18,8 +19,8 @@ import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.awaitBody
-import java.io.ByteArrayInputStream
 import java.time.Instant
+import java.util.Base64
 
 /**
  * Document from web tool for retrieving and parsing web page content.
@@ -31,7 +32,7 @@ class DocumentFromWebTool(
     override val promptRepository: PromptRepository,
     @Qualifier("searxngWebClient") private val webClient: WebClient,
     private val linkIndexer: LinkIndexer,
-    private val tikaProcessor: TikaDocumentProcessor,
+    private val tikaClient: ITikaClient,
 ) : McpTool {
     private val logger = KotlinLogging.logger {}
 
@@ -98,20 +99,24 @@ class DocumentFromWebTool(
         // Use Tika to extract plain text (consistent with email processing)
         val plainText =
             try {
-                ByteArrayInputStream(responseBody.toByteArray()).use { stream ->
-                    val result =
-                        tikaProcessor.processDocumentStream(
-                            inputStream = stream,
-                            fileName = "webpage.html",
-                        )
-                    if (result.success) {
-                        result.plainText
-                    } else {
-                        return ToolResult.error(
-                            output = "Failed to parse ${params.url}: ${result.errorMessage}",
-                            message = "Parsing error",
-                        )
-                    }
+                val result =
+                    tikaClient.process(
+                        TikaProcessRequest(
+                            source =
+                                TikaProcessRequest.Source.FileBytes(
+                                    fileName = "webpage.html",
+                                    dataBase64 = Base64.getEncoder().encodeToString(responseBody.toByteArray()),
+                                ),
+                            includeMetadata = false,
+                        ),
+                    )
+                if (result.success) {
+                    result.plainText
+                } else {
+                    return ToolResult.error(
+                        output = "Failed to parse ${params.url}: ${result.errorMessage}",
+                        message = "Parsing error",
+                    )
                 }
             } catch (e: Exception) {
                 logger.error(e) { "Tika parsing failed for ${params.url}" }
@@ -121,7 +126,7 @@ class DocumentFromWebTool(
                 )
             }
 
-        val truncatedContent = plainText.take(params.maxContentLength)
+        val truncatedContent = plainText.substring(0, kotlin.math.min(plainText.length, params.maxContentLength))
 
         val output =
             buildString {

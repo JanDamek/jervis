@@ -1,5 +1,7 @@
 package com.jervis.service.git
 
+import com.jervis.domain.git.MonoRepoConfig
+import com.jervis.entity.ClientDocument
 import com.jervis.entity.ProjectDocument
 import com.jervis.repository.mongo.ClientMongoRepository
 import com.jervis.service.storage.DirectoryStructureService
@@ -7,19 +9,26 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
-import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.nio.file.Path
 
 /**
  * Service for Git repository management operations.
  * Handles cloning, pulling, and credential configuration for Git repositories.
+ *
+ * Supports both:
+ * - Standalone project-repositories-Client mono-repositories (shared across multiple projects)
+ *
+ * Parallel processing workflow:
+ * - fetchMonoRepo() - Fast git fetch (only history, no files)
+ * - cloneOrPullMonoRepo() - Full clone/pull with physical files
+ * These can run in parallel: fetch → index metadata (parallel) → clone/pull → index code
  */
 @Service
 class GitRepositoryService(
     private val directoryStructureService: DirectoryStructureService,
     private val credentialsManager: GitCredentialsManager,
     private val clientMongoRepository: ClientMongoRepository,
+    private val gitRemoteClient: GitRemoteClient,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -57,13 +66,32 @@ class GitRepositoryService(
             }
         }
 
+    /**
+     * Resolve Git repository URL for a project following precedence rules:
+     * 1. Project Override (project.overrides.gitRemoteUrl) - highest priority
+     * 2. Client Mono-Repo (client.monoRepoUrl) - shared repository for multiple projects
+     * 3. None - no Git configuration available
+     */
     private suspend fun getRepositoryUrl(project: ProjectDocument): String? {
         // Priority 1: Project-specific Git URL override
-        project.overrides?.gitRemoteUrl?.let { return it }
+        project.overrides?.gitRemoteUrl?.let {
+            logger.info { "Using project-specific Git URL for ${project.name}" }
+            return it
+        }
 
-        // Priority 2: Client mono-repo URL (legacy fallback)
+        // Priority 2: Client mono-repo URL
         val client = clientMongoRepository.findById(project.clientId)
-        return client?.monoRepoUrl
+        client?.monoRepoUrl?.let {
+            logger.info { "Using client mono-repo URL for ${project.name}" }
+            if (project.projectPath != null) {
+                logger.info { "Project path within mono-repo: ${project.projectPath}" }
+            }
+            return it
+        }
+
+        // No Git configuration
+        logger.debug { "No Git repository URL configured for project ${project.name}" }
+        return null
     }
 
     private suspend fun cloneRepository(
@@ -74,50 +102,25 @@ class GitRepositoryService(
     ) {
         logger.info { "Cloning repository from $repoUrl to $gitDir" }
 
-        // Create parent directory
         gitDir.parent?.toFile()?.mkdirs()
 
         val envVars = buildGitEnvironment(authContext)
         val branch = getBranchName(project)
+        val sparseCheckoutPath =
+            if (project.projectPath != null && project.overrides?.gitRemoteUrl == null) {
+                project.projectPath
+            } else {
+                null
+            }
 
-        // TODO: projectPath removed - mono-repo subpath support needs redesign
-        // For now, clone full repository
-        executeGitCommand(
-            listOf("git", "clone", "--branch", branch, repoUrl, gitDir.toString()),
-            null,
-            envVars,
-            "clone",
-        )
-
-        /* DISABLED - sparse checkout for mono-repo subpath
-        if (project.projectPath != null) {
-            executeGitCommand(
-                listOf("git", "clone", "--no-checkout", repoUrl, gitDir.toString()),
-                null,
-                envVars,
-                "clone",
-            )
-            executeGitCommand(
-                listOf("git", "sparse-checkout", "init", "--cone"),
-                gitDir,
-                envVars,
-                "sparse-checkout-init",
-            )
-            executeGitCommand(
-                listOf("git", "sparse-checkout", "set", project.projectPath),
-                gitDir,
-                envVars,
-                "sparse-checkout-set",
-            )
-
-            executeGitCommand(
-                listOf("git", "checkout", branch),
-                gitDir,
-                envVars,
-                "checkout",
-            )
-        }
-         */
+        gitRemoteClient
+            .clone(
+                repoUrl = repoUrl,
+                targetPath = gitDir,
+                branch = branch,
+                envVars = envVars,
+                sparseCheckoutPath = sparseCheckoutPath,
+            ).collectWithLogging(logger, project.name)
 
         logger.info { "Successfully cloned repository for project: ${project.name}" }
     }
@@ -129,23 +132,17 @@ class GitRepositoryService(
     ) {
         logger.info { "Pulling latest changes for project: ${project.name}" }
 
+        val repoUrl = getRepositoryUrl(project) ?: throw IllegalStateException("No repository URL")
         val envVars = buildGitEnvironment(authContext)
         val branch = getBranchName(project)
 
-        // Fetch and pull
-        executeGitCommand(
-            listOf("git", "fetch", "origin"),
-            gitDir,
-            envVars,
-            "fetch",
-        )
-
-        executeGitCommand(
-            listOf("git", "pull", "origin", branch),
-            gitDir,
-            envVars,
-            "pull",
-        )
+        gitRemoteClient
+            .pull(
+                repoUrl = repoUrl,
+                workingDir = gitDir,
+                branch = branch,
+                envVars = envVars,
+            ).collectWithLogging(logger, project.name)
 
         logger.info { "Successfully pulled latest changes for project: ${project.name}" }
     }
@@ -183,88 +180,106 @@ class GitRepositoryService(
         return envVars
     }
 
-    private fun executeGitCommand(
-        command: List<String>,
-        workingDir: Path?,
-        envVars: Map<String, String>,
-        operationName: String,
-    ) {
-        val processBuilder = ProcessBuilder(command)
-        workingDir?.let { processBuilder.directory(it.toFile()) }
-
-        processBuilder.environment().putAll(envVars)
-        processBuilder.redirectErrorStream(true)
-
-        val process = processBuilder.start()
-        val output = BufferedReader(InputStreamReader(process.inputStream)).use { it.readText() }
-        val exitCode = process.waitFor()
-
-        if (exitCode != 0) {
-            throw RuntimeException("Git $operationName failed with exit code $exitCode: $output")
-        }
-
-        logger.info { "Git $operationName completed successfully" }
-    }
+    // ========== Mono-Repo Methods ==========
 
     /**
-     * Validate that repository is accessible with current credentials.
-     * TODO: Refactor to use Client mono-repo URL
+     * Fast fetch for mono-repo (only history, no files).
+     * Used for quick commit metadata retrieval before full clone.
+     * Can run in parallel with indexing.
      */
-    suspend fun validateRepositoryAccess(project: ProjectDocument): Boolean =
-        withContext(Dispatchers.IO) {
-            logger.warn { "Git validation temporarily disabled - needs refactoring to use client mono-repo" }
-            false
-        }
-
-    /**
-     * Pull latest changes from remote repository.
-     * TODO: Refactor to use Client mono-repo URL
-     */
-    suspend fun pullLatestChanges(project: ProjectDocument): Result<Unit> =
-        withContext(Dispatchers.IO) {
-            logger.warn { "Git pull temporarily disabled - needs refactoring to use client mono-repo" }
-            Result.success(Unit)
-        }
-
-    /**
-     * Get the current Git commit hash for a repository path.
-     * Moved from HistoricalVersioningService - this is the right place for Git operations.
-     *
-     * Returns null if:
-     * - Directory is not a Git repository (no .git directory)
-     * - Git command fails
-     * - Any error occurs
-     */
-    suspend fun getCurrentCommitHash(repositoryPath: Path): String? =
+    suspend fun fetchMonoRepo(
+        client: ClientDocument,
+        monoRepoConfig: MonoRepoConfig,
+    ): Result<Path> =
         withContext(Dispatchers.IO) {
             try {
-                // Check if .git directory exists before attempting git command
-                val gitDir = repositoryPath.resolve(".git")
-                if (!gitDir.toFile().exists()) {
-                    logger.debug { "No .git directory at $repositoryPath, skipping git commit hash retrieval" }
-                    return@withContext null
-                }
+                val gitDir = directoryStructureService.clientMonoRepoGitDir(client.id, monoRepoConfig.id)
+                val authContext = credentialsManager.prepareMonoRepoAuthentication(client, monoRepoConfig)
 
-                val processBuilder =
-                    ProcessBuilder("git", "rev-parse", "HEAD")
-                        .directory(repositoryPath.toFile())
-                        .redirectErrorStream(true)
-
-                val process = processBuilder.start()
-                val exitCode = process.waitFor()
-
-                if (exitCode == 0) {
-                    val hash = process.inputStream.bufferedReader().use { it.readText().trim() }
-                    logger.debug { "Retrieved Git commit hash for $repositoryPath: $hash" }
-                    hash
+                if (gitDir.toFile().exists() && gitDir.resolve(".git").toFile().exists()) {
+                    logger.info { "Mono-repo ${monoRepoConfig.name} exists, fetching latest commits..." }
+                    fetchMonoRepoChanges(gitDir, monoRepoConfig.defaultBranch, authContext)
                 } else {
-                    logger.debug { "Git command failed for repository: $repositoryPath (exit code: $exitCode)" }
-                    null
+                    logger.info { "Mono-repo ${monoRepoConfig.name} does not exist, initializing bare fetch..." }
+                    gitDir.parent?.toFile()?.mkdirs()
+                    cloneMonoRepoForFetch(
+                        gitDir,
+                        monoRepoConfig.repositoryUrl,
+                        monoRepoConfig.defaultBranch,
+                        authContext,
+                    )
                 }
+
+                Result.success(gitDir)
             } catch (e: Exception) {
-                logger.debug(e) { "Could not get Git commit hash for repository: $repositoryPath" }
+                logger.error(e) { "Failed to fetch mono-repo ${monoRepoConfig.name}" }
+                Result.failure(e)
+            }
+        }
+
+    private suspend fun fetchMonoRepoChanges(
+        gitDir: Path,
+        branch: String,
+        authContext: GitCredentialsManager.GitAuthContext?,
+    ) {
+        val repoUrl = extractRepoUrlFromGitConfig(gitDir) ?: throw IllegalStateException("Cannot determine remote URL")
+        val envVars = buildGitEnvironment(authContext)
+
+        gitRemoteClient
+            .fetch(
+                repoUrl = repoUrl,
+                workingDir = gitDir,
+                branch = branch,
+                envVars = envVars,
+            ).collectWithLogging(logger, "mono-repo")
+
+        logger.info { "Successfully fetched latest commits for mono-repo" }
+    }
+
+    private suspend fun cloneMonoRepoForFetch(
+        gitDir: Path,
+        repoUrl: String,
+        branch: String,
+        authContext: GitCredentialsManager.GitAuthContext?,
+    ) {
+        val envVars = buildGitEnvironment(authContext)
+
+        gitRemoteClient
+            .clone(
+                repoUrl = repoUrl,
+                targetPath = gitDir,
+                branch = branch,
+                envVars = envVars,
+                sparseCheckoutPath = null,
+            ).collectWithLogging(logger, "mono-repo")
+
+        logger.info { "Successfully initialized mono-repo for fetch" }
+    }
+
+    // ========== Shared Methods ==========
+
+    /**
+     * Extract repository URL from .git/config.
+     * Returns null if cannot be determined.
+     */
+    private fun extractRepoUrlFromGitConfig(gitDir: Path): String? =
+        try {
+            val processBuilder =
+                ProcessBuilder("git", "config", "--get", "remote.origin.url")
+                    .directory(gitDir.toFile())
+                    .redirectErrorStream(true)
+
+            val process = processBuilder.start()
+            val exitCode = process.waitFor()
+
+            if (exitCode == 0) {
+                process.inputStream.bufferedReader().use { it.readText().trim() }
+            } else {
                 null
             }
+        } catch (e: Exception) {
+            logger.debug(e) { "Could not extract repo URL from git config at $gitDir" }
+            null
         }
 
     /**

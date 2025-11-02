@@ -1,6 +1,6 @@
 package com.jervis.service.background
 
-import com.jervis.configuration.QualifierProperties
+import com.jervis.domain.sender.ConversationThread
 import com.jervis.domain.task.PendingTask
 import com.jervis.domain.task.PendingTaskTypeEnum
 import com.jervis.entity.AliasType
@@ -9,11 +9,13 @@ import com.jervis.service.listener.email.imap.ImapMessage
 import com.jervis.service.sender.ConversationThreadService
 import com.jervis.service.sender.MessageLinkService
 import com.jervis.service.sender.SenderProfileService
+import com.jervis.service.task.UserTaskService
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flatMapMerge
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -30,10 +32,10 @@ class TaskQualificationService(
     private val qualifierGateway: QualifierLlmGateway,
     private val pendingTaskService: PendingTaskService,
     private val backgroundTaskGoalsService: BackgroundTaskGoalsService,
-    private val props: QualifierProperties,
     private val senderProfileService: SenderProfileService,
     private val conversationThreadService: ConversationThreadService,
     private val messageLinkService: MessageLinkService,
+    private val userTaskService: UserTaskService,
 ) {
     /**
      * Process entire Flow of tasks needing qualification.
@@ -117,6 +119,20 @@ class TaskQualificationService(
             conversationThreadService.addRagDocumentId(thread.id, it)
         }
 
+        // 4.1 Resolution hook BEFORE creating any new task
+        val sourceUri = "email://${accountId.toHexString()}/${email.messageId}"
+        val (resolved, closedTaskIds) = resolveExistingUserTasksIfApplicable(thread, clientId, sourceUri, email)
+        if (resolved) {
+            conversationThreadService.setRequiresResponse(thread.id, false)
+            if (thread.actionItems.all { it.completed }) {
+                conversationThreadService.updateStatus(thread.id, com.jervis.entity.ThreadStatus.RESOLVED)
+            }
+            logger.info {
+                "Thread ${thread.threadId} resolved by inbound email ${email.messageId}; closed tasks: ${closedTaskIds.joinToString()}"
+            }
+            return QualificationResult.Discard(reason = "Resolved by inbound update; closed tasks: ${closedTaskIds.joinToString()}")
+        }
+
         // 5. Qualify: discard/delegate
         val decision = qualifyBasicEmail(email, clientId)
 
@@ -126,19 +142,24 @@ class TaskQualificationService(
         }
 
         // 6. Create task with simple context (just IDs!)
+        val baseContext =
+            mutableMapOf(
+                "senderProfileId" to senderProfile.id.toHexString(),
+                "threadId" to thread.id.toHexString(),
+                "sourceUri" to sourceUri,
+                "from" to email.from,
+                "subject" to email.subject,
+                "date" to email.receivedAt.toString(),
+            )
+        if (closedTaskIds.isNotEmpty()) {
+            baseContext["previousTasksClosed"] = closedTaskIds.joinToString(",")
+        }
+
         val task =
             pendingTaskService.createTask(
                 taskType = PendingTaskTypeEnum.EMAIL_PROCESSING,
                 content = formatEmailContent(email),
-                context =
-                    mapOf(
-                        "senderProfileId" to senderProfile.id.toHexString(),
-                        "threadId" to thread.id.toHexString(),
-                        "sourceUri" to "email://${accountId.toHexString()}/${email.messageId}",
-                        "from" to email.from,
-                        "subject" to email.subject,
-                        "date" to email.receivedAt.toString(),
-                    ),
+                context = baseContext,
                 clientId = clientId,
                 projectId = projectId,
             )
@@ -194,6 +215,45 @@ class TaskQualificationService(
             }
         }
 
+    /**
+     * Build mapping values for qualifier prompt placeholders from task data.
+     * Different task types require different context values from task.context.
+     */
+    private fun buildMappingValues(
+        task: PendingTask,
+        truncatedContent: String,
+    ): Map<String, String> =
+        buildMap {
+            // Default: all tasks get 'content' placeholder
+            put("content", truncatedContent)
+
+            // Task-specific placeholders from context
+            when (task.taskType) {
+                PendingTaskTypeEnum.FILE_STRUCTURE_ANALYSIS -> {
+                    // Qualifier prompt expects: {filePath}, {contentPreview}
+                    task.context["filePath"]?.let { put("filePath", it) }
+                    task.context["fileContent"]?.let {
+                        val preview = it.take(500) // First 500 chars as preview
+                        put("contentPreview", preview)
+                    } ?: put("contentPreview", truncatedContent.take(500))
+                }
+
+                PendingTaskTypeEnum.COMMIT_ANALYSIS -> {
+                    // Qualifier prompt uses {content} from commit message + stats
+                    // No additional placeholders needed
+                }
+
+                PendingTaskTypeEnum.EMAIL_PROCESSING -> {
+                    // Email qualification uses {content} with FROM/SUBJECT/BODY
+                    // No additional placeholders needed
+                }
+
+                else -> {
+                    // Other task types use default {content} only
+                }
+            }
+        }
+
     private suspend fun qualifyTask(task: PendingTask) {
         val startTime = System.currentTimeMillis()
         val taskConfig = backgroundTaskGoalsService.getQualifierPrompts(task.taskType)
@@ -215,7 +275,7 @@ class TaskQualificationService(
                     rawContent
                 }
 
-            val mappingValues = mapOf("content" to truncatedContent)
+            val mappingValues = buildMappingValues(task, truncatedContent)
 
             val decision =
                 qualifierGateway.qualify(
@@ -229,11 +289,33 @@ class TaskQualificationService(
             when (decision) {
                 is QualifierLlmGateway.QualifierDecision.Discard -> {
                     logger.info { "Task ${task.id} (${task.taskType}) DISCARDED by qualifier in ${duration}ms - spam/noise" }
+
+                    // Store qualification notes before deletion (for audit trail)
+                    try {
+                        pendingTaskService.mergeContext(
+                            task.id,
+                            mapOf("qualificationNotes" to "DISCARDED: Spam/noise detected"),
+                        )
+                    } catch (e: Exception) {
+                        logger.warn(e) { "Failed to store qualification notes for discarded task ${task.id}" }
+                    }
+
                     pendingTaskService.deleteTask(task.id)
                 }
 
                 is QualifierLlmGateway.QualifierDecision.Delegate -> {
                     logger.debug { "Task ${task.id} (${task.taskType}) DELEGATED in ${duration}ms to strong model" }
+
+                    // Store qualification notes (reason from qualifier)
+                    try {
+                        pendingTaskService.mergeContext(
+                            task.id,
+                            mapOf("qualificationNotes" to "DELEGATED: Actionable content"),
+                        )
+                    } catch (e: Exception) {
+                        logger.warn(e) { "Failed to store qualification notes for delegated task ${task.id}" }
+                    }
+
                     pendingTaskService.setNeedsQualification(task.id, false)
                 }
             }
@@ -241,6 +323,48 @@ class TaskQualificationService(
             val duration = System.currentTimeMillis() - startTime
             logger.error(e) { "Qualification failed for task ${task.id} after ${duration}ms, delegating to strong model" }
             pendingTaskService.setNeedsQualification(task.id, false)
+        }
+    }
+
+    private fun looksLikeResolution(
+        email: ImapMessage,
+        thread: ConversationThread,
+    ): Boolean {
+        val text = (email.subject + "\n" + email.content).lowercase()
+        val resolutionMarkers =
+            listOf(
+                "approved",
+                "confirm",
+                "confirmed",
+                "done",
+                "resolved",
+                "solved",
+                "fixed",
+                "thanks",
+                "thank you",
+                "attached",
+                "see attachment",
+                "see attached",
+            )
+        val containsMarker = resolutionMarkers.any { it in text }
+        val hasQuestion = text.contains("?")
+        return containsMarker && !hasQuestion
+    }
+
+    private suspend fun resolveExistingUserTasksIfApplicable(
+        thread: ConversationThread,
+        clientId: ObjectId,
+        resolutionSourceUri: String,
+        email: ImapMessage,
+    ): Pair<Boolean, List<String>> {
+        val active = userTaskService.findActiveTasksByThread(clientId, thread.id).toList()
+        if (active.isEmpty()) return false to emptyList()
+
+        return if (looksLikeResolution(email, thread)) {
+            val closed = active.map { userTaskService.completeTask(it.id, resolutionSourceUri).id.toHexString() }
+            true to closed
+        } else {
+            false to emptyList()
         }
     }
 

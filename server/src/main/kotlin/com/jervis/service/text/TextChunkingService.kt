@@ -1,6 +1,6 @@
 package com.jervis.service.text
 
-import com.jervis.configuration.TextChunkingProperties
+import com.jervis.configuration.properties.TextChunkingProperties
 import dev.langchain4j.data.document.Document
 import dev.langchain4j.data.document.DocumentSplitter
 import dev.langchain4j.data.document.splitter.DocumentSplitters

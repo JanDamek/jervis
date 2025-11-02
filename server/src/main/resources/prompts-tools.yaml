@@ -443,6 +443,30 @@ tools:
       modelType: GENERIC_TEXT_MODEL
       creativityLevel: LOW
 
+  GIT_COMMIT_DIFF_TOOL:
+    description: "Get full Git diff for specific commit. Returns added/modified/deleted files with actual code changes. Use to see what changed in a commit. Parameters: commitHash (required). Returns: changedFiles, additions, deletions, diffContent."
+    systemPrompt:
+    userPrompt:
+    modelParams:
+      modelType: GENERIC_TEXT_MODEL
+      creativityLevel: LOW
+
+  GIT_FILE_CURRENT_CONTENT_TOOL:
+    description: "Get current content of file from Git repository. Use when you need to read actual source code. WARNING: Large files may be truncated. Parameters: filePath (required), maxLines (optional, default 1000). Returns: content, lineCount, truncated boolean."
+    systemPrompt:
+    userPrompt:
+    modelParams:
+      modelType: GENERIC_TEXT_MODEL
+      creativityLevel: LOW
+
+  GIT_COMMIT_FILES_LIST_TOOL:
+    description: "Get list of files changed in commit with change types. Faster than git_commit_diff if you only need file list. Parameters: commitHash (required). Returns: files with path, changeType (ADDED/MODIFIED/DELETED), additions, deletions."
+    systemPrompt:
+    userPrompt:
+    modelParams:
+      modelType: GENERIC_TEXT_MODEL
+      creativityLevel: LOW
+
   COMMUNICATION_EMAIL_TOOL:
     description: "Email sending and notifications. Use for: notify teams/stakeholders, send reports or alerts. Use for updates, alerts, status reports, and stakeholder communication. Parameters: to (required), cc/bcc (optional), subject, body, priority."
     systemPrompt: |
@@ -569,7 +593,7 @@ tools:
       creativityLevel: LOW
 
   TASK_CREATE_USER_TASK_TOOL:
-    description: "Create a task for the user to handle (NOT a background task). Use when user needs to take action: reply to email, review document, make decision, attend meeting, etc. Required JSON format: { \"title\": \"Task title\", \"description\": \"Optional details\", \"priority\": \"LOW|MEDIUM|HIGH|URGENT\", \"dueDate\": \"ISO-8601 datetime\", \"sourceType\": \"EMAIL|MEETING|AGENT_SUGGESTION|MANUAL\", \"sourceUri\": \"email://accountId/messageId or other reference\", \"metadata\": { \"key\": \"value\" } }"
+    description: "Create a task for the user to handle (NOT a background task). Use when user needs to take action: reply to email, review document, make decision, attend meeting, etc. Required JSON format: { \"title\": \"Task title\", \"description\": \"Optional details\", \"priority\": \"LOW|MEDIUM|HIGH|URGENT\", \"dueDate\": \"ISO-8601 datetime\", \"sourceType\": \"EMAIL|MEETING|AGENT_SUGGESTION|MANUAL\", \"sourceUri\": \"email://accountId/messageId or other reference\", \"metadata\": { \"key\": \"value\" } }. For email-based tasks, metadata MUST include \"threadId\": \"<hex>\" so the system can auto-resolve when the conversation is answered."
     systemPrompt:
     userPrompt:
     modelParams:

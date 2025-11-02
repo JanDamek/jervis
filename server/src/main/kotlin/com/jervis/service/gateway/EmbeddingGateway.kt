@@ -1,8 +1,8 @@
 package com.jervis.service.gateway
 
-import com.jervis.configuration.ModelsProperties
-import com.jervis.domain.model.ModelProvider
-import com.jervis.domain.model.ModelType
+import com.jervis.configuration.properties.ModelsProperties
+import com.jervis.domain.model.ModelProviderEnum
+import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.service.gateway.clients.EmbeddingProviderClient
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -19,7 +19,7 @@ class EmbeddingGateway(
     }
 
     suspend fun callEmbedding(
-        type: ModelType,
+        type: ModelTypeEnum,
         text: String,
     ): List<Float> {
         val candidates = modelsProperties.models[type].orEmpty()
@@ -46,13 +46,13 @@ class EmbeddingGateway(
     }
 
     private suspend fun doCallEmbedding(
-        provider: ModelProvider,
+        provider: ModelProviderEnum,
         model: String,
         text: String,
     ): List<Float> = executeProviderCall(provider, model, text)
 
     private suspend fun executeProviderCall(
-        provider: ModelProvider,
+        provider: ModelProviderEnum,
         model: String,
         text: String,
     ): List<Float> =

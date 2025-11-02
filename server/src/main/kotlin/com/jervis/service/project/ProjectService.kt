@@ -66,7 +66,6 @@ class ProjectService(
                 val newProject = project.copy(createdAt = Instant.now(), updatedAt = Instant.now())
                 projectRepository.save(newProject)
             } else {
-                // TODO: Project overrides removed - simplified update
                 val updatedProject =
                     project.copy(
                         createdAt = existing.createdAt,

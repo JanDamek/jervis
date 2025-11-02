@@ -56,14 +56,14 @@ class SchedulerWindow(
     private val projectService: IProjectService,
     private val agentOrchestrator: IAgentOrchestratorService,
     private val notificationsClient: com.jervis.client.NotificationsWebSocketClient,
-) : JFrame("Plánovač úkolů") {
+) : JFrame("Task Scheduler") {
     private val taskListModel = DefaultListModel<Any>()
     private val taskList = JList(taskListModel)
     private val taskDescriptionArea = JTextArea(4, 40)
     private val scheduleTimeField = JTextField(20)
-    private val repeatableCheckBox = JCheckBox("Opakující se úkol")
+    private val repeatableCheckBox = JCheckBox("Repeatable task")
     private val cronExpressionField = JTextField(20)
-    private val statusLabel = JLabel("Připraveno k vytvoření úkolu")
+    private val statusLabel = JLabel("Ready to create task")
 
     // Client and project selection
     private val clientComboBox = JComboBox<ClientComboItem>()

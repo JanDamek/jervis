@@ -34,6 +34,7 @@ class AgentOrchestratorService(
     private val projectMongoRepository: ProjectMongoRepository,
     private val conversationIndexingService: com.jervis.service.indexing.ConversationIndexingService,
     private val backgroundTaskGoalsService: BackgroundTaskGoalsService,
+    private val fileDescriptionProcessor: com.jervis.service.listener.git.processor.FileDescriptionProcessor,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -98,7 +99,6 @@ class AgentOrchestratorService(
                     projectDocument = projectDocument,
                     quick = quick,
                     backgroundMode = background,
-                    originPendingTaskId = null,
                 )
 
             findingInRAG(plan)
@@ -214,14 +214,38 @@ class AgentOrchestratorService(
         logger.info { "AGENT_BACKGROUND_GOALS: Task ${task.id} has ${goals.size} goal(s)" }
 
         return try {
-            handleWithCustomGoals(
-                text = taskPrompt,
-                clientId = clientId,
-                projectId = projectId,
-                quick = false,
-                background = true,
-                customGoals = goals,
-            )
+            val response =
+                handleWithCustomGoals(
+                    text = taskPrompt,
+                    clientId = clientId,
+                    projectId = projectId,
+                    quick = false,
+                    background = true,
+                    customGoals = goals,
+                )
+
+            // Post-processing for specific task types
+            when (task.taskType) {
+                com.jervis.domain.task.PendingTaskTypeEnum.FILE_STRUCTURE_ANALYSIS -> {
+                    // Extract and store file description in RAG
+                    try {
+                        val success = fileDescriptionProcessor.processAnalysisResult(task, response.message)
+                        if (success) {
+                            logger.info { "FILE_STRUCTURE_ANALYSIS: Successfully stored description for ${task.context["filePath"]}" }
+                        } else {
+                            logger.warn { "FILE_STRUCTURE_ANALYSIS: Failed to store description for ${task.context["filePath"]}" }
+                        }
+                    } catch (e: Exception) {
+                        logger.error(e) { "FILE_STRUCTURE_ANALYSIS: Error storing description: ${e.message}" }
+                    }
+                }
+
+                else -> {
+                    // No post-processing for other task types
+                }
+            }
+
+            response
         } catch (e: Exception) {
             logger.error(e) { "AGENT_BACKGROUND_ERROR: Failed to process task ${task.id}: ${e.message}" }
             throw e
@@ -239,6 +263,24 @@ class AgentOrchestratorService(
                 appendLine("CONTENT:")
                 appendLine(task.content)
                 appendLine()
+            }
+
+            // Append qualification notes if present
+            task.context["qualificationNotes"]?.let { notes ->
+                if (notes.isNotBlank()) {
+                    appendLine("QUALIFICATION_NOTES:")
+                    appendLine(notes)
+                    appendLine()
+                }
+            }
+
+            // Append dynamic goal if present (per-task specialization)
+            task.context["dynamicGoal"]?.let { goal ->
+                if (goal.isNotBlank()) {
+                    appendLine("DYNAMIC_GOAL:")
+                    appendLine(goal)
+                    appendLine()
+                }
             }
         }
 

@@ -1,7 +1,7 @@
 package com.jervis.service.gateway.selection
 
-import com.jervis.configuration.ModelsProperties
-import com.jervis.domain.model.ModelType
+import com.jervis.configuration.properties.ModelsProperties
+import com.jervis.domain.model.ModelTypeEnum
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.emptyFlow
@@ -20,11 +20,11 @@ class ModelCandidateSelector(
      * Always returns at least one model (the one with the highest token capacity) to ensure processing can proceed.
      */
     fun selectCandidates(
-        modelType: ModelType,
+        modelTypeEnum: ModelTypeEnum,
         quickModeOnly: Boolean,
         estimatedTokens: Int,
     ): Flow<ModelsProperties.ModelDetail> {
-        val baseModels = modelsProperties.models[modelType] ?: emptyList()
+        val baseModels = modelsProperties.models[modelTypeEnum] ?: emptyList()
 
         if (baseModels.isEmpty()) {
             return emptyFlow()

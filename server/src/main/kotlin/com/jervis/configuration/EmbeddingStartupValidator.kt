@@ -1,7 +1,8 @@
 package com.jervis.configuration
 
-import com.jervis.domain.model.ModelProvider
-import com.jervis.domain.model.ModelType
+import com.jervis.configuration.properties.ModelsProperties
+import com.jervis.domain.model.ModelProviderEnum
+import com.jervis.domain.model.ModelTypeEnum
 import jakarta.annotation.PostConstruct
 import org.springframework.stereotype.Component
 
@@ -15,8 +16,8 @@ class EmbeddingStartupValidator(
 ) {
     @PostConstruct
     fun validate() {
-        listOf(ModelType.EMBEDDING_TEXT, ModelType.EMBEDDING_CODE).forEach { type ->
-            val invalid = modelsProperties.models[type].orEmpty().any { it.provider == ModelProvider.ANTHROPIC }
+        listOf(ModelTypeEnum.EMBEDDING_TEXT, ModelTypeEnum.EMBEDDING_CODE).forEach { type ->
+            val invalid = modelsProperties.models[type].orEmpty().any { it.provider == ModelProviderEnum.ANTHROPIC }
             check(
                 !invalid,
             ) { "Anthropic provider is not supported for embeddings. Please remove ANTHROPIC from models.$type in application.yml" }

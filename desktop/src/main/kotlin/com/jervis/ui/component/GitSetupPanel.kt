@@ -207,11 +207,12 @@ class GitSetupPanel(
             gbc.fill =
                 GridBagConstraints.NONE
             gbc.weightx = 0.0
-            urlLabel = JLabel("URL:*")
+            urlLabel = JLabel("Mono-Repo URL:")
             add(urlLabel, gbc)
             gbc.gridx = 1
             gbc.fill = GridBagConstraints.HORIZONTAL
             gbc.weightx = 1.0
+            repoUrlField.toolTipText = "Optional: Only for clients using a single mono-repository for multiple projects"
             add(repoUrlField, gbc)
             row++
 
@@ -497,10 +498,9 @@ class GitSetupPanel(
         if (provider == GitProviderEnum.NONE) {
             return true
         }
-        if (repoUrlField.text.isBlank()) {
-            JOptionPane.showMessageDialog(this, "Repository URL is required", "Error", JOptionPane.ERROR_MESSAGE)
-            return false
-        }
+
+        // Mono-repo URL is optional now - if not provided, projects must have their own Git URLs
+
         if (gitUserNameField.text.isBlank() || gitUserEmailField.text.isBlank()) {
             JOptionPane.showMessageDialog(
                 this,

@@ -40,9 +40,15 @@ server:
     connection-timeout: 600s # 10 minutes for long-running agent operations
     idle-timeout: 600s
 
-tika:
-  ocr:
-    timeout-ms: 120000
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health"
+  endpoint:
+    health:
+      probes:
+        enabled: true
 
 models: # embedding dimensions configured per model
   EMBEDDING_TEXT:
@@ -70,6 +76,10 @@ models: # embedding dimensions configured per model
       model: qwen3:30b
       context-length: 32768
       num-predict: 4096
+    - provider: GOOGLE
+      model: gemini-2.5-pro-latest
+      context-length: 1048576
+      num-predict: 65536
 
   CODER:
     - provider: OLLAMA
@@ -87,18 +97,30 @@ models: # embedding dimensions configured per model
       model: qwen3:30b
       context-length: 32768
       num-predict: 8192
+    - provider: GOOGLE
+      model: gemini-2.5-pro-latest
+      context-length: 1048576
+      num-predict: 65536
 
   JOERN:
     - provider: OLLAMA
       model: qwen3:30b
       context-length: 32768
       num-predict: 4096
+    - provider: GOOGLE
+      model: gemini-2.5-pro-latest
+      context-length: 1048576
+      num-predict: 65536
 
   GENERIC_TEXT_MODEL:
     - provider: OLLAMA
       model: qwen3:30b
       context-length: 32768
       num-predict: 4096
+    - provider: GOOGLE
+      model: gemini-2.5-pro-latest
+      context-length: 1048576
+      num-predict: 65536
   #    - provider: OPENAI
   #      model: gpt-4o-mini
   #      context-length: 8192
@@ -121,6 +143,10 @@ models: # embedding dimensions configured per model
       context-length: 32768
       num-predict: 8192
       quick: false
+    - provider: GOOGLE
+      model: gemini-2.5-pro-latest
+      context-length: 1048576
+      num-predict: 65536
     - provider: OPENAI
       model: gpt-4o
       context-length: 16384
@@ -159,8 +185,13 @@ models: # embedding dimensions configured per model
 endpoints:
   openai:
     api-key: ${OPENAI_API_KEY}
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1/}
   anthropic:
     api-key: ${ANTHROPIC_API_KEY}
+    base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com/}
+  google:
+    api-key: ${GOOGLE_API_KEY}
+    base-url: ${GOOGLE_BASE_URL:https://generativelanguage.googleapis.com/}
   ollama:
     primary:
       base-url: ${OLLAMA_BASE_URL:http://192.168.100.117:11434/}
@@ -170,34 +201,24 @@ endpoints:
     base-url: ${LMSTUDIO_BASE_URL:http://192.168.101.249:1234/}
   searxng:
     base-url: ${SEARXNG_BASE_URL:http://192.168.100.117:30053/}
-
-qualifier:
-  # Increased from 4 to 8 - small model can handle more parallel requests
-  # qwen2.5:3b on CPU can easily process 8+ parallel requests
-  concurrency: 8
-  timeout: 10000 # Increased from 5s to 10s for safety
-
-# Service-specific timeout configurations
-timeouts:
   joern:
-    process-timeout-minutes: 30
-    version-timeout-minutes: 30
-    parse-timeout-minutes: 30
-    script-timeout-minutes: 30
-    scan-timeout-minutes: 30
-    help-command-timeout-minutes: 30
+    base-url: ${JOERN_BASE_URL:http://192.168.100.117:8082/}
+  tika:
+    base-url: ${TIKA_BASE_URL:http://localhost:8081/}
+  whisper:
+    base-url: ${WHISPER_BASE_URL:http://localhost:8083/}
 
-  webclient:
-    connect-timeout-seconds: 60
-    pending-acquire-timeout-minutes: 30
-    response-timeout-seconds: 120
-
-  qdrant:
-    operation-timeout-minutes: 30
-
-  mcp:
-    joern-tool-timeout-seconds: 1800
-    terminal-tool-timeout-seconds: 1800
+# HTTP client connections and timeouts (used by WebClient)
+connections:
+  connection-pool:
+    max-connections: 500
+    max-idle-time: 30m
+    max-life-time: 60m
+    pending-acquire-timeout: 30m
+    evict-in-background: 60m
+    pending-acquire-max-count: 1000
+  timeouts:
+    connect-timeout-millis: 60000
 
 # Retry configuration for external HTTP calls
 retry:
@@ -206,16 +227,6 @@ retry:
     initial-backoff-millis: 1000
     max-backoff-millis: 30000
     backoff-multiplier: 2.0
-
-# Service-specific connection pool configurations
-connection-pools:
-  webclient:
-    max-connections: 500
-    pending-acquire-max-count: 1000
-    evict-in-background-minutes: 60
-    pending-acquire-timeout-minutes: 30
-    max-life-time-minutes: 60
-    max-idle-time-minutes: 30
 
 # Workspace configuration - central root for all server-managed files
 data:
@@ -234,12 +245,6 @@ audio:
       - opus
       - webm
 
-  whisper:
-    enabled: true
-    api-url: http://192.168.100.117:9000/
-    timeout-seconds: 300
-    max-retries: 3
-
 # Text chunking configuration
 text:
   chunking:
@@ -247,24 +252,10 @@ text:
     overlap-percentage: 10
     chars-per-token: 4.0
 
-# Email configuration
-email:
-  indexing:
-    link-extraction:
-      enabled: true
-    attachment-processing:
-      enabled: true
-
 # Link indexing configuration
 link:
   indexing:
-    # ISO-8601 duration or simplified forms (e.g., 30d, 12h)
-    reindex-interval: 30d
-  safety:
-    # Enable LLM-based link qualification for uncertain links
-    enable-llm-qualification: true
-    # Conservative mode: block uncertain links (if false, allows uncertain links)
-    block-uncertain: true
+    skip-if-indexed-within: 30d
 
 # Git synchronization configuration
 git:

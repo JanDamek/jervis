@@ -1,6 +1,5 @@
 package com.jervis.service.indexing
 
-import com.jervis.entity.ProjectDocument
 import com.jervis.repository.mongo.ClientMongoRepository
 import com.jervis.repository.mongo.ProjectMongoRepository
 import kotlinx.coroutines.Dispatchers
@@ -34,7 +33,6 @@ class AudioUploadService(
             projectRepository.findById(projectId)
                 ?: error("Project not found: $projectId")
 
-            // TODO: Audio monitoring was in project.overrides which is removed
             error("Audio monitoring configuration removed - needs redesign")
         }
 
@@ -42,7 +40,6 @@ class AudioUploadService(
         clientId: ObjectId,
         filePart: FilePart,
     ): UploadResult {
-        // TODO: Audio monitoring needs redesign
         error("Audio monitoring configuration removed - needs redesign")
     }
 
@@ -55,7 +52,6 @@ class AudioUploadService(
             projectRepository.findById(projectId)
                 ?: error("Project not found: $projectId")
 
-            // TODO: Audio monitoring configuration removed - needs redesign
             error("Audio monitoring configuration removed - needs redesign")
         }
 }

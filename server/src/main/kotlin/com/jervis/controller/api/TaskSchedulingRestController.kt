@@ -14,6 +14,8 @@ import java.time.Instant
 @RestController
 class TaskSchedulingRestController(
     private val taskSchedulingService: TaskSchedulingService,
+    private val taskManagementService: com.jervis.service.scheduling.TaskManagementService,
+    private val scheduledTaskRepository: com.jervis.repository.mongo.ScheduledTaskMongoRepository,
 ) : ITaskSchedulingService {
     override suspend fun scheduleTask(
         @RequestParam projectId: String,
@@ -56,7 +58,22 @@ class TaskSchedulingRestController(
     override suspend fun retryTask(
         @PathVariable taskId: String,
     ): ScheduledTaskDto {
-        TODO("Not yet implemented")
+        val task =
+            taskSchedulingService.findById(ObjectId(taskId))
+                ?: error("Task not found: $taskId")
+
+        return taskSchedulingService
+            .scheduleTask(
+                projectId = task.projectId,
+                taskInstruction = task.taskInstruction,
+                taskName = task.taskName,
+                scheduledAt = Instant.now(),
+                taskParameters = task.taskParameters,
+                priority = task.priority,
+                maxRetries = task.maxRetries,
+                cronExpression = task.cronExpression,
+                createdBy = task.createdBy,
+            ).toDto()
     }
 
     override suspend fun updateTaskStatus(
@@ -64,12 +81,16 @@ class TaskSchedulingRestController(
         @RequestParam status: String,
         @RequestParam(required = false) errorMessage: String?,
     ): ScheduledTaskDto {
-        TODO("Not yet implemented")
+        val task =
+            taskSchedulingService.findById(ObjectId(taskId))
+                ?: error("Task not found: $taskId")
+
+        val newStatus = ScheduledTaskStatusEnum.valueOf(status.uppercase())
+
+        return taskManagementService.updateTaskStatus(task, newStatus, errorMessage).toDto()
     }
 
     override fun getTasksByStatus(
         @RequestParam taskStatus: ScheduledTaskStatusEnum,
-    ): List<ScheduledTaskDto> {
-        TODO("Not yet implemented")
-    }
+    ): List<ScheduledTaskDto> = throw UnsupportedOperationException("Use async endpoint instead")
 }

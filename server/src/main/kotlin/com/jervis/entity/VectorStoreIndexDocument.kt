@@ -15,12 +15,21 @@ import java.time.Instant
  * - Reindexing only changed parts (delete old, index new)
  * - Cleanup of stale data
  * - Audit trail of what was indexed when
+ *
+ * RAG Strategy for mono-repos:
+ * - Mono-repo commits: clientId + monoRepoId (projectId = null)
+ * - Standalone project commits: clientId + projectId (monoRepoId = null)
+ * This enables cross-project code discovery within mono-repos.
  */
 @Document(collection = "vector_store_index")
 @CompoundIndexes(
     CompoundIndex(
         name = "project_branch_source_idx",
         def = "{'projectId': 1, 'branch': 1, 'sourceType': 1, 'isActive': 1}",
+    ),
+    CompoundIndex(
+        name = "client_monorepo_branch_source_idx",
+        def = "{'clientId': 1, 'monoRepoId': 1, 'branch': 1, 'sourceType': 1, 'isActive': 1}",
     ),
     CompoundIndex(
         name = "source_idx",
@@ -34,13 +43,18 @@ import java.time.Instant
         name = "commit_idx",
         def = "{'projectId': 1, 'commitHash': 1, 'isActive': 1}",
     ),
+    CompoundIndex(
+        name = "monorepo_commit_idx",
+        def = "{'clientId': 1, 'monoRepoId': 1, 'commitHash': 1, 'isActive': 1}",
+    ),
 )
 data class VectorStoreIndexDocument(
     @Id
     val id: ObjectId = ObjectId(),
-    // Project context
-    val projectId: ObjectId,
+    // Context - either project-specific OR client mono-repo
     val clientId: ObjectId,
+    val projectId: ObjectId? = null, // null for mono-repo commits
+    val monoRepoId: String? = null, // null for standalone project commits
     val branch: String, // CRITICAL - enables branch switching
     // Source tracking
     val sourceType: RagSourceType, // GIT_HISTORY, CODE_CHANGE, EMAIL, etc.

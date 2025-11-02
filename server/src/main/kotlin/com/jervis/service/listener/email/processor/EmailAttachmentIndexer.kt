@@ -1,11 +1,12 @@
 package com.jervis.service.listener.email.processor
 
-import com.jervis.domain.model.ModelType
+import com.jervis.common.client.ITikaClient
+import com.jervis.common.dto.TikaProcessRequest
+import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.domain.rag.EmbeddingType
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
 import com.jervis.repository.vector.VectorStorageRepository
-import com.jervis.service.document.TikaDocumentProcessor
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.listener.email.imap.ImapAttachment
 import com.jervis.service.listener.email.imap.ImapMessage
@@ -15,7 +16,7 @@ import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
-import java.io.ByteArrayInputStream
+import java.util.Base64
 
 private val logger = KotlinLogging.logger {}
 
@@ -23,7 +24,7 @@ private val logger = KotlinLogging.logger {}
 class EmailAttachmentIndexer(
     private val embeddingGateway: EmbeddingGateway,
     private val vectorStorage: VectorStorageRepository,
-    private val tikaDocumentProcessor: TikaDocumentProcessor,
+    private val tikaClient: ITikaClient,
     private val textChunkingService: TextChunkingService,
 ) {
     suspend fun indexAttachments(
@@ -59,13 +60,15 @@ class EmailAttachmentIndexer(
         projectId: ObjectId?,
     ) {
         val processingResult =
-            tikaDocumentProcessor.processDocumentStream(
-                inputStream = ByteArrayInputStream(attachment.data),
-                fileName = attachment.fileName,
-                sourceLocation =
-                    TikaDocumentProcessor.SourceLocation(
-                        documentPath = "email://${accountId.toHexString()}/${message.messageId}/attachment/$attachmentIndex",
-                    ),
+            tikaClient.process(
+                TikaProcessRequest(
+                    source =
+                        TikaProcessRequest.Source.FileBytes(
+                            fileName = attachment.fileName,
+                            dataBase64 = Base64.getEncoder().encodeToString(attachment.data),
+                        ),
+                    includeMetadata = true,
+                ),
             )
 
         if (!processingResult.success || processingResult.plainText.isBlank()) {
@@ -77,7 +80,7 @@ class EmailAttachmentIndexer(
         logger.debug { "Split attachment ${attachment.fileName} into ${chunks.size} chunks" }
 
         chunks.forEachIndexed { chunkIndex, chunk ->
-            val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, chunk.text())
+            val embedding = embeddingGateway.callEmbedding(ModelTypeEnum.EMBEDDING_TEXT, chunk.text())
 
             vectorStorage.store(
                 EmbeddingType.EMBEDDING_TEXT,

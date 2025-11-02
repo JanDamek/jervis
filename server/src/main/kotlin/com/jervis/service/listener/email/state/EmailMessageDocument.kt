@@ -7,12 +7,6 @@ import org.springframework.data.mongodb.core.index.CompoundIndexes
 import org.springframework.data.mongodb.core.mapping.Document
 import java.time.Instant
 
-enum class EmailMessageState {
-    NEW,
-    INDEXED,
-    FAILED, // Message couldn't be fetched from IMAP (not found, invalid ID, etc.)
-}
-
 @Document(collection = "email_messages")
 @CompoundIndexes(
     CompoundIndex(name = "account_messageId_idx", def = "{'accountId':1,'messageId':1}", unique = true),

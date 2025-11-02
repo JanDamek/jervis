@@ -16,8 +16,9 @@ java-diff-utils = "4.12"
 guava = "33.4.1-jre"
 flatlaf = "3.6.1"
 springdoc = "2.8.9"
-joern = "2.0.0"
+joern = "4.0.439"
 langchain4j = "1.7.1"
+google-cloud-bom = "26.50.0"
 
 [libraries]
 # Kotlin
@@ -83,6 +84,13 @@ guava = { module = "com.google.guava:guava", version.ref = "guava" }
 jakarta-annotation-api = { module = "jakarta.annotation:jakarta.annotation-api" }
 flatlaf = { module = "com.formdev:flatlaf", version.ref = "flatlaf" }
 langchain4j = { module = "dev.langchain4j:langchain4j", version.ref = "langchain4j" }
+
+# Google Cloud APIs
+google-cloud-bom = { module = "com.google.cloud:libraries-bom", version.ref = "google-cloud-bom" }
+google-cloud-texttospeech = { module = "com.google.cloud:google-cloud-texttospeech" }
+google-cloud-speech = { module = "com.google.cloud:google-cloud-speech" }
+google-cloud-translate = { module = "com.google.cloud:google-cloud-translate" }
+google-cloud-vision = { module = "com.google.cloud:google-cloud-vision" }
 
 # Testing
 junit-bom = { module = "org.junit:junit-bom" }

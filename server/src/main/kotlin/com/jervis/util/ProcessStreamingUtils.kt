@@ -30,7 +30,7 @@ object ProcessStreamingUtils {
     data class ProcessConfig(
         val command: String,
         val workingDirectory: File? = null,
-        val timeoutSeconds: Long = 300,
+        val timeoutSeconds: Long = 30000,
         val environment: Map<String, String> = emptyMap(),
     )
 

@@ -22,6 +22,11 @@ enum class PromptTypeEnum(
     PROJECT_VERSION_CONTROL_TOOL(listOf("project_version_control", "git_control", "git")),
     PROJECT_GIT_SYNC_TOOL(listOf("project_git_sync", "git_sync", "sync_repo")),
 
+    // GIT TOOLS (explicit access to Git data)
+    GIT_COMMIT_DIFF_TOOL(listOf("git_commit_diff", "git_diff", "commit_diff")),
+    GIT_FILE_CURRENT_CONTENT_TOOL(listOf("git_file_current_content", "git_file_content", "file_content")),
+    GIT_COMMIT_FILES_LIST_TOOL(listOf("git_commit_files_list", "git_files", "commit_files")),
+
     // SYSTEM OPERATIONS
     SYSTEM_EXECUTE_COMMAND_TOOL(listOf("system_execute_command", "exec_command", "system.exec")),
     SYSTEM_SCHEDULE_TASK_TOOL(listOf("system_schedule_task", "schedule_task", "task.schedule")),

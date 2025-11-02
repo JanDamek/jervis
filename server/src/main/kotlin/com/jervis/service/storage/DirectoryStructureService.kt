@@ -1,6 +1,6 @@
 package com.jervis.service.storage
 
-import com.jervis.configuration.DataRootProperties
+import com.jervis.configuration.properties.DataRootProperties
 import com.jervis.domain.storage.DirectoryStructure
 import com.jervis.domain.storage.ProjectSubdirectory
 import com.jervis.entity.ClientDocument
@@ -24,6 +24,8 @@ import kotlin.io.path.exists
  * Workspace structure: {workspaceRoot}/
  *   - clients/{clientId}/
  *     - audio/
+ *     - mono-repos/{monoRepoId}/
+ *       - git/
  *     - projects/{projectId}/
  *       - git/
  *       - uploads/
@@ -189,6 +191,27 @@ class DirectoryStructureService(
 
     fun clientGitDir(clientId: ObjectId): Path =
         clientDir(clientId).resolve("git").also {
+            createDirectoryIfNotExists(it)
+        }
+
+    fun clientMonoReposRoot(clientId: ObjectId): Path =
+        clientDir(clientId).resolve("mono-repos").also {
+            createDirectoryIfNotExists(it)
+        }
+
+    fun clientMonoRepoDir(
+        clientId: ObjectId,
+        monoRepoId: String,
+    ): Path =
+        clientMonoReposRoot(clientId).resolve(monoRepoId).also {
+            createDirectoryIfNotExists(it)
+        }
+
+    fun clientMonoRepoGitDir(
+        clientId: ObjectId,
+        monoRepoId: String,
+    ): Path =
+        clientMonoRepoDir(clientId, monoRepoId).resolve("git").also {
             createDirectoryIfNotExists(it)
         }
 

@@ -11,12 +11,12 @@ import org.springframework.stereotype.Component
  * Combines all filtered chunks from multiple queries into a comprehensive response.
  */
 @Component
-class LlmContentSynthesisStrategy : ContentSynthesisStrategy {
+class LlmContentSynthesisStrategy {
     companion object {
         private val logger = KotlinLogging.logger {}
     }
 
-    override suspend fun synthesize(
+    suspend fun synthesize(
         queryResults: List<RagService.QueryResult>,
         originalQuery: String,
         plan: Plan,

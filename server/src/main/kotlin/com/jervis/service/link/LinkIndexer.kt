@@ -1,7 +1,7 @@
 package com.jervis.service.link
 
-import com.jervis.configuration.LinkIndexingProperties
-import com.jervis.domain.model.ModelType
+import com.jervis.configuration.properties.LinkIndexingProperties
+import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.domain.rag.EmbeddingType
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
@@ -61,6 +61,15 @@ class LinkIndexer(
                 val link = linkContentService.fetchPlainText(url)
                 if (!link.success || link.plainText.isBlank()) {
                     logger.debug { "No text to index for $url (success=${link.success})" }
+                    // Mark as indexed even if empty, so we don't retry repeatedly
+                    val updated =
+                        IndexedLinkDocument(
+                            id = existing?.id ?: ObjectId.get(),
+                            url = url,
+                            lastIndexedAt = Instant.now(),
+                            contentHash = null,
+                        )
+                    indexedLinkRepo.save(updated)
                     return IndexResult(processedChunks = 0, skipped = true)
                 }
                 link.plainText
@@ -70,7 +79,7 @@ class LinkIndexer(
         logger.debug { "Split link content from $url into ${chunks.size} chunks" }
 
         chunks.forEachIndexed { chunkIndex, chunk ->
-            val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, chunk.text())
+            val embedding = embeddingGateway.callEmbedding(ModelTypeEnum.EMBEDDING_TEXT, chunk.text())
 
             vectorStorage.store(
                 EmbeddingType.EMBEDDING_TEXT,

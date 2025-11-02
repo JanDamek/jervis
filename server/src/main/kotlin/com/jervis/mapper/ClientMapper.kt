@@ -1,7 +1,9 @@
 package com.jervis.mapper
 
+import com.jervis.domain.git.MonoRepoConfig
 import com.jervis.dto.ClientDto
 import com.jervis.dto.GitCredentialsDto
+import com.jervis.dto.MonoRepoConfigDto
 import com.jervis.entity.ClientDocument
 import org.bson.types.ObjectId
 
@@ -12,7 +14,8 @@ fun ClientDocument.toDto(gitCredentials: GitCredentialsDto? = null): ClientDto =
         gitProvider = this.gitProvider,
         gitAuthType = this.gitAuthType,
         monoRepoUrl = this.monoRepoUrl,
-        monoRepoCredentialsRef = null, // Deprecated - credentials now embedded in ClientDocument
+        monoRepos = this.monoRepos.map { it.toDto() },
+        monoRepoCredentialsRef = null,
         defaultBranch = this.defaultBranch,
         gitConfig = this.gitConfig?.toDto(),
         gitCredentials = gitCredentials,
@@ -24,6 +27,15 @@ fun ClientDocument.toDto(gitCredentials: GitCredentialsDto? = null): ClientDto =
         disabledProjects = this.disabledProjects.map { it.toHexString() },
     )
 
+fun MonoRepoConfig.toDto(): MonoRepoConfigDto =
+    MonoRepoConfigDto(
+        id = this.id,
+        name = this.name,
+        repositoryUrl = this.repositoryUrl,
+        defaultBranch = this.defaultBranch,
+        hasCredentialsOverride = this.credentialsOverride != null,
+    )
+
 fun ClientDto.toDocument(): ClientDocument =
     ClientDocument(
         id = ObjectId(this.id),
@@ -31,6 +43,7 @@ fun ClientDto.toDocument(): ClientDocument =
         gitProvider = this.gitProvider,
         gitAuthType = this.gitAuthType,
         monoRepoUrl = this.monoRepoUrl,
+        monoRepos = this.monoRepos.map { it.toDomain() },
         defaultBranch = this.defaultBranch,
         gitConfig = this.gitConfig?.toDomain(),
         shortDescription = this.shortDescription,
@@ -39,4 +52,13 @@ fun ClientDto.toDocument(): ClientDocument =
         dependsOnProjects = this.dependsOnProjects.map { ObjectId(it) },
         isDisabled = this.isDisabled,
         disabledProjects = this.disabledProjects.map { ObjectId(it) },
+    )
+
+fun MonoRepoConfigDto.toDomain(): MonoRepoConfig =
+    MonoRepoConfig(
+        id = this.id,
+        name = this.name,
+        repositoryUrl = this.repositoryUrl,
+        defaultBranch = this.defaultBranch,
+        credentialsOverride = null,
     )

@@ -53,14 +53,25 @@ class ConversationThreadService(
     ): ConversationThread {
         val threadId = extractThreadId(emailHeaders)
 
+        // 1) Exact lookup by stored threadId
         findByThreadId(threadId)?.let { existing ->
-            return addMessageToThread(
-                thread = existing,
-                messageId = emailHeaders.messageId,
-                senderProfileId = senderProfileId,
-            )
+            return addMessageToThread(existing, emailHeaders, senderProfileId)
         }
 
+        // 2) Heuristic merge: normalized subject + same client/project + recency
+        val candidate =
+            findRecentThreadBySubject(
+                subject = emailHeaders.subject,
+                clientId = clientId,
+                projectId = projectId,
+            )
+
+        if (candidate != null) {
+            logger.info { "Merging email ${emailHeaders.messageId} into existing thread ${candidate.threadId} by subject heuristic" }
+            return addMessageToThread(candidate, emailHeaders, senderProfileId)
+        }
+
+        // 3) Create a brand-new thread
         logger.info { "Creating new conversation thread: $threadId" }
 
         val newThread =
@@ -231,4 +242,77 @@ class ConversationThreadService(
             email.subject.contains("?") ||
             email.subject.contains("failed", ignoreCase = true) ||
             email.subject.contains("error", ignoreCase = true)
+
+    // Overload: add full email (adds channel mapping and updates requiresResponse heuristically)
+    suspend fun addMessageToThread(
+        thread: ConversationThread,
+        emailHeaders: ImapMessage,
+        senderProfileId: ObjectId,
+    ): ConversationThread {
+        if (thread.messageIds.contains(emailHeaders.messageId)) return thread
+
+        val updatedSenderIds =
+            if (thread.senderProfileIds.contains(senderProfileId)) {
+                thread.senderProfileIds
+            } else {
+                thread.senderProfileIds + senderProfileId
+            }
+
+        val newMappings =
+            thread.channelMappings +
+                com.jervis.domain.sender.ChannelMapping(
+                    channel = com.jervis.entity.MessageChannel.EMAIL,
+                    externalId = emailHeaders.messageId,
+                    externalThreadId = null,
+                    addedAt = emailHeaders.receivedAt,
+                )
+
+        val requiresResponse = thread.requiresResponse || detectRequiresResponse(emailHeaders)
+
+        val updated =
+            thread.copy(
+                messageIds = thread.messageIds + emailHeaders.messageId,
+                messageCount = thread.messageCount + 1,
+                lastMessageAt = Instant.now(),
+                lastMessageFrom = emailHeaders.from,
+                senderProfileIds = updatedSenderIds,
+                channelMappings = newMappings,
+                requiresResponse = requiresResponse,
+            )
+
+        val entity = updated.toEntity()
+        val saved = repository.save(entity)
+        return saved.toDomain()
+    }
+
+    suspend fun setRequiresResponse(
+        threadId: ObjectId,
+        requiresResponse: Boolean,
+    ): ConversationThread? {
+        val thread = findById(threadId) ?: return null
+        val updated = thread.copy(requiresResponse = requiresResponse)
+        val entity = updated.toEntity()
+        val saved = repository.save(entity)
+        return saved.toDomain()
+    }
+
+    private suspend fun findRecentThreadBySubject(
+        subject: String,
+        clientId: ObjectId,
+        projectId: ObjectId?,
+    ): ConversationThread? {
+        val normalized = normalizeSubject(subject)
+        val candidates = findByClientAndProject(clientId, projectId).toList()
+        val recentWindow = java.time.Duration.ofDays(14)
+        val now = Instant.now()
+
+        return candidates
+            .filter { normalizeSubject(it.subject).equals(normalized, ignoreCase = true) }
+            .filter { it.status != ThreadStatus.ARCHIVED }
+            .filter {
+                java.time.Duration
+                    .between(it.lastMessageAt, now)
+                    .abs() <= recentWindow
+            }.maxByOrNull { it.lastMessageAt }
+    }
 }

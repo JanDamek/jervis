@@ -22,7 +22,9 @@ dependencies {
     implementation(platform("org.springframework.boot:spring-boot-dependencies:${libs.versions.spring.boot.get()}"))
 
     implementation(project(":common"))
+    implementation(project(":common-internal"))
     implementation(libs.spring.boot.starter.webflux)
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
     annotationProcessor(libs.spring.boot.configuration.processor)
 
     // Kotlin
@@ -31,6 +33,12 @@ dependencies {
     implementation(libs.kotlin.stdlib)
     implementation(libs.kotlin.reflect)
     implementation(libs.kotlinx.serialization.json)
+
+    // Ktor HTTP client for integrations
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.cio)
+    implementation(libs.ktor.client.content.negotiation)
+    implementation(libs.ktor.serialization.kotlinx.json)
 
     // Logging
     implementation(libs.kotlin.logging)
@@ -77,14 +85,6 @@ dependencies {
     implementation(libs.javaparser.core)
     implementation(libs.jsoup)
 
-    // Apache Tika 3.x (uses Jakarta instead of javax)
-    implementation(libs.tika.core)
-    implementation(libs.tika.parsers.standardpkg) {
-        // Tika 3.x transitively brings jakarta.activation, ensure no javax leaks
-        exclude(group = "javax.activation", module = "activation")
-        exclude(group = "javax.activation", module = "javax.activation-api")
-    }
-
     // Kotlin compiler embeddable
     implementation(libs.kotlin.compiler.embeddable)
 
@@ -93,6 +93,13 @@ dependencies {
 
     // LangChain4j for text chunking
     implementation(libs.langchain4j)
+
+    // Google Cloud APIs (commented out for future use)
+    // implementation(platform(libs.google.cloud.bom))
+    // implementation(libs.google.cloud.texttospeech)
+    // implementation(libs.google.cloud.speech)
+    // implementation(libs.google.cloud.translate)
+    // implementation(libs.google.cloud.vision)
 
     testImplementation(libs.junit.jupiter)
 }

@@ -12,6 +12,7 @@ import com.jervis.service.listener.email.state.EmailMessageStateManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flatMapMerge
@@ -75,7 +76,22 @@ class EmailContinuousIndexer(
                     indexMessage(account, message)
                     emit(messageDoc)
                 }.catch { e ->
-                    logger.error(e) { "Indexing failed for UID:${messageDoc.uid} messageId:${messageDoc.messageId}, marking as FAILED" }
+                    logger.error(e) { "Indexing failed for UID:${messageDoc.uid} messageId:${messageDoc.messageId}" }
+
+                    // Classify error type
+                    val isCommunicationError =
+                        e.message?.contains("Connection", ignoreCase = true) == true ||
+                            e.message?.contains("timeout", ignoreCase = true) == true ||
+                            e.message?.contains("IMAP", ignoreCase = true) == true ||
+                            e is java.net.SocketException ||
+                            e is java.net.SocketTimeoutException
+
+                    if (isCommunicationError) {
+                        logger.warn { "Communication error detected, pausing 30s before continuing" }
+                        delay(30_000)
+                    }
+
+                    // Mark as failed and continue with next message
                     stateManager.markAsFailed(messageDoc)
                 }
             }.onEach { messageDoc ->

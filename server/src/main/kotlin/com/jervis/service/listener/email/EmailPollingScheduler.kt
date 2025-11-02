@@ -45,8 +45,15 @@ class EmailPollingScheduler(
 
     private suspend fun processAccountWithTimestampUpdate(account: EmailAccountDocument) {
         logger.info { "Syncing headers for account: ${account.email} (${account.id})" }
-        emailIndexingOrchestrator.syncMessageHeaders(account)
-        updateAccountTimestamp(account.id)
+
+        try {
+            emailIndexingOrchestrator.syncMessageHeaders(account)
+            updateAccountTimestamp(account.id)
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to sync account ${account.id}, will retry on next poll cycle" }
+            // Don't update timestamp on failure - account stays as "needs sync"
+            // Scheduler will retry on next cycle (60s later)
+        }
     }
 
     private suspend fun updateAccountTimestamp(accountId: ObjectId) {

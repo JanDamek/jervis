@@ -16,16 +16,15 @@ import java.time.Instant
 
 private val logger = KotlinLogging.logger {}
 
-@Serializable
-data class CreateUserTaskRequest(
-    val title: String,
-    val description: String? = null,
-    val priority: String? = null,
-    val dueDate: String? = null,
-    val sourceType: String,
-    val sourceUri: String? = null,
-    val metadata: Map<String, String> = emptyMap(),
-)
+/**
+ * Creates a user-facing task. For EMAIL-based tasks we enforce mandatory identifiers
+ * so the system knows exactly which email/thread to respond to after approval.
+ *
+ * Required for EMAIL sourceType:
+ * - sourceUri must be email://<accountId>/<messageId>
+ * - metadata.threadId must be present (hex string)
+ * - We enrich metadata with emailAccountId and emailMessageId if missing
+ */
 
 @Service
 class TaskCreateUserTaskTool(
@@ -58,6 +57,24 @@ class TaskCreateUserTaskTool(
                     runCatching { Instant.parse(it) }.getOrNull()
                 }
 
+            val enrichedMetadata = request.metadata.toMutableMap()
+            if (sourceType == TaskSourceType.EMAIL) {
+                val uri = request.sourceUri
+                require(!uri.isNullOrBlank()) { "For sourceType=EMAIL, sourceUri must be provided as email://<accountId>/<messageId>" }
+                require(uri.startsWith("email://")) { "For sourceType=EMAIL, sourceUri must start with 'email://'" }
+                val parts = uri.removePrefix("email://").split("/")
+                require(parts.size >= 2) { "Invalid email sourceUri. Expected format: email://<accountId>/<messageId>" }
+                val accountIdHex = parts[0]
+                val messageId = parts[1]
+                // enrich if absent
+                enrichedMetadata.putIfAbsent("emailAccountId", accountIdHex)
+                enrichedMetadata.putIfAbsent("emailMessageId", messageId)
+                // require threadId for auto-resolution and correct routing
+                require(enrichedMetadata.containsKey("threadId")) {
+                    "metadata.threadId is required for EMAIL tasks so the system can auto-resolve when the conversation is answered"
+                }
+            }
+
             val task =
                 userTaskService.createTask(
                     title = request.title,
@@ -68,7 +85,7 @@ class TaskCreateUserTaskTool(
                     clientId = plan.clientId,
                     sourceType = sourceType,
                     sourceUri = request.sourceUri,
-                    metadata = request.metadata,
+                    metadata = enrichedMetadata,
                 )
 
             ToolResult.success(
@@ -92,4 +109,15 @@ class TaskCreateUserTaskTool(
                 message = e.message,
             )
         }
+
+    @Serializable
+    data class CreateUserTaskRequest(
+        val title: String,
+        val description: String? = null,
+        val priority: String? = null,
+        val dueDate: String? = null,
+        val sourceType: String,
+        val sourceUri: String? = null,
+        val metadata: Map<String, String> = emptyMap(),
+    )
 }

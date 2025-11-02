@@ -3,10 +3,13 @@ package com.jervis.service.listener.git.processor
 import com.jervis.entity.ProjectDocument
 import com.jervis.service.git.state.GitCommitStateManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
+import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 import java.nio.file.Path
 
@@ -19,6 +22,14 @@ import java.nio.file.Path
  * 2. GitDiffCodeIndexer - indexes actual code changes (CODE embeddings)
  * 3. GitTaskCreator - creates pending tasks for commit analysis
  *
+ * Supports both:
+ * - Standalone project repositories
+ * - Client mono-repositories (shared across multiple projects)
+ *
+ * Parallel processing strategy:
+ * - Metadata indexing runs in parallel with code indexing (using coroutineScope + async)
+ * - This reduces total indexing time significantly
+ *
  * This follows the email indexing pattern where orchestrator coordinates
  * multiple specialized processors instead of one monolithic service.
  */
@@ -28,6 +39,9 @@ class GitIndexingOrchestrator(
     private val diffCodeIndexer: GitDiffCodeIndexer,
     private val taskCreator: GitTaskCreator,
     private val stateManager: GitCommitStateManager,
+    private val fileStructureAnalyzer: FileStructureAnalyzer,
+    private val projectDescriptionUpdater: ProjectDescriptionUpdater,
+    private val gitBranchAnalysisService: com.jervis.service.listener.git.branch.GitBranchAnalysisService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -38,6 +52,8 @@ class GitIndexingOrchestrator(
         val commitMetadataResult: GitCommitMetadataIndexer.GitHistoryIndexingResult,
         val codeIndexingResult: GitDiffCodeIndexer.CodeIndexingResult,
         val tasksCreated: Int,
+        val fileAnalysisTasksCreated: Int,
+        val descriptionUpdateTaskCreated: Boolean,
         val errors: Int,
     )
 
@@ -95,24 +111,39 @@ class GitIndexingOrchestrator(
                     "chunks=${codeIndexingResult.indexedChunks}, errors=${codeIndexingResult.errorFiles}"
             }
 
-            // Step 3: Create pending tasks for commit analysis
-            logger.info { "Step 3: Creating pending tasks for commit analysis..." }
-            val tasksCreated =
+            // Step 3: Create pending tasks for commit analysis, file analysis, and description updates
+            logger.info { "Step 3: Creating pending tasks for analysis..." }
+            val taskResult =
                 try {
                     createAnalysisTasksForNewCommits(project, projectPath, branch)
                 } catch (e: Exception) {
                     logger.error(e) { "Failed to create analysis tasks" }
                     totalErrors++
-                    0
+                    TaskCreationResult(0, 0, false)
                 }
 
-            logger.info { "Created $tasksCreated pending tasks for commit analysis" }
+            logger.info {
+                "Created tasks: ${taskResult.commitTasks} commit analysis, " +
+                    "${taskResult.fileAnalysisTasks} file structure, " +
+                    "description update=${taskResult.descriptionTaskCreated}"
+            }
+
+            // Step 4: Branch-aware summaries and RAG embedding
+            logger.info { "Step 4: Indexing branch summaries for ${project.name}..." }
+            try {
+                gitBranchAnalysisService.indexAllBranches(project, projectPath)
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to index branch summaries" }
+                totalErrors++
+            }
 
             val finalResult =
                 GitIndexingResult(
                     commitMetadataResult = commitMetadataResult,
                     codeIndexingResult = codeIndexingResult,
-                    tasksCreated = tasksCreated,
+                    tasksCreated = taskResult.commitTasks,
+                    fileAnalysisTasksCreated = taskResult.fileAnalysisTasks,
+                    descriptionUpdateTaskCreated = taskResult.descriptionTaskCreated,
                     errors = totalErrors + commitMetadataResult.errorCommits + codeIndexingResult.errorFiles,
                 )
 
@@ -120,12 +151,180 @@ class GitIndexingOrchestrator(
                 "Git indexing orchestration completed for project: ${project.name} - " +
                     "commits=${commitMetadataResult.processedCommits}, " +
                     "code_files=${codeIndexingResult.indexedFiles}, " +
-                    "tasks=$tasksCreated, " +
+                    "commit_tasks=${taskResult.commitTasks}, " +
+                    "file_tasks=${taskResult.fileAnalysisTasks}, " +
+                    "desc_update=${taskResult.descriptionTaskCreated}, " +
                     "errors=${finalResult.errors}"
             }
 
             finalResult
         }
+
+    // ========== Mono-Repo Orchestration ==========
+
+    /**
+     * Orchestrate complete Git indexing for a client mono-repo with parallel processing.
+     * Uses coroutineScope + async for parallel metadata and code indexing.
+     *
+     * @param clientId Client ID owning the mono-repo
+     * @param monoRepoId Mono-repo identifier
+     * @param monoRepoPath Path to cloned mono-repo
+     * @param branch Current branch name
+     * @param maxCommits Maximum number of commits to process
+     */
+    suspend fun orchestrateMonoRepoIndexing(
+        clientId: ObjectId,
+        monoRepoId: String,
+        monoRepoPath: Path,
+        branch: String,
+        maxCommits: Int = 1000,
+    ): GitIndexingResult =
+        withContext(Dispatchers.IO) {
+            logger.info {
+                "Starting mono-repo Git indexing orchestration for mono-repo: $monoRepoId, branch: $branch"
+            }
+
+            // Use coroutineScope for parallel processing
+            coroutineScope {
+                var totalErrors = 0
+
+                // Step 1 & 2: Run metadata and code indexing IN PARALLEL
+                logger.info { "Step 1+2: Indexing commit metadata and code diffs in parallel..." }
+
+                val metadataDeferred =
+                    async {
+                        try {
+                            commitMetadataIndexer.indexMonoRepoGitHistory(
+                                clientId,
+                                monoRepoId,
+                                monoRepoPath,
+                                branch,
+                                maxCommits,
+                            )
+                        } catch (e: Exception) {
+                            logger.error(e) { "Failed to index mono-repo commit metadata" }
+                            totalErrors++
+                            GitCommitMetadataIndexer.GitHistoryIndexingResult(0, 0, 1)
+                        }
+                    }
+
+                val codeDeferred =
+                    async {
+                        try {
+                            indexMonoRepoCodeDiffsForNewCommits(clientId, monoRepoId, monoRepoPath, branch)
+                        } catch (e: Exception) {
+                            logger.error(e) { "Failed to index mono-repo code diffs" }
+                            totalErrors++
+                            GitDiffCodeIndexer.CodeIndexingResult(0, 0, 1)
+                        }
+                    }
+
+                // Wait for both to complete
+                val commitMetadataResult = metadataDeferred.await()
+                val codeIndexingResult = codeDeferred.await()
+
+                logger.info {
+                    "Parallel indexing completed - " +
+                        "Metadata: processed=${commitMetadataResult.processedCommits}, errors=${commitMetadataResult.errorCommits} | " +
+                        "Code: files=${codeIndexingResult.indexedFiles}, chunks=${codeIndexingResult.indexedChunks}, errors=${codeIndexingResult.errorFiles}"
+                }
+
+                // Step 3: Create pending tasks (no task creation for mono-repos currently)
+                // Mono-repos are indexed for RAG queries, but tasks are project-specific
+                val tasksCreated = 0
+                val fileAnalysisTasksCreated = 0
+                val descriptionUpdateTaskCreated = false
+
+                val finalResult =
+                    GitIndexingResult(
+                        commitMetadataResult = commitMetadataResult,
+                        codeIndexingResult = codeIndexingResult,
+                        tasksCreated = tasksCreated,
+                        fileAnalysisTasksCreated = fileAnalysisTasksCreated,
+                        descriptionUpdateTaskCreated = descriptionUpdateTaskCreated,
+                        errors = totalErrors + commitMetadataResult.errorCommits + codeIndexingResult.errorFiles,
+                    )
+
+                logger.info {
+                    "Mono-repo Git indexing orchestration completed for: $monoRepoId - " +
+                        "commits=${commitMetadataResult.processedCommits}, " +
+                        "code_files=${codeIndexingResult.indexedFiles}, " +
+                        "errors=${finalResult.errors}"
+                }
+
+                finalResult
+            }
+        }
+
+    /**
+     * Index code diffs for all NEW mono-repo commits with parallel processing.
+     */
+    private suspend fun indexMonoRepoCodeDiffsForNewCommits(
+        clientId: ObjectId,
+        monoRepoId: String,
+        monoRepoPath: Path,
+        branch: String,
+    ): GitDiffCodeIndexer.CodeIndexingResult =
+        withContext(Dispatchers.IO) {
+            logger.info { "Indexing code diffs for ALL new mono-repo commits: $monoRepoId" }
+
+            var totalFiles = 0
+            var totalChunks = 0
+            var totalErrors = 0
+            var processedCount = 0
+
+            // Get ALL commits with state=NEW from MongoDB
+            stateManager
+                .findNewMonoRepoCommits(clientId, monoRepoId)
+                .buffer(32)
+                .collect { commitDoc ->
+                    try {
+                        logger.debug { "Indexing mono-repo code diff for commit ${commitDoc.commitHash.take(8)}" }
+
+                        val result =
+                            diffCodeIndexer.indexMonoRepoCommitCodeChanges(
+                                clientId,
+                                monoRepoId,
+                                monoRepoPath,
+                                commitDoc.commitHash,
+                                branch,
+                            )
+
+                        totalFiles += result.indexedFiles
+                        totalChunks += result.indexedChunks
+                        totalErrors += result.errorFiles
+                        processedCount++
+
+                        if (processedCount % 10 == 0) {
+                            logger.info { "Mono-repo code diff progress: $processedCount commits processed..." }
+                        }
+
+                        // Mark as indexed after successful processing
+                        stateManager.markAsIndexed(commitDoc)
+                    } catch (e: Exception) {
+                        logger.error(e) { "Failed to index mono-repo code diff for commit ${commitDoc.commitHash.take(8)}" }
+                        totalErrors++
+
+                        // CRITICAL: Mark as indexed even on failure to prevent infinite retry loop
+                        // The error is logged and counted, but we must move on to next commit
+                        try {
+                            stateManager.markAsIndexed(commitDoc)
+                            logger.warn { "Marked failed commit ${commitDoc.commitHash.take(8)} as indexed to prevent retry loop" }
+                        } catch (markError: Exception) {
+                            logger.error(markError) { "Failed to mark commit as indexed: ${commitDoc.commitHash.take(8)}" }
+                        }
+                    }
+                }
+
+            logger.info {
+                "Mono-repo code diff indexing completed: $processedCount commits, " +
+                    "$totalFiles files, $totalChunks chunks, $totalErrors errors"
+            }
+
+            GitDiffCodeIndexer.CodeIndexingResult(totalFiles, totalChunks, totalErrors)
+        }
+
+    // ========== Shared Methods ==========
 
     /**
      * Index code diffs for all NEW commits in state manager.
@@ -169,9 +368,22 @@ class GitIndexingOrchestrator(
                         if (processedCount % 10 == 0) {
                             logger.info { "Code diff progress: $processedCount commits processed..." }
                         }
+
+                        // Mark as indexed after successful processing
+                        // NOTE: Final marking happens in createAnalysisTasksForNewCommits after task creation
+                        // This intermediate marking ensures we track indexing progress separately
                     } catch (e: Exception) {
                         logger.error(e) { "Failed to index code diff for commit ${commitDoc.commitHash.take(8)}" }
                         totalErrors++
+
+                        // CRITICAL: Mark as indexed even on failure to prevent infinite retry loop
+                        // The error is logged and counted, but we must move on to next commit
+                        try {
+                            stateManager.markAsIndexed(commitDoc)
+                            logger.warn { "Marked failed commit ${commitDoc.commitHash.take(8)} as indexed to prevent retry loop" }
+                        } catch (markError: Exception) {
+                            logger.error(markError) { "Failed to mark commit as indexed: ${commitDoc.commitHash.take(8)}" }
+                        }
                     }
                 }
 
@@ -188,17 +400,22 @@ class GitIndexingOrchestrator(
      * Called after both metadata and code indexing complete.
      * Processes ALL new commits, not just last 10.
      * After task creation, marks commits as INDEXED.
+     *
+     * NEW: Also creates FILE_STRUCTURE_ANALYSIS tasks for changed files
+     * and PROJECT_DESCRIPTION_UPDATE task if needed.
      */
     private suspend fun createAnalysisTasksForNewCommits(
         project: ProjectDocument,
         projectPath: Path,
         branch: String,
-    ): Int =
+    ): TaskCreationResult =
         withContext(Dispatchers.IO) {
             logger.info { "Creating analysis tasks for ALL new commits in project: ${project.name}" }
 
             val createdTasks = mutableListOf<GitTaskCreator.CommitData>()
-            var taskCount = 0
+            var commitTaskCount = 0
+            var fileAnalysisTaskCount = 0
+            val recentCommitHashes = mutableListOf<String>()
 
             // Get ALL commits with state=NEW from MongoDB
             val newCommitDocuments =
@@ -211,19 +428,30 @@ class GitIndexingOrchestrator(
 
             for (commitDoc in newCommitDocuments) {
                 try {
-                    logger.debug { "Creating task for commit ${commitDoc.commitHash.take(8)}" }
+                    logger.debug { "Creating tasks for commit ${commitDoc.commitHash.take(8)}" }
 
                     // Fetch full commit details from Git
                     val commitData = getCommitData(projectPath, commitDoc.commitHash, branch)
 
                     if (commitData != null) {
-                        // Create pending task with qualification
+                        // 1. Create COMMIT_ANALYSIS task
                         taskCreator.createCommitAnalysisTask(project, projectPath, commitData)
                         createdTasks.add(commitData)
-                        taskCount++
+                        commitTaskCount++
+                        recentCommitHashes.add(commitData.commitHash)
 
-                        if (taskCount % 10 == 0) {
-                            logger.info { "Task creation progress: $taskCount tasks created..." }
+                        // 2. Create FILE_STRUCTURE_ANALYSIS tasks for changed files
+                        val fileTasksCreated =
+                            fileStructureAnalyzer.analyzeCommitFiles(
+                                project = project,
+                                projectPath = projectPath,
+                                commitHash = commitData.commitHash,
+                                changedFiles = commitData.changedFiles,
+                            )
+                        fileAnalysisTaskCount += fileTasksCreated
+
+                        if (commitTaskCount % 10 == 0) {
+                            logger.info { "Task creation progress: $commitTaskCount commit tasks, $fileAnalysisTaskCount file tasks..." }
                         }
 
                         // Mark commit as INDEXED after successful task creation
@@ -233,16 +461,49 @@ class GitIndexingOrchestrator(
                         logger.warn { "Could not fetch commit data for ${commitDoc.commitHash.take(8)}" }
                     }
                 } catch (e: Exception) {
-                    logger.error(e) { "Failed to create task for commit ${commitDoc.commitHash.take(8)}" }
+                    logger.error(e) { "Failed to create tasks for commit ${commitDoc.commitHash.take(8)}" }
+                }
+            }
+
+            // 3. Create PROJECT_DESCRIPTION_UPDATE task if needed
+            var descriptionTaskCreated = false
+            if (recentCommitHashes.isNotEmpty()) {
+                try {
+                    val updateTask =
+                        projectDescriptionUpdater.checkAndCreateUpdateTask(
+                            project = project,
+                            recentCommitHashes = recentCommitHashes,
+                            commitsSinceLastUpdate = recentCommitHashes.size,
+                        )
+
+                    if (updateTask != null) {
+                        descriptionTaskCreated = true
+                        logger.info { "Created project description update task for ${project.name}" }
+                    }
+                } catch (e: Exception) {
+                    logger.error(e) { "Failed to create project description update task" }
                 }
             }
 
             logger.info {
-                "Task creation completed: $taskCount tasks created from ${newCommitDocuments.size} commits"
+                "Task creation completed: $commitTaskCount commit tasks, " +
+                    "$fileAnalysisTaskCount file analysis tasks, " +
+                    "description update=${if (descriptionTaskCreated) "yes" else "no"} " +
+                    "from ${newCommitDocuments.size} commits"
             }
 
-            taskCount
+            TaskCreationResult(
+                commitTasks = commitTaskCount,
+                fileAnalysisTasks = fileAnalysisTaskCount,
+                descriptionTaskCreated = descriptionTaskCreated,
+            )
         }
+
+    private data class TaskCreationResult(
+        val commitTasks: Int,
+        val fileAnalysisTasks: Int,
+        val descriptionTaskCreated: Boolean,
+    )
 
     /**
      * Get detailed commit data for a specific commit hash.

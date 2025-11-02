@@ -1,7 +1,7 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.domain.model.ModelType
+import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
@@ -55,7 +55,7 @@ class KnowledgeStoreTool(
             "KNOWLEDGE_STORE_OPERATION: content_length=${content.length}"
         }
 
-        val modelType = ModelType.EMBEDDING_TEXT
+        val modelTypeEnum = ModelTypeEnum.EMBEDDING_TEXT
 
         // Chunk the content if it's large
         val chunks = textChunkingService.splitText(content).map { it.text() }
@@ -67,7 +67,7 @@ class KnowledgeStoreTool(
 
         chunks.forEach { chunk ->
             // Generate embedding for this chunk
-            val embedding = embeddingGateway.callEmbedding(modelType, chunk)
+            val embedding = embeddingGateway.callEmbedding(modelTypeEnum, chunk)
 
             // Create RAG document
             val ragDocument =
@@ -84,7 +84,7 @@ class KnowledgeStoreTool(
                 )
 
             // Store in a vector database
-            val pointId = vectorStorage.store(modelType, ragDocument, embedding)
+            val pointId = vectorStorage.store(modelTypeEnum, ragDocument, embedding)
             storedIds.add(pointId)
         }
 

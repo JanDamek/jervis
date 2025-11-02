@@ -1,17 +1,10 @@
 package com.jervis.service.gateway.processing
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.jervis.domain.model.ModelProvider
+import com.jervis.domain.model.ModelProviderEnum
+import com.jervis.service.gateway.processing.domain.ParsedResponse
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
-
-/**
- * Data class to hold both think content and parsed JSON result
- */
-data class ParsedResponse<T>(
-    val thinkContent: String?,
-    val result: T,
-)
 
 @Service
 class JsonParser {
@@ -172,7 +165,7 @@ class JsonParser {
     fun <T : Any> validateAndParseWithThink(
         rawResponse: String,
         responseSchema: T,
-        provider: ModelProvider,
+        provider: ModelProviderEnum,
         model: String,
     ): ParsedResponse<T> {
         try {
@@ -216,7 +209,7 @@ class JsonParser {
     fun <T : Any> validateAndParse(
         rawResponse: String,
         responseSchema: T,
-        provider: ModelProvider,
+        provider: ModelProviderEnum,
         model: String,
     ): T {
         try {

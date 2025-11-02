@@ -1,11 +1,11 @@
 package com.jervis.controller.api
 
-import com.jervis.controller.mapper.toCreateDomain
-import com.jervis.controller.mapper.toDto
-import com.jervis.controller.mapper.toUpdateDomain
 import com.jervis.dto.email.CreateOrUpdateEmailAccountRequestDto
 import com.jervis.dto.email.EmailAccountDto
 import com.jervis.dto.email.ValidateResponseDto
+import com.jervis.mapper.toCreateDomain
+import com.jervis.mapper.toDto
+import com.jervis.mapper.toUpdateDomain
 import com.jervis.service.IEmailAccountService
 import com.jervis.service.email.EmailAccountService
 import kotlinx.coroutines.flow.map

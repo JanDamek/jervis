@@ -1,6 +1,5 @@
 package com.jervis.domain.plan
 
-import com.jervis.domain.project.ProjectContextInfo
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.ProjectDocument
 import org.bson.types.ObjectId
@@ -21,8 +20,6 @@ data class Plan(
     val projectDocument: ProjectDocument? = null,
     val quick: Boolean,
     val backgroundMode: Boolean = false,
-    var projectContextInfo: ProjectContextInfo? = null,
-    val originPendingTaskId: ObjectId? = null,
 ) {
     val clientId: ObjectId
         get() = clientDocument.id
@@ -32,8 +29,8 @@ data class Plan(
 
     override fun toString(): String =
         when {
-            backgroundMode -> "🔄 $taskInstruction (background)"
-            quick -> "⚡ $taskInstruction"
+            backgroundMode -> "$taskInstruction (background)"
+            quick -> taskInstruction
             else -> taskInstruction
         }
 }

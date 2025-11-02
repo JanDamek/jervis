@@ -20,7 +20,7 @@ class PendingTaskService(
         taskType: PendingTaskTypeEnum,
         content: String? = null,
         projectId: ObjectId? = null,
-        clientId: ObjectId? = null,
+        clientId: ObjectId,
         needsQualification: Boolean = false,
         context: Map<String, String> = emptyMap(),
     ): PendingTask {
@@ -59,5 +59,37 @@ class PendingTaskService(
         val updated = task.copy(needsQualification = needsQualification)
         pendingTaskRepository.save(updated)
         logger.debug { "Updated task $taskId needsQualification=$needsQualification" }
+    }
+
+    /**
+     * Merge additional context into existing task.
+     * Validates that all values are non-blank (fail fast on blank values).
+     *
+     * @param taskId Task ID to update
+     * @param contextPatch Map of context keys to merge (values must be non-blank)
+     * @return Updated task
+     * @throws IllegalArgumentException if task not found or any value is blank
+     */
+    suspend fun mergeContext(
+        taskId: ObjectId,
+        contextPatch: Map<String, String>,
+    ): PendingTask {
+        val task =
+            pendingTaskRepository.findById(taskId)
+                ?: throw IllegalArgumentException("Task not found: $taskId")
+
+        // Fail fast: reject blank values
+        contextPatch.forEach { (key, value) ->
+            require(value.isNotBlank()) { "Context key '$key' has blank value for task $taskId" }
+        }
+
+        val merged = task.copy(context = task.context + contextPatch)
+        val saved = pendingTaskRepository.save(merged)
+
+        logger.info {
+            "TASK_CONTEXT_MERGE: Task ${taskId.toHexString()} merged keys ${contextPatch.keys.joinToString(", ")}"
+        }
+
+        return saved.toDomain()
     }
 }

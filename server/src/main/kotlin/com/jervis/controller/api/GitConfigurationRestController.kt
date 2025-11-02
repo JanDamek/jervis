@@ -149,12 +149,14 @@ class GitConfigurationRestController(
         }
     }
 
+    @Deprecated("Git config moved to client level")
     override suspend fun setupGitOverrideForProject(
         @PathVariable projectId: String,
         @RequestBody request: ProjectGitOverrideRequestDto,
     ): ProjectDto {
         logger.info { "Setting up Git override for project: $projectId" }
 
+        @Suppress("DEPRECATION")
         val result = gitConfigurationService.setupGitOverrideForProject(ObjectId(projectId), request)
 
         if (result.isFailure) {

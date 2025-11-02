@@ -97,3 +97,7 @@ tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
     jvmArgs = listOf("--add-opens", "java.desktop/com.apple.eawt=ALL-UNNAMED")
 }
 
+// Disable Spring Boot executable jar at the root project (no main class here)
+tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
+    enabled = false
+}
