@@ -19,4 +19,13 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "jervis"
-include(":common", ":server", ":desktop", ":api-client")
+include(
+    ":common",
+    ":server",
+    ":desktop",
+    ":api-client",
+    ":common-internal",
+    ":service-tika",
+    ":service-joern",
+    ":service-whisper",
+)

@@ -85,4 +85,42 @@ class UserTaskService(
                 endDate = endDate,
                 statuses = listOf(TaskStatus.TODO.name, TaskStatus.IN_PROGRESS.name),
             ).map { it.toDomain() }
+
+    fun findActiveTasksByThread(
+        clientId: ObjectId,
+        threadId: ObjectId,
+    ): Flow<UserTask> =
+        userTaskRepository
+            .findActiveByClientAndThreadId(
+                clientId = clientId,
+                statuses = listOf(TaskStatus.TODO.name, TaskStatus.IN_PROGRESS.name),
+                threadId = threadId.toHexString(),
+            ).map { it.toDomain() }
+
+    suspend fun completeTask(
+        taskId: ObjectId,
+        resolvedBySourceUri: String? = null,
+    ): UserTask {
+        val existing =
+            userTaskRepository.findById(taskId)
+                ?: error("User task not found: $taskId")
+
+        val newMetadata =
+            if (resolvedBySourceUri != null) {
+                existing.metadata + ("resolvedBySourceUri" to resolvedBySourceUri)
+            } else {
+                existing.metadata
+            }
+
+        val updated =
+            existing.copy(
+                status = TaskStatus.COMPLETED.name,
+                completedAt = Instant.now(),
+                metadata = newMetadata,
+            )
+
+        val saved = userTaskRepository.save(updated)
+        logger.info { "Completed user task: ${saved.id}" }
+        return saved.toDomain()
+    }
 }

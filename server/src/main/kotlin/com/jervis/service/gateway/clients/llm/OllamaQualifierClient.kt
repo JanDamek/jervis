@@ -1,9 +1,9 @@
 package com.jervis.service.gateway.clients.llm
 
-import com.jervis.configuration.ModelsProperties
 import com.jervis.configuration.prompts.PromptConfigBase
+import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.domain.llm.LlmResponse
-import com.jervis.domain.model.ModelProvider
+import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.service.gateway.clients.ProviderClient
 import com.jervis.service.gateway.clients.StreamChunk
 import kotlinx.coroutines.flow.Flow
@@ -20,7 +20,7 @@ class OllamaQualifierClient(
     @Qualifier("ollamaQualifierWebClient") private val webClient: WebClient,
     private val ollamaClient: OllamaClient,
 ) : ProviderClient {
-    override val provider: ModelProvider = ModelProvider.OLLAMA_QUALIFIER
+    override val provider: ModelProviderEnum = ModelProviderEnum.OLLAMA_QUALIFIER
 
     override suspend fun call(
         model: String,

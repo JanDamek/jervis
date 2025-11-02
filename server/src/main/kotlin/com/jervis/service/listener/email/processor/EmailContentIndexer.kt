@@ -1,11 +1,12 @@
 package com.jervis.service.listener.email.processor
 
-import com.jervis.domain.model.ModelType
+import com.jervis.common.client.ITikaClient
+import com.jervis.common.dto.TikaProcessRequest
+import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.domain.rag.EmbeddingType
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
 import com.jervis.repository.vector.VectorStorageRepository
-import com.jervis.service.document.TikaDocumentProcessor
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.listener.email.imap.ImapMessage
 import com.jervis.service.text.TextChunkingService
@@ -13,7 +14,7 @@ import dev.langchain4j.data.segment.TextSegment
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
-import java.io.ByteArrayInputStream
+import java.util.Base64
 
 private val logger = KotlinLogging.logger {}
 
@@ -22,7 +23,7 @@ class EmailContentIndexer(
     private val embeddingGateway: EmbeddingGateway,
     private val vectorStorage: VectorStorageRepository,
     private val textChunkingService: TextChunkingService,
-    private val tikaDocumentProcessor: TikaDocumentProcessor,
+    private val tikaClient: ITikaClient,
 ) {
     suspend fun indexEmailContent(
         message: ImapMessage,
@@ -62,17 +63,21 @@ class EmailContentIndexer(
     }
 
     private suspend fun extractPlainText(content: String): String =
-        runCatching {
+        try {
             val contentBytes = content.toByteArray(Charsets.UTF_8)
-            ByteArrayInputStream(contentBytes).use { inputStream ->
-                val result =
-                    tikaDocumentProcessor.processDocumentStream(
-                        inputStream = inputStream,
-                        fileName = "email.html",
-                    )
-                result.plainText.takeIf { it.isNotBlank() } ?: content
-            }
-        }.getOrElse { e ->
+            val res =
+                tikaClient.process(
+                    TikaProcessRequest(
+                        source =
+                            TikaProcessRequest.Source.FileBytes(
+                                fileName = "email.html",
+                                dataBase64 = Base64.getEncoder().encodeToString(contentBytes),
+                            ),
+                        includeMetadata = false,
+                    ),
+                )
+            if (res.success && res.plainText.isNotBlank()) res.plainText else content
+        } catch (e: Exception) {
             logger.warn(e) { "Failed to extract plain text with Tika, using original content" }
             content
         }
@@ -88,7 +93,7 @@ class EmailContentIndexer(
         chunkIndex: Int,
         totalChunks: Int,
     ): String {
-        val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, chunk.text())
+        val embedding = embeddingGateway.callEmbedding(ModelTypeEnum.EMBEDDING_TEXT, chunk.text())
 
         return vectorStorage.store(
             EmbeddingType.EMBEDDING_TEXT,

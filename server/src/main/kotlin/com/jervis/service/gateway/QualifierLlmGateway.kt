@@ -5,7 +5,7 @@ import com.jervis.configuration.prompts.CreativityLevel
 import com.jervis.configuration.prompts.ModelParams
 import com.jervis.configuration.prompts.PromptGenericConfig
 import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.domain.model.ModelType
+import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.service.gateway.core.LlmCallExecutor
 import com.jervis.service.gateway.processing.PromptBuilderService
 import com.jervis.service.gateway.selection.ModelCandidateSelector
@@ -47,7 +47,7 @@ class QualifierLlmGateway(
                     userPrompt = userPromptTemplate,
                     modelParams =
                         ModelParams(
-                            modelType = ModelType.QUALIFIER,
+                            modelType = ModelTypeEnum.QUALIFIER,
                             creativityLevel = CreativityLevel.LOW,
                         ),
                 )
@@ -71,12 +71,12 @@ class QualifierLlmGateway(
                 return QualifierDecision.Delegate
             }
 
-            logger.debug { "Qualifier call: estimatedTokens=$estimatedTokens (prompt $totalPromptChars chars)" }
+            logger.trace { "Qualifier call: estimatedTokens=$estimatedTokens (prompt $totalPromptChars chars)" }
 
             // Select candidates with QUALIFIER type (shared model selection logic)
             val candidates =
                 modelCandidateSelector
-                    .selectCandidates(ModelType.QUALIFIER, quickModeOnly = false, estimatedTokens = estimatedTokens)
+                    .selectCandidates(ModelTypeEnum.QUALIFIER, quickModeOnly = false, estimatedTokens = estimatedTokens)
                     .toList()
 
             if (candidates.isEmpty()) {
@@ -153,7 +153,7 @@ class QualifierLlmGateway(
                 userPrompt = userPrompt,
                 modelParams =
                     ModelParams(
-                        modelType = ModelType.QUALIFIER,
+                        modelType = ModelTypeEnum.QUALIFIER,
                         creativityLevel = CreativityLevel.LOW,
                     ),
             )
@@ -164,7 +164,7 @@ class QualifierLlmGateway(
 
         val candidates =
             modelCandidateSelector
-                .selectCandidates(ModelType.QUALIFIER, quickModeOnly = false, estimatedTokens = estimatedTokens)
+                .selectCandidates(ModelTypeEnum.QUALIFIER, quickModeOnly = false, estimatedTokens = estimatedTokens)
                 .toList()
 
         if (candidates.isEmpty()) {

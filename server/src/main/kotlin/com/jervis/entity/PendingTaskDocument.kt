@@ -31,7 +31,7 @@ data class PendingTaskDocument(
             taskType = PendingTaskTypeEnum.valueOf(taskType),
             content = content,
             projectId = projectId,
-            clientId = clientId,
+            clientId = clientId ?: error("PendingTaskDocument $id has null clientId"),
             createdAt = createdAt,
             needsQualification = needsQualification,
             context = context,

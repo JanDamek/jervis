@@ -1,12 +1,12 @@
 package com.jervis.service.gateway.clients.llm
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
-import com.jervis.configuration.ModelsProperties
 import com.jervis.configuration.prompts.CreativityConfig
 import com.jervis.configuration.prompts.PromptConfigBase
 import com.jervis.configuration.prompts.PromptsConfiguration
+import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.domain.llm.LlmResponse
-import com.jervis.domain.model.ModelProvider
+import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.service.gateway.clients.ProviderClient
 import com.jervis.service.gateway.clients.StreamChunk
 import kotlinx.coroutines.flow.Flow
@@ -20,7 +20,7 @@ class AnthropicClient(
     @Qualifier("anthropicWebClient") private val webClient: WebClient,
     private val promptsConfiguration: PromptsConfiguration,
 ) : ProviderClient {
-    override val provider: ModelProvider = ModelProvider.ANTHROPIC
+    override val provider: ModelProviderEnum = ModelProviderEnum.ANTHROPIC
 
     override suspend fun call(
         model: String,

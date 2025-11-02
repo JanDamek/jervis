@@ -1,0 +1,25 @@
+# Ignore build outputs
+**/build/
+**/target/
+**/.gradle/
+
+# Ignore IDE files
+**/.idea/
+**/*.iml
+**/.vscode/
+
+# Ignore Git
+.git
+.gitignore
+
+# Ignore temporary files
+**/*.tmp
+**/*.log
+**/.DS_Store
+
+# Ignore desktop module (only building server)
+desktop/
+
+# Ignore documentation
+*.md
+docs/

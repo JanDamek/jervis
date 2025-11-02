@@ -3,8 +3,11 @@ package com.jervis.config
 import com.jervis.service.IAgentOrchestratorService
 import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
+import com.jervis.service.IConfluenceService
 import com.jervis.service.IEmailAccountService
 import com.jervis.service.IGitConfigurationService
+import com.jervis.service.IIntegrationSettingsService
+import com.jervis.service.IJiraSetupService
 import com.jervis.service.IProjectService
 import com.jervis.service.ITaskSchedulingService
 import org.springframework.context.annotation.Bean
@@ -47,4 +50,16 @@ class HttpInterfaceClientConfig {
     @Bean
     fun emailAccountClient(webClient: WebClient): IEmailAccountService =
         createHttpServiceProxyFactory(webClient).createClient(IEmailAccountService::class.java)
+
+    @Bean
+    fun jiraSetupClient(webClient: WebClient): IJiraSetupService =
+        createHttpServiceProxyFactory(webClient).createClient(IJiraSetupService::class.java)
+
+    @Bean
+    fun confluenceClient(webClient: WebClient): IConfluenceService =
+        createHttpServiceProxyFactory(webClient).createClient(IConfluenceService::class.java)
+
+    @Bean
+    fun integrationSettingsClient(webClient: WebClient): IIntegrationSettingsService =
+        createHttpServiceProxyFactory(webClient).createClient(IIntegrationSettingsService::class.java)
 }

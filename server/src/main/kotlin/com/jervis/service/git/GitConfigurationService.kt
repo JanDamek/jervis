@@ -286,7 +286,6 @@ class GitConfigurationService(
 
     /**
      * Setup Git override configuration for a project.
-     * TODO: Git config moved to client level, simplify to repository URL only
      * DEPRECATED - will be redesigned according to new architecture
      */
     @Deprecated("Git config moved to client level")
@@ -301,7 +300,6 @@ class GitConfigurationService(
 
     /**
      * Retrieve existing Git credentials for a project override.
-     * TODO: Git config moved to client level
      * DEPRECATED - will be redesigned according to new architecture
      */
     @Deprecated("Git config moved to client level")

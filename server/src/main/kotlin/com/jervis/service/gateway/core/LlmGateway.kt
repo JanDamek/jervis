@@ -2,9 +2,9 @@ package com.jervis.service.gateway.core
 
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.service.gateway.processing.JsonParser
-import com.jervis.service.gateway.processing.ParsedResponse
 import com.jervis.service.gateway.processing.PromptBuilderService
 import com.jervis.service.gateway.processing.TokenEstimationService
+import com.jervis.service.gateway.processing.domain.ParsedResponse
 import com.jervis.service.gateway.selection.ModelCandidateSelector
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.flow.toList

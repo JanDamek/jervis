@@ -43,7 +43,7 @@ class ProjectDialog(
     initialMaxFileSizeMB: Int = 5,
     initialIsDisabled: Boolean = false,
     initialDefault: Boolean = false,
-    initialOverrides: ProjectOverridesDto? = null,
+    private val initialOverrides: ProjectOverridesDto? = null,
 ) : JDialog(owner, title, true) {
     private val nameField =
         JTextField(initialName).apply {
@@ -78,7 +78,8 @@ class ProjectDialog(
     private val projectPathField =
         JTextField(initialProjectPath).apply {
             preferredSize = Dimension(480, 30)
-            toolTipText = "Path within client mono-repository (e.g., services/auth-service)."
+            toolTipText =
+                "Optional: Path within client's mono-repository (e.g., 'services/backend-api'). Leave empty if project has its own Git repository."
         }
     private val languagesField =
         JTextField(initialLanguages).apply {
@@ -130,6 +131,9 @@ class ProjectDialog(
     private val okButton = JButton("OK")
     private val cancelButton = JButton("Cancel")
 
+    // Root panel for overrides tabs (Git/Jira/Confluence)
+    private val overridesPanelRoot: JPanel = createProjectOverridesPanel()
+
     var result: ProjectResult? = null
     var gitOverrideRequest: ProjectGitOverrideRequestDto? = null
 
@@ -167,8 +171,7 @@ class ProjectDialog(
         tabbedPane.addTab("Advanced", advancedPanel)
 
         // Project Overrides Tab
-        val overridesPanel = createProjectOverridesPanel()
-        tabbedPane.addTab("Project Overrides", overridesPanel)
+        tabbedPane.addTab("Project Overrides", overridesPanelRoot)
 
         // Button panel
         val buttonPanel = JPanel(FlowLayout(FlowLayout.RIGHT))
@@ -180,12 +183,34 @@ class ProjectDialog(
 
         add(panel)
 
-        // Set focus order: nameField → pathField → browseButton → descriptionArea → defaultCheckbox → okButton → cancelButton
-        val focusOrder =
-            arrayOf(nameField, descriptionArea, defaultCheckbox, okButton, cancelButton)
-        for (i in 0 until focusOrder.size - 1) {
-            focusOrder[i].nextFocusableComponent = focusOrder[i + 1]
-        }
+        // Set focus order using FocusTraversalPolicy to avoid deprecated nextFocusableComponent
+        val focusOrder = listOf(nameField, descriptionArea, defaultCheckbox, okButton, cancelButton)
+        this.focusTraversalPolicy =
+            object : java.awt.FocusTraversalPolicy() {
+                override fun getComponentAfter(
+                    aContainer: java.awt.Container?,
+                    aComponent: java.awt.Component?,
+                ): java.awt.Component {
+                    val idx = focusOrder.indexOf(aComponent)
+                    val nextIdx = if (idx == -1) 0 else (idx + 1) % focusOrder.size
+                    return focusOrder[nextIdx]
+                }
+
+                override fun getComponentBefore(
+                    aContainer: java.awt.Container?,
+                    aComponent: java.awt.Component?,
+                ): java.awt.Component {
+                    val idx = focusOrder.indexOf(aComponent)
+                    val prevIdx = if (idx == -1) focusOrder.lastIndex else (idx - 1 + focusOrder.size) % focusOrder.size
+                    return focusOrder[prevIdx]
+                }
+
+                override fun getFirstComponent(aContainer: java.awt.Container?): java.awt.Component = focusOrder.first()
+
+                override fun getLastComponent(aContainer: java.awt.Container?): java.awt.Component = focusOrder.last()
+
+                override fun getDefaultComponent(aContainer: java.awt.Container?): java.awt.Component = nameField
+            }
 
         // Add ESC key handling - ESC acts as Cancel
         addKeyListener(
@@ -236,7 +261,7 @@ class ProjectDialog(
         gbc.fill =
             GridBagConstraints.NONE
         gbc.weightx = 0.0
-        panel.add(JLabel("Project path:"), gbc)
+        panel.add(JLabel("Mono-Repo Path:"), gbc)
         gbc.gridx = 1
         gbc.gridwidth = 2
         gbc.anchor = GridBagConstraints.LINE_START
@@ -395,8 +420,60 @@ class ProjectDialog(
     private fun createProjectOverridesPanel(): JPanel {
         val panel = JPanel(BorderLayout())
 
-        // Git Configuration Override Tab (only one override now, no tabs needed)
-        panel.add(JScrollPane(gitOverridePanel), BorderLayout.CENTER)
+        val tabs = JTabbedPane()
+
+        // Git Configuration Override
+        tabs.addTab("Git", JScrollPane(gitOverridePanel))
+
+        // Jira Override
+        val jiraPanel = JPanel(GridBagLayout())
+        val gbcJ =
+            GridBagConstraints().apply {
+                insets = Insets(8, 8, 8, 8)
+                anchor = GridBagConstraints.LINE_START
+            }
+        var rowJ = 0
+        val jiraKeyField = JTextField(20).apply { text = initialOverrides?.jiraProjectKey ?: "" }
+        gbcJ.gridx = 0
+        gbcJ.gridy = rowJ
+        jiraPanel.add(JLabel("Jira Project Key:"), gbcJ)
+        gbcJ.gridx = 1
+        gbcJ.gridy = rowJ
+        jiraPanel.add(jiraKeyField, gbcJ)
+
+        // Confluence Override
+        val confPanel = JPanel(GridBagLayout())
+        val gbcC =
+            GridBagConstraints().apply {
+                insets = Insets(8, 8, 8, 8)
+                anchor = GridBagConstraints.LINE_START
+            }
+        var rowC = 0
+        val spaceKeyField = JTextField(20).apply { text = initialOverrides?.confluenceSpaceKey ?: "" }
+        val rootPageField = JTextField(20).apply { text = initialOverrides?.confluenceRootPageId ?: "" }
+        gbcC.gridx = 0
+        gbcC.gridy = rowC
+        confPanel.add(JLabel("Confluence Space Key:"), gbcC)
+        gbcC.gridx = 1
+        gbcC.gridy = rowC
+        confPanel.add(spaceKeyField, gbcC)
+        rowC++
+        gbcC.gridx = 0
+        gbcC.gridy = rowC
+        confPanel.add(JLabel("Confluence Root Page ID:"), gbcC)
+        gbcC.gridx = 1
+        gbcC.gridy = rowC
+        confPanel.add(rootPageField, gbcC)
+
+        tabs.addTab("Jira", JScrollPane(jiraPanel))
+        tabs.addTab("Confluence", JScrollPane(confPanel))
+
+        panel.add(tabs, BorderLayout.CENTER)
+
+        // Store fields in client properties for retrieval on save
+        panel.putClientProperty("jiraKeyField", jiraKeyField)
+        panel.putClientProperty("spaceKeyField", spaceKeyField)
+        panel.putClientProperty("rootPageField", rootPageField)
 
         return panel
     }
@@ -462,11 +539,21 @@ class ProjectDialog(
         }
 
         // Collect override data from panels
+        val jiraKey =
+            (overridesPanelRoot.getClientProperty("jiraKeyField") as? JTextField)?.text?.trim()?.ifEmpty { null }
+        val spaceKey =
+            (overridesPanelRoot.getClientProperty("spaceKeyField") as? JTextField)?.text?.trim()?.ifEmpty { null }
+        val rootPageId =
+            (overridesPanelRoot.getClientProperty("rootPageField") as? JTextField)?.text?.trim()?.ifEmpty { null }
+
         val overrides =
             ProjectOverridesDto(
                 gitRemoteUrl = gitOverridePanel.getGitRemoteUrl(),
                 gitAuthType = gitOverridePanel.getGitAuthType(),
                 gitConfig = gitOverridePanel.getGitConfig(),
+                jiraProjectKey = jiraKey,
+                confluenceSpaceKey = spaceKey,
+                confluenceRootPageId = rootPageId,
             )
 
         // Collect Git override request with credentials

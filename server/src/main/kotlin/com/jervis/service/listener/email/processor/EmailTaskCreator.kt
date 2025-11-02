@@ -1,20 +1,19 @@
 package com.jervis.service.listener.email.processor
 
+import com.jervis.common.client.ITikaClient
 import com.jervis.domain.task.PendingTaskTypeEnum
 import com.jervis.service.background.PendingTaskService
-import com.jervis.service.document.TikaDocumentProcessor
 import com.jervis.service.listener.email.imap.ImapMessage
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
-import java.io.ByteArrayInputStream
 
 private val logger = KotlinLogging.logger {}
 
 @Service
 class EmailTaskCreator(
     private val pendingTaskService: PendingTaskService,
-    private val tikaProcessor: TikaDocumentProcessor,
+    private val tikaClient: ITikaClient,
 ) {
     companion object {
         private const val MAX_CONTENT_SIZE = 15 * 1024 * 1024
@@ -97,16 +96,24 @@ class EmailTaskCreator(
      */
     private suspend fun cleanEmailBody(rawContent: String): String {
         // Use Tika to extract plain text from HTML or any other format
-        val plainText =
+        val plainText: String =
             try {
-                ByteArrayInputStream(rawContent.toByteArray()).use { stream ->
-                    val result =
-                        tikaProcessor.processDocumentStream(
-                            inputStream = stream,
-                            fileName = "email-body.html",
-                        )
-                    if (result.success) result.plainText else rawContent
-                }
+                val bytes = rawContent.toByteArray()
+                val result =
+                    tikaClient.process(
+                        com.jervis.common.dto.TikaProcessRequest(
+                            source =
+                                com.jervis.common.dto.TikaProcessRequest.Source.FileBytes(
+                                    fileName = "email-body.html",
+                                    dataBase64 =
+                                        java.util.Base64
+                                            .getEncoder()
+                                            .encodeToString(bytes),
+                                ),
+                            includeMetadata = false,
+                        ),
+                    )
+                if (result.success) result.plainText else rawContent
             } catch (e: Exception) {
                 logger.warn(e) { "Failed to parse email body with Tika, using raw content" }
                 rawContent

@@ -1,12 +1,16 @@
 package com.jervis
 
-import com.jervis.configuration.DataRootProperties
-import com.jervis.configuration.LinkIndexingProperties
-import com.jervis.configuration.LinkSafetyProperties
-import com.jervis.configuration.TextChunkingProperties
-import com.jervis.configuration.TikaOcrProperties
 import com.jervis.configuration.YamlPropertySourceFactory
 import com.jervis.configuration.prompts.PromptsConfiguration
+import com.jervis.configuration.properties.AudioMonitoringProperties
+import com.jervis.configuration.properties.DataRootProperties
+import com.jervis.configuration.properties.EndpointProperties
+import com.jervis.configuration.properties.LinkIndexingProperties
+import com.jervis.configuration.properties.ModelsProperties
+import com.jervis.configuration.properties.QdrantProperties
+import com.jervis.configuration.properties.RetryProperties
+import com.jervis.configuration.properties.TextChunkingProperties
+import com.jervis.configuration.properties.WebClientProperties
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.runApplication
@@ -19,10 +23,14 @@ import org.springframework.data.mongodb.repository.config.EnableMongoRepositorie
 @EnableConfigurationProperties(
     PromptsConfiguration::class,
     DataRootProperties::class,
-    TikaOcrProperties::class,
     TextChunkingProperties::class,
     LinkIndexingProperties::class,
-    LinkSafetyProperties::class,
+    EndpointProperties::class,
+    AudioMonitoringProperties::class,
+    WebClientProperties::class,
+    ModelsProperties::class,
+    QdrantProperties::class,
+    RetryProperties::class,
 )
 @PropertySource(
     value = ["classpath:prompts-tools.yaml", "classpath:prompts-services.yaml"],
@@ -31,7 +39,9 @@ import org.springframework.data.mongodb.repository.config.EnableMongoRepositorie
 @ComponentScan(
     basePackages = [
         "com.jervis.service",
-        "com.jervis.repository", "com.jervis.configuration", "com.jervis.controller",
+        "com.jervis.repository",
+        "com.jervis.configuration",
+        "com.jervis.controller",
         "com.jervis.util",
     ],
 )

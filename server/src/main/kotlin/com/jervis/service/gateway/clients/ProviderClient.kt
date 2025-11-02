@@ -1,13 +1,13 @@
 package com.jervis.service.gateway.clients
 
-import com.jervis.configuration.ModelsProperties
 import com.jervis.configuration.prompts.PromptConfigBase
+import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.domain.llm.LlmResponse
-import com.jervis.domain.model.ModelProvider
+import com.jervis.domain.model.ModelProviderEnum
 import kotlinx.coroutines.flow.Flow
 
 interface ProviderClient {
-    val provider: ModelProvider
+    val provider: ModelProviderEnum
 
     suspend fun call(
         model: String,

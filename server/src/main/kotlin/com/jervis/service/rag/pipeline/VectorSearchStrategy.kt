@@ -1,6 +1,6 @@
 package com.jervis.service.rag.pipeline
 
-import com.jervis.domain.model.ModelType
+import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
@@ -19,14 +19,14 @@ import org.springframework.stereotype.Component
 class VectorSearchStrategy(
     private val vectorStorage: VectorStorageRepository,
     private val embeddingGateway: EmbeddingGateway,
-) : SearchStrategy {
+) {
     companion object {
         private val logger = KotlinLogging.logger {}
         private const val MAX_INITIAL_RESULTS = 100
         private const val MAX_HIT_CONTENT_LENGTH = 2000
     }
 
-    override suspend fun search(
+    suspend fun search(
         query: RagQuery,
         plan: Plan,
     ): List<DocumentChunk> {
@@ -35,8 +35,8 @@ class VectorSearchStrategy(
         val (projectId, clientId) = resolveScope(plan)
 
         return coroutineScope {
-            val textResults = async { searchByModelType(ModelType.EMBEDDING_TEXT, query, projectId, clientId) }
-            val codeResults = async { searchByModelType(ModelType.EMBEDDING_CODE, query, projectId, clientId) }
+            val textResults = async { searchByModelType(ModelTypeEnum.EMBEDDING_TEXT, query, projectId, clientId) }
+            val codeResults = async { searchByModelType(ModelTypeEnum.EMBEDDING_CODE, query, projectId, clientId) }
 
             (textResults.await() + codeResults.await()).sortedByDescending { it.score }
         }
@@ -54,16 +54,16 @@ class VectorSearchStrategy(
     }
 
     private suspend fun searchByModelType(
-        modelType: ModelType,
+        modelTypeEnum: ModelTypeEnum,
         query: RagQuery,
         projectId: String?,
         clientId: String?,
     ): List<DocumentChunk> {
-        val embedding = embeddingGateway.callEmbedding(modelType, query.searchTerms)
+        val embedding = embeddingGateway.callEmbedding(modelTypeEnum, query.searchTerms)
 
         return vectorStorage
             .search(
-                collectionType = modelType,
+                collectionType = modelTypeEnum,
                 query = embedding,
                 limit = MAX_INITIAL_RESULTS,
                 projectId = projectId,

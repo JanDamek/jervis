@@ -13,6 +13,7 @@ data class ClientDto(
     val gitProvider: GitProviderEnum? = null,
     val gitAuthType: GitAuthTypeEnum? = null,
     val monoRepoUrl: String? = null,
+    val monoRepos: List<MonoRepoConfigDto> = emptyList(),
     val monoRepoCredentialsRef: String? = null,
     val defaultBranch: String = "main",
     val gitConfig: GitConfigDto? = null,

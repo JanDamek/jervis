@@ -1,8 +1,9 @@
 package com.jervis.service.mcp.tools
 
+import com.jervis.common.client.ITikaClient
+import com.jervis.common.dto.TikaProcessRequest
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.plan.Plan
-import com.jervis.service.document.TikaDocumentProcessor
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
@@ -27,7 +28,7 @@ import kotlin.io.path.isRegularFile
 class DocumentExtractTextTool(
     private val llmGateway: LlmGateway,
     override val promptRepository: PromptRepository,
-    private val tikaDocumentProcessor: TikaDocumentProcessor,
+    private val tikaClient: ITikaClient,
     private val directoryStructureService: DirectoryStructureService,
 ) : McpTool {
     companion object {
@@ -89,8 +90,14 @@ class DocumentExtractTextTool(
                 return@withContext ToolResult.error("Path is not a regular file: ${params.filePath}")
             }
 
-            // Process document with Tika
-            val processingResult = tikaDocumentProcessor.processDocument(documentPath)
+            // Process document with Tika via internal service
+            val processingResult =
+                tikaClient.process(
+                    TikaProcessRequest(
+                        source = TikaProcessRequest.Source.FilePath(documentPath.toString()),
+                        includeMetadata = true,
+                    ),
+                )
 
             if (!processingResult.success) {
                 logger.error { "DOCUMENT_EXTRACT_TEXT_ERROR: Failed to process document: ${processingResult.errorMessage}" }

@@ -1,8 +1,6 @@
 package com.jervis.service.git.state
 
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.reactive.asFlow
-import kotlinx.coroutines.reactor.awaitSingleOrNull
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -13,17 +11,25 @@ private val logger = KotlinLogging.logger {}
 /**
  * Manages Git commit state tracking in MongoDB.
  * Analog to EmailMessageStateManager - tracks which commits have been indexed.
+ *
+ * Supports both:
+ * - Standalone project commits (projectId + clientId)
+ * - Client mono-repo commits (clientId + monoRepoId, projectId = null)
  */
 @Service
 class GitCommitStateManager(
     private val gitCommitRepository: GitCommitRepository,
 ) {
+    // ========== Standalone Project Methods ==========
+
     /**
-     * Save new commit hashes from Git log that haven't been indexed yet.
+     * Save new commit hashes from Git log for a standalone project.
      */
     suspend fun saveNewCommits(
+        clientId: ObjectId,
         projectId: ObjectId,
         commits: List<GitCommitInfo>,
+        branch: String = "main",
     ) {
         logger.info { "Starting batch commit sync for project $projectId" }
 
@@ -40,7 +46,7 @@ class GitCommitStateManager(
         val newCommits = commits.filterNot { existingCommitHashes.contains(it.commitHash) }
         logger.info { "Identified ${newCommits.size} new commits to save for project $projectId" }
 
-        newCommits.forEach { saveNewCommit(projectId, it) }
+        newCommits.forEach { saveNewCommit(clientId, projectId, it, branch) }
         logger.info { "Batch sync completed for project $projectId" }
     }
 
@@ -49,43 +55,124 @@ class GitCommitStateManager(
 
         gitCommitRepository
             .findByProjectId(projectId)
-            .asFlow()
             .collect { existingCommits.add(it) }
 
         return existingCommits.map { it.commitHash }.toSet()
     }
 
     private suspend fun saveNewCommit(
+        clientId: ObjectId,
         projectId: ObjectId,
         commitInfo: GitCommitInfo,
+        branch: String,
     ) {
         val newCommit =
             GitCommitDocument(
+                clientId = clientId,
                 projectId = projectId,
+                monoRepoId = null,
                 commitHash = commitInfo.commitHash,
                 state = GitCommitState.NEW,
                 author = commitInfo.author,
                 message = commitInfo.message,
                 commitDate = commitInfo.commitDate,
+                branch = branch,
             )
-        gitCommitRepository.save(newCommit).awaitSingleOrNull()
+        gitCommitRepository.save(newCommit)
         logger.debug { "Saved new commit ${commitInfo.commitHash.take(8)} by ${commitInfo.author} with state NEW" }
     }
 
     /**
-     * Find commits that need to be indexed (state = NEW).
+     * Find commits that need to be indexed for a standalone project (state = NEW).
      */
     fun findNewCommits(projectId: ObjectId): Flow<GitCommitDocument> =
         gitCommitRepository
             .findByProjectIdAndStateOrderByCommitDateAsc(projectId, GitCommitState.NEW)
-            .asFlow()
+
+    // ========== Mono-Repo Methods ==========
+
+    /**
+     * Save new commit hashes from Git log for a client mono-repo.
+     */
+    suspend fun saveNewMonoRepoCommits(
+        clientId: ObjectId,
+        monoRepoId: String,
+        commits: List<GitCommitInfo>,
+        branch: String = "main",
+    ) {
+        logger.info { "Starting batch commit sync for mono-repo $monoRepoId" }
+
+        if (commits.isEmpty()) {
+            logger.info { "No commits to process for mono-repo $monoRepoId" }
+            return
+        }
+
+        logger.info { "Found ${commits.size} commits in Git for mono-repo $monoRepoId" }
+
+        val existingCommitHashes = loadExistingMonoRepoCommitHashes(clientId, monoRepoId)
+        logger.info { "Found ${existingCommitHashes.size} existing commits in DB for mono-repo $monoRepoId" }
+
+        val newCommits = commits.filterNot { existingCommitHashes.contains(it.commitHash) }
+        logger.info { "Identified ${newCommits.size} new commits to save for mono-repo $monoRepoId" }
+
+        newCommits.forEach { saveNewMonoRepoCommit(clientId, monoRepoId, it, branch) }
+        logger.info { "Batch sync completed for mono-repo $monoRepoId" }
+    }
+
+    private suspend fun loadExistingMonoRepoCommitHashes(
+        clientId: ObjectId,
+        monoRepoId: String,
+    ): Set<String> {
+        val existingCommits = mutableListOf<GitCommitDocument>()
+
+        gitCommitRepository
+            .findByClientIdAndMonoRepoId(clientId, monoRepoId)
+            .collect { existingCommits.add(it) }
+
+        return existingCommits.map { it.commitHash }.toSet()
+    }
+
+    private suspend fun saveNewMonoRepoCommit(
+        clientId: ObjectId,
+        monoRepoId: String,
+        commitInfo: GitCommitInfo,
+        branch: String,
+    ) {
+        val newCommit =
+            GitCommitDocument(
+                clientId = clientId,
+                projectId = null,
+                monoRepoId = monoRepoId,
+                commitHash = commitInfo.commitHash,
+                state = GitCommitState.NEW,
+                author = commitInfo.author,
+                message = commitInfo.message,
+                commitDate = commitInfo.commitDate,
+                branch = branch,
+            )
+        gitCommitRepository.save(newCommit)
+        logger.debug { "Saved new mono-repo commit ${commitInfo.commitHash.take(8)} by ${commitInfo.author} with state NEW" }
+    }
+
+    /**
+     * Find commits that need to be indexed for a mono-repo (state = NEW).
+     */
+    fun findNewMonoRepoCommits(
+        clientId: ObjectId,
+        monoRepoId: String,
+    ): Flow<GitCommitDocument> =
+        gitCommitRepository
+            .findByClientIdAndMonoRepoIdAndStateOrderByCommitDateAsc(clientId, monoRepoId, GitCommitState.NEW)
+
+    // ========== Shared Methods ==========
 
     /**
      * Mark commit as indexed after successful processing.
+     * Works for both standalone and mono-repo commits.
      */
     suspend fun markAsIndexed(commitDocument: GitCommitDocument) {
         val updated = commitDocument.copy(state = GitCommitState.INDEXED)
-        gitCommitRepository.save(updated).awaitSingleOrNull()
+        gitCommitRepository.save(updated)
         logger.debug { "Marked commit ${commitDocument.commitHash.take(8)} as INDEXED" }
     }
 }

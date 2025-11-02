@@ -1,26 +1,23 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.TimeoutsProperties
+import com.jervis.common.client.IJoernClient
+import com.jervis.common.dto.JoernQueryDto
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.plan.Plan
-import com.jervis.service.analysis.JoernAnalysisService
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
 import com.jervis.service.storage.DirectoryStructureService
-import com.jervis.util.ProcessStreamingUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import org.springframework.stereotype.Service
-import java.io.File
 
 @Service
 class CodeAnalyzeTool(
     private val llmGateway: LlmGateway,
-    private val joernAnalysisService: JoernAnalysisService,
-    private val timeoutsProperties: TimeoutsProperties,
+    private val joernClient: IJoernClient,
     private val directoryStructureService: DirectoryStructureService,
     override val promptRepository: PromptRepository,
 ) : McpTool {
@@ -69,60 +66,20 @@ class CodeAnalyzeTool(
             }
 
             try {
-                // Detect language buckets and ensure CPG files exist
-                val languageBuckets = joernAnalysisService.detectLanguageBuckets(projectPath)
-                val allCpgMap = joernAnalysisService.ensurePerLanguageCpg(projectPath, languageBuckets)
-
-                if (allCpgMap.isEmpty()) {
-                    return@withContext ToolResult.error("No CPG files found in project. Run indexing first to generate CPG files.")
+                val script = buildJoernQuery(params)
+                val zipB64 = zipDirectoryBase64(projectPath)
+                val request = JoernQueryDto(query = script, projectZipBase64 = zipB64)
+                val resp = joernClient.run(request)
+                if (resp.exitCode != 0) {
+                    return@withContext ToolResult.error("Joern failed (exit=${resp.exitCode}): ${resp.stderr ?: resp.stdout}")
                 }
-
-                val cpgMap =
-                    if (params.targetLanguage.isNotBlank()) {
-                        allCpgMap.filterKeys { language ->
-                            language.equals(params.targetLanguage, ignoreCase = true)
-                        }
-                    } else {
-                        allCpgMap
-                    }
-
-                if (cpgMap.isEmpty()) {
-                    return@withContext ToolResult.error(
-                        "No CPG files found for language '${params.targetLanguage}'. Available languages: ${
-                            allCpgMap.keys.joinToString(", ")
-                        }",
-                    )
-                }
-
-                val results = mutableListOf<String>()
-
-                for ((languageName, cpgPath) in cpgMap) {
-                    try {
-                        val script = loadAndPrepareScript(params, cpgPath, languageName)
-                        val scriptFile = createTempScriptFile(script, languageName)
-                        val result = runJoernScript(scriptFile, projectDir)
-
-                        if (!result.isSuccess) {
-                            return@withContext ToolResult.error("Joern failed for ${cpgPath.fileName}: ${result.output}")
-                        }
-
-                        val languageResult = "=== ${languageName.uppercase()} ANALYSIS ===\n${result.output}"
-                        results.add(languageResult)
-                    } catch (e: Exception) {
-                        val errorMessage = e.message ?: e.toString()
-                        val errorResult = "=== ${languageName.uppercase()} ANALYSIS (FAILED) ===\nError: $errorMessage"
-                        results.add(errorResult)
-                    }
-                }
-
-                val combinedResults = results.joinToString("\n\n---\n\n")
 
                 ToolResult.analysisResult(
                     toolName = "CODE_ANALYZE",
                     analysisType = "Code Analysis: ${params.analysisQuery}",
-                    count = cpgMap.size,
-                    unit = "language",
-                    results = formatJoernOutput(combinedResults),
+                    count = 1,
+                    unit = "project",
+                    results = formatJoernOutput(resp.stdout),
                 )
             } catch (e: Exception) {
                 val errorMessage = e.message ?: e.toString()
@@ -130,94 +87,48 @@ class CodeAnalyzeTool(
             }
         }
 
-    private suspend fun runJoernScript(
-        scriptPath: File,
-        projectDir: File,
-    ): ProcessResult =
-        withContext(Dispatchers.IO) {
-            val processResult =
-                ProcessStreamingUtils.runProcess(
-                    ProcessStreamingUtils.ProcessConfig(
-                        command =
-                            buildString {
-                                append("joern")
-                                append(" -J-XX:+IgnoreUnrecognizedVMOptions")
-                                append(" -J-Djava.awt.headless=true")
-                                append(" -J--add-opens=java.base/sun.nio.ch=ALL-UNNAMED")
-                                append(" -J--add-opens=java.base/java.io=ALL-UNNAMED")
-                                append(" -J--add-opens=java.base/java.util=ALL-UNNAMED")
-                                append(" --script \"${scriptPath.absolutePath}\"")
-                            },
-                        workingDirectory = projectDir,
-                        timeoutSeconds = timeoutsProperties.mcp.joernToolTimeoutSeconds,
-                    ),
-                )
+    private fun buildJoernQuery(params: CodeAnalyzeParams): String {
+        // Build a simple Joern query - the service-joern will handle the template processing
+        return """
+            importCode(".")
+            val language = "${params.targetLanguage.ifBlank { "project" }}"
+            val analysisQuery = "${params.analysisQuery}"
+            val methodPattern = "${params.methodPattern}"
+            val maxResults = ${params.maxResults}
+            val includeExternal = ${params.includeExternal}
+            """.trimIndent()
+    }
 
-            ProcessResult(processResult.output, processResult.isSuccess, processResult.exitCode)
+    private fun zipDirectoryBase64(root: java.nio.file.Path): String {
+        val baos = java.io.ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(baos).use { zos ->
+            java.nio.file.Files.walk(root).use { stream ->
+                stream
+                    .filter { p ->
+                        java.nio.file.Files
+                            .isRegularFile(p)
+                    }.filter { p -> !p.toString().contains("${java.io.File.separator}.git${java.io.File.separator}") }
+                    .forEach { file ->
+                        val entryName = root.relativize(file).toString().replace('\\', '/')
+                        val entry = java.util.zip.ZipEntry(entryName)
+                        zos.putNextEntry(entry)
+                        java.nio.file.Files.newInputStream(file).use { input ->
+                            input.copyTo(zos)
+                        }
+                        zos.closeEntry()
+                    }
+            }
         }
-
-    private fun loadAndPrepareScript(
-        params: CodeAnalyzeParams,
-        cpgPath: java.nio.file.Path,
-        language: String,
-    ): String {
-        val templateResource =
-            this::class.java.getResourceAsStream("/joern/code_analysis.sc")
-                ?: throw RuntimeException("Code analysis template not found in resources")
-
-        val template = templateResource.bufferedReader().use { it.readText() }
-
-        return template
-            .replace("{{CPG_PATH}}", cpgPath.toString())
-            .replace("{{LANGUAGE}}", language)
-            .replace("{{ANALYSIS_QUERY}}", params.analysisQuery)
-            .replace("{{METHOD_PATTERN}}", params.methodPattern)
-            .replace("{{MAX_RESULTS}}", params.maxResults.toString())
-            .replace("{{INCLUDE_EXTERNAL}}", params.includeExternal.toString())
+        return java.util.Base64
+            .getEncoder()
+            .encodeToString(baos.toByteArray())
     }
 
     private fun formatJoernOutput(output: String): String =
         try {
-            // Try to format JSON if it's valid
             val trimmed = output.trim()
-            if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-                // Basic JSON formatting - could be enhanced with a proper JSON library
-                trimmed
-            } else {
-                output
-            }
+            if (trimmed.startsWith("{") || trimmed.startsWith("[")) trimmed else output
         } catch (_: Exception) {
             output
         }
-
-    /**
-     * Extract language name from CPG file path (e.g., "cpg_kotlin.bin" -> "kotlin")
-     */
-    private fun extractLanguageFromCpgPath(cpgPath: java.nio.file.Path): String {
-        val fileName = cpgPath.fileName.toString()
-        return if (fileName.startsWith("cpg_") && fileName.endsWith(".bin")) {
-            fileName.removePrefix("cpg_").removeSuffix(".bin")
-        } else {
-            "unknown"
-        }
-    }
-
-    /**
-     * Create temporary script file for a specific language
-     */
-    private suspend fun createTempScriptFile(
-        script: String,
-        languageName: String,
-    ): File =
-        withContext(Dispatchers.IO) {
-            val scriptFile = File.createTempFile("joern-$languageName-", ".sc")
-            scriptFile.writeText(script)
-            scriptFile
-        }
-
-    data class ProcessResult(
-        val output: String,
-        val isSuccess: Boolean,
-        val exitCode: Int,
-    )
 }

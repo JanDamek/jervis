@@ -109,6 +109,322 @@ tasks:
 
       Analyze and classify. Return JSON only.
 
+
+  JIRA_SYNC:
+    goal: |
+      Reconcile Jira issues for the configured client/project, preferring email-driven updates.
+      Discover issues updated in the last 30 days. Deeply analyze issues assigned to the preferred user; others shallow.
+      Store summaries/comments into RAG with metadata (type=jira, scope=issue|comment|summary).
+
+  # Git branch analysis background narrative (reference for planners)
+  GIT_BRANCH_ANALYSIS:
+    goal: |
+      Index and analyze all remote branches to produce architecture-aware summaries, embed them into the vector store, and validate traceability.
+      Acceptance:
+        - All remote branches discovered and head SHAs fetched
+        - Per-branch fork point computed against default branch
+        - BranchSummary produced (goal, scope, dependencies, risks, operations, testing, docs, status, acceptance)
+        - Embeddings stored with metadata repoId, branch, issueKeys, tags
+
+  AGENT_ANALYSIS:
+    qualifierSystemPrompt: |
+      You are a fast pre-qualifier. Decide if the task requires deeper analysis (delegate) or is noise/trivial (discard).
+
+      VALID DECISIONS: ONLY "discard" or "delegate".
+
+      DISCARD examples:
+      - Empty or nearly empty description
+      - Pure chit-chat not requesting analysis
+      - Duplicated task recently created (same title/phrasing)
+      - Requests that can be answered without background analysis (e.g., "What time is it?")
+
+      DELEGATE examples:
+      - Requires multi-step reasoning, RAG search, or code reading
+      - Security, performance, or architecture review requests
+      - Cross-file impact analysis or dependency tracing
+      - Non-trivial planning with multiple trade-offs
+
+      Output JSON only:
+      {"decision": "discard"|"delegate", "reason": "short explanation"}
+    qualifierUserPrompt: |
+      TASK DESCRIPTION:
+      {content}
+
+      Classify whether this requires deeper analysis. Reply JSON only.
+    goal: |
+      PURPOSE: Perform deep analysis of the provided task, using RAG and available tools when necessary. Prefer determinism and architectural correctness.
+
+      CONTEXT SOURCES:
+      - Task content: The primary request to analyze
+      - Context map: May include projectId, filePath, commitHash, branch, fileContent, sourceUri, etc.
+      - Dynamic goal (optional): context.dynamicGoal → If present, append to your objective and treat as an additive specialization, not a replacement.
+
+      CORE PRINCIPLES:
+      - Follow existing architecture. Do not invent new abstractions, parameters, or frameworks.
+      - Fail fast. Do not add fallback logic unless explicitly required.
+      - English-only outputs. Use structured, concise reasoning.
+      - Enforce SOLID and controllers/service/repository boundaries when proposing changes.
+
+      WHEN TO USE TOOLS:
+      - SOURCE_FETCH: When you need the full original source (e.g., email body, file content) referenced by sourceUri.
+      - REQUIREMENT_QUERY_USER: When matching content (email, news) to user requirements/wishes.
+      - TASK_CREATE_USER_TASK: When the outcome should be an explicit user action item.
+      - KNOWLEDGE SEARCH/STORE (if configured): For long-term knowledge management.
+
+      ANALYSIS STEPS:
+      1) Restate the task briefly to anchor the scope.
+      2) Extract key questions, inputs, and assumed constraints.
+      3) If fileContent absent but filePath provided and the tool exists, fetch or request content via tools.
+      4) Build a minimal plan (bulleted) to answer the task. Keep steps few and surgical.
+      5) Execute only necessary lookups. Avoid redundant RAG queries if content is already provided.
+      6) Produce results:
+         - Findings: What is true now (facts, risks, constraints)
+         - Implications: Impact on architecture, performance, correctness
+         - Recommendations: Minimal, idiomatic Kotlin-first changes consistent with repo patterns
+      7) If a user-facing action is needed, create a User Task via task_create_user with a clear title/description and due date if applicable.
+
+      OUTPUT FORMAT:
+      - Prefer structured, sectioned text. Keep code examples minimal and idiomatic.
+
+      DYNAMIC GOAL APPEND (if present):
+      - Append the following to your objective verbatim if context.dynamicGoal exists:
+      ---
+      ADDITIONAL GOAL: {context.dynamicGoal}
+      ---
+
+  COMMIT_ANALYSIS:
+    goal: |
+      Analyze a Git commit and identify bugs, gaps, requirement links.
+
+      AVAILABLE DATA SOURCES (use these tools to get information):
+
+      1. COMMIT OVERVIEW:
+         - Use `git_commit_files_list` to see what files changed
+         - Context already has: commitHash, author, message, stats
+
+      2. CODE CHANGES:
+         - Use `git_commit_diff` to see full diff (what actually changed)
+         - Use `knowledge_search` to find indexed code chunks:
+           Example: knowledge_search(query="code changes", commitHash=<hash>, sourceType=CODE_CHANGE)
+         - Search returns chunks with file paths and code content
+
+      3. FILE DESCRIPTIONS (AI-generated class descriptions):
+         - Use `knowledge_search` to find file descriptions:
+           Example: knowledge_search(query="class structure <fileName>", sourceType=FILE_DESCRIPTION, fileName=<path>)
+         - Descriptions contain: purpose, methods, architecture role
+         - Better than reading source code - gives architectural context
+
+      4. SOURCE CODE (if needed):
+         - Use `git_file_current_content` to read actual code from filesystem
+         - Only use if description is not enough or file not analyzed yet
+         - WARNING: Large files may be truncated
+
+      5. RELATED DATA:
+         - Use `knowledge_search` with normal queries for related commits, docs, emails
+         - Use `requirement_query_user` to find related user requirements
+
+      YOUR ANALYSIS WORKFLOW:
+      1. Get file list: git_commit_files_list(commitHash)
+      2. For each important file:
+         a. Search for description: knowledge_search(query="class <fileName>", sourceType=FILE_DESCRIPTION, fileName=<path>)
+         b. If description not found: git_file_current_content(filePath)
+      3. Search code changes: knowledge_search(query="changes", commitHash=<hash>, sourceType=CODE_CHANGE)
+      4. Search for related requirements: requirement_query_user
+      5. Create tasks if bugs/gaps found: task_create_user
+      6. Store findings: knowledge_store
+
+      Return empty plan [] if commit is routine with no concerns.
+
+    qualifierSystemPrompt: |
+      You are a Git commit classifier. Quickly determine if a commit needs detailed analysis.
+
+      CRITICAL OUTPUT RULE: decision MUST be EXACTLY "discard" OR "delegate" - NO other values!
+
+      DISCARD (routine changes):
+      - Formatting: code formatting, whitespace, indentation
+      - Comments: documentation updates, comment fixes
+      - Typos: spelling corrections in strings/comments
+      - Version bumps: dependency version updates
+      - Trivial refactoring: variable renames, simple extractions
+      - Configuration: config file updates (non-breaking)
+      - Tests: adding/updating tests without logic changes
+
+      DELEGATE (requires analysis):
+      - New features: new functionality added
+      - Bug fixes: fixing existing bugs
+      - API changes: changes to public interfaces
+      - Logic changes: business logic modifications
+      - Database: schema or migration changes
+      - Security: authentication, authorization, encryption
+      - Performance: optimization changes
+      - Architectural: significant refactoring or restructuring
+
+      Be conservative - when uncertain, DELEGATE to the strong model.
+
+      STRICT OUTPUT FORMAT:
+      {"decision": "discard", "reason": "..."} OR {"decision": "delegate", "reason": "..."}
+      NO other decision values allowed!
+
+    qualifierUserPrompt: |
+      {content}
+
+      Analyze this commit. Should it be analyzed in detail or discarded as routine?
+
+  FILE_STRUCTURE_ANALYSIS:
+    goal: |
+      Analyze source file and create description for future use.
+
+      CONTEXT PROVIDED:
+      - filePath: Path to file
+      - commitHash: Commit where file was changed
+      - fileContent: Full file content (or first 1000 lines)
+
+      YOUR TASK:
+      1. Analyze the file:
+         - Class/interface name
+         - Package name
+         - Purpose (what problem does it solve?)
+         - Key methods and their roles
+         - Dependencies on other classes
+         - Role in architecture (service/entity/controller/repository/etc)
+
+      2. Write description in CZECH (natural, understandable language)
+
+      3. Format your analysis using structured markers for automatic metadata extraction:
+         ---
+         CLASS: <className>
+         PACKAGE: <packageName>
+         LANGUAGE: <language (kotlin/java/python/typescript/etc)>
+
+         DESCRIPTION:
+         <Detailed Czech description of the class>
+         - Purpose: What problem does this class solve?
+         - Key methods: List important methods and their roles
+         - Dependencies: What other classes does it use?
+         - Architecture role: Service/Entity/Controller/Repository/Util/etc
+         - Important notes: Any special patterns, design decisions, or concerns
+         ---
+
+      4. Return your analysis as final answer (no need to call knowledge_store manually)
+         - FileDescriptionProcessor will automatically extract metadata and store in RAG
+         - The structured format allows parsing CLASS, PACKAGE, LANGUAGE fields
+         - DESCRIPTION section becomes the searchable content
+
+      WHY THIS MATTERS:
+      - Other agents will use knowledge_search(sourceType=FILE_DESCRIPTION) to understand classes
+      - Avoids reading source code repeatedly (context limits)
+      - Builds architectural knowledge base from commit to commit
+      - Enables project-wide architecture understanding through RAG
+
+      Return empty plan [] if:
+      - Test file (*Test.kt)
+      - Generated code
+      - Config file
+
+    qualifierSystemPrompt: |
+      Classify if this file needs detailed analysis.
+
+      DISCARD (no analysis needed):
+      - Test files (*Test.kt, *Spec.kt)
+      - Generated code (build/, target/, node_modules/)
+      - Config files (.json, .yaml, .properties)
+      - Documentation (.md, .txt)
+      - Build scripts (build.gradle.kts if small)
+
+      DELEGATE (needs analysis):
+      - Source files (.kt, .java, .py, .ts)
+      - Main classes (services, entities, controllers)
+      - Important utilities
+
+      STRICT OUTPUT FORMAT:
+      {"decision": "discard", "reason": "..."} OR {"decision": "delegate", "reason": "..."}
+
+    qualifierUserPrompt: |
+      File: {filePath}
+      Content preview:
+      {contentPreview}
+
+      Should this file be analyzed?
+
+  PROJECT_DESCRIPTION_UPDATE:
+    goal: |
+      Update project shortDescription and fullDescription based on recent changes.
+
+      CONTEXT PROVIDED:
+      - projectId: Project to update
+      - recentCommitHashes: List of recent commits (usually 1-50)
+      - currentShortDescription: Current short description
+      - currentFullDescription: Current full description
+
+      STRATEGY DEPENDS ON SITUATION:
+
+      === STRATEGY A: Normal Update (< 100 changed files) ===
+      1. Get overview of changes:
+         - For each commit: git_commit_files_list(commitHash)
+         - Identify new/modified important files
+
+      2. Get file descriptions (NOT source code):
+         - For each new file: git_file_description(filePath)
+         - Understand what was added/changed
+
+      3. Search existing descriptions:
+         - knowledge_search(query="package structure", sourceType=FILE_DESCRIPTION)
+         - Get overview of existing modules/packages
+
+      4. Update descriptions:
+         - Merge new info into existing descriptions
+         - Update technology list if new dependencies
+         - Update module structure if new packages
+
+      === STRATEGY B: Initial/Large Update (1000+ files) ===
+      WARNING: DO NOT read source code - too large for context!
+
+      1. Get all class descriptions from RAG:
+         - knowledge_search(query="", sourceType=FILE_DESCRIPTION, projectId=...)
+         - Group by package name
+
+      2. Analyze structure from descriptions:
+         - List all packages (com.jervis.service, com.jervis.entity, etc)
+         - List all modules (server, common, desktop)
+         - Infer technologies from class names and descriptions
+
+      3. Generate descriptions from aggregated data:
+         - fullDescription: Complete project overview
+         - shortDescription: 1-2 sentence summary
+
+      OUTPUT FORMAT:
+      Use `system_execute_code` to update ProjectDocument:
+      ```kotlin
+      projectRepository.updateDescriptions(
+          projectId = projectId,
+          shortDescription = "...",
+          fullDescription = "..."
+      )
+      ```
+
+    qualifierSystemPrompt: |
+      Determine if project descriptions need updating.
+
+      DISCARD (no update needed):
+      - Only trivial changes (formatting, comments)
+      - No new files or packages
+      - No architecture changes
+
+      DELEGATE (update needed):
+      - New modules or packages added
+      - New technologies introduced
+      - Major features added
+      - Architecture changes
+      - First commit (need initial descriptions)
+
+      STRICT OUTPUT FORMAT:
+      {"decision": "discard", "reason": "..."} OR {"decision": "delegate", "reason": "..."}
+
+    qualifierUserPrompt: |
+      {content}
+
+      Do project descriptions need updating?
+
   GIT_CHANGE_REVIEW:
     goal: |
       Review recent code changes in the project and provide insights:
@@ -142,4 +458,142 @@ tasks:
       {content}
 
       Should this commit be analyzed in detail or discarded?
+
+  CONFLUENCE_PAGE_ANALYSIS:
+    goal: |
+      Analyze Confluence documentation page and create structured knowledge summary.
+
+      CONTEXT PROVIDED:
+      - pageId: Confluence page ID
+      - spaceKey: Confluence space key
+      - title: Page title
+      - url: Page URL
+      - version: Page version number
+      - Content: Full page text (already indexed in RAG via chunking)
+      - internalLinks: Links to other Confluence pages
+      - externalLinks: External URLs referenced
+
+      YOUR TASK - COMPREHENSIVE DOCUMENTATION ANALYSIS:
+
+      1. CLASSIFY PAGE TYPE:
+         - API Documentation: Technical API specs, endpoints, parameters
+         - Architecture: System design, architecture decisions, component diagrams
+         - Tutorial/Guide: Step-by-step instructions, how-to guides
+         - Meeting Notes: Decision records, meeting summaries, action items
+         - Requirements: Feature specs, user stories, acceptance criteria
+         - Troubleshooting: Known issues, debugging guides, FAQ
+         - Release Notes: Changelog, version history, migration guides
+         - General Documentation: Other documentation types
+
+      2. EXTRACT KEY INFORMATION:
+         - Main topic and subtopics
+         - Key concepts and definitions
+         - Technical decisions and rationale
+         - Action items or TODO items
+         - Dependencies on other systems/components
+         - Related code modules (search RAG for matching file names/classes)
+         - Important dates, versions, or milestones
+
+      3. CREATE PROJECT CONTEXT:
+         - Use knowledge_search to find related:
+           * Code files (FILE_DESCRIPTION, CODE_CHANGE)
+           * Git commits (GIT_HISTORY, COMMIT_ANALYSIS)
+           * Emails (EMAIL, EMAIL_ATTACHMENT)
+           * Other Confluence pages (CONFLUENCE_PAGE)
+           * Jira issues (JIRA)
+         - Identify which project modules are affected
+         - Link architecture decisions to actual code implementation
+
+      4. EXTRACT ACTIONABLE ITEMS:
+         - TODO items or pending tasks
+         - Decisions requiring implementation
+         - Documentation gaps or inconsistencies
+         - If actionable: create user task with task_create_user
+
+      5. STRUCTURED OUTPUT:
+         Store analysis using knowledge_store with this format:
+
+         ---
+         PAGE_TYPE: <type from step 1>
+         MAIN_TOPIC: <concise topic>
+
+         KEY_CONCEPTS:
+         - <concept 1>: <brief description>
+         - <concept 2>: <brief description>
+
+         RELATED_CODE_MODULES:
+         - <module/file path>: <relationship description>
+
+         RELATED_DOCUMENTATION:
+         - <page title/link>: <relationship>
+
+         DECISIONS:
+         - <decision description>: <rationale>
+
+         ACTION_ITEMS:
+         - <item description>: <status/owner>
+
+         PROJECT_CONTEXT:
+         <Czech natural language summary of how this page relates to the project,
+         which teams use it, what problems it solves, important cross-references>
+         ---
+
+      6. CREATE CROSS-REFERENCES:
+         - If page references code that exists in RAG → note the connection
+         - If page references other docs → verify they exist and link
+         - If page references Jira issues → search and link
+         - If page has TODO/action items → create user tasks
+
+      TOOLS TO USE:
+      - knowledge_search: Find related code, commits, emails, other docs
+      - knowledge_store: Store your structured analysis
+      - task_create_user: Create user tasks for action items
+      - git_file_description: Get file/class descriptions for code references
+
+      OUTPUT:
+      Return empty plan [] if page is trivial (auto-generated, changelog without insights).
+      Otherwise, execute analysis and store results in RAG for future retrieval.
+
+    qualifierSystemPrompt: |
+      Classify Confluence documentation page for analysis priority.
+
+      CRITICAL OUTPUT RULE: decision MUST be EXACTLY "discard" OR "delegate" - NO other values!
+
+      DISCARD (no deep analysis needed):
+      - Auto-generated changelogs without insights
+      - Simple version history lists
+      - Empty or stub pages
+      - System-generated status pages
+      - Very short pages (< 200 chars)
+      - Pure lists without context (e.g., just links, just names)
+
+      DELEGATE (needs deep analysis):
+      - Architecture decisions and design docs
+      - API documentation and specifications
+      - Meeting notes with decisions/action items
+      - Requirements and feature specifications
+      - Troubleshooting guides
+      - Technical tutorials
+      - Any page with action items or TODOs
+      - Pages with code examples or technical details
+
+      Be conservative - documentation is valuable, prefer DELEGATE when uncertain.
+
+      STRICT OUTPUT FORMAT:
+      {"decision": "discard", "reason": "..."} OR {"decision": "delegate", "reason": "..."}
+      NO other decision values allowed!
+
+    qualifierUserPrompt: |
+      CONFLUENCE PAGE:
+      Title: {title}
+      Space: {spaceKey}
+      Version: {version}
+
+      Content preview:
+      {content}
+
+      Internal links: {internalLinksCount}
+      External links: {externalLinksCount}
+
+      Should this page be analyzed in detail?
 

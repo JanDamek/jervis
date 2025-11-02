@@ -57,7 +57,20 @@ class ImapClient {
                     }
                 }
             }.getOrElse { e ->
-                logger.error(e) { "Failed to fetch message IDs for account ${account.id}" }
+                // Classify error type for better debugging
+                val errorType =
+                    when {
+                        e is jakarta.mail.AuthenticationFailedException -> "AUTHENTICATION_FAILED"
+                        e is java.net.SocketTimeoutException -> "CONNECTION_TIMEOUT"
+                        e is java.net.SocketException -> "NETWORK_ERROR"
+                        e.message?.contains("Connection", ignoreCase = true) == true -> "CONNECTION_ERROR"
+                        else -> "UNKNOWN_ERROR"
+                    }
+
+                logger.error(e) {
+                    "Failed to fetch message IDs for account ${account.id}: errorType=$errorType, message=${e.message}"
+                }
+                // Flow terminates gracefully - scheduler will retry on next poll cycle
             }
         }.buffer(50) // Buffer maxes 50 message IDs to prevent overwhelming downstream processing
 
@@ -84,7 +97,21 @@ class ImapClient {
                 }
             }
         }.getOrElse { e ->
-            logger.error(e) { "Failed to fetch message by UID $uid for account ${account.id}" }
+            // Classify error type for better debugging
+            val errorType =
+                when {
+                    e is jakarta.mail.AuthenticationFailedException -> "AUTHENTICATION_FAILED"
+                    e is java.net.SocketTimeoutException -> "CONNECTION_TIMEOUT"
+                    e is java.net.SocketException -> "NETWORK_ERROR"
+                    e is jakarta.mail.FolderNotFoundException -> "FOLDER_NOT_FOUND"
+                    e is jakarta.mail.MessageRemovedException -> "MESSAGE_DELETED"
+                    e.message?.contains("Connection", ignoreCase = true) == true -> "CONNECTION_ERROR"
+                    else -> "UNKNOWN_ERROR"
+                }
+
+            logger.error(e) {
+                "Failed to fetch message by UID $uid for account ${account.id}: errorType=$errorType, message=${e.message}"
+            }
             null
         }
 

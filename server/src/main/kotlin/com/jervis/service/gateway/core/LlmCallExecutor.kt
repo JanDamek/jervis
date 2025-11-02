@@ -1,8 +1,8 @@
 package com.jervis.service.gateway.core
 
-import com.jervis.configuration.ModelsProperties
 import com.jervis.configuration.prompts.PromptConfigBase
 import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.service.debug.DebugService
 import com.jervis.service.gateway.clients.ProviderClient
@@ -162,7 +162,7 @@ class LlmCallExecutor(
     /**
      * Finds the appropriate client for the given provider.
      */
-    private fun findClientForProvider(provider: com.jervis.domain.model.ModelProvider): ProviderClient =
+    private fun findClientForProvider(provider: com.jervis.domain.model.ModelProviderEnum): ProviderClient =
         clients.find { it.provider == provider }
             ?: throw IllegalStateException("No client found for provider $provider")
 
@@ -171,7 +171,7 @@ class LlmCallExecutor(
      */
     private fun validateResponse(
         response: LlmResponse,
-        provider: com.jervis.domain.model.ModelProvider,
+        provider: com.jervis.domain.model.ModelProviderEnum,
     ) {
         require(response.answer.isNotBlank()) { "Empty response from $provider" }
     }
@@ -191,7 +191,7 @@ class LlmCallExecutor(
      * Logs a successful LLM call with timing information.
      */
     private fun logSuccessfulCall(
-        provider: com.jervis.domain.model.ModelProvider,
+        provider: com.jervis.domain.model.ModelProviderEnum,
         model: String,
         startTime: Long,
     ) {
@@ -203,7 +203,7 @@ class LlmCallExecutor(
      * Logs failed LLM call with timing and error information.
      */
     private fun logFailedCall(
-        provider: com.jervis.domain.model.ModelProvider,
+        provider: com.jervis.domain.model.ModelProviderEnum,
         model: String,
         startTime: Long,
         errorDetail: String,

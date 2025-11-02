@@ -1,7 +1,7 @@
 package com.jervis.service.gateway.clients.embedding
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
-import com.jervis.domain.model.ModelProvider
+import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.service.gateway.clients.EmbeddingProviderClient
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
@@ -14,7 +14,7 @@ import org.springframework.web.reactive.function.client.awaitBody
 class LmStudioEmbeddingClient(
     @Qualifier("lmStudioWebClient") private val client: WebClient,
 ) : EmbeddingProviderClient {
-    override val provider = ModelProvider.LM_STUDIO
+    override val provider = ModelProviderEnum.LM_STUDIO
 
     override suspend fun call(
         model: String,

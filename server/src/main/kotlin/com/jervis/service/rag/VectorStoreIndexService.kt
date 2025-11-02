@@ -21,8 +21,10 @@ class VectorStoreIndexService(
 ) {
     private val logger = KotlinLogging.logger {}
 
+    // ========== Standalone Project Methods ==========
+
     /**
-     * Track a new document in vector store.
+     * Track a new document in vector store for standalone project.
      * Creates MongoDB record linking source to Qdrant vector.
      */
     suspend fun trackIndexed(
@@ -42,8 +44,9 @@ class VectorStoreIndexService(
 
         val document =
             VectorStoreIndexDocument(
-                projectId = projectId,
                 clientId = clientId,
+                projectId = projectId,
+                monoRepoId = null,
                 branch = branch,
                 sourceType = sourceType,
                 sourceId = sourceId,
@@ -64,7 +67,7 @@ class VectorStoreIndexService(
     }
 
     /**
-     * Check if content has changed since last indexing.
+     * Check if content has changed since last indexing for standalone project.
      * Returns true if content hash differs or document doesn't exist.
      */
     suspend fun hasContentChanged(
@@ -78,6 +81,79 @@ class VectorStoreIndexService(
                 sourceType,
                 sourceId,
                 projectId,
+                true,
+            )
+
+        if (existing == null) {
+            return true // Not indexed yet
+        }
+
+        val newHash = calculateContentHash(content)
+        return existing.contentHash != newHash
+    }
+
+    // ========== Mono-Repo Methods ==========
+
+    /**
+     * Track a new document in vector store for mono-repo.
+     * Creates MongoDB record with monoRepoId (projectId = null).
+     */
+    suspend fun trackIndexedForMonoRepo(
+        clientId: ObjectId,
+        monoRepoId: String,
+        branch: String,
+        sourceType: RagSourceType,
+        sourceId: String,
+        vectorStoreId: String,
+        vectorStoreName: String,
+        content: String,
+        filePath: String? = null,
+        symbolName: String? = null,
+        commitHash: String? = null,
+    ): VectorStoreIndexDocument {
+        val contentHash = calculateContentHash(content)
+
+        val document =
+            VectorStoreIndexDocument(
+                clientId = clientId,
+                projectId = null,
+                monoRepoId = monoRepoId,
+                branch = branch,
+                sourceType = sourceType,
+                sourceId = sourceId,
+                vectorStoreId = vectorStoreId,
+                vectorStoreName = vectorStoreName,
+                contentHash = contentHash,
+                filePath = filePath,
+                symbolName = symbolName,
+                commitHash = commitHash,
+            )
+
+        val saved = repository.save(document)
+        logger.debug {
+            "Tracked indexed mono-repo document: monoRepo=$monoRepoId, branch=$branch, " +
+                "sourceType=$sourceType, sourceId=$sourceId, vectorStoreId=$vectorStoreId"
+        }
+        return saved
+    }
+
+    /**
+     * Check if content has changed since last indexing for mono-repo.
+     * Returns true if content hash differs or document doesn't exist.
+     */
+    suspend fun hasContentChangedForMonoRepo(
+        sourceType: RagSourceType,
+        sourceId: String,
+        clientId: ObjectId,
+        monoRepoId: String,
+        content: String,
+    ): Boolean {
+        val existing =
+            repository.findBySourceTypeAndSourceIdAndClientIdAndMonoRepoIdAndIsActive(
+                sourceType,
+                sourceId,
+                clientId,
+                monoRepoId,
                 true,
             )
 
@@ -158,13 +234,26 @@ class VectorStoreIndexService(
         projectId: ObjectId,
         branch: String,
         filePath: String,
-    ): VectorStoreIndexDocument? =
-        repository.findByProjectIdAndBranchAndFilePathAndIsActive(
-            projectId,
-            branch,
-            filePath,
-            true,
-        )
+    ): VectorStoreIndexDocument? {
+        val results =
+            repository
+                .findByProjectIdAndBranchAndFilePathAndIsActiveOrderByLastUpdatedAtDesc(
+                    projectId,
+                    branch,
+                    filePath,
+                    true,
+                ).toList()
+
+        if (results.size > 1) {
+            logger.warn {
+                "Found ${results.size} duplicate active index records for file $filePath " +
+                    "(project=$projectId, branch=$branch). Using latest. " +
+                    "Consider cleanup of duplicates."
+            }
+        }
+
+        return results.firstOrNull()
+    }
 
     /**
      * Get all indexed documents for a commit.

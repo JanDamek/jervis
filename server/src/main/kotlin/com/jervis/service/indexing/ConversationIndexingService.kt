@@ -1,6 +1,6 @@
 package com.jervis.service.indexing
 
-import com.jervis.domain.model.ModelType
+import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
@@ -67,7 +67,7 @@ class ConversationIndexingService(
             // Store each chunk
             for ((index, chunk) in chunks.withIndex()) {
                 try {
-                    val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, chunk.text())
+                    val embedding = embeddingGateway.callEmbedding(ModelTypeEnum.EMBEDDING_TEXT, chunk.text())
 
                     val ragDocument =
                         RagDocument(
@@ -93,7 +93,7 @@ class ConversationIndexingService(
                             chunkOf = chunks.size,
                         )
 
-                    vectorStorage.store(ModelType.EMBEDDING_TEXT, ragDocument, embedding)
+                    vectorStorage.store(ModelTypeEnum.EMBEDDING_TEXT, ragDocument, embedding)
                 } catch (e: Exception) {
                     logger.error(e) { "CONVERSATION_INDEXING: Failed to store chunk $index" }
                 }

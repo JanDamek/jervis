@@ -14,15 +14,34 @@ enum class GitCommitState {
 
 @Document(collection = "git_commits")
 @CompoundIndexes(
-    CompoundIndex(name = "project_commitHash_idx", def = "{'projectId':1,'commitHash':1}", unique = true),
-    CompoundIndex(name = "project_state_commitDate_idx", def = "{'projectId':1,'state':1,'commitDate':1}"),
+    CompoundIndex(
+        name = "client_monorepo_commitHash_idx",
+        def = "{'clientId':1,'monoRepoId':1,'commitHash':1}",
+        unique = true,
+    ),
+    CompoundIndex(
+        name = "project_commitHash_idx",
+        def = "{'projectId':1,'commitHash':1}",
+        unique = true,
+    ),
+    CompoundIndex(
+        name = "client_monorepo_state_idx",
+        def = "{'clientId':1,'monoRepoId':1,'state':1,'commitDate':1}",
+    ),
+    CompoundIndex(
+        name = "project_state_idx",
+        def = "{'projectId':1,'state':1,'commitDate':1}",
+    ),
 )
 data class GitCommitDocument(
     @Id val id: ObjectId = ObjectId(),
-    val projectId: ObjectId,
+    val clientId: ObjectId,
+    val projectId: ObjectId? = null,
+    val monoRepoId: String? = null,
     val commitHash: String,
     val state: GitCommitState,
     val author: String? = null,
     val message: String? = null,
     val commitDate: Instant? = null,
+    val branch: String = "main",
 )

@@ -1,22 +1,23 @@
 package com.jervis.service.link
 
-import com.jervis.service.document.TikaDocumentProcessor
+import com.jervis.common.client.ITikaClient
+import com.jervis.common.dto.TikaProcessRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
-import java.io.ByteArrayInputStream
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
+import java.util.Base64
 
 private val logger = KotlinLogging.logger {}
 
 @Service
 class LinkContentService(
-    private val tikaDocumentProcessor: TikaDocumentProcessor,
+    private val tikaClient: ITikaClient,
 ) {
     private val httpClient: HttpClient =
         HttpClient
@@ -73,13 +74,15 @@ class LinkContentService(
 
                 val fileName = extractFileNameFromUri(uri, contentType)
                 val processingResult =
-                    tikaDocumentProcessor.processDocumentStream(
-                        inputStream = ByteArrayInputStream(responseBody),
-                        fileName = fileName,
-                        sourceLocation =
-                            TikaDocumentProcessor.SourceLocation(
-                                documentPath = url,
-                            ),
+                    tikaClient.process(
+                        TikaProcessRequest(
+                            source =
+                                TikaProcessRequest.Source.FileBytes(
+                                    fileName = fileName,
+                                    dataBase64 = Base64.getEncoder().encodeToString(responseBody),
+                                ),
+                            includeMetadata = true,
+                        ),
                     )
 
                 if (!processingResult.success) {

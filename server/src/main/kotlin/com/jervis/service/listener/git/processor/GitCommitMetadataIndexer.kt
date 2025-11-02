@@ -1,13 +1,11 @@
 package com.jervis.service.listener.git.processor
 
-import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.domain.model.ModelType
+import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.ProjectDocument
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
-import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.git.state.GitCommitInfo
 import com.jervis.service.git.state.GitCommitStateManager
 import com.jervis.service.rag.VectorStoreIndexService
@@ -23,26 +21,27 @@ import java.time.Instant
 import java.time.format.DateTimeFormatter
 
 /**
- * Indexes Git commit metadata into RAG system.
+ * Indexes Git commit metadata into RAG system WITHOUT LLM calls.
  * Focuses on commit-level information: author, message, files changed, stats.
  *
  * Architecture follows email indexing pattern:
  * 1. Fetch commits from Git log
  * 2. Save commit IDs to state manager (MongoDB)
  * 3. Process only NEW commits from state manager
- * 4. Create atomic sentences for each commit
+ * 4. Create plain text summary (NO LLM)
  * 5. Embed and store in Qdrant with vector store tracking
  * 6. Mark commits as INDEXED after processing
  *
+ * Detailed commit analysis happens later via PendingTask system with qualification.
+ *
  * Does NOT handle:
  * - Code diff indexing (see GitDiffCodeIndexer)
- * - Pending task creation (see GitTaskCreator)
+ * - LLM-based analysis (moved to background tasks)
  */
 @Service
 class GitCommitMetadataIndexer(
     private val embeddingGateway: EmbeddingGateway,
     private val vectorStorage: VectorStorageRepository,
-    private val llmGateway: LlmGateway,
     private val stateManager: GitCommitStateManager,
     private val vectorStoreIndexService: VectorStoreIndexService,
 ) {
@@ -74,8 +73,10 @@ class GitCommitMetadataIndexer(
         val changedMethods: Map<String, Set<String>> = emptyMap(),
     )
 
+    // ========== Standalone Project Methods ==========
+
     /**
-     * Index git history following email indexing pattern.
+     * Index git history for a standalone project following email indexing pattern.
      * 1. Sync commit IDs from Git log
      * 2. Process NEW commits from state manager
      *
@@ -92,10 +93,10 @@ class GitCommitMetadataIndexer(
                 logger.info { "Starting git history indexing for project: ${project.name}, branch: $branch" }
 
                 // Step 1: Sync commit IDs from Git (similar to syncMessageIdsFromImap)
-                syncCommitIdsFromGit(project, projectPath, maxCommits)
+                syncCommitIdsFromGit(project, projectPath, maxCommits, branch)
 
                 // Step 2: Process NEW commits (similar to processNewMessages)
-                val result = processNewCommits(project, projectPath, branch)
+                val result = processNewCommits(project, null, projectPath, branch)
 
                 logger.info {
                     "Git history indexing completed for project: ${project.name} - " +
@@ -110,24 +111,202 @@ class GitCommitMetadataIndexer(
         }
 
     /**
-     * Sync commit IDs from Git log to state manager.
+     * Sync commit IDs from Git log to state manager for standalone project.
      * Analogous to EmailIndexingOrchestrator.syncMessageIdsFromImap()
      */
     private suspend fun syncCommitIdsFromGit(
         project: ProjectDocument,
         projectPath: Path,
         maxCommits: Int,
+        branch: String,
     ) {
         val commits = fetchCommitInfoFromGit(projectPath, maxCommits)
-        stateManager.saveNewCommits(project.id, commits)
+        stateManager.saveNewCommits(project.clientId, project.id, commits, branch)
+    }
+
+    // ========== Mono-Repo Methods ==========
+
+    /**
+     * Index git history for a client mono-repo.
+     * Uses clientId + monoRepoId for RAG queries (no projectId).
+     */
+    suspend fun indexMonoRepoGitHistory(
+        clientId: org.bson.types.ObjectId,
+        monoRepoId: String,
+        monoRepoPath: Path,
+        branch: String,
+        maxCommits: Int = 1000,
+    ): GitHistoryIndexingResult =
+        withContext(Dispatchers.IO) {
+            try {
+                logger.info { "Starting git history indexing for mono-repo: $monoRepoId, branch: $branch" }
+
+                // Step 1: Sync commit IDs from Git
+                syncMonoRepoCommitIdsFromGit(clientId, monoRepoId, monoRepoPath, maxCommits, branch)
+
+                // Step 2: Process NEW commits
+                val result = processNewMonoRepoCommits(clientId, monoRepoId, monoRepoPath, branch)
+
+                logger.info {
+                    "Git history indexing completed for mono-repo: $monoRepoId - " +
+                        "Processed: ${result.processedCommits}, Errors: ${result.errorCommits}"
+                }
+
+                result
+            } catch (e: Exception) {
+                logger.error(e) { "Error during git history indexing for mono-repo: $monoRepoId" }
+                GitHistoryIndexingResult(0, 0, 1)
+            }
+        }
+
+    /**
+     * Sync commit IDs from Git log to state manager for mono-repo.
+     */
+    private suspend fun syncMonoRepoCommitIdsFromGit(
+        clientId: org.bson.types.ObjectId,
+        monoRepoId: String,
+        monoRepoPath: Path,
+        maxCommits: Int,
+        branch: String,
+    ) {
+        val commits = fetchCommitInfoFromGit(monoRepoPath, maxCommits)
+        stateManager.saveNewMonoRepoCommits(clientId, monoRepoId, commits, branch)
     }
 
     /**
-     * Process commits with state = NEW.
-     * Analogous to EmailIndexingOrchestrator.processNewMessages()
+     * Process commits with state = NEW for mono-repo.
+     * Indexes basic metadata WITHOUT marking as INDEXED.
+     * Marking as INDEXED happens later after PendingTask creation (if needed for mono-repos).
+     */
+    private suspend fun processNewMonoRepoCommits(
+        clientId: org.bson.types.ObjectId,
+        monoRepoId: String,
+        monoRepoPath: Path,
+        branch: String,
+    ): GitHistoryIndexingResult {
+        var processedCommits = 0
+        var errorCommits = 0
+
+        stateManager
+            .findNewMonoRepoCommits(clientId, monoRepoId)
+            .buffer(10)
+            .collect { commitDoc ->
+                try {
+                    logger.info { "Processing mono-repo commit ${commitDoc.commitHash.take(8)} by ${commitDoc.author}" }
+
+                    val fullCommit = fetchFullCommitDetails(monoRepoPath, commitDoc.commitHash, branch)
+
+                    if (fullCommit != null) {
+                        val success = indexMonoRepoGitCommit(clientId, monoRepoId, fullCommit)
+                        if (success) {
+                            // For mono-repos, mark as indexed immediately (no project-specific tasks)
+                            stateManager.markAsIndexed(commitDoc)
+                            processedCommits++
+                        } else {
+                            errorCommits++
+                        }
+                    } else {
+                        errorCommits++
+                        logger.warn { "Could not fetch full details for mono-repo commit ${commitDoc.commitHash}" }
+                    }
+                } catch (e: Exception) {
+                    logger.error(e) { "Failed to process mono-repo commit ${commitDoc.commitHash}" }
+                    errorCommits++
+                }
+            }
+
+        return GitHistoryIndexingResult(processedCommits, 0, errorCommits)
+    }
+
+    /**
+     * Index a single git commit from mono-repo using plain text summary (NO LLM calls).
+     * Creates single embedding from commit metadata for basic searchability.
+     * Detailed analysis happens later in background via PendingTask.
+     */
+    private suspend fun indexMonoRepoGitCommit(
+        clientId: org.bson.types.ObjectId,
+        monoRepoId: String,
+        commit: GitCommit,
+    ): Boolean {
+        try {
+            // Create plain text summary WITHOUT LLM
+            val summary = createPlainTextSummary(commit)
+
+            val sourceId = "${commit.hash}-metadata"
+
+            // Check if content changed (skip if already indexed with same content)
+            if (!vectorStoreIndexService.hasContentChangedForMonoRepo(
+                    RagSourceType.GIT_HISTORY,
+                    sourceId,
+                    clientId,
+                    monoRepoId,
+                    summary,
+                )
+            ) {
+                logger.debug { "Skipping mono-repo commit ${commit.hash} - content unchanged" }
+                return true
+            }
+
+            // Create single embedding for commit metadata
+            val embedding = embeddingGateway.callEmbedding(ModelTypeEnum.EMBEDDING_TEXT, summary)
+
+            val ragDocument =
+                RagDocument(
+                    projectId = null, // No projectId for mono-repo commits
+                    ragSourceType = RagSourceType.GIT_HISTORY,
+                    summary = summary,
+                    clientId = clientId,
+                    // Universal metadata
+                    from = commit.author,
+                    subject = commit.message.lines().firstOrNull() ?: "",
+                    timestamp = commit.date,
+                    parentRef = commit.hash,
+                    indexInParent = 0,
+                    totalSiblings = 1,
+                    contentType = "git-commit",
+                    // Git-specific
+                    language = "git-commit",
+                    gitCommitHash = commit.hash,
+                    symbolName = "git-commit-${commit.hash.take(8)}",
+                    branch = commit.branch,
+                    chunkId = 0,
+                )
+
+            val vectorStoreId = vectorStorage.store(ModelTypeEnum.EMBEDDING_TEXT, ragDocument, embedding)
+
+            // Track in MongoDB with monoRepoId (projectId = null)
+            vectorStoreIndexService.trackIndexedForMonoRepo(
+                clientId = clientId,
+                monoRepoId = monoRepoId,
+                branch = commit.branch,
+                sourceType = RagSourceType.GIT_HISTORY,
+                sourceId = sourceId,
+                vectorStoreId = vectorStoreId,
+                vectorStoreName = "git-commit-${commit.hash.take(8)}",
+                content = summary,
+                filePath = null,
+                symbolName = "git-commit-${commit.hash.take(8)}",
+                commitHash = commit.hash,
+            )
+
+            logger.debug { "Successfully indexed mono-repo git commit metadata: ${commit.hash}" }
+            return true
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to index mono-repo git commit: ${commit.hash}" }
+            return false
+        }
+    }
+
+    // ========== Shared Methods ==========
+
+    /**
+     * Process commits with state = NEW (works for both standalone and mono-repo).
+     * Indexes basic metadata WITHOUT marking as INDEXED.
+     * Marking as INDEXED happens later after PendingTask creation.
      */
     private suspend fun processNewCommits(
         project: ProjectDocument,
+        monoRepoId: String?,
         projectPath: Path,
         branch: String,
     ): GitHistoryIndexingResult {
@@ -147,7 +326,7 @@ class GitCommitMetadataIndexer(
                     if (fullCommit != null) {
                         val success = indexGitCommit(project, fullCommit)
                         if (success) {
-                            stateManager.markAsIndexed(commitDoc)
+                            // DO NOT mark as indexed yet - this happens after PendingTask creation
                             processedCommits++
                         } else {
                             errorCommits++
@@ -166,84 +345,119 @@ class GitCommitMetadataIndexer(
     }
 
     /**
-     * Index a single git commit using atomic sentence embedding with vector store tracking
+     * Index a single git commit using plain text summary (NO LLM calls).
+     * Creates single embedding from commit metadata for basic searchability.
+     * Detailed analysis happens later in background via PendingTask.
      */
     private suspend fun indexGitCommit(
         project: ProjectDocument,
         commit: GitCommit,
     ): Boolean {
         try {
-            // Create atomic sentences for RAG embedding following requirement #4
-            val sentences = createCommitSentences(commit)
+            // Create plain text summary WITHOUT LLM
+            val summary = createPlainTextSummary(commit)
 
-            logger.debug { "Split commit ${commit.hash} into ${sentences.size} atomic sentences" }
+            val sourceId = "${commit.hash}-metadata"
 
-            // Create individual embeddings for each sentence
-            for (index in sentences.indices) {
-                val sentence = sentences[index]
-                val sourceId = "${commit.hash}-sentence-$index"
-
-                // Check if content changed (skip if already indexed with same content)
-                if (!vectorStoreIndexService.hasContentChanged(
-                        RagSourceType.GIT_HISTORY,
-                        sourceId,
-                        project.id,
-                        sentence,
-                    )
-                ) {
-                    logger.debug { "Skipping sentence $index of commit ${commit.hash} - content unchanged" }
-                    continue
-                }
-
-                val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, sentence)
-
-                val ragDocument =
-                    RagDocument(
-                        projectId = project.id,
-                        ragSourceType = RagSourceType.GIT_HISTORY,
-                        summary = sentence,
-                        clientId = project.clientId,
-                        // Universal metadata
-                        from = commit.author,
-                        subject = commit.message.lines().firstOrNull() ?: "",
-                        timestamp = commit.date,
-                        parentRef = commit.hash,
-                        indexInParent = index,
-                        totalSiblings = sentences.size,
-                        contentType = "git-commit",
-                        // Git-specific
-                        language = "git-commit",
-                        gitCommitHash = commit.hash,
-                        symbolName = "git-commit-${commit.hash.take(8)}",
-                        branch = commit.branch,
-                        chunkId = index,
-                    )
-
-                val vectorStoreId = vectorStorage.store(ModelType.EMBEDDING_TEXT, ragDocument, embedding)
-
-                // Track in MongoDB what was indexed to Qdrant
-                vectorStoreIndexService.trackIndexed(
-                    projectId = project.id,
-                    clientId = project.clientId,
-                    branch = commit.branch,
-                    sourceType = RagSourceType.GIT_HISTORY,
-                    sourceId = sourceId,
-                    vectorStoreId = vectorStoreId,
-                    vectorStoreName = "git-commit-${commit.hash.take(8)}-$index",
-                    content = sentence,
-                    filePath = null,
-                    symbolName = "git-commit-${commit.hash.take(8)}",
-                    commitHash = commit.hash,
+            // Check if content changed (skip if already indexed with same content)
+            if (!vectorStoreIndexService.hasContentChanged(
+                    RagSourceType.GIT_HISTORY,
+                    sourceId,
+                    project.id,
+                    summary,
                 )
+            ) {
+                logger.debug { "Skipping commit ${commit.hash} - content unchanged" }
+                return true
             }
 
-            logger.debug { "Successfully indexed git commit: ${commit.hash} as ${sentences.size} atomic sentences" }
+            // Create single embedding for commit metadata
+            val embedding = embeddingGateway.callEmbedding(ModelTypeEnum.EMBEDDING_TEXT, summary)
+
+            val ragDocument =
+                RagDocument(
+                    projectId = project.id,
+                    ragSourceType = RagSourceType.GIT_HISTORY,
+                    summary = summary,
+                    clientId = project.clientId,
+                    // Universal metadata
+                    from = commit.author,
+                    subject = commit.message.lines().firstOrNull() ?: "",
+                    timestamp = commit.date,
+                    parentRef = commit.hash,
+                    indexInParent = 0,
+                    totalSiblings = 1,
+                    contentType = "git-commit",
+                    // Git-specific
+                    language = "git-commit",
+                    gitCommitHash = commit.hash,
+                    symbolName = "git-commit-${commit.hash.take(8)}",
+                    branch = commit.branch,
+                    chunkId = 0,
+                )
+
+            val vectorStoreId = vectorStorage.store(ModelTypeEnum.EMBEDDING_TEXT, ragDocument, embedding)
+
+            // Track in MongoDB what was indexed to Qdrant
+            vectorStoreIndexService.trackIndexed(
+                projectId = project.id,
+                clientId = project.clientId,
+                branch = commit.branch,
+                sourceType = RagSourceType.GIT_HISTORY,
+                sourceId = sourceId,
+                vectorStoreId = vectorStoreId,
+                vectorStoreName = "git-commit-${commit.hash.take(8)}",
+                content = summary,
+                filePath = null,
+                symbolName = "git-commit-${commit.hash.take(8)}",
+                commitHash = commit.hash,
+            )
+
+            logger.debug { "Successfully indexed git commit metadata: ${commit.hash}" }
             return true
         } catch (e: Exception) {
             logger.error(e) { "Failed to index git commit: ${commit.hash}" }
             return false
         }
     }
+
+    /**
+     * Create plain text summary of commit without LLM calls.
+     * This provides basic searchability for commit metadata.
+     */
+    private fun createPlainTextSummary(commit: GitCommit): String =
+        buildString {
+            appendLine("Commit: ${commit.hash}")
+            appendLine("Author: ${commit.author}")
+            appendLine("Date: ${commit.date}")
+            appendLine("Branch: ${commit.branch}")
+            appendLine()
+            appendLine("Message:")
+            appendLine(commit.message)
+            appendLine()
+
+            if (commit.changedFiles.isNotEmpty()) {
+                appendLine("Files changed (${commit.changedFiles.size}):")
+                commit.changedFiles.take(20).forEach { file ->
+                    appendLine("  - $file")
+                }
+                if (commit.changedFiles.size > 20) {
+                    appendLine("  ... and ${commit.changedFiles.size - 20} more files")
+                }
+                appendLine()
+                appendLine("Statistics: +${commit.additions} additions, -${commit.deletions} deletions")
+            }
+
+            if (commit.parentHashes.size >= 2) {
+                appendLine()
+                appendLine("Merge commit from: ${commit.parentHashes.joinToString(", ")}")
+            }
+
+            if (commit.tags.isNotEmpty()) {
+                appendLine()
+                appendLine("Tags: ${commit.tags.joinToString(", ")}")
+            }
+        }.trim()
 
     /**
      * Fetch basic commit info from Git log (hash, author, message, date).
@@ -503,89 +717,5 @@ class GitCommitMetadataIndexer(
             logger.debug(e) { "Failed to parse changed methods for commit $commitHash" }
             emptyMap()
         }
-    }
-
-    /**
-     * Create atomic sentences for RAG embedding from git commit data using LLM processing.
-     * Following requirement #4: "každý commit se také musí rozložit na krátké popisky"
-     */
-    private suspend fun createCommitSentences(commit: GitCommit): List<String> {
-        val atomic = mutableListOf<String>()
-
-        // Deterministic atomic facts to guarantee RAG discoverability
-        atomic += "Commit ${commit.hash} on branch ${commit.branch} was authored by ${commit.author} on ${commit.date}."
-        if (commit.message.isNotBlank()) {
-            atomic += "Commit ${commit.hash} message: ${commit.message}."
-        }
-        if (commit.changedFiles.isNotEmpty()) {
-            atomic += "Commit ${commit.hash} changed ${commit.changedFiles.size} files: ${
-                commit.changedFiles.joinToString(
-                    ", ",
-                )
-            }."
-            atomic += "Commit ${commit.hash} stats: +${commit.additions} additions and -${commit.deletions} deletions."
-        }
-        if (commit.parentHashes.size >= 2) {
-            atomic += "Commit ${commit.hash} is a merge of ${commit.parentHashes.joinToString(" and ")}."
-        }
-        commit.tags.takeIf { it.isNotEmpty() }?.let { tags ->
-            atomic += "Commit ${commit.hash} has tags: ${tags.joinToString(", ")}."
-        }
-        // Method-level facts for queries like 'who last changed isAuthorized'
-        commit.changedMethods.forEach { (file, methods) ->
-            methods.forEach { method ->
-                atomic += "Method $method in $file was modified in commit ${commit.hash} by ${commit.author} on ${commit.date}."
-            }
-        }
-
-        // Provide structured block to LLM to optionally expand/norm sentences
-        val commitContent =
-            buildString {
-                appendLine("Commit: ${commit.hash}")
-                appendLine("Author: ${commit.author}")
-                appendLine("Date: ${commit.date}")
-                appendLine("Branch: ${commit.branch}")
-                appendLine("Parents: ${commit.parentHashes.joinToString(", ")}")
-                appendLine("Tags: ${commit.tags.joinToString(", ")}")
-                appendLine("Message: ${commit.message}")
-                if (commit.changedFiles.isNotEmpty()) {
-                    appendLine("Files changed (${commit.changedFiles.size}): ${commit.changedFiles.joinToString(", ")}")
-                    appendLine("Statistics: +${commit.additions} additions, -${commit.deletions} deletions")
-                }
-                if (commit.changedMethods.isNotEmpty()) {
-                    appendLine("Changed methods:")
-                    commit.changedMethods.forEach { (file, methods) ->
-                        appendLine("- $file: ${methods.joinToString(", ")}")
-                    }
-                }
-            }
-
-        val llmSentences =
-            try {
-                val response =
-                    llmGateway.callLlm(
-                        type = PromptTypeEnum.GIT_COMMIT_PROCESSING,
-                        responseSchema = GitCommitProcessingResponse(),
-                        quick = false,
-                        backgroundMode = false,
-                        mappingValue =
-                            mapOf(
-                                "commitHash" to commit.hash,
-                                "commitAuthor" to commit.author,
-                                "commitDate" to commit.date,
-                                "commitBranch" to commit.branch,
-                                "commitContent" to commitContent,
-                            ),
-                    )
-                response.result.sentences
-            } catch (e: Exception) {
-                logger.warn(e) { "Failed to generate LLM sentences for commit ${commit.hash}, using atomic sentences only" }
-                emptyList()
-            }
-
-        return (atomic + llmSentences)
-            .map { it.trim() }
-            .filter { it.isNotEmpty() && it.length >= 10 }
-            .distinct()
     }
 }

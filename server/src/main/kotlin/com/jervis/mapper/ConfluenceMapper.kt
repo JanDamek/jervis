@@ -1,0 +1,59 @@
+package com.jervis.mapper
+
+import com.jervis.dto.ConfluenceAccountDto
+import com.jervis.dto.ConfluenceAccountStatsDto
+import com.jervis.dto.ConfluencePageDto
+import com.jervis.entity.ConfluenceAccountDocument
+import com.jervis.entity.ConfluencePageDocument
+import com.jervis.service.confluence.state.ConfluenceIndexingStats
+
+/**
+ * Extension function to convert Entity to DTO.
+ * Used in Controller layer (mapping happens at boundary).
+ */
+fun ConfluenceAccountDocument.toDto(stats: ConfluenceIndexingStats? = null): ConfluenceAccountDto =
+    ConfluenceAccountDto(
+        id = id.toHexString(),
+        clientId = clientId.toHexString(),
+        projectId = projectId?.toHexString(),
+        cloudId = cloudId,
+        siteName = siteName,
+        siteUrl = siteUrl,
+        spaceKeys = spaceKeys,
+        isActive = isActive,
+        lastPolledAt = lastPolledAt,
+        lastSuccessfulSyncAt = lastSuccessfulSyncAt,
+        lastErrorMessage = lastErrorMessage,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+        stats =
+            stats?.let {
+                ConfluenceAccountStatsDto(
+                    totalPages = it.totalPages,
+                    indexedPages = it.indexedPages,
+                    newPages = it.newPages,
+                    failedPages = it.failedPages,
+                    totalSpaces = spaceKeys.size,
+                )
+            },
+    )
+
+fun ConfluencePageDocument.toDto(): ConfluencePageDto =
+    ConfluencePageDto(
+        id = id.toHexString(),
+        accountId = accountId.toHexString(),
+        pageId = pageId,
+        spaceKey = spaceKey,
+        title = title,
+        url = url,
+        lastKnownVersion = lastKnownVersion,
+        state = state.name,
+        parentPageId = parentPageId,
+        internalLinksCount = internalLinks.size,
+        externalLinksCount = externalLinks.size,
+        childPagesCount = childPageIds.size,
+        lastModifiedBy = lastModifiedBy,
+        lastModifiedAt = lastModifiedAt,
+        lastIndexedAt = lastIndexedAt,
+        errorMessage = errorMessage,
+    )

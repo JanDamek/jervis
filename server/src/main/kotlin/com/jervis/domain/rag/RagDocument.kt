@@ -56,4 +56,9 @@ data class RagDocument(
      * Each entry corresponds to an embedding stored in the vector database.
      */
     val vectorStoreIds: List<String> = emptyList(),
+    // ========== CONFLUENCE-SPECIFIC METADATA ==========
+    /** Confluence page ID (used for RagSourceType.CONFLUENCE_PAGE) */
+    val confluencePageId: String? = null,
+    /** Confluence space key (used for RagSourceType.CONFLUENCE_PAGE) */
+    val confluenceSpaceKey: String? = null,
 )

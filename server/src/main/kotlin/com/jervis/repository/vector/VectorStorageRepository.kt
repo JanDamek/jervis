@@ -1,9 +1,8 @@
 package com.jervis.repository.vector
 
-import com.jervis.configuration.ModelsProperties
-import com.jervis.configuration.QdrantProperties
-import com.jervis.configuration.TimeoutsProperties
-import com.jervis.domain.model.ModelType
+import com.jervis.configuration.properties.ModelsProperties
+import com.jervis.configuration.properties.QdrantProperties
+import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.domain.rag.EmbeddingType
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
@@ -21,7 +20,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import mu.KotlinLogging
 import org.springframework.stereotype.Repository
-import java.time.Duration
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -35,7 +33,6 @@ import java.util.concurrent.atomic.AtomicReference
 class VectorStorageRepository(
     private val qdrantProperties: QdrantProperties,
     private val modelsProperties: ModelsProperties,
-    private val timeoutsProperties: TimeoutsProperties,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -46,25 +43,25 @@ class VectorStorageRepository(
     /**
      * Get dimension for a specific embedding model type from configuration
      */
-    private fun getDimensionForModelType(modelType: ModelType): Int {
-        val modelList = modelsProperties.models[modelType] ?: emptyList()
+    private fun getDimensionForModelType(modelTypeEnum: ModelTypeEnum): Int {
+        val modelList = modelsProperties.models[modelTypeEnum] ?: emptyList()
         val firstModel =
             modelList.firstOrNull()
-                ?: throw IllegalArgumentException("No models configured for type: $modelType")
+                ?: throw IllegalArgumentException("No models configured for type: $modelTypeEnum")
 
         return firstModel.dimension
-            ?: throw IllegalArgumentException("No dimension configured for model type: $modelType")
+            ?: throw IllegalArgumentException("No dimension configured for model type: $modelTypeEnum")
     }
 
     /**
      * Generate collection name routing to semantic_code and semantic_text
      * Following Story 4: unified collections for better organization
      */
-    private fun getCollectionNameForModelType(modelType: ModelType): String =
-        when (modelType) {
-            ModelType.EMBEDDING_TEXT -> "semantic_text"
-            ModelType.EMBEDDING_CODE -> "semantic_code"
-            else -> throw IllegalArgumentException("Unsupported collection type: $modelType")
+    private fun getCollectionNameForModelType(modelTypeEnum: ModelTypeEnum): String =
+        when (modelTypeEnum) {
+            ModelTypeEnum.EMBEDDING_TEXT -> "semantic_text"
+            ModelTypeEnum.EMBEDDING_CODE -> "semantic_code"
+            else -> throw IllegalArgumentException("Unsupported collection type: $modelTypeEnum")
         }
 
     /**
@@ -73,7 +70,7 @@ class VectorStorageRepository(
      */
     private fun validateEmbeddingDimensionsConsistency() {
         try {
-            val embeddingTypes = listOf(ModelType.EMBEDDING_TEXT, ModelType.EMBEDDING_CODE)
+            val embeddingTypes = listOf(ModelTypeEnum.EMBEDDING_TEXT, ModelTypeEnum.EMBEDDING_CODE)
 
             for (embeddingType in embeddingTypes) {
                 val modelList = modelsProperties.models[embeddingType] ?: emptyList()
@@ -140,7 +137,6 @@ class VectorStorageRepository(
             QdrantClient(
                 QdrantGrpcClient
                     .newBuilder(qdrantProperties.host, qdrantProperties.port, false, true)
-                    .withTimeout(Duration.ofMinutes(timeoutsProperties.qdrant.operationTimeoutMinutes))
                     .build(),
             )
         // Test the connection
@@ -153,10 +149,10 @@ class VectorStorageRepository(
      */
     private suspend fun initializeCollections() {
         try {
-            val codeCollectionName = getCollectionNameForModelType(ModelType.EMBEDDING_CODE)
-            val textCollectionName = getCollectionNameForModelType(ModelType.EMBEDDING_TEXT)
-            val codeDimension = getDimensionForModelType(ModelType.EMBEDDING_CODE)
-            val textDimension = getDimensionForModelType(ModelType.EMBEDDING_TEXT)
+            val codeCollectionName = getCollectionNameForModelType(ModelTypeEnum.EMBEDDING_CODE)
+            val textCollectionName = getCollectionNameForModelType(ModelTypeEnum.EMBEDDING_TEXT)
+            val codeDimension = getDimensionForModelType(ModelTypeEnum.EMBEDDING_CODE)
+            val textDimension = getDimensionForModelType(ModelTypeEnum.EMBEDDING_TEXT)
 
             createCollectionIfNotExists(codeCollectionName, codeDimension)
             createCollectionIfNotExists(textCollectionName, textDimension)
@@ -268,7 +264,7 @@ class VectorStorageRepository(
      * Unified store method: picks a collection by type (EMBEDDING_TEXT / EMBEDDING_CODE)
      */
     suspend fun store(
-        collectionType: ModelType,
+        collectionType: ModelTypeEnum,
         ragDocument: RagDocument,
         embedding: List<Float>,
     ): String {
@@ -317,12 +313,12 @@ class VectorStorageRepository(
         ragDocument: RagDocument,
         embedding: List<Float>,
     ): String {
-        val modelType =
+        val modelTypeEnum =
             when (embeddingType) {
-                EmbeddingType.EMBEDDING_TEXT -> ModelType.EMBEDDING_TEXT
-                EmbeddingType.EMBEDDING_CODE -> ModelType.EMBEDDING_CODE
+                EmbeddingType.EMBEDDING_TEXT -> ModelTypeEnum.EMBEDDING_TEXT
+                EmbeddingType.EMBEDDING_CODE -> ModelTypeEnum.EMBEDDING_CODE
             }
-        return store(modelType, ragDocument, embedding)
+        return store(modelTypeEnum, ragDocument, embedding)
     }
 
     /**
@@ -330,7 +326,7 @@ class VectorStorageRepository(
      * Enhanced with ragSourceType and symbolType filtering for Story 4
      */
     suspend fun search(
-        collectionType: ModelType,
+        collectionType: ModelTypeEnum,
         query: List<Float>,
         limit: Int = 100,
         minScore: Float = 0.0f,
@@ -520,149 +516,6 @@ class VectorStorageRepository(
         }
 
     /**
-     * Deletes vectors from collection based on metadata filter.
-     * Used for removing old embeddings when file content changes.
-     */
-    suspend fun deleteByFilter(
-        collectionType: ModelType,
-        filter: Map<String, Any>,
-    ): Int =
-        executeQdrantOperation("deleteByFilter") { client ->
-            val collectionName = getCollectionNameForModelType(collectionType)
-            val qdrantFilter = createQdrantFilter(filter)
-
-            val deleteRequest =
-                Points.DeletePoints
-                    .newBuilder()
-                    .setCollectionName(collectionName)
-                    .setPoints(
-                        Points.PointsSelector
-                            .newBuilder()
-                            .setFilter(qdrantFilter)
-                            .build(),
-                    ).build()
-
-            client.deleteAsync(deleteRequest).get()
-            logger.info { "Deleted vectors from $collectionName with filter: $filter" }
-            // Qdrant async delete returns an UpdateResult; operationId is not a count, so we return 0 as best-effort
-            0
-        } ?: 0
-
-    /**
-     * Deletes specific vector points by their IDs.
-     */
-    suspend fun deleteByIds(
-        collectionType: ModelType,
-        pointIds: List<String>,
-    ): Int =
-        executeQdrantOperation("deleteByIds") { client ->
-            val collectionName = getCollectionNameForModelType(collectionType)
-
-            val idsList =
-                Points.PointsIdsList
-                    .newBuilder()
-                    .addAllIds(
-                        pointIds.map { id ->
-                            Points.PointId
-                                .newBuilder()
-                                .setUuid(id)
-                                .build()
-                        },
-                    ).build()
-
-            val deleteRequest =
-                Points.DeletePoints
-                    .newBuilder()
-                    .setCollectionName(collectionName)
-                    .setPoints(
-                        Points.PointsSelector
-                            .newBuilder()
-                            .setPoints(idsList)
-                            .build(),
-                    ).build()
-
-            client.deleteAsync(deleteRequest).get()
-            logger.info { "Deleted ${pointIds.size} vectors from $collectionName" }
-            pointIds.size
-        } ?: 0
-
-    /**
-     * Search documents by filter without vector query (for background tasks).
-     * Returns documents matching the filter criteria, paginated by offset/limit.
-     */
-    suspend fun searchByFilter(
-        filter: Map<String, Any>,
-        limit: Int = 10,
-        offset: Int = 0,
-    ): kotlinx.coroutines.flow.Flow<RagDocument> =
-        kotlinx.coroutines.flow.flow {
-            val collection = getCollectionNameForModelType(ModelType.EMBEDDING_TEXT)
-            val qdrantFilter = if (filter.isNotEmpty()) createQdrantFilter(filter) else null
-
-            val scrollRequest =
-                Points.ScrollPoints
-                    .newBuilder()
-                    .setCollectionName(collection)
-                    .setLimit(limit)
-                    .setOffset(
-                        Points.PointId
-                            .newBuilder()
-                            .setNum(offset.toLong())
-                            .build(),
-                    ).setWithPayload(
-                        Points.WithPayloadSelector
-                            .newBuilder()
-                            .setEnable(true)
-                            .build(),
-                    ).apply {
-                        if (qdrantFilter != null) this.filter = qdrantFilter
-                    }.build()
-
-            val results =
-                executeQdrantOperation("Scroll in $collection") { client ->
-                    client.scrollAsync(scrollRequest).get()
-                }?.resultList.orEmpty()
-
-            results.forEach { point ->
-                val payload = point.payloadMap
-                val ragDocument =
-                    RagDocument(
-                        projectId =
-                            org.bson.types.ObjectId(
-                                extractStringFromPayload(payload, "projectId") ?: "000000000000000000000000",
-                            ),
-                        clientId =
-                            org.bson.types.ObjectId(
-                                extractStringFromPayload(payload, "clientId") ?: "000000000000000000000000",
-                            ),
-                        summary = extractStringFromPayload(payload, "summary") ?: "",
-                        ragSourceType =
-                            RagSourceType.valueOf(
-                                extractStringFromPayload(payload, "ragSourceType") ?: "CODE",
-                            ),
-                        language = extractStringFromPayload(payload, "language"),
-                        packageName = extractStringFromPayload(payload, "packageName"),
-                        className = extractStringFromPayload(payload, "className"),
-                        methodName = extractStringFromPayload(payload, "methodName"),
-                    )
-                emit(ragDocument)
-            }
-        }
-
-    private fun extractStringFromPayload(
-        payload: Map<String, JsonWithInt.Value>,
-        key: String,
-    ): String? =
-        payload[key]?.let { value ->
-            when {
-                value.hasStringValue() -> value.stringValue
-                value.hasIntegerValue() -> value.integerValue.toString()
-                value.hasDoubleValue() -> value.doubleValue.toString()
-                else -> null
-            }
-        }
-
-    /**
      * Health check result for vector storage
      */
     data class HealthCheckResult(
@@ -671,105 +524,4 @@ class VectorStorageRepository(
         val error: String? = null,
         val responseTimeMs: Long = 0,
     )
-
-    /**
-     * Perform health check on vector storage connectivity and collections
-     */
-    suspend fun healthCheck(): HealthCheckResult {
-        val startTime = System.currentTimeMillis()
-        val details = mutableMapOf<String, Any>()
-
-        return try {
-            logger.debug { "Performing vector storage health check" }
-
-            // Check basic connectivity by performing simple search operations on both collections
-            val textCollection = getCollectionNameForModelType(ModelType.EMBEDDING_TEXT)
-            val codeCollection = getCollectionNameForModelType(ModelType.EMBEDDING_CODE)
-
-            var textCollectionHealthy = false
-            var codeCollectionHealthy = false
-
-            // Test text collection with empty search
-            try {
-                val textResults =
-                    search(
-                        collectionType = ModelType.EMBEDDING_TEXT,
-                        query = emptyList(), // Empty query for health check
-                        limit = 1,
-                        minScore = 0.0f,
-                    )
-                textCollectionHealthy = true
-                details["textCollection"] =
-                    mapOf(
-                        "name" to textCollection,
-                        "accessible" to true,
-                        "testSearchResults" to textResults.size,
-                    )
-            } catch (e: Exception) {
-                logger.warn(e) { "Text collection health check failed" }
-                details["textCollection"] =
-                    mapOf(
-                        "name" to textCollection,
-                        "accessible" to false,
-                        "error" to (e.message ?: "Unknown error"),
-                    )
-            }
-
-            // Test code collection with empty search
-            try {
-                val codeResults =
-                    search(
-                        collectionType = ModelType.EMBEDDING_CODE,
-                        query = emptyList(), // Empty query for health check
-                        limit = 1,
-                        minScore = 0.0f,
-                    )
-                codeCollectionHealthy = true
-                details["codeCollection"] =
-                    mapOf(
-                        "name" to codeCollection,
-                        "accessible" to true,
-                        "testSearchResults" to codeResults.size,
-                    )
-            } catch (e: Exception) {
-                logger.warn(e) { "Code collection health check failed" }
-                details["codeCollection"] =
-                    mapOf(
-                        "name" to codeCollection,
-                        "accessible" to false,
-                        "error" to (e.message ?: "Unknown error"),
-                    )
-            }
-
-            val responseTime = System.currentTimeMillis() - startTime
-            val isHealthy = textCollectionHealthy && codeCollectionHealthy
-
-            details["connectionStatus"] = if (isHealthy) "HEALTHY" else "DEGRADED"
-            details["responseTime"] = responseTime
-            details["collectionsChecked"] = 2
-            details["collectionsHealthy"] = listOf(textCollectionHealthy, codeCollectionHealthy).count { it }
-
-            logger.debug { "Vector storage health check completed: healthy=$isHealthy, responseTime=${responseTime}ms" }
-
-            HealthCheckResult(
-                isHealthy = isHealthy,
-                details = details.toMap(),
-                responseTimeMs = responseTime,
-            )
-        } catch (e: Exception) {
-            val responseTime = System.currentTimeMillis() - startTime
-            details["connectionStatus"] = "ERROR"
-            details["responseTime"] = responseTime
-            details["errorType"] = e::class.simpleName ?: "UnknownException"
-
-            logger.error(e) { "Vector storage health check failed with exception" }
-
-            HealthCheckResult(
-                isHealthy = false,
-                details = details.toMap(),
-                error = e.message ?: "Unknown error during health check",
-                responseTimeMs = responseTime,
-            )
-        }
-    }
 }

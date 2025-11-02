@@ -10,8 +10,10 @@ import com.jervis.service.IClientService
 import com.jervis.service.IEmailAccountService
 import com.jervis.service.IGitConfigurationService
 import com.jervis.service.IProjectService
+import com.jervis.ui.component.ConfluenceSettingsPanel
 import com.jervis.ui.component.EmailConfigPanel
 import com.jervis.ui.component.GitSetupPanel
+import com.jervis.ui.component.JiraSetupPanel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -47,6 +49,8 @@ class ClientsWindow(
     private val projectService: IProjectService,
     private val linkService: IClientProjectLinkService,
     private val emailAccountService: IEmailAccountService,
+    private val jiraSetupService: com.jervis.service.IJiraSetupService,
+    private val integrationSettingsService: com.jervis.service.IIntegrationSettingsService,
 ) : JFrame("Client Management") {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -443,14 +447,14 @@ class ClientsWindow(
             if (allProjects.isEmpty()) {
                 JOptionPane.showMessageDialog(
                     this@ClientsWindow,
-                    "Nejsou dostupné žádné projekty.",
+                    "No projects available.",
                     "Info",
                     JOptionPane.INFORMATION_MESSAGE,
                 )
                 return@launch
             }
 
-            val dialog = JDialog(this@ClientsWindow, "Přiřadit existující projekty", true)
+            val dialog = JDialog(this@ClientsWindow, "Assign existing projects", true)
             val listModel = javax.swing.DefaultListModel<ProjectDto>()
             allProjects.forEach { listModel.addElement(it) }
             val list = JList(listModel)
@@ -482,14 +486,14 @@ class ClientsWindow(
                         if (p != null) {
                             val assigned = p.clientId
                             val suffix =
-                                if (assigned != null && assigned != clientId) " — přiřazeno jinému klientovi" else ""
+                                if (assigned != null && assigned != clientId) " — assigned to a different client" else ""
                             label.text = "${p.name}$suffix"
                         }
                         return label
                     }
                 }
-            val ok = JButton("Přiřadit")
-            val cancel = JButton("Zrušit")
+            val ok = JButton("Assign")
+            val cancel = JButton("Cancel")
             ok.addActionListener {
                 val selected = list.selectedValuesList
                 if (selected.isEmpty()) {
@@ -501,8 +505,8 @@ class ClientsWindow(
                     val res =
                         JOptionPane.showConfirmDialog(
                             dialog,
-                            "Některé vybrané projekty jsou již přiřazené jinému klientovi. Opravdu je chcete přeřadit?",
-                            "Potvrzení",
+                            "Some selected projects are already assigned to a different client. Do you want to reassign them?",
+                            "Confirmation",
                             JOptionPane.YES_NO_OPTION,
                         )
                     if (res != JOptionPane.YES_OPTION) return@addActionListener
@@ -553,7 +557,7 @@ class ClientsWindow(
     private fun showClientDependenciesDialog() {
         CoroutineScope(Dispatchers.Main).launch {
             val allProjects = withContext(Dispatchers.IO) { projectService.getAllProjects() }
-            val dialog = JDialog(this@ClientsWindow, "Závislosti klienta (vyberte projekty)", true)
+            val dialog = JDialog(this@ClientsWindow, "Client dependencies (select projects)", true)
             val listModel = javax.swing.DefaultListModel<ProjectDto>()
             allProjects.forEach { listModel.addElement(it) }
             val list = JList(listModel)
@@ -978,13 +982,29 @@ class ClientsWindow(
                     }
 
                 // Create and show dialog with credentials
-                val dialog = ClientSettingsDialog(this@ClientsWindow, client, existingCredentials, emailAccountService)
+                val dialog =
+                    ClientSettingsDialog(
+                        this@ClientsWindow,
+                        client,
+                        existingCredentials,
+                        emailAccountService,
+                        jiraSetupService,
+                        integrationSettingsService,
+                    )
                 dialog.isVisible = true
                 handleDialogResult(client, dialog)
             } catch (e: Exception) {
                 logger.warn { "Failed to load credentials: ${e.message}" }
                 // Create dialog without credentials on error
-                val dialog = ClientSettingsDialog(this@ClientsWindow, client, null, emailAccountService)
+                val dialog =
+                    ClientSettingsDialog(
+                        this@ClientsWindow,
+                        client,
+                        null,
+                        emailAccountService,
+                        jiraSetupService,
+                        integrationSettingsService,
+                    )
                 dialog.isVisible = true
                 handleDialogResult(client, dialog)
             }
@@ -1249,6 +1269,8 @@ class ClientsWindow(
         private val client: ClientDto,
         private val existingCredentials: GitCredentialsDto?,
         private val emailAccountService: IEmailAccountService,
+        private val jiraSetupService: com.jervis.service.IJiraSetupService,
+        private val integrationSettingsService: com.jervis.service.IIntegrationSettingsService,
     ) : JDialog(owner, "Client Settings: ${client.name}", true) {
         private val gitSetupPanel =
             GitSetupPanel(
@@ -1269,6 +1291,8 @@ class ClientsWindow(
             )
 
         private val emailConfigPanel by lazy { EmailConfigPanel(emailAccountService, client) }
+        private val jiraPanel by lazy { JiraSetupPanel(client.id, jiraSetupService) }
+        private val confluencePanel by lazy { ConfluenceSettingsPanel(client.id, integrationSettingsService) }
         private val okButton = JButton("OK")
         private val cancelButton = JButton("Cancel")
 
@@ -1296,6 +1320,12 @@ class ClientsWindow(
 
             // Email Accounts Tab
             tabbedPane.addTab("Email Accounts", JScrollPane(emailConfigPanel))
+
+            // Jira Setup Tab
+            tabbedPane.addTab("Jira", JScrollPane(jiraPanel))
+
+            // Confluence Settings Tab
+            tabbedPane.addTab("Confluence", JScrollPane(confluencePanel))
 
             // Button panel
             val buttonPanel = JPanel(FlowLayout(FlowLayout.RIGHT))

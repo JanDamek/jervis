@@ -18,14 +18,6 @@ import java.time.temporal.ChronoUnit
 
 private val logger = KotlinLogging.logger {}
 
-@Serializable
-data class QueryUserTasksRequest(
-    val scope: String = "active",
-    val daysAhead: Int? = null,
-    val startDate: String? = null,
-    val endDate: String? = null,
-)
-
 @Service
 class TaskQueryUserTasksTool(
     private val userTaskService: UserTaskService,
@@ -121,4 +113,12 @@ class TaskQueryUserTasksTool(
             )
         }
     }
+
+    @Serializable
+    data class QueryUserTasksRequest(
+        val scope: String = "active",
+        val daysAhead: Int? = null,
+        val startDate: String? = null,
+        val endDate: String? = null,
+    )
 }

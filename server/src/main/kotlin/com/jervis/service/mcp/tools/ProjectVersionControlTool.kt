@@ -1,6 +1,5 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.TimeoutsProperties
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.core.LlmGateway
@@ -16,7 +15,6 @@ import org.springframework.stereotype.Service
 @Service
 class ProjectVersionControlTool(
     private val llmGateway: LlmGateway,
-    private val timeoutsProperties: TimeoutsProperties,
     override val promptRepository: PromptRepository,
     private val directoryStructureService: DirectoryStructureService,
 ) : McpTool {
@@ -92,7 +90,6 @@ class ProjectVersionControlTool(
                 ProcessStreamingUtils.ProcessConfig(
                     command = command,
                     workingDirectory = projectDir,
-                    timeoutSeconds = timeoutsProperties.mcp.terminalToolTimeoutSeconds,
                 ),
             )
 

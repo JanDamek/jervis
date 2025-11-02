@@ -12,6 +12,7 @@ data class ProjectDto(
     val description: String? = null,
     val shortDescription: String? = null,
     val fullDescription: String? = null,
+    val monoRepoId: String? = null,
     val projectPath: String? = null,
     val documentationUrls: List<String> = emptyList(),
     val languages: List<String> = emptyList(),

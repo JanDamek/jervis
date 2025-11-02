@@ -1,27 +1,15 @@
 package com.jervis.service.indexing
 
-import com.jervis.configuration.AudioMonitoringProperties
-import com.jervis.configuration.AudioTranscriptionProperties
-import com.jervis.domain.model.ModelType
-import com.jervis.domain.rag.RagDocument
-import com.jervis.domain.rag.RagSourceType
-import com.jervis.entity.ClientDocument
-import com.jervis.entity.ProjectDocument
+import com.jervis.common.client.IWhisperClient
+import com.jervis.common.dto.WhisperResultDto
+import com.jervis.configuration.properties.AudioMonitoringProperties
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
-import com.jervis.service.gateway.WhisperGateway
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import mu.KotlinLogging
-import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.Paths
-import kotlin.io.path.extension
 import kotlin.io.path.isRegularFile
-import kotlin.io.path.nameWithoutExtension
-import kotlin.io.path.pathString
 
 /**
  * Minimal audio transcript indexing service placeholder.
@@ -38,24 +26,16 @@ import kotlin.io.path.pathString
  */
 @Service
 class AudioTranscriptIndexingService(
-    private val whisperGateway: WhisperGateway,
+    private val whisperClient: IWhisperClient,
     private val embeddingGateway: EmbeddingGateway,
     private val vectorStorage: VectorStorageRepository,
-    private val audioProps: AudioTranscriptionProperties,
     private val audioMonitoringProps: AudioMonitoringProperties,
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
         private const val UNKNOWN = "unknown"
-        private const val AUDIO_MODULE = "audio"
         private const val MIN_SENTENCE_LENGTH = 10
     }
-
-    data class TranscriptionJob(
-        val fileName: String,
-        val filePath: Path,
-        val source: String,
-    )
 
     data class AudioIndexingResult(
         val processedFiles: Int,
@@ -83,171 +63,6 @@ class AudioTranscriptIndexingService(
         CLIENT("client"),
     }
 
-    /**
-     * Scan project's configured audioPath and prepare transcripts for indexing.
-     * Current minimal implementation validates configuration and reports monitoring progress.
-     */
-    suspend fun indexProjectAudioFiles(project: ProjectDocument): AudioIndexingResult =
-        withContext(Dispatchers.IO) {
-            logger.info { "Starting audio indexing for project: ${project.name}" }
-            logger.info { "Starting audio transcript indexing for project: ${project.name}" }
-
-            // TODO: Audio monitoring was in project.overrides which is removed
-            // Audio monitoring configuration needs to be redesigned
-            logger.warn { "Audio monitoring configuration removed - needs redesign" }
-            return@withContext AudioIndexingResult(0, 0, 0, 0, 0, 0, 0)
-
-            /* DISABLED - needs redesign without project.overrides
-            indexAudioDirectory(
-                audioPath = audioPath,
-                projectId = project.id,
-                clientId = project.clientId,
-                projectPath = null,
-                scope = Scope.PROJECT,
-            )
-             */
-        }
-
-    suspend fun indexClientAudioFiles(
-        client: ClientDocument,
-        clientAudioPath: String,
-    ): AudioIndexingResult =
-        withContext(Dispatchers.IO) {
-            logger.info { "Starting audio indexing for client: ${client.name}" }
-
-            indexAudioDirectory(
-                audioPath = clientAudioPath,
-                projectId = null,
-                clientId = client.id,
-                projectPath = null,
-                scope = Scope.CLIENT,
-            )
-        }
-
-    private suspend fun indexAudioDirectory(
-        audioPath: String,
-        projectId: ObjectId?,
-        clientId: ObjectId,
-        projectPath: Path?,
-        scope: Scope,
-    ): AudioIndexingResult {
-        val audioDir = Paths.get(audioPath)
-        if (!Files.exists(audioDir)) {
-            logger.warn { "Audio path does not exist: $audioPath" }
-            return AudioIndexingResult(0, 0, 1, 0, 0, 0, 1)
-        }
-
-        var processedFiles = 0
-        var skippedFiles = 0
-        var errorFiles = 0
-        var totalTranscriptionTime = 0L
-
-        try {
-            val audioFiles = findSupportedAudioFiles(audioDir)
-
-            logger.info { "Found ${audioFiles.size} audio files to process in ${scope.label} scope" }
-
-            for ((_, audioFile) in audioFiles.withIndex()) {
-                val startTime = System.currentTimeMillis()
-                try {
-                    val relativePath = audioDir.relativize(audioFile).toString()
-
-                    Files.readAllBytes(audioFile)
-
-                    "audio/${scope.label}/$relativePath"
-
-                    val shouldIndex = false // TODO implement vectorstore indexing service
-
-                    if (!shouldIndex) {
-                        skippedFiles++
-                        logger.debug { "Skipping already indexed audio file: $relativePath" }
-                        continue
-                    }
-
-                    val transcription =
-                        whisperGateway.transcribeAudioFile(
-                            audioFile = audioFile,
-                            model = audioProps.model,
-                            language = audioProps.language,
-                        )
-
-                    val sourceId =
-                        when (scope) {
-                            Scope.PROJECT -> projectId?.toHexString() ?: "unknown"
-                            Scope.CLIENT -> clientId.toHexString()
-                        }
-
-                    val metadata =
-                        AudioMetadata(
-                            fileName = audioFile.fileName.toString(),
-                            filePath = audioFile,
-                            source = "${scope.label}:$sourceId",
-                            format = audioFile.extension,
-                            durationSeconds = transcription.duration,
-                            language = transcription.language,
-                        )
-
-                    val sentences = createTranscriptSentences(transcription, metadata)
-
-                    logger.debug { "Split audio transcript $relativePath into ${sentences.size} sentences" }
-
-                    var successfulSentences = 0
-                    for (sentenceIndex in sentences.indices) {
-                        try {
-                            val sentence = sentences[sentenceIndex]
-                            val embedding = embeddingGateway.callEmbedding(ModelType.EMBEDDING_TEXT, sentence)
-
-                            val ragDocument =
-                                RagDocument(
-                                    projectId = projectId,
-                                    clientId = clientId,
-                                    ragSourceType = RagSourceType.AUDIO_TRANSCRIPT,
-                                    summary = sentence,
-                                    language = metadata.language ?: UNKNOWN,
-                                    chunkId = sentenceIndex,
-                                    symbolName = "audio-${audioFile.nameWithoutExtension}",
-                                )
-
-                            vectorStorage.store(ModelType.EMBEDDING_TEXT, ragDocument, embedding)
-                            successfulSentences++
-                        } catch (e: Exception) {
-                            logger.error(e) { "Error storing sentence $sentenceIndex for audio $relativePath" }
-                        }
-                    }
-
-                    logger.info { "Successfully indexed audio $relativePath as $successfulSentences/${sentences.size} sentences" }
-
-                    processedFiles++
-                    val elapsedTime = (System.currentTimeMillis() - startTime) / 1000
-                    totalTranscriptionTime += elapsedTime
-                } catch (e: Exception) {
-                    audioDir.relativize(audioFile).toString()
-                    logger.warn(e) { "Failed to process audio file: ${audioFile.pathString}" }
-                    errorFiles++
-                }
-            }
-        } catch (e: Exception) {
-            logger.error(e) { "Error during audio indexing for ${scope.label} scope" }
-            errorFiles++
-        }
-
-        logger.info {
-            "Audio indexing completed for ${scope.label} - " +
-                "Processed: $processedFiles, Skipped: $skippedFiles, Errors: $errorFiles, " +
-                "Total time: ${totalTranscriptionTime}s"
-        }
-
-        return AudioIndexingResult(
-            processedFiles = processedFiles,
-            skippedFiles = skippedFiles,
-            errorFiles = errorFiles,
-            totalTranscriptionTimeSeconds = totalTranscriptionTime,
-            processedAudios = processedFiles,
-            skippedAudios = skippedFiles,
-            errorAudios = errorFiles,
-        )
-    }
-
     private fun findSupportedAudioFiles(root: Path): List<Path> {
         if (!Files.exists(root)) return emptyList()
         val regex =
@@ -263,7 +78,7 @@ class AudioTranscriptIndexingService(
     }
 
     private fun createTranscriptSentences(
-        transcription: WhisperGateway.WhisperTranscriptionResponse,
+        transcription: WhisperResultDto,
         metadata: AudioMetadata,
     ): List<String> {
         val sentences = mutableListOf<String>()
@@ -297,9 +112,5 @@ class AudioTranscriptIndexingService(
         }
 
         return sentences.filter { it.isNotEmpty() }
-    }
-
-    suspend fun enqueueTranscription(job: TranscriptionJob) {
-        logger.info { "Enqueued transcription job for ${job.source}: ${job.fileName} at ${job.filePath}" }
     }
 }

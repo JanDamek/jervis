@@ -1,6 +1,6 @@
 package com.jervis.service.gateway.core
 
-import com.jervis.configuration.ModelsProperties
+import com.jervis.configuration.properties.ModelsProperties
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import mu.KotlinLogging
@@ -41,6 +41,11 @@ class ModelConcurrencyManager {
                 logger.info { "Initializing semaphore for model $modelKey with concurrency=$concurrency" }
                 Semaphore(concurrency)
             }
+
+        // If we are at capacity, explicitly log that we will suspend until a permit is available.
+        if (semaphore.availablePermits == 0) {
+            logger.debug { "Model at capacity for $modelKey ($concurrency). Waiting for a free permit..." }
+        }
 
         return semaphore.withPermit {
             logger.debug { "Model permit acquired for $modelKey, available=${semaphore.availablePermits}/$concurrency" }

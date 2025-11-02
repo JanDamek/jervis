@@ -4,9 +4,9 @@ import com.jervis.domain.plan.Plan
 import com.jervis.service.rag.domain.DocumentChunk
 import com.jervis.service.rag.domain.RagQuery
 import com.jervis.service.rag.domain.RagResult
-import com.jervis.service.rag.pipeline.ChunkDeduplicationStrategy
-import com.jervis.service.rag.pipeline.ContentSynthesisStrategy
-import com.jervis.service.rag.pipeline.SearchStrategy
+import com.jervis.service.rag.pipeline.LlmContentSynthesisStrategy
+import com.jervis.service.rag.pipeline.MetadataBasedDeduplicationStrategy
+import com.jervis.service.rag.pipeline.VectorSearchStrategy
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -26,18 +26,17 @@ import org.springframework.stereotype.Service
  */
 @Service
 class RagService(
-    private val searchStrategy: SearchStrategy,
-    private val synthesisStrategy: ContentSynthesisStrategy,
-    private val deduplicationStrategy: ChunkDeduplicationStrategy,
+    private val searchStrategy: VectorSearchStrategy,
+    private val synthesisStrategy: LlmContentSynthesisStrategy,
+    private val deduplicationStrategy: MetadataBasedDeduplicationStrategy,
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
-        private const val MAX_CHUNKS_PER_QUERY = 15
     }
 
     /**
      * Execute a complete RAG pipeline for multiple queries.
-     * Returns synthesized answer combining all relevant information.
+     * Returns a synthesized answer combining all relevant information.
      */
     suspend fun executeRagPipeline(
         queries: List<RagQuery>,
@@ -57,49 +56,6 @@ class RagService(
             totalChunksFound = queryResults.sumOf { it.chunks.size },
             totalChunksFiltered = queryResults.sumOf { it.filteredChunks.size },
         )
-    }
-
-    /**
-     * Execute direct vector search for multiple queries without LLM synthesis.
-     * Returns raw deduplicated chunks from vector store.
-     */
-    suspend fun executeDirectSearch(
-        queries: List<RagQuery>,
-        plan: Plan,
-    ): List<DocumentChunk> {
-        logger.info { "RAG_DIRECT_SEARCH_START: Processing ${queries.size} queries" }
-
-        val queryResults = executeParallelQueries(queries, plan)
-        val allChunks = queryResults.flatMap { it.filteredChunks }
-        val deduplicated = deduplicationStrategy.deduplicate(allChunks)
-
-        logger.info { "RAG_DIRECT_SEARCH_COMPLETE: Retrieved ${deduplicated.size} unique chunks" }
-
-        return deduplicated
-    }
-
-    /**
-     * Execute direct vector search with per-query results.
-     * Returns map of query text to its specific chunks (parallel execution).
-     */
-    suspend fun executeDirectSearchWithQueryMapping(
-        queries: List<RagQuery>,
-        plan: Plan,
-    ): Map<String, List<DocumentChunk>> {
-        logger.info { "RAG_DIRECT_SEARCH_MAPPED_START: Processing ${queries.size} queries in parallel" }
-
-        val queryResults = executeParallelQueries(queries, plan)
-
-        val resultMap =
-            queryResults.associate { result ->
-                result.query to result.filteredChunks
-            }
-
-        logger.info {
-            "RAG_DIRECT_SEARCH_MAPPED_COMPLETE: Retrieved ${queryResults.sumOf { it.filteredChunks.size }} total chunks"
-        }
-
-        return resultMap
     }
 
     private suspend fun executeParallelQueries(
@@ -133,7 +89,8 @@ class RagService(
                 .take(query.maxChunks)
 
         logger.info {
-            "Query '${query.searchTerms}': ${chunks.size} raw → ${deduplicatedChunks.size} dedup → ${filteredChunks.size} filtered (threshold=${query.minSimilarityThreshold}). " +
+            "Query '${query.searchTerms}': ${chunks.size} raw → ${deduplicatedChunks.size} dedup → ${filteredChunks.size} " +
+                "filtered (threshold=${query.minSimilarityThreshold}). " +
                 "Top scores: [$topScores]. Filtered out: $belowThreshold chunks"
         }
 

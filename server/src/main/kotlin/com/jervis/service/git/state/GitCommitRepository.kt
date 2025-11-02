@@ -1,22 +1,27 @@
 package com.jervis.service.git.state
 
+import kotlinx.coroutines.flow.Flow
 import org.bson.types.ObjectId
-import org.springframework.data.mongodb.repository.ReactiveMongoRepository
+import org.springframework.data.repository.kotlin.CoroutineCrudRepository
 import org.springframework.stereotype.Repository
-import reactor.core.publisher.Flux
-import reactor.core.publisher.Mono
 
 @Repository
-interface GitCommitRepository : ReactiveMongoRepository<GitCommitDocument, ObjectId> {
-    fun findByProjectId(projectId: ObjectId): Flux<GitCommitDocument>
+interface GitCommitRepository : CoroutineCrudRepository<GitCommitDocument, ObjectId> {
+    fun findByProjectId(projectId: ObjectId): Flow<GitCommitDocument>
 
     fun findByProjectIdAndStateOrderByCommitDateAsc(
         projectId: ObjectId,
         state: GitCommitState,
-    ): Flux<GitCommitDocument>
+    ): Flow<GitCommitDocument>
 
-    fun findByProjectIdAndCommitHash(
-        projectId: ObjectId,
-        commitHash: String,
-    ): Mono<GitCommitDocument>
+    fun findByClientIdAndMonoRepoId(
+        clientId: ObjectId,
+        monoRepoId: String,
+    ): Flow<GitCommitDocument>
+
+    fun findByClientIdAndMonoRepoIdAndStateOrderByCommitDateAsc(
+        clientId: ObjectId,
+        monoRepoId: String,
+        state: GitCommitState,
+    ): Flow<GitCommitDocument>
 }

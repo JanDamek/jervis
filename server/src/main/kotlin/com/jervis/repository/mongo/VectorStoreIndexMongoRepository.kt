@@ -24,15 +24,16 @@ interface VectorStoreIndexMongoRepository : CoroutineCrudRepository<VectorStoreI
     ): Flow<VectorStoreIndexDocument>
 
     /**
-     * Find indexed document by file path in a specific branch.
+     * Find indexed documents by file path in a specific branch.
+     * Returns Flow to handle potential duplicates (takes latest by lastUpdatedAt).
      * Used to detect if file needs reindexing after changes.
      */
-    suspend fun findByProjectIdAndBranchAndFilePathAndIsActive(
+    fun findByProjectIdAndBranchAndFilePathAndIsActiveOrderByLastUpdatedAtDesc(
         projectId: ObjectId,
         branch: String,
         filePath: String,
         isActive: Boolean,
-    ): VectorStoreIndexDocument?
+    ): Flow<VectorStoreIndexDocument>
 
     /**
      * Find all indexed documents for a specific commit.
@@ -45,13 +46,34 @@ interface VectorStoreIndexMongoRepository : CoroutineCrudRepository<VectorStoreI
     ): Flow<VectorStoreIndexDocument>
 
     /**
-     * Find indexed document by source type and source ID.
+     * Find all indexed documents for a specific commit (any active state).
+     * Used by git_commit_chunks MCP tool to retrieve all chunks from a commit.
+     */
+    fun findByProjectIdAndCommitHash(
+        projectId: ObjectId,
+        commitHash: String,
+    ): Flow<VectorStoreIndexDocument>
+
+    /**
+     * Find indexed document by source type and source ID for standalone project.
      * Generic lookup for any source type (GIT_HISTORY, CODE_CHANGE, EMAIL, etc.)
      */
     suspend fun findBySourceTypeAndSourceIdAndProjectIdAndIsActive(
         sourceType: RagSourceType,
         sourceId: String,
         projectId: ObjectId,
+        isActive: Boolean,
+    ): VectorStoreIndexDocument?
+
+    /**
+     * Find indexed document by source type and source ID for mono-repo.
+     * Used for mono-repo commit and code indexing.
+     */
+    suspend fun findBySourceTypeAndSourceIdAndClientIdAndMonoRepoIdAndIsActive(
+        sourceType: RagSourceType,
+        sourceId: String,
+        clientId: ObjectId,
+        monoRepoId: String,
         isActive: Boolean,
     ): VectorStoreIndexDocument?
 

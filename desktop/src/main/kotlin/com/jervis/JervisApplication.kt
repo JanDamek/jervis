@@ -43,6 +43,8 @@ class JervisApplication(
     private val debugWindowService: DesktopDebugWindowService,
     private val notificationsClient: NotificationsWebSocketClient,
     private val emailAccountService: IEmailAccountService,
+    private val jiraSetupService: com.jervis.service.IJiraSetupService,
+    private val integrationSettingsService: com.jervis.service.IIntegrationSettingsService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -64,6 +66,8 @@ class JervisApplication(
                     debugWindowService,
                     notificationsClient,
                     emailAccountService,
+                    jiraSetupService,
+                    integrationSettingsService,
                 )
 
             EventQueue.invokeLater {

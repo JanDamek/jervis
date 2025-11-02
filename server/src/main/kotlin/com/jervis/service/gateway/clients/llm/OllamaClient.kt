@@ -2,12 +2,12 @@ package com.jervis.service.gateway.clients.llm
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.jervis.configuration.ModelsProperties
 import com.jervis.configuration.prompts.CreativityConfig
 import com.jervis.configuration.prompts.PromptConfigBase
 import com.jervis.configuration.prompts.PromptsConfiguration
+import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.domain.llm.LlmResponse
-import com.jervis.domain.model.ModelProvider
+import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.service.gateway.clients.ProviderClient
 import com.jervis.service.gateway.clients.StreamChunk
 import kotlinx.coroutines.flow.Flow
@@ -27,7 +27,7 @@ class OllamaClient(
 ) : ProviderClient {
     private val logger = KotlinLogging.logger {}
 
-    override val provider: ModelProvider = ModelProvider.OLLAMA
+    override val provider: ModelProviderEnum = ModelProviderEnum.OLLAMA
 
     /**
      * Select appropriate WebClient based on ModelType from prompt config.
@@ -35,7 +35,7 @@ class OllamaClient(
      */
     private fun selectWebClient(prompt: PromptConfigBase): WebClient =
         when (prompt.modelParams.modelType) {
-            com.jervis.domain.model.ModelType.QUALIFIER -> qualifierWebClient
+            com.jervis.domain.model.ModelTypeEnum.QUALIFIER -> qualifierWebClient
             else -> primaryWebClient
         }
 

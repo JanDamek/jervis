@@ -9,12 +9,12 @@ import org.springframework.stereotype.Component
  * Removes duplicate chunks that point to the same source location.
  */
 @Component
-class MetadataBasedDeduplicationStrategy : ChunkDeduplicationStrategy {
+class MetadataBasedDeduplicationStrategy {
     companion object {
         private val logger = KotlinLogging.logger {}
     }
 
-    override fun deduplicate(chunks: List<DocumentChunk>): List<DocumentChunk> {
+    fun deduplicate(chunks: List<DocumentChunk>): List<DocumentChunk> {
         val seen = mutableSetOf<String>()
         val deduplicated =
             chunks.filter { chunk ->
