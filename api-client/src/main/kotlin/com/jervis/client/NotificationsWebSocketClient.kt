@@ -1,6 +1,7 @@
 package com.jervis.client
 
 import com.jervis.dto.events.AgentResponseEventDto
+import com.jervis.dto.events.ErrorNotificationEventDto
 import com.jervis.dto.events.JiraAuthPromptEventDto
 import com.jervis.dto.events.PlanStatusChangeEventDto
 import com.jervis.dto.events.StepCompletionEventDto
@@ -115,6 +116,14 @@ class NotificationsWebSocketClient(
         // Try to decode as JiraAuthPromptEventDto
         runCatching {
             json.decodeFromString(JiraAuthPromptEventDto.serializer(), text)
+        }.onSuccess {
+            eventPublisher.publishEvent(it)
+            return
+        }
+
+        // Try to decode as ErrorNotificationEventDto
+        runCatching {
+            json.decodeFromString(ErrorNotificationEventDto.serializer(), text)
         }.onSuccess {
             eventPublisher.publishEvent(it)
             return

@@ -21,3 +21,12 @@ data class PlanStatusChangeEventDto(
     val planStatus: String,
     val timestamp: String,
 )
+
+@Serializable
+data class ErrorNotificationEventDto(
+    val eventType: String = "ERROR",
+    val message: String,
+    val stackTrace: String? = null,
+    val correlationId: String? = null,
+    val timestamp: String,
+)

@@ -33,6 +33,7 @@ class JiraSetupRestController(
     private val jiraSelectionService: JiraSelectionService,
     private val sessionManager: WebSocketSessionManager,
     private val jiraApiClient: com.jervis.service.jira.JiraApiClient,
+    private val errorPublisher: com.jervis.service.notification.ErrorNotificationsPublisher,
 ) : IJiraSetupService {
     private val logger = KotlinLogging.logger {}
     private val json = Json { encodeDefaults = true }
@@ -43,17 +44,31 @@ class JiraSetupRestController(
         return status
     }
 
-    override suspend fun testApiToken(request: JiraApiTokenTestRequestDto): JiraApiTokenTestResponseDto {
-        val ok = jiraAuthService.testApiToken(request.tenant, request.email, request.apiToken)
-        logger.info { "JIRA_UI_SETUP: testApiToken tenant=${request.tenant} email=${request.email} ok=$ok" }
-        return JiraApiTokenTestResponseDto(success = ok, message = if (ok) null else "Unauthorized")
-    }
+    override suspend fun testApiToken(request: JiraApiTokenTestRequestDto): JiraApiTokenTestResponseDto =
+        try {
+            val ok = jiraAuthService.testApiToken(request.tenant, request.email, request.apiToken)
+            logger.info { "JIRA_UI_SETUP: testApiToken tenant=${request.tenant} email=${request.email} ok=$ok" }
+            JiraApiTokenTestResponseDto(success = ok, message = if (ok) null else "Unauthorized")
+        } catch (e: Exception) {
+            errorPublisher.publishError(
+                message = "Jira token test failed: ${e.message}",
+                stackTrace = e.stackTraceToString(),
+            )
+            throw e
+        }
 
-    override suspend fun saveApiToken(request: JiraApiTokenSaveRequestDto): JiraSetupStatusDto {
-        val conn = jiraAuthService.saveApiToken(request.clientId, request.tenant, request.email, request.apiToken)
-        logger.info { "JIRA_UI_SETUP: saveApiToken succeeded for client=${conn.clientId} tenant=${conn.tenant.value}" }
-        return fetchStatus(request.clientId)
-    }
+    override suspend fun saveApiToken(request: JiraApiTokenSaveRequestDto): JiraSetupStatusDto =
+        try {
+            val conn = jiraAuthService.saveApiToken(request.clientId, request.tenant, request.email, request.apiToken)
+            logger.info { "JIRA_UI_SETUP: saveApiToken succeeded for client=${conn.clientId} tenant=${conn.tenant.value}" }
+            fetchStatus(request.clientId)
+        } catch (e: Exception) {
+            errorPublisher.publishError(
+                message = "Failed to save Jira API token: ${e.message}",
+                stackTrace = e.stackTraceToString(),
+            )
+            throw e
+        }
 
     override suspend fun beginAuth(request: JiraBeginAuthRequestDto): JiraBeginAuthResponseDto {
         val correlationId = UUID.randomUUID().toString()
@@ -104,32 +119,46 @@ class JiraSetupRestController(
         return fetchStatus(request.clientId)
     }
 
-    override suspend fun listProjects(clientId: String): List<com.jervis.dto.jira.JiraProjectRefDto> {
-        val conn = jiraSelectionService.getConnection(ObjectId(clientId))
-        val list = jiraApiClient.listProjects(conn)
-        return list.map {
-            com.jervis.dto.jira
-                .JiraProjectRefDto(key = it.first.value, name = it.second)
+    override suspend fun listProjects(clientId: String): List<com.jervis.dto.jira.JiraProjectRefDto> =
+        try {
+            val conn = jiraSelectionService.getConnection(ObjectId(clientId))
+            val list = jiraApiClient.listProjects(conn)
+            list.map {
+                com.jervis.dto.jira
+                    .JiraProjectRefDto(key = it.first.value, name = it.second)
+            }
+        } catch (e: Exception) {
+            errorPublisher.publishError(
+                message = "Failed to list Jira projects: ${e.message}",
+                stackTrace = e.stackTraceToString(),
+            )
+            throw e
         }
-    }
 
     override suspend fun listBoards(
         clientId: String,
         projectKey: String?,
-    ): List<com.jervis.dto.jira.JiraBoardRefDto> {
-        val conn = jiraSelectionService.getConnection(ObjectId(clientId))
-        val boards =
-            jiraApiClient.listBoards(
-                conn,
-                projectKey?.let {
-                    JiraProjectKey(it)
-                },
+    ): List<com.jervis.dto.jira.JiraBoardRefDto> =
+        try {
+            val conn = jiraSelectionService.getConnection(ObjectId(clientId))
+            val boards =
+                jiraApiClient.listBoards(
+                    conn,
+                    projectKey?.let {
+                        JiraProjectKey(it)
+                    },
+                )
+            boards.map {
+                com.jervis.dto.jira
+                    .JiraBoardRefDto(id = it.first.value, name = it.second)
+            }
+        } catch (e: Exception) {
+            errorPublisher.publishError(
+                message = "Failed to list Jira boards: ${e.message}",
+                stackTrace = e.stackTraceToString(),
             )
-        return boards.map {
-            com.jervis.dto.jira
-                .JiraBoardRefDto(id = it.first.value, name = it.second)
+            throw e
         }
-    }
 
     private suspend fun fetchStatus(clientId: String): JiraSetupStatusDto =
         try {
