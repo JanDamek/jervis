@@ -13,6 +13,7 @@ data class EmailAccountDto(
     val description: String? = null,
     val email: String,
     val username: String? = null,
+    val password: String? = null,
     val serverHost: String? = null,
     val serverPort: Int? = null,
     val useSsl: Boolean = true,

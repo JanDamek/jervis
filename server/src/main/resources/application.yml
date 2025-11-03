@@ -3,7 +3,7 @@ logging:
   level:
     root: INFO
     com.jervis: INFO
-    com.jervis.service: DEBUG
+    com.jervis.service: INFO
     org.springframework.web: INFO
     org.springframework.web.reactive.socket: INFO
     org.springframework.web.reactive.handler: INFO
@@ -11,7 +11,7 @@ logging:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
     file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
   file:
-    name: ~/.jervis/logs/jervis-app.log
+    name: ${DATA_ROOT_DIR}/logs/jervis-app.log
   logback:
     rollingpolicy:
       max-history: 7
@@ -76,10 +76,12 @@ models: # embedding dimensions configured per model
       model: qwen3:30b
       context-length: 32768
       num-predict: 4096
+      concurrency: 1
     - provider: GOOGLE
       model: gemini-2.5-pro-latest
       context-length: 1048576
       num-predict: 65536
+      concurrency: 1
 
   CODER:
     - provider: OLLAMA
@@ -87,54 +89,55 @@ models: # embedding dimensions configured per model
       context-length: 132768
       num-predict: 4096
       quick: false
-    - provider: ANTHROPIC
-      model: claude-3-5-sonnet-20241022
-      context-length: 16384
-      quick: false
+      concurrency: 1
+    - provider: GOOGLE
+      model: gemini-2.5-pro-latest
+      context-length: 1048576
+      num-predict: 65536
+      concurrency: 1
 
   PLANNER:
     - provider: OLLAMA
       model: qwen3:30b
       context-length: 32768
       num-predict: 8192
+      concurrency: 1
     - provider: GOOGLE
       model: gemini-2.5-pro-latest
       context-length: 1048576
       num-predict: 65536
+      concurrency: 1
 
   JOERN:
     - provider: OLLAMA
       model: qwen3:30b
       context-length: 32768
       num-predict: 4096
-    - provider: GOOGLE
-      model: gemini-2.5-pro-latest
-      context-length: 1048576
-      num-predict: 65536
+      concurrency: 1
 
   GENERIC_TEXT_MODEL:
     - provider: OLLAMA
       model: qwen3:30b
       context-length: 32768
       num-predict: 4096
+      concurrency: 1
     - provider: GOOGLE
       model: gemini-2.5-pro-latest
       context-length: 1048576
       num-predict: 65536
-  #    - provider: OPENAI
-  #      model: gpt-4o-mini
-  #      context-length: 8192
-  #      quick: true
+      concurrency: 1
 
   GENERIC_CODE_MODEL:
     - provider: OLLAMA
       model: qwen3-coder:30b
       context-length: 32768
       num-predict: 8192
-  #    - provider: ANTHROPIC
-  #      model: claude-3-5-haiku-20241022
-  #      context-length: 8192
-  #      quick: true
+      concurrency: 1
+    - provider: GOOGLE
+      model: gemini-2.5-pro-latest
+      context-length: 1048576
+      concurrency: 1
+      num-predict: 65536
 
   # Heavy models - BATCH PROCESSING ONLY due to P40 VRAM limitations
   HEAVY_TEXT_MODEL:
@@ -143,14 +146,17 @@ models: # embedding dimensions configured per model
       context-length: 32768
       num-predict: 8192
       quick: false
+      concurrency: 1
     - provider: GOOGLE
       model: gemini-2.5-pro-latest
       context-length: 1048576
       num-predict: 65536
+      concurrency: 1
     - provider: OPENAI
       model: gpt-4o
       context-length: 16384
       quick: false
+      concurrency: 1
 
   HEAVY_CODE_MODEL:
     - provider: OLLAMA
@@ -158,29 +164,25 @@ models: # embedding dimensions configured per model
       context-length: 32768
       num-predict: 8192
       quick: false
-    - provider: ANTHROPIC
-      model: claude-3-5-sonnet-20241022
-      context-length: 32768
-      quick: false
-  #    - provider: OPENAI
-  #      model: gpt-4o
-  #      maxTokens: 8196
-  #      quick: true
-  #    - provider: ANTHROPIC
-  #      model: claude-3-5-sonnet
-  #      maxTokens: 8196
-  #      quick: true
+      concurrency: 1
+    - provider: GOOGLE
+      model: gemini-2.5-pro-latest
+      context-length: 1048576
+      num-predict: 65536
+      concurrency: 1
+
   QUICK:
     - provider: OLLAMA_QUALIFIER
       model: qwen2.5:3b-instruct-q4_K_M
       context-length: 8196
       quick: false
+      concurrency: 1
 
   QUALIFIER:
     - provider: OLLAMA_QUALIFIER
       model: qwen2.5:3b-instruct-q4_K_M
       context-length: 32768
-      concurrency: 4
+      concurrency: 1
 
 endpoints:
   openai:
@@ -230,7 +232,7 @@ retry:
 
 # Workspace configuration - central root for all server-managed files
 data:
-  root-dir: ${DATA_ROOT_DIR:~/.jervis/workspace}
+  root-dir: ${DATA_ROOT_DIR}
 
 # Audio processing configuration
 audio:
