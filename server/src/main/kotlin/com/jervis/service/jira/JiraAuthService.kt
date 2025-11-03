@@ -19,6 +19,21 @@ interface JiraAuthService {
         redirectUri: String,
     ): JiraConnection
 
+    /** Test Atlassian Cloud API token by calling /rest/api/3/myself with Basic auth. */
+    suspend fun testApiToken(
+        tenant: String,
+        email: String,
+        apiToken: String,
+    ): Boolean
+
+    /** Save Atlassian Cloud API token for client and tenant, returning stored connection snapshot. */
+    suspend fun saveApiToken(
+        clientId: String,
+        tenant: String,
+        email: String,
+        apiToken: String,
+    ): JiraConnection
+
     /** Ensure access token is valid; refresh if expired. Returns updated connection snapshot. */
     suspend fun ensureValidToken(conn: JiraConnection): JiraConnection
 }

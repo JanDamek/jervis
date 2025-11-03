@@ -1,5 +1,8 @@
 package com.jervis.service
 
+import com.jervis.dto.jira.JiraApiTokenSaveRequestDto
+import com.jervis.dto.jira.JiraApiTokenTestRequestDto
+import com.jervis.dto.jira.JiraApiTokenTestResponseDto
 import com.jervis.dto.jira.JiraBeginAuthRequestDto
 import com.jervis.dto.jira.JiraBeginAuthResponseDto
 import com.jervis.dto.jira.JiraBoardSelectionDto
@@ -19,6 +22,16 @@ interface IJiraSetupService {
     @GetExchange("/status")
     suspend fun getStatus(
         @RequestParam clientId: String,
+    ): JiraSetupStatusDto
+
+    @PostExchange("/test-api-token")
+    suspend fun testApiToken(
+        @RequestBody request: JiraApiTokenTestRequestDto,
+    ): JiraApiTokenTestResponseDto
+
+    @PostExchange("/save-api-token")
+    suspend fun saveApiToken(
+        @RequestBody request: JiraApiTokenSaveRequestDto,
     ): JiraSetupStatusDto
 
     @PostExchange("/begin-auth")

@@ -23,6 +23,8 @@ data class JiraConnectionDocument(
     val clientId: ObjectId,
     /** Atlassian cloud tenant hostname, e.g. example.atlassian.net */
     val tenant: String,
+    /** Account email used for API token authentication */
+    val email: String? = null,
     /** Short-lived access token */
     val accessToken: String,
     /** Long-lived refresh token (offline access) */
