@@ -73,3 +73,16 @@ data class JiraUserSelectionDto(
     val clientId: String,
     val accountId: String,
 )
+
+// Lightweight list DTOs for UI selection
+@Serializable
+data class JiraProjectRefDto(
+    val key: String,
+    val name: String,
+)
+
+@Serializable
+data class JiraBoardRefDto(
+    val id: Long,
+    val name: String,
+)

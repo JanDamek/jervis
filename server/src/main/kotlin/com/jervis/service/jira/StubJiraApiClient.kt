@@ -30,8 +30,66 @@ class StubJiraApiClient(
         conn: JiraConnection,
         project: JiraProjectKey?,
     ): List<Pair<JiraBoardId, String>> {
-        // Minimal impl: return empty until needed
-        return emptyList()
+        val client = clientFor(conn)
+        val results = mutableListOf<Pair<JiraBoardId, String>>()
+        var startAt = 0
+        val max = 50
+        do {
+            val response: BoardsResponseDto =
+                client
+                    .get()
+                    .uri { b ->
+                        b
+                            .path("/rest/agile/1.0/board")
+                            .queryParam("startAt", startAt)
+                            .queryParam("maxResults", max)
+                            .apply { project?.let { queryParam("projectKeyOrId", it.value) } }
+                            .build()
+                    }.header("Authorization", basic(conn))
+                    .retrieve()
+                    .awaitBody<BoardsResponseDto>()
+            val values = response.values.orEmpty()
+            for (v in values) {
+                val id = v.id ?: continue
+                val name = v.name ?: ("Board $id")
+                results += JiraBoardId(id) to name
+            }
+            val pageCount = values.size
+            startAt += pageCount
+            val total = response.total ?: (startAt + 1)
+        } while (pageCount > 0 && startAt < total)
+        return results
+    }
+
+    override suspend fun listProjects(conn: JiraConnection): List<Pair<JiraProjectKey, String>> {
+        val client = clientFor(conn)
+        val results = mutableListOf<Pair<JiraProjectKey, String>>()
+        var startAt = 0
+        val max = 50
+        do {
+            val response: ProjectSearchResponseDto =
+                client
+                    .get()
+                    .uri { b ->
+                        b
+                            .path("/rest/api/3/project/search")
+                            .queryParam("startAt", startAt)
+                            .queryParam("maxResults", max)
+                            .build()
+                    }.header("Authorization", basic(conn))
+                    .retrieve()
+                    .awaitBody()
+            val values = response.values.orEmpty()
+            for (p in values) {
+                val key = p.key ?: continue
+                val name = p.name ?: key
+                results += JiraProjectKey(key) to name
+            }
+            val pageCount = values.size
+            startAt += pageCount
+            val total = response.total ?: (startAt + 1)
+        } while (pageCount > 0 && startAt < total)
+        return results
     }
 
     override suspend fun projectExists(
@@ -233,6 +291,34 @@ class StubJiraApiClient(
         val id: String? = null,
         val renderedBody: String? = null,
         val body: String? = null,
+    )
+
+    // Agile boards response
+    private data class BoardsResponseDto(
+        val startAt: Int? = null,
+        val maxResults: Int? = null,
+        val total: Int? = null,
+        val isLast: Boolean? = null,
+        val values: List<BoardDto>? = null,
+    )
+
+    private data class BoardDto(
+        val id: Long? = null,
+        val name: String? = null,
+        val type: String? = null,
+    )
+
+    // Project search response
+    private data class ProjectSearchResponseDto(
+        val startAt: Int? = null,
+        val maxResults: Int? = null,
+        val total: Int? = null,
+        val values: List<ProjectDto>? = null,
+    )
+
+    private data class ProjectDto(
+        val key: String? = null,
+        val name: String? = null,
     )
 
     private fun stripHtml(input: String): String =

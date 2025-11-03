@@ -22,7 +22,6 @@ import javax.swing.JLabel
 import javax.swing.JList
 import javax.swing.JOptionPane
 import javax.swing.JPanel
-import javax.swing.JPasswordField
 import javax.swing.JScrollPane
 import javax.swing.JSeparator
 import javax.swing.JTabbedPane
@@ -126,9 +125,7 @@ class GitSetupPanel(
             lineWrap = true
         }
     private val sshPublicKeyArea = JTextArea(initialSshPublicKey ?: "", 5, 50).apply { lineWrap = true }
-    private val sshPassphraseField = JPasswordField(30).apply {
-        text = initialSshPassphrase ?: ""
-    }
+    private val sshPassphraseField = JTextField(initialSshPassphrase ?: "", 30)
     private val httpsTokenArea = JTextArea(
         initialHttpsToken ?: "",
         5, 50
@@ -136,9 +133,7 @@ class GitSetupPanel(
         lineWrap = true
     }
     private val httpsUsernameField = JTextField(initialHttpsUsername ?: "", 30)
-    private val httpsPasswordField = JPasswordField(30).apply {
-        text = initialHttpsPassword ?: ""
-    }
+    private val httpsPasswordField = JTextField(initialHttpsPassword ?: "", 30)
     private val gpgPrivateKeyArea = JTextArea(
         initialGpgPrivateKey ?: "",
         10, 50
@@ -147,9 +142,7 @@ class GitSetupPanel(
     }
     private val gpgPublicKeyArea = JTextArea(initialGpgPublicKey ?: "", 5, 50).apply { lineWrap = true }
     private val gpgKeyIdField = JTextField(initialGitConfig?.gpgKeyId ?: "", 30)
-    private val gpgPassphraseField = JPasswordField(30).apply {
-        text = initialGpgPassphrase ?: ""
-    }
+    private val gpgPassphraseField = JTextField(initialGpgPassphrase ?: "", 30)
     private val gitUserNameField = JTextField(initialGitConfig?.gitUserName ?: "", 30)
     private val gitUserEmailField = JTextField(initialGitConfig?.gitUserEmail ?: "", 30)
     private val requireGpgSignCheckbox = JCheckBox("Require GPG signatures", initialGitConfig?.requireGpgSign ?: false)
@@ -537,7 +530,7 @@ class GitSetupPanel(
                 }
             }
             GitAuthTypeEnum.HTTPS_BASIC -> {
-                val passwordText = String(httpsPasswordField.password)
+                val passwordText = httpsPasswordField.text
                 if (httpsUsernameField.text.isBlank() || passwordText.isEmpty()) {
                     JOptionPane.showMessageDialog(this, "Username/password required", "Error", JOptionPane.ERROR_MESSAGE)
                     tabbedPane.selectedIndex = 1
@@ -572,11 +565,11 @@ class GitSetupPanel(
         }
 
         val sshPrivateKeyText = sshPrivateKeyArea.text
-        val sshPassphraseText = String(sshPassphraseField.password)
+        val sshPassphraseText = sshPassphraseField.text
         val httpsTokenText = httpsTokenArea.text
-        val httpsPasswordText = String(httpsPasswordField.password)
+        val httpsPasswordText = httpsPasswordField.text
         val gpgPrivateKeyText = gpgPrivateKeyArea.text
-        val gpgPassphraseText = String(gpgPassphraseField.password)
+        val gpgPassphraseText = gpgPassphraseField.text
 
         return GitSetupRequestDto(
             gitProvider = provider,

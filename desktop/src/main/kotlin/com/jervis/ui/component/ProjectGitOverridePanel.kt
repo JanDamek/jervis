@@ -17,7 +17,6 @@ import javax.swing.JFileChooser
 import javax.swing.JLabel
 import javax.swing.JOptionPane
 import javax.swing.JPanel
-import javax.swing.JPasswordField
 import javax.swing.JScrollPane
 import javax.swing.JTextArea
 import javax.swing.JTextField
@@ -80,10 +79,9 @@ class ProjectGitOverridePanel(
         }
 
     private val sshPassphraseField =
-        JPasswordField().apply {
+        JTextField(initialSshPassphrase ?: "").apply {
             preferredSize = Dimension(300, 30)
             toolTipText = "Passphrase for SSH private key (if required)"
-            text = initialSshPassphrase ?: ""
         }
 
     // HTTPS PAT credential fields
@@ -105,10 +103,9 @@ class ProjectGitOverridePanel(
         }
 
     private val httpsPasswordField =
-        JPasswordField().apply {
+        JTextField(initialHttpsPassword ?: "").apply {
             preferredSize = Dimension(300, 30)
             toolTipText = "Password for HTTPS Basic authentication"
-            text = initialHttpsPassword ?: ""
         }
 
     // Presence flags for existing credentials derived from initial values
@@ -143,21 +140,9 @@ class ProjectGitOverridePanel(
         }
 
     private val gpgPassphraseField =
-        JPasswordField().apply {
+        JTextField(initialGpgPassphrase ?: "").apply {
             preferredSize = Dimension(300, 30)
             toolTipText = "Passphrase for GPG private key (if required)"
-            if (hasGpgPassphrase) {
-                text = "*** (exists - leave empty to keep)"
-                foreground = java.awt.Color.GRAY
-                addFocusListener(object : java.awt.event.FocusAdapter() {
-                    override fun focusGained(e: java.awt.event.FocusEvent) {
-                        if (String(password) == "*** (exists - leave empty to keep)") {
-                            text = ""
-                            foreground = java.awt.Color.BLACK
-                        }
-                    }
-                })
-            }
         }
 
     private val requireGpgSignCheckbox =
@@ -644,7 +629,7 @@ class ProjectGitOverridePanel(
                 if (overrideAuthCheckbox.isSelected &&
                     authTypeCombo.selectedItem == GitAuthTypeEnum.SSH_KEY
                 ) {
-                    String(sshPassphraseField.password).takeIf { it.isNotBlank() }
+                    sshPassphraseField.text.takeIf { it.isNotBlank() }
                 } else {
                     null
                 },
@@ -668,7 +653,7 @@ class ProjectGitOverridePanel(
                 if (overrideAuthCheckbox.isSelected &&
                     authTypeCombo.selectedItem == GitAuthTypeEnum.HTTPS_BASIC
                 ) {
-                    String(httpsPasswordField.password).takeIf { it.isNotBlank() }
+                    httpsPasswordField.text.takeIf { it.isNotBlank() }
                 } else {
                     null
                 },
@@ -686,7 +671,7 @@ class ProjectGitOverridePanel(
                 },
             gpgPassphrase =
                 if (overrideGpgCheckbox.isSelected) {
-                    String(gpgPassphraseField.password).takeIf { it.isNotBlank() }
+                    gpgPassphraseField.text.takeIf { it.isNotBlank() }
                 } else {
                     null
                 },
@@ -726,7 +711,7 @@ class ProjectGitOverridePanel(
                 }
 
                 GitAuthTypeEnum.HTTPS_BASIC -> {
-                    val passwordText = String(httpsPasswordField.password)
+                    val passwordText = httpsPasswordField.text
                     if (httpsUsernameField.text.trim().isBlank() ||
                         (passwordText.isBlank() || passwordText == "*** (exists - leave empty to keep)") && !hasHttpsPassword
                     ) {

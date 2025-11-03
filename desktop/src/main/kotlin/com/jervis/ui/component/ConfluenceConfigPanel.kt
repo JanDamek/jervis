@@ -22,7 +22,6 @@ import javax.swing.JCheckBox
 import javax.swing.JLabel
 import javax.swing.JOptionPane
 import javax.swing.JPanel
-import javax.swing.JPasswordField
 import javax.swing.JScrollPane
 import javax.swing.JTable
 import javax.swing.JTextArea
@@ -38,8 +37,8 @@ class ConfluenceConfigPanel(
     private val cloudIdField = JTextField(20)
     private val siteNameField = JTextField(20)
     private val siteUrlField = JTextField(30)
-    private val accessTokenField = JPasswordField(30)
-    private val refreshTokenField = JPasswordField(30)
+    private val accessTokenField = JTextField(30)
+    private val refreshTokenField = JTextField(30)
     private val spaceKeysArea = JTextArea(3, 30)
     private val isActiveCheckbox = JCheckBox("Active", true)
 
@@ -212,7 +211,7 @@ class ConfluenceConfigPanel(
                 val cloudId = cloudIdField.text.trim()
                 val siteName = siteNameField.text.trim()
                 val siteUrl = siteUrlField.text.trim()
-                val accessToken = String(accessTokenField.password).trim()
+                val accessToken = accessTokenField.text.trim()
                 val spaceKeys =
                     spaceKeysArea.text
                         .split("\n")
@@ -259,7 +258,7 @@ class ConfluenceConfigPanel(
                             siteUrl = siteUrl,
                             accessToken = accessToken,
                             refreshToken =
-                                String(refreshTokenField.password)
+                                refreshTokenField.text
                                     .trim()
                                     .takeIf { it.isNotEmpty() },
                             tokenExpiresAt = Instant.now().plusSeconds(3600),

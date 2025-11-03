@@ -1321,8 +1321,8 @@ class ClientsWindow(
             // Email Accounts Tab
             tabbedPane.addTab("Email Accounts", JScrollPane(emailConfigPanel))
 
-            // Jira Setup Tab
-            tabbedPane.addTab("Jira", JScrollPane(jiraPanel))
+            // Atlassian Cloud Setup Tab
+            tabbedPane.addTab("Atlassian Cloud", JScrollPane(jiraPanel))
 
             // Confluence Settings Tab
             tabbedPane.addTab("Confluence", JScrollPane(confluencePanel))

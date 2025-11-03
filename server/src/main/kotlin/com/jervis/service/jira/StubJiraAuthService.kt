@@ -101,6 +101,7 @@ class StubJiraAuthService(
                     .get()
                     .uri("/rest/api/3/myself")
                     .header("Authorization", "Basic $basic")
+                    .header("Accept", "application/json")
                     .retrieve()
                     .awaitBodilessEntity()
             response.statusCode.is2xxSuccessful

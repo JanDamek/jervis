@@ -58,4 +58,16 @@ interface IJiraSetupService {
     suspend fun setPreferredUser(
         @RequestBody request: JiraUserSelectionDto,
     ): JiraSetupStatusDto
+
+    // Lists for UI selection
+    @GetExchange("/projects")
+    suspend fun listProjects(
+        @RequestParam clientId: String,
+    ): List<com.jervis.dto.jira.JiraProjectRefDto>
+
+    @GetExchange("/boards")
+    suspend fun listBoards(
+        @RequestParam clientId: String,
+        @RequestParam(required = false) projectKey: String? = null,
+    ): List<com.jervis.dto.jira.JiraBoardRefDto>
 }
