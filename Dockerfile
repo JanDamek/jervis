@@ -131,9 +131,15 @@ ENTRYPOINT ["sh", "-c", "mkdir -p ${WORK_DATA} && java ${JAVA_OPTS} -Djava.io.tm
 # ---------- Whisper base (simple runtime)
 FROM eclipse-temurin:21-jre AS whisper-base
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    python3 python3-pip ffmpeg ca-certificates curl && rm -rf /var/lib/apt/lists/*
-# Install faster-whisper (CPU)
-RUN pip3 --no-cache-dir install faster-whisper
+    python3 python3-venv ffmpeg libgomp1 ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+ENV VIRTUAL_ENV=/opt/venv
+RUN python3 -m venv "$VIRTUAL_ENV"
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+RUN python -m pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir faster-whisper
+# Optional sanity check
+RUN python -c "import faster_whisper, sys; print('faster-whisper', faster_whisper.__version__)"
 
 # ---------- Final image: jervis-whisper
 FROM whisper-base AS runtime-whisper
