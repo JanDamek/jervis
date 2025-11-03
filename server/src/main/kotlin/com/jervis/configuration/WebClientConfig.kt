@@ -156,8 +156,14 @@ class WebClientConfig(
             .defaultHeaders { headers ->
                 headers.contentType = MediaType.APPLICATION_JSON
                 headers.accept = listOf(MediaType.APPLICATION_JSON)
-            }.exchangeStrategies(defaultExchangeStrategies())
-            .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
+            }
+            // Tika can return large plain text payloads; allow a much larger in-memory buffer just for this client
+            .exchangeStrategies(
+                ExchangeStrategies
+                    .builder()
+                    .codecs { it.defaultCodecs().maxInMemorySize(TIKA_MAX_IN_MEMORY_BYTES) }
+                    .build(),
+            ).clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
             .filter(createRetryFilter())
             .build()
 
@@ -238,6 +244,7 @@ class WebClientConfig(
 
     companion object {
         private const val DEFAULT_MAX_IN_MEMORY_BYTES = 8 * 1024 * 1024 // 8 MB
+        private const val TIKA_MAX_IN_MEMORY_BYTES = 64 * 1024 * 1024 // 64 MB for large Tika payloads
         private const val ANTHROPIC_VERSION = "2023-06-01"
     }
 }

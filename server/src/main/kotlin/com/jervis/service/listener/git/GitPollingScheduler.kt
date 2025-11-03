@@ -48,7 +48,14 @@ class GitPollingScheduler(
         fixedDelayString = "\${git.sync.polling-interval-ms:300000}",
         initialDelayString = "\${git.sync.initial-delay-ms:60000}",
     )
-    suspend fun syncAllRepositories() {
+    fun syncAllRepositoriesScheduled() {
+        // Spring @Scheduled does not support suspend directly; bridge via runBlocking
+        kotlinx.coroutines.runBlocking {
+            syncAllRepositories()
+        }
+    }
+
+    private suspend fun syncAllRepositories() {
         runCatching {
             logger.info { "=== GIT_SYNC: Starting unified Git synchronization ===" }
 
