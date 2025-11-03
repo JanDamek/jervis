@@ -119,13 +119,14 @@ class StubJiraAuthService(
         require(email.isNotBlank()) { "Email must be provided" }
         require(apiToken.isNotBlank()) { "API token must be provided" }
 
-        val ok = testApiToken(tenant, email, apiToken)
-        require(ok) { "Invalid Jira API token or tenant/email mismatch" }
+        // Always persist what user entered first; validate in background to set connection state
+        val isValid = testApiToken(tenant, email, apiToken)
 
         val clientObjId = org.bson.types.ObjectId(clientId)
         val now = Instant.now()
         val farFuture = now.plusSeconds(10L * 365 * 24 * 3600) // ~10 years
         val normalizedTenant = normalizeTenant(tenant)
+        val effectiveExpiry = if (isValid) farFuture else Instant.EPOCH
 
         val existing = connectionRepo.findByClientIdAndTenant(clientObjId, normalizedTenant)
         val saved =
@@ -136,8 +137,8 @@ class StubJiraAuthService(
                         tenant = normalizedTenant,
                         email = email,
                         accessToken = apiToken, // store token
-                        refreshToken = "",
-                        expiresAt = farFuture,
+                        refreshToken = existing?.refreshToken ?: "",
+                        expiresAt = effectiveExpiry,
                         preferredUser = null,
                         mainBoard = null,
                         primaryProject = null,
@@ -150,11 +151,19 @@ class StubJiraAuthService(
                         email = email,
                         accessToken = apiToken,
                         refreshToken = existing.refreshToken,
-                        expiresAt = farFuture,
+                        expiresAt = effectiveExpiry,
                         updatedAt = now,
                     )
                 connectionRepo.save(updated)
             }
+
+        if (!isValid) {
+            logger.info {
+                "JIRA_AUTH_STUB: Saved Jira API credentials but validation failed for client=$clientId tenant=$normalizedTenant (will show as disconnected)"
+            }
+        } else {
+            logger.info { "JIRA_AUTH_STUB: Saved Jira API credentials and validated for client=$clientId tenant=$normalizedTenant" }
+        }
 
         return JiraConnection(
             clientId = clientId,

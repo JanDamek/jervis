@@ -37,6 +37,8 @@ data class JiraConnectionDocument(
     val mainBoard: Long? = null,
     /** Primary project key for this client */
     val primaryProject: String? = null,
+    /** Last successful Jira indexing sync timestamp */
+    val lastSyncedAt: Instant? = null,
     @Indexed
     val updatedAt: Instant = Instant.now(),
 )
