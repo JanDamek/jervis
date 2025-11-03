@@ -304,15 +304,7 @@ class GitIndexingOrchestrator(
                     } catch (e: Exception) {
                         logger.error(e) { "Failed to index mono-repo code diff for commit ${commitDoc.commitHash.take(8)}" }
                         totalErrors++
-
-                        // CRITICAL: Mark as indexed even on failure to prevent infinite retry loop
-                        // The error is logged and counted, but we must move on to next commit
-                        try {
-                            stateManager.markAsIndexed(commitDoc)
-                            logger.warn { "Marked failed commit ${commitDoc.commitHash.take(8)} as indexed to prevent retry loop" }
-                        } catch (markError: Exception) {
-                            logger.error(markError) { "Failed to mark commit as indexed: ${commitDoc.commitHash.take(8)}" }
-                        }
+                        // Do NOT mark as indexed on failure; leave as NEW to retry on next cycle
                     }
                 }
 
@@ -375,15 +367,7 @@ class GitIndexingOrchestrator(
                     } catch (e: Exception) {
                         logger.error(e) { "Failed to index code diff for commit ${commitDoc.commitHash.take(8)}" }
                         totalErrors++
-
-                        // CRITICAL: Mark as indexed even on failure to prevent infinite retry loop
-                        // The error is logged and counted, but we must move on to next commit
-                        try {
-                            stateManager.markAsIndexed(commitDoc)
-                            logger.warn { "Marked failed commit ${commitDoc.commitHash.take(8)} as indexed to prevent retry loop" }
-                        } catch (markError: Exception) {
-                            logger.error(markError) { "Failed to mark commit as indexed: ${commitDoc.commitHash.take(8)}" }
-                        }
+                        // Do NOT mark as indexed on failure; leave as NEW so task creation can still occur
                     }
                 }
 

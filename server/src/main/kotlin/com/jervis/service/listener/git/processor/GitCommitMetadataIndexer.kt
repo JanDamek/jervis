@@ -199,8 +199,7 @@ class GitCommitMetadataIndexer(
                     if (fullCommit != null) {
                         val success = indexMonoRepoGitCommit(clientId, monoRepoId, fullCommit)
                         if (success) {
-                            // For mono-repos, mark as indexed immediately (no project-specific tasks)
-                            stateManager.markAsIndexed(commitDoc)
+                            // Do NOT mark as indexed here; code diff step will mark after processing
                             processedCommits++
                         } else {
                             errorCommits++
