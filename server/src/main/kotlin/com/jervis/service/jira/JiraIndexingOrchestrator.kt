@@ -25,6 +25,8 @@ class JiraIndexingOrchestrator(
     private val vectorStoreIndexService: VectorStoreIndexService,
     private val projectRepository: com.jervis.repository.mongo.ProjectMongoRepository,
     private val clientRepository: com.jervis.repository.mongo.ClientMongoRepository,
+    private val connectionRepository: com.jervis.repository.mongo.JiraConnectionMongoRepository,
+    private val issueIndexRepository: com.jervis.repository.mongo.JiraIssueIndexMongoRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -57,8 +59,11 @@ class JiraIndexingOrchestrator(
                     setOf(primaryProject.value)
                 }
 
-            // Shallow discovery window (last 30 days)
-            val baseJqlSuffix = "AND updated >= -30d ORDER BY updated DESC"
+            // Determine incremental window based on last sync
+            val connDoc = connectionRepository.findByClientId(clientId)
+            val lastSyncedAt = connDoc?.lastSyncedAt
+            val baseJqlSuffix =
+                if (lastSyncedAt == null) "AND updated >= -30d ORDER BY updated DESC" else "ORDER BY updated DESC"
 
             effectiveProjectKeys.forEach { key ->
                 val jql = "project = $key $baseJqlSuffix"
@@ -66,35 +71,43 @@ class JiraIndexingOrchestrator(
                 runCatching {
                     val connValid = selection.getConnection(clientId).let { auth.ensureValidToken(it) }
                     val tenantHost = connValid.tenant.value
-                    api.searchIssues(connValid, jql).collect { issue ->
-                        val assignedToMe = issue.assignee?.value == me.value
-                        val projectKey = JiraProjectKey(key)
-                        if (!assignedToMe) {
-                            // Shallow: one compact narrative chunk
-                            indexIssueSummaryShallow(
-                                clientId,
-                                issue.key,
-                                projectKey,
-                                assignedToMe,
-                                issue.summary,
-                                issue.status,
-                                issue.updated,
-                                tenantHost,
-                            )
-                        } else {
-                            // Deep placeholder: summary only for now, comments later
-                            indexIssueSummaryShallow(
-                                clientId,
-                                issue.key,
-                                projectKey,
-                                assignedToMe,
-                                issue.summary,
-                                issue.status,
-                                issue.updated,
-                                tenantHost,
-                            )
+                    api
+                        .searchIssues(connValid, jql, updatedSinceEpochMs = lastSyncedAt?.toEpochMilli())
+                        .collect { issue ->
+                            val assignedToMe = issue.assignee?.value == me.value
+                            val projectKey = JiraProjectKey(key)
+                            if (!assignedToMe) {
+                                // Shallow: one compact narrative chunk
+                                indexIssueSummaryShallow(
+                                    clientId,
+                                    issue.key,
+                                    projectKey,
+                                    assignedToMe,
+                                    issue.summary,
+                                    issue.status,
+                                    issue.updated,
+                                    tenantHost,
+                                )
+                            } else {
+                                // Deep: summary + comments
+                                indexIssueSummaryShallow(
+                                    clientId,
+                                    issue.key,
+                                    projectKey,
+                                    assignedToMe,
+                                    issue.summary,
+                                    issue.status,
+                                    issue.updated,
+                                    tenantHost,
+                                )
+                                indexIssueCommentsDeep(
+                                    clientId = clientId,
+                                    issueKey = issue.key,
+                                    project = projectKey,
+                                    tenantHost = tenantHost,
+                                )
+                            }
                         }
-                    }
                 }.onFailure { e ->
                     logger.error(e) { "JIRA_INDEX: search failed for client=${clientId.toHexString()} project=$key" }
                     // Fail fast: continue other keys but surface error count via logs
@@ -102,6 +115,17 @@ class JiraIndexingOrchestrator(
             }
 
             logger.info { "JIRA_INDEX: Done for client=${clientId.toHexString()} (projects=${effectiveProjectKeys.size})" }
+
+            // Update last synced timestamp on successful completion
+            runCatching {
+                val doc = connectionRepository.findByClientId(clientId)
+                if (doc != null) {
+                    val updated = doc.copy(lastSyncedAt = Instant.now(), updatedAt = Instant.now())
+                    connectionRepository.save(updated)
+                }
+            }.onFailure { e ->
+                logger.warn(e) { "JIRA_INDEX: Failed to update lastSyncedAt for client=${clientId.toHexString()}" }
+            }
         }
 
     private suspend fun indexIssueSummaryShallow(
@@ -146,5 +170,83 @@ class JiraIndexingOrchestrator(
 
         // We cannot use trackIndexed() which requires projectId. If a client-level tracking exists later, switch to it.
         logger.info { "JIRA_INDEX: Stored shallow summary for $issueKey vectorId=$vectorId" }
+    }
+
+    private suspend fun indexIssueCommentsDeep(
+        clientId: ObjectId,
+        issueKey: String,
+        project: JiraProjectKey,
+        tenantHost: String,
+    ) {
+        val conn = selection.getConnection(clientId).let { auth.ensureValidToken(it) }
+        val indexDoc = issueIndexRepository.findByClientIdAndIssueKey(clientId, issueKey)
+        var lastProcessedId = indexDoc?.lastEmbeddedCommentId
+        var process = lastProcessedId == null
+        var processedCount = 0
+
+        api.fetchIssueComments(conn, issueKey).collect { pair ->
+            val commentId = pair.first
+            val body = pair.second
+
+            if (!process) {
+                if (commentId == lastProcessedId) {
+                    process = true
+                }
+                return@collect
+            }
+
+            if (body.isBlank()) return@collect
+
+            val text =
+                buildString {
+                    appendLine("Issue: $issueKey  Project: ${project.value}")
+                    appendLine("CommentId: $commentId")
+                    appendLine("Comment: $body")
+                }.trim()
+
+            val embedding = embeddingGateway.callEmbedding(com.jervis.domain.model.ModelTypeEnum.EMBEDDING_TEXT, text)
+            val rag =
+                RagDocument(
+                    projectId = null,
+                    clientId = clientId,
+                    summary = text,
+                    ragSourceType = RagSourceType.JIRA,
+                    subject = "Jira comment on $issueKey",
+                    timestamp = Instant.now().toString(),
+                    parentRef = issueKey,
+                    branch = "main",
+                    contentType = "jira-issue-comment",
+                    symbolName = "jira-issue-comment:$issueKey:$commentId",
+                    sourceUri = "https://$tenantHost/browse/$issueKey?focusedCommentId=$commentId&page=com.atlassian.jira.plugin.system.issuetabpanels:comment-tabpanel#comment-$commentId",
+                )
+            vectorStorage.store(com.jervis.domain.model.ModelTypeEnum.EMBEDDING_TEXT, rag, embedding)
+
+            lastProcessedId = commentId
+            processedCount++
+        }
+
+        if (processedCount > 0) {
+            val newDoc =
+                if (indexDoc == null) {
+                    com.jervis.entity.jira.JiraIssueIndexDocument(
+                        clientId = clientId,
+                        issueKey = issueKey,
+                        projectKey = project.value,
+                        lastSeenUpdated = Instant.now(),
+                        lastEmbeddedCommentId = lastProcessedId,
+                        etag = null,
+                        archived = false,
+                        updatedAt = Instant.now(),
+                    )
+                } else {
+                    indexDoc.copy(
+                        lastSeenUpdated = Instant.now(),
+                        lastEmbeddedCommentId = lastProcessedId,
+                        updatedAt = Instant.now(),
+                    )
+                }
+            issueIndexRepository.save(newDoc)
+            logger.info { "JIRA_INDEX: Stored $processedCount new comments for $issueKey" }
+        }
     }
 }
