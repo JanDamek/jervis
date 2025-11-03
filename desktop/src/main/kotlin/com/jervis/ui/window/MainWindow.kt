@@ -684,4 +684,44 @@ class MainWindow(
         // since we don't maintain context list
         logger.debug { "Plan status change event received for context ${event.contextId}" }
     }
+
+    @EventListener
+    fun handleErrorNotification(event: com.jervis.dto.events.ErrorNotificationEventDto) {
+        // Show error message, with optional stack trace dialog on demand
+        val message = event.message
+        val stack = event.stackTrace
+        javax.swing.SwingUtilities.invokeLater {
+            if (stack.isNullOrBlank()) {
+                JOptionPane.showMessageDialog(
+                    this,
+                    message,
+                    "Server Error",
+                    JOptionPane.ERROR_MESSAGE,
+                )
+            } else {
+                val choice =
+                    JOptionPane.showOptionDialog(
+                        this,
+                        message,
+                        "Server Error",
+                        JOptionPane.DEFAULT_OPTION,
+                        JOptionPane.ERROR_MESSAGE,
+                        null,
+                        arrayOf("Close", "Show stack trace"),
+                        "Show stack trace",
+                    )
+                if (choice == 1) {
+                    val area = JTextArea(stack)
+                    area.isEditable = false
+                    val scroll = JScrollPane(area)
+                    scroll.preferredSize = Dimension(800, 400)
+                    val dialog = JDialog(this, "Stack trace", true)
+                    dialog.contentPane.add(scroll)
+                    dialog.pack()
+                    dialog.setLocationRelativeTo(this)
+                    dialog.isVisible = true
+                }
+            }
+        }
+    }
 }

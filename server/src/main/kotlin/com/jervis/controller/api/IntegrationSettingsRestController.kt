@@ -20,22 +20,35 @@ class IntegrationSettingsRestController(
     private val clientRepository: ClientMongoRepository,
     private val projectRepository: ProjectMongoRepository,
     private val jiraConnectionRepository: JiraConnectionMongoRepository,
+    private val errorPublisher: com.jervis.service.notification.ErrorNotificationsPublisher,
 ) : IIntegrationSettingsService {
     private val logger = KotlinLogging.logger {}
 
-    override suspend fun getClientStatus(clientId: String): IntegrationClientStatusDto {
-        val client = requireNotNull(clientRepository.findById(ObjectId(clientId))) { "Client not found: $clientId" }
-        val jiraConn = jiraConnectionRepository.findByClientId(client.id)
-        val jiraConnected = jiraConn != null && jiraConn.expiresAt.isAfter(Instant.now())
-        return IntegrationClientStatusDto(
-            clientId = client.id.toHexString(),
-            jiraConnected = jiraConnected,
-            jiraTenant = jiraConn?.tenant,
-            jiraPrimaryProject = jiraConn?.primaryProject,
-            confluenceSpaceKey = client.confluenceSpaceKey,
-            confluenceRootPageId = client.confluenceRootPageId,
-        )
-    }
+    override suspend fun getClientStatus(clientId: String): IntegrationClientStatusDto =
+        try {
+            val client =
+                clientRepository.findById(ObjectId(clientId))
+                    ?: return IntegrationClientStatusDto(clientId = clientId, jiraConnected = false)
+            val jiraConn = jiraConnectionRepository.findByClientId(client.id)
+            val jiraConnected = jiraConn != null && jiraConn.expiresAt.isAfter(Instant.now())
+            IntegrationClientStatusDto(
+                clientId = client.id.toHexString(),
+                jiraConnected = jiraConnected,
+                jiraTenant = jiraConn?.tenant,
+                jiraPrimaryProject = jiraConn?.primaryProject,
+                confluenceSpaceKey = client.confluenceSpaceKey,
+                confluenceRootPageId = client.confluenceRootPageId,
+            )
+        } catch (e: Exception) {
+            errorPublisher.publishError(
+                message = "Failed to fetch client integration status: ${e.message}",
+                stackTrace = e.stackTraceToString(),
+            )
+            IntegrationClientStatusDto(
+                clientId = clientId,
+                jiraConnected = false,
+            )
+        }
 
     override suspend fun setClientConfluenceDefaults(request: ClientConfluenceDefaultsDto): IntegrationClientStatusDto {
         val client =

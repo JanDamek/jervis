@@ -1171,7 +1171,7 @@ class ClientsWindow(
             gbc.fill =
                 GridBagConstraints.NONE
             gbc.weightx = 0.0
-            panel.add(JLabel("Popis:"), gbc)
+            panel.add(JLabel("Description:"), gbc)
             gbc.gridx = 1
             gbc.anchor = GridBagConstraints.LINE_START
             gbc.fill =
