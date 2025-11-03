@@ -17,7 +17,6 @@ import javax.swing.JButton
 import javax.swing.JLabel
 import javax.swing.JOptionPane
 import javax.swing.JPanel
-import javax.swing.JPasswordField
 import javax.swing.JTextField
 import javax.swing.SwingUtilities
 
@@ -39,18 +38,24 @@ class JiraSetupPanel(
 
     // Connection settings
     private val connectionTypeCombo = javax.swing.JComboBox(arrayOf("Atlassian Cloud"))
-    private val tenantField = JTextField(24)
+    private val tenantField =
+        JTextField(24).apply {
+            toolTipText =
+                "Enter Atlassian Cloud tenant host only, e.g. your-domain.atlassian.net (no https://, no path)"
+        }
     private val emailField = JTextField(24)
-    private val apiTokenField = JPasswordField(24)
+    private val apiTokenField = JTextField(24)
 
     private val testSaveButton = JButton("Test & Save API Token")
     private val helpButton = JButton("Where to get API token")
     private val refreshButton = JButton("Refresh Status")
 
     private val projectKeyField = JTextField(16)
+    private val chooseProjectButton = JButton("Choose…")
     private val setProjectButton = JButton("Set Primary Project")
 
     private val boardIdField = JTextField(10)
+    private val chooseBoardButton = JButton("Choose…")
     private val setBoardButton = JButton("Set Main Board")
 
     private val preferredUserField = JTextField(24)
@@ -58,8 +63,20 @@ class JiraSetupPanel(
 
     init {
         layoutUI()
+        setControlsEnabled(false)
         bindHandlers()
         refreshStatus()
+    }
+
+    private fun setControlsEnabled(enabled: Boolean) {
+        projectKeyField.isEnabled = enabled
+        chooseProjectButton.isEnabled = enabled
+        setProjectButton.isEnabled = enabled
+        boardIdField.isEnabled = enabled
+        chooseBoardButton.isEnabled = enabled
+        setBoardButton.isEnabled = enabled
+        preferredUserField.isEnabled = enabled
+        setPreferredUserButton.isEnabled = enabled
     }
 
     private fun layoutUI() {
@@ -92,12 +109,17 @@ class JiraSetupPanel(
             JPanel(FlowLayout(FlowLayout.LEFT)).apply {
                 add(JLabel("Connection:"))
                 add(connectionTypeCombo)
-                add(JLabel("Tenant (your-domain.atlassian.net):"))
+                add(JLabel("Tenant host (your-domain.atlassian.net, host only):"))
                 add(tenantField)
                 add(JLabel("Email:"))
                 add(emailField)
                 add(JLabel("API token:"))
                 add(apiTokenField)
+                add(
+                    JLabel("(Enter host only, e.g., your-domain.atlassian.net — no https://, no path)").apply {
+                        foreground = java.awt.Color.GRAY
+                    },
+                )
             }
         add(connPanel, gbc)
         row++
@@ -122,6 +144,7 @@ class JiraSetupPanel(
             JPanel(FlowLayout(FlowLayout.LEFT)).apply {
                 add(JLabel("Project Key:"))
                 add(projectKeyField)
+                add(chooseProjectButton)
                 add(setProjectButton)
             }
         add(projectPanel, gbc)
@@ -134,6 +157,7 @@ class JiraSetupPanel(
             JPanel(FlowLayout(FlowLayout.LEFT)).apply {
                 add(JLabel("Board Id:"))
                 add(boardIdField)
+                add(chooseBoardButton)
                 add(setBoardButton)
             }
         add(boardPanel, gbc)
@@ -152,10 +176,89 @@ class JiraSetupPanel(
     }
 
     private fun bindHandlers() {
+        fun info(message: String) =
+            SwingUtilities.invokeLater {
+                JOptionPane.showMessageDialog(
+                    this,
+                    message,
+                    "Info",
+                    JOptionPane.INFORMATION_MESSAGE,
+                )
+            }
+
+        chooseProjectButton.addActionListener {
+            CoroutineScope(Dispatchers.IO).launch {
+                runCatching {
+                    val items = jiraSetupService.listProjects(clientId)
+                    withContext(Dispatchers.Main) {
+                        if (items.isEmpty()) {
+                            showError("No projects available. Make sure the token has access.")
+                            return@withContext
+                        }
+                        val names = items.map { it.name + " (" + it.key + ")" }.toTypedArray()
+                        val selection =
+                            JOptionPane.showInputDialog(
+                                this@JiraSetupPanel,
+                                "Select Jira project:",
+                                "Choose Project",
+                                JOptionPane.QUESTION_MESSAGE,
+                                null,
+                                names,
+                                names.first(),
+                            ) as? String
+                        if (selection != null) {
+                            val index = names.indexOf(selection)
+                            if (index >= 0) {
+                                val chosen = items[index]
+                                projectKeyField.text = chosen.key
+                            }
+                        }
+                    }
+                }.onFailure { e -> showError("Failed to load projects: ${e.message}") }
+            }
+        }
+
+        chooseBoardButton.addActionListener {
+            CoroutineScope(Dispatchers.IO).launch {
+                val projectKey = projectKeyField.text.trim().ifBlank { null }
+                runCatching {
+                    val boards = jiraSetupService.listBoards(clientId, projectKey)
+                    withContext(Dispatchers.Main) {
+                        if (boards.isEmpty()) {
+                            showError("No boards found${projectKey?.let { " for project $it" } ?: ""}.")
+                            return@withContext
+                        }
+                        val names = boards.map { it.name + " (" + it.id + ")" }.toTypedArray()
+                        val selection =
+                            JOptionPane.showInputDialog(
+                                this@JiraSetupPanel,
+                                "Select Jira board:",
+                                "Choose Board",
+                                JOptionPane.QUESTION_MESSAGE,
+                                null,
+                                names,
+                                names.first(),
+                            ) as? String
+                        if (selection != null) {
+                            val index = names.indexOf(selection)
+                            if (index >= 0) {
+                                val chosen = boards[index]
+                                boardIdField.text = chosen.id.toString()
+                            }
+                        }
+                    }
+                }.onFailure { e -> showError("Failed to load boards: ${e.message}") }
+            }
+        }
+
         testSaveButton.addActionListener {
-            val tenant = tenantField.text.trim()
+            val rawTenant = tenantField.text.trim()
+            val tenant = normalizeTenant(rawTenant)
+            if (tenant != rawTenant) {
+                tenantField.text = tenant
+            }
             val email = emailField.text.trim()
-            val token = String(apiTokenField.password)
+            val token = apiTokenField.text.trim()
             if (tenant.isBlank() || email.isBlank() || token.isBlank()) {
                 showError("Tenant, Email and API token are required")
                 return@addActionListener
@@ -170,6 +273,9 @@ class JiraSetupPanel(
                         }
                     }
                     jiraSetupService.saveApiToken(JiraApiTokenSaveRequestDto(clientId, tenant, email, token))
+                    withContext(Dispatchers.Main) {
+                        info("API token saved and validated. You can now choose Project and Board.")
+                    }
                 }.onFailure { e -> showError("Failed to save API token: ${e.message}") }
                 refreshStatus()
             }
@@ -238,6 +344,7 @@ class JiraSetupPanel(
                     projectLabel.text = "Primary project: ${status.primaryProject ?: "–"}"
                     boardLabel.text = "Main board: ${status.mainBoard?.toString() ?: "–"}"
                     userLabel.text = "Preferred user: ${status.preferredUser ?: "–"}"
+                    setControlsEnabled(status.connected)
                 }
             }.onFailure { e ->
                 showError("Failed to load status: ${e.message}")
@@ -261,3 +368,10 @@ class JiraSetupPanel(
         }
     }
 }
+
+private fun normalizeTenant(input: String): String =
+    input
+        .trim()
+        .removePrefix("https://")
+        .removePrefix("http://")
+        .removeSuffix("/")

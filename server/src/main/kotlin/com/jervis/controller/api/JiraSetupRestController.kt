@@ -32,6 +32,7 @@ class JiraSetupRestController(
     private val jiraAuthService: JiraAuthService,
     private val jiraSelectionService: JiraSelectionService,
     private val sessionManager: WebSocketSessionManager,
+    private val jiraApiClient: com.jervis.service.jira.JiraApiClient,
 ) : IJiraSetupService {
     private val logger = KotlinLogging.logger {}
     private val json = Json { encodeDefaults = true }
@@ -101,6 +102,33 @@ class JiraSetupRestController(
         jiraSelectionService.setPreferredUser(ObjectId(request.clientId), JiraAccountId(request.accountId))
         logger.info { "JIRA_UI_SETUP: setPreferredUser client=${request.clientId} account=${request.accountId}" }
         return fetchStatus(request.clientId)
+    }
+
+    override suspend fun listProjects(clientId: String): List<com.jervis.dto.jira.JiraProjectRefDto> {
+        val conn = jiraSelectionService.getConnection(ObjectId(clientId))
+        val list = jiraApiClient.listProjects(conn)
+        return list.map {
+            com.jervis.dto.jira
+                .JiraProjectRefDto(key = it.first.value, name = it.second)
+        }
+    }
+
+    override suspend fun listBoards(
+        clientId: String,
+        projectKey: String?,
+    ): List<com.jervis.dto.jira.JiraBoardRefDto> {
+        val conn = jiraSelectionService.getConnection(ObjectId(clientId))
+        val boards =
+            jiraApiClient.listBoards(
+                conn,
+                projectKey?.let {
+                    JiraProjectKey(it)
+                },
+            )
+        return boards.map {
+            com.jervis.dto.jira
+                .JiraBoardRefDto(id = it.first.value, name = it.second)
+        }
     }
 
     private suspend fun fetchStatus(clientId: String): JiraSetupStatusDto =

@@ -15,6 +15,8 @@ interface JiraApiClient {
         project: JiraProjectKey? = null,
     ): List<Pair<JiraBoardId, String>>
 
+    suspend fun listProjects(conn: JiraConnection): List<Pair<JiraProjectKey, String>>
+
     suspend fun projectExists(
         conn: JiraConnection,
         key: JiraProjectKey,
