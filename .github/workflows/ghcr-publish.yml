@@ -37,7 +37,65 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and Push (selective)
+      - name: Build and Push images to GHCR (inline)
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_REF_TYPE: ${{ github.ref_type }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
         run: |
-          chmod +x ./scripts/build-and-push.sh
-          ./scripts/build-and-push.sh
+          set -euo pipefail
+
+          OWNER="$GITHUB_REPOSITORY_OWNER"
+          OWNER_LC=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+          SHORT_SHA=${GITHUB_SHA:0:7}
+          REF_NAME="$GITHUB_REF_NAME"
+          REF_TYPE="$GITHUB_REF_TYPE"
+
+          echo "Building for $REF_TYPE: $REF_NAME (sha=$SHORT_SHA)"
+
+          # Compute tags
+          TAGS=()
+          if [ "$REF_TYPE" = "tag" ]; then
+            # e.g. v1.2.3 or release-2025.11.03
+            TAGS+=("$REF_NAME")
+            # Also publish latest on versioned tags starting with v
+            case "$REF_NAME" in
+              v*) TAGS+=("latest") ;;
+            esac
+          else
+            # branch push
+            TAGS+=("$REF_NAME")
+            TAGS+=("sha-$SHORT_SHA")
+            case "$REF_NAME" in
+              main|master) TAGS+=("latest") ;;
+            esac
+          fi
+
+          # Helper to turn array into multiple -t args
+          tag_args() {
+            local image="$1"; shift
+            local args=()
+            for t in "$@"; do
+              args+=( -t "$image:$t" )
+            done
+            printf '%s\n' "${args[@]}"
+          }
+
+          # Build and push all runtime images from the multi-stage Dockerfile
+          build_push() {
+            local target="$1"; shift
+            local image="$1"; shift
+            echo "==> Building $image from target $target with tags: ${TAGS[*]}"
+            docker buildx build \
+              --target "$target" \
+              $(tag_args "$image" "${TAGS[@]}") \
+              --push \
+              .
+          }
+
+          build_push runtime-server  "ghcr.io/$OWNER_LC/jervis-server"
+          build_push runtime-joern   "ghcr.io/$OWNER_LC/jervis-joern"
+          build_push runtime-whisper "ghcr.io/$OWNER_LC/jervis-whisper"
+          build_push runtime-tika    "ghcr.io/$OWNER_LC/jervis-tika"
