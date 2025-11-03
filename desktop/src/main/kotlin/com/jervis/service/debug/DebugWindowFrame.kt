@@ -70,8 +70,6 @@ class DebugWindowFrame : JFrame("LLM Debug Window") {
             val tabIndex = tabbedPane.indexOfComponent(tabPanel)
             tabbedPane.setTabComponentAt(tabIndex, createCloseableTabComponent(tabLabel, session.id))
 
-            tabbedPane.selectedComponent = tabPanel
-
             updateWindowTitle()
         }
     }

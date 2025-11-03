@@ -4,6 +4,9 @@ import com.jervis.domain.jira.JiraAccountId
 import com.jervis.domain.jira.JiraBoardId
 import com.jervis.domain.jira.JiraProjectKey
 import com.jervis.dto.events.JiraAuthPromptEventDto
+import com.jervis.dto.jira.JiraApiTokenSaveRequestDto
+import com.jervis.dto.jira.JiraApiTokenTestRequestDto
+import com.jervis.dto.jira.JiraApiTokenTestResponseDto
 import com.jervis.dto.jira.JiraBeginAuthRequestDto
 import com.jervis.dto.jira.JiraBeginAuthResponseDto
 import com.jervis.dto.jira.JiraBoardSelectionDto
@@ -37,6 +40,18 @@ class JiraSetupRestController(
         val status = fetchStatus(clientId)
         logger.info { "JIRA_UI_SETUP: status requested for client=$clientId connected=${status.connected}" }
         return status
+    }
+
+    override suspend fun testApiToken(request: JiraApiTokenTestRequestDto): JiraApiTokenTestResponseDto {
+        val ok = jiraAuthService.testApiToken(request.tenant, request.email, request.apiToken)
+        logger.info { "JIRA_UI_SETUP: testApiToken tenant=${request.tenant} email=${request.email} ok=$ok" }
+        return JiraApiTokenTestResponseDto(success = ok, message = if (ok) null else "Unauthorized")
+    }
+
+    override suspend fun saveApiToken(request: JiraApiTokenSaveRequestDto): JiraSetupStatusDto {
+        val conn = jiraAuthService.saveApiToken(request.clientId, request.tenant, request.email, request.apiToken)
+        logger.info { "JIRA_UI_SETUP: saveApiToken succeeded for client=${conn.clientId} tenant=${conn.tenant.value}" }
+        return fetchStatus(request.clientId)
     }
 
     override suspend fun beginAuth(request: JiraBeginAuthRequestDto): JiraBeginAuthResponseDto {

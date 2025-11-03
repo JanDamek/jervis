@@ -6,6 +6,7 @@ import java.time.Instant
 data class JiraConnection(
     val clientId: String,
     val tenant: JiraTenant,
+    val email: String? = null,
     val accessToken: String,
     val refreshToken: String,
     val expiresAt: Instant,

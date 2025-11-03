@@ -36,6 +36,27 @@ data class JiraCompleteAuthRequestDto(
 )
 
 @Serializable
+data class JiraApiTokenTestRequestDto(
+    val tenant: String,
+    val email: String,
+    val apiToken: String,
+)
+
+@Serializable
+data class JiraApiTokenTestResponseDto(
+    val success: Boolean,
+    val message: String? = null,
+)
+
+@Serializable
+data class JiraApiTokenSaveRequestDto(
+    val clientId: String,
+    val tenant: String,
+    val email: String,
+    val apiToken: String,
+)
+
+@Serializable
 data class JiraProjectSelectionDto(
     val clientId: String,
     val projectKey: String,

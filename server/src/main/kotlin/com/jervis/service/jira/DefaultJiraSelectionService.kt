@@ -57,6 +57,7 @@ class DefaultJiraSelectionService(
         return JiraConnection(
             clientId = clientId.toHexString(),
             tenant = JiraTenant(doc.tenant),
+            email = doc.email,
             accessToken = doc.accessToken,
             refreshToken = doc.refreshToken,
             expiresAt = doc.expiresAt,

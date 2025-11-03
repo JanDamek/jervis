@@ -1,7 +1,7 @@
 package com.jervis.ui.component
 
-import com.jervis.dto.jira.JiraBeginAuthRequestDto
-import com.jervis.dto.jira.JiraCompleteAuthRequestDto
+import com.jervis.dto.jira.JiraApiTokenSaveRequestDto
+import com.jervis.dto.jira.JiraApiTokenTestRequestDto
 import com.jervis.service.IJiraSetupService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -17,6 +17,7 @@ import javax.swing.JButton
 import javax.swing.JLabel
 import javax.swing.JOptionPane
 import javax.swing.JPanel
+import javax.swing.JPasswordField
 import javax.swing.JTextField
 import javax.swing.SwingUtilities
 
@@ -39,8 +40,11 @@ class JiraSetupPanel(
     // Connection settings
     private val connectionTypeCombo = javax.swing.JComboBox(arrayOf("Atlassian Cloud"))
     private val tenantField = JTextField(24)
+    private val emailField = JTextField(24)
+    private val apiTokenField = JPasswordField(24)
 
-    private val beginAuthButton = JButton("Connect Jira (OAuth)")
+    private val testSaveButton = JButton("Test & Save API Token")
+    private val helpButton = JButton("Where to get API token")
     private val refreshButton = JButton("Refresh Status")
 
     private val projectKeyField = JTextField(16)
@@ -86,10 +90,14 @@ class JiraSetupPanel(
         gbc.gridy = row
         val connPanel =
             JPanel(FlowLayout(FlowLayout.LEFT)).apply {
-                add(JLabel("Connection type:"))
+                add(JLabel("Connection:"))
                 add(connectionTypeCombo)
-                add(JLabel("Tenant host (e.g., your-domain.atlassian.net):"))
+                add(JLabel("Tenant (your-domain.atlassian.net):"))
                 add(tenantField)
+                add(JLabel("Email:"))
+                add(emailField)
+                add(JLabel("API token:"))
+                add(apiTokenField)
             }
         add(connPanel, gbc)
         row++
@@ -100,7 +108,8 @@ class JiraSetupPanel(
         gbc.weightx = 0.0
         val actions =
             JPanel(FlowLayout(FlowLayout.LEFT)).apply {
-                add(beginAuthButton)
+                add(testSaveButton)
+                add(helpButton)
                 add(refreshButton)
             }
         add(actions, gbc)
@@ -143,20 +152,30 @@ class JiraSetupPanel(
     }
 
     private fun bindHandlers() {
-        beginAuthButton.addActionListener {
+        testSaveButton.addActionListener {
+            val tenant = tenantField.text.trim()
+            val email = emailField.text.trim()
+            val token = String(apiTokenField.password)
+            if (tenant.isBlank() || email.isBlank() || token.isBlank()) {
+                showError("Tenant, Email and API token are required")
+                return@addActionListener
+            }
             CoroutineScope(Dispatchers.IO).launch {
                 runCatching {
-                    // For desktop, redirect URI can be a manual callback; user will paste code + verifier.
-                    val redirectUri = "urn:ietf:wg:oauth:2.0:oob"
-                    val tenant = tenantField.text.trim()
-                    require(tenant.isNotEmpty()) { "Tenant host must be provided" }
-                    val resp = jiraSetupService.beginAuth(JiraBeginAuthRequestDto(clientId, redirectUri, tenant))
-                    openInBrowser(resp.authUrl)
-                    promptCompleteAuth(resp.correlationId, redirectUri)
-                }.onFailure { e ->
-                    showError("Failed to start Jira auth: ${e.message}")
-                }
+                    val test = jiraSetupService.testApiToken(JiraApiTokenTestRequestDto(tenant, email, token))
+                    withContext(Dispatchers.Main) {
+                        if (!test.success) {
+                            showError("Token test failed: ${test.message ?: "Unauthorized"}")
+                            return@withContext
+                        }
+                    }
+                    jiraSetupService.saveApiToken(JiraApiTokenSaveRequestDto(clientId, tenant, email, token))
+                }.onFailure { e -> showError("Failed to save API token: ${e.message}") }
+                refreshStatus()
             }
+        }
+        helpButton.addActionListener {
+            openInBrowser("https://id.atlassian.com/manage-profile/security/api-tokens")
         }
         refreshButton.addActionListener { refreshStatus() }
         setProjectButton.addActionListener {
@@ -233,25 +252,6 @@ class JiraSetupPanel(
                 .browse(URI(url))
         }.onFailure { e ->
             logger.warn(e) { "Failed to open browser for $url" }
-        }
-    }
-
-    private suspend fun promptCompleteAuth(
-        correlationId: String,
-        redirectUri: String,
-    ) {
-        withContext(Dispatchers.Main) {
-            val code = JOptionPane.showInputDialog(this@JiraSetupPanel, "Enter authorization code from browser")?.trim()
-            val verifier = JOptionPane.showInputDialog(this@JiraSetupPanel, "Enter PKCE verifier")?.trim()
-            if (code.isNullOrBlank() || verifier.isNullOrBlank()) return@withContext
-            CoroutineScope(Dispatchers.IO).launch {
-                runCatching {
-                    val tenant = tenantField.text.trim()
-                    val req = JiraCompleteAuthRequestDto(clientId, code, verifier, redirectUri, correlationId, tenant)
-                    jiraSetupService.completeAuth(req)
-                }.onFailure { e -> showError("Failed to complete auth: ${e.message}") }
-                refreshStatus()
-            }
         }
     }
 

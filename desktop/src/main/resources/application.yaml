@@ -5,4 +5,4 @@ spring:
 
 jervis:
   server:
-    url: http://localhost:5500
+    url: http://192.168.100.117:5500
