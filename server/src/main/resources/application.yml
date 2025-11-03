@@ -204,9 +204,9 @@ endpoints:
   joern:
     base-url: ${JOERN_BASE_URL:http://192.168.100.117:8082/}
   tika:
-    base-url: ${TIKA_BASE_URL:http://localhost:8081/}
+    base-url: ${TIKA_BASE_URL:http://192.168.100.117:8081/}
   whisper:
-    base-url: ${WHISPER_BASE_URL:http://localhost:8083/}
+    base-url: ${WHISPER_BASE_URL:http://192.168.100.117:8083/}
 
 # HTTP client connections and timeouts (used by WebClient)
 connections:
