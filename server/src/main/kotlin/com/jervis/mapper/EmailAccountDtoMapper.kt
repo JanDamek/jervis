@@ -56,6 +56,7 @@ fun EmailAccount.toDto(): EmailAccountDto =
         description = this.description,
         email = this.email,
         username = this.username,
+        password = this.password,
         serverHost = this.serverHost,
         serverPort = this.serverPort,
         useSsl = this.useSsl,

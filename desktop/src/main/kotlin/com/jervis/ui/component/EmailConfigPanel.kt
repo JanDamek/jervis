@@ -23,7 +23,6 @@ import javax.swing.JComboBox
 import javax.swing.JLabel
 import javax.swing.JOptionPane
 import javax.swing.JPanel
-import javax.swing.JPasswordField
 import javax.swing.JScrollPane
 import javax.swing.JTable
 import javax.swing.JTextArea
@@ -42,7 +41,7 @@ class EmailConfigPanel(
     private val descriptionArea = JTextArea(2, 20)
     private val emailField = JTextField(20)
     private val usernameField = JTextField(20)
-    private val passwordField = JPasswordField(20)
+    private val passwordField = JTextField(20)
     private val serverHostField = JTextField(20)
     private val serverPortField = JTextField(5)
     private val useSslCheckbox = JCheckBox("Use SSL/TLS", true)
@@ -306,7 +305,7 @@ class EmailConfigPanel(
                         description = description,
                         email = email,
                         username = usernameField.text.trim().ifEmpty { null },
-                        password = String(passwordField.password).ifEmpty { null },
+                        password = passwordField.text.trim().ifEmpty { null },
                         serverHost = serverHostField.text.trim().ifEmpty { null },
                         serverPort = serverPortField.text.trim().toIntOrNull(),
                         useSsl = useSslCheckbox.isSelected,
@@ -321,6 +320,10 @@ class EmailConfigPanel(
 
                 withContext(Dispatchers.Swing) {
                     showInfo("Account saved successfully: ${savedAccount.email}")
+                    // Keep password visible and filled after save
+                    if (!passwordField.text.isNullOrEmpty()) {
+                        passwordField.text = passwordField.text
+                    }
                     clearForm()
                     loadAccounts()
                 }
@@ -342,7 +345,7 @@ class EmailConfigPanel(
                     return@launch
                 }
 
-                if (usernameField.text.isBlank() || passwordField.password.isEmpty() || serverHostField.text.isBlank()) {
+                if (usernameField.text.isBlank() || passwordField.text.isBlank() || serverHostField.text.isBlank()) {
                     showError("Username, password, and IMAP server are required")
                     return@launch
                 }
@@ -358,7 +361,7 @@ class EmailConfigPanel(
                         description = null,
                         email = email,
                         username = usernameField.text.trim(),
-                        password = String(passwordField.password),
+                        password = passwordField.text.trim(),
                         serverHost = serverHostField.text.trim(),
                         serverPort = serverPortField.text.trim().toIntOrNull(),
                         useSsl = useSslCheckbox.isSelected,
@@ -437,6 +440,7 @@ class EmailConfigPanel(
                     descriptionArea.text = account.description ?: ""
                     emailField.text = account.email
                     usernameField.text = account.username ?: ""
+                    passwordField.text = account.password ?: ""
                     serverHostField.text = account.serverHost ?: ""
                     serverPortField.text = account.serverPort?.toString() ?: ""
                     useSslCheckbox.isSelected = account.useSsl
