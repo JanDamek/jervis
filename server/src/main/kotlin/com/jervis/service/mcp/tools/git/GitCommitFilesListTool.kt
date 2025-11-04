@@ -35,6 +35,7 @@ import java.io.InputStreamReader
 class GitCommitFilesListTool(
     private val projectMongoRepository: ProjectMongoRepository,
     private val directoryStructureService: DirectoryStructureService,
+    private val gitRepositoryService: com.jervis.service.git.GitRepositoryService,
     override val promptRepository: PromptRepository,
 ) : McpTool {
     private val logger = KotlinLogging.logger {}
@@ -114,10 +115,14 @@ class GitCommitFilesListTool(
                 projectMongoRepository.findById(projectId)
                     ?: throw IllegalStateException("Project not found: $projectId")
 
-            val gitDir = directoryStructureService.projectGitDir(project)
+            var gitDir = directoryStructureService.projectGitDir(project)
 
             if (!gitDir.toFile().exists()) {
-                throw IllegalStateException("Git repository not found for project: ${project.name}")
+                val cloneResult = gitRepositoryService.cloneOrUpdateRepository(project)
+                gitDir =
+                    cloneResult.getOrElse {
+                        throw IllegalStateException("Git repository not available for project: ${project.name}: ${it.message}")
+                    }
             }
 
             // Execute git show --numstat to get file changes

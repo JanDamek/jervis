@@ -95,7 +95,18 @@ class EmailContinuousIndexer(
                     stateManager.markAsFailed(messageDoc)
                 }
             }.onEach { messageDoc ->
-                stateManager.markAsIndexed(messageDoc)
+                kotlin
+                    .runCatching {
+                        stateManager.markAsIndexed(messageDoc)
+                    }.onFailure { e ->
+                        logger.warn(e) { "markAsIndexed failed for messageId:${messageDoc.messageId}, trying by messageId" }
+                        kotlin
+                            .runCatching {
+                                stateManager.markMessageIdAsIndexed(account.id, messageDoc.messageId)
+                            }.onFailure { e2 ->
+                                logger.error(e2) { "Fallback mark by messageId also failed for messageId:${messageDoc.messageId}" }
+                    }
+                }
                 logger.info { "Successfully indexed messageId:${messageDoc.messageId}" }
             }.collect { }
     }

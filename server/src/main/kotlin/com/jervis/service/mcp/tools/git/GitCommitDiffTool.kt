@@ -109,10 +109,15 @@ class GitCommitDiffTool(
                 projectMongoRepository.findById(projectId)
                     ?: throw IllegalStateException("Project not found: $projectId")
 
-            val gitDir = directoryStructureService.projectGitDir(project)
+            var gitDir = directoryStructureService.projectGitDir(project)
 
             if (!gitDir.toFile().exists()) {
-                throw IllegalStateException("Git repository not found for project: ${project.name}")
+                // Ensure the repository is available locally; clone or update as needed
+                val cloneResult = gitRepositoryService.cloneOrUpdateRepository(project)
+                gitDir =
+                    cloneResult.getOrElse {
+                        throw IllegalStateException("Git repository not available for project: ${project.name}: ${it.message}")
+                    }
             }
 
             // Execute git show to get diff

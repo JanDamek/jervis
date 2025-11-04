@@ -24,6 +24,19 @@ class PendingTaskService(
         needsQualification: Boolean = false,
         context: Map<String, String> = emptyMap(),
     ): PendingTask {
+        // Idempotency: for EMAIL_PROCESSING with sourceUri, do not create duplicates
+        if (taskType == PendingTaskTypeEnum.EMAIL_PROCESSING) {
+            val sourceUri = context["sourceUri"]
+            if (!sourceUri.isNullOrBlank()) {
+                val existing =
+                    pendingTaskRepository.findFirstByClientAndTypeAndSourceUri(clientId, taskType.name, sourceUri)
+                if (existing != null) {
+                    logger.info { "Reusing existing pending task ${existing.id} for EMAIL_PROCESSING sourceUri=$sourceUri" }
+                    return existing.toDomain()
+                }
+            }
+        }
+
         val task =
             PendingTask(
                 taskType = taskType,
@@ -37,7 +50,7 @@ class PendingTaskService(
         val document = PendingTaskDocument.fromDomain(task)
         val saved = pendingTaskRepository.save(document)
 
-        logger.info { "Created pending task: ${saved.id} - ${taskType.name}, needsQualification=$needsQualification" }
+        logger.info { "Created pending task: ${'$'}{saved.id} - ${'$'}{taskType.name}, needsQualification=${'$'}needsQualification" }
         return saved.toDomain()
     }
 
