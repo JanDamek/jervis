@@ -153,6 +153,16 @@ ENTRYPOINT ["sh", "-c", "mkdir -p ${WORK_DATA} && java ${JAVA_OPTS} -Djava.io.tm
 
 # ---------- Final image: jervis-server (orchestrator)
 FROM eclipse-temurin:21-jre AS runtime-server
+
+# Ensure required CLI tools are available for Git-based operations executed by server tools
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    git \
+    openssh-client \
+    ca-certificates \
+    curl && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /opt/jervis
 COPY --from=builder /app/server/build/libs/*.jar app.jar
 ENV SERVER_PORT=5500 JAVA_OPTS="-Xmx2g -Xms512m" DATA_ROOT_DIR=/opt/jervis/data WORK_DATA=/opt/jervis/work

@@ -98,6 +98,24 @@ class EmailMessageStateManager(
         logger.debug { "Marked messageId ${messageDocument.messageId} as INDEXED" }
     }
 
+    suspend fun markMessageIdAsIndexed(
+        accountId: ObjectId,
+        messageId: String,
+    ): Boolean {
+        val existing = emailMessageRepository.findByAccountIdAndMessageId(accountId, messageId)
+        if (existing == null) {
+            logger.warn { "markMessageIdAsIndexed: message not found for account=$accountId messageId=$messageId" }
+            return false
+        }
+        if (existing.state == EmailMessageState.INDEXED) {
+            return true
+        }
+        val updated = existing.copy(state = EmailMessageState.INDEXED)
+        emailMessageRepository.save(updated)
+        logger.info { "Marked messageId $messageId as INDEXED (by messageId lookup)" }
+        return true
+    }
+
     suspend fun markAsFailed(messageDocument: EmailMessageDocument) {
         val updated = messageDocument.copy(state = EmailMessageState.FAILED)
         emailMessageRepository.save(updated)

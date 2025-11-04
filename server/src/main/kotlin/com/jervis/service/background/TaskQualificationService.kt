@@ -36,6 +36,7 @@ class TaskQualificationService(
     private val conversationThreadService: ConversationThreadService,
     private val messageLinkService: MessageLinkService,
     private val userTaskService: UserTaskService,
+    private val emailMessageStateManager: com.jervis.service.listener.email.state.EmailMessageStateManager,
 ) {
     /**
      * Process entire Flow of tasks needing qualification.

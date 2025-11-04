@@ -31,6 +31,11 @@ class GitTaskCreator(
 ) {
     private val logger = KotlinLogging.logger {}
 
+    private companion object {
+        // Cap per-file content to avoid oversized tasks
+        const val MAX_FILE_BYTES: Int = 512 * 1024 // 512 KB per file
+    }
+
     /**
      * Commit data for task creation
      */
@@ -71,7 +76,7 @@ class GitTaskCreator(
                     "projectPath" to projectPath.toString(),
                 )
 
-            // Build content string with detailed information
+            // Build content string with detailed information and full file contents
             val content =
                 buildString {
                     appendLine("Commit Analysis Required")
@@ -87,6 +92,20 @@ class GitTaskCreator(
                     appendLine("- Detect gaps in application architecture")
                     appendLine("- Link to requirements from meetings, planning, documentation")
                     appendLine("- Verify commit doesn't break application")
+                    appendLine()
+                    appendLine("Changed Files – Full Content at Commit:")
+                    for (path in commitData.changedFiles) {
+                        appendLine()
+                        appendLine("=== FILE: $path ===")
+                        val fileContent =
+                            try {
+                                gitShowFile(projectPath, commitData.commitHash, path)
+                            } catch (e: Exception) {
+                                "[Could not retrieve content for $path at ${commitData.commitHash}: ${e.message}]"
+                            }
+                        appendLine(fileContent)
+                        appendLine("=== END FILE: $path ===")
+                    }
                 }
 
             val created =
@@ -105,6 +124,48 @@ class GitTaskCreator(
 
             created
         }
+
+    private fun gitShowFile(
+        repoPath: Path,
+        commitHash: String,
+        filePath: String,
+    ): String {
+        val process =
+            ProcessBuilder(
+                "git",
+                "show",
+                "$commitHash:$filePath",
+            ).directory(repoPath.toFile())
+                .redirectErrorStream(true)
+                .start()
+
+        val bytes = process.inputStream.readAllBytes()
+        val exit = process.waitFor()
+        if (exit != 0) {
+            val msg =
+                try {
+                    String(bytes, Charsets.UTF_8)
+                } catch (_: Exception) {
+                    "exit=$exit, ${bytes.size} bytes"
+                }
+            throw IllegalStateException("git show failed for $filePath at $commitHash: $msg")
+        }
+
+        // Detect binary by presence of NUL or many control chars
+        val sample = if (bytes.size > MAX_FILE_BYTES) bytes.copyOf(MAX_FILE_BYTES) else bytes
+        val controlCount = sample.count { b -> b.toInt() in 0..8 || b.toInt() in 14..31 }
+        val isBinary = sample.any { it == 0.toByte() } || controlCount > (sample.size / 10)
+        if (isBinary) {
+            return "[Binary file omitted at $commitHash:$filePath, size=${bytes.size} bytes]"
+        }
+
+        val text = sample.toString(Charsets.UTF_8)
+        return if (bytes.size > MAX_FILE_BYTES) {
+            text + "\n\n[Truncated: ${bytes.size - MAX_FILE_BYTES} more bytes omitted]"
+        } else {
+            text
+        }
+    }
 
     /**
      * Create multiple commit analysis tasks in batch

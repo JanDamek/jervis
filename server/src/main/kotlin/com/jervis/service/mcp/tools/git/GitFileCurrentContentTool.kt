@@ -35,6 +35,7 @@ import kotlin.io.path.readText
 class GitFileCurrentContentTool(
     private val projectMongoRepository: ProjectMongoRepository,
     private val directoryStructureService: DirectoryStructureService,
+    private val gitRepositoryService: com.jervis.service.git.GitRepositoryService,
     override val promptRepository: PromptRepository,
 ) : McpTool {
     private val logger = KotlinLogging.logger {}
@@ -115,7 +116,16 @@ class GitFileCurrentContentTool(
                 projectMongoRepository.findById(projectId)
                     ?: throw IllegalStateException("Project not found: $projectId")
 
-            val gitDir = directoryStructureService.projectGitDir(project)
+            var gitDir = directoryStructureService.projectGitDir(project)
+            if (!gitDir.toFile().exists()) {
+                val cloneResult = gitRepositoryService.cloneOrUpdateRepository(project)
+                gitDir =
+                    cloneResult.getOrElse {
+                        throw IllegalStateException(
+                            "Git repository not available for project: ${project.name}: ${it.message}",
+                        )
+                    }
+            }
             val fullPath = gitDir.resolve(filePath)
 
             if (!Files.exists(fullPath)) {
