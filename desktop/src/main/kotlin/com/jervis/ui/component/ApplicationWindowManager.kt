@@ -47,6 +47,8 @@ class ApplicationWindowManager(
             projectService,
             clientService,
             gitConfigurationService,
+            jiraSetupService,
+            integrationSettingsService,
         )
     }
 

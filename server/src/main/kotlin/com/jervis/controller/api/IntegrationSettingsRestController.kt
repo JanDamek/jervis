@@ -92,14 +92,22 @@ class IntegrationSettingsRestController(
         val project =
             requireNotNull(projectRepository.findById(ObjectId(request.projectId))) { "Project not found: ${request.projectId}" }
         val currentOverrides = project.overrides
+
+        fun String?.applyClear(current: String?): String? =
+            when (this) {
+                null -> current // unchanged
+                "" -> null // explicit clear
+                else -> this
+            }
+
         val updatedOverrides =
             com.jervis.domain.project.ProjectOverrides(
                 gitRemoteUrl = currentOverrides?.gitRemoteUrl,
                 gitAuthType = currentOverrides?.gitAuthType,
                 gitConfig = currentOverrides?.gitConfig,
-                jiraProjectKey = request.jiraProjectKey ?: currentOverrides?.jiraProjectKey,
-                confluenceSpaceKey = request.confluenceSpaceKey ?: currentOverrides?.confluenceSpaceKey,
-                confluenceRootPageId = request.confluenceRootPageId ?: currentOverrides?.confluenceRootPageId,
+                jiraProjectKey = request.jiraProjectKey.applyClear(currentOverrides?.jiraProjectKey),
+                confluenceSpaceKey = request.confluenceSpaceKey.applyClear(currentOverrides?.confluenceSpaceKey),
+                confluenceRootPageId = request.confluenceRootPageId.applyClear(currentOverrides?.confluenceRootPageId),
             )
         val updated: ProjectDocument = project.copy(overrides = updatedOverrides, updatedAt = Instant.now())
         projectRepository.save(updated)

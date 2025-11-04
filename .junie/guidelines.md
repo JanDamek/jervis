@@ -1,11 +1,3 @@
-Rozumím. Níže je kompletní souhrnný dokument — jednotné guidelines pro celou aplikaci Jervis, určené jak pro vývojáře,
-tak pro AI asistenty.
-Spojuje architekturu, vrstvy, význam modulů, zásady programování, pravidla pro návrh i kód, a obsahuje veškeré informace
-z původního zadání.
-Je psaný jako čistý text, aby byl snadno čitelný i pro LLM modely, build systémy nebo generátory dokumentace.
-
-⸻
-
 JERVIS – ARCHITEKTURA A PROGRAMOVACÍ PRAVIDLA
 (verze pro vývoj i AI asistenty)
 
@@ -57,9 +49,7 @@ common-internal → interní komunikace mezi službami a serverem
 desktop → uživatelský klient
 api-client → komunikační knihovna pro UI nástroje
 
-⸻
-
-ARCHITEKTONICKÉ ZÁSADY
+ARCHITEKTONICKÉ ZÁSADY:
 
 1. FOLLOW EXISTING ARCHITECTURE FIRST
    Vždy nejprve analyzuj existující vzory. Nevytvářej nové abstrakce, parametry, frameworky ani utility bez důvodu.
@@ -82,50 +72,56 @@ ARCHITEKTONICKÉ ZÁSADY
    • Service → DTO
    • Controller → Entity
    • Domain s perzistentními anotacemi
+6. Postup indexace:
+   • Základní logika každé indexace je načíst obsah a porovnat s MongoDB snapshotem a tím nalést co je nového
+   • Při indexaci text chunkovat přes `TextChunkingService` a ukládat do RAG
+   • Indexace kódu pokud je delší jak 4096 tokenu chunkovat stejnou službou, bude v budoucnu nahrazena a ukládat do RAG
+   • Vytvořit na každou změnu Pending task, kde se popsaná celková změna s dostatečnou přesnosti aby qualifier, zvlášť
+   pro každou indexaci, mohl rozhodnout, zda takto to stačí nebo přead na GPU
+   • Pending task který prošel qualifikaci již je připraven pro background běh, kde je predán agentnímu plánovači s
+   detailními goual pro analýzu a model věděl co přesně hledá a co má hlídat
+   • Agenti model bud rozhodne, že njsou nutné žádné, kroky nebo podle goul založí potřebné úkolý, klidně pending task
+   sám pro sebe, aby se pak tím zabýval podrobněji s více úhlu, nebo úkol pro živatele atd.
 
-⸻
-
-PRAVIDLA KÓDU A PROGRAMOVÁNÍ.createClient(IAgentOrchestratorService::class.java)
-
-HLAVNÍ JAZYK
-Kotlin-first. Žádný Java styl.
-Spring Boot framework.
-Coroutines jako výchozí pro asynchronní logiku.
-Reactor pouze pro interop.
-Všude kde to je jen trochu možné používen NonNull hodnoty.
+PRAVIDLA KÓDU A PROGRAMOVÁNÍ:
+HLAVNÍ JAZYK:
+• Kotlin-first. Žádný Java styl.
+• Spring Boot framework.
+• Coroutines jako výchozí pro asynchronní logiku.
+• Reactor pouze pro interop.
+• Všude kde to je jen trochu možné používen NonNull hodnoty.
 
 KOMUNIKACE:
-Pro spojení mezi modulý se používá výhradně @HttpExchange přes REST API.
-Ve společné klivovně je definován interface začínající I***Service.
-Controller implementuje tento interface.
-Client část používá tento interface pro komunikaci se serverem.
-Vzor implementace spojení client-controller:
-private fun createHttpServiceProxyFactory(webClient: WebClient)=HttpServiceProxyFactory.builderFor(
-WebClientAdapter.create(webClient)).build().createClient(I***Service::class.java)
+• Pro spojení mezi modulý se používá výhradně @HttpExchange přes REST API.
+• Ve společné klivovně je definován interface začínající I***Service.
+• Controller implementuje tento interface.
+• Client část používá tento interface pro komunikaci se serverem.
+• Vzor implementace spojení client-controller: private fun createHttpServiceProxyFactory(webClient: WebClient)
+=HttpServiceProxyFactory.builderFor(WebClientAdapter.create(webClient)).build().createClient(I***Service::class.java)
 
-JAZYK A KOMENTÁŘE
-Kód, proměnné, komentáře a logy musí být výhradně v angličtině.
-Čeština v kódu je zakázána.
-Inline komentáře // jsou známkou špatného návrhu.
-Pokud vysvětlují „co“ kód dělá, musí být odstraněny.
-Pokud vysvětlují „proč“, přesunout do KDoc nad metodu nebo třídu.
+JAZYK A KOMENTÁŘE:
+• Kód, proměnné, komentáře a logy musí být výhradně v angličtině.
+• Čeština v kódu je zakázána.
+• Inline komentáře // jsou známkou špatného návrhu.
+• Pokud vysvětlují „co“ kód dělá, musí být odstraněny.
+• Pokud vysvětlují „proč“, přesunout do KDoc nad metodu nebo třídu.
 
-SOLID PRINCIPY
-Dodržuj jasnou odpovědnost tříd a rozhraní. Logika nesmí být rozptýlená napříč vrstvami.
+SOLID PRINCIPY:
+• Dodržuj jasnou odpovědnost tříd a rozhraní. Logika nesmí být rozptýlená napříč vrstvami.
 
 IF-LESS PROGRAMMING
-Omez používání if/else.
-Preferuj sealed class, polymorfismus nebo strategické patterny.
-Používej when s exhaustiveness, pokud je to čitelnější.
+• Omez používání if/else.
+• Preferuj sealed class, polymorfismus nebo strategické patterny.
+• Používej when s exhaustiveness, pokud je to čitelnější.
 
 NAZEVNÍ KONVENCE
-Třídy a rozhraní PascalCase
-Metody a proměnné camelCase
-Žádné zkratky, používaj jasné anglické názvy.
+• Třídy a rozhraní PascalCase
+• Metody a proměnné camelCase
+• Žádné zkratky, používaj jasné anglické názvy.
 
 KONSTANTY A IMUTABILITA
-Preferuj val místo var.
-Magické hodnoty nahrazuj const val.
+• Preferuj val místo var.
+• Magické hodnoty nahrazuj const val.
 
 MODEL OBJEKTŮ
 • Domain: immutable, pouze val, aktualizace přes .copy(). Používá se v Service vrstvě.
@@ -133,9 +129,9 @@ MODEL OBJEKTŮ
 • DTO: immutable, pouze pro Controller, serializováno přes @Serializable.
 
 HRANICE VRSTEV
-Controller: DTO → Domain, Service volání
-Service: Domain → Entity, Repository volání
-Repository: Entity → DB
+• Controller: DTO → Domain, Service volání
+• Service: Domain → Entity, Repository volání
+• Repository: Entity → DB
 
 ZAKÁZANÉ VZTAHY
 • Controller nesmí vracet Entity
@@ -143,50 +139,48 @@ ZAKÁZANÉ VZTAHY
 • Controller nesmí přistupovat k Repository
 
 NULL-SAFETY
-Nikdy nepoužívej !!
-Používej ?:, ?., requireNotNull, checkNotNull.
-Lateinit var pouze pro DI nebo frameworkové vlastnosti.
+• Nikdy nepoužívej !!
+• Používej ?:, ?., requireNotNull, checkNotNull.
+• Lateinit var pouze pro DI nebo frameworkové vlastnosti.
 
 ČITELNOST A STRUKTURA
-Funkce krátké, jednoúčelové.
-Sdílený kód přes extension functions.
-Eliminuj duplicity.
+• Funkce krátké, jednoúčelové.
+• Sdílený kód přes extension functions.
+• Eliminuj duplicity.
 
 SERIALIZACE
-Standard je kotlinx.serialization.
-Jackson pouze pro interop.
-Explicitně anotuj rozdílné názvy polí.
+• Standard je kotlinx.serialization.
+• Jackson pouze pro interop.
+• Explicitně anotuj rozdílné názvy polí.
 
 KOROUTINY A REAKTIVITA
-Používej suspend fun.
-Pro streamy Flow.
-Nikdy nepoužívej .block() v produkčním kódu.
+• Používej suspend fun.
+• Pro streamy Flow.
+• Nikdy nepoužívej .block() v produkčním kódu.
 
 LOGOVÁNÍ
-Structured logging: logger.info { “message with $var” }
-Vždy přidávej correlation ID nebo trace ID, pokud je dostupné.
+• Structured logging: logger.info { “message with $var” }
+• Vždy přidávej correlation ID nebo trace ID, pokud je dostupné.
 
 ZÁVISLOSTI A DI
-Pouze constructor injection.
-Žádné field injection ani manuální singletony.
+• Pouze constructor injection.
+• Žádné field injection ani manuální singletony.
 
 TESTY
-Píšou se jen na explicitní požadavek.
-Nepoužívej auto generování.
+• Píšou se jen na explicitní požadavek.
+• Nepoužívej auto generování.
 
 VÝKON A SPRÁVA ZDROJŮ
-Používej connection pooly, správné schedulery, implementuj retry a timeouty.
+• Používej connection pooly, správné schedulery, implementuj retry a timeouty.
 
 VÝSTUPNÍ POŽADAVKY PRO AI
-AI nástroje musí kód přímo upravovat podle těchto pravidel, ne pouze navrhovat změny.
-Nesmí vymýšlet nové parametry ani metody.
-Pokud si AI není jistá, musí se doptat.
-Při nejasnosti vol nejjednodušší řešení odpovídající existujícímu vzoru.
-AI nesmí měnit architekturu, vrstvy ani strukturu bez explicitního pokynu.
+• AI nástroje musí kód přímo upravovat podle těchto pravidel, ne pouze navrhovat změny.
+• Nesmí vymýšlet nové parametry ani metody.
+• Pokud si AI není jistá, musí se doptat.
+• Při nejasnosti vol nejjednodušší řešení odpovídající existujícímu vzoru.
+• AI nesmí měnit architekturu, vrstvy ani strukturu bez explicitního pokynu.
 
-⸻
-
-ZÁSADY ARCHITEKTONICKÉ DISCIPLÍNY
+ZÁSADY ARCHITEKTONICKÉ DISCIPLÍNY:
 
 1. Všechny vrstvy jsou striktně oddělené.
 2. Domain model je jediný zdroj pravdy.
@@ -198,9 +192,7 @@ ZÁSADY ARCHITEKTONICKÉ DISCIPLÍNY
 8. Klienti mezi sebou nemohou sdílet data, pouze projekty v rámci klienta sdílejí RAG.
 9. Server je zodpovědný za orchestrace, řízení procesů, modely a agentní běhy.
 
-⸻
-
 CÍL
-Zachovat architektonickou čistotu, čitelnost a stabilitu celého systému.
-Kód musí být vždy idiomatický, bezpečný, bez zbytečných větví, komentářů nebo duplicit.
-Všechny AI i vývojáři musí tyto zásady striktně respektovat.
+• Zachovat architektonickou čistotu, čitelnost a stabilitu celého systému.
+• Kód musí být vždy idiomatický, bezpečný, bez zbytečných větví, komentářů nebo duplicit.
+• Všechny AI i vývojáři musí tyto zásady striktně respektovat.
