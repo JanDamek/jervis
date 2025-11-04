@@ -5,6 +5,7 @@ import com.jervis.dto.user.UserTaskDto
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.service.annotation.GetExchange
 import org.springframework.web.service.annotation.HttpExchange
+import org.springframework.web.service.annotation.PutExchange
 
 @HttpExchange("/api/user-tasks")
 interface IUserTaskService {
@@ -17,4 +18,9 @@ interface IUserTaskService {
     suspend fun activeCount(
         @RequestParam clientId: String,
     ): UserTaskCountDto
+
+    @PutExchange("/cancel")
+    suspend fun cancel(
+        @RequestParam taskId: String,
+    ): UserTaskDto
 }

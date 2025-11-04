@@ -24,6 +24,12 @@ class UserTaskRestController(
         val count = userTaskService.findActiveTasksByClient(cid).toList().size
         return UserTaskCountDto(clientId = clientId, activeCount = count)
     }
+
+    override suspend fun cancel(taskId: String): UserTaskDto {
+        val tid = ObjectId(taskId)
+        val updated = userTaskService.cancelTask(tid)
+        return updated.toDto()
+    }
 }
 
 private fun com.jervis.domain.task.UserTask.toDto(): UserTaskDto =
