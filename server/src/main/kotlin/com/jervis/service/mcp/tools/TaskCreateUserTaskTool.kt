@@ -75,10 +75,87 @@ class TaskCreateUserTaskTool(
                 }
             }
 
+            // Compose a comprehensive description with clear user action and full context
+            val combinedDescription =
+                buildString {
+                    appendLine("Action: ${request.title}")
+                    request.description?.takeIf { it.isNotBlank() }?.let {
+                        appendLine()
+                        appendLine(it)
+                    }
+                    appendLine()
+                    appendLine("Source: ${'$'}sourceType")
+                    request.sourceUri?.let { appendLine("Source URI: ${'$'}it") }
+                    if (stepContext.isNotBlank()) {
+                        appendLine()
+                        appendLine("Analysis Context:")
+                        appendLine(stepContext)
+                    }
+                    // Email context (if provided)
+                    val emailAccountId = enrichedMetadata["emailAccountId"]
+                    val emailMessageId = enrichedMetadata["emailMessageId"]
+                    val threadId = enrichedMetadata["threadId"]
+                    if (emailAccountId != null || emailMessageId != null || threadId != null) {
+                        appendLine()
+                        appendLine("Email Context:")
+                        emailAccountId?.let { appendLine("- Account: $it") }
+                        emailMessageId?.let { appendLine("- Message ID: $it") }
+                        threadId?.let { appendLine("- Thread ID: $it") }
+                        enrichedMetadata["emailFrom"]?.let { appendLine("- From: $it") }
+                        enrichedMetadata["emailTo"]?.let { appendLine("- To: $it") }
+                        enrichedMetadata["emailSubject"]?.let { appendLine("- Subject: $it") }
+                    }
+                    // Git context (if provided)
+                    val commitHash = enrichedMetadata["commitHash"]
+                    val commitMessage = enrichedMetadata["commitMessage"] ?: enrichedMetadata["message"]
+                    val commitAuthor = enrichedMetadata["author"]
+                    val commitBranch = enrichedMetadata["branch"]
+                    val additions = enrichedMetadata["additions"]
+                    val deletions = enrichedMetadata["deletions"]
+                    if (commitHash != null || commitMessage != null || commitAuthor != null) {
+                        appendLine()
+                        appendLine("Git Commit:")
+                        commitHash?.let { appendLine("- Hash: $it") }
+                        commitAuthor?.let { appendLine("- Author: $it") }
+                        commitBranch?.let { appendLine("- Branch: $it") }
+                        commitMessage?.let { appendLine("- Message: $it") }
+                        if (additions != null || deletions != null) {
+                            val addStr = additions ?: "?"
+                            val delStr = deletions ?: "?"
+                            appendLine("- Changes: +$addStr/-$delStr")
+                        }
+                        enrichedMetadata["changedFiles"]?.let { files ->
+                            appendLine("- Changed Files:")
+                            files
+                                .split('\n', ',', ';')
+                                .map { it.trim() }
+                                .filter { it.isNotEmpty() }
+                                .take(50)
+                                .forEach { f ->
+                                    appendLine("  - $f")
+                                }
+                        }
+                    }
+                    // Any attachments summary if supplied
+                    enrichedMetadata["attachments"]?.let { at ->
+                        appendLine()
+                        appendLine("Attachments:")
+                        at.lines().forEach { appendLine("- ${'$'}it") }
+                    }
+                    // Append full metadata at the end for completeness
+                    if (enrichedMetadata.isNotEmpty()) {
+                        appendLine()
+                        appendLine("Metadata:")
+                        enrichedMetadata.entries.sortedBy { it.key }.forEach { (_, _) ->
+                            appendLine("- ${'$'}k=${'$'}v")
+                        }
+                    }
+                }
+
             val task =
                 userTaskService.createTask(
                     title = request.title,
-                    description = request.description,
+                    description = combinedDescription,
                     priority = priority,
                     dueDate = dueDate,
                     projectId = plan.projectId,

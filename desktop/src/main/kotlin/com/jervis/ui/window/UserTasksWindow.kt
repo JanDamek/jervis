@@ -1,5 +1,7 @@
 package com.jervis.ui.window
 
+import com.jervis.dto.ChatRequestContextDto
+import com.jervis.dto.ChatRequestDto
 import com.jervis.dto.user.UserTaskDto
 import com.jervis.service.IClientService
 import com.jervis.service.IUserTaskService
@@ -11,17 +13,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.awt.BorderLayout
 import java.awt.Dimension
+import java.awt.FlowLayout
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import javax.swing.JButton
-import javax.swing.JComboBox
 import javax.swing.JFrame
 import javax.swing.JLabel
 import javax.swing.JOptionPane
 import javax.swing.JPanel
 import javax.swing.JScrollPane
 import javax.swing.JTable
+import javax.swing.JTextArea
+import javax.swing.JTextField
 import javax.swing.border.EmptyBorder
 import javax.swing.table.AbstractTableModel
 
@@ -32,18 +36,140 @@ import javax.swing.table.AbstractTableModel
 class UserTasksWindow(
     private val userTaskService: IUserTaskService,
     private val clientService: IClientService,
+    private val agentOrchestrator: com.jervis.service.IAgentOrchestratorService,
     private val windowManager: ApplicationWindowManager,
 ) : JFrame("User Tasks") {
-    private val clientSelector = JComboBox<SelectorItem>(arrayOf())
     private val refreshButton = JButton("Refresh")
+    private val revokeButton = JButton("Revoke")
+    private val proceedButton = JButton("Proceed")
+    private val filterField = JTextField(20)
 
-    // Quick actions placeholder (future per-task action buttons will be added here)
-    private val quickActionsLabel = JLabel("Quick Actions (coming soon)")
+    private val instructionArea = JTextArea(3, 40)
 
     private val tasksTableModel = UserTasksTableModel(emptyList())
     private val tasksTable = JTable(tasksTableModel)
 
+    private val detailsArea =
+        JTextArea().apply {
+            isEditable = false
+            lineWrap = true
+            wrapStyleWord = true
+        }
+
     private val scope = CoroutineScope(Dispatchers.Main)
+
+    private var allTasks: List<UserTaskDto> = emptyList()
+
+    private fun selectedTask(): UserTaskDto? {
+        val row = tasksTable.selectedRow
+        if (row < 0) return null
+        return tasksTableModel.getTaskAt(row)
+    }
+
+    private fun updateDetailsFromSelection() {
+        val task = selectedTask()
+        if (task == null) {
+            detailsArea.text = ""
+            return
+        }
+        val sb = StringBuilder()
+        sb.appendLine("Title: ${task.title}")
+        sb.appendLine("Priority: ${task.priority}")
+        sb.appendLine("Status: ${task.status}")
+        task.dueDateEpochMillis?.let {
+            sb.appendLine("Due: ${Instant.ofEpochMilli(it)}")
+        }
+        val projectText = task.projectId ?: "-"
+        sb.appendLine("Project: $projectText")
+        sb.appendLine("Source: ${task.sourceType}")
+        sb.appendLine()
+        if (!task.description.isNullOrBlank()) {
+            sb.appendLine(task.description)
+        }
+        detailsArea.text = sb.toString()
+    }
+
+    private fun updateProceedEnabled() {
+        val hasInstruction = instructionArea.text.trim().isNotEmpty()
+        val hasSelection = tasksTable.selectedRow >= 0
+        proceedButton.isEnabled = hasInstruction && hasSelection
+    }
+
+    private fun handleProceed() {
+        val instruction = instructionArea.text.trim()
+        val task = selectedTask()
+        if (instruction.isEmpty()) {
+            JOptionPane.showMessageDialog(
+                this,
+                "Please enter instruction text.",
+                "Validation",
+                JOptionPane.WARNING_MESSAGE,
+            )
+            return
+        }
+        if (task == null) {
+            JOptionPane.showMessageDialog(this, "Please select a user task.", "Validation", JOptionPane.WARNING_MESSAGE)
+            return
+        }
+        val projectId = task.projectId
+        if (projectId.isNullOrBlank()) {
+            JOptionPane.showMessageDialog(
+                this,
+                "Selected task has no project assigned.",
+                "Error",
+                JOptionPane.ERROR_MESSAGE,
+            )
+            return
+        }
+        val clientId = task.clientId
+        val ctx =
+            ChatRequestContextDto(
+                clientId = clientId,
+                projectId = projectId,
+                autoScope = false,
+                quick = false,
+                existingContextId = null,
+            )
+        val message =
+            buildString {
+                appendLine(instruction)
+                appendLine()
+                appendLine("Continue using the following user-task content:")
+                appendLine("Title: ${task.title}")
+                if (!task.description.isNullOrBlank()) {
+                    appendLine(task.description!!)
+                }
+            }
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                agentOrchestrator.handle(
+                    ChatRequestDto(
+                        text = message,
+                        context = ctx,
+                        wsSessionId = windowManager.getNotificationsSessionId(),
+                    ),
+                )
+            }.onSuccess {
+                withContext(Dispatchers.Main) {
+                    JOptionPane.showMessageDialog(
+                        this@UserTasksWindow,
+                        "Instruction sent to agent orchestrator.",
+                        "Info",
+                        JOptionPane.INFORMATION_MESSAGE,
+                    )
+                }
+            }.onFailure { e ->
+                withContext(Dispatchers.Main) {
+                    JOptionPane.showMessageDialog(
+                        this@UserTasksWindow,
+                        "Failed to send: ${'$'}{e.message}",
+                        "Error",
+                        JOptionPane.ERROR_MESSAGE,
+                    )
+                }
+            }
+        }
+    }
 
     init {
         defaultCloseOperation = HIDE_ON_CLOSE
@@ -55,87 +181,166 @@ class UserTasksWindow(
         // Header
         val header = UiDesign.headerLabel("User Tasks")
 
-        // Form row: client selector
-        val form =
-            UiDesign.formPanel {
-                row("Client:", clientSelector)
+        // Top toolbar with filter and actions
+        val topBar =
+            JPanel(BorderLayout(UiDesign.gap, UiDesign.gap)).apply {
+                val left =
+                    JPanel(FlowLayout(FlowLayout.LEFT, UiDesign.gap, 0)).apply {
+                        add(JLabel("Filter:"))
+                        add(filterField)
+                    }
+                val right = UiDesign.actionBar(refreshButton, revokeButton)
+                add(left, BorderLayout.WEST)
+                add(right, BorderLayout.EAST)
+            }
+        val northPanel =
+            JPanel(BorderLayout(UiDesign.gap, UiDesign.gap)).apply {
+                add(header, BorderLayout.NORTH)
+                add(topBar, BorderLayout.SOUTH)
             }
 
-        // Quick actions bar
+        // Quick actions bar with instruction input
+        val instructionPanel =
+            JPanel(BorderLayout(UiDesign.gap, UiDesign.gap)).apply {
+                add(JLabel("Instruction:"), BorderLayout.WEST)
+                add(JScrollPane(instructionArea), BorderLayout.CENTER)
+            }
         val qaPanel =
             JPanel(BorderLayout(UiDesign.gap, UiDesign.gap)).apply {
-                add(UiDesign.subHeaderLabel("Quick Actions"), BorderLayout.WEST)
-                add(quickActionsLabel, BorderLayout.CENTER)
-                add(UiDesign.actionBar(refreshButton), BorderLayout.EAST)
+                add(UiDesign.subHeaderLabel("Quick Actions"), BorderLayout.NORTH)
+                add(instructionPanel, BorderLayout.CENTER)
+                add(UiDesign.actionBar(proceedButton, refreshButton), BorderLayout.EAST)
             }
 
-        // Table area
+        // Table area + details
         tasksTable.fillsViewportHeight = true
         tasksTable.autoResizeMode = JTable.AUTO_RESIZE_ALL_COLUMNS
         val tableScroll = JScrollPane(tasksTable)
+        val detailsSection = UiDesign.sectionPanel("Task Content", JScrollPane(detailsArea))
+        val centerPanel =
+            JPanel(BorderLayout(UiDesign.gap, UiDesign.gap)).apply {
+                add(tableScroll, BorderLayout.CENTER)
+                add(detailsSection, BorderLayout.SOUTH)
+            }
 
         val content = JPanel(BorderLayout(UiDesign.gap, UiDesign.gap))
-        content.add(header, BorderLayout.NORTH)
-        content.add(UiDesign.sectionPanel(null, form), BorderLayout.WEST)
-        content.add(tableScroll, BorderLayout.CENTER)
+        content.add(northPanel, BorderLayout.NORTH)
+        content.add(centerPanel, BorderLayout.CENTER)
         content.add(UiDesign.sectionPanel(null, qaPanel), BorderLayout.SOUTH)
 
         add(content, BorderLayout.CENTER)
 
         // Handlers
         refreshButton.addActionListener { refreshTasks() }
-        clientSelector.addActionListener {
-            val selected = (clientSelector.selectedItem as? SelectorItem)?.id
-            if (!selected.isNullOrBlank()) {
-                windowManager.updateCurrentClientId(selected)
-                refreshTasks()
-            }
-        }
-
-        // Load clients and initial tasks
-        loadClientsAndSelectFirst()
-    }
-
-    fun preselectClient(clientId: String?) {
-        if (clientId == null) return
-        val size = clientSelector.itemCount
-        for (i in 0 until size) {
-            val item = clientSelector.getItemAt(i)
-            if (item.id == clientId) {
-                clientSelector.selectedIndex = i
-                break
-            }
-        }
-    }
-
-    private fun loadClientsAndSelectFirst() {
-        scope.launch {
-            try {
-                val clients = withContext(Dispatchers.IO) { clientService.list() }
-                clientSelector.removeAllItems()
-                clients.forEach { c -> clientSelector.addItem(SelectorItem(c.id, c.name)) }
-                if (clients.isNotEmpty()) {
-                    clientSelector.selectedIndex = 0
+        proceedButton.addActionListener { handleProceed() }
+        revokeButton.addActionListener { handleRevoke() }
+        filterField.document.addDocumentListener(
+            object : javax.swing.event.DocumentListener {
+                private fun update() {
+                    applyFilterAndUpdate()
                 }
-            } catch (e: Exception) {
-                JOptionPane.showMessageDialog(
-                    this@UserTasksWindow,
-                    "Failed to load clients: ${'$'}{e.message}",
-                    "Error",
-                    JOptionPane.ERROR_MESSAGE,
-                )
-            }
+
+                override fun insertUpdate(e: javax.swing.event.DocumentEvent?) = update()
+
+                override fun removeUpdate(e: javax.swing.event.DocumentEvent?) = update()
+
+                override fun changedUpdate(e: javax.swing.event.DocumentEvent?) = update()
+            },
+        )
+        instructionArea.document.addDocumentListener(
+            object : javax.swing.event.DocumentListener {
+                private fun update() {
+                    updateProceedEnabled()
+                }
+
+                override fun insertUpdate(e: javax.swing.event.DocumentEvent?) = update()
+
+                override fun removeUpdate(e: javax.swing.event.DocumentEvent?) = update()
+
+                override fun changedUpdate(e: javax.swing.event.DocumentEvent?) = update()
+            },
+        )
+        tasksTable.selectionModel.addListSelectionListener { _ ->
+            updateDetailsFromSelection()
+            updateProceedEnabled()
         }
+
+        // Initial load
+        refreshTasks()
+    }
+
+    private fun handleRevoke() {
+        val task =
+            selectedTask() ?: run {
+                JOptionPane.showMessageDialog(this, "Select a task to revoke.", "Info", JOptionPane.INFORMATION_MESSAGE)
+                return
+            }
+        val confirm =
+            JOptionPane.showConfirmDialog(
+                this,
+                "Discard selected task?",
+                "Confirm Revoke",
+                JOptionPane.OK_CANCEL_OPTION,
+            )
+        if (confirm != JOptionPane.OK_OPTION) return
+        scope.launch(Dispatchers.IO) {
+            runCatching { userTaskService.cancel(task.id) }
+                .onSuccess {
+                    withContext(Dispatchers.Main) {
+                        JOptionPane.showMessageDialog(
+                            this@UserTasksWindow,
+                            "Task revoked.",
+                            "Info",
+                            JOptionPane.INFORMATION_MESSAGE,
+                        )
+                        refreshTasks()
+                    }
+                }.onFailure { e ->
+                    withContext(Dispatchers.Main) {
+                        JOptionPane.showMessageDialog(
+                            this@UserTasksWindow,
+                            "Failed to revoke: ${'$'}{e.message}",
+                            "Error",
+                            JOptionPane.ERROR_MESSAGE,
+                        )
+                    }
+                }
+        }
+    }
+
+    private fun applyFilterAndUpdate() {
+        val q = filterField.text.trim().lowercase()
+        val filtered =
+            if (q.isBlank()) {
+                allTasks
+            } else {
+                allTasks.filter { t ->
+                    t.title.lowercase().contains(q) ||
+                        (t.description?.lowercase()?.contains(q) == true) ||
+                        t.sourceType.lowercase().contains(q) ||
+                        (t.projectId?.lowercase()?.contains(q) == true)
+                }
+            }
+        tasksTableModel.update(filtered)
     }
 
     fun refreshTasks() {
-        val client = clientSelector.selectedItem as? SelectorItem ?: return
         scope.launch {
             try {
-                val tasks = withContext(Dispatchers.IO) { userTaskService.listActive(client.id) }
-                tasksTableModel.update(tasks)
-                // Update dock badge with active count for current client
-                windowManager.updateUserTaskBadgeForClient(client.id)
+                val tasks =
+                    withContext(Dispatchers.IO) {
+                        val clients = clientService.list()
+                        val all = mutableListOf<UserTaskDto>()
+                        for (c in clients) {
+                            runCatching { userTaskService.listActive(c.id) }.onSuccess { all.addAll(it) }
+                        }
+                        // sort by age ascending using createdAtEpochMillis (older first)
+                        all.sortedBy { it.createdAtEpochMillis }
+                    }
+                allTasks = tasks
+                applyFilterAndUpdate()
+                // Update dock badge with total active count
+                windowManager.updateUserTaskBadgeForClient("")
             } catch (e: Exception) {
                 JOptionPane.showMessageDialog(
                     this@UserTasksWindow,
@@ -145,13 +350,6 @@ class UserTasksWindow(
                 )
             }
         }
-    }
-
-    data class SelectorItem(
-        val id: String,
-        val name: String,
-    ) {
-        override fun toString(): String = name
     }
 }
 
@@ -164,6 +362,8 @@ private class UserTasksTableModel(
         tasks = newTasks
         fireTableDataChanged()
     }
+
+    fun getTaskAt(rowIndex: Int): UserTaskDto = tasks[rowIndex]
 
     override fun getRowCount(): Int = tasks.size
 

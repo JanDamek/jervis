@@ -81,7 +81,7 @@ class ApplicationWindowManager(
     // User Tasks window
     private val userTasksWindow: com.jervis.ui.window.UserTasksWindow by lazy {
         com.jervis.ui.window
-            .UserTasksWindow(userTaskService, clientService, this)
+            .UserTasksWindow(userTaskService, clientService, chatCoordinator, this)
     }
 
     @Volatile
@@ -173,9 +173,10 @@ class ApplicationWindowManager(
 
     fun showUserTasksWindow() {
         userTasksWindow.isVisible = true
-        currentClientId?.let { userTasksWindow.preselectClient(it) }
         userTasksWindow.refreshTasks()
     }
+
+    fun getNotificationsSessionId(): String = notificationsClient.sessionId
 
     fun updateCurrentClientId(clientId: String) {
         currentClientId = clientId
@@ -185,9 +186,13 @@ class ApplicationWindowManager(
     fun updateUserTaskBadgeForClient(clientId: String) {
         badgeScope.launch {
             try {
-                val count = userTaskService.activeCount(clientId).activeCount
-                MacOSAppUtils
-                    .setDockBadgeCount(count)
+                // Always show total active user-tasks across all clients
+                val clients = clientService.list()
+                var total = 0
+                for (c in clients) {
+                    runCatching { userTaskService.activeCount(c.id).activeCount }.onSuccess { total += it }
+                }
+                MacOSAppUtils.setDockBadgeCount(total)
             } catch (_: Exception) {
                 // ignore badge update errors
             }
