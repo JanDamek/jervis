@@ -71,7 +71,7 @@ class TikaController(
         includeMetadata: Boolean,
     ): TikaProcessResult {
         val metadata =
-            if (includeMetadata && result.metadata != null) {
+            if (includeMetadata) {
                 TikaMetadata(
                     title = result.metadata.title,
                     author = result.metadata.author,
