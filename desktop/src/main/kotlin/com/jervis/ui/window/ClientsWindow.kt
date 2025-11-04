@@ -10,6 +10,7 @@ import com.jervis.service.IClientService
 import com.jervis.service.IEmailAccountService
 import com.jervis.service.IGitConfigurationService
 import com.jervis.service.IProjectService
+import com.jervis.ui.component.ApplicationWindowManager
 import com.jervis.ui.component.ConfluenceSettingsPanel
 import com.jervis.ui.component.EmailConfigPanel
 import com.jervis.ui.component.GitSetupPanel
@@ -51,6 +52,7 @@ class ClientsWindow(
     private val emailAccountService: IEmailAccountService,
     private val jiraSetupService: com.jervis.service.IJiraSetupService,
     private val integrationSettingsService: com.jervis.service.IIntegrationSettingsService,
+    private val applicationWindowManager: ApplicationWindowManager,
 ) : JFrame("Client Management") {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -240,7 +242,7 @@ class ClientsWindow(
         deleteBtn.addActionListener { deleteSelectedClient() }
         saveBtn.addActionListener { saveClient() }
         settingsBtn.addActionListener { showClientSettingsDialog() }
-        addProjectBtn.addActionListener { showAddProjectDialog() }
+        addProjectBtn.addActionListener { applicationWindowManager.showProjectSettingWindow() }
         assignExistingBtn.addActionListener { showAssignExistingProjectsDialog() }
         dependenciesBtn.addActionListener { showClientDependenciesDialog() }
         removeProjectBtn.addActionListener { removeSelectedProjectFromClient() }
@@ -257,6 +259,16 @@ class ClientsWindow(
             val clients = withContext(Dispatchers.IO) { clientService.list() }
             listModel.clear()
             clients.forEach { listModel.addElement(it) }
+        }
+    }
+
+    fun reloadClientsAndProjects() {
+        loadClients()
+        val cid = selectedClientId
+        if (cid != null) {
+            loadProjectsForClient(cid)
+        } else {
+            projectsModel.clear()
         }
     }
 
@@ -330,6 +342,9 @@ class ClientsWindow(
                 // Update form and linked projects list
                 fillClientForm(currentClient!!)
                 loadProjectsForClient(savedClient.id)
+
+                // Broadcast reload to other windows
+                applicationWindowManager.broadcastReloadClientsAndProjects()
 
                 JOptionPane.showMessageDialog(
                     this@ClientsWindow,
@@ -953,6 +968,8 @@ class ClientsWindow(
                         "Úspěch",
                         JOptionPane.INFORMATION_MESSAGE,
                     )
+                    // Immediately open Client Settings with Atlassian tab selected to configure Jira/Confluence API
+                    openClientSettingsFor(createdClient, selectAtlassianTab = true)
                 } catch (e: Exception) {
                     JOptionPane.showMessageDialog(
                         this@ClientsWindow,
@@ -971,17 +988,18 @@ class ClientsWindow(
                 JOptionPane.showMessageDialog(this, "Vyberte nejprve klienta.", "Info", JOptionPane.INFORMATION_MESSAGE)
                 return
             }
+        openClientSettingsFor(client, selectAtlassianTab = false)
+    }
 
-        // Load existing credentials first
+    private fun openClientSettingsFor(
+        client: ClientDto,
+        selectAtlassianTab: Boolean,
+    ) {
         var existingCredentials: GitCredentialsDto? = null
         CoroutineScope(Dispatchers.Main).launch {
             try {
                 existingCredentials =
-                    withContext(Dispatchers.IO) {
-                        gitConfigurationService.getGitCredentials(client.id)
-                    }
-
-                // Create and show dialog with credentials
+                    withContext(Dispatchers.IO) { gitConfigurationService.getGitCredentials(client.id) }
                 val dialog =
                     ClientSettingsDialog(
                         this@ClientsWindow,
@@ -990,12 +1008,12 @@ class ClientsWindow(
                         emailAccountService,
                         jiraSetupService,
                         integrationSettingsService,
+                        selectAtlassianTab,
                     )
                 dialog.isVisible = true
                 handleDialogResult(client, dialog)
             } catch (e: Exception) {
                 logger.warn { "Failed to load credentials: ${e.message}" }
-                // Create dialog without credentials on error
                 val dialog =
                     ClientSettingsDialog(
                         this@ClientsWindow,
@@ -1004,6 +1022,7 @@ class ClientsWindow(
                         emailAccountService,
                         jiraSetupService,
                         integrationSettingsService,
+                        selectAtlassianTab,
                     )
                 dialog.isVisible = true
                 handleDialogResult(client, dialog)
@@ -1271,6 +1290,7 @@ class ClientsWindow(
         private val emailAccountService: IEmailAccountService,
         private val jiraSetupService: com.jervis.service.IJiraSetupService,
         private val integrationSettingsService: com.jervis.service.IIntegrationSettingsService,
+        private val selectAtlassianTab: Boolean = false,
     ) : JDialog(owner, "Client Settings: ${client.name}", true) {
         private val gitSetupPanel =
             GitSetupPanel(
@@ -1293,6 +1313,7 @@ class ClientsWindow(
         private val emailConfigPanel by lazy { EmailConfigPanel(emailAccountService, client) }
         private val jiraPanel by lazy { JiraSetupPanel(client.id, jiraSetupService) }
         private val confluencePanel by lazy { ConfluenceSettingsPanel(client.id, integrationSettingsService) }
+        private val tabbedPane = javax.swing.JTabbedPane()
         private val okButton = JButton("OK")
         private val cancelButton = JButton("Cancel")
 
@@ -1326,8 +1347,6 @@ class ClientsWindow(
             val panel = JPanel(BorderLayout())
             panel.border = EmptyBorder(16, 16, 16, 16)
 
-            val tabbedPane = javax.swing.JTabbedPane()
-
             // Git Configuration Tab
             tabbedPane.addTab("Git Configuration", JScrollPane(gitSetupPanel))
 
@@ -1339,6 +1358,12 @@ class ClientsWindow(
 
             // Confluence Settings Tab
             tabbedPane.addTab("Confluence", JScrollPane(confluencePanel))
+
+            // Preselect Atlassian tab if requested
+            if (selectAtlassianTab) {
+                val idx = tabbedPane.indexOfTab("Atlassian Cloud")
+                if (idx >= 0) tabbedPane.selectedIndex = idx
+            }
 
             // Button panel
             val buttonPanel = JPanel(FlowLayout(FlowLayout.RIGHT))

@@ -53,6 +53,7 @@ class ProjectSettingWindow(
     private val gitConfigurationService: IGitConfigurationService,
     private val jiraSetupService: IJiraSetupService,
     private val integrationSettingsService: IIntegrationSettingsService,
+    private val applicationWindowManager: com.jervis.ui.component.ApplicationWindowManager,
 ) : JFrame("Project Management") {
     private val projectTableModel = ProjectTableModel(emptyList())
     private val projectTable = JTable(projectTableModel)
@@ -344,6 +345,10 @@ class ProjectSettingWindow(
         }
     }
 
+    fun reloadProjects() {
+        loadProjectsWithCoroutine()
+    }
+
     /**
      * Add new project
      */
@@ -353,27 +358,104 @@ class ProjectSettingWindow(
 
         val result = dialog.result
         if (result != null) {
-            val newProject =
-                ProjectDto(
-                    clientId = Constants.GLOBAL_ID_STRING,
-                    name = result.name,
-                    projectPath = result.projectPath,
-                    description = result.description,
-                    languages = result.languages,
-                    inspirationOnly = result.inspirationOnly,
-                    indexingRules =
-                        IndexingRulesDto(
-                            includeGlobs = result.includeGlobs,
-                            excludeGlobs = result.excludeGlobs,
-                            maxFileSizeMB = result.maxFileSizeMB,
-                        ),
-                    isDisabled = result.isDisabled,
-                    isActive = false,
-                )
-
             CoroutineScope(Dispatchers.Main).launch {
-                projectService.saveProject(newProject, result.isDefault)
-                loadProjects()
+                try {
+                    val clients = withContext(Dispatchers.IO) { clientService.list() }
+                    if (clients.isEmpty()) {
+                        JOptionPane.showMessageDialog(
+                            this@ProjectSettingWindow,
+                            "No clients found. Create a client first.",
+                            "Info",
+                            JOptionPane.INFORMATION_MESSAGE,
+                        )
+                        return@launch
+                    }
+
+                    // Choose client: if one exists, use it; otherwise prompt selection
+                    val chosenClientId: String =
+                        if (clients.size == 1) {
+                            clients.first().id
+                        } else {
+                            val combo = JComboBox<ClientDto>()
+                            clients.forEach { combo.addItem(it) }
+                            combo.renderer =
+                                object : DefaultListCellRenderer() {
+                                    override fun getListCellRendererComponent(
+                                        list: JList<*>?,
+                                        value: Any?,
+                                        index: Int,
+                                        isSelected: Boolean,
+                                        cellHasFocus: Boolean,
+                                    ): Component {
+                                        val label =
+                                            super.getListCellRendererComponent(
+                                                list,
+                                                value,
+                                                index,
+                                                isSelected,
+                                                cellHasFocus,
+                                            ) as JLabel
+                                        val c = value as? ClientDto
+                                        if (c != null) label.text = c.name
+                                        return label
+                                    }
+                                }
+                            val panel = JPanel(BorderLayout(8, 8))
+                            panel.border = EmptyBorder(12, 12, 12, 12)
+                            panel.add(JLabel("Assign client for new project:"), BorderLayout.NORTH)
+                            panel.add(combo, BorderLayout.CENTER)
+                            val dialog = JDialog(this@ProjectSettingWindow, "Select Client", true)
+                            val ok = JButton("OK")
+                            val cancel = JButton("Cancel")
+                            val btns =
+                                JPanel(FlowLayout(FlowLayout.RIGHT)).apply {
+                                    add(ok)
+                                    add(cancel)
+                                }
+                            panel.add(btns, BorderLayout.SOUTH)
+                            var selectedId: String? = null
+                            ok.addActionListener {
+                                selectedId = (combo.selectedItem as ClientDto).id
+                                dialog.dispose()
+                            }
+                            cancel.addActionListener { dialog.dispose() }
+                            dialog.contentPane = panel
+                            dialog.pack()
+                            dialog.setLocationRelativeTo(this@ProjectSettingWindow)
+                            dialog.isVisible = true
+                            selectedId ?: return@launch
+                        }
+
+                    val newProject =
+                        ProjectDto(
+                            clientId = chosenClientId,
+                            name = result.name,
+                            projectPath = result.projectPath,
+                            description = result.description,
+                            languages = result.languages,
+                            inspirationOnly = result.inspirationOnly,
+                            indexingRules =
+                                IndexingRulesDto(
+                                    includeGlobs = result.includeGlobs,
+                                    excludeGlobs = result.excludeGlobs,
+                                    maxFileSizeMB = result.maxFileSizeMB,
+                                ),
+                            isDisabled = result.isDisabled,
+                            isActive = false,
+                            overrides = result.overrides,
+                        )
+
+                    projectService.saveProject(newProject, result.isDefault)
+                    loadProjects()
+                    applicationWindowManager.broadcastReloadClientsAndProjects()
+                } catch (e: Exception) {
+                    JOptionPane.showMessageDialog(
+                        this@ProjectSettingWindow,
+                        "Failed to create project: ${e.message}",
+                        "Error",
+                        JOptionPane.ERROR_MESSAGE,
+                    )
+                }
             }
         }
     }
@@ -446,6 +528,7 @@ class ProjectSettingWindow(
                         // Save project and optionally set as default
                         projectService.saveProject(updatedProject, result.isDefault)
                         loadProjects()
+                        applicationWindowManager.broadcastReloadClientsAndProjects()
                     } catch (e: Exception) {
                         e.printStackTrace()
                         JOptionPane.showMessageDialog(
@@ -480,6 +563,7 @@ class ProjectSettingWindow(
                 CoroutineScope(Dispatchers.Main).launch {
                     projectService.deleteProject(project)
                     loadProjects()
+                    applicationWindowManager.broadcastReloadClientsAndProjects()
                 }
             }
         }
@@ -496,6 +580,7 @@ class ProjectSettingWindow(
             CoroutineScope(Dispatchers.Main).launch {
                 projectService.setActiveProject(project)
                 loadProjects()
+                applicationWindowManager.broadcastReloadClientsAndProjects()
             }
         }
     }
@@ -511,6 +596,7 @@ class ProjectSettingWindow(
             CoroutineScope(Dispatchers.Main).launch {
                 projectService.setDefaultProject(project)
                 loadProjects()
+                applicationWindowManager.broadcastReloadClientsAndProjects()
             }
         }
     }
@@ -584,6 +670,7 @@ class ProjectSettingWindow(
                                 val updated = project.copy(clientId = selected.id)
                                 projectService.saveProject(updated, false)
                                 loadProjects()
+                                applicationWindowManager.broadcastReloadClientsAndProjects()
                             } catch (e: Exception) {
                                 JOptionPane.showMessageDialog(
                                     dialog,

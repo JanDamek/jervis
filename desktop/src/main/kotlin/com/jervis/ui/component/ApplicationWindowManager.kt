@@ -49,6 +49,7 @@ class ApplicationWindowManager(
             gitConfigurationService,
             jiraSetupService,
             integrationSettingsService,
+            this,
         )
     }
 
@@ -61,6 +62,7 @@ class ApplicationWindowManager(
             emailAccountService,
             jiraSetupService,
             integrationSettingsService,
+            this,
         )
     }
 
@@ -125,22 +127,33 @@ class ApplicationWindowManager(
     }
 
     fun showMainWindow() {
+        mainWindow.reloadClientsAndProjects()
         mainWindow.isVisible = true
     }
 
     fun showProjectSettingWindow() {
+        projectSettingsWindow.reloadProjects()
         projectSettingsWindow.isVisible = true
     }
 
     fun showClientsWindow() {
+        clientsWindow.reloadClientsAndProjects()
         clientsWindow.isVisible = true
     }
 
     fun showSchedulerWindow() {
+        schedulerWindow.reloadClientsAndProjects()
         schedulerWindow.isVisible = true
     }
 
     fun showDebugWindow() {
         debugWindowService.showDebugWindow()
+    }
+
+    fun broadcastReloadClientsAndProjects() {
+        mainWindow.reloadClientsAndProjects()
+        clientsWindow.reloadClientsAndProjects()
+        schedulerWindow.reloadClientsAndProjects()
+        projectSettingsWindow.reloadProjects()
     }
 }

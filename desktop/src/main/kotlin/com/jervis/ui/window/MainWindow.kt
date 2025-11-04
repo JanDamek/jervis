@@ -99,6 +99,51 @@ class MainWindow(
         }
     }
 
+    fun reloadClientsAndProjects() {
+        // Load clients and projects asynchronously during reload
+        windowScope.launch {
+            try {
+                val clients = clientService.list()
+                EventQueue.invokeLater {
+                    clientSelector.removeAllItems()
+                    clients.forEach { c -> clientSelector.addItem(SelectorItem(c.id, c.name)) }
+                    if (clients.isNotEmpty()) {
+                        clientSelector.selectedIndex = 0
+                    }
+                }
+
+                val selectedClientId = clients.firstOrNull()?.id
+                val linkedProjectIds =
+                    selectedClientId?.let { id -> linkService.listForClient(id).map { it.projectId }.toSet() }
+                        ?: emptySet()
+
+                val projects = projectService.getAllProjects()
+                projectNameById.clear()
+                projects.forEach { p -> projectNameById[p.id] = p.name }
+
+                val filtered =
+                    if (linkedProjectIds.isNotEmpty()) {
+                        projects.filter { it.id in linkedProjectIds }
+                    } else {
+                        projects.filter { it.clientId == selectedClientId }
+                    }
+                val projectItems = filtered.map { SelectorItem(it.id, it.name) }
+                val defaultProject = projectService.getDefaultProject()
+                EventQueue.invokeLater {
+                    projectSelector.removeAllItems()
+                    projectItems.forEach { projectSelector.addItem(it) }
+                    val defaultItem =
+                        projectItems.find { it.name == defaultProject?.name } ?: projectItems.firstOrNull()
+                    if (defaultItem != null) {
+                        projectSelector.selectedItem = defaultItem
+                    }
+                }
+            } catch (_: Exception) {
+                // ignore UI refresh errors during reload
+            }
+        }
+    }
+
     // UI selector models
     data class SelectorItem(
         val id: String,
