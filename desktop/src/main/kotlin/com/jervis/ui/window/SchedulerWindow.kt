@@ -57,6 +57,10 @@ class SchedulerWindow(
     private val agentOrchestrator: IAgentOrchestratorService,
     private val notificationsClient: com.jervis.client.NotificationsWebSocketClient,
 ) : JFrame("Task Scheduler") {
+    fun reloadClientsAndProjects() {
+        loadInitialData()
+    }
+
     private val taskListModel = DefaultListModel<Any>()
     private val taskList = JList(taskListModel)
     private val taskDescriptionArea = JTextArea(4, 40)

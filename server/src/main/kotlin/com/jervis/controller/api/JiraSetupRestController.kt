@@ -167,6 +167,8 @@ class JiraSetupRestController(
                 clientId = clientId,
                 connected = conn.expiresAt.isAfter(Instant.now()),
                 tenant = conn.tenant.value,
+                email = conn.email,
+                tokenPresent = conn.accessToken.isNotBlank(),
                 primaryProject = conn.primaryProject?.value,
                 mainBoard = conn.mainBoard?.value,
                 preferredUser = conn.preferredUser?.value,

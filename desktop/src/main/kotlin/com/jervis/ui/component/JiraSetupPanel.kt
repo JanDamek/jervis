@@ -258,7 +258,8 @@ class JiraSetupPanel(
                 tenantField.text = tenant
             }
             val email = emailField.text.trim()
-            val token = apiTokenField.text.trim()
+            val tokenRaw = apiTokenField.text.trim()
+            val token = if (tokenRaw.startsWith("*** (exists")) "" else tokenRaw
             if (tenant.isBlank() || email.isBlank() || token.isBlank()) {
                 showError("Tenant, Email and API token are required")
                 return@addActionListener
@@ -344,6 +345,12 @@ class JiraSetupPanel(
                     projectLabel.text = "Primary project: ${status.primaryProject ?: "–"}"
                     boardLabel.text = "Main board: ${status.mainBoard?.toString() ?: "–"}"
                     userLabel.text = "Preferred user: ${status.preferredUser ?: "–"}"
+
+                    // Always reflect saved connection settings in the editable fields
+                    tenantField.text = status.tenant ?: ""
+                    emailField.text = status.email ?: ""
+                    apiTokenField.text = if (status.tokenPresent) "*** (exists - leave empty to keep)" else ""
+
                     setControlsEnabled(status.connected)
                 }
             }.onFailure { e ->
