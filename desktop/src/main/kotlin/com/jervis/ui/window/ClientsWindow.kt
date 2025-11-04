@@ -1307,6 +1307,19 @@ class ClientsWindow(
 
             setupLayout()
             setupEventHandlers()
+
+            // Ensure Jira status is always up-to-date when dialog opens
+            addWindowListener(
+                object : java.awt.event.WindowAdapter() {
+                    override fun windowOpened(e: java.awt.event.WindowEvent) {
+                        try {
+                            jiraPanel.refreshStatus()
+                        } catch (_: Exception) {
+                            // ignore
+                        }
+                    }
+                },
+            )
         }
 
         private fun setupLayout() {

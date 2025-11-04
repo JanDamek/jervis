@@ -6,7 +6,10 @@ import com.jervis.dto.IndexingRulesDto
 import com.jervis.dto.ProjectDto
 import com.jervis.service.IClientService
 import com.jervis.service.IGitConfigurationService
+import com.jervis.service.IIntegrationSettingsService
+import com.jervis.service.IJiraSetupService
 import com.jervis.service.IProjectService
+import com.jervis.ui.component.ProjectIntegrationPanel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -48,6 +51,8 @@ class ProjectSettingWindow(
     private val projectService: IProjectService,
     private val clientService: IClientService,
     private val gitConfigurationService: IGitConfigurationService,
+    private val jiraSetupService: IJiraSetupService,
+    private val integrationSettingsService: IIntegrationSettingsService,
 ) : JFrame("Project Management") {
     private val projectTableModel = ProjectTableModel(emptyList())
     private val projectTable = JTable(projectTableModel)
@@ -65,6 +70,7 @@ class ProjectSettingWindow(
     private val newClientButton = JButton("New Client…")
     private val dependenciesButton = JButton("Dependencies…")
     private val toggleDisabledButton = JButton("Toggle Disabled")
+    private val integrationButton = JButton("Integration…")
 
     init {
         setupUI()
@@ -104,6 +110,7 @@ class ProjectSettingWindow(
         buttonPanel.add(newClientButton)
         buttonPanel.add(dependenciesButton)
         buttonPanel.add(toggleDisabledButton)
+        buttonPanel.add(integrationButton)
 
         mainPanel.add(tablePanel, BorderLayout.CENTER)
         mainPanel.add(buttonPanel, BorderLayout.SOUTH)
@@ -159,6 +166,7 @@ class ProjectSettingWindow(
         newClientButton.addActionListener { createNewClient() }
         dependenciesButton.addActionListener { editDependenciesForSelectedProject() }
         toggleDisabledButton.addActionListener { toggleDisabledForSelectedProject() }
+        integrationButton.addActionListener { openIntegrationOverridesForSelectedProject() }
 
         // Table selection listener
         projectTable.selectionModel.addListSelectionListener { updateButtonState() }
@@ -234,6 +242,11 @@ class ProjectSettingWindow(
                             dependenciesItem.addActionListener { editDependenciesForSelectedProject() }
                             contextMenu.add(dependenciesItem)
 
+                            // Integration Overrides
+                            val integrationItem = JMenuItem("Integration Overrides…")
+                            integrationItem.addActionListener { openIntegrationOverridesForSelectedProject() }
+                            contextMenu.add(integrationItem)
+
                             // Toggle Disabled
                             val toggleDisabledItem = JMenuItem("Toggle Disabled")
                             toggleDisabledItem.addActionListener { toggleDisabledForSelectedProject() }
@@ -273,6 +286,7 @@ class ProjectSettingWindow(
         deleteButton.isEnabled = hasSelection
         activateButton.isEnabled = false
         activateButton.isVisible = false
+        integrationButton.isEnabled = hasSelection
         if (hasSelection) {
             val selectedProject = projectTableModel.getProjectAt(projectTable.selectedRow)
             // Default button is enabled only if project is not default
@@ -280,6 +294,36 @@ class ProjectSettingWindow(
         } else {
             defaultButton.isEnabled = false
         }
+    }
+
+    private fun openIntegrationOverridesForSelectedProject() {
+        val selectedRow = projectTable.selectedRow
+        if (selectedRow == -1) {
+            JOptionPane.showMessageDialog(
+                this,
+                "Please select a project first.",
+                "Info",
+                JOptionPane.INFORMATION_MESSAGE,
+            )
+            return
+        }
+        val project = projectTableModel.getProjectAt(selectedRow)
+        if (project.clientId == Constants.GLOBAL_ID_STRING) {
+            JOptionPane.showMessageDialog(
+                this,
+                "Assign a client to this project first to configure integration overrides.",
+                "Integration Overrides",
+                JOptionPane.INFORMATION_MESSAGE,
+            )
+            return
+        }
+
+        val dialog = JDialog(this, "Integration Overrides – ${'$'}{project.name}", true)
+        val panel = ProjectIntegrationPanel(project.id, integrationSettingsService, jiraSetupService)
+        dialog.contentPane.add(JScrollPane(panel))
+        dialog.setSize(600, 300)
+        dialog.setLocationRelativeTo(this)
+        dialog.isVisible = true
     }
 
     /**
