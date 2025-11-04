@@ -75,12 +75,15 @@ class IntegrationSettingsRestController(
         val effectiveJiraProject = override?.jiraProjectKey ?: jiraConn?.primaryProject
         val effectiveSpace = override?.confluenceSpaceKey ?: client.confluenceSpaceKey
         val effectiveRoot = override?.confluenceRootPageId ?: client.confluenceRootPageId
+        val effectiveBoardId = override?.jiraBoardId ?: jiraConn?.mainBoard
 
         return IntegrationProjectStatusDto(
             projectId = project.id.toHexString(),
             clientId = client.id.toHexString(),
             effectiveJiraProjectKey = effectiveJiraProject,
             overrideJiraProjectKey = override?.jiraProjectKey,
+            effectiveJiraBoardId = effectiveBoardId,
+            overrideJiraBoardId = override?.jiraBoardId,
             effectiveConfluenceSpaceKey = effectiveSpace,
             overrideConfluenceSpaceKey = override?.confluenceSpaceKey,
             effectiveConfluenceRootPageId = effectiveRoot,
@@ -100,12 +103,20 @@ class IntegrationSettingsRestController(
                 else -> this
             }
 
+        fun String?.applyClearToLong(current: Long?): Long? =
+            when (this) {
+                null -> current // unchanged
+                "" -> null // explicit clear
+                else -> this.trim().toLongOrNull() ?: error("Invalid jiraBoardId: '$this'")
+            }
+
         val updatedOverrides =
             com.jervis.domain.project.ProjectOverrides(
                 gitRemoteUrl = currentOverrides?.gitRemoteUrl,
                 gitAuthType = currentOverrides?.gitAuthType,
                 gitConfig = currentOverrides?.gitConfig,
                 jiraProjectKey = request.jiraProjectKey.applyClear(currentOverrides?.jiraProjectKey),
+                jiraBoardId = request.jiraBoardId.applyClearToLong(currentOverrides?.jiraBoardId),
                 confluenceSpaceKey = request.confluenceSpaceKey.applyClear(currentOverrides?.confluenceSpaceKey),
                 confluenceRootPageId = request.confluenceRootPageId.applyClear(currentOverrides?.confluenceRootPageId),
             )

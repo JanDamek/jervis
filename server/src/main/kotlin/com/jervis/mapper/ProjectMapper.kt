@@ -65,6 +65,7 @@ fun com.jervis.domain.project.ProjectOverrides.toDto(): ProjectOverridesDto =
         gitAuthType = this.gitAuthType,
         gitConfig = this.gitConfig?.toDto(),
         jiraProjectKey = this.jiraProjectKey,
+        jiraBoardId = this.jiraBoardId,
         confluenceSpaceKey = this.confluenceSpaceKey,
         confluenceRootPageId = this.confluenceRootPageId,
     )
@@ -75,6 +76,7 @@ fun ProjectOverridesDto.toDomain(): com.jervis.domain.project.ProjectOverrides =
         gitAuthType = this.gitAuthType,
         gitConfig = this.gitConfig?.toDomain(),
         jiraProjectKey = this.jiraProjectKey,
+        jiraBoardId = this.jiraBoardId,
         confluenceSpaceKey = this.confluenceSpaceKey,
         confluenceRootPageId = this.confluenceRootPageId,
     )

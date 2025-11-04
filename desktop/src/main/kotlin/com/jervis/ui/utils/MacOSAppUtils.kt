@@ -19,6 +19,26 @@ object MacOSAppUtils {
     private val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
     private var windowManager: ApplicationWindowManager? = null
 
+    fun setDockBadgeCount(count: Int) {
+        if (!isMacOS) return
+        try {
+            if (Taskbar.isTaskbarSupported()) {
+                val taskbar = Taskbar.getTaskbar()
+                if (taskbar.isSupported(Taskbar.Feature.ICON_BADGE_TEXT)) {
+                    val text = if (count > 0) count.toString() else null
+                    // setIconBadge is available on macOS
+                    val method =
+                        taskbar.javaClass.methods.firstOrNull { it.name == "setIconBadge" && it.parameterCount == 1 }
+                    if (method != null) {
+                        method.invoke(taskbar, text)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to update dock badge: ${e.message}" }
+        }
+    }
+
     /**
      * Sets the application icon in the macOS Dock using the modern Taskbar API (Java 9+).
      */
@@ -92,6 +112,10 @@ object MacOSAppUtils {
             // Tools menu
             val toolsMenu = JMenu("Tools")
 
+            val userTasksItem = JMenuItem("User Tasks")
+            userTasksItem.addActionListener { applicationWindowManager.showUserTasksWindow() }
+            toolsMenu.add(userTasksItem)
+
             val projectSettingsItem = JMenuItem("Project Settings")
             projectSettingsItem.addActionListener { applicationWindowManager.showProjectSettingWindow() }
             toolsMenu.add(projectSettingsItem)
@@ -163,6 +187,10 @@ object MacOSAppUtils {
                     val schedulerItem = java.awt.MenuItem("Scheduler")
                     schedulerItem.addActionListener { applicationWindowManager.showSchedulerWindow() }
                     dockMenu.add(schedulerItem)
+
+                    val userTasksItem = java.awt.MenuItem("User Tasks")
+                    userTasksItem.addActionListener { applicationWindowManager.showUserTasksWindow() }
+                    dockMenu.add(userTasksItem)
 
                     val debugWindowItem = java.awt.MenuItem("Show Debug Window")
                     debugWindowItem.addActionListener { applicationWindowManager.showDebugWindow() }

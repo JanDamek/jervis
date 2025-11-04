@@ -32,9 +32,6 @@ class JiraSetupPanel(
 
     private val statusLabel = JLabel("Status: loading…")
     private val tenantLabel = JLabel("Tenant: –")
-    private val projectLabel = JLabel("Primary project: –")
-    private val boardLabel = JLabel("Main board: –")
-    private val userLabel = JLabel("Preferred user: –")
 
     // Connection settings
     private val connectionTypeCombo = javax.swing.JComboBox(arrayOf("Atlassian Cloud"))
@@ -50,33 +47,10 @@ class JiraSetupPanel(
     private val helpButton = JButton("Where to get API token")
     private val refreshButton = JButton("Refresh Status")
 
-    private val projectKeyField = JTextField(16)
-    private val chooseProjectButton = JButton("Choose…")
-    private val setProjectButton = JButton("Set Primary Project")
-
-    private val boardIdField = JTextField(10)
-    private val chooseBoardButton = JButton("Choose…")
-    private val setBoardButton = JButton("Set Main Board")
-
-    private val preferredUserField = JTextField(24)
-    private val setPreferredUserButton = JButton("Set Preferred User")
-
     init {
         layoutUI()
-        setControlsEnabled(false)
         bindHandlers()
         refreshStatus()
-    }
-
-    private fun setControlsEnabled(enabled: Boolean) {
-        projectKeyField.isEnabled = enabled
-        chooseProjectButton.isEnabled = enabled
-        setProjectButton.isEnabled = enabled
-        boardIdField.isEnabled = enabled
-        chooseBoardButton.isEnabled = enabled
-        setBoardButton.isEnabled = enabled
-        preferredUserField.isEnabled = enabled
-        setPreferredUserButton.isEnabled = enabled
     }
 
     private fun layoutUI() {
@@ -98,9 +72,6 @@ class JiraSetupPanel(
 
         addRow(statusLabel)
         addRow(tenantLabel)
-        addRow(projectLabel)
-        addRow(boardLabel)
-        addRow(userLabel)
 
         // Connection config row
         gbc.gridx = 0
@@ -136,43 +107,6 @@ class JiraSetupPanel(
             }
         add(actions, gbc)
         row++
-
-        // Primary project
-        gbc.gridx = 0
-        gbc.gridy = row
-        val projectPanel =
-            JPanel(FlowLayout(FlowLayout.LEFT)).apply {
-                add(JLabel("Project Key:"))
-                add(projectKeyField)
-                add(chooseProjectButton)
-                add(setProjectButton)
-            }
-        add(projectPanel, gbc)
-        row++
-
-        // Main board
-        gbc.gridx = 0
-        gbc.gridy = row
-        val boardPanel =
-            JPanel(FlowLayout(FlowLayout.LEFT)).apply {
-                add(JLabel("Board Id:"))
-                add(boardIdField)
-                add(chooseBoardButton)
-                add(setBoardButton)
-            }
-        add(boardPanel, gbc)
-        row++
-
-        // Preferred user
-        gbc.gridx = 0
-        gbc.gridy = row
-        val userPanel =
-            JPanel(FlowLayout(FlowLayout.LEFT)).apply {
-                add(JLabel("Preferred accountId:"))
-                add(preferredUserField)
-                add(setPreferredUserButton)
-            }
-        add(userPanel, gbc)
     }
 
     private fun bindHandlers() {
@@ -186,71 +120,6 @@ class JiraSetupPanel(
                 )
             }
 
-        chooseProjectButton.addActionListener {
-            CoroutineScope(Dispatchers.IO).launch {
-                runCatching {
-                    val items = jiraSetupService.listProjects(clientId)
-                    withContext(Dispatchers.Main) {
-                        if (items.isEmpty()) {
-                            showError("No projects available. Make sure the token has access.")
-                            return@withContext
-                        }
-                        val names = items.map { it.name + " (" + it.key + ")" }.toTypedArray()
-                        val selection =
-                            JOptionPane.showInputDialog(
-                                this@JiraSetupPanel,
-                                "Select Jira project:",
-                                "Choose Project",
-                                JOptionPane.QUESTION_MESSAGE,
-                                null,
-                                names,
-                                names.first(),
-                            ) as? String
-                        if (selection != null) {
-                            val index = names.indexOf(selection)
-                            if (index >= 0) {
-                                val chosen = items[index]
-                                projectKeyField.text = chosen.key
-                            }
-                        }
-                    }
-                }.onFailure { e -> showError("Failed to load projects: ${e.message}") }
-            }
-        }
-
-        chooseBoardButton.addActionListener {
-            CoroutineScope(Dispatchers.IO).launch {
-                val projectKey = projectKeyField.text.trim().ifBlank { null }
-                runCatching {
-                    val boards = jiraSetupService.listBoards(clientId, projectKey)
-                    withContext(Dispatchers.Main) {
-                        if (boards.isEmpty()) {
-                            showError("No boards found${projectKey?.let { " for project $it" } ?: ""}.")
-                            return@withContext
-                        }
-                        val names = boards.map { it.name + " (" + it.id + ")" }.toTypedArray()
-                        val selection =
-                            JOptionPane.showInputDialog(
-                                this@JiraSetupPanel,
-                                "Select Jira board:",
-                                "Choose Board",
-                                JOptionPane.QUESTION_MESSAGE,
-                                null,
-                                names,
-                                names.first(),
-                            ) as? String
-                        if (selection != null) {
-                            val index = names.indexOf(selection)
-                            if (index >= 0) {
-                                val chosen = boards[index]
-                                boardIdField.text = chosen.id.toString()
-                            }
-                        }
-                    }
-                }.onFailure { e -> showError("Failed to load boards: ${e.message}") }
-            }
-        }
-
         testSaveButton.addActionListener {
             val rawTenant = tenantField.text.trim()
             val tenant = normalizeTenant(rawTenant)
@@ -259,7 +128,7 @@ class JiraSetupPanel(
             }
             val email = emailField.text.trim()
             val tokenRaw = apiTokenField.text.trim()
-            val token = if (tokenRaw.startsWith("*** (exists")) "" else tokenRaw
+            val token = tokenRaw
             if (tenant.isBlank() || email.isBlank() || token.isBlank()) {
                 showError("Tenant, Email and API token are required")
                 return@addActionListener
@@ -275,7 +144,7 @@ class JiraSetupPanel(
                     }
                     jiraSetupService.saveApiToken(JiraApiTokenSaveRequestDto(clientId, tenant, email, token))
                     withContext(Dispatchers.Main) {
-                        info("API token saved and validated. You can now choose Project and Board.")
+                        info("API token saved and validated.")
                     }
                 }.onFailure { e -> showError("Failed to save API token: ${e.message}") }
                 refreshStatus()
@@ -285,75 +154,21 @@ class JiraSetupPanel(
             openInBrowser("https://id.atlassian.com/manage-profile/security/api-tokens")
         }
         refreshButton.addActionListener { refreshStatus() }
-        setProjectButton.addActionListener {
-            val key = projectKeyField.text.trim()
-            if (key.isBlank()) {
-                showError("Project key must not be blank")
-                return@addActionListener
-            }
-            CoroutineScope(Dispatchers.IO).launch {
-                runCatching {
-                    jiraSetupService.setPrimaryProject(
-                        com.jervis.dto.jira
-                            .JiraProjectSelectionDto(clientId, key),
-                    )
-                }.onFailure { e -> showError("Failed to set primary project: ${e.message}") }
-                refreshStatus()
-            }
-        }
-        setBoardButton.addActionListener {
-            val id = boardIdField.text.trim().toLongOrNull()
-            if (id == null) {
-                showError("Board id must be a number")
-                return@addActionListener
-            }
-            CoroutineScope(Dispatchers.IO).launch {
-                runCatching {
-                    jiraSetupService.setMainBoard(
-                        com.jervis.dto.jira
-                            .JiraBoardSelectionDto(clientId, id),
-                    )
-                }.onFailure { e -> showError("Failed to set main board: ${e.message}") }
-                refreshStatus()
-            }
-        }
-        setPreferredUserButton.addActionListener {
-            val accountId = preferredUserField.text.trim()
-            if (accountId.isBlank()) {
-                showError("AccountId must not be blank")
-                return@addActionListener
-            }
-            CoroutineScope(Dispatchers.IO).launch {
-                runCatching {
-                    jiraSetupService.setPreferredUser(
-                        com.jervis.dto.jira
-                            .JiraUserSelectionDto(clientId, accountId),
-                    )
-                }.onFailure { e -> showError("Failed to set preferred user: ${e.message}") }
-                refreshStatus()
-            }
-        }
     }
 
     fun refreshStatus() {
         CoroutineScope(Dispatchers.IO).launch {
-            runCatching {
+            try {
                 val status = jiraSetupService.getStatus(clientId)
                 withContext(Dispatchers.Main) {
                     statusLabel.text = "Status: ${if (status.connected) "Connected" else "Disconnected"}"
                     tenantLabel.text = "Tenant: ${status.tenant ?: "–"}"
-                    projectLabel.text = "Primary project: ${status.primaryProject ?: "–"}"
-                    boardLabel.text = "Main board: ${status.mainBoard?.toString() ?: "–"}"
-                    userLabel.text = "Preferred user: ${status.preferredUser ?: "–"}"
 
                     // Always reflect saved connection settings in the editable fields
                     tenantField.text = status.tenant ?: ""
                     emailField.text = status.email ?: ""
-                    apiTokenField.text = if (status.tokenPresent) "*** (exists - leave empty to keep)" else ""
-
-                    setControlsEnabled(status.connected)
                 }
-            }.onFailure { e ->
+            } catch (e: Exception) {
                 showError("Failed to load status: ${e.message}")
             }
         }

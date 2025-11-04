@@ -931,4 +931,20 @@ class ProjectSettingWindow(
             }
         }
     }
+
+    fun openEditDialogForProject(projectId: String) {
+        val rows = projectTable.rowCount
+        var foundRow = -1
+        for (i in 0 until rows) {
+            val p = projectTableModel.getProjectAt(i)
+            if (p.id == projectId) {
+                foundRow = i
+                break
+            }
+        }
+        if (foundRow >= 0) {
+            projectTable.setRowSelectionInterval(foundRow, foundRow)
+            editSelectedProject()
+        }
+    }
 }

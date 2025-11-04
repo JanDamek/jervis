@@ -2,213 +2,202 @@
 apply: always
 ---
 
-# AI Assistant Guidelines for Code (Kotlin-first)
-
-This document defines strict rules for how AI assistants must generate and modify code in this project.  
-The goal is **maximum architecture correctness, readability, and consistency**.
-
----
-
-## 0️⃣ Architectural Safety Rules
-
-### 0.1 Follow Existing Architecture First
-
-- Inspect existing patterns and reuse them.
-- Do **NOT** introduce new frameworks, abstractions, or parameter additions unless explicitly required.
-
-### 0.2 Fail Fast — Do Not Guess
-
-- Do not swallow exceptions.
-- Do not attempt fallback logic unless explicitly required.
-- Unexpected states **must throw clear errors**.
-
-### 0.3 Do Not Invent Anything
-
-- No new config values, no new annotations or parameters.
-- No new utility classes unless already used elsewhere.
-- No unused DTOs, methods, or entities — **no dead code**.
-
-### 0.4 No Auto-Generated Tests
-
-- Write/update tests **only when explicitly requested**.
-
----
-
-## 1️⃣ Main Language Rules
-
-- **Always write idiomatic Kotlin**, not Java-style Kotlin.
-- Main stack:
-    - **Spring Boot**
-    - **Coroutines first**
-    - Reactor only for interop at context boundaries
-
----
-
-## 2️⃣ English-Only Code
-
-- All code, logs, comments **must be in English**.
-- Any Czech text must be **immediately translated**.
-- Inline comments (`//`) indicate bad code readability.
-    - Remove them if they state “what”
-    - Move to KDoc if they state “why”
-
----
-
-## 3️⃣ SOLID Principles
-
-- Enforce proper abstractions and separation.
-- Eliminate business logic spreading across layers.
-
----
-
-## 4️⃣ Favor If-less Programming
-
-- Prefer sealed types, polymorphism, strategies.
-- Use exhaustive `when` for small state sets.
-- Use branching only when it is the **clearest** solution.
-
----
-
-## 5️⃣ Naming Conventions
-
-- PascalCase: Classes, Interfaces, Enums
-- camelCase: Methods, Variables
-- No unnecessary abbreviations
-
----
-
-## 6️⃣ Constants & Immutability
-
-- Prefer `val`
-- Replace values with `const val` where possible
-
----
-
-## 7️⃣ Object Modeling Rules
-
-### 7.1 Domain Objects (Business models)
-
-- Immutable (`val` fields + `.copy()`)
-- Used in **Service and use-case logic**
-- Represent real business rules
-- ❌ Not allowed in REST or external APIs
-
-### 7.2 Entities (Persistence layer models)
-
-- Used in **Repository only** and **service persistence logic**
-- Can be mutated if storage requires it
-- **Never exposed outside business internals**
-
-### 7.3 DTOs (API contracts)
-
-- Used **only** for:
-    - REST controllers
-    - Messaging / API boundaries
-- Immutable
-- Annotated with `@Serializable`
-
----
-
-## 8️⃣ Object Boundary Enforcement ✅
-
-| Layer      | Allowed Input | Allowed Output | Can call            | Forbidden                        |
-|------------|:-------------:|:--------------:|---------------------|----------------------------------|
-| Controller |      DTO      |      DTO       | Service             | Repository, Entity               |
-| Service    |    Domain     |     Domain     | Repository, Service | Controller, DTO                  |
-| Repository |    Entity     |     Entity     | Database            | Controller, Service, Domain, DTO |
-
----
-
-### ✅ Mapping Rules
-
-| Convert         | Where      |
-|-----------------|------------|
-| DTO → Domain    | Controller |
-| Domain → DTO    | Controller |
-| Domain → Entity | Service    |
-| Entity → Domain | Service    |
-
----
-
-### ❌ Hard Prohibitions
-
-- Controllers returning Entities → ❌
-- Services receiving DTOs → ❌
-- Controllers accessing Repositories → ❌
-- Domain models with persistence annotations → ❌
-- DTOs in domain logic → ❌
-
-Failure to respect these rules must be corrected before any other work proceeds.
-
----
-
-## 9️⃣ Null Safety
-
-- ❌ Never use `!!` (except documented Java interop)
-- Prefer:
-    - `?.`
-    - `?:`
-    - `requireNotNull()`, `checkNotNull()`
-    - sealed results or `Result`
-
----
-
-## 🔟 Readability & Structure
-
-- Keep functions small and single-purpose.
-- Extract shared code into extension functions.
-- No duplication.
-
----
-
-## 1️⃣1️⃣ Collections
-
-- Prefer immutable Kotlin collections (`listOf`, `mapOf`)
-
----
-
-## 1️⃣2️⃣ Serialization
-
-- Default: **Kotlinx Serialization**
-- Avoid reflection-based Jackson unless interop needed
-
----
-
-## 1️⃣3️⃣ Coroutines First
-
-- Use `suspend fun` where async is expected.
-- Use `Flow<T>` for streams > 1 element.
-- **Never call `.block()`** in production.
-
----
-
-## 1️⃣4️⃣ Observability & Logging
-
-- Always use structured logging (`logger.info {}`)
-- Include **correlation IDs (trace/MDC IDs)** where available
-
----
-
-## 1️⃣5️⃣ Dependency Injection
-
-- Use constructor injection only
-- No field injection or manual singletons
-
----
-
-## ✅ Output Requirements for AI
-
-- Modify code directly — not suggestions only.
-- Follow Kotlin style guidelines.
-- Enforce all rules above automatically when writing code.
-- If a rule cannot be followed → **ask before proceeding**.
-- When unsure → **choose the simplest approach aligned with existing patterns**.
-
----
-
-## ✅ Final Rule
-
-> **The domain model is the source of truth.  
-> Controllers handle communication.  
-> Repositories handle persistence.**  
-> No crossing of responsibilities.
+JERVIS – ARCHITEKTURA A PROGRAMOVACÍ PRAVIDLA
+(verze pro vývoj i AI asistenty)
+
+ÚČEL
+Jervis je vícevrstvá Kotlin/Spring Boot platforma určená pro podporu softwarové architektury, řízení projektů, indexaci
+kódu a dokumentů, a pro asistenci vývojářům při práci s daty, modely a automatizací procesů. Aplikace slouží nejen k
+technické práci s architekturou softwaru, ale i jako inteligentní asistent pro obecné úlohy.
+
+ZÁKLADNÍ ARCHITEKTURA
+Aplikace je rozdělena do jasně definovaných částí:
+• SERVER: centrální mozek aplikace, řídí všechny procesy, orchestruje agenty, plánovače, modely, RAG (vector store),
+spravuje data, komunikaci a archiv.
+• UI NÁSTROJE: jediný přístupový bod pro uživatele. V současnosti existuje pouze desktopová varianta, ale architektura
+podporuje více UI rozhraní (např. web, mobilní).
+Každé UI komunikuje se serverem přes API klienta. Desktop je tedy jeden z mnoha potenciálních UI nástrojů.
+• API-CLIENT: knihovna určená pouze pro UI nástroje, zajišťuje komunikaci se serverem.
+• COMMON: společný modul pro všechny UI i server. Obsahuje sdílené typy, utility, datové struktury a základní logiku
+použitelnou v obou směrech.
+• COMMON-INTERNAL: modul určený výhradně pro interní komunikaci mezi službami a serverem. Používají jej pouze:
+• service-ocr → server
+• service-joern → server
+• service-whisper → server
+Tento modul nesmí být importován do common, api-client ani desktop části.
+• SERVICE-***: nezávislé mikroslužby (např. OCR, Whisper, Joern). Běží samostatně, bez nutnosti autorizace, slouží jen
+pro výpočty a specializované úlohy serveru.
+
+VŠEOBECNÁ LOGIKA
+Pro uživatele existuje pouze UI, přes které komunikuje se serverem.
+Server je jediný zdroj pravdy a řídí všechny procesy, data, plánování i modely.
+Service-*** služby jsou jen pomocné, výpočetní moduly bez vlastní logiky řízení.
+Server rozhoduje o jejich využití.
+Nikde v UI nic neskývej, vždy vše rovnou zobraz, API token, password atd.
+
+ZÁKLADNÍ KONCEPT
+Základem je klient. Každý klient má své projekty. Projekty v rámci jednoho klienta mohou přistupovat ke společné RAG
+paměti, sdílet znalosti a data. Klienti mezi sebou data sdílet nesmí.
+Datová izolace klientů je absolutní.
+
+CELKOVÁ STRUKTURA
+server/
+├── controller → REST rozhraní, pouze DTO
+├── service → business logika, plánování, orchestrace
+├── entity → dokumenty pro MongoDB
+├── repository → přístup k databázi
+├── mapper → převody mezi Domain, DTO, Entity
+└── resources → konfigurace, definice background úloh
+service-ocr, service-whisper, service-joern → samostatné služby
+common → sdílené třídy, utilitní funkce
+common-internal → interní komunikace mezi službami a serverem
+desktop → uživatelský klient
+api-client → komunikační knihovna pro UI nástroje
+
+ARCHITEKTONICKÉ ZÁSADY:
+
+1. FOLLOW EXISTING ARCHITECTURE FIRST
+   Vždy nejprve analyzuj existující vzory. Nevytvářej nové abstrakce, parametry, frameworky ani utility bez důvodu.
+2. FAIL FAST – DO NOT GUESS
+   Chyby se nesmí maskovat. Neočekávaný stav znamená výjimku. Žádné fallback logiky.
+3. NO INVENTION
+   Nepřidávej nové konfigurační položky, parametry ani třídy, které nejsou v architektuře. Nepiš metody, které nejsou
+   volané.
+4. NO AUTO-GENERATED TESTS
+   Testy se vytvářejí pouze na explicitní požadavek.
+5. SEPARATION OF LAYERS
+   • Controller komunikuje pouze s DTO a volá Service.
+   • Service pracuje s Domain objekty a volá Repository.
+   • Repository obsluhuje Entity a přístup do databáze.
+   • Mapper provádí převody mezi vrstvami podle schématu:
+   DTO ↔ Domain (v Controlleru)
+   Domain ↔ Entity (v Service)
+   Zakázáno je:
+   • Controller → Repository
+   • Service → DTO
+   • Controller → Entity
+   • Domain s perzistentními anotacemi
+6. Postup indexace:
+   • Základní logika každé indexace je načíst obsah a porovnat s MongoDB snapshotem a tím nalést co je nového
+   • Při indexaci text chunkovat přes `TextChunkingService` a ukládat do RAG
+   • Indexace kódu pokud je delší jak 4096 tokenu chunkovat stejnou službou, bude v budoucnu nahrazena a ukládat do RAG
+   • Vytvořit na každou změnu Pending task, kde se popsaná celková změna s dostatečnou přesnosti aby qualifier, zvlášť
+   pro každou indexaci, mohl rozhodnout, zda takto to stačí nebo přead na GPU
+   • Pending task který prošel qualifikaci již je připraven pro background běh, kde je predán agentnímu plánovači s
+   detailními goual pro analýzu a model věděl co přesně hledá a co má hlídat
+   • Agenti model bud rozhodne, že njsou nutné žádné, kroky nebo podle goul založí potřebné úkolý, klidně pending task
+   sám pro sebe, aby se pak tím zabýval podrobněji s více úhlu, nebo úkol pro živatele atd.
+
+PRAVIDLA KÓDU A PROGRAMOVÁNÍ:
+HLAVNÍ JAZYK:
+• Kotlin-first. Žádný Java styl.
+• Spring Boot framework.
+• Coroutines jako výchozí pro asynchronní logiku.
+• Reactor pouze pro interop.
+• Všude kde to je jen trochu možné používen NonNull hodnoty.
+
+KOMUNIKACE:
+• Pro spojení mezi modulý se používá výhradně @HttpExchange přes REST API.
+• Ve společné klivovně je definován interface začínající I***Service.
+• Controller implementuje tento interface.
+• Client část používá tento interface pro komunikaci se serverem.
+• Vzor implementace spojení client-controller: private fun createHttpServiceProxyFactory(webClient: WebClient)
+=HttpServiceProxyFactory.builderFor(WebClientAdapter.create(webClient)).build().createClient(I***Service::class.java)
+
+JAZYK A KOMENTÁŘE:
+• Kód, proměnné, komentáře a logy musí být výhradně v angličtině.
+• Čeština v kódu je zakázána.
+• Inline komentáře // jsou známkou špatného návrhu.
+• Pokud vysvětlují „co“ kód dělá, musí být odstraněny.
+• Pokud vysvětlují „proč“, přesunout do KDoc nad metodu nebo třídu.
+
+SOLID PRINCIPY:
+• Dodržuj jasnou odpovědnost tříd a rozhraní. Logika nesmí být rozptýlená napříč vrstvami.
+
+IF-LESS PROGRAMMING
+• Omez používání if/else.
+• Preferuj sealed class, polymorfismus nebo strategické patterny.
+• Používej when s exhaustiveness, pokud je to čitelnější.
+
+NAZEVNÍ KONVENCE
+• Třídy a rozhraní PascalCase
+• Metody a proměnné camelCase
+• Žádné zkratky, používaj jasné anglické názvy.
+
+KONSTANTY A IMUTABILITA
+• Preferuj val místo var.
+• Magické hodnoty nahrazuj const val.
+
+MODEL OBJEKTŮ
+• Domain: immutable, pouze val, aktualizace přes .copy(). Používá se v Service vrstvě.
+• Entity: používá se pouze v Repository vrstvě, mutable pouze pokud vyžaduje DB.
+• DTO: immutable, pouze pro Controller, serializováno přes @Serializable.
+
+HRANICE VRSTEV
+• Controller: DTO → Domain, Service volání
+• Service: Domain → Entity, Repository volání
+• Repository: Entity → DB
+
+ZAKÁZANÉ VZTAHY
+• Controller nesmí vracet Entity
+• Service nesmí přijímat DTO
+• Controller nesmí přistupovat k Repository
+
+NULL-SAFETY
+• Nikdy nepoužívej !!
+• Používej ?:, ?., requireNotNull, checkNotNull.
+• Lateinit var pouze pro DI nebo frameworkové vlastnosti.
+
+ČITELNOST A STRUKTURA
+• Funkce krátké, jednoúčelové.
+• Sdílený kód přes extension functions.
+• Eliminuj duplicity.
+
+SERIALIZACE
+• Standard je kotlinx.serialization.
+• Jackson pouze pro interop.
+• Explicitně anotuj rozdílné názvy polí.
+
+KOROUTINY A REAKTIVITA
+• Používej suspend fun.
+• Pro streamy Flow.
+• Nikdy nepoužívej .block() v produkčním kódu.
+
+LOGOVÁNÍ
+• Structured logging: logger.info { “message with $var” }
+• Vždy přidávej correlation ID nebo trace ID, pokud je dostupné.
+
+ZÁVISLOSTI A DI
+• Pouze constructor injection.
+• Žádné field injection ani manuální singletony.
+
+TESTY
+• Píšou se jen na explicitní požadavek.
+• Nepoužívej auto generování.
+
+VÝKON A SPRÁVA ZDROJŮ
+• Používej connection pooly, správné schedulery, implementuj retry a timeouty.
+
+VÝSTUPNÍ POŽADAVKY PRO AI
+• AI nástroje musí kód přímo upravovat podle těchto pravidel, ne pouze navrhovat změny.
+• Nesmí vymýšlet nové parametry ani metody.
+• Pokud si AI není jistá, musí se doptat.
+• Při nejasnosti vol nejjednodušší řešení odpovídající existujícímu vzoru.
+• AI nesmí měnit architekturu, vrstvy ani strukturu bez explicitního pokynu.
+
+ZÁSADY ARCHITEKTONICKÉ DISCIPLÍNY:
+
+1. Všechny vrstvy jsou striktně oddělené.
+2. Domain model je jediný zdroj pravdy.
+3. Controller slouží jen pro komunikaci.
+4. Repository řeší pouze persistenci.
+5. common obsahuje sdílenou logiku mezi klienty a serverem.
+6. common-internal slouží jen pro interní komunikaci služeb se serverem.
+7. UI komunikuje pouze přes API klient.
+8. Klienti mezi sebou nemohou sdílet data, pouze projekty v rámci klienta sdílejí RAG.
+9. Server je zodpovědný za orchestrace, řízení procesů, modely a agentní běhy.
+
+CÍL
+• Zachovat architektonickou čistotu, čitelnost a stabilitu celého systému.
+• Kód musí být vždy idiomatický, bezpečný, bez zbytečných větví, komentářů nebo duplicit.
+• Všechny AI i vývojáři musí tyto zásady striktně respektovat.

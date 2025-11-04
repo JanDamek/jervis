@@ -573,11 +573,11 @@ class ProjectGitOverridePanel(
         }
 
     /**
-     * Helper function to get credential value - returns null to preserve existing if placeholder is present
+     * Helper function to get credential value - returns null to preserve existing when blank; otherwise returns text
      */
     private fun getCredentialValue(text: String, hasExisting: Boolean): String? {
         return when {
-            text.isBlank() || text == "*** (exists - leave empty to keep)" ->
+            text.isBlank() ->
                 if (hasExisting) null else null
 
             else -> text
@@ -694,7 +694,7 @@ class ProjectGitOverridePanel(
             when (authTypeCombo.selectedItem as? GitAuthTypeEnum) {
                 GitAuthTypeEnum.SSH_KEY -> {
                     val sshKeyText = sshPrivateKeyArea.text
-                    if (sshKeyText.isBlank() || sshKeyText == "*** (exists - leave empty to keep)") {
+                    if (sshKeyText.isBlank()) {
                         if (!hasSshPrivateKey) {
                             return false
                         }
@@ -703,7 +703,7 @@ class ProjectGitOverridePanel(
 
                 GitAuthTypeEnum.HTTPS_PAT -> {
                     val tokenText = httpsTokenArea.text
-                    if (tokenText.isBlank() || tokenText == "*** (exists - leave empty to keep)") {
+                    if (tokenText.isBlank()) {
                         if (!hasHttpsToken) {
                             return false
                         }
@@ -713,7 +713,7 @@ class ProjectGitOverridePanel(
                 GitAuthTypeEnum.HTTPS_BASIC -> {
                     val passwordText = httpsPasswordField.text
                     if (httpsUsernameField.text.trim().isBlank() ||
-                        (passwordText.isBlank() || passwordText == "*** (exists - leave empty to keep)") && !hasHttpsPassword
+                        (passwordText.isBlank() && !hasHttpsPassword)
                     ) {
                         return false
                     }
@@ -725,7 +725,7 @@ class ProjectGitOverridePanel(
 
         if (overrideGpgCheckbox.isSelected && requireGpgSignCheckbox.isSelected) {
             val gpgKeyText = gpgPrivateKeyArea.text
-            if ((gpgKeyText.isBlank() || gpgKeyText == "*** (exists - leave empty to keep)") && !hasGpgPrivateKey) {
+            if (gpgKeyText.isBlank() && !hasGpgPrivateKey) {
                 return false
             }
             if (gpgKeyIdField.text.trim().isBlank()) {

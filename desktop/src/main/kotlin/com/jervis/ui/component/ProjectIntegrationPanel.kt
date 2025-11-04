@@ -20,7 +20,7 @@ import javax.swing.SwingUtilities
 
 /**
  * Project-level Integration panel focused on Jira override selection.
- * Shows effective Jira project key and allows setting/clearing an override.
+ * Shows effective Jira project and board, and allows setting/clearing overrides.
  */
 class ProjectIntegrationPanel(
     private val projectId: String,
@@ -28,12 +28,26 @@ class ProjectIntegrationPanel(
     private val jiraService: IJiraSetupService,
 ) : JPanel(GridBagLayout()) {
     private val statusEffectiveJira = JLabel("–")
+    private val statusEffectiveJiraBoard = JLabel("–")
+    private val statusEffectiveConfluenceSpace = JLabel("–")
+    private val statusEffectiveConfluenceRoot = JLabel("–")
+
     private val overrideJiraField = JTextField(16)
     private val chooseJiraButton = JButton("Choose…")
+
+    private val overrideJiraBoardField = JTextField(12)
+    private val chooseBoardButton = JButton("Choose Board…")
+
+    private val overrideConfluenceSpaceField = JTextField(16)
+    private val overrideConfluenceRootPageField = JTextField(16)
+
     private val saveOverridesButton = JButton("Save Overrides")
     private val clearJiraOverrideButton = JButton("Clear Jira Override")
+    private val clearBoardOverrideButton = JButton("Clear Board Override")
+    private val clearConfluenceOverridesButton = JButton("Clear Confluence Overrides")
 
     private var currentClientId: String? = null
+    private var currentEffectiveProjectKey: String? = null
 
     init {
         layoutUI()
@@ -63,8 +77,11 @@ class ProjectIntegrationPanel(
             row++
         }
 
-        // Effective Jira project
+        // Effective
         addRow("Effective Jira Project:", statusEffectiveJira)
+        addRow("Effective Jira Board:", statusEffectiveJiraBoard)
+        addRow("Effective Confluence Space:", statusEffectiveConfluenceSpace)
+        addRow("Effective Confluence Root Page:", statusEffectiveConfluenceRoot)
 
         // Override Jira project (field + choose button)
         val jiraOverridePanel =
@@ -74,6 +91,18 @@ class ProjectIntegrationPanel(
             }
         addRow("Override Jira Project Key:", jiraOverridePanel)
 
+        // Override Jira board (field + choose button)
+        val boardOverridePanel =
+            JPanel(FlowLayout(FlowLayout.LEFT)).apply {
+                add(overrideJiraBoardField)
+                add(chooseBoardButton)
+            }
+        addRow("Override Jira Board ID:", boardOverridePanel)
+
+        // Confluence overrides
+        addRow("Override Confluence Space Key:", overrideConfluenceSpaceField)
+        addRow("Override Confluence Root Page ID:", overrideConfluenceRootPageField)
+
         // Actions
         gbc.gridx = 0
         gbc.gridy = row
@@ -82,6 +111,8 @@ class ProjectIntegrationPanel(
             JPanel(FlowLayout(FlowLayout.LEFT)).apply {
                 add(saveOverridesButton)
                 add(clearJiraOverrideButton)
+                add(clearBoardOverrideButton)
+                add(clearConfluenceOverridesButton)
             }
         add(actions, gbc)
     }
@@ -121,14 +152,55 @@ class ProjectIntegrationPanel(
             }
         }
 
+        chooseBoardButton.addActionListener {
+            CoroutineScope(Dispatchers.IO).launch {
+                val clientId = currentClientId
+                if (clientId.isNullOrBlank()) {
+                    showError("Assign a client to this project first.")
+                    return@launch
+                }
+                val filterProject = currentEffectiveProjectKey ?: overrideJiraField.text.trim().ifBlank { null }
+                runCatching { jiraService.listBoards(clientId, filterProject) }
+                    .onSuccess { items ->
+                        withContext(Dispatchers.Main) {
+                            if (items.isEmpty()) {
+                                showError("No boards available${if (filterProject != null) " for project $filterProject" else ""}.")
+                                return@withContext
+                            }
+                            val names = items.map { "${it.name} (#${it.id})" }.toTypedArray()
+                            val selection =
+                                JOptionPane.showInputDialog(
+                                    this@ProjectIntegrationPanel,
+                                    "Select Jira board:",
+                                    "Choose Board",
+                                    JOptionPane.QUESTION_MESSAGE,
+                                    null,
+                                    names,
+                                    names.first(),
+                                ) as? String
+                            if (selection != null) {
+                                val idx = names.indexOf(selection)
+                                if (idx >= 0) overrideJiraBoardField.text = items[idx].id.toString()
+                            }
+                        }
+                    }.onFailure { e -> showError("Failed to load boards: ${e.message}") }
+            }
+        }
+
         saveOverridesButton.addActionListener {
             CoroutineScope(Dispatchers.IO).launch {
                 val jiraKey = overrideJiraField.text.trim().ifBlank { null }
+                val boardIdStr = overrideJiraBoardField.text.trim().ifBlank { null }
+                val confSpace = overrideConfluenceSpaceField.text.trim().ifBlank { null }
+                val confRoot = overrideConfluenceRootPageField.text.trim().ifBlank { null }
                 runCatching {
                     integrationService.setProjectOverrides(
                         ProjectIntegrationOverridesDto(
                             projectId = projectId,
                             jiraProjectKey = jiraKey,
+                            jiraBoardId = boardIdStr,
+                            confluenceSpaceKey = confSpace,
+                            confluenceRootPageId = confRoot,
                         ),
                     )
                 }.onFailure { e -> showError("Failed to save overrides: ${e.message}") }
@@ -150,6 +222,36 @@ class ProjectIntegrationPanel(
                 refresh()
             }
         }
+
+        clearBoardOverrideButton.addActionListener {
+            CoroutineScope(Dispatchers.IO).launch {
+                runCatching {
+                    integrationService.setProjectOverrides(
+                        ProjectIntegrationOverridesDto(
+                            projectId = projectId,
+                            jiraBoardId = "",
+                        ),
+                    )
+                }.onFailure { e -> showError("Failed to clear Board override: ${e.message}") }
+                refresh()
+            }
+        }
+
+        clearConfluenceOverridesButton.addActionListener {
+            CoroutineScope(Dispatchers.IO).launch {
+                runCatching {
+                    // Empty strings signal explicit clear
+                    integrationService.setProjectOverrides(
+                        ProjectIntegrationOverridesDto(
+                            projectId = projectId,
+                            confluenceSpaceKey = "",
+                            confluenceRootPageId = "",
+                        ),
+                    )
+                }.onFailure { e -> showError("Failed to clear Confluence overrides: ${e.message}") }
+                refresh()
+            }
+        }
     }
 
     private fun refresh() {
@@ -158,9 +260,19 @@ class ProjectIntegrationPanel(
                 .onSuccess { s ->
                     withContext(Dispatchers.Main) {
                         statusEffectiveJira.text = s.effectiveJiraProjectKey ?: "–"
+                        statusEffectiveJiraBoard.text = s.effectiveJiraBoardId?.toString() ?: "–"
+                        statusEffectiveConfluenceSpace.text = s.effectiveConfluenceSpaceKey ?: "–"
+                        statusEffectiveConfluenceRoot.text = s.effectiveConfluenceRootPageId ?: "–"
+
                         overrideJiraField.text = s.overrideJiraProjectKey ?: ""
+                        overrideJiraBoardField.text = s.overrideJiraBoardId?.toString() ?: ""
+                        overrideConfluenceSpaceField.text = s.overrideConfluenceSpaceKey ?: ""
+                        overrideConfluenceRootPageField.text = s.overrideConfluenceRootPageId ?: ""
+
                         currentClientId = s.clientId
+                        currentEffectiveProjectKey = s.effectiveJiraProjectKey
                         chooseJiraButton.isEnabled = !currentClientId.isNullOrBlank()
+                        chooseBoardButton.isEnabled = !currentClientId.isNullOrBlank()
                     }
                 }.onFailure { e -> showError("Failed to load project integration status: ${e.message}") }
         }
