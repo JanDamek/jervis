@@ -25,6 +25,8 @@ data class ClientConfluenceDefaultsDto(
 data class ProjectIntegrationOverridesDto(
     val projectId: String,
     val jiraProjectKey: String? = null,
+    // Jira board override: String semantics -> null = unchanged, "" = clear, numeric string = set to that ID
+    val jiraBoardId: String? = null,
     val confluenceSpaceKey: String? = null,
     val confluenceRootPageId: String? = null,
 )
@@ -36,6 +38,8 @@ data class IntegrationProjectStatusDto(
     // Effective settings resolved from client defaults + overrides
     val effectiveJiraProjectKey: String? = null,
     val overrideJiraProjectKey: String? = null,
+    val effectiveJiraBoardId: Long? = null,
+    val overrideJiraBoardId: Long? = null,
     val effectiveConfluenceSpaceKey: String? = null,
     val overrideConfluenceSpaceKey: String? = null,
     val effectiveConfluenceRootPageId: String? = null,

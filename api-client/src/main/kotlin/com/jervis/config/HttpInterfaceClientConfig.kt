@@ -10,6 +10,7 @@ import com.jervis.service.IIntegrationSettingsService
 import com.jervis.service.IJiraSetupService
 import com.jervis.service.IProjectService
 import com.jervis.service.ITaskSchedulingService
+import com.jervis.service.IUserTaskService
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.web.reactive.function.client.WebClient
@@ -62,4 +63,8 @@ class HttpInterfaceClientConfig {
     @Bean
     fun integrationSettingsClient(webClient: WebClient): IIntegrationSettingsService =
         createHttpServiceProxyFactory(webClient).createClient(IIntegrationSettingsService::class.java)
+
+    @Bean
+    fun userTaskClient(webClient: WebClient): IUserTaskService =
+        createHttpServiceProxyFactory(webClient).createClient(IUserTaskService::class.java)
 }

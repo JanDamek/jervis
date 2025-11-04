@@ -29,6 +29,7 @@ Pro uživatele existuje pouze UI, přes které komunikuje se serverem.
 Server je jediný zdroj pravdy a řídí všechny procesy, data, plánování i modely.
 Service-*** služby jsou jen pomocné, výpočetní moduly bez vlastní logiky řízení.
 Server rozhoduje o jejich využití.
+Nikde v UI nic neskývej, vždy vše rovnou zobraz, API token, password atd.
 
 ZÁKLADNÍ KONCEPT
 Základem je klient. Každý klient má své projekty. Projekty v rámci jednoho klienta mohou přistupovat ke společné RAG
@@ -196,3 +197,45 @@ CÍL
 • Zachovat architektonickou čistotu, čitelnost a stabilitu celého systému.
 • Kód musí být vždy idiomatický, bezpečný, bez zbytečných větví, komentářů nebo duplicit.
 • Všechny AI i vývojáři musí tyto zásady striktně respektovat.
+
+DESKTOP UI DESIGN SYSTEM
+
+ÚČEL
+• Tato sekce definuje jednotný vzhled a chování všech desktopových oken (Swing) v JERVIS.
+• Cílem je konzistence, jednoduchost a čitelnost.
+
+ZÁSADY
+• Používej jednoduché rozvržení: BorderLayout + GridBagLayout.
+• Vnější okraje: 10 px okolo hlavních panelů.
+• Vnitřní okraje sekcí: 12 px, mezery mezi prvky: 8 px.
+• Nadpisy sekcí: font SansSerif BOLD 13, hlavní nadpisy: SansSerif BOLD 16.
+• Tlačítka skupinuj do pravého action baru v rámci sekce.
+• Řádky formuláře: dvousloupcové (label vlevo, pole vpravo), labely zarovnat vlevo.
+• Chyby zobrazuj přes JOptionPane.ERROR_MESSAGE, bez potlačení.
+• Žádné maskování hodnot – vše zobrazuj otevřeně (tokeny, hesla) dle hlavních pravidel.
+
+KOMPONENTY
+• Hlavička okna: název v titulku, případně headerLabel uvnitř.
+• Sekce: rámeček s vnitřním okrajem 12 px, název sekce nahoře.
+• Action bar: FlowLayout(ALIGN_RIGHT) s mezerou 8 px.
+• Form panel: GridBagLayout s mezerami 8 px a jednotným dvě‑sloupcovým rozvržením.
+• Tabulky: JScrollPane, sloupce pojmenovat jednoznačně, preferovaná výška řádku standardní.
+
+INTERAKCE
+• Všechny dlouhé operace spouštěj v Coroutines (Dispatchers.IO), UI aktualizace v Dispatchers.Main.
+• Žádné fallbacky – fail fast.
+• Tlačítka mají jasný popis akce (např. "Save Overrides", "Refresh").
+
+IMPLEMENTACE
+• V desktop modulu je helper UiDesign (com.jervis.ui.style.UiDesign), který poskytuje:
+– headerLabel(text), subHeaderLabel(text)
+– sectionPanel(title, content)
+– actionBar(buttons…)
+– formPanel { row(label, field); fullWidth(component) }
+• Každé nové okno a panel používej tyto stavební bloky.
+
+USER TASKS OKNO
+• Zobraz seznam "user-tasks" (čekající na uživatele) v tabulce.
+• Horní lišta "Quick Actions" (placeholder), akce budou doplněny podle typu task.
+• Refresh tlačítko obnoví data.
+• Badge v ikoně aplikace (macOS Dock) zobrazuje počet aktivních user-tasků (součet pro aktuální kontext klienta).

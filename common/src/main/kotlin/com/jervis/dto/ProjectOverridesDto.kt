@@ -10,6 +10,8 @@ data class ProjectOverridesDto(
     val gitConfig: GitConfigDto? = null,
     // Jira override for project
     val jiraProjectKey: String? = null,
+    // Jira: per-project override of main board ID
+    val jiraBoardId: Long? = null,
     // Confluence documentation overrides for project
     val confluenceSpaceKey: String? = null,
     val confluenceRootPageId: String? = null,

@@ -360,6 +360,10 @@ class MainWindow(
 
         // Refresh projects when client changes
         clientSelector.addActionListener {
+            val selected = clientSelector.selectedItem as? SelectorItem
+            if (selected != null) {
+                applicationWindowManager.updateCurrentClientId(selected.id)
+            }
             refreshProjectsForSelectedClient()
         }
 
@@ -615,6 +619,10 @@ class MainWindow(
 
         // Tools menu
         val toolsMenu = JMenu("Tools")
+
+        val userTasksItem = JMenuItem("User Tasks")
+        userTasksItem.addActionListener { applicationWindowManager.showUserTasksWindow() }
+        toolsMenu.add(userTasksItem)
 
         // Debug Window
         val debugWindowItem = JMenuItem("Show Debug Window")

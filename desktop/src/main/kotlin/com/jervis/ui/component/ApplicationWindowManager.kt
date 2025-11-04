@@ -15,6 +15,9 @@ import com.jervis.ui.window.MainWindow
 import com.jervis.ui.window.SchedulerWindow
 import com.jervis.ui.window.TrayIconManager
 import com.jervis.ui.window.project.ProjectSettingWindow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import javax.swing.UIManager
 
 class ApplicationWindowManager(
@@ -29,6 +32,7 @@ class ApplicationWindowManager(
     private val emailAccountService: IEmailAccountService,
     private val jiraSetupService: com.jervis.service.IJiraSetupService,
     private val integrationSettingsService: com.jervis.service.IIntegrationSettingsService,
+    private val userTaskService: com.jervis.service.IUserTaskService,
 ) {
     private val mainWindow: MainWindow by lazy {
         MainWindow(
@@ -73,6 +77,17 @@ class ApplicationWindowManager(
     private val trayIconManager: TrayIconManager by lazy {
         TrayIconManager(this)
     }
+
+    // User Tasks window
+    private val userTasksWindow: com.jervis.ui.window.UserTasksWindow by lazy {
+        com.jervis.ui.window
+            .UserTasksWindow(userTaskService, clientService, this)
+    }
+
+    @Volatile
+    private var currentClientId: String? = null
+
+    private val badgeScope = CoroutineScope(Dispatchers.IO)
 
     fun initialize() {
         // Configure macOS-specific settings first
@@ -136,6 +151,12 @@ class ApplicationWindowManager(
         projectSettingsWindow.isVisible = true
     }
 
+    fun showProjectEditDialog(projectId: String) {
+        projectSettingsWindow.reloadProjects()
+        projectSettingsWindow.isVisible = true
+        projectSettingsWindow.openEditDialogForProject(projectId)
+    }
+
     fun showClientsWindow() {
         clientsWindow.reloadClientsAndProjects()
         clientsWindow.isVisible = true
@@ -148,6 +169,29 @@ class ApplicationWindowManager(
 
     fun showDebugWindow() {
         debugWindowService.showDebugWindow()
+    }
+
+    fun showUserTasksWindow() {
+        userTasksWindow.isVisible = true
+        currentClientId?.let { userTasksWindow.preselectClient(it) }
+        userTasksWindow.refreshTasks()
+    }
+
+    fun updateCurrentClientId(clientId: String) {
+        currentClientId = clientId
+        updateUserTaskBadgeForClient(clientId)
+    }
+
+    fun updateUserTaskBadgeForClient(clientId: String) {
+        badgeScope.launch {
+            try {
+                val count = userTaskService.activeCount(clientId).activeCount
+                MacOSAppUtils
+                    .setDockBadgeCount(count)
+            } catch (_: Exception) {
+                // ignore badge update errors
+            }
+        }
     }
 
     fun broadcastReloadClientsAndProjects() {

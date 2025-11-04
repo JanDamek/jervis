@@ -71,6 +71,11 @@ class TrayIconManager {
             windowManager.showSchedulerWindow()
         }
 
+        val userTasksItem = MenuItem("User Tasks")
+        userTasksItem.addActionListener {
+            windowManager.showUserTasksWindow()
+        }
+
         val debugWindowItem = MenuItem("Show Debug Window")
         debugWindowItem.addActionListener {
             windowManager.showDebugWindow()
@@ -86,6 +91,7 @@ class TrayIconManager {
         popup.add(openProjectSettingsItem)
         popup.add(openClientsItem)
         popup.add(openSchedulerItem)
+        popup.add(userTasksItem)
         popup.add(debugWindowItem)
         popup.addSeparator()
         popup.add(exitItem)

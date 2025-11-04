@@ -77,6 +77,7 @@ class ClientsWindow(
     private val projectsList = JList<ProjectDto>()
     private val projectsModel = javax.swing.DefaultListModel<ProjectDto>()
     private val removeProjectBtn = JButton("Remove from Client")
+    private val editProjectBtn = JButton("Edit Project…")
     private val toggleDisableForClientBtn = JButton("Toggle Disable for Client")
     private val toggleAnonymizeForClientBtn = JButton("Toggle Anonymization for Client")
     private val toggleHistoricalForClientBtn = JButton("Toggle Historical for Client")
@@ -211,6 +212,7 @@ class ClientsWindow(
         projHeader.add(JLabel("Projects of Selected Client"), BorderLayout.WEST)
         val projBtns =
             JPanel(FlowLayout(FlowLayout.RIGHT)).apply {
+                add(editProjectBtn)
                 add(removeProjectBtn)
                 add(toggleDisableForClientBtn)
                 add(toggleAnonymizeForClientBtn)
@@ -249,6 +251,14 @@ class ClientsWindow(
         toggleDisableForClientBtn.addActionListener { toggleDisableForClientForSelectedProject() }
         toggleAnonymizeForClientBtn.addActionListener { toggleAnonymizeForClientForSelectedProject() }
         toggleHistoricalForClientBtn.addActionListener { toggleHistoricalForClientForSelectedProject() }
+        editProjectBtn.addActionListener {
+            val selected = projectsList.selectedValue
+            if (selected != null) {
+                applicationWindowManager.showProjectEditDialog(selected.id)
+            } else {
+                JOptionPane.showMessageDialog(this, "Select a project first.", "Info", JOptionPane.INFORMATION_MESSAGE)
+            }
+        }
 
         // Load data
         loadClients()
