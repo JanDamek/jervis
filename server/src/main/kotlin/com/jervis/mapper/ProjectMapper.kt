@@ -31,10 +31,12 @@ fun ProjectDocument.toDto(): ProjectDto =
         overrides = this.overrides?.toDto(),
     )
 
-fun ProjectDto.toDocument(): ProjectDocument =
-    ProjectDocument(
-        id = ObjectId(this.id),
-        clientId = ObjectId(this.clientId),
+fun ProjectDto.toDocument(): ProjectDocument {
+    val resolvedId = if (ObjectId.isValid(this.id)) ObjectId(this.id) else ObjectId.get()
+    val resolvedClientId = requireNotNull(this.clientId) { "clientId is required" }
+    return ProjectDocument(
+        id = resolvedId,
+        clientId = ObjectId(resolvedClientId),
         name = this.name,
         description = this.description,
         shortDescription = this.shortDescription,
@@ -43,7 +45,7 @@ fun ProjectDto.toDocument(): ProjectDocument =
         documentationUrls = this.documentationUrls,
         languages = this.languages,
         communicationLanguageEnum = this.communicationLanguageEnum,
-        dependsOnProjects = this.dependsOnProjects.map { ObjectId(it) },
+        dependsOnProjects = this.dependsOnProjects.filter { ObjectId.isValid(it) }.map { ObjectId(it) },
         inspirationOnly = this.inspirationOnly,
         indexingRules =
             com.jervis.domain.project.IndexingRules(
@@ -55,6 +57,7 @@ fun ProjectDto.toDocument(): ProjectDocument =
         isActive = this.isActive,
         overrides = this.overrides?.toDomain(),
     )
+}
 
 fun com.jervis.domain.project.ProjectOverrides.toDto(): ProjectOverridesDto =
     ProjectOverridesDto(
