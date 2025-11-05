@@ -39,6 +39,7 @@ class GitDiffCodeIndexer(
     private val vectorStorage: VectorStorageRepository,
     private val vectorStoreIndexService: VectorStoreIndexService,
     private val tikaClient: ITikaClient,
+    private val textChunkingService: com.jervis.service.text.TextChunkingService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -377,51 +378,7 @@ class GitDiffCodeIndexer(
     /**
      * Chunk text into smaller pieces for embedding
      */
-    private fun chunkText(text: String): List<String> {
-        if (text.length <= MAX_CHUNK_SIZE) {
-            return listOf(text)
-        }
-
-        val chunks = mutableListOf<String>()
-        var currentChunk = StringBuilder()
-
-        // Split by sentences (simple: ., !, ?)
-        val sentences = text.split(Regex("[.!?]\\s+"))
-
-        for (sentence in sentences) {
-            if (currentChunk.length + sentence.length > MAX_CHUNK_SIZE) {
-                if (currentChunk.isNotEmpty()) {
-                    chunks.add(currentChunk.toString().trim())
-                    currentChunk = StringBuilder()
-                }
-
-                // If single sentence > MAX_CHUNK_SIZE, split by words
-                if (sentence.length > MAX_CHUNK_SIZE) {
-                    val words = sentence.split(" ")
-                    for (word in words) {
-                        if (currentChunk.length + word.length > MAX_CHUNK_SIZE) {
-                            if (currentChunk.isNotEmpty()) {
-                                chunks.add(currentChunk.toString().trim())
-                                currentChunk = StringBuilder()
-                            }
-                        }
-                        currentChunk.append(word).append(" ")
-                    }
-                } else {
-                    currentChunk.append(sentence).append(". ")
-                }
-            } else {
-                currentChunk.append(sentence).append(". ")
-            }
-        }
-
-        if (currentChunk.isNotEmpty()) {
-            chunks.add(currentChunk.toString().trim())
-        }
-
-        logger.debug { "Chunked text into ${chunks.size} chunks (max size: $MAX_CHUNK_SIZE)" }
-        return chunks
-    }
+    private fun chunkText(text: String): List<String> = textChunkingService.splitText(text).map { it.text() }
 
     // ========== Mono-Repo Methods ==========
 
@@ -654,37 +611,10 @@ class GitDiffCodeIndexer(
         }
 
     /**
-     * Create code chunks from code change (max 512 tokens per chunk)
+     * Create code chunks from code change using TextChunkingService.
      */
-    private fun createCodeChunks(codeChange: CodeChange): List<String> {
-        val allCode = codeChange.addedLines.joinToString("\n")
-
-        // If code is small, return as single chunk
-        if (allCode.length < 2000) {
-            return listOf(allCode)
-        }
-
-        // Split into chunks of ~50 lines
-        val chunks = mutableListOf<String>()
-        val lines = codeChange.addedLines
-        var currentChunk = mutableListOf<String>()
-
-        for (line in lines) {
-            currentChunk.add(line)
-
-            if (currentChunk.size >= 50) {
-                chunks.add(currentChunk.joinToString("\n"))
-                currentChunk.clear()
-            }
-        }
-
-        // Add remaining lines
-        if (currentChunk.isNotEmpty()) {
-            chunks.add(currentChunk.joinToString("\n"))
-        }
-
-        return chunks
-    }
+    private fun createCodeChunks(codeChange: CodeChange): List<String> =
+        textChunkingService.splitText(codeChange.addedLines.joinToString("\n")).map { it.text() }
 
     /**
      * Detect programming language from file path

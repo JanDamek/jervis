@@ -27,6 +27,7 @@ class JiraIndexingOrchestrator(
     private val clientRepository: com.jervis.repository.mongo.ClientMongoRepository,
     private val connectionRepository: com.jervis.repository.mongo.JiraConnectionMongoRepository,
     private val issueIndexRepository: com.jervis.repository.mongo.JiraIssueIndexMongoRepository,
+    private val textChunkingService: com.jervis.service.text.TextChunkingService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -145,31 +146,39 @@ class JiraIndexingOrchestrator(
                 appendLine("Goal: $summary")
             }.trim()
 
-        "jira-issue-summary:$issueKey"
+        val chunks = textChunkingService.splitText(text)
+        if (chunks.isEmpty()) {
+            logger.debug { "JIRA_INDEX: No content to index for issue $issueKey" }
+            return
+        }
 
-        // For now, we cannot scope to projectId in RagDocument (no DTO/controller), so use client scope only
-        // VectorStoreIndexService requires projectId for trackIndexed; we keep mono-repo pattern separate.
-        // Use a "standalone" style by skipping tracking here if project context is unknown.
-        val embedding = embeddingGateway.callEmbedding(com.jervis.domain.model.ModelTypeEnum.EMBEDDING_TEXT, text)
+        var stored = 0
+        chunks.forEachIndexed { index, chunk ->
+            val embedding =
+                embeddingGateway.callEmbedding(com.jervis.domain.model.ModelTypeEnum.EMBEDDING_TEXT, chunk.text())
 
-        val rag =
-            RagDocument(
-                projectId = null, // unknown here; Jira is client-level context
-                clientId = clientId,
-                summary = text,
-                ragSourceType = RagSourceType.JIRA,
-                subject = "Jira issue $issueKey",
-                timestamp = updated.toString(),
-                parentRef = issueKey,
-                branch = "main",
-                contentType = "jira-issue-summary",
-                symbolName = "jira-issue:$issueKey",
-                sourceUri = "https://$tenantHost/browse/$issueKey",
-            )
-        val vectorId = vectorStorage.store(com.jervis.domain.model.ModelTypeEnum.EMBEDDING_TEXT, rag, embedding)
+            val rag =
+                RagDocument(
+                    projectId = null, // unknown here; Jira is client-level context
+                    clientId = clientId,
+                    summary = chunk.text(),
+                    ragSourceType = RagSourceType.JIRA,
+                    subject = "Jira issue $issueKey",
+                    timestamp = updated.toString(),
+                    parentRef = issueKey,
+                    branch = "main",
+                    contentType = "jira-issue-summary",
+                    symbolName = "jira-issue:$issueKey",
+                    sourceUri = "https://$tenantHost/browse/$issueKey",
+                    chunkId = index,
+                    chunkOf = chunks.size,
+                )
+            vectorStorage.store(com.jervis.domain.model.ModelTypeEnum.EMBEDDING_TEXT, rag, embedding)
+            stored++
+        }
 
         // We cannot use trackIndexed() which requires projectId. If a client-level tracking exists later, switch to it.
-        logger.info { "JIRA_INDEX: Stored shallow summary for $issueKey vectorId=$vectorId" }
+        logger.info { "JIRA_INDEX: Stored shallow summary for $issueKey chunks=$stored" }
     }
 
     private suspend fun indexIssueCommentsDeep(
@@ -204,22 +213,30 @@ class JiraIndexingOrchestrator(
                     appendLine("Comment: $body")
                 }.trim()
 
-            val embedding = embeddingGateway.callEmbedding(com.jervis.domain.model.ModelTypeEnum.EMBEDDING_TEXT, text)
-            val rag =
-                RagDocument(
-                    projectId = null,
-                    clientId = clientId,
-                    summary = text,
-                    ragSourceType = RagSourceType.JIRA,
-                    subject = "Jira comment on $issueKey",
-                    timestamp = Instant.now().toString(),
-                    parentRef = issueKey,
-                    branch = "main",
-                    contentType = "jira-issue-comment",
-                    symbolName = "jira-issue-comment:$issueKey:$commentId",
-                    sourceUri = "https://$tenantHost/browse/$issueKey?focusedCommentId=$commentId&page=com.atlassian.jira.plugin.system.issuetabpanels:comment-tabpanel#comment-$commentId",
-                )
-            vectorStorage.store(com.jervis.domain.model.ModelTypeEnum.EMBEDDING_TEXT, rag, embedding)
+            val chunks = textChunkingService.splitText(text)
+            if (chunks.isEmpty()) return@collect
+
+            chunks.forEachIndexed { index, chunk ->
+                val embedding =
+                    embeddingGateway.callEmbedding(com.jervis.domain.model.ModelTypeEnum.EMBEDDING_TEXT, chunk.text())
+                val rag =
+                    RagDocument(
+                        projectId = null,
+                        clientId = clientId,
+                        summary = chunk.text(),
+                        ragSourceType = RagSourceType.JIRA,
+                        subject = "Jira comment on $issueKey",
+                        timestamp = Instant.now().toString(),
+                        parentRef = issueKey,
+                        branch = "main",
+                        contentType = "jira-issue-comment",
+                        symbolName = "jira-issue-comment:$issueKey:$commentId",
+                        sourceUri = "https://$tenantHost/browse/$issueKey?focusedCommentId=$commentId&page=com.atlassian.jira.plugin.system.issuetabpanels:comment-tabpanel#comment-$commentId",
+                        chunkId = index,
+                        chunkOf = chunks.size,
+                    )
+                vectorStorage.store(com.jervis.domain.model.ModelTypeEnum.EMBEDDING_TEXT, rag, embedding)
+            }
 
             lastProcessedId = commentId
             processedCount++

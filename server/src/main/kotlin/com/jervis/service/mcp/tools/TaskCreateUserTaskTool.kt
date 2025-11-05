@@ -84,8 +84,8 @@ class TaskCreateUserTaskTool(
                         appendLine(it)
                     }
                     appendLine()
-                    appendLine("Source: ${'$'}sourceType")
-                    request.sourceUri?.let { appendLine("Source URI: ${'$'}it") }
+                    appendLine("Source: $sourceType")
+                    request.sourceUri?.let { appendLine("Source URI: $it") }
                     if (stepContext.isNotBlank()) {
                         appendLine()
                         appendLine("Analysis Context:")
@@ -140,14 +140,14 @@ class TaskCreateUserTaskTool(
                     enrichedMetadata["attachments"]?.let { at ->
                         appendLine()
                         appendLine("Attachments:")
-                        at.lines().forEach { appendLine("- ${'$'}it") }
+                        at.lines().forEach { appendLine("- $it") }
                     }
                     // Append full metadata at the end for completeness
                     if (enrichedMetadata.isNotEmpty()) {
                         appendLine()
                         appendLine("Metadata:")
-                        enrichedMetadata.entries.sortedBy { it.key }.forEach { (_, _) ->
-                            appendLine("- ${'$'}k=${'$'}v")
+                        for (entry in enrichedMetadata.entries.sortedBy { it.key }) {
+                            appendLine("- ${entry.key}=${entry.value}")
                         }
                     }
                 }

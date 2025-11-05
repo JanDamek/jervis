@@ -25,14 +25,22 @@ class PendingTaskService(
         clientId: ObjectId,
         context: Map<String, String> = emptyMap(),
     ): PendingTask {
-        // Idempotency: for EMAIL_PROCESSING with sourceUri, do not create duplicates
-        if (taskType == PendingTaskTypeEnum.EMAIL_PROCESSING) {
+        // Idempotency: for selected types with canonical sourceUri, do not create duplicates
+        val dedupeBySourceUriTypes =
+            setOf(
+                PendingTaskTypeEnum.EMAIL_PROCESSING,
+                PendingTaskTypeEnum.CONFLUENCE_PAGE_ANALYSIS,
+                PendingTaskTypeEnum.COMMIT_ANALYSIS,
+                PendingTaskTypeEnum.FILE_STRUCTURE_ANALYSIS,
+                PendingTaskTypeEnum.PROJECT_DESCRIPTION_UPDATE,
+            )
+        if (taskType in dedupeBySourceUriTypes) {
             val sourceUri = context["sourceUri"]
             if (!sourceUri.isNullOrBlank()) {
                 val existing =
                     pendingTaskRepository.findFirstByClientAndTypeAndSourceUri(clientId, taskType.name, sourceUri)
                 if (existing != null) {
-                    logger.info { "Reusing existing pending task ${existing.id} for EMAIL_PROCESSING sourceUri=$sourceUri" }
+                    logger.info { "Reusing existing pending task ${existing.id} for ${taskType.name} sourceUri=$sourceUri" }
                     return existing.toDomain()
                 }
             }
@@ -52,7 +60,7 @@ class PendingTaskService(
         val document = PendingTaskDocument.fromDomain(task)
         val saved = pendingTaskRepository.save(document)
 
-        logger.info { "Created pending task: ${'$'}{saved.id} - ${'$'}{taskType.name}, state=${'$'}{task.state}" }
+        logger.info { "Created pending task: ${saved.id} - ${taskType.name}, state=${task.state}" }
         return saved.toDomain()
     }
 
@@ -81,7 +89,10 @@ class PendingTaskService(
         return saved.toDomain()
     }
 
-    suspend fun finalizeCompleted(taskId: ObjectId, from: PendingTaskState) {
+    suspend fun finalizeCompleted(
+        taskId: ObjectId,
+        from: PendingTaskState,
+    ) {
         val task = pendingTaskRepository.findById(taskId) ?: return
         if (PendingTaskState.valueOf(task.state) != from) return
         val unitId = task.context["unitId"] ?: "?"
@@ -100,11 +111,12 @@ class PendingTaskService(
         require(PendingTaskState.valueOf(taskDoc.state) == from) { "State changed for $taskId; expected=$from actual=${taskDoc.state}" }
         val domain = taskDoc.toDomain()
         val title = "Indexing/Qualification failed: ${domain.taskType.name}"
-        val description = buildString {
-            appendLine("Pending task ${domain.id} failed in state ${domain.state}")
-            appendLine("Reason: $reason")
-            error?.let { appendLine("Error: $it") }
-        }
+        val description =
+            buildString {
+                appendLine("Pending task ${domain.id} failed in state ${domain.state}")
+                appendLine("Reason: $reason")
+                error?.let { appendLine("Error: $it") }
+            }
         val userTask =
             userTaskService.createTask(
                 title = title,

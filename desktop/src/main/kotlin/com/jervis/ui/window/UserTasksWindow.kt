@@ -163,7 +163,7 @@ class UserTasksWindow(
                 withContext(Dispatchers.Main) {
                     JOptionPane.showMessageDialog(
                         this@UserTasksWindow,
-                        "Failed to send: ${'$'}{e.message}",
+                        "Failed to send: ${e.message}",
                         "Error",
                         JOptionPane.ERROR_MESSAGE,
                     )
@@ -299,7 +299,7 @@ class UserTasksWindow(
                     withContext(Dispatchers.Main) {
                         JOptionPane.showMessageDialog(
                             this@UserTasksWindow,
-                            "Failed to revoke: ${'$'}{e.message}",
+                            "Failed to revoke: ${e.message}",
                             "Error",
                             JOptionPane.ERROR_MESSAGE,
                         )
@@ -344,7 +344,7 @@ class UserTasksWindow(
             } catch (e: Exception) {
                 JOptionPane.showMessageDialog(
                     this@UserTasksWindow,
-                    "Failed to load tasks: ${'$'}{e.message}",
+                    "Failed to load tasks: ${e.message}",
                     "Error",
                     JOptionPane.ERROR_MESSAGE,
                 )

@@ -1,7 +1,6 @@
 package com.jervis.service.gateway
 
 import com.jervis.configuration.properties.ModelsProperties
-import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.service.gateway.clients.EmbeddingProviderClient
 import mu.KotlinLogging
@@ -13,6 +12,7 @@ class EmbeddingGateway(
     private val modelsProperties: ModelsProperties,
     private val clients: List<EmbeddingProviderClient>,
     private val rateLimiter: EmbeddingRateLimiter,
+    private val modelConcurrencyManager: com.jervis.service.gateway.core.ModelConcurrencyManager,
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -36,7 +36,7 @@ class EmbeddingGateway(
         for ((index, candidate) in candidates.withIndex()) {
             val provider = candidate.provider ?: continue
             try {
-                return doCallEmbedding(provider, candidate.model, sanitizedText)
+                return executeWithControls(candidate, sanitizedText)
             } catch (t: Throwable) {
                 lastError = t
                 logger.warn(t) { "Embedding candidate $index ($provider:${candidate.model}) failed, trying next if available" }
@@ -45,21 +45,19 @@ class EmbeddingGateway(
         throw IllegalStateException("All embedding candidates failed for $type", lastError)
     }
 
-    private suspend fun doCallEmbedding(
-        provider: ModelProviderEnum,
-        model: String,
-        text: String,
-    ): List<Float> = executeProviderCall(provider, model, text)
-
-    private suspend fun executeProviderCall(
-        provider: ModelProviderEnum,
-        model: String,
+    private suspend fun executeWithControls(
+        candidate: ModelsProperties.ModelDetail,
         text: String,
     ): List<Float> =
-        rateLimiter.execute {
-            val client = clients.first { it.provider == provider }
-            val rawEmbedding = client.call(model, text)
-            normalizeL2(rawEmbedding)
+        modelConcurrencyManager.withConcurrencyControl(candidate) {
+            rateLimiter.execute {
+                val provider =
+                    candidate.provider
+                        ?: throw IllegalStateException("Provider not specified for candidate ${candidate.model}")
+                val client = clients.first { it.provider == provider }
+                val rawEmbedding = client.call(candidate.model, text)
+                normalizeL2(rawEmbedding)
+            }
         }
 
     /**

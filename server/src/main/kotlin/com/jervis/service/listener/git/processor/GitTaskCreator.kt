@@ -34,6 +34,9 @@ class GitTaskCreator(
     private companion object {
         // Cap per-file content to avoid oversized tasks
         const val MAX_FILE_BYTES: Int = 512 * 1024 // 512 KB per file
+
+        // Cap total task content to keep Mongo document under 16MB and reasonable for transport
+        const val MAX_TASK_CONTENT_CHARS: Int = 4_000_000 // ~4M chars (~8MB UTF-16), safe headroom
     }
 
     /**
@@ -65,16 +68,22 @@ class GitTaskCreator(
 
             // Build context map for task
             val context =
-                mapOf(
-                    "commitHash" to commitData.commitHash,
-                    "author" to commitData.author,
-                    "message" to commitData.message,
-                    "branch" to commitData.branch,
-                    "additions" to commitData.additions.toString(),
-                    "deletions" to commitData.deletions.toString(),
-                    "changedFilesCount" to commitData.changedFiles.size.toString(),
-                    "projectPath" to projectPath.toString(),
-                )
+                buildMap<String, String> {
+                    put("commitHash", commitData.commitHash)
+                    put("author", commitData.author)
+                    put("message", commitData.message)
+                    put("branch", commitData.branch)
+                    put("additions", commitData.additions.toString())
+                    put("deletions", commitData.deletions.toString())
+                    put("changedFilesCount", commitData.changedFiles.size.toString())
+                    put("projectPath", projectPath.toString())
+                    // Canonical source for idempotency/traceability
+                    put("sourceUri", "git://${project.id.toHexString()}/${commitData.commitHash}")
+                    // Provide explicit file list for decision without RAG
+                    if (commitData.changedFiles.isNotEmpty()) {
+                        put("changedFiles", commitData.changedFiles.joinToString(","))
+                    }
+                }
 
             // Build content string with detailed information and full file contents
             val content =
@@ -108,10 +117,17 @@ class GitTaskCreator(
                     }
                 }
 
+            val finalContent =
+                if (content.length > MAX_TASK_CONTENT_CHARS) {
+                    content.take(MAX_TASK_CONTENT_CHARS) + "\n\n[... task content truncated to keep under storage limits ...]"
+                } else {
+                    content
+                }
+
             val created =
                 pendingTaskService.createTask(
                     taskType = PendingTaskTypeEnum.COMMIT_ANALYSIS,
-                    content = content,
+                    content = finalContent,
                     projectId = project.id,
                     clientId = project.clientId,
                     context = context,

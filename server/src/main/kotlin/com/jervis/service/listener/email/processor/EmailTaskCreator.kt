@@ -16,7 +16,7 @@ class EmailTaskCreator(
     private val tikaClient: ITikaClient,
 ) {
     companion object {
-        private const val MAX_CONTENT_SIZE = 15 * 1024 * 1024
+        private const val MAX_CONTENT_BYTES = 12 * 1024 * 1024 // 12 MiB headroom to stay under Mongo 16MB limit
         private val URL_PATTERN = Regex("""https?://[^\s<>"{}|\\^`\[\]]+""")
     }
 
@@ -32,13 +32,26 @@ class EmailTaskCreator(
 
             // Build context map for prompt template substitution (used by qualifier and orchestrator)
             val context =
-                mapOf(
-                    "from" to message.from,
-                    "to" to message.to,
-                    "subject" to message.subject,
-                    "date" to message.receivedAt.toString(),
-                    "body" to cleanBody,
-                )
+                buildMap<String, String> {
+                    put("from", message.from)
+                    put("to", message.to)
+                    put("subject", message.subject)
+                    put("date", message.receivedAt.toString())
+                    put("body", cleanBody)
+                    // Canonical source for idempotency/traceability
+                    put("sourceUri", "email://${accountId.toHexString()}/${message.messageId}")
+                    put("accountId", accountId.toHexString())
+                    put("messageId", message.messageId)
+                    put("hasAttachments", message.attachments.isNotEmpty().toString())
+                    if (message.attachments.isNotEmpty()) {
+                        put(
+                            "attachments",
+                            message.attachments.joinToString(",") { att ->
+                                "${att.fileName}:${att.contentType}:${att.size}"
+                            }
+                                )
+                    }
+                }
 
             pendingTaskService.createTask(
                 taskType = PendingTaskTypeEnum.EMAIL_PROCESSING,
@@ -79,9 +92,9 @@ class EmailTaskCreator(
                 }
             }
 
-        return if (content.length > MAX_CONTENT_SIZE) {
-            logger.warn { "Email content truncated from ${content.length} to $MAX_CONTENT_SIZE bytes" }
-            content.take(MAX_CONTENT_SIZE) + "\n\n[Content truncated - use source_fetch_original for full email]"
+        return if (content.length > MAX_CONTENT_BYTES) {
+            logger.warn { "Email content truncated from ${content.length} to $MAX_CONTENT_BYTES bytes" }
+            content.take(MAX_CONTENT_BYTES) + "\n\n[Content truncated - use source_fetch_original for full email]"
         } else {
             content
         }

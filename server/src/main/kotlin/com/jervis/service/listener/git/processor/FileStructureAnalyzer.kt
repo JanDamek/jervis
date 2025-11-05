@@ -35,6 +35,11 @@ class FileStructureAnalyzer(
 ) {
     private val logger = KotlinLogging.logger {}
 
+    private companion object {
+        // Cap how much file content we embed into task context to keep Mongo doc under limit
+        const val MAX_FILE_CONTENT_FOR_CONTEXT: Int = 200_000 // ~200k chars per task context
+    }
+
     /**
      * Analyze changed files from commit and create structure analysis tasks.
      * Returns count of tasks created.
@@ -94,12 +99,21 @@ class FileStructureAnalyzer(
         fileContent: String,
         dynamicGoal: String? = null,
     ): PendingTask {
+        val contentForContext =
+            if (fileContent.length > MAX_FILE_CONTENT_FOR_CONTEXT) {
+                fileContent.take(MAX_FILE_CONTENT_FOR_CONTEXT) + "\n\n[... file content truncated for context ...]"
+            } else {
+                fileContent
+            }
+
         val context =
             mutableMapOf(
                 "projectId" to project.id.toHexString(),
                 "filePath" to filePath,
                 "commitHash" to commitHash,
-                "fileContent" to fileContent,
+                "fileContent" to contentForContext,
+                // Canonical source for idempotency/traceability and decision without RAG
+                "sourceUri" to "gitfile://${project.id.toHexString()}/$commitHash/$filePath",
             )
 
         // Add dynamic goal if provided and non-blank

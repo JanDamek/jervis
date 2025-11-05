@@ -120,19 +120,19 @@ class UserTaskService(
             )
 
         val saved = userTaskRepository.save(updated)
-        logger.info { "Completed user task: ${'$'}{saved.id}" }
+        logger.info { "Completed user task: ${saved.id}" }
         return saved.toDomain()
     }
 
     suspend fun cancelTask(taskId: ObjectId): UserTask {
-        val existing = userTaskRepository.findById(taskId) ?: error("User task not found: ${'$'}taskId")
+        val existing = userTaskRepository.findById(taskId) ?: error("User task not found: $taskId")
         val updated =
             existing.copy(
                 status = TaskStatus.CANCELLED.name,
                 completedAt = Instant.now(),
             )
         val saved = userTaskRepository.save(updated)
-        logger.info { "Cancelled user task: ${'$'}{saved.id}" }
+        logger.info { "Cancelled user task: ${saved.id}" }
         return saved.toDomain()
     }
 }
