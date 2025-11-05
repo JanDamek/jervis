@@ -115,16 +115,28 @@ tasks:
       Reconcile Jira issues for the configured client/project, preferring email-driven updates.
       Discover issues updated in the last 30 days. Deeply analyze issues assigned to the preferred user; others shallow.
       Store summaries/comments into RAG with metadata (type=jira, scope=issue|comment|summary).
+    qualifierSystemPrompt: |
+      You are a Jira sync pre-qualifier. Decide if this sync task is actionable (delegate) or noise (discard).
 
-  # Git branch analysis background narrative (reference for planners)
-  GIT_BRANCH_ANALYSIS:
-    goal: |
-      Index and analyze all remote branches to produce architecture-aware summaries, embed them into the vector store, and validate traceability.
-      Acceptance:
-        - All remote branches discovered and head SHAs fetched
-        - Per-branch fork point computed against default branch
-        - BranchSummary produced (goal, scope, dependencies, risks, operations, testing, docs, status, acceptance)
-        - Embeddings stored with metadata repoId, branch, issueKeys, tags
+      VALID DECISIONS: ONLY "discard" or "delegate".
+
+      DISCARD when:
+      - Missing or invalid Jira configuration in context
+      - No recent updates (e.g., older than 30 days) and no forced sync requested
+      - Duplicate sync for the same project/time window in the last 6 hours
+
+      DELEGATE when:
+      - Configuration present (baseUrl, projectKey(s), credentials/token available)
+      - There are recent updates, webhooks, or user explicitly requested a sync
+      - Backlog re-index is requested
+
+      Output JSON only: {"decision": "discard"|"delegate", "reason": "short explanation"}
+    qualifierUserPrompt: |
+      CONTEXT:
+      {content}
+
+      Decide if Jira synchronization should proceed now. Reply JSON only.
+
 
   AGENT_ANALYSIS:
     qualifierSystemPrompt: |
@@ -425,39 +437,50 @@ tasks:
 
       Do project descriptions need updating?
 
-  GIT_CHANGE_REVIEW:
+
+  DELAYED_USER_RESPONSE:
     goal: |
-      Review recent code changes in the project and provide insights:
-
-      CONTEXT: Git history is already indexed to RAG by the listener.
-
-      YOUR TASK: Analyze the LAST commit or recent changes and determine:
-      1. What are the key changes in the most recent commit(s)?
-      2. Are there any patterns or trends in recent development?
-      3. Are there any potential issues or concerns?
-      4. Should the user be notified about important changes?
-
-      Use `knowledge_search` to retrieve recent Git commits from RAG.
-      If findings are significant, create user task with `task_create_user`.
-      If important context discovered, store with `knowledge_store`.
-
-      Return empty plan [] if no action needed.
-
+      Wait until the specified condition is met (e.g., branch indexed, external system updated), then answer the original user question.
+      When the condition is satisfied, use available context to produce a concise, correct answer or next step.
     qualifierSystemPrompt: |
-      You are a git commit classifier. Your task is to quickly determine if a commit needs full analysis.
-
-      CLASSIFICATION RULES:
-      - DISCARD: formatting changes, whitespace, typos, version bumps, trivial refactoring, comment updates
-      - DELEGATE: new features, bug fixes, significant refactoring, API changes, architectural changes
-
-      Be conservative - when uncertain, DELEGATE to the strong model.
-
-      Return JSON: {"decision": "discard"|"delegate", "reason": "short explanation"}
-
+      Pre-qualify delayed user response tasks.
+      VALID DECISIONS: ONLY "discard" or "delegate".
+      DISCARD when:
+      - Condition or dueAt is missing in context and there is no way to check readiness
+      - The original question has already been answered (context indicates resolved)
+      - The deadline has passed and the request is obsolete
+      DELEGATE when:
+      - There is a clear readiness indicator (e.g., index status available, webhook received)
+      - dueAt is approaching or reached
+      - The user is waiting for an explicit follow-up
+      Output JSON only: {"decision": "discard"|"delegate", "reason": "short explanation"}
     qualifierUserPrompt: |
+      CONTEXT:
       {content}
 
-      Should this commit be analyzed in detail or discarded?
+      Should we proceed with the delayed response now? Reply JSON only.
+
+  JIRA_CONFIG:
+    goal: |
+      Validate and apply Jira configuration values required for synchronization and indexing. Fail fast on missing values.
+      Scope: baseUrl, projectKey(s), credentials/token, user mapping, and webhooks if applicable.
+    qualifierSystemPrompt: |
+      Pre-qualify Jira configuration tasks. Decide if action is required.
+      VALID DECISIONS: ONLY "discard" or "delegate".
+      DISCARD when:
+      - Configuration already complete and valid (context indicates success)
+      - Request duplicates a recently completed configuration
+      - Missing required inputs that the system cannot infer
+      DELEGATE when:
+      - Required values are present but need to be applied/verified
+      - User explicitly requested configuration or fix
+      - Validation failed previously and needs correction
+      Output JSON only: {"decision": "discard"|"delegate", "reason": "short explanation"}
+    qualifierUserPrompt: |
+      CONFIG CONTEXT:
+      {content}
+
+      Is configuration action required now? Reply JSON only.
 
   CONFLUENCE_PAGE_ANALYSIS:
     goal: |
