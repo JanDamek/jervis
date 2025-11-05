@@ -631,6 +631,10 @@ class MainWindow(
         ragSearchItem.addActionListener { applicationWindowManager.showRagSearchWindow() }
         toolsMenu.add(ragSearchItem)
 
+        val errorLogsItem = JMenuItem("Error Logs")
+        errorLogsItem.addActionListener { applicationWindowManager.showErrorLogsWindow() }
+        toolsMenu.add(errorLogsItem)
+
         // Debug Window
         val debugWindowItem = JMenuItem("Show Debug Window")
         debugWindowItem.accelerator =

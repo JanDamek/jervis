@@ -10,7 +10,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.swing.Swing
 import java.awt.BorderLayout
 import java.awt.Dimension
-import javax.swing.*
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
+import javax.swing.JButton
+import javax.swing.JFrame
+import javax.swing.JOptionPane
+import javax.swing.JPanel
+import javax.swing.JScrollPane
+import javax.swing.JTable
+import javax.swing.SwingUtilities
 import javax.swing.table.DefaultTableModel
 
 class ErrorLogsWindow(
@@ -29,10 +37,14 @@ class ErrorLogsWindow(
 
         val contentPanel = JPanel(BorderLayout())
         val actions = createActionsPanel()
-        val section = UiDesign.sectionPanel("Error Logs", JPanel(BorderLayout()).apply {
-            add(JScrollPane(table), BorderLayout.CENTER)
-            add(actions, BorderLayout.NORTH)
-        })
+        val section =
+            UiDesign.sectionPanel(
+                "Error Logs",
+                JPanel(BorderLayout()).apply {
+                    add(JScrollPane(table), BorderLayout.CENTER)
+                    add(actions, BorderLayout.NORTH)
+                },
+            )
 
         add(UiDesign.headerLabel("Server Error Logs"), BorderLayout.NORTH)
         add(section, BorderLayout.CENTER)
@@ -53,7 +65,12 @@ class ErrorLogsWindow(
     fun refresh() {
         val clientId = currentClientId
         if (clientId == null) {
-            JOptionPane.showMessageDialog(this, "Select a client in main UI first.", "Info", JOptionPane.WARNING_MESSAGE)
+            JOptionPane.showMessageDialog(
+                this,
+                "Select a client in main UI first.",
+                "Info",
+                JOptionPane.WARNING_MESSAGE,
+            )
             return
         }
         scope.launch {
@@ -62,17 +79,21 @@ class ErrorLogsWindow(
                     with(Dispatchers.Swing) {
                         SwingUtilities.invokeLater { render(logs) }
                     }
-                }
-                .onFailure { e ->
+                }.onFailure { e ->
                     SwingUtilities.invokeLater {
-                        JOptionPane.showMessageDialog(this@ErrorLogsWindow, e.message, "Error", JOptionPane.ERROR_MESSAGE)
+                        JOptionPane.showMessageDialog(
+                            this@ErrorLogsWindow,
+                            e.message,
+                            "Error",
+                            JOptionPane.ERROR_MESSAGE,
+                        )
                     }
                 }
         }
     }
 
     private fun render(logs: List<ErrorLogDto>) {
-        tableModel.setRowCount(0)
+        tableModel.rowCount = 0
         logs.forEach { l ->
             tableModel.addRow(arrayOf(l.id, l.createdAt, l.message))
         }
@@ -88,19 +109,24 @@ class ErrorLogsWindow(
         scope.launch {
             runCatching { errorLogService.get(id) }
                 .onSuccess { dto ->
-                    val text = buildString {
-                        appendLine("ID: ${dto.id}")
-                        appendLine("Timestamp: ${dto.createdAt}")
-                        appendLine("Message: ${dto.message}")
-                        dto.stackTrace?.let { appendLine("\n$it") }
-                    }
+                    val text =
+                        buildString {
+                            appendLine("ID: ${dto.id}")
+                            appendLine("Timestamp: ${dto.createdAt}")
+                            appendLine("Message: ${dto.message}")
+                            dto.stackTrace?.let { appendLine("\n$it") }
+                        }
                     val clipboard = Toolkit.getDefaultToolkit().systemClipboard
                     val selection = StringSelection(text)
                     clipboard.setContents(selection, selection)
-                }
-                .onFailure { e ->
+                }.onFailure { e ->
                     SwingUtilities.invokeLater {
-                        JOptionPane.showMessageDialog(this@ErrorLogsWindow, e.message, "Error", JOptionPane.ERROR_MESSAGE)
+                        JOptionPane.showMessageDialog(
+                            this@ErrorLogsWindow,
+                            e.message,
+                            "Error",
+                            JOptionPane.ERROR_MESSAGE,
+                        )
                     }
                 }
         }
@@ -116,17 +142,43 @@ class ErrorLogsWindow(
         scope.launch {
             runCatching { errorLogService.delete(id) }
                 .onSuccess { refresh() }
-                .onFailure { e -> SwingUtilities.invokeLater { JOptionPane.showMessageDialog(this@ErrorLogsWindow, e.message, "Error", JOptionPane.ERROR_MESSAGE) } }
+                .onFailure { e ->
+                    SwingUtilities.invokeLater {
+                        JOptionPane.showMessageDialog(
+                            this@ErrorLogsWindow,
+                            e.message,
+                            "Error",
+                            JOptionPane.ERROR_MESSAGE,
+                        )
+                    }
+                }
         }
     }
 
     private fun deleteAllForClient() {
         val clientId = currentClientId ?: return
-        if (JOptionPane.showConfirmDialog(this, "Really delete all error logs for this client?", "Confirm", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return
+        if (JOptionPane.showConfirmDialog(
+                this,
+                "Really delete all error logs for this client?",
+                "Confirm",
+                JOptionPane.YES_NO_OPTION,
+            ) != JOptionPane.YES_OPTION
+        ) {
+            return
+        }
         scope.launch {
             runCatching { errorLogService.deleteAll(clientId) }
                 .onSuccess { refresh() }
-                .onFailure { e -> SwingUtilities.invokeLater { JOptionPane.showMessageDialog(this@ErrorLogsWindow, e.message, "Error", JOptionPane.ERROR_MESSAGE) } }
+                .onFailure { e ->
+                    SwingUtilities.invokeLater {
+                        JOptionPane.showMessageDialog(
+                            this@ErrorLogsWindow,
+                            e.message,
+                            "Error",
+                            JOptionPane.ERROR_MESSAGE,
+                        )
+                    }
+                }
         }
     }
 }

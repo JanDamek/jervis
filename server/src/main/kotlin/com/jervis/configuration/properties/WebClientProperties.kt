@@ -19,5 +19,6 @@ data class WebClientProperties(
 
     data class WebClientTimeouts(
         val connectTimeoutMillis: Int,
+        val responseTimeoutMillis: Long = 120000, // Default 2 minutes for embeddings
     )
 }

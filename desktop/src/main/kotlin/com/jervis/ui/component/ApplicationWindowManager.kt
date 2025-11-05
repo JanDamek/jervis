@@ -5,14 +5,16 @@ import com.jervis.service.IAgentOrchestratorService
 import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
 import com.jervis.service.IEmailAccountService
+import com.jervis.service.IErrorLogService
 import com.jervis.service.IGitConfigurationService
 import com.jervis.service.IProjectService
 import com.jervis.service.ITaskSchedulingService
-import com.jervis.service.IErrorLogService
 import com.jervis.service.debug.DesktopDebugWindowService
 import com.jervis.ui.utils.MacOSAppUtils
 import com.jervis.ui.window.ClientsWindow
+import com.jervis.ui.window.ErrorLogsWindow
 import com.jervis.ui.window.MainWindow
+import com.jervis.ui.window.RagSearchWindow
 import com.jervis.ui.window.SchedulerWindow
 import com.jervis.ui.window.TrayIconManager
 import com.jervis.ui.window.project.ProjectSettingWindow
@@ -90,16 +92,12 @@ class ApplicationWindowManager(
     }
 
     // RAG Search window
-    private val ragSearchWindow: com.jervis.ui.window.RagSearchWindow by lazy {
-        com.jervis.ui.window
-            .RagSearchWindow(ragSearchService, clientService, projectService)
+    private val ragSearchWindow: RagSearchWindow by lazy {
+        RagSearchWindow(ragSearchService, clientService, projectService)
     }
 
-    private val errorLogsWindow: com.jervis.ui.window.ErrorLogsWindow by lazy {
-        com.jervis.ui.window.ErrorLogsWindow(errorLogService, clientService)
-    }
-        com.jervis.ui.window
-            .RagSearchWindow(ragSearchService, clientService, projectService)
+    private val errorLogsWindow: ErrorLogsWindow by lazy {
+        ErrorLogsWindow(errorLogService, clientService)
     }
 
     @Volatile
@@ -135,9 +133,6 @@ class ApplicationWindowManager(
         errorLogsWindow.setCurrentClientId(currentClientId)
         errorLogsWindow.isVisible = true
         errorLogsWindow.refresh()
-    }
-        ragSearchWindow.isVisible = true
-        ragSearchWindow.toFront()
     }
 
     /**

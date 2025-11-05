@@ -22,7 +22,7 @@ class VectorSearchStrategy(
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
-        private const val MAX_INITIAL_RESULTS = 100
+        private const val MAX_INITIAL_RESULTS = 500
         private const val MAX_HIT_CONTENT_LENGTH = 2000
     }
 
@@ -30,9 +30,8 @@ class VectorSearchStrategy(
         query: RagQuery,
         plan: Plan,
     ): List<DocumentChunk> {
-        logger.debug { "VECTOR_SEARCH: Starting for '${query.searchTerms}'" }
-
         val (projectId, clientId) = resolveScope(plan)
+        logger.info { "VECTOR_SEARCH: Starting for '${query.searchTerms}' with clientId=$clientId, projectId=$projectId" }
 
         return coroutineScope {
             val textResults = async { searchByModelType(ModelTypeEnum.EMBEDDING_TEXT, query, projectId, clientId) }
@@ -61,15 +60,20 @@ class VectorSearchStrategy(
     ): List<DocumentChunk> {
         val embedding = embeddingGateway.callEmbedding(modelTypeEnum, query.searchTerms)
 
-        return vectorStorage
-            .search(
+        val results =
+            vectorStorage
+                .search(
                 collectionType = modelTypeEnum,
                 query = embedding,
                 limit = MAX_INITIAL_RESULTS,
                 projectId = projectId,
                 clientId = clientId,
                 filter = null,
-            ).map { result ->
+                )
+
+        logger.info { "VECTOR_SEARCH: $modelTypeEnum returned ${results.size} results for clientId=$clientId, projectId=$projectId" }
+
+        return results.map { result ->
                 DocumentChunk(
                     content = extractContent(result).take(MAX_HIT_CONTENT_LENGTH),
                     score = extractScore(result),

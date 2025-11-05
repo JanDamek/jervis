@@ -81,6 +81,11 @@ class TrayIconManager {
             windowManager.showRagSearchWindow()
         }
 
+        val errorLogsItem = MenuItem("Error Logs")
+        errorLogsItem.addActionListener {
+            windowManager.showErrorLogsWindow()
+        }
+
         val debugWindowItem = MenuItem("Show Debug Window")
         debugWindowItem.addActionListener {
             windowManager.showDebugWindow()
@@ -98,6 +103,7 @@ class TrayIconManager {
         popup.add(openSchedulerItem)
         popup.add(userTasksItem)
         popup.add(ragSearchItem)
+        popup.add(errorLogsItem)
         popup.add(debugWindowItem)
         popup.addSeparator()
         popup.add(exitItem)

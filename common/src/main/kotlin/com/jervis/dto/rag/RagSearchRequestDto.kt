@@ -9,4 +9,6 @@ data class RagSearchRequestDto(
     val searchText: String,
     val filterKey: String? = null,
     val filterValue: String? = null,
+    val maxChunks: Int = 5,
+    val minSimilarityThreshold: Double = 0.15,
 )
