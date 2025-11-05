@@ -34,6 +34,9 @@ dependencies {
     implementation(libs.kotlin.reflect)
     implementation(libs.kotlinx.serialization.json)
 
+    // Java NIO File (for Path/Files API)
+    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk7:${libs.versions.kotlin.get()}")
+
     // Ktor HTTP client for integrations
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.cio)
