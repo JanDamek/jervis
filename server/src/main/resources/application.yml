@@ -61,7 +61,7 @@ models: # embedding dimensions configured per model
       model: text-embedding-nomic-embed-text-v2-moe
       context-length: 512
       dimension: 768
-      concurrency: 1
+      concurrency: 25
   #    - provider: OLLAMA
   #      model: text-embedding-nomic-embed-text-v2-moe
   #      maxTokens: 512
@@ -72,7 +72,7 @@ models: # embedding dimensions configured per model
       model: text-embedding-nomic-embed-code
       context-length: 4096
       dimension: 3584
-      concurrency: 1
+      concurrency: 12
   #    - provider: OLLAMA
   #      model: nomic-embed-code
   #      maxTokens: 4096
