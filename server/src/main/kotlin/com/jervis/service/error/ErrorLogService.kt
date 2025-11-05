@@ -5,6 +5,9 @@ import com.jervis.entity.ErrorLogDocument
 import com.jervis.repository.mongo.ErrorLogMongoRepository
 import com.jervis.service.notification.ErrorNotificationsPublisher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.reactive.awaitFirst
+import kotlinx.coroutines.reactive.awaitFirstOrNull
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -25,43 +28,58 @@ class ErrorLogService(
         clientId: ObjectId? = null,
         projectId: ObjectId? = null,
         correlationId: String? = null,
-    ): ErrorLog = withContext(Dispatchers.IO) {
-        val stack = throwable.toStackTraceString()
-        val domain =
-            ErrorLog(
-                clientId = clientId,
-                projectId = projectId,
-                correlationId = correlationId,
-                message = throwable.message ?: throwable.javaClass.name,
-                stackTrace = stack,
-                causeType = throwable.javaClass.name,
-            )
-        val saved = repository.save(ErrorLogDocument.fromDomain(domain)).toDomain()
-
-        // Publish over websocket for UI dialog
-        errorPublisher.publish(
-            message = saved.message,
-            stackTrace = saved.stackTrace,
-            correlationId = saved.correlationId,
-            timestamp = saved.createdAt.toString(),
-        )
-        logger.error(throwable) { "Captured error persisted id=${saved.id}" }
-        saved
-    }
-
-    suspend fun list(clientId: ObjectId, limit: Int): List<ErrorLog> =
+    ): ErrorLog =
         withContext(Dispatchers.IO) {
-            repository.findAllByClientIdOrderByCreatedAtDesc(clientId, PageRequest.of(0, limit)).map { it.toDomain() }
+            val stack = throwable.toStackTraceString()
+            val domain =
+                ErrorLog(
+                    clientId = clientId,
+                    projectId = projectId,
+                    correlationId = correlationId,
+                    message = throwable.message ?: throwable.javaClass.name,
+                    stackTrace = stack,
+                    causeType = throwable.javaClass.name,
+                )
+            val saved = repository.save(ErrorLogDocument.fromDomain(domain)).awaitFirst().toDomain()
+
+            // Publish over websocket for UI dialog
+            errorPublisher.publishError(
+                message = saved.message,
+                stackTrace = saved.stackTrace,
+                correlationId = saved.correlationId,
+            )
+            logger.error(throwable) { "Captured error persisted id=${saved.id}" }
+            saved
         }
 
-    suspend fun get(id: ObjectId): ErrorLog = withContext(Dispatchers.IO) { repository.findById(id).orElseThrow() .toDomain() }
+    suspend fun list(
+        clientId: ObjectId,
+        limit: Int,
+    ): List<ErrorLog> =
+        withContext(Dispatchers.IO) {
+            repository
+                .findAllByClientIdOrderByCreatedAtDesc(clientId, PageRequest.of(0, limit))
+                .toList()
+                .map { it.toDomain() }
+        }
 
-    suspend fun delete(id: ObjectId) = withContext(Dispatchers.IO) { repository.deleteById(id) }
+    suspend fun get(id: ObjectId): ErrorLog =
+        withContext(Dispatchers.IO) {
+            repository.findById(id).awaitFirstOrNull()?.toDomain()
+                ?: throw NoSuchElementException("ErrorLog with id=$id not found")
+        }
 
-    suspend fun deleteAll(clientId: ObjectId) = withContext(Dispatchers.IO) { repository.deleteAllByClientId(clientId) }
+    suspend fun delete(id: ObjectId): Unit =
+        withContext(Dispatchers.IO) {
+            repository.deleteById(id).awaitFirstOrNull()
+            Unit
+        }
+
+    suspend fun deleteAll(clientId: ObjectId): Long = withContext(Dispatchers.IO) { repository.deleteAllByClientId(clientId) }
 }
 
 private fun Throwable.toStackTraceString(): String =
-    StringWriter().also { sw ->
-        PrintWriter(sw).use { pw -> this.printStackTrace(pw) }
-    }.toString()
+    StringWriter()
+        .also { sw ->
+            PrintWriter(sw).use { pw -> this.printStackTrace(pw) }
+        }.toString()
