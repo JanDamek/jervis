@@ -128,6 +128,14 @@ class NotificationsWebSocketClient(
             eventPublisher.publishEvent(it)
             return
         }
+
+        // Try to decode as UserTaskCreatedEventDto
+        runCatching {
+            json.decodeFromString(com.jervis.dto.events.UserTaskCreatedEventDto.serializer(), text)
+        }.onSuccess {
+            eventPublisher.publishEvent(it)
+            return
+        }
     }
 
     fun stop() {

@@ -6,6 +6,8 @@ import com.jervis.dto.PlanDto
 import com.jervis.dto.PlanStepDto
 import com.jervis.dto.events.PlanStatusChangeEventDto
 import com.jervis.dto.events.StepCompletionEventDto
+import com.jervis.dto.events.UserTaskCreatedEventDto
+import com.jervis.ui.utils.MacOSAppUtils
 import com.jervis.service.IAgentOrchestratorService
 import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
@@ -775,6 +777,17 @@ class MainWindow(
                     dialog.isVisible = true
                 }
             }
+        }
+    }
+
+    @EventListener
+    fun handleUserTaskCreated(event: UserTaskCreatedEventDto) {
+        // Update dock badge count and show macOS notification
+        try {
+            applicationWindowManager.updateUserTaskBadgeForClient("")
+            MacOSAppUtils.showSystemNotification("New User Task", event.title)
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed processing UserTaskCreatedEvent: ${'$'}{e.message}" }
         }
     }
 }

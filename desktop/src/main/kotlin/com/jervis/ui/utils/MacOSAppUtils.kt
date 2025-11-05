@@ -19,6 +19,18 @@ object MacOSAppUtils {
     private val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
     private var windowManager: ApplicationWindowManager? = null
 
+    fun showSystemNotification(title: String, message: String) {
+        if (!isMacOS) return
+        try {
+            // Use AppleScript via osascript for macOS Notification Center
+            val cmd = arrayOf("osascript", "-e", "display notification \"${'$'}message\" with title \"${'$'}title\"")
+            val process = Runtime.getRuntime().exec(cmd)
+            process.waitFor()
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to show macOS notification: ${'$'}{e.message}" }
+        }
+    }
+
     fun setDockBadgeCount(count: Int) {
         if (!isMacOS) return
         try {
