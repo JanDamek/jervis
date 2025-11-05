@@ -112,7 +112,12 @@ class OllamaClient(
         flow {
             val creativityConfig = getCreativityConfig(prompt)
             val options = buildOptions(creativityConfig, config, estimatedTokens)
-            val requestBody = buildRequestBody(model, userPrompt, systemPrompt, options)
+            val keepAlive: String? =
+                when (prompt.modelParams.modelType) {
+                    com.jervis.domain.model.ModelTypeEnum.QUALIFIER -> "1h"
+                    else -> null
+                }
+            val requestBody = buildRequestBody(model, userPrompt, systemPrompt, options, keepAlive)
 
             val responseFlow =
                 webClient
@@ -221,6 +226,7 @@ class OllamaClient(
         userPrompt: String,
         systemPrompt: String?,
         options: Map<String, Any>,
+        keepAlive: String?,
     ): Map<String, Any> {
         val baseBody =
             mapOf(
@@ -241,7 +247,13 @@ class OllamaClient(
                 ?.let { mapOf("options" to it) }
                 ?: emptyMap()
 
-        return baseBody + systemField + optionsField
+        val keepAliveField =
+            keepAlive
+                ?.takeUnless { it.isBlank() }
+                ?.let { mapOf("keep_alive" to it) }
+                ?: emptyMap()
+
+        return baseBody + systemField + optionsField + keepAliveField
     }
 
     private fun parseResponse(
