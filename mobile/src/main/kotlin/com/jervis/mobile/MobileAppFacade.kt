@@ -22,8 +22,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.springframework.web.reactive.function.client.WebClient
-import org.springframework.web.reactive.function.client.support.WebClientAdapter
 import org.springframework.web.service.invoker.HttpServiceProxyFactory
+import com.jervis.config.HttpServiceClientFactory
 
 private val logger = KotlinLogging.logger {}
 
@@ -43,9 +43,7 @@ class MobileAppFacade(
     }
 
     private val httpFactory: HttpServiceProxyFactory by lazy {
-        HttpServiceProxyFactory
-            .builderFor(WebClientAdapter.create(webClient))
-            .build()
+        HttpServiceClientFactory.create(webClient)
     }
 
     // Services from :common

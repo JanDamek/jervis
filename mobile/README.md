@@ -10,6 +10,10 @@ What’s implemented now
 - MobileNotifications: wraps WebSocket notifications and exposes Flows (Agent responses, errors, etc.).
 - Simple chat state models (ChatMessage, MobileSelection).
 
+Unified client creation
+- Both Desktop and Android create HTTP interface proxies via `HttpServiceClientFactory` (in `:api-client`).
+- Services live in `:common` under `com.jervis.service` with `@HttpExchange` annotations; server controllers implement the same interfaces.
+
 Notes on iOS
 - The existing `:api-client` is JVM‑only (Spring HTTP interface + Reactor interop) and cannot run on iOS/Native.
 - You can still build an iOS UI that consumes the same facade API by adding a tiny transport shim (e.g., Ktor client on iOS) with the same interface. The facade API was kept stable for this.
