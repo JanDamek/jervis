@@ -112,15 +112,15 @@ class PendingTaskService(
                 projectId = domain.projectId,
                 clientId = domain.clientId,
                 sourceType = com.jervis.domain.task.TaskSourceType.AGENT_SUGGESTION,
-                sourceUri = "pending-task://${domain.id.toHexString()}",
+                sourceUri = null, // No cross-collection link to pending-task
                 metadata =
                     mapOf(
-                        "createdFromPendingTaskId" to domain.id.toHexString(),
-                        "taskType" to domain.taskType.name,
-                        "state" to domain.state.name,
-                        "unitId" to (domain.context["unitId"] ?: ""),
-                        "contentHash" to (domain.context["contentHash"] ?: ""),
-                    ) + domain.context,
+                        // Snapshot without cross-collection references
+                        "snapshot.taskType" to domain.taskType.name,
+                        "snapshot.state" to domain.state.name,
+                        "snapshot.unitId" to (domain.context["unitId"] ?: ""),
+                        "snapshot.contentHash" to (domain.context["contentHash"] ?: ""),
+                    ) + domain.context.mapKeys { (k, _) -> "snapshot.context.$k" },
             )
         logger.info { "TASK_FAILED_ESCALATED: id=$taskId userTaskId=${userTask.id} reason=$reason" }
         pendingTaskRepository.deleteById(taskId)
@@ -180,13 +180,13 @@ class PendingTaskService(
                 projectId = task.projectId,
                 clientId = task.clientId,
                 sourceType = com.jervis.domain.task.TaskSourceType.AGENT_SUGGESTION,
-                sourceUri = "pending-task://${task.id.toHexString()}",
+                sourceUri = null, // No cross-collection link to pending-task
                 metadata =
                     mapOf(
-                        "pendingTaskId" to task.id.toHexString(),
-                        "taskType" to task.taskType.name,
-                        "state" to task.state.name,
-                    ) + task.context,
+                        // Snapshot without cross-collection references
+                        "snapshot.taskType" to task.taskType.name,
+                        "snapshot.state" to task.state.name,
+                    ) + task.context.mapKeys { (k, _) -> "snapshot.context.$k" },
             )
         logger.info { "TASK_FAILED_ESCALATED: pending=${task.id} -> userTask=${userTask.id} reason=$reason" }
         // Delete pending task after escalation
