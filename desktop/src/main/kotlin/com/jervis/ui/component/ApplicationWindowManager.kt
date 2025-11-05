@@ -8,6 +8,7 @@ import com.jervis.service.IEmailAccountService
 import com.jervis.service.IGitConfigurationService
 import com.jervis.service.IProjectService
 import com.jervis.service.ITaskSchedulingService
+import com.jervis.service.IErrorLogService
 import com.jervis.service.debug.DesktopDebugWindowService
 import com.jervis.ui.utils.MacOSAppUtils
 import com.jervis.ui.window.ClientsWindow
@@ -35,6 +36,7 @@ class ApplicationWindowManager(
     private val confluenceService: com.jervis.service.IConfluenceService,
     private val userTaskService: com.jervis.service.IUserTaskService,
     private val ragSearchService: com.jervis.service.IRagSearchService,
+    private val errorLogService: IErrorLogService,
 ) {
     private val mainWindow: MainWindow by lazy {
         MainWindow(
@@ -93,6 +95,13 @@ class ApplicationWindowManager(
             .RagSearchWindow(ragSearchService, clientService, projectService)
     }
 
+    private val errorLogsWindow: com.jervis.ui.window.ErrorLogsWindow by lazy {
+        com.jervis.ui.window.ErrorLogsWindow(errorLogService, clientService)
+    }
+        com.jervis.ui.window
+            .RagSearchWindow(ragSearchService, clientService, projectService)
+    }
+
     @Volatile
     private var currentClientId: String? = null
 
@@ -118,6 +127,15 @@ class ApplicationWindowManager(
     }
 
     fun showRagSearchWindow() {
+        ragSearchWindow.isVisible = true
+        ragSearchWindow.toFront()
+    }
+
+    fun showErrorLogsWindow() {
+        errorLogsWindow.setCurrentClientId(currentClientId)
+        errorLogsWindow.isVisible = true
+        errorLogsWindow.refresh()
+    }
         ragSearchWindow.isVisible = true
         ragSearchWindow.toFront()
     }
