@@ -184,7 +184,10 @@ class TaskQualificationService(
                 projectId = projectId,
             )
 
-        logger.info { "Email ${email.messageId} delegated to planner with context" }
+        // Requirement: writing pending task must atomically flip email state to INDEXED
+        emailMessageStateManager.markMessageIdAsIndexed(accountId, email.messageId)
+
+        logger.info { "Email ${email.messageId} delegated to planner with context and marked as INDEXED" }
         return QualificationResult.Delegate(task = task)
     }
 

@@ -28,4 +28,11 @@ interface UserTaskMongoRepository : CoroutineCrudRepository<UserTaskDocument, Ob
         statuses: List<String>,
         threadId: String,
     ): Flow<UserTaskDocument>
+
+    fun findFirstByClientIdAndSourceTypeAndSourceUriAndStatusIn(
+        clientId: ObjectId,
+        sourceType: String,
+        sourceUri: String,
+        status: List<String>,
+    ): UserTaskDocument?
 }

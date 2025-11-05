@@ -19,6 +19,13 @@ private val logger = KotlinLogging.logger {}
 class EmailMessageStateManager(
     private val emailMessageRepository: EmailMessageRepository,
 ) {
+    /** Mark given message as INDEXING. Used to claim work before IMAP fetch. */
+    suspend fun markAsIndexing(messageDocument: EmailMessageDocument) {
+        if (messageDocument.state == EmailMessageState.INDEXING) return
+        val updated = messageDocument.copy(state = EmailMessageState.INDEXING)
+        emailMessageRepository.save(updated)
+        logger.debug { "Marked messageId ${messageDocument.messageId} as INDEXING" }
+    }
     suspend fun saveNewMessageIds(
         accountId: ObjectId,
         messageIds: Flow<ImapMessageId>,
@@ -120,5 +127,22 @@ class EmailMessageStateManager(
         val updated = messageDocument.copy(state = EmailMessageState.FAILED)
         emailMessageRepository.save(updated)
         logger.warn { "Marked messageId ${messageDocument.messageId} as FAILED (could not fetch from IMAP)" }
+    }
+
+    /** On app start, reset any messages stuck in INDEXING back to NEW (previous run didn't complete). */
+    suspend fun resetDanglingIndexingToNewOnStartup(): Int {
+        var reset = 0
+        emailMessageRepository
+            .findByState(EmailMessageState.INDEXING)
+            .collect { doc ->
+                emailMessageRepository.save(doc.copy(state = EmailMessageState.NEW))
+                reset++
+            }
+        if (reset > 0) {
+            logger.warn { "Startup recovery: reset $reset email messages from INDEXING to NEW" }
+        } else {
+            logger.info { "Startup recovery: no dangling INDEXING email messages found" }
+        }
+        return reset
     }
 }

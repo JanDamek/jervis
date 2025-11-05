@@ -6,7 +6,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.flatMapMerge
+import kotlinx.coroutines.flow.flatMapConcat
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.withContext
@@ -111,7 +111,7 @@ abstract class AbstractContinuousIndexer<A, I> {
 
         newItemsFlow(account)
             .buffer(bufferSize)
-            .flatMapMerge { item ->
+            .flatMapConcat { item ->
                 flow {
                     val label = itemLogLabel(item)
                     logger.info { "[$indexerName] Indexing $label" }
