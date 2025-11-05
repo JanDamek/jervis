@@ -39,7 +39,7 @@ class UserTaskService(
                     clientId = clientId,
                     sourceType = sourceType.name,
                     sourceUri = sourceUri,
-                    status = listOf(TaskStatus.TODO.name, TaskStatus.IN_PROGRESS.name),
+                    status = listOf(TaskStatusEnum.TODO.name, TaskStatusEnum.IN_PROGRESS.name),
                 )
             if (existing != null) {
                 logger.info { "Skipped duplicate user task for sourceUri=$sourceUri (existing=${existing.id})" }

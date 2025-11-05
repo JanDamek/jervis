@@ -15,37 +15,49 @@ import org.yaml.snakeyaml.Yaml
 @Service
 class BackgroundTaskGoalsService {
     private val logger = KotlinLogging.logger {}
-    private val tasks: Map<String, TaskConfig>
+    private val tasks: Map<PendingTaskTypeEnum, TaskConfig>
 
     init {
         tasks = loadConfiguration()
+        validateAllEnumsHaveConfiguration()
         logger.info { "Loaded configuration for ${tasks.size} background task types" }
     }
 
     /**
      * Get a goal for a specific pending task type (used by AgentOrchestrator).
-     * Returns null if no goal is defined for this type.
      */
-    fun getGoals(taskType: PendingTaskTypeEnum): String? = tasks[taskType.name]?.goal
+    fun getGoals(taskType: PendingTaskTypeEnum): String =
+        requireNotNull(tasks[taskType]) {
+            "Missing configuration for task type: $taskType"
+        }.goal
 
     /**
      * Get qualifier prompts (systemPrompt + userPrompt) for a task type (used by TaskQualificationService).
-     * Returns null if no qualifier prompts defined for this type.
      */
-    fun getQualifierPrompts(taskType: PendingTaskTypeEnum): TaskConfig = tasks[taskType.name]!!
+    fun getQualifierPrompts(taskType: PendingTaskTypeEnum): TaskConfig =
+        requireNotNull(tasks[taskType]) {
+            "Missing configuration for task type: $taskType"
+        }
 
-    private fun loadConfiguration(): Map<String, TaskConfig> =
+    private fun validateAllEnumsHaveConfiguration() {
+        val missingTypes = PendingTaskTypeEnum.entries.filter { it !in tasks.keys }
+        check(missingTypes.isEmpty()) {
+            "Missing configuration for PendingTaskTypeEnum values: ${missingTypes.joinToString()}"
+        }
+    }
+
+    private fun loadConfiguration(): Map<PendingTaskTypeEnum, TaskConfig> =
         try {
             val resource = ClassPathResource("background-task-goals.yaml")
             val yaml = Yaml()
             val data: Map<String, Any?> = yaml.load(resource.inputStream)
 
-            val tasksSection = data["tasks"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
+            val tasksSection: Map<String, Any?> = data["tasks"] as? Map<String, Any?> ?: emptyMap()
             val tasksTyped =
                 tasksSection.entries
-                    .mapNotNull { (k, v) ->
-                        val key = k?.toString() ?: return@mapNotNull null
-                        val valueMap =
+                    .map { (k, v) ->
+                        val key = PendingTaskTypeEnum.valueOf(k.toString())
+                        val valueMap: Map<String, String> =
                             (v as? Map<*, *>)
                                 ?.mapNotNull { (ik, iv) ->
                                     val innerKey = ik?.toString() ?: return@mapNotNull null
@@ -53,24 +65,37 @@ class BackgroundTaskGoalsService {
                                     innerKey to innerVal
                                 }?.toMap() ?: emptyMap()
 
+                        val goal =
+                            requireNotNull(valueMap["goal"]) {
+                                "Missing 'goal' for task type: $key"
+                            }
+                        val qualifierSystemPrompt =
+                            requireNotNull(valueMap["qualifierSystemPrompt"]) {
+                                "Missing 'qualifierSystemPrompt' for task type: $key"
+                            }
+                        val qualifierUserPrompt =
+                            requireNotNull(valueMap["qualifierUserPrompt"]) {
+                                "Missing 'qualifierUserPrompt' for task type: $key"
+                            }
+
                         key to
                             TaskConfig(
-                                goal = valueMap["goal"] ?: "",
-                                qualifierSystemPrompt = valueMap["qualifierSystemPrompt"],
-                                qualifierUserPrompt = valueMap["qualifierUserPrompt"],
+                                goal = goal,
+                                qualifierSystemPrompt = qualifierSystemPrompt,
+                                qualifierUserPrompt = qualifierUserPrompt,
                             )
                     }.toMap()
 
             logger.debug { "Loaded task configurations: ${tasksTyped.keys}" }
             tasksTyped
         } catch (e: Exception) {
-            logger.error(e) { "Failed to load background-task-goals.yaml, using empty configuration" }
-            emptyMap()
+            logger.error(e) { "Failed to load background-task-goals.yaml" }
+            throw IllegalStateException("Cannot start application without valid background-task-goals.yaml", e)
         }
 
     data class TaskConfig(
         val goal: String,
-        val qualifierSystemPrompt: String?,
-        val qualifierUserPrompt: String?,
+        val qualifierSystemPrompt: String,
+        val qualifierUserPrompt: String,
     )
 }
