@@ -192,13 +192,17 @@ class GitFileCurrentContentTool(
                 ensureBranchCheckedOut(gitDir, branch)
             }
 
-            val fullPath = gitDir.resolve(filePath)
+            val resolvedPath = directoryStructureService.resolveExistingProjectPath(
+                project,
+                filePath,
+                com.jervis.domain.storage.ProjectSubdirectory.GIT,
+            )
 
-            if (!Files.exists(fullPath)) {
-                throw IllegalStateException("File not found: $filePath")
+            if (!Files.exists(resolvedPath)) {
+                throw IllegalStateException("File not found: $filePath at $resolvedPath")
             }
 
-            val allLines = fullPath.readText().lines()
+            val allLines = resolvedPath.readText().lines()
             val lineCount = allLines.size
 
             val content =
@@ -214,6 +218,7 @@ class GitFileCurrentContentTool(
                 truncated = lineCount > maxLines,
             )
         }
+
 
     private data class FileContent(
         val content: String,

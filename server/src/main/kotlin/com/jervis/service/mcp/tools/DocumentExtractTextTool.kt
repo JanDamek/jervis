@@ -14,9 +14,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
-import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.Paths
 import kotlin.io.path.exists
 import kotlin.io.path.isRegularFile
 
@@ -131,21 +129,10 @@ class DocumentExtractTextTool(
         filePath: String,
         plan: Plan,
     ): Path {
-        val path = Paths.get(filePath)
-
-        return when {
-            path.isAbsolute -> path
-            else -> {
-                val projectPath =
-                    directoryStructureService.projectGitDir(
-                        plan.clientDocument.id,
-                        plan.projectDocument!!.id,
-                    )
-                when {
-                    Files.exists(projectPath) && Files.isDirectory(projectPath) -> projectPath.resolve(filePath)
-                    else -> Paths.get(System.getProperty("user.dir")).resolve(filePath)
-                }
-            }
-        }
+        return directoryStructureService.resolveExistingProjectPath(
+            plan.projectDocument!!,
+            filePath,
+            com.jervis.domain.storage.ProjectSubdirectory.DOCUMENTS,
+        )
     }
 }
