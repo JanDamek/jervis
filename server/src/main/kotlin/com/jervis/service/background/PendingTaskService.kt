@@ -81,6 +81,52 @@ class PendingTaskService(
         return saved.toDomain()
     }
 
+    suspend fun finalizeCompleted(taskId: ObjectId, from: PendingTaskState) {
+        val task = pendingTaskRepository.findById(taskId) ?: return
+        if (PendingTaskState.valueOf(task.state) != from) return
+        val unitId = task.context["unitId"] ?: "?"
+        val contentHash = task.context["contentHash"] ?: "?"
+        logger.info { "TASK_COMPLETED_DELETE: id=$taskId unit=$unitId hash=$contentHash" }
+        pendingTaskRepository.deleteById(taskId)
+    }
+
+    suspend fun failAndEscalateToUserTask(
+        taskId: ObjectId,
+        from: PendingTaskState,
+        reason: String,
+        error: String? = null,
+    ): ObjectId {
+        val taskDoc = pendingTaskRepository.findById(taskId) ?: error("Task not found: $taskId")
+        require(PendingTaskState.valueOf(taskDoc.state) == from) { "State changed for $taskId; expected=$from actual=${taskDoc.state}" }
+        val domain = taskDoc.toDomain()
+        val title = "Indexing/Qualification failed: ${domain.taskType.name}"
+        val description = buildString {
+            appendLine("Pending task ${domain.id} failed in state ${domain.state}")
+            appendLine("Reason: $reason")
+            error?.let { appendLine("Error: $it") }
+        }
+        val userTask =
+            userTaskService.createTask(
+                title = title,
+                description = description,
+                projectId = domain.projectId,
+                clientId = domain.clientId,
+                sourceType = com.jervis.domain.task.TaskSourceType.AGENT_SUGGESTION,
+                sourceUri = "pending-task://${domain.id.toHexString()}",
+                metadata =
+                    mapOf(
+                        "createdFromPendingTaskId" to domain.id.toHexString(),
+                        "taskType" to domain.taskType.name,
+                        "state" to domain.state.name,
+                        "unitId" to (domain.context["unitId"] ?: ""),
+                        "contentHash" to (domain.context["contentHash"] ?: ""),
+                    ) + domain.context,
+            )
+        logger.info { "TASK_FAILED_ESCALATED: id=$taskId userTaskId=${userTask.id} reason=$reason" }
+        pendingTaskRepository.deleteById(taskId)
+        return userTask.id
+    }
+
     fun findTasksReadyForQualification(): Flow<PendingTask> = findTasksByState(PendingTaskState.READY_FOR_QUALIFICATION)
 
     suspend fun tryClaimForQualification(taskId: ObjectId): PendingTask? =
