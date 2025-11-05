@@ -43,6 +43,8 @@ class EmailContinuousIndexer(
         account: EmailAccountDocument,
         item: com.jervis.service.listener.email.state.EmailMessageDocument,
     ): ImapMessage? {
+        // Claim the item by marking it INDEXING before any remote IO
+        stateManager.markAsIndexing(item)
         val uid = item.uid
         if (uid == null) return null
         return imapClient.fetchMessage(account, uid)
