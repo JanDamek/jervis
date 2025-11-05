@@ -42,6 +42,6 @@ data class PendingTask(
     val projectId: ObjectId? = null,
     val clientId: ObjectId,
     val createdAt: Instant = Instant.now(),
-    val needsQualification: Boolean = false,
+    val state: PendingTaskState = PendingTaskState.NEW,
     val context: Map<String, String> = emptyMap(),
 )

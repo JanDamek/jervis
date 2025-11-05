@@ -45,7 +45,6 @@ class CreatePendingTaskTool(
                 content = taskDescription,
                 projectId = plan.projectDocument?.id,
                 clientId = plan.clientDocument.id,
-                needsQualification = true,
             )
 
         logger.info { "CREATE_PENDING_TASK_SUCCESS: Created task ${task.id}" }

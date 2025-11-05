@@ -1,6 +1,7 @@
 package com.jervis.entity
 
 import com.jervis.domain.task.PendingTask
+import com.jervis.domain.task.PendingTaskState
 import com.jervis.domain.task.PendingTaskTypeEnum
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
@@ -22,7 +23,7 @@ data class PendingTaskDocument(
     @Indexed
     val createdAt: Instant = Instant.now(),
     @Indexed
-    val needsQualification: Boolean = false,
+    val state: String,
     val context: Map<String, String> = emptyMap(),
 ) {
     fun toDomain(): PendingTask =
@@ -33,7 +34,7 @@ data class PendingTaskDocument(
             projectId = projectId,
             clientId = clientId ?: error("PendingTaskDocument $id has null clientId"),
             createdAt = createdAt,
-            needsQualification = needsQualification,
+            state = PendingTaskState.valueOf(state),
             context = context,
         )
 
@@ -46,7 +47,7 @@ data class PendingTaskDocument(
                 projectId = domain.projectId,
                 clientId = domain.clientId,
                 createdAt = domain.createdAt,
-                needsQualification = domain.needsQualification,
+                state = domain.state.name,
                 context = domain.context,
             )
     }

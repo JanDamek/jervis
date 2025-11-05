@@ -1,6 +1,7 @@
 package com.jervis.service.background
 
 import com.jervis.domain.task.PendingTask
+import com.jervis.domain.task.PendingTaskState
 import com.jervis.domain.task.PendingTaskTypeEnum
 import com.jervis.entity.PendingTaskDocument
 import com.jervis.repository.mongo.PendingTaskMongoRepository
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Service
 @Service
 class PendingTaskService(
     private val pendingTaskRepository: PendingTaskMongoRepository,
+    private val userTaskService: com.jervis.service.task.UserTaskService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -21,7 +23,6 @@ class PendingTaskService(
         content: String? = null,
         projectId: ObjectId? = null,
         clientId: ObjectId,
-        needsQualification: Boolean = false,
         context: Map<String, String> = emptyMap(),
     ): PendingTask {
         // Idempotency: for EMAIL_PROCESSING with sourceUri, do not create duplicates
@@ -43,14 +44,15 @@ class PendingTaskService(
                 content = content,
                 projectId = projectId,
                 clientId = clientId,
-                needsQualification = needsQualification,
+                // Current pipeline does not have explicit indexing step yet; start at READY_FOR_QUALIFICATION
+                state = PendingTaskState.READY_FOR_QUALIFICATION,
                 context = context,
             )
 
         val document = PendingTaskDocument.fromDomain(task)
         val saved = pendingTaskRepository.save(document)
 
-        logger.info { "Created pending task: ${'$'}{saved.id} - ${'$'}{taskType.name}, needsQualification=${'$'}needsQualification" }
+        logger.info { "Created pending task: ${'$'}{saved.id} - ${'$'}{taskType.name}, state=${'$'}{task.state}" }
         return saved.toDomain()
     }
 
@@ -59,50 +61,90 @@ class PendingTaskService(
         logger.info { "Deleted pending task: $taskId" }
     }
 
-    fun findTasksNeedingQualification(needsQualification: Boolean = true): Flow<PendingTask> =
+    fun findTasksByState(state: PendingTaskState): Flow<PendingTask> =
         pendingTaskRepository
-            .findByNeedsQualificationOrderByCreatedAtAsc(needsQualification)
+            .findByStateOrderByCreatedAtAsc(state.name)
             .map { it.toDomain() }
 
-    suspend fun setNeedsQualification(
+    suspend fun updateState(
         taskId: ObjectId,
-        needsQualification: Boolean,
-    ) {
-        val task = pendingTaskRepository.findById(taskId) ?: return
-        val updated = task.copy(needsQualification = needsQualification)
-        pendingTaskRepository.save(updated)
-        logger.debug { "Updated task $taskId needsQualification=$needsQualification" }
+        expected: PendingTaskState,
+        next: PendingTaskState,
+    ): PendingTask {
+        val task = pendingTaskRepository.findById(taskId) ?: error("Task not found: $taskId")
+        require(PendingTaskState.valueOf(task.state) == expected) {
+            "Invalid state transition for $taskId: expected=$expected, actual=${task.state}"
+        }
+        val updated = task.copy(state = next.name)
+        val saved = pendingTaskRepository.save(updated)
+        logger.info { "TASK_STATE_CHANGE: id=$taskId from=$expected to=$next" }
+        return saved.toDomain()
     }
+
+    fun findTasksReadyForQualification(): Flow<PendingTask> = findTasksByState(PendingTaskState.READY_FOR_QUALIFICATION)
+
+    suspend fun tryClaimForQualification(taskId: ObjectId): PendingTask? =
+        runCatching { updateState(taskId, PendingTaskState.READY_FOR_QUALIFICATION, PendingTaskState.QUALIFYING) }
+            .getOrNull()
 
     /**
      * Merge additional context into existing task.
      * Validates that all values are non-blank (fail fast on blank values).
-     *
-     * @param taskId Task ID to update
-     * @param contextPatch Map of context keys to merge (values must be non-blank)
-     * @return Updated task
-     * @throws IllegalArgumentException if task not found or any value is blank
+     * Allowed only in NEW state.
      */
     suspend fun mergeContext(
         taskId: ObjectId,
         contextPatch: Map<String, String>,
     ): PendingTask {
-        val task =
-            pendingTaskRepository.findById(taskId)
-                ?: throw IllegalArgumentException("Task not found: $taskId")
+        val taskDoc =
+            pendingTaskRepository.findById(taskId) ?: throw IllegalArgumentException("Task not found: $taskId")
+        require(taskDoc.state == PendingTaskState.NEW.name) {
+            "Cannot merge context in state ${taskDoc.state} for task $taskId"
+        }
 
         // Fail fast: reject blank values
         contextPatch.forEach { (key, value) ->
             require(value.isNotBlank()) { "Context key '$key' has blank value for task $taskId" }
         }
 
-        val merged = task.copy(context = task.context + contextPatch)
+        val merged = taskDoc.copy(context = taskDoc.context + contextPatch)
         val saved = pendingTaskRepository.save(merged)
 
-        logger.info {
-            "TASK_CONTEXT_MERGE: Task ${taskId.toHexString()} merged keys ${contextPatch.keys.joinToString(", ")}"
-        }
+        logger.info { "TASK_CONTEXT_MERGE: Task ${taskId.toHexString()} merged keys ${contextPatch.keys.joinToString(", ")}" }
 
         return saved.toDomain()
+    }
+
+    suspend fun failAndEscalateToUserTask(
+        task: PendingTask,
+        reason: String,
+        error: Throwable? = null,
+    ): ObjectId {
+        val title = "Background task failed: ${task.taskType.name}"
+        val description =
+            buildString {
+                appendLine("Pending task ${task.id} failed in state ${task.state}")
+                appendLine("Reason: $reason")
+                error?.message?.let { appendLine("Error: $it") }
+            }
+        val userTask =
+            userTaskService.createTask(
+                title = title,
+                description = description,
+                projectId = task.projectId,
+                clientId = task.clientId,
+                sourceType = com.jervis.domain.task.TaskSourceType.AGENT_SUGGESTION,
+                sourceUri = "pending-task://${task.id.toHexString()}",
+                metadata =
+                    mapOf(
+                        "pendingTaskId" to task.id.toHexString(),
+                        "taskType" to task.taskType.name,
+                        "state" to task.state.name,
+                    ) + task.context,
+            )
+        logger.info { "TASK_FAILED_ESCALATED: pending=${task.id} -> userTask=${userTask.id} reason=$reason" }
+        // Delete pending task after escalation
+        pendingTaskRepository.deleteById(task.id)
+        return userTask.id
     }
 }

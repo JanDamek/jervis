@@ -11,7 +11,7 @@ import org.springframework.stereotype.Repository
 interface PendingTaskMongoRepository : CoroutineCrudRepository<PendingTaskDocument, ObjectId> {
     fun findAllByOrderByCreatedAtAsc(): Flow<PendingTaskDocument>
 
-    fun findByNeedsQualificationOrderByCreatedAtAsc(needsQualification: Boolean): Flow<PendingTaskDocument>
+    fun findByStateOrderByCreatedAtAsc(state: String): Flow<PendingTaskDocument>
 
     @Query("{ 'clientId': ?0, 'taskType': ?1, 'context.sourceUri': ?2 }")
     suspend fun findFirstByClientAndTypeAndSourceUri(

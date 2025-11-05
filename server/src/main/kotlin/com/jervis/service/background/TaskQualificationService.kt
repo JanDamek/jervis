@@ -51,18 +51,23 @@ class TaskQualificationService(
 
         try {
             pendingTaskService
-                .findTasksNeedingQualification(needsQualification = true)
+                .findTasksReadyForQualification()
                 .flatMapMerge(concurrency = 32) { task ->
                     flow {
-                        processedCount++
-                        if (processedCount == 1) {
-                            logger.info { "First task received - qualification pipeline started" }
+                        val claimed = pendingTaskService.tryClaimForQualification(task.id)
+                        if (claimed != null) {
+                            processedCount++
+                            if (processedCount == 1) {
+                                logger.info { "First task received - qualification pipeline started" }
+                            }
+                            if (processedCount % 100 == 0) {
+                                logger.info { "Qualification progress: $processedCount tasks processed..." }
+                            }
+                            qualifyTask(claimed)
+                            emit(claimed)
+                        } else {
+                            logger.debug { "Task ${task.id} could not be claimed (race), skipping" }
                         }
-                        if (processedCount % 100 == 0) {
-                            logger.info { "Qualification progress: $processedCount tasks processed..." }
-                        }
-                        qualifyTask(task)
-                        emit(task)
                     }.catch { e ->
                         logger.error(e) { "Failed to qualify task: ${task.id}" }
                     }
@@ -317,13 +322,26 @@ class TaskQualificationService(
                         logger.warn(e) { "Failed to store qualification notes for delegated task ${task.id}" }
                     }
 
-                    pendingTaskService.setNeedsQualification(task.id, false)
+                    pendingTaskService.updateState(
+                        task.id,
+                        com.jervis.domain.task.PendingTaskState.QUALIFYING,
+                        com.jervis.domain.task.PendingTaskState.DISPATCHED_GPU,
+                    )
                 }
             }
         } catch (e: Exception) {
             val duration = System.currentTimeMillis() - startTime
             logger.error(e) { "Qualification failed for task ${task.id} after ${duration}ms, delegating to strong model" }
-            pendingTaskService.setNeedsQualification(task.id, false)
+            // Even if qualifier failed, delegate to strong model by transitioning state
+            try {
+                pendingTaskService.updateState(
+                    task.id,
+                    com.jervis.domain.task.PendingTaskState.QUALIFYING,
+                    com.jervis.domain.task.PendingTaskState.DISPATCHED_GPU,
+                )
+            } catch (ie: Exception) {
+                logger.warn(ie) { "Failed to transition task ${task.id} to DISPATCHED_GPU after qualifier error" }
+            }
         }
     }
 
