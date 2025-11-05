@@ -25,6 +25,8 @@ class RagDirectSearchService(
         searchText: String,
         filterKey: String?,
         filterValue: String?,
+        maxChunks: Int = 5,
+        minSimilarityThreshold: Double = 0.15,
     ): DirectSearchResult {
         val clientObjectId = ObjectId(clientId)
         val projectObjectId = projectId?.let { ObjectId(it) }
@@ -46,7 +48,7 @@ class RagDirectSearchService(
                 backgroundMode = false,
             )
 
-        val queries = buildQueries(searchText)
+        val queries = buildQueries(searchText, maxChunks, minSimilarityThreshold)
 
         val raw = ragService.executeRawSearch(queries, plan)
 
@@ -69,8 +71,18 @@ class RagDirectSearchService(
         )
     }
 
-    private suspend fun buildQueries(text: String): List<RagQuery> =
-        textChunkingService.splitText(text).map { RagQuery(searchTerms = it.text()) }
+    private suspend fun buildQueries(
+        text: String,
+        maxChunks: Int,
+        minSimilarityThreshold: Double,
+    ): List<RagQuery> =
+        textChunkingService.splitText(text).map {
+            RagQuery(
+                searchTerms = it.text(),
+                maxChunks = maxChunks,
+                minSimilarityThreshold = minSimilarityThreshold,
+            )
+        }
 
     data class DirectSearchResult(
         val items: List<DocumentChunk>,

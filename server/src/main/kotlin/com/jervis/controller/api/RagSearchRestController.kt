@@ -19,6 +19,8 @@ class RagSearchRestController(
                 searchText = request.searchText,
                 filterKey = request.filterKey,
                 filterValue = request.filterValue,
+                maxChunks = request.maxChunks,
+                minSimilarityThreshold = request.minSimilarityThreshold,
             )
 
         val items =

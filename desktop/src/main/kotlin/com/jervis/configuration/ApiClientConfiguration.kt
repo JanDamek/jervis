@@ -84,10 +84,6 @@ class ApiClientConfiguration(
         NotificationsWebSocketClient(serverUrl, applicationEventPublisher).also { it.start() }
 
     @Bean
-    fun errorLogClient(webClient: WebClient): com.jervis.service.IErrorLogService =
-        httpConfig.createHttpServiceProxyFactory(webClient).createClient(com.jervis.service.IErrorLogService::class.java)
-
-    @Bean
     fun debugClient(debugWindowService: IDebugWindowService): DebugWebSocketClient =
         DebugWebSocketClient(serverUrl, debugWindowService).also { it.start() }
 }

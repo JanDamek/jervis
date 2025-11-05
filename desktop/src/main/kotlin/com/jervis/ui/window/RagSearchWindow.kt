@@ -46,6 +46,8 @@ class RagSearchWindow(
     private val projectCombo = JComboBox<ProjectDto>()
     private val filterKeyField = JTextField(16)
     private val filterValueField = JTextField(16)
+    private val maxChunksField = JTextField("20", 8)
+    private val minScoreField = JTextField("0.15", 8)
 
     private val resultsModel = ResultsTableModel(emptyList())
     private val resultsTable = JTable(resultsModel)
@@ -80,6 +82,8 @@ class RagSearchWindow(
                 row("Project", projectCombo)
                 row("Filter Key", filterKeyField)
                 row("Filter Value", filterValueField)
+                row("Max Chunks", maxChunksField)
+                row("Min Score", minScoreField)
             }
 
         val top =
@@ -117,16 +121,37 @@ class RagSearchWindow(
                     buildString {
                         appendLine("Score: ${"%.4f".format(item.score)}")
                         appendLine()
-                        appendLine(item.content)
-                        appendLine()
-                        appendLine("Metadata:")
-                        if (item.metadata.isEmpty()) {
-                            appendLine("<empty>")
-                        } else {
-                            item.metadata.entries.sortedBy { it.key }.forEach { (k, v) ->
-                                appendLine("- $k = $v")
+
+                        // Display key metadata in a readable format
+                        appendLine("=== Metadata ===")
+                        val sourceType = item.metadata["ragSourceType"] ?: "Unknown"
+                        val sourceUri = item.metadata["sourceUri"] ?: ""
+                        val createdAt = item.metadata["createdAt"] ?: ""
+                        val chunkInfo =
+                            buildString {
+                                val chunkId = item.metadata["chunkId"]
+                                val chunkOf = item.metadata["chunkOf"]
+                                if (chunkId != null && chunkOf != null) {
+                                    append("Chunk $chunkId of $chunkOf")
+                                }
                             }
+
+                        appendLine("Source Type: $sourceType")
+                        if (sourceUri.isNotEmpty()) appendLine("URI: $sourceUri")
+                        if (createdAt.isNotEmpty()) appendLine("Created: $createdAt")
+                        if (chunkInfo.isNotEmpty()) appendLine("Chunk: $chunkInfo")
+
+                        // Show summary if available
+                        val summary = item.metadata["summary"]
+                        if (!summary.isNullOrBlank()) {
+                            appendLine()
+                            appendLine("=== Summary ===")
+                            appendLine(summary)
                         }
+
+                        appendLine()
+                        appendLine("=== Content ===")
+                        appendLine(item.content)
                     }
             } else {
                 detailsArea.text = ""
@@ -141,7 +166,11 @@ class RagSearchWindow(
                 val projects = projectService.getAllProjects()
                 withContext(Dispatchers.Main) {
                     clientCombo.model = DefaultComboBoxModel(clients.toTypedArray())
-                    projectCombo.model = DefaultComboBoxModel(projects.toTypedArray())
+
+                    // Add "All Projects" option at the beginning for projects only
+                    val projectItems = mutableListOf<ProjectDto?>(null).apply { addAll(projects) }
+                    projectCombo.model = DefaultComboBoxModel(projectItems.toTypedArray())
+
                     clientCombo.renderer =
                         object : DefaultListCellRenderer() {
                             override fun getListCellRendererComponent(
@@ -166,7 +195,7 @@ class RagSearchWindow(
                                 cellHasFocus: Boolean,
                             ): java.awt.Component {
                                 val c = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus)
-                                text = (value as? ProjectDto)?.name ?: ""
+                                text = (value as? ProjectDto)?.name ?: "<All Projects>"
                                 return c
                             }
                         }
@@ -199,6 +228,29 @@ class RagSearchWindow(
         val fk = filterKeyField.text.trim().ifEmpty { null }
         val fv = filterValueField.text.trim().ifEmpty { null }
 
+        // Parse maxChunks and minScore with validation
+        val maxChunks = maxChunksField.text.trim().toIntOrNull() ?: 20
+        val minScore = minScoreField.text.trim().toDoubleOrNull() ?: 0.15
+
+        if (maxChunks < 1 || maxChunks > 1000) {
+            JOptionPane.showMessageDialog(
+                this,
+                "Max Chunks must be between 1 and 1000.",
+                "Validation",
+                JOptionPane.WARNING_MESSAGE,
+            )
+            return
+        }
+        if (minScore < 0.0 || minScore > 1.0) {
+            JOptionPane.showMessageDialog(
+                this,
+                "Min Score must be between 0.0 and 1.0.",
+                "Validation",
+                JOptionPane.WARNING_MESSAGE,
+            )
+            return
+        }
+
         searchButton.isEnabled = false
 
         scope.launch(Dispatchers.IO) {
@@ -209,6 +261,8 @@ class RagSearchWindow(
                     searchText = query,
                     filterKey = fk,
                     filterValue = fv,
+                    maxChunks = maxChunks,
+                    minSimilarityThreshold = minScore,
                 )
             runCatching { ragSearchService.search(req) }
                 .onSuccess { resp ->
@@ -217,7 +271,7 @@ class RagSearchWindow(
                         if (resp.items.isNotEmpty()) {
                             resultsTable.setRowSelectionInterval(0, 0)
                         }
-                        title = "RAG Search — ${resp.totalChunksFiltered} relevant of ${resp.totalChunksFound}"
+                        title = "RAG Search — ${resp.items.size} results"
                     }
                 }.onFailure { e ->
                     withContext(Dispatchers.Main) {

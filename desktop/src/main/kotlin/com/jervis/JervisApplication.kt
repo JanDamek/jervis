@@ -5,10 +5,16 @@ import com.jervis.client.NotificationsWebSocketClient
 import com.jervis.service.IAgentOrchestratorService
 import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
+import com.jervis.service.IConfluenceService
 import com.jervis.service.IEmailAccountService
+import com.jervis.service.IErrorLogService
 import com.jervis.service.IGitConfigurationService
+import com.jervis.service.IIntegrationSettingsService
+import com.jervis.service.IJiraSetupService
 import com.jervis.service.IProjectService
+import com.jervis.service.IRagSearchService
 import com.jervis.service.ITaskSchedulingService
+import com.jervis.service.IUserTaskService
 import com.jervis.service.debug.DesktopDebugWindowService
 import com.jervis.ui.component.ApplicationWindowManager
 import com.jervis.ui.utils.MacOSAppUtils.configureMacOSSettings
@@ -43,16 +49,16 @@ class JervisApplication(
     private val debugWindowService: DesktopDebugWindowService,
     private val notificationsClient: NotificationsWebSocketClient,
     private val emailAccountService: IEmailAccountService,
-    private val jiraSetupService: com.jervis.service.IJiraSetupService,
-    private val integrationSettingsService: com.jervis.service.IIntegrationSettingsService,
-    private val confluenceService: com.jervis.service.IConfluenceService,
-    private val userTaskService: com.jervis.service.IUserTaskService,
-    private val ragSearchService: com.jervis.service.IRagSearchService,
+    private val jiraSetupService: IJiraSetupService,
+    private val integrationSettingsService: IIntegrationSettingsService,
+    private val confluenceService: IConfluenceService,
+    private val userTaskService: IUserTaskService,
+    private val ragSearchService: IRagSearchService,
 ) {
     private val logger = KotlinLogging.logger {}
 
     @Bean
-    fun initApp(): ApplicationRunner =
+    fun initApp(errorLogClient: IErrorLogService): ApplicationRunner =
         ApplicationRunner {
             CoroutineScope(Dispatchers.Default).launch {
                 ensureDefaultProject()
@@ -74,6 +80,7 @@ class JervisApplication(
                     confluenceService,
                     userTaskService,
                     ragSearchService,
+                    errorLogService = errorLogClient,
                 )
 
             EventQueue.invokeLater {

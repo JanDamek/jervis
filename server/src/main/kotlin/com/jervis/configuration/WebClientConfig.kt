@@ -222,7 +222,7 @@ class WebClientConfig(
             .option(
                 ChannelOption.CONNECT_TIMEOUT_MILLIS,
                 webClientProperties.timeouts.connectTimeoutMillis,
-            )
+            ).responseTimeout(Duration.ofMillis(webClientProperties.timeouts.responseTimeoutMillis))
     }
 
     private fun createRetryFilter() =

@@ -135,6 +135,10 @@ object MacOSAppUtils {
             ragSearchItem.addActionListener { applicationWindowManager.showRagSearchWindow() }
             toolsMenu.add(ragSearchItem)
 
+            val errorLogsItem = JMenuItem("Error Logs")
+            errorLogsItem.addActionListener { applicationWindowManager.showErrorLogsWindow() }
+            toolsMenu.add(errorLogsItem)
+
             val projectSettingsItem = JMenuItem("Project Settings")
             projectSettingsItem.addActionListener { applicationWindowManager.showProjectSettingWindow() }
             toolsMenu.add(projectSettingsItem)
@@ -210,6 +214,10 @@ object MacOSAppUtils {
                     val userTasksItem = java.awt.MenuItem("User Tasks")
                     userTasksItem.addActionListener { applicationWindowManager.showUserTasksWindow() }
                     dockMenu.add(userTasksItem)
+
+                    val errorLogsItem = java.awt.MenuItem("Error Logs")
+                    errorLogsItem.addActionListener { applicationWindowManager.showErrorLogsWindow() }
+                    dockMenu.add(errorLogsItem)
 
                     val debugWindowItem = java.awt.MenuItem("Show Debug Window")
                     debugWindowItem.addActionListener { applicationWindowManager.showDebugWindow() }
