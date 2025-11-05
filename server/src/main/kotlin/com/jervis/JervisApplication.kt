@@ -20,7 +20,7 @@ import org.springframework.context.annotation.PropertySource
 import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRepositories
 
 @SpringBootApplication
-@EnableReactiveMongoRepositories(basePackages = ["com.jervis.repository.mongo"])
+@EnableReactiveMongoRepositories(basePackages = ["com.jervis"])
 @EnableConfigurationProperties(
     PromptsConfiguration::class,
     DataRootProperties::class,

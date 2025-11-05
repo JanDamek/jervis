@@ -26,6 +26,7 @@ class EmailMessageStateManager(
         emailMessageRepository.save(updated)
         logger.debug { "Marked messageId ${messageDocument.messageId} as INDEXING" }
     }
+
     suspend fun saveNewMessageIds(
         accountId: ObjectId,
         messageIds: Flow<ImapMessageId>,

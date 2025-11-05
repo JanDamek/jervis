@@ -2,6 +2,10 @@ package com.jervis.configuration
 
 import com.jervis.service.error.ErrorLogService
 import jakarta.annotation.PostConstruct
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import mu.KotlinLogging
 import org.springframework.context.annotation.Configuration
 
@@ -10,6 +14,7 @@ class UncaughtExceptionConfig(
     private val errorLogService: ErrorLogService,
 ) {
     private val logger = KotlinLogging.logger {}
+    private val exceptionScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     @PostConstruct
     fun registerHandler() {
@@ -17,7 +22,7 @@ class UncaughtExceptionConfig(
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
             logger.error(e) { "Uncaught exception in thread ${t.name}" }
             // Persist asynchronously to avoid blocking critical crash paths
-            kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            exceptionScope.launch {
                 errorLogService.recordError(e)
             }
             previous?.uncaughtException(t, e)
