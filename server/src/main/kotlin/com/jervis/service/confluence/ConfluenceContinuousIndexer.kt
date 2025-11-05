@@ -1,5 +1,6 @@
 package com.jervis.service.confluence
 
+import com.jervis.domain.confluence.ConfluencePageContent
 import com.jervis.entity.ConfluenceAccountDocument
 import com.jervis.service.confluence.processor.ConfluenceContentProcessor
 import com.jervis.service.confluence.processor.ConfluenceTaskCreator
@@ -52,7 +53,7 @@ class ConfluenceContinuousIndexer(
         item: com.jervis.entity.ConfluencePageDocument,
         content: Any,
     ): IndexingResult {
-        val pageContent = content as com.jervis.domain.confluence.ConfluencePageContent
+        val pageContent = content as ConfluencePageContent
         val html =
             pageContent.bodyHtml ?: return IndexingResult(
                 success = false,

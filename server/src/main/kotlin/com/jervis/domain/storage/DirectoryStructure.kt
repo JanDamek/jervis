@@ -85,26 +85,3 @@ data class DirectoryStructure(
         ): DirectoryStructure = DirectoryStructure(Paths.get(workspaceRoot), clientId, projectId)
     }
 }
-
-/**
- * Represents types of subdirectories within a project
- */
-enum class ProjectSubdirectory(
-    val dirName: String,
-) {
-    GIT("git"),
-    UPLOADS("uploads"),
-    AUDIO("audio"),
-    DOCUMENTS("documents"),
-    MEETINGS("meetings"),
-}
-
-/**
- * Represents types of temporary directories
- */
-enum class TmpSubdirectory(
-    val dirName: String,
-) {
-    SCRAPING("scraping"),
-    PROCESSING("processing"),
-}

@@ -14,22 +14,9 @@ data class UserRequirement(
     val title: String,
     val description: String,
     val keywords: List<String> = emptyList(), // For matching (e.g., ["spain", "vacation", "beach"])
-    val priority: RequirementPriority = RequirementPriority.MEDIUM,
-    val status: RequirementStatus = RequirementStatus.ACTIVE,
+    val priority: RequirementPriorityEnum = RequirementPriorityEnum.MEDIUM,
+    val status: RequirementStatusEnum = RequirementStatusEnum.ACTIVE,
     val createdAt: Instant = Instant.now(),
     val completedAt: Instant? = null,
     val metadata: Map<String, String> = emptyMap(),
 )
-
-enum class RequirementPriority {
-    LOW,
-    MEDIUM,
-    HIGH,
-    URGENT,
-}
-
-enum class RequirementStatus {
-    ACTIVE, // Currently tracking
-    COMPLETED, // Requirement fulfilled
-    CANCELLED, // User cancelled
-}

@@ -1,5 +1,6 @@
 package com.jervis.entity
 
+import com.jervis.domain.MessageChannelEnum
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.CompoundIndex
@@ -17,7 +18,7 @@ data class MessageLinkDocument(
     @Id val id: ObjectId = ObjectId(),
     @Indexed(unique = true)
     val messageId: String,
-    val channel: MessageChannel,
+    val channel: MessageChannelEnum,
     @Indexed
     val threadId: ObjectId,
     @Indexed
@@ -28,12 +29,3 @@ data class MessageLinkDocument(
     val hasAttachments: Boolean = false,
     val ragDocumentId: String? = null,
 )
-
-enum class MessageChannel {
-    EMAIL,
-    SLACK,
-    TEAMS,
-    DISCORD,
-    JIRA,
-    GIT_COMMIT,
-}

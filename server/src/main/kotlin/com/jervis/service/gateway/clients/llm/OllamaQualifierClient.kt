@@ -2,10 +2,10 @@ package com.jervis.service.gateway.clients.llm
 
 import com.jervis.configuration.prompts.PromptConfigBase
 import com.jervis.configuration.properties.ModelsProperties
+import com.jervis.domain.gateway.StreamChunk
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.service.gateway.clients.ProviderClient
-import com.jervis.service.gateway.clients.StreamChunk
 import kotlinx.coroutines.flow.Flow
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service

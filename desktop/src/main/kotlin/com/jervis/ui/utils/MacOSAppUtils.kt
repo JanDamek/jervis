@@ -19,7 +19,10 @@ object MacOSAppUtils {
     private val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
     private var windowManager: ApplicationWindowManager? = null
 
-    fun showSystemNotification(title: String, message: String) {
+    fun showSystemNotification(
+        title: String,
+        message: String,
+    ) {
         if (!isMacOS) return
         try {
             // Use AppleScript via osascript for macOS Notification Center
@@ -127,6 +130,10 @@ object MacOSAppUtils {
             val userTasksItem = JMenuItem("User Tasks")
             userTasksItem.addActionListener { applicationWindowManager.showUserTasksWindow() }
             toolsMenu.add(userTasksItem)
+
+            val ragSearchItem = JMenuItem("RAG Search")
+            ragSearchItem.addActionListener { applicationWindowManager.showRagSearchWindow() }
+            toolsMenu.add(ragSearchItem)
 
             val projectSettingsItem = JMenuItem("Project Settings")
             projectSettingsItem.addActionListener { applicationWindowManager.showProjectSettingWindow() }

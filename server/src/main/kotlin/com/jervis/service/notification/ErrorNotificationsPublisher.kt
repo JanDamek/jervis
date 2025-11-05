@@ -1,7 +1,7 @@
 package com.jervis.service.notification
 
+import com.jervis.domain.websocket.WebSocketChannelTypeEnum
 import com.jervis.dto.events.ErrorNotificationEventDto
-import com.jervis.service.websocket.WebSocketChannelType
 import com.jervis.service.websocket.WebSocketSessionManager
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -27,6 +27,6 @@ class ErrorNotificationsPublisher(
                 timestamp = Instant.now().toString(),
             )
         val payload = json.encodeToString(dto)
-        sessionManager.broadcastToChannel(payload, WebSocketChannelType.NOTIFICATIONS)
+        sessionManager.broadcastToChannel(payload, WebSocketChannelTypeEnum.NOTIFICATIONS)
     }
 }

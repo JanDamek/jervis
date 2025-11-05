@@ -142,12 +142,13 @@ ZAKÁZANÉ VZTAHY
 NULL-SAFETY
 • Nikdy nepoužívej !!
 • Používej ?:, ?., requireNotNull, checkNotNull.
-• Lateinit var pouze pro DI nebo frameworkové vlastnosti.
+• Lateinit var pouze pro DI nebo frameworkové vlastnosti. Preferuji nikdy.
 
 ČITELNOST A STRUKTURA
 • Funkce krátké, jednoúčelové.
 • Sdílený kód přes extension functions.
 • Eliminuj duplicity.
+• Vždy používej import nikdy nepiš celý path ke tříde
 
 SERIALIZACE
 • Standard je kotlinx.serialization.
@@ -196,14 +197,8 @@ ZÁSADY ARCHITEKTONICKÉ DISCIPLÍNY:
 CÍL
 • Zachovat architektonickou čistotu, čitelnost a stabilitu celého systému.
 • Kód musí být vždy idiomatický, bezpečný, bez zbytečných větví, komentářů nebo duplicit.
-• Všechny AI i vývojáři musí tyto zásady striktně respektovat.
 
 DESKTOP UI DESIGN SYSTEM
-
-ÚČEL
-• Tato sekce definuje jednotný vzhled a chování všech desktopových oken (Swing) v JERVIS.
-• Cílem je konzistence, jednoduchost a čitelnost.
-
 ZÁSADY
 • Používej jednoduché rozvržení: BorderLayout + GridBagLayout.
 • Vnější okraje: 10 px okolo hlavních panelů.

@@ -1,9 +1,9 @@
 package com.jervis.controller.api
 
-import com.jervis.dto.ConfluenceAccountCreateDto
-import com.jervis.dto.ConfluenceAccountDto
-import com.jervis.dto.ConfluenceAccountUpdateDto
-import com.jervis.dto.ConfluencePageDto
+import com.jervis.dto.confluence.ConfluenceAccountCreateDto
+import com.jervis.dto.confluence.ConfluenceAccountDto
+import com.jervis.dto.confluence.ConfluenceAccountUpdateDto
+import com.jervis.dto.confluence.ConfluencePageDto
 import com.jervis.entity.ConfluenceAccountDocument
 import com.jervis.mapper.toDto
 import com.jervis.repository.mongo.ConfluenceAccountMongoRepository

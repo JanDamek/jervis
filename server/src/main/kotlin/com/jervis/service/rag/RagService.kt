@@ -58,6 +58,25 @@ class RagService(
         )
     }
 
+    /**
+     * Execute only retrieval part and return raw filtered chunks with counters.
+     */
+    suspend fun executeRawSearch(
+        queries: List<RagQuery>,
+        plan: Plan,
+    ): RawSearchResult {
+        logger.info { "RAG_RAW_SEARCH_START: Processing ${queries.size} queries" }
+        val results = executeParallelQueries(queries, plan)
+        val items = results.flatMap { it.filteredChunks }.sortedByDescending { it.score }
+        logger.info { "RAG_RAW_SEARCH_COMPLETE: items=${items.size}" }
+        return RawSearchResult(
+            items = items,
+            queriesProcessed = results.size,
+            totalChunksFound = results.sumOf { it.chunks.size },
+            totalChunksFiltered = results.sumOf { it.filteredChunks.size },
+        )
+    }
+
     private suspend fun executeParallelQueries(
         queries: List<RagQuery>,
         plan: Plan,
@@ -105,5 +124,12 @@ class RagService(
         val query: String,
         val chunks: List<DocumentChunk>,
         val filteredChunks: List<DocumentChunk>,
+    )
+
+    data class RawSearchResult(
+        val items: List<DocumentChunk>,
+        val queriesProcessed: Int,
+        val totalChunksFound: Int,
+        val totalChunksFiltered: Int,
     )
 }

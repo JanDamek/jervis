@@ -5,6 +5,7 @@ import com.jervis.dto.events.ErrorNotificationEventDto
 import com.jervis.dto.events.JiraAuthPromptEventDto
 import com.jervis.dto.events.PlanStatusChangeEventDto
 import com.jervis.dto.events.StepCompletionEventDto
+import com.jervis.dto.events.UserTaskCreatedEventDto
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.websocket.WebSockets
@@ -131,7 +132,7 @@ class NotificationsWebSocketClient(
 
         // Try to decode as UserTaskCreatedEventDto
         runCatching {
-            json.decodeFromString(com.jervis.dto.events.UserTaskCreatedEventDto.serializer(), text)
+            json.decodeFromString(UserTaskCreatedEventDto.serializer(), text)
         }.onSuccess {
             eventPublisher.publishEvent(it)
             return

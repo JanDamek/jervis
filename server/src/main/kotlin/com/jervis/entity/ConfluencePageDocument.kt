@@ -1,5 +1,6 @@
 package com.jervis.entity
 
+import com.jervis.domain.confluence.ConfluencePageStateEnum
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.CompoundIndex
@@ -47,7 +48,7 @@ data class ConfluencePageDocument(
     val url: String,
     val lastKnownVersion: Int,
     val contentHash: String? = null,
-    val state: ConfluencePageState = ConfluencePageState.NEW,
+    val state: ConfluencePageStateEnum = ConfluencePageStateEnum.NEW,
     val parentPageId: String? = null,
     val childPageIds: List<String> = emptyList(),
     val internalLinks: List<String> = emptyList(),
@@ -59,9 +60,3 @@ data class ConfluencePageDocument(
     val createdAt: Instant = Instant.now(),
     val updatedAt: Instant = Instant.now(),
 )
-
-enum class ConfluencePageState {
-    NEW,
-    INDEXED,
-    FAILED,
-}

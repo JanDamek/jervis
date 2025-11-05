@@ -1,10 +1,12 @@
 package com.jervis.service.sender
 
+import com.jervis.domain.MessageChannelEnum
+import com.jervis.domain.confluence.ConversationCategoryEnum
+import com.jervis.domain.confluence.PriorityEnum
+import com.jervis.domain.confluence.ThreadStatusEnum
 import com.jervis.domain.sender.ActionItem
+import com.jervis.domain.sender.ChannelMapping
 import com.jervis.domain.sender.ConversationThread
-import com.jervis.entity.ConversationCategory
-import com.jervis.entity.Priority
-import com.jervis.entity.ThreadStatus
 import com.jervis.mapper.toDomain
 import com.jervis.mapper.toEntity
 import com.jervis.repository.mongo.ConversationThreadMongoRepository
@@ -81,8 +83,8 @@ class ConversationThreadService(
                 subject = normalizeSubject(emailHeaders.subject),
                 channelMappings =
                     listOf(
-                        com.jervis.domain.sender.ChannelMapping(
-                            channel = com.jervis.entity.MessageChannel.EMAIL,
+                        ChannelMapping(
+                            channel = MessageChannelEnum.EMAIL,
                             externalId = emailHeaders.messageId,
                             externalThreadId = null,
                             addedAt = emailHeaders.receivedAt,
@@ -91,8 +93,8 @@ class ConversationThreadService(
                 senderProfileIds = listOf(senderProfileId),
                 participantSummary = null,
                 category = inferCategory(emailHeaders),
-                priority = Priority.NORMAL,
-                status = ThreadStatus.ACTIVE,
+                priorityEnum = PriorityEnum.NORMAL,
+                status = ThreadStatusEnum.ACTIVE,
                 summary = null,
                 keyPoints = emptyList(),
                 lastSummaryUpdate = null,
@@ -165,7 +167,7 @@ class ConversationThreadService(
 
     suspend fun updateStatus(
         threadId: ObjectId,
-        status: ThreadStatus,
+        status: ThreadStatusEnum,
     ): ConversationThread? {
         val thread = findById(threadId) ?: return null
         val updated = thread.copy(status = status)
@@ -226,15 +228,15 @@ class ConversationThreadService(
     private fun normalizeSubject(subject: String): String =
         subject.replace(Regex("^(Re:|Fwd:|Fw:)\\s*", RegexOption.IGNORE_CASE), "").trim()
 
-    private fun inferCategory(email: ImapMessage): ConversationCategory =
+    private fun inferCategory(email: ImapMessage): ConversationCategoryEnum =
         when {
-            email.subject.contains("failed", ignoreCase = true) -> ConversationCategory.SUPPORT_REQUEST
-            email.subject.contains("error", ignoreCase = true) -> ConversationCategory.SUPPORT_REQUEST
-            email.subject.contains("urgent", ignoreCase = true) -> ConversationCategory.SUPPORT_REQUEST
-            email.subject.contains("task", ignoreCase = true) -> ConversationCategory.TASK_ASSIGNMENT
-            email.subject.contains("backup", ignoreCase = true) -> ConversationCategory.SYSTEM_NOTIFICATION
-            email.from.contains("noreply", ignoreCase = true) -> ConversationCategory.SYSTEM_NOTIFICATION
-            else -> ConversationCategory.DISCUSSION
+            email.subject.contains("failed", ignoreCase = true) -> ConversationCategoryEnum.SUPPORT_REQUEST
+            email.subject.contains("error", ignoreCase = true) -> ConversationCategoryEnum.SUPPORT_REQUEST
+            email.subject.contains("urgent", ignoreCase = true) -> ConversationCategoryEnum.SUPPORT_REQUEST
+            email.subject.contains("task", ignoreCase = true) -> ConversationCategoryEnum.TASK_ASSIGNMENT
+            email.subject.contains("backup", ignoreCase = true) -> ConversationCategoryEnum.SYSTEM_NOTIFICATION
+            email.from.contains("noreply", ignoreCase = true) -> ConversationCategoryEnum.SYSTEM_NOTIFICATION
+            else -> ConversationCategoryEnum.DISCUSSION
         }
 
     private fun detectRequiresResponse(email: ImapMessage): Boolean =
@@ -260,8 +262,8 @@ class ConversationThreadService(
 
         val newMappings =
             thread.channelMappings +
-                com.jervis.domain.sender.ChannelMapping(
-                    channel = com.jervis.entity.MessageChannel.EMAIL,
+                ChannelMapping(
+                    channel = MessageChannelEnum.EMAIL,
                     externalId = emailHeaders.messageId,
                     externalThreadId = null,
                     addedAt = emailHeaders.receivedAt,
@@ -308,7 +310,7 @@ class ConversationThreadService(
 
         return candidates
             .filter { normalizeSubject(it.subject).equals(normalized, ignoreCase = true) }
-            .filter { it.status != ThreadStatus.ARCHIVED }
+            .filter { it.status != ThreadStatusEnum.ARCHIVED }
             .filter {
                 java.time.Duration
                     .between(it.lastMessageAt, now)

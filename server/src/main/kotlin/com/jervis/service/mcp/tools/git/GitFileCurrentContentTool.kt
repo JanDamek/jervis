@@ -2,6 +2,7 @@ package com.jervis.service.mcp.tools.git
 
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.plan.Plan
+import com.jervis.domain.storage.ProjectSubdirectoryEnum
 import com.jervis.repository.mongo.ProjectMongoRepository
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
@@ -192,11 +193,12 @@ class GitFileCurrentContentTool(
                 ensureBranchCheckedOut(gitDir, branch)
             }
 
-            val resolvedPath = directoryStructureService.resolveExistingProjectPath(
-                project,
-                filePath,
-                com.jervis.domain.storage.ProjectSubdirectory.GIT,
-            )
+            val resolvedPath =
+                directoryStructureService.resolveExistingProjectPath(
+                    project,
+                    filePath,
+                    ProjectSubdirectoryEnum.GIT,
+                )
 
             if (!Files.exists(resolvedPath)) {
                 throw IllegalStateException("File not found: $filePath at $resolvedPath")
@@ -218,7 +220,6 @@ class GitFileCurrentContentTool(
                 truncated = lineCount > maxLines,
             )
         }
-
 
     private data class FileContent(
         val content: String,

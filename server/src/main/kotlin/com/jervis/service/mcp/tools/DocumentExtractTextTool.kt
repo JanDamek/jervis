@@ -4,6 +4,7 @@ import com.jervis.common.client.ITikaClient
 import com.jervis.common.dto.TikaProcessRequest
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.plan.Plan
+import com.jervis.domain.storage.ProjectSubdirectoryEnum
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
@@ -128,11 +129,10 @@ class DocumentExtractTextTool(
     private fun resolvePath(
         filePath: String,
         plan: Plan,
-    ): Path {
-        return directoryStructureService.resolveExistingProjectPath(
+    ): Path =
+        directoryStructureService.resolveExistingProjectPath(
             plan.projectDocument!!,
             filePath,
-            com.jervis.domain.storage.ProjectSubdirectory.DOCUMENTS,
+            ProjectSubdirectoryEnum.DOCUMENTS,
         )
-    }
 }

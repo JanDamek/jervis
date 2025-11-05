@@ -1,7 +1,7 @@
 package com.jervis.repository.mongo
 
+import com.jervis.domain.confluence.ThreadStatusEnum
 import com.jervis.entity.ConversationThreadDocument
-import com.jervis.entity.ThreadStatus
 import kotlinx.coroutines.flow.Flow
 import org.bson.types.ObjectId
 import org.springframework.data.repository.kotlin.CoroutineCrudRepository
@@ -20,7 +20,7 @@ interface ConversationThreadMongoRepository : CoroutineCrudRepository<Conversati
     ): Flow<ConversationThreadDocument>
 
     fun findByStatusAndLastMessageAtBefore(
-        status: ThreadStatus,
+        status: ThreadStatusEnum,
         timestamp: Instant,
     ): Flow<ConversationThreadDocument>
 
@@ -28,6 +28,6 @@ interface ConversationThreadMongoRepository : CoroutineCrudRepository<Conversati
 
     suspend fun countByClientIdAndStatus(
         clientId: ObjectId,
-        status: ThreadStatus,
+        status: ThreadStatusEnum,
     ): Long
 }

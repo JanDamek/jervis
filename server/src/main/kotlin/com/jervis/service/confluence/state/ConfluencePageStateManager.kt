@@ -1,8 +1,8 @@
 package com.jervis.service.confluence.state
 
 import com.jervis.domain.confluence.ConfluencePage
+import com.jervis.domain.confluence.ConfluencePageStateEnum
 import com.jervis.entity.ConfluencePageDocument
-import com.jervis.entity.ConfluencePageState
 import com.jervis.repository.mongo.ConfluencePageMongoRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -62,7 +62,7 @@ class ConfluencePageStateManager(
                     title = page.title,
                     url = url,
                     lastKnownVersion = page.version.number,
-                    state = ConfluencePageState.NEW,
+                    state = ConfluencePageStateEnum.NEW,
                     parentPageId = page.parentId,
                     lastModifiedBy = page.version.authorId,
                     lastModifiedAt = page.version.createdAt,
@@ -78,7 +78,7 @@ class ConfluencePageStateManager(
                     title = page.title,
                     url = url,
                     lastKnownVersion = page.version.number,
-                    state = ConfluencePageState.NEW,
+                    state = ConfluencePageStateEnum.NEW,
                     parentPageId = page.parentId,
                     lastModifiedBy = page.version.authorId,
                     lastModifiedAt = page.version.createdAt,
@@ -126,7 +126,7 @@ class ConfluencePageStateManager(
     suspend fun markAsIndexed(page: ConfluencePageDocument) {
         val updated =
             page.copy(
-                state = ConfluencePageState.INDEXED,
+                state = ConfluencePageStateEnum.INDEXED,
                 lastIndexedAt = Instant.now(),
                 errorMessage = null,
                 updatedAt = Instant.now(),
@@ -145,7 +145,7 @@ class ConfluencePageStateManager(
     ) {
         val updated =
             page.copy(
-                state = ConfluencePageState.FAILED,
+                state = ConfluencePageStateEnum.FAILED,
                 errorMessage = errorMessage.take(500), // Truncate long errors
                 updatedAt = Instant.now(),
             )
@@ -191,9 +191,9 @@ class ConfluencePageStateManager(
      * Get indexing statistics for monitoring.
      */
     suspend fun getStats(accountId: ObjectId): ConfluenceIndexingStats {
-        val newCount = pageRepository.countByAccountIdAndState(accountId, ConfluencePageState.NEW)
-        val indexedCount = pageRepository.countByAccountIdAndState(accountId, ConfluencePageState.INDEXED)
-        val failedCount = pageRepository.countByAccountIdAndState(accountId, ConfluencePageState.FAILED)
+        val newCount = pageRepository.countByAccountIdAndState(accountId, ConfluencePageStateEnum.NEW)
+        val indexedCount = pageRepository.countByAccountIdAndState(accountId, ConfluencePageStateEnum.INDEXED)
+        val failedCount = pageRepository.countByAccountIdAndState(accountId, ConfluencePageStateEnum.FAILED)
 
         return ConfluenceIndexingStats(
             accountId = accountId,

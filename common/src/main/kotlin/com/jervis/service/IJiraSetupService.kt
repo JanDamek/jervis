@@ -5,8 +5,10 @@ import com.jervis.dto.jira.JiraApiTokenTestRequestDto
 import com.jervis.dto.jira.JiraApiTokenTestResponseDto
 import com.jervis.dto.jira.JiraBeginAuthRequestDto
 import com.jervis.dto.jira.JiraBeginAuthResponseDto
+import com.jervis.dto.jira.JiraBoardRefDto
 import com.jervis.dto.jira.JiraBoardSelectionDto
 import com.jervis.dto.jira.JiraCompleteAuthRequestDto
+import com.jervis.dto.jira.JiraProjectRefDto
 import com.jervis.dto.jira.JiraProjectSelectionDto
 import com.jervis.dto.jira.JiraSetupStatusDto
 import com.jervis.dto.jira.JiraUserSelectionDto
@@ -63,11 +65,11 @@ interface IJiraSetupService {
     @GetExchange("/projects")
     suspend fun listProjects(
         @RequestParam clientId: String,
-    ): List<com.jervis.dto.jira.JiraProjectRefDto>
+    ): List<JiraProjectRefDto>
 
     @GetExchange("/boards")
     suspend fun listBoards(
         @RequestParam clientId: String,
         @RequestParam(required = false) projectKey: String? = null,
-    ): List<com.jervis.dto.jira.JiraBoardRefDto>
+    ): List<JiraBoardRefDto>
 }

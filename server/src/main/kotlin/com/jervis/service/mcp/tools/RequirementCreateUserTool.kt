@@ -2,7 +2,7 @@ package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.plan.Plan
-import com.jervis.domain.requirement.RequirementPriority
+import com.jervis.domain.requirement.RequirementPriorityEnum
 import com.jervis.entity.UserRequirementDocument
 import com.jervis.repository.mongo.UserRequirementMongoRepository
 import com.jervis.service.gateway.core.LlmGateway
@@ -89,6 +89,6 @@ class RequirementCreateUserTool(
         val title: String = "",
         val description: String = "",
         val keywords: List<String> = emptyList(),
-        val priority: RequirementPriority = RequirementPriority.MEDIUM,
+        val priority: RequirementPriorityEnum = RequirementPriorityEnum.MEDIUM,
     )
 }

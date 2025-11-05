@@ -1,5 +1,10 @@
 package com.jervis.entity
 
+import com.jervis.domain.confluence.ActionItemEmbedded
+import com.jervis.domain.confluence.ChannelMappingEmbedded
+import com.jervis.domain.confluence.ConversationCategoryEnum
+import com.jervis.domain.confluence.PriorityEnum
+import com.jervis.domain.confluence.ThreadStatusEnum
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.CompoundIndex
@@ -21,9 +26,9 @@ data class ConversationThreadDocument(
     val channelMappings: List<ChannelMappingEmbedded> = emptyList(),
     val senderProfileIds: List<ObjectId> = emptyList(),
     val participantSummary: String? = null,
-    val category: ConversationCategory = ConversationCategory.DISCUSSION,
-    val priority: Priority = Priority.NORMAL,
-    val status: ThreadStatus = ThreadStatus.ACTIVE,
+    val category: ConversationCategoryEnum = ConversationCategoryEnum.DISCUSSION,
+    val priorityEnum: PriorityEnum = PriorityEnum.NORMAL,
+    val status: ThreadStatusEnum = ThreadStatusEnum.ACTIVE,
     val summary: String? = null,
     val keyPoints: List<String> = emptyList(),
     val lastSummaryUpdate: Instant? = null,
@@ -41,42 +46,4 @@ data class ConversationThreadDocument(
     @Indexed
     val clientId: ObjectId,
     val tags: List<String> = emptyList(),
-)
-
-enum class ConversationCategory {
-    DISCUSSION,
-    SUPPORT_REQUEST,
-    TASK_ASSIGNMENT,
-    DECISION_MAKING,
-    INFORMATION_SHARING,
-    SYSTEM_NOTIFICATION,
-}
-
-enum class ThreadStatus {
-    ACTIVE,
-    WAITING_RESPONSE,
-    RESOLVED,
-    ARCHIVED,
-}
-
-enum class Priority {
-    LOW,
-    NORMAL,
-    HIGH,
-    URGENT,
-}
-
-data class ActionItemEmbedded(
-    val description: String,
-    val assignedTo: String? = null,
-    val deadline: Instant? = null,
-    val completed: Boolean = false,
-    val createdAt: Instant = Instant.now(),
-)
-
-data class ChannelMappingEmbedded(
-    val channel: MessageChannel,
-    val externalId: String,
-    val externalThreadId: String? = null,
-    val addedAt: Instant = Instant.now(),
 )

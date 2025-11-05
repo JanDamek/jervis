@@ -34,6 +34,7 @@ class ApplicationWindowManager(
     private val integrationSettingsService: com.jervis.service.IIntegrationSettingsService,
     private val confluenceService: com.jervis.service.IConfluenceService,
     private val userTaskService: com.jervis.service.IUserTaskService,
+    private val ragSearchService: com.jervis.service.IRagSearchService,
 ) {
     private val mainWindow: MainWindow by lazy {
         MainWindow(
@@ -86,6 +87,12 @@ class ApplicationWindowManager(
             .UserTasksWindow(userTaskService, clientService, chatCoordinator, this)
     }
 
+    // RAG Search window
+    private val ragSearchWindow: com.jervis.ui.window.RagSearchWindow by lazy {
+        com.jervis.ui.window
+            .RagSearchWindow(ragSearchService, clientService, projectService)
+    }
+
     @Volatile
     private var currentClientId: String? = null
 
@@ -108,6 +115,11 @@ class ApplicationWindowManager(
             println("Warning: Failed to initialize system tray icon: ${e.message}")
             // Application continues to work without tray icon
         }
+    }
+
+    fun showRagSearchWindow() {
+        ragSearchWindow.isVisible = true
+        ragSearchWindow.toFront()
     }
 
     /**

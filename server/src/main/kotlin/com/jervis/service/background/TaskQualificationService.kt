@@ -1,9 +1,10 @@
 package com.jervis.service.background
 
+import com.jervis.domain.confluence.ThreadStatusEnum
+import com.jervis.domain.email.AliasTypeEnum
 import com.jervis.domain.sender.ConversationThread
 import com.jervis.domain.task.PendingTask
 import com.jervis.domain.task.PendingTaskTypeEnum
-import com.jervis.entity.AliasType
 import com.jervis.service.gateway.QualifierLlmGateway
 import com.jervis.service.listener.email.imap.ImapMessage
 import com.jervis.service.sender.ConversationThreadService
@@ -99,7 +100,7 @@ class TaskQualificationService(
             senderProfileService.findOrCreateProfile(
                 identifier = email.from,
                 displayName = null,
-                aliasType = AliasType.EMAIL_WORK,
+                aliasType = AliasTypeEnum.EMAIL_WORK,
             )
 
         // 2. Create/find thread
@@ -131,7 +132,7 @@ class TaskQualificationService(
         if (resolved) {
             conversationThreadService.setRequiresResponse(thread.id, false)
             if (thread.actionItems.all { it.completed }) {
-                conversationThreadService.updateStatus(thread.id, com.jervis.entity.ThreadStatus.RESOLVED)
+                conversationThreadService.updateStatus(thread.id, ThreadStatusEnum.RESOLVED)
             }
             logger.info {
                 "Thread ${thread.threadId} resolved by inbound email ${email.messageId}; closed tasks: ${closedTaskIds.joinToString()}"

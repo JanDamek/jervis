@@ -47,6 +47,7 @@ class JervisApplication(
     private val integrationSettingsService: com.jervis.service.IIntegrationSettingsService,
     private val confluenceService: com.jervis.service.IConfluenceService,
     private val userTaskService: com.jervis.service.IUserTaskService,
+    private val ragSearchService: com.jervis.service.IRagSearchService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -72,6 +73,7 @@ class JervisApplication(
                     integrationSettingsService,
                     confluenceService,
                     userTaskService,
+                    ragSearchService,
                 )
 
             EventQueue.invokeLater {

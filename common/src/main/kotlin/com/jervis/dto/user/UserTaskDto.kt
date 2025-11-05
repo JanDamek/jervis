@@ -16,9 +16,3 @@ data class UserTaskDto(
     val sourceUri: String? = null,
     val createdAtEpochMillis: Long,
 )
-
-@Serializable
-data class UserTaskCountDto(
-    val clientId: String,
-    val activeCount: Int,
-)

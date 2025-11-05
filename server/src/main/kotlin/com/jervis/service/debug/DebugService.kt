@@ -1,7 +1,9 @@
 package com.jervis.service.debug
 
+import com.jervis.domain.websocket.WebSocketChannelTypeEnum
 import com.jervis.dto.events.DebugEventDto
-import com.jervis.service.websocket.WebSocketChannelType
+import com.jervis.dto.events.ResponseChunkDto
+import com.jervis.dto.events.SessionCompletedDto
 import com.jervis.service.websocket.WebSocketSessionManager
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -44,7 +46,7 @@ class DebugService(
             )
         val jsonString = json.encodeToString<DebugEventDto>(dto)
         logger.debug { "Broadcasting debug session started: $sessionId" }
-        sessionManager.broadcastToChannel(jsonString, WebSocketChannelType.DEBUG)
+        sessionManager.broadcastToChannel(jsonString, WebSocketChannelTypeEnum.DEBUG)
     }
 
     fun responseChunk(
@@ -52,21 +54,21 @@ class DebugService(
         chunk: String,
     ) {
         val dto: DebugEventDto =
-            DebugEventDto.ResponseChunkDto(
+            ResponseChunkDto(
                 sessionId = sessionId,
                 chunk = chunk,
             )
         val jsonString = json.encodeToString<DebugEventDto>(dto)
-        sessionManager.broadcastToChannel(jsonString, WebSocketChannelType.DEBUG)
+        sessionManager.broadcastToChannel(jsonString, WebSocketChannelTypeEnum.DEBUG)
     }
 
     fun sessionCompleted(sessionId: String) {
         val dto: DebugEventDto =
-            DebugEventDto.SessionCompletedDto(
+            SessionCompletedDto(
                 sessionId = sessionId,
             )
         val jsonString = json.encodeToString<DebugEventDto>(dto)
         logger.debug { "Broadcasting debug session completed: $sessionId" }
-        sessionManager.broadcastToChannel(jsonString, WebSocketChannelType.DEBUG)
+        sessionManager.broadcastToChannel(jsonString, WebSocketChannelTypeEnum.DEBUG)
     }
 }

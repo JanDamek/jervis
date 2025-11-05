@@ -1,7 +1,6 @@
 package com.jervis.domain.sender
 
-import com.jervis.entity.AliasType
-import com.jervis.entity.RelationshipType
+import com.jervis.domain.email.RelationshipTypeEnum
 import org.bson.types.ObjectId
 import java.time.Instant
 
@@ -10,7 +9,7 @@ data class SenderProfile(
     val primaryIdentifier: String,
     val displayName: String?,
     val aliases: List<SenderAlias>,
-    val relationship: RelationshipType,
+    val relationship: RelationshipTypeEnum,
     val organization: String?,
     val role: String?,
     val conversationSummary: String?,
@@ -22,20 +21,4 @@ data class SenderProfile(
     val lastInteractionAt: Instant?,
     val totalMessagesReceived: Int,
     val totalMessagesSent: Int,
-)
-
-data class SenderAlias(
-    val type: AliasType,
-    val value: String,
-    val displayName: String?,
-    val verified: Boolean,
-    val firstSeenAt: Instant,
-    val lastSeenAt: Instant,
-)
-
-data class CommunicationStats(
-    val averageResponseTimeMs: Long?,
-    val preferredChannel: String?,
-    val typicalResponseDay: String?,
-    val timezone: String?,
 )

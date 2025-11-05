@@ -3,21 +3,23 @@ package com.jervis.controller.api
 import com.jervis.domain.jira.JiraAccountId
 import com.jervis.domain.jira.JiraBoardId
 import com.jervis.domain.jira.JiraProjectKey
+import com.jervis.domain.websocket.WebSocketChannelTypeEnum
 import com.jervis.dto.events.JiraAuthPromptEventDto
 import com.jervis.dto.jira.JiraApiTokenSaveRequestDto
 import com.jervis.dto.jira.JiraApiTokenTestRequestDto
 import com.jervis.dto.jira.JiraApiTokenTestResponseDto
 import com.jervis.dto.jira.JiraBeginAuthRequestDto
 import com.jervis.dto.jira.JiraBeginAuthResponseDto
+import com.jervis.dto.jira.JiraBoardRefDto
 import com.jervis.dto.jira.JiraBoardSelectionDto
 import com.jervis.dto.jira.JiraCompleteAuthRequestDto
+import com.jervis.dto.jira.JiraProjectRefDto
 import com.jervis.dto.jira.JiraProjectSelectionDto
 import com.jervis.dto.jira.JiraSetupStatusDto
 import com.jervis.dto.jira.JiraUserSelectionDto
 import com.jervis.service.IJiraSetupService
 import com.jervis.service.jira.JiraAuthService
 import com.jervis.service.jira.JiraSelectionService
-import com.jervis.service.websocket.WebSocketChannelType
 import com.jervis.service.websocket.WebSocketSessionManager
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -82,7 +84,7 @@ class JiraSetupRestController(
                 redirectUri = request.redirectUri,
             )
         val payload = json.encodeToString(event)
-        sessionManager.broadcastToChannel(payload, WebSocketChannelType.NOTIFICATIONS)
+        sessionManager.broadcastToChannel(payload, WebSocketChannelTypeEnum.NOTIFICATIONS)
         logger.info { "JIRA_UI_SETUP: beginAuth published prompt for client=${request.clientId} correlationId=$correlationId" }
 
         return JiraBeginAuthResponseDto(correlationId = correlationId, authUrl = authUrl)
@@ -119,13 +121,12 @@ class JiraSetupRestController(
         return fetchStatus(request.clientId)
     }
 
-    override suspend fun listProjects(clientId: String): List<com.jervis.dto.jira.JiraProjectRefDto> =
+    override suspend fun listProjects(clientId: String): List<JiraProjectRefDto> =
         try {
             val conn = jiraSelectionService.getConnection(ObjectId(clientId))
             val list = jiraApiClient.listProjects(conn)
             list.map {
-                com.jervis.dto.jira
-                    .JiraProjectRefDto(key = it.first.value, name = it.second)
+                JiraProjectRefDto(key = it.first.value, name = it.second)
             }
         } catch (e: Exception) {
             errorPublisher.publishError(
@@ -138,7 +139,7 @@ class JiraSetupRestController(
     override suspend fun listBoards(
         clientId: String,
         projectKey: String?,
-    ): List<com.jervis.dto.jira.JiraBoardRefDto> =
+    ): List<JiraBoardRefDto> =
         try {
             val conn = jiraSelectionService.getConnection(ObjectId(clientId))
             val boards =
@@ -149,8 +150,7 @@ class JiraSetupRestController(
                     },
                 )
             boards.map {
-                com.jervis.dto.jira
-                    .JiraBoardRefDto(id = it.first.value, name = it.second)
+                JiraBoardRefDto(id = it.first.value, name = it.second)
             }
         } catch (e: Exception) {
             errorPublisher.publishError(

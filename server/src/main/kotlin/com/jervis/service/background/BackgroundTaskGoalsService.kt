@@ -6,12 +6,6 @@ import org.springframework.core.io.ClassPathResource
 import org.springframework.stereotype.Service
 import org.yaml.snakeyaml.Yaml
 
-data class TaskConfig(
-    val goal: String,
-    val qualifierSystemPrompt: String?,
-    val qualifierUserPrompt: String?,
-)
-
 /**
  * Service for loading background task configuration from YAML.
  * Each pending task type has:
@@ -29,8 +23,8 @@ class BackgroundTaskGoalsService {
     }
 
     /**
-     * Get goal for a specific pending task type (used by AgentOrchestrator).
-     * Returns null if no goal defined for this type.
+     * Get a goal for a specific pending task type (used by AgentOrchestrator).
+     * Returns null if no goal is defined for this type.
      */
     fun getGoals(taskType: PendingTaskTypeEnum): String? = tasks[taskType.name]?.goal
 
@@ -64,9 +58,8 @@ class BackgroundTaskGoalsService {
                                 goal = valueMap["goal"] ?: "",
                                 qualifierSystemPrompt = valueMap["qualifierSystemPrompt"],
                                 qualifierUserPrompt = valueMap["qualifierUserPrompt"],
-                        )
-                    }
-                    .toMap()
+                            )
+                    }.toMap()
 
             logger.debug { "Loaded task configurations: ${tasksTyped.keys}" }
             tasksTyped
@@ -74,4 +67,10 @@ class BackgroundTaskGoalsService {
             logger.error(e) { "Failed to load background-task-goals.yaml, using empty configuration" }
             emptyMap()
         }
+
+    data class TaskConfig(
+        val goal: String,
+        val qualifierSystemPrompt: String?,
+        val qualifierUserPrompt: String?,
+    )
 }

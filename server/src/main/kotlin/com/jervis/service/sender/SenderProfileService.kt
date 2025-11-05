@@ -1,9 +1,9 @@
 package com.jervis.service.sender
 
+import com.jervis.domain.email.AliasTypeEnum
+import com.jervis.domain.email.RelationshipTypeEnum
 import com.jervis.domain.sender.SenderAlias
 import com.jervis.domain.sender.SenderProfile
-import com.jervis.entity.AliasType
-import com.jervis.entity.RelationshipType
 import com.jervis.mapper.toDomain
 import com.jervis.mapper.toEntity
 import com.jervis.repository.mongo.SenderProfileMongoRepository
@@ -39,7 +39,7 @@ class SenderProfileService(
     suspend fun findOrCreateProfile(
         identifier: String,
         displayName: String?,
-        aliasType: AliasType,
+        aliasType: AliasTypeEnum,
     ): SenderProfile {
         findByIdentifier(identifier)?.let { return it }
 
@@ -91,7 +91,7 @@ class SenderProfileService(
 
     suspend fun addAlias(
         profile: SenderProfile,
-        type: AliasType,
+        type: AliasTypeEnum,
         value: String,
         displayName: String?,
     ): SenderProfile {
@@ -163,7 +163,7 @@ class SenderProfileService(
 
     suspend fun updateRelationship(
         profileId: ObjectId,
-        relationship: RelationshipType,
+        relationship: RelationshipTypeEnum,
         organization: String?,
         role: String?,
     ): SenderProfile? {
@@ -181,14 +181,14 @@ class SenderProfileService(
 
     private fun inferRelationship(
         identifier: String,
-        aliasType: AliasType,
-    ): RelationshipType =
+        aliasType: AliasTypeEnum,
+    ): RelationshipTypeEnum =
         when {
-            identifier.contains("noreply", ignoreCase = true) -> RelationshipType.SYSTEM
-            identifier.contains("support", ignoreCase = true) -> RelationshipType.SUPPORT
-            identifier.contains("backup", ignoreCase = true) -> RelationshipType.SYSTEM
-            identifier.contains("@localhost") -> RelationshipType.SYSTEM
-            aliasType == AliasType.GIT_AUTHOR -> RelationshipType.COLLEAGUE
-            else -> RelationshipType.UNKNOWN
+            identifier.contains("noreply", ignoreCase = true) -> RelationshipTypeEnum.SYSTEM
+            identifier.contains("support", ignoreCase = true) -> RelationshipTypeEnum.SUPPORT
+            identifier.contains("backup", ignoreCase = true) -> RelationshipTypeEnum.SYSTEM
+            identifier.contains("@localhost") -> RelationshipTypeEnum.SYSTEM
+            aliasType == AliasTypeEnum.GIT_AUTHOR -> RelationshipTypeEnum.COLLEAGUE
+            else -> RelationshipTypeEnum.UNKNOWN
         }
 }

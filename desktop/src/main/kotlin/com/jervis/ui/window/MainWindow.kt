@@ -4,16 +4,17 @@ import com.jervis.dto.ChatRequestContextDto
 import com.jervis.dto.ChatRequestDto
 import com.jervis.dto.PlanDto
 import com.jervis.dto.PlanStepDto
+import com.jervis.dto.events.ErrorNotificationEventDto
 import com.jervis.dto.events.PlanStatusChangeEventDto
 import com.jervis.dto.events.StepCompletionEventDto
 import com.jervis.dto.events.UserTaskCreatedEventDto
-import com.jervis.ui.utils.MacOSAppUtils
 import com.jervis.service.IAgentOrchestratorService
 import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
 import com.jervis.service.IProjectService
 import com.jervis.service.debug.DesktopDebugWindowService
 import com.jervis.ui.component.ApplicationWindowManager
+import com.jervis.ui.utils.MacOSAppUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -626,6 +627,10 @@ class MainWindow(
         userTasksItem.addActionListener { applicationWindowManager.showUserTasksWindow() }
         toolsMenu.add(userTasksItem)
 
+        val ragSearchItem = JMenuItem("RAG Search")
+        ragSearchItem.addActionListener { applicationWindowManager.showRagSearchWindow() }
+        toolsMenu.add(ragSearchItem)
+
         // Debug Window
         val debugWindowItem = JMenuItem("Show Debug Window")
         debugWindowItem.accelerator =
@@ -741,7 +746,7 @@ class MainWindow(
     }
 
     @EventListener
-    fun handleErrorNotification(event: com.jervis.dto.events.ErrorNotificationEventDto) {
+    fun handleErrorNotification(event: ErrorNotificationEventDto) {
         // Show error message, with optional stack trace dialog on demand
         val message = event.message
         val stack = event.stackTrace

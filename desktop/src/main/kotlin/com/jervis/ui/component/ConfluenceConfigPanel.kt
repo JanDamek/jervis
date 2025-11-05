@@ -1,8 +1,8 @@
 package com.jervis.ui.component
 
 import com.jervis.dto.ClientDto
-import com.jervis.dto.ConfluenceAccountCreateDto
-import com.jervis.dto.ConfluenceAccountUpdateDto
+import com.jervis.dto.confluence.ConfluenceAccountCreateDto
+import com.jervis.dto.confluence.ConfluenceAccountUpdateDto
 import com.jervis.service.IConfluenceService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

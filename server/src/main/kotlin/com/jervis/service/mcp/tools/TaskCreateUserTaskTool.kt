@@ -2,7 +2,7 @@ package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.plan.Plan
-import com.jervis.domain.task.TaskPriority
+import com.jervis.domain.task.TaskPriorityEnum
 import com.jervis.domain.task.TaskSourceType
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
@@ -45,8 +45,8 @@ class TaskCreateUserTaskTool(
 
             val priority =
                 request.priority?.let {
-                    runCatching { TaskPriority.valueOf(it.uppercase()) }.getOrNull()
-                } ?: TaskPriority.MEDIUM
+                    runCatching { TaskPriorityEnum.valueOf(it.uppercase()) }.getOrNull()
+                } ?: TaskPriorityEnum.MEDIUM
 
             val sourceType =
                 runCatching { TaskSourceType.valueOf(request.sourceType.uppercase()) }
