@@ -31,6 +31,7 @@ import org.springframework.data.mongodb.repository.config.EnableMongoRepositorie
     ModelsProperties::class,
     QdrantProperties::class,
     RetryProperties::class,
+    com.jervis.configuration.properties.BackgroundProperties::class,
 )
 @PropertySource(
     value = ["classpath:prompts-tools.yaml", "classpath:prompts-services.yaml"],
