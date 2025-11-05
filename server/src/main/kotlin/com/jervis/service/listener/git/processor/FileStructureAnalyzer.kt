@@ -133,7 +133,6 @@ class FileStructureAnalyzer(
             content = content,
             projectId = project.id,
             clientId = project.clientId,
-            needsQualification = true,
             context = context,
         )
     }

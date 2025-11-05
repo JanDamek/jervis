@@ -45,7 +45,6 @@ class EmailTaskCreator(
                 content = combinedContent,
                 projectId = projectId,
                 clientId = clientId,
-                needsQualification = true, // Qualifier can create simple actions directly
                 context = context,
             )
 

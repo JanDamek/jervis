@@ -1,6 +1,7 @@
 package com.jervis.service.background
 
 import com.jervis.domain.task.PendingTask
+import com.jervis.domain.task.PendingTaskState
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
@@ -155,10 +156,10 @@ class BackgroundEngine(
                     }
 
                 if (canRunBackgroundTask) {
-                    // Get next task for strong model (needsQualification = false)
+                    // Get next task for strong model (state = DISPATCHED_GPU)
                     val task =
                         pendingTaskService
-                            .findTasksNeedingQualification(needsQualification = false)
+                            .findTasksByState(PendingTaskState.DISPATCHED_GPU)
                             .firstOrNull()
 
                     if (task != null) {
@@ -248,8 +249,14 @@ class BackgroundEngine(
                             "consecutiveFailures=$consecutiveFailures, isCommunication=$isCommunicationError"
                     }
 
-                    // Delete failed task to prevent retry loop
-                    pendingTaskService.deleteTask(task.id)
+                    // Escalate to user-task and delete pending task (ephemeral)
+                    try {
+                        pendingTaskService.failAndEscalateToUserTask(task, reason = errorType, error = e)
+                    } catch (esc: Exception) {
+                        logger.error(esc) { "Failed to escalate task ${task.id} to user-task after error" }
+                        // Ensure deletion to avoid retry loop even if escalation fails
+                        pendingTaskService.deleteTask(task.id)
+                    }
 
                     if (backoffDelay > 0) {
                         logger.warn {

@@ -161,7 +161,6 @@ class ProjectDescriptionUpdater(
             content = content,
             projectId = project.id,
             clientId = project.clientId,
-            needsQualification = true,
             context = context,
         )
     }
