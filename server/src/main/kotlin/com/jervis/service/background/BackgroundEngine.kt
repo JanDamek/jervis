@@ -32,6 +32,7 @@ class BackgroundEngine(
     private val pendingTaskService: PendingTaskService,
     private val agentOrchestrator: AgentOrchestratorService,
     private val taskQualificationService: TaskQualificationService,
+    private val backgroundProperties: com.jervis.configuration.properties.BackgroundProperties,
 ) {
     private val logger = KotlinLogging.logger {}
     private val supervisor = SupervisorJob()
@@ -113,8 +114,9 @@ class BackgroundEngine(
                 logger.info { "Qualification loop cancelled" }
                 throw e
             } catch (e: Exception) {
-                logger.error(e) { "ERROR in qualification loop - will retry in 60s" }
-                delay(60_000)
+                val waitMs = backgroundProperties.waitOnError.toMillis()
+                logger.error(e) { "ERROR in qualification loop - will retry in ${waitMs / 1000}s (configured)" }
+                delay(waitMs)
             }
         }
 
@@ -179,8 +181,9 @@ class BackgroundEngine(
                 logger.info { "Execution loop cancelled" }
                 throw e
             } catch (e: Exception) {
-                logger.error(e) { "Error in execution loop" }
-                delay(60_000)
+                val waitMs = backgroundProperties.waitOnError.toMillis()
+                logger.error(e) { "Error in execution loop - will retry in ${waitMs / 1000}s (configured)" }
+                delay(waitMs)
             }
         }
     }

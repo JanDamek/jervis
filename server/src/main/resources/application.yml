@@ -50,6 +50,11 @@ management:
       probes:
         enabled: true
 
+jervis:
+  background:
+    enabled: true
+    wait-on-error: 30s
+
 models: # embedding dimensions configured per model
   EMBEDDING_TEXT:
     - provider: LM_STUDIO
