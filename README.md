@@ -143,6 +143,12 @@ A lightweight startup screen lets users choose a persona without authentication.
 
 ## Server–User Component Split
 
+Best practice: Server–UI communication (Desktop and Mobile)
+- Contracts live in :common as `I***Service` interfaces annotated with `@HttpExchange`.
+- Server controllers implement these interfaces directly (fail fast, no DTO leakage across layers).
+- Desktop and Android create clients from the same interfaces using `HttpServiceClientFactory` in `:api-client`.
+- iOS is non‑JVM; recommended approach is either: (a) implement the same interfaces with a Ktor client on iOS, or (b) (optional) introduce a thin `service-mobile` adapter that reuses `:api-client` and exposes mobile‑friendly endpoints. Desktop remains the primary UI.
+
 See docs/architecture.md for the architecture diagram, API contract (/api/v0), and rationale for the separation between
 the Server (APIs/business logic) and User (UI/client) layers.
 
