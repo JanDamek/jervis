@@ -67,14 +67,45 @@ class ProjectGitSyncTool(
                 val syncParams = parseTaskDescription(taskDescription, plan, stepContext)
                 logger.info { "PROJECT_GIT_SYNC: Starting Git sync with params: $syncParams" }
 
-                // TODO: Check client mono-repo URL instead of project URL
-                logger.warn { "Git sync temporarily disabled - needs refactoring to use client mono-repo" }
-                return@withContext ToolResult.error(
-                    output =
-                        "❌ Git Synchronization Temporarily Unavailable\n\n" +
-                            "Git operations are being refactored to use client-level mono-repository configuration. " +
-                            "This feature will be available soon.",
-                )
+                val project =
+                    plan.projectDocument
+                        ?: return@withContext ToolResult.error(
+                            "No project context available",
+                            "Project required for git sync",
+                        )
+
+                // Perform clone or update
+                val result = gitRepositoryService.cloneOrUpdateRepository(project)
+                val gitDir =
+                    result.getOrElse { e ->
+                        return@withContext ToolResult.error(
+                            output = "❌ Git Synchronization Failed\n\n${e.message}",
+                            message = e.message,
+                        )
+                    }
+
+                // Optional branch parsing from task description
+                val branch = extractBranch(taskDescription)
+                if (!branch.isNullOrBlank()) {
+                    runCatching { ensureBranchCheckedOut(gitDir, branch) }
+                        .onFailure { e ->
+                            return@withContext ToolResult.error(
+                                output = "❌ Git Synchronization Failed (branch checkout)\n\n${e.message}",
+                                message = e.message,
+                            )
+                        }
+                }
+
+                ToolResult.success(
+                    toolName = name.name,
+                    summary = "Git repository synchronized",
+                    content =
+                        buildString {
+                            appendLine("Path: $gitDir")
+                            branch?.let { appendLine("Branch: $it") }
+                        appendLine("Status: OK")
+                    },
+                        )
             } catch (e: Exception) {
                 logger.error(e) { "PROJECT_GIT_SYNC: Unexpected error" }
                 return@withContext ToolResult.error(
@@ -84,4 +115,27 @@ class ProjectGitSyncTool(
                 )
             }
         }
+
+    private fun extractBranch(taskDescription: String): String? {
+        val pattern = Regex("""branch:\s*([^\s,]+)""", RegexOption.IGNORE_CASE)
+        return pattern.find(taskDescription)?.groupValues?.get(1)
+    }
+
+    private fun ensureBranchCheckedOut(gitDir: java.nio.file.Path, branch: String) {
+        val fetch =
+            ProcessBuilder("git", "fetch", "origin", branch).directory(gitDir.toFile()).redirectErrorStream(true)
+                .start()
+        val fetchOut = fetch.inputStream.bufferedReader().use { it.readText() }
+        val fetchExit = fetch.waitFor()
+        if (fetchExit != 0) {
+            throw IllegalStateException("git fetch failed for branch '$branch' in $gitDir: $fetchOut")
+        }
+        val checkout =
+            ProcessBuilder("git", "checkout", branch).directory(gitDir.toFile()).redirectErrorStream(true).start()
+        val checkoutOut = checkout.inputStream.bufferedReader().use { it.readText() }
+        val checkoutExit = checkout.waitFor()
+        if (checkoutExit != 0) {
+            throw IllegalStateException("git checkout failed for branch '$branch' in $gitDir: $checkoutOut")
+        }
+    }
 }

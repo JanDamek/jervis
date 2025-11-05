@@ -42,7 +42,10 @@ class ConfluencePollingScheduler(
      * Poll next Confluence account (oldest lastPolledAt first).
      * Runs every 5 minutes with 1 minute initial delay.
      */
-    @Scheduled(fixedDelay = 300_000, initialDelay = 60_000) // 5 min polling, 1 min startup
+    @Scheduled(
+        fixedDelayString = "\${confluence.sync.polling-interval-ms:1800000}",
+        initialDelayString = "\${confluence.sync.initial-delay-ms:60000}",
+    ) // configurable polling
     suspend fun pollNextAccount() {
         runCatching {
             val account = findNextAccountToPoll()

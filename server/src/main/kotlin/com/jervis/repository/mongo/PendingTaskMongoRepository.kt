@@ -14,7 +14,7 @@ interface PendingTaskMongoRepository : CoroutineCrudRepository<PendingTaskDocume
     fun findByNeedsQualificationOrderByCreatedAtAsc(needsQualification: Boolean): Flow<PendingTaskDocument>
 
     @Query("{ 'clientId': ?0, 'taskType': ?1, 'context.sourceUri': ?2 }")
-    fun findFirstByClientAndTypeAndSourceUri(
+    suspend fun findFirstByClientAndTypeAndSourceUri(
         clientId: ObjectId,
         taskType: String,
         sourceUri: String,

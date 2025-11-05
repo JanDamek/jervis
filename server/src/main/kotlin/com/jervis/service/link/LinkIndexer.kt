@@ -62,14 +62,7 @@ class LinkIndexer(
                 if (!link.success || link.plainText.isBlank()) {
                     logger.debug { "No text to index for $url (success=${link.success})" }
                     // Mark as indexed even if empty, so we don't retry repeatedly
-                    val updated =
-                        IndexedLinkDocument(
-                            id = existing?.id ?: ObjectId.get(),
-                            url = url,
-                            lastIndexedAt = Instant.now(),
-                            contentHash = null,
-                        )
-                    indexedLinkRepo.save(updated)
+                    upsertIndexedLink(url)
                     return IndexResult(processedChunks = 0, skipped = true)
                 }
                 link.plainText
@@ -98,17 +91,40 @@ class LinkIndexer(
             )
         }
 
-        // Update/insert index record
-        val updated =
-            IndexedLinkDocument(
-                id = existing?.id ?: ObjectId.get(),
-                url = url,
-                lastIndexedAt = Instant.now(),
-                contentHash = null,
-            )
-        indexedLinkRepo.save(updated)
+        // Update/insert index record atomically to avoid duplicate key races
+        upsertIndexedLink(url)
 
         logger.info { "Indexed link $url with ${chunks.size} chunks" }
         return IndexResult(processedChunks = chunks.size, skipped = false)
+    }
+
+    private suspend fun upsertIndexedLink(url: String) {
+        val now = Instant.now()
+        val existing = indexedLinkRepo.findByUrl(url)
+        if (existing != null) {
+            indexedLinkRepo.save(existing.copy(lastIndexedAt = now))
+            return
+        }
+        try {
+            indexedLinkRepo.save(
+                IndexedLinkDocument(
+                    id = ObjectId.get(),
+                    url = url,
+                    lastIndexedAt = now,
+                    contentHash = null,
+                ),
+            )
+        } catch (e: Exception) {
+            val message = e.message ?: ""
+            // Handle duplicate key race (code 11000) by re-reading and updating
+            if (message.contains("E11000") || message.contains("duplicate key", ignoreCase = true)) {
+                val found = indexedLinkRepo.findByUrl(url)
+                if (found != null) {
+                    indexedLinkRepo.save(found.copy(lastIndexedAt = now))
+                    return
+                }
+            }
+            throw e
+        }
     }
 }

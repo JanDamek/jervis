@@ -61,8 +61,10 @@ class GitFileCurrentContentTool(
             val filePath = extractFilePath(taskDescription)
             val maxLines = extractMaxLinesOptional(taskDescription) ?: 1000
 
+            // Optional branch
+            val branch = extractBranch(taskDescription)
             // Read file content
-            val fileContent = readFileContent(projectId, filePath, maxLines)
+            val fileContent = readFileContent(projectId, filePath, maxLines, branch)
 
             ToolResult.success(
                 toolName = name.name,
@@ -92,9 +94,65 @@ class GitFileCurrentContentTool(
     }
 
     private fun extractFilePath(taskDescription: String): String {
-        val pathPattern = Regex("""(?:file(?:Path)?:\s*)?([^\s,]+)""", RegexOption.IGNORE_CASE)
-        return pathPattern.find(taskDescription)?.groupValues?.get(1)
-            ?: throw IllegalArgumentException("No file path found in: $taskDescription")
+        // Allow optional branch parameter in description: branch: <name>
+        return taskDescription.let { extractPathFromDescription(it) }
+    }
+
+    private fun extractPathFromDescription(text: String): String {
+        // Try JSON-like key first
+        Regex("""file(Path)?\s*[:=]\s*"([^"]+)""", RegexOption.IGNORE_CASE).find(text)?.let {
+            return it.groupValues[2]
+        }
+        // Try unquoted key=value or key: value
+        Regex("""file(Path)?\s*[:=]\s*([^\n,]+)""", RegexOption.IGNORE_CASE).find(text)?.let {
+            val candidate = it.groupValues[2].trim()
+            if (looksLikePath(candidate)) return candidate
+        }
+        // Fallback: scan tokens and pick the first token that looks like a path with a separator
+        text
+            .split("\n", " ", "\t", ",")
+            .map { it.trim() }
+            .firstOrNull { looksLikePath(it) }
+            ?.let { return it }
+        throw IllegalArgumentException("No file path found in: $text")
+    }
+
+    private fun looksLikePath(token: String): Boolean {
+        if (token.isBlank()) return false
+        val t = token.trim().trim('"', '\'', '`')
+        if (t.equals("Get", ignoreCase = true) || t.equals("File", ignoreCase = true)) return false
+        // Must contain a path separator and a dot extension somewhere
+        val hasSep = t.contains("/") || t.contains("\\")
+        val hasExt = t.contains('.')
+        return hasSep && hasExt && !t.contains("://")
+    }
+
+    private fun extractBranch(taskDescription: String): String? {
+        val pattern = Regex("""branch:\s*([^\s,]+)""", RegexOption.IGNORE_CASE)
+        return pattern.find(taskDescription)?.groupValues?.get(1)
+    }
+
+    private fun ensureBranchCheckedOut(
+        gitDir: java.nio.file.Path,
+        branch: String,
+    ) {
+        val fetch =
+            ProcessBuilder("git", "fetch", "origin", branch)
+                .directory(gitDir.toFile())
+                .redirectErrorStream(true)
+                .start()
+        val fetchOut = fetch.inputStream.bufferedReader().use { it.readText() }
+        val fetchExit = fetch.waitFor()
+        if (fetchExit != 0) {
+            throw IllegalStateException("git fetch failed for branch '$branch' in $gitDir: $fetchOut")
+        }
+        val checkout =
+            ProcessBuilder("git", "checkout", branch).directory(gitDir.toFile()).redirectErrorStream(true).start()
+        val checkoutOut = checkout.inputStream.bufferedReader().use { it.readText() }
+        val checkoutExit = checkout.waitFor()
+        if (checkoutExit != 0) {
+            throw IllegalStateException("git checkout failed for branch '$branch' in $gitDir: $checkoutOut")
+        }
     }
 
     private fun extractMaxLinesOptional(taskDescription: String): Int? {
@@ -110,6 +168,7 @@ class GitFileCurrentContentTool(
         projectId: ObjectId,
         filePath: String,
         maxLines: Int,
+        branch: String?,
     ): FileContent =
         withContext(Dispatchers.IO) {
             val project =
@@ -117,7 +176,8 @@ class GitFileCurrentContentTool(
                     ?: throw IllegalStateException("Project not found: $projectId")
 
             var gitDir = directoryStructureService.projectGitDir(project)
-            if (!gitDir.toFile().exists()) {
+            // Ensure repository exists and is a valid Git repo
+            if (!gitDir.toFile().exists() || !gitDir.resolve(".git").toFile().exists()) {
                 val cloneResult = gitRepositoryService.cloneOrUpdateRepository(project)
                 gitDir =
                     cloneResult.getOrElse {
@@ -126,6 +186,12 @@ class GitFileCurrentContentTool(
                         )
                     }
             }
+
+            // Optional branch: checkout if provided
+            if (!branch.isNullOrBlank()) {
+                ensureBranchCheckedOut(gitDir, branch)
+            }
+
             val fullPath = gitDir.resolve(filePath)
 
             if (!Files.exists(fullPath)) {

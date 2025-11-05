@@ -53,6 +53,7 @@ class ProjectSettingWindow(
     private val gitConfigurationService: IGitConfigurationService,
     private val jiraSetupService: IJiraSetupService,
     private val integrationSettingsService: IIntegrationSettingsService,
+    private val confluenceService: com.jervis.service.IConfluenceService,
     private val applicationWindowManager: com.jervis.ui.component.ApplicationWindowManager,
 ) : JFrame("Project Management") {
     private val projectTableModel = ProjectTableModel(emptyList())
@@ -319,8 +320,8 @@ class ProjectSettingWindow(
             return
         }
 
-        val dialog = JDialog(this, "Integration Overrides – ${'$'}{project.name}", true)
-        val panel = ProjectIntegrationPanel(project.id, integrationSettingsService, jiraSetupService)
+        val dialog = JDialog(this, "Integration Overrides – ${project.name}", true)
+        val panel = ProjectIntegrationPanel(project.id, integrationSettingsService, jiraSetupService, confluenceService)
         dialog.contentPane.add(JScrollPane(panel))
         dialog.setSize(600, 300)
         dialog.setLocationRelativeTo(this)
@@ -483,6 +484,10 @@ class ProjectSettingWindow(
                     project.isDisabled,
                     project.isActive,
                     project.overrides,
+                    existingProjectId = project.id,
+                    integrationSettingsService = integrationSettingsService,
+                    jiraSetupService = jiraSetupService,
+                    confluenceService = confluenceService,
                 )
             dialog.isVisible = true
 
