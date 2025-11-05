@@ -56,9 +56,11 @@ class GitCommitDiffTool(
 
             // Extract commitHash from task description
             val commitHash = extractCommitHash(taskDescription)
+            // Optional branch
+            val branch = extractBranch(taskDescription)
 
             // Get diff
-            val diff = getCommitDiff(projectId, commitHash)
+            val diff = getCommitDiff(projectId, commitHash, branch)
 
             ToolResult.success(
                 toolName = name.name,
@@ -103,6 +105,7 @@ class GitCommitDiffTool(
     private suspend fun getCommitDiff(
         projectId: ObjectId,
         commitHash: String,
+        branch: String?,
     ): DiffResult =
         withContext(Dispatchers.IO) {
             val project =
@@ -111,13 +114,18 @@ class GitCommitDiffTool(
 
             var gitDir = directoryStructureService.projectGitDir(project)
 
-            if (!gitDir.toFile().exists()) {
-                // Ensure the repository is available locally; clone or update as needed
+            // Ensure repository exists and is a valid Git repo
+            if (!gitDir.toFile().exists() || !gitDir.resolve(".git").toFile().exists()) {
                 val cloneResult = gitRepositoryService.cloneOrUpdateRepository(project)
                 gitDir =
                     cloneResult.getOrElse {
                         throw IllegalStateException("Git repository not available for project: ${project.name}: ${it.message}")
                     }
+            }
+
+            // If branch specified, ensure checkout
+            if (!branch.isNullOrBlank()) {
+                ensureBranchCheckedOut(gitDir, branch)
             }
 
             // Execute git show to get diff
@@ -137,7 +145,8 @@ class GitCommitDiffTool(
             val exitCode = process.waitFor()
 
             if (exitCode != 0) {
-                throw RuntimeException("git show failed (exit code $exitCode): $output")
+                val branchLabel = branch ?: "(current)"
+                throw RuntimeException("git show failed (exit code $exitCode) in $gitDir for branch '$branchLabel': $output")
             }
 
             // Parse output to extract file list and stats
@@ -168,6 +177,34 @@ class GitCommitDiffTool(
                 diffContent = output,
             )
         }
+
+    private fun extractBranch(taskDescription: String): String? {
+        val pattern = Regex("""branch:\s*([^\s,]+)""", RegexOption.IGNORE_CASE)
+        return pattern.find(taskDescription)?.groupValues?.get(1)
+    }
+
+    private fun ensureBranchCheckedOut(
+        gitDir: java.nio.file.Path,
+        branch: String,
+    ) {
+        val fetch =
+            ProcessBuilder("git", "fetch", "origin", branch)
+                .directory(gitDir.toFile())
+                .redirectErrorStream(true)
+                .start()
+        val fetchOut = fetch.inputStream.bufferedReader().use { it.readText() }
+        val fetchExit = fetch.waitFor()
+        if (fetchExit != 0) {
+            throw IllegalStateException("git fetch failed for branch '$branch' in $gitDir: $fetchOut")
+        }
+        val checkout =
+            ProcessBuilder("git", "checkout", branch).directory(gitDir.toFile()).redirectErrorStream(true).start()
+        val checkoutOut = checkout.inputStream.bufferedReader().use { it.readText() }
+        val checkoutExit = checkout.waitFor()
+        if (checkoutExit != 0) {
+            throw IllegalStateException("git checkout failed for branch '$branch' in $gitDir: $checkoutOut")
+        }
+    }
 
     private data class DiffResult(
         val changedFiles: List<String>,

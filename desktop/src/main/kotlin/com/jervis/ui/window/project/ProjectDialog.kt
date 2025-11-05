@@ -44,6 +44,11 @@ class ProjectDialog(
     initialIsDisabled: Boolean = false,
     initialDefault: Boolean = false,
     private val initialOverrides: ProjectOverridesDto? = null,
+    // Optional integration context (used for editing an existing project)
+    private val existingProjectId: String? = null,
+    private val integrationSettingsService: com.jervis.service.IIntegrationSettingsService? = null,
+    private val jiraSetupService: com.jervis.service.IJiraSetupService? = null,
+    private val confluenceService: com.jervis.service.IConfluenceService? = null,
 ) : JDialog(owner, title, true) {
     private val nameField =
         JTextField(initialName).apply {
@@ -172,6 +177,18 @@ class ProjectDialog(
 
         // Project Overrides Tab
         tabbedPane.addTab("Project Overrides", overridesPanelRoot)
+
+        // Integration Tab (direct Jira/Confluence selectors) for existing projects
+        if (existingProjectId != null && integrationSettingsService != null && jiraSetupService != null) {
+            val integrationPanel =
+                com.jervis.ui.component.ProjectIntegrationPanel(
+                    existingProjectId,
+                    integrationSettingsService,
+                    jiraSetupService,
+                    confluenceService,
+                )
+            tabbedPane.addTab("Integration", JScrollPane(integrationPanel))
+        }
 
         // Button panel
         val buttonPanel = JPanel(FlowLayout(FlowLayout.RIGHT))

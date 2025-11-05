@@ -43,11 +43,13 @@ class LinkIndexingService(
     ) = withContext(Dispatchers.IO) {
         val allLinks = extractLinks(text)
         if (allLinks.isEmpty()) return@withContext
+        // Deduplicate to avoid repeated indexing attempts for identical URLs within the same batch
+        val distinctLinks = allLinks.distinct()
 
         logger.debug { "Extracted ${allLinks.size} links from text (source=$sourceType)" }
 
         // Safety qualification: filter out unsubscribe, tracking, auth links
-        val safeLinks = linkSafetyQualifier.filterSafeLinks(allLinks).toList()
+        val safeLinks = linkSafetyQualifier.filterSafeLinks(distinctLinks).toList()
         val blockedCount = allLinks.size - safeLinks.size
 
         if (blockedCount > 0) {

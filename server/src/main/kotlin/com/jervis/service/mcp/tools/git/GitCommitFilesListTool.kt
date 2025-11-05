@@ -60,8 +60,11 @@ class GitCommitFilesListTool(
             // Extract commitHash
             val commitHash = extractCommitHash(taskDescription)
 
+            // Optional branch parameter
+            val branch = extractBranch(taskDescription)
+
             // Get file list
-            val files = getCommitFilesList(projectId, commitHash)
+            val files = getCommitFilesList(projectId, commitHash, branch)
 
             ToolResult.success(
                 toolName = name.name,
@@ -109,6 +112,7 @@ class GitCommitFilesListTool(
     private suspend fun getCommitFilesList(
         projectId: ObjectId,
         commitHash: String,
+        branch: String?,
     ): List<FileChange> =
         withContext(Dispatchers.IO) {
             val project =
@@ -117,12 +121,18 @@ class GitCommitFilesListTool(
 
             var gitDir = directoryStructureService.projectGitDir(project)
 
-            if (!gitDir.toFile().exists()) {
+            // Ensure repository exists and is a valid Git repository
+            if (!gitDir.toFile().exists() || !gitDir.resolve(".git").toFile().exists()) {
                 val cloneResult = gitRepositoryService.cloneOrUpdateRepository(project)
                 gitDir =
                     cloneResult.getOrElse {
                         throw IllegalStateException("Git repository not available for project: ${project.name}: ${it.message}")
                     }
+            }
+
+            // If branch specified, ensure checkout to that branch
+            if (!branch.isNullOrBlank()) {
+                ensureBranchCheckedOut(gitDir, branch)
             }
 
             // Execute git show --numstat to get file changes
@@ -141,7 +151,8 @@ class GitCommitFilesListTool(
             val exitCode = process.waitFor()
 
             if (exitCode != 0) {
-                throw RuntimeException("git show failed (exit code $exitCode): $output")
+                val branchLabel = branch ?: "(current)"
+                throw RuntimeException("git show failed (exit code $exitCode) in $gitDir for branch '$branchLabel': $output")
             }
 
             // Parse output
@@ -180,6 +191,35 @@ class GitCommitFilesListTool(
 
             files
         }
+
+    private fun extractBranch(taskDescription: String): String? {
+        val pattern = Regex("""branch:\s*([^\s,]+)""", RegexOption.IGNORE_CASE)
+        return pattern.find(taskDescription)?.groupValues?.get(1)
+    }
+
+    private fun ensureBranchCheckedOut(
+        gitDir: java.nio.file.Path,
+        branch: String,
+    ) {
+        // fetch remote branch then checkout
+        val fetch =
+            ProcessBuilder("git", "fetch", "origin", branch)
+                .directory(gitDir.toFile())
+                .redirectErrorStream(true)
+                .start()
+        val fetchOut = fetch.inputStream.bufferedReader().use { it.readText() }
+        val fetchExit = fetch.waitFor()
+        if (fetchExit != 0) {
+            throw IllegalStateException("git fetch failed for branch '$branch' in $gitDir: $fetchOut")
+        }
+        val checkout =
+            ProcessBuilder("git", "checkout", branch).directory(gitDir.toFile()).redirectErrorStream(true).start()
+        val checkoutOut = checkout.inputStream.bufferedReader().use { it.readText() }
+        val checkoutExit = checkout.waitFor()
+        if (checkoutExit != 0) {
+            throw IllegalStateException("git checkout failed for branch '$branch' in $gitDir: $checkoutOut")
+        }
+    }
 
     private data class FileChange(
         val path: String,

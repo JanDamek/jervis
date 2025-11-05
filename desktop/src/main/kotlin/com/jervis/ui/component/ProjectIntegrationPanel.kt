@@ -26,6 +26,7 @@ class ProjectIntegrationPanel(
     private val projectId: String,
     private val integrationService: IIntegrationSettingsService,
     private val jiraService: IJiraSetupService,
+    private val confluenceService: com.jervis.service.IConfluenceService? = null,
 ) : JPanel(GridBagLayout()) {
     private val statusEffectiveJira = JLabel("–")
     private val statusEffectiveJiraBoard = JLabel("–")
@@ -39,7 +40,9 @@ class ProjectIntegrationPanel(
     private val chooseBoardButton = JButton("Choose Board…")
 
     private val overrideConfluenceSpaceField = JTextField(16)
+    private val chooseSpaceButton = JButton("Choose Space…")
     private val overrideConfluenceRootPageField = JTextField(16)
+    private val chooseRootPageButton = JButton("Choose Root Page…")
 
     private val saveOverridesButton = JButton("Save Overrides")
     private val clearJiraOverrideButton = JButton("Clear Jira Override")
@@ -48,6 +51,7 @@ class ProjectIntegrationPanel(
 
     private var currentClientId: String? = null
     private var currentEffectiveProjectKey: String? = null
+    private var currentConfluenceAccountId: String? = null
 
     init {
         layoutUI()
@@ -100,8 +104,19 @@ class ProjectIntegrationPanel(
         addRow("Override Jira Board ID:", boardOverridePanel)
 
         // Confluence overrides
-        addRow("Override Confluence Space Key:", overrideConfluenceSpaceField)
-        addRow("Override Confluence Root Page ID:", overrideConfluenceRootPageField)
+        val confSpacePanel =
+            JPanel(FlowLayout(FlowLayout.LEFT)).apply {
+                add(overrideConfluenceSpaceField)
+                add(chooseSpaceButton)
+            }
+        addRow("Override Confluence Space Key:", confSpacePanel)
+
+        val confRootPanel =
+            JPanel(FlowLayout(FlowLayout.LEFT)).apply {
+                add(overrideConfluenceRootPageField)
+                add(chooseRootPageButton)
+            }
+        addRow("Override Confluence Root Page ID:", confRootPanel)
 
         // Actions
         gbc.gridx = 0
@@ -250,6 +265,109 @@ class ProjectIntegrationPanel(
                     )
                 }.onFailure { e -> showError("Failed to clear Confluence overrides: ${e.message}") }
                 refresh()
+            }
+        }
+
+        chooseSpaceButton.addActionListener {
+            val svc = confluenceService
+            if (svc == null) {
+                showError("Confluence service not available in this build.")
+                return@addActionListener
+            }
+            CoroutineScope(Dispatchers.IO).launch {
+                runCatching { svc.listAccounts(projectId = projectId) }
+                    .onSuccess { accounts ->
+                        withContext(Dispatchers.Main) {
+                            if (accounts.isEmpty()) {
+                                showError("No Confluence accounts found for this project.")
+                                return@withContext
+                            }
+                            val options = mutableListOf<Pair<String, String>>()
+                            accounts.forEach { acc ->
+                                if (acc.spaceKeys.isEmpty()) {
+                                    options.add("${acc.siteName} – (no spaces configured)" to "")
+                                } else {
+                                    acc.spaceKeys.forEach { sk -> options.add("${acc.siteName} – $sk" to acc.id) }
+                                }
+                            }
+                            val labels = options.map { it.first }.toTypedArray()
+                            val selection =
+                                JOptionPane.showInputDialog(
+                                    this@ProjectIntegrationPanel,
+                                    "Select Confluence space:",
+                                    "Choose Space",
+                                    JOptionPane.QUESTION_MESSAGE,
+                                    null,
+                                    labels,
+                                    labels.firstOrNull(),
+                                ) as? String
+                            if (selection != null) {
+                                val idx = labels.indexOf(selection)
+                                if (idx >= 0) {
+                                    val label = options[idx].first
+                                    val accountId = options[idx].second
+                                    val space = label.substringAfter(" – ", "").trim()
+                                    if (space.isNotBlank() && accountId.isNotBlank()) {
+                                        currentConfluenceAccountId = accountId
+                                        overrideConfluenceSpaceField.text = space
+                                    } else {
+                                        showError("Selected account has no spaces configured.")
+                                    }
+                                }
+                            }
+                        }
+                    }.onFailure { e -> showError("Failed to list Confluence accounts: ${e.message}") }
+            }
+        }
+
+        chooseRootPageButton.addActionListener {
+            val svc = confluenceService
+            if (svc == null) {
+                showError("Confluence service not available in this build.")
+                return@addActionListener
+            }
+            val spaceKey = overrideConfluenceSpaceField.text.trim()
+            if (spaceKey.isBlank()) {
+                showError("Select a Space first.")
+                return@addActionListener
+            }
+            CoroutineScope(Dispatchers.IO).launch {
+                // Determine account
+                val accountId =
+                    currentConfluenceAccountId ?: run {
+                        val accounts = runCatching { svc.listAccounts(projectId = projectId) }.getOrElse { emptyList() }
+                        accounts.firstOrNull()?.id
+                    }
+                if (accountId.isNullOrBlank()) {
+                    withContext(Dispatchers.Main) { showError("No Confluence account available for this project.") }
+                    return@launch
+                }
+                runCatching { svc.listPages(accountId, spaceKey, state = null) }
+                    .onSuccess { pages ->
+                        withContext(Dispatchers.Main) {
+                            if (pages.isEmpty()) {
+                                showError("No pages found in space $spaceKey.")
+                                return@withContext
+                            }
+                            val labels = pages.map { "${it.title} (#${it.pageId})" }.toTypedArray()
+                            val sel =
+                                JOptionPane.showInputDialog(
+                                    this@ProjectIntegrationPanel,
+                                    "Select root page:",
+                                    "Choose Root Page",
+                                    JOptionPane.QUESTION_MESSAGE,
+                                    null,
+                                    labels,
+                                    labels.firstOrNull(),
+                                ) as? String
+                            if (sel != null) {
+                                val idx = labels.indexOf(sel)
+                                if (idx >= 0) {
+                                    overrideConfluenceRootPageField.text = pages[idx].pageId
+                                }
+                            }
+                        }
+                    }.onFailure { e -> showError("Failed to list pages: ${e.message}") }
             }
         }
     }

@@ -10,7 +10,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.mapNotNull
-import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.net.URI
@@ -40,10 +39,13 @@ class LinkSafetyQualifier(
     private val indexedLinkRepository: IndexedLinkMongoRepository,
     private val unsafeLinkPatternRepository: UnsafeLinkPatternMongoRepository,
 ) {
-    @Serializable
+    @kotlinx.serialization.Serializable
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
     data class SafetyResult(
         val decision: Decision,
         val reason: String,
+        @com.fasterxml.jackson.annotation.JsonProperty("suggested_regex")
+        val suggestedRegex: String? = null,
     ) {
         enum class Decision {
             SAFE, // Index this link
@@ -316,7 +318,13 @@ class LinkSafetyQualifier(
 
             // Cache UNSAFE results to avoid future LLM calls
             if (result.decision == SafetyResult.Decision.UNSAFE) {
-                cacheUnsafeLink(url, result.reason)
+                val reasonWithRegex =
+                    if (!result.suggestedRegex.isNullOrBlank() && !result.reason.contains("Suggested regex:")) {
+                        result.reason + " Suggested regex: /" + result.suggestedRegex + "/"
+                    } else {
+                        result.reason
+                    }
+                cacheUnsafeLink(url, reasonWithRegex)
             }
 
             result

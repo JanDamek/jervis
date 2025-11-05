@@ -23,6 +23,7 @@ import javax.swing.JLabel
 import javax.swing.JOptionPane
 import javax.swing.JPanel
 import javax.swing.JScrollPane
+import javax.swing.JSplitPane
 import javax.swing.JTable
 import javax.swing.JTextArea
 import javax.swing.JTextField
@@ -44,7 +45,7 @@ class UserTasksWindow(
     private val proceedButton = JButton("Proceed")
     private val filterField = JTextField(20)
 
-    private val instructionArea = JTextArea(3, 40)
+    private val instructionArea = JTextArea(9, 40)
 
     private val tasksTableModel = UserTasksTableModel(emptyList())
     private val tasksTable = JTable(tasksTableModel)
@@ -173,7 +174,8 @@ class UserTasksWindow(
 
     init {
         defaultCloseOperation = HIDE_ON_CLOSE
-        minimumSize = Dimension(900, 480)
+        minimumSize = Dimension(1100, 700)
+        size = Dimension(1280, 900)
         layout = BorderLayout(10, 10)
         rootPane.border =
             EmptyBorder(UiDesign.outerMargin, UiDesign.outerMargin, UiDesign.outerMargin, UiDesign.outerMargin)
@@ -217,15 +219,18 @@ class UserTasksWindow(
         tasksTable.autoResizeMode = JTable.AUTO_RESIZE_ALL_COLUMNS
         val tableScroll = JScrollPane(tasksTable)
         val detailsSection = UiDesign.sectionPanel("Task Content", JScrollPane(detailsArea))
-        val centerPanel =
-            JPanel(BorderLayout(UiDesign.gap, UiDesign.gap)).apply {
-                add(tableScroll, BorderLayout.CENTER)
-                add(detailsSection, BorderLayout.SOUTH)
+        val splitPane =
+            JSplitPane(JSplitPane.VERTICAL_SPLIT, tableScroll, detailsSection).apply {
+                setOneTouchExpandable(true)
+                setContinuousLayout(true)
+                setResizeWeight(0.6)
+                setDividerLocation(0.6)
+                setDividerSize(10)
             }
 
         val content = JPanel(BorderLayout(UiDesign.gap, UiDesign.gap))
         content.add(northPanel, BorderLayout.NORTH)
-        content.add(centerPanel, BorderLayout.CENTER)
+        content.add(splitPane, BorderLayout.CENTER)
         content.add(UiDesign.sectionPanel(null, qaPanel), BorderLayout.SOUTH)
 
         add(content, BorderLayout.CENTER)
@@ -287,12 +292,7 @@ class UserTasksWindow(
             runCatching { userTaskService.cancel(task.id) }
                 .onSuccess {
                     withContext(Dispatchers.Main) {
-                        JOptionPane.showMessageDialog(
-                            this@UserTasksWindow,
-                            "Task revoked.",
-                            "Info",
-                            JOptionPane.INFORMATION_MESSAGE,
-                        )
+                        // No success dialog per guidelines; just refresh the list
                         refreshTasks()
                     }
                 }.onFailure { e ->

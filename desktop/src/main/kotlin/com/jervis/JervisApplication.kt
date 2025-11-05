@@ -45,6 +45,7 @@ class JervisApplication(
     private val emailAccountService: IEmailAccountService,
     private val jiraSetupService: com.jervis.service.IJiraSetupService,
     private val integrationSettingsService: com.jervis.service.IIntegrationSettingsService,
+    private val confluenceService: com.jervis.service.IConfluenceService,
     private val userTaskService: com.jervis.service.IUserTaskService,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -69,6 +70,7 @@ class JervisApplication(
                     emailAccountService,
                     jiraSetupService,
                     integrationSettingsService,
+                    confluenceService,
                     userTaskService,
                 )
 
