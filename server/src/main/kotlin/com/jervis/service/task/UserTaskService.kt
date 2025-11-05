@@ -32,6 +32,19 @@ class UserTaskService(
         sourceUri: String? = null,
         metadata: Map<String, String> = emptyMap(),
     ): UserTask {
+        if (sourceUri != null) {
+            val existing = userTaskRepository.findFirstByClientIdAndSourceTypeAndSourceUriAndStatusIn(
+                clientId = clientId,
+                sourceType = sourceType.name,
+                sourceUri = sourceUri,
+                status = listOf(TaskStatus.TODO.name, TaskStatus.IN_PROGRESS.name),
+            )
+            if (existing != null) {
+                logger.info { "Skipped duplicate user task for sourceUri=$sourceUri (existing=${existing.id})" }
+                return existing.toDomain()
+            }
+        }
+
         val task =
             UserTask(
                 title = title,
