@@ -5,6 +5,7 @@ import com.jervis.configuration.prompts.PromptsConfiguration
 import com.jervis.configuration.properties.AudioMonitoringProperties
 import com.jervis.configuration.properties.DataRootProperties
 import com.jervis.configuration.properties.EndpointProperties
+import com.jervis.configuration.properties.IndexingFlowProperties
 import com.jervis.configuration.properties.LinkIndexingProperties
 import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.configuration.properties.QdrantProperties
@@ -32,6 +33,7 @@ import org.springframework.data.mongodb.repository.config.EnableMongoRepositorie
     QdrantProperties::class,
     RetryProperties::class,
     com.jervis.configuration.properties.BackgroundProperties::class,
+    IndexingFlowProperties::class,
 )
 @PropertySource(
     value = ["classpath:prompts-tools.yaml", "classpath:prompts-services.yaml"],

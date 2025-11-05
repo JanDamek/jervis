@@ -75,6 +75,8 @@ class ConfluenceTaskCreator(
                 put("title", page.title)
                 put("url", page.url)
                 put("version", page.lastKnownVersion.toString())
+                // Canonical source reference for idempotency/traceability
+                put("sourceUri", "confluence://${page.accountId.toHexString()}/${page.pageId}")
                 page.parentPageId?.let { put("parentPageId", it) }
                 page.lastModifiedBy?.let { put("lastModifiedBy", it) }
                 page.lastModifiedAt?.let { put("lastModifiedAt", it.toString()) }
@@ -82,7 +84,7 @@ class ConfluenceTaskCreator(
                 put("externalLinksCount", page.externalLinks.size.toString())
                 put("childPagesCount", page.childPageIds.size.toString())
 
-                // Add links as JSON for GPU analysis
+                // Add links for analysis
                 if (page.internalLinks.isNotEmpty()) {
                     put("internalLinks", page.internalLinks.joinToString(","))
                 }

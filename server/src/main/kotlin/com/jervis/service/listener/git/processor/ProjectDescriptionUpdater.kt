@@ -107,15 +107,18 @@ class ProjectDescriptionUpdater(
         recentCommitHashes: List<String>,
         isInitialUpdate: Boolean,
     ): PendingTask {
-        val context =
-            mapOf(
-                "projectId" to project.id.toHexString(),
-                "recentCommitHashes" to recentCommitHashes.joinToString(","),
-                "currentShortDescription" to (project.shortDescription ?: ""),
-                "currentFullDescription" to (project.fullDescription ?: ""),
-                "isInitialUpdate" to isInitialUpdate.toString(),
-                "commitCount" to recentCommitHashes.size.toString(),
-            )
+        val context: Map<String, String> =
+            buildMap<String, String> {
+                put("projectId", project.id.toHexString())
+                put("projectName", project.name)
+                put("recentCommitHashes", recentCommitHashes.joinToString(","))
+                put("currentShortDescription", project.shortDescription ?: "")
+                put("currentFullDescription", project.fullDescription ?: "")
+                put("isInitialUpdate", isInitialUpdate.toString())
+                put("commitCount", recentCommitHashes.size.toString())
+                // Canonical source for idempotency/traceability
+                put("sourceUri", "project://" + project.id.toHexString() + "/description-update")
+            }
 
         val content =
             buildString {

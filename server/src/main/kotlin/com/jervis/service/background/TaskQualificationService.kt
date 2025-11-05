@@ -152,11 +152,25 @@ class TaskQualificationService(
             mutableMapOf(
                 "senderProfileId" to senderProfile.id.toHexString(),
                 "threadId" to thread.id.toHexString(),
+                "threadKey" to thread.threadId,
+                "threadSubject" to thread.subject,
                 "sourceUri" to sourceUri,
+                "channel" to "EMAIL",
+                "accountId" to accountId.toHexString(),
+                "messageId" to email.messageId,
                 "from" to email.from,
+                "to" to email.to,
                 "subject" to email.subject,
                 "date" to email.receivedAt.toString(),
+                "hasAttachments" to email.attachments.isNotEmpty().toString(),
             )
+        ragDocumentId?.let { baseContext["ragDocumentId"] = it }
+        if (email.attachments.isNotEmpty()) {
+            baseContext["attachments"] =
+                email.attachments.joinToString(",") { att ->
+                    "${att.fileName}:${att.contentType}:${att.size}"
+                }
+        }
         if (closedTaskIds.isNotEmpty()) {
             baseContext["previousTasksClosed"] = closedTaskIds.joinToString(",")
         }
@@ -242,6 +256,16 @@ class TaskQualificationService(
                         val preview = it.take(500) // First 500 chars as preview
                         put("contentPreview", preview)
                     } ?: put("contentPreview", truncatedContent.take(500))
+                }
+
+                PendingTaskTypeEnum.CONFLUENCE_PAGE_ANALYSIS -> {
+                    // Qualifier prompt expects: {title}, {spaceKey}, {version}, and uses {content}
+                    put("title", task.context["title"] ?: "")
+                    put("spaceKey", task.context["spaceKey"] ?: "")
+                    put("version", task.context["version"] ?: "")
+                    // Provide counts if present
+                    task.context["internalLinksCount"]?.let { put("internalLinksCount", it) }
+                    task.context["externalLinksCount"]?.let { put("externalLinksCount", it) }
                 }
 
                 PendingTaskTypeEnum.COMMIT_ANALYSIS -> {

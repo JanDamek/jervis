@@ -10,16 +10,7 @@ import com.jervis.service.listener.email.processor.EmailAttachmentIndexer
 import com.jervis.service.listener.email.processor.EmailContentIndexer
 import com.jervis.service.listener.email.state.EmailMessageStateManager
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.buffer
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.flatMapMerge
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
@@ -38,83 +29,32 @@ class EmailContinuousIndexer(
     private val attachmentIndexer: EmailAttachmentIndexer,
     private val linkIndexingService: LinkIndexingService,
     private val taskQualificationService: TaskQualificationService,
-) {
-    /**
-     * Starts continuous indexing for an account. This never returns.
-     * Should be launched in a separate coroutine scope.
-     */
-    @OptIn(ExperimentalCoroutinesApi::class)
-    suspend fun startContinuousIndexing(account: EmailAccountDocument) {
-        logger.info { "Starting continuous indexer for account ${account.id} (${account.email})" }
+    private val flowProps: com.jervis.configuration.properties.IndexingFlowProperties,
+) : com.jervis.service.indexing.AbstractContinuousIndexer<EmailAccountDocument, com.jervis.service.listener.email.state.EmailMessageDocument>() {
+    override val indexerName: String = "EmailContinuousIndexer"
+    override val bufferSize: Int get() = flowProps.bufferSize
 
-        stateManager
-            .continuousNewMessages(account.id)
-            .buffer(128) // Back-pressure relief between DB and indexing
-            .flatMapMerge(concurrency = 5) { messageDoc ->
-                flow {
-                    logger.info { "Indexing message UID:${messageDoc.uid} From:${messageDoc.from} Subject:${messageDoc.subject}" }
+    override fun newItemsFlow(account: EmailAccountDocument) = stateManager.continuousNewMessages(account.id)
 
-                    val uid = messageDoc.uid
-                    if (uid == null) {
-                        logger.warn { "Message has no UID messageId:${messageDoc.messageId}, marking as FAILED" }
-                        stateManager.markAsFailed(messageDoc)
-                        return@flow
-                    }
+    override fun itemLogLabel(item: com.jervis.service.listener.email.state.EmailMessageDocument) =
+        "UID:${item.uid} msgId:${item.messageId} subject:${item.subject}"
 
-                    // IMAP operations should run on IO dispatcher
-                    val message =
-                        withContext(Dispatchers.IO) {
-                            imapClient.fetchMessage(account, uid)
-                        }
-
-                    if (message == null) {
-                        logger.warn { "Could not fetch UID:$uid messageId:${messageDoc.messageId}, marking as FAILED" }
-                        stateManager.markAsFailed(messageDoc)
-                        return@flow
-                    }
-
-                    indexMessage(account, message)
-                    emit(messageDoc)
-                }.catch { e ->
-                    logger.error(e) { "Indexing failed for UID:${messageDoc.uid} messageId:${messageDoc.messageId}" }
-
-                    // Classify error type
-                    val isCommunicationError =
-                        e.message?.contains("Connection", ignoreCase = true) == true ||
-                            e.message?.contains("timeout", ignoreCase = true) == true ||
-                            e.message?.contains("IMAP", ignoreCase = true) == true ||
-                            e is java.net.SocketException ||
-                            e is java.net.SocketTimeoutException
-
-                    if (isCommunicationError) {
-                        logger.warn { "Communication error detected, pausing 30s before continuing" }
-                        delay(30_000)
-                    }
-
-                    // Mark as failed and continue with next message
-                    stateManager.markAsFailed(messageDoc)
-                }
-            }.onEach { messageDoc ->
-                kotlin
-                    .runCatching {
-                        stateManager.markAsIndexed(messageDoc)
-                    }.onFailure { e ->
-                        logger.warn(e) { "markAsIndexed failed for messageId:${messageDoc.messageId}, trying by messageId" }
-                        kotlin
-                            .runCatching {
-                                stateManager.markMessageIdAsIndexed(account.id, messageDoc.messageId)
-                            }.onFailure { e2 ->
-                                logger.error(e2) { "Fallback mark by messageId also failed for messageId:${messageDoc.messageId}" }
-                    }
-                }
-                logger.info { "Successfully indexed messageId:${messageDoc.messageId}" }
-            }.collect { }
+    override suspend fun fetchContentIO(
+        account: EmailAccountDocument,
+        item: com.jervis.service.listener.email.state.EmailMessageDocument,
+    ): ImapMessage? {
+        val uid = item.uid
+        if (uid == null) return null
+        return imapClient.fetchMessage(account, uid)
     }
 
-    private suspend fun indexMessage(
+    override suspend fun processAndIndex(
         account: EmailAccountDocument,
-        message: ImapMessage,
-    ) {
+        item: com.jervis.service.listener.email.state.EmailMessageDocument,
+        content: Any,
+    ): IndexingResult {
+        val message = content as ImapMessage
+
         val ragDocumentId =
             contentIndexer.indexEmailContent(
                 message = message,
@@ -139,13 +79,58 @@ class EmailContinuousIndexer(
             parentRef = message.messageId,
         )
 
+        val success = ragDocumentId != null
+        return IndexingResult(
+            success = success,
+            plainText = message.content,
+            ragDocumentId = ragDocumentId,
+        )
+    }
+
+    override fun shouldCreateTask(
+        account: EmailAccountDocument,
+        item: com.jervis.service.listener.email.state.EmailMessageDocument,
+        content: Any,
+        result: IndexingResult,
+    ): Boolean = true
+
+    override suspend fun createTask(
+        account: EmailAccountDocument,
+        item: com.jervis.service.listener.email.state.EmailMessageDocument,
+        content: Any,
+        result: IndexingResult,
+    ) {
+        val message = content as ImapMessage
         taskQualificationService.qualifyEmailEnriched(
             email = message,
             accountId = account.id,
             clientId = account.clientId,
             projectId = account.projectId,
-            ragDocumentId = ragDocumentId,
+            ragDocumentId = result.ragDocumentId,
         )
+    }
+
+    override suspend fun markAsIndexed(
+        account: EmailAccountDocument,
+        item: com.jervis.service.listener.email.state.EmailMessageDocument,
+    ) {
+        kotlin
+            .runCatching { stateManager.markAsIndexed(item) }
+            .onFailure { e ->
+                logger.warn(e) { "markAsIndexed failed for messageId:${item.messageId}, trying by messageId" }
+                kotlin
+                    .runCatching { stateManager.markMessageIdAsIndexed(account.id, item.messageId) }
+                    .onFailure { e2 -> logger.error(e2) { "Fallback mark by messageId also failed for messageId:${item.messageId}" } }
+            }
+        logger.info { "Successfully indexed messageId:${item.messageId}" }
+    }
+
+    override suspend fun markAsFailed(
+        account: EmailAccountDocument,
+        item: com.jervis.service.listener.email.state.EmailMessageDocument,
+        reason: String,
+    ) {
+        stateManager.markAsFailed(item)
     }
 
     /**
@@ -157,11 +142,8 @@ class EmailContinuousIndexer(
         scope: CoroutineScope,
     ) {
         scope.launch {
-            runCatching {
-                startContinuousIndexing(account)
-            }.onFailure { e ->
-                logger.error(e) { "Continuous indexer crashed for account ${account.id}" }
-            }
+            runCatching { startContinuousIndexing(account) }
+                .onFailure { e -> logger.error(e) { "Continuous indexer crashed for account ${account.id}" } }
         }
     }
 }

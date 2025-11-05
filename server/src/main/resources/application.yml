@@ -61,6 +61,7 @@ models: # embedding dimensions configured per model
       model: text-embedding-nomic-embed-text-v2-moe
       context-length: 512
       dimension: 768
+      concurrency: 1
   #    - provider: OLLAMA
   #      model: text-embedding-nomic-embed-text-v2-moe
   #      maxTokens: 512
@@ -71,6 +72,7 @@ models: # embedding dimensions configured per model
       model: text-embedding-nomic-embed-code
       context-length: 4096
       dimension: 3584
+      concurrency: 1
   #    - provider: OLLAMA
   #      model: nomic-embed-code
   #      maxTokens: 4096
@@ -181,13 +183,13 @@ models: # embedding dimensions configured per model
       model: qwen2.5:3b-instruct-q4_K_M
       context-length: 8196
       quick: false
-      concurrency: 1
+      concurrency: 2
 
   QUALIFIER:
     - provider: OLLAMA_QUALIFIER
       model: qwen2.5:3b-instruct-q4_K_M
       context-length: 32768
-      concurrency: 1
+      concurrency: 2
 
 endpoints:
   openai:
@@ -270,3 +272,9 @@ git:
     # Interval for checking and syncing Git repositories (in milliseconds)
     polling-interval-ms: 300000 # 5 minutes
     initial-delay-ms: 60000 # 1 minute after startup
+
+# Continuous indexing flow settings (global)
+# jervis:
+#   indexing:
+#     flow:
+#       buffer-size: 128  # Buffer between producer and processing; 0 disables buffering

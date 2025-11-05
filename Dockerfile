@@ -108,7 +108,7 @@ ENV TIKA_OCR_TIMEOUT_MS=120000
 FROM tika-base AS runtime-tika
 WORKDIR /opt/jervis
 COPY --from=builder /app/service-tika/build/libs/*.jar app.jar
-ENV SERVER_PORT=8080 JAVA_OPTS="-Xmx1g -Xms256m" WORK_DATA=/opt/jervis/work
+ENV SERVER_PORT=8080 JAVA_OPTS="-Xmx2g -Xms512m" WORK_DATA=/opt/jervis/work
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:${SERVER_PORT}/actuator/health || exit 1
@@ -122,7 +122,7 @@ COPY --from=joern-install /opt/joern ${JOERN_HOME}
 ENV PATH="${JOERN_HOME}/joern-cli:${PATH}"
 WORKDIR /opt/jervis
 COPY --from=builder /app/service-joern/build/libs/*.jar app.jar
-ENV SERVER_PORT=8080 JAVA_OPTS="-Xmx1g -Xms256m" WORK_DATA=/opt/jervis/work
+ENV SERVER_PORT=8080 JAVA_OPTS="-Xmx2g -Xms512m" WORK_DATA=/opt/jervis/work
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:${SERVER_PORT}/actuator/health || exit 1
@@ -145,7 +145,7 @@ RUN python -c "import faster_whisper, sys; print('faster-whisper', faster_whispe
 FROM whisper-base AS runtime-whisper
 WORKDIR /opt/jervis
 COPY --from=builder /app/service-whisper/build/libs/*.jar app.jar
-ENV SERVER_PORT=8080 JAVA_OPTS="-Xmx1g -Xms256m" WORK_DATA=/opt/jervis/work
+ENV SERVER_PORT=8080 JAVA_OPTS="-Xmx2g -Xms512m" WORK_DATA=/opt/jervis/work
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:${SERVER_PORT}/actuator/health || exit 1
@@ -165,7 +165,7 @@ RUN apt-get update && \
 
 WORKDIR /opt/jervis
 COPY --from=builder /app/server/build/libs/*.jar app.jar
-ENV SERVER_PORT=5500 JAVA_OPTS="-Xmx2g -Xms512m" DATA_ROOT_DIR=/opt/jervis/data WORK_DATA=/opt/jervis/work
+ENV SERVER_PORT=5500 JAVA_OPTS="-Xmx4g -Xms1g" DATA_ROOT_DIR=/opt/jervis/data WORK_DATA=/opt/jervis/work
 EXPOSE 5500
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:${SERVER_PORT}/actuator/health || exit 1

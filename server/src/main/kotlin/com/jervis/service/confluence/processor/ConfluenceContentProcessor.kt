@@ -9,7 +9,6 @@ import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.rag.VectorStoreIndexService
 import mu.KotlinLogging
 import org.jsoup.Jsoup
-import org.jsoup.safety.Safelist
 import org.springframework.stereotype.Service
 import java.time.Instant
 
@@ -37,12 +36,9 @@ class ConfluenceContentProcessor(
     private val embeddingGateway: EmbeddingGateway,
     private val vectorStorage: VectorStorageRepository,
     private val vectorStoreIndexService: VectorStoreIndexService,
+    private val tikaClient: com.jervis.common.client.ITikaClient,
+    private val textChunkingService: com.jervis.service.text.TextChunkingService,
 ) {
-    companion object {
-        private const val MAX_CHUNK_SIZE = 4000 // chars per chunk
-        private const val CHUNK_OVERLAP = 200 // overlap between chunks for context
-    }
-
     /**
      * Process page content and index into RAG.
      * Returns number of chunks indexed.
@@ -69,16 +65,16 @@ class ConfluenceContentProcessor(
                 )
             }
 
-            // Chunk content with overlap
-            val chunks = chunkContent(parsed.plainText)
-            logger.debug { "Created ${chunks.size} chunks for page ${page.pageId}" }
+            // Chunk content via TextChunkingService
+            val segments = textChunkingService.splitText(parsed.plainText)
+            logger.debug { "Created ${segments.size} chunks for page ${page.pageId}" }
 
             var indexedChunks = 0
 
             // Index each chunk
-            for ((index, chunk) in chunks.withIndex()) {
+            for ((index, segment) in segments.withIndex()) {
                 try {
-                    indexChunk(page, chunk, index)
+                    indexChunk(page, segment.text(), index)
                     indexedChunks++
                 } catch (e: Exception) {
                     logger.error(e) { "Failed to index chunk $index for page ${page.pageId}" }
@@ -106,7 +102,7 @@ class ConfluenceContentProcessor(
     /**
      * Parse HTML content and extract plain text + links.
      */
-    private fun parseHtmlContent(
+    private suspend fun parseHtmlContent(
         htmlContent: String,
         baseUrl: String,
     ): ParsedContent {
@@ -124,17 +120,36 @@ class ConfluenceContentProcessor(
         // Classify links
         val (internalLinks, externalLinks) = classifyLinks(allLinks, baseUrl)
 
-        // Clean HTML and extract plain text
+        // Extract plain text using Tika (authoritative plain text conversion)
         val plainText =
-            Jsoup
-                .clean(
-                    htmlContent,
-                    baseUrl,
-                    Safelist.none(),
-                    org.jsoup.nodes.Document
-                        .OutputSettings()
-                        .prettyPrint(false),
-                ).trim()
+            try {
+                val bytes = htmlContent.toByteArray(Charsets.UTF_8)
+                val result =
+                    tikaClient.process(
+                        com.jervis.common.dto.TikaProcessRequest(
+                            source =
+                                com.jervis.common.dto.TikaProcessRequest.Source.FileBytes(
+                                    fileName = "page.html",
+                                    dataBase64 =
+                                        java.util.Base64
+                                            .getEncoder()
+                                            .encodeToString(bytes),
+                                ),
+                            includeMetadata = false,
+                        ),
+                    )
+                if (result.success && result.plainText.isNotBlank()) {
+                    result.plainText
+                } else {
+                    Jsoup
+                        .parse(htmlContent, baseUrl)
+                        .text()
+                        .trim()
+                }
+            } catch (e: Exception) {
+                logger.warn(e) { "Tika failed to extract plain text for Confluence page, fallback to Jsoup.text()" }
+                Jsoup.parse(htmlContent, baseUrl).text().trim()
+            }
 
         return ParsedContent(
             plainText = plainText,
@@ -180,55 +195,6 @@ class ConfluenceContentProcessor(
         } catch (e: Exception) {
             null
         }
-
-    /**
-     * Chunk content with overlap for better context.
-     * Uses sentence-aware splitting similar to GitDiffCodeIndexer.
-     */
-    private fun chunkContent(text: String): List<String> {
-        if (text.length <= MAX_CHUNK_SIZE) {
-            return listOf(text)
-        }
-
-        val chunks = mutableListOf<String>()
-        var start = 0
-
-        while (start < text.length) {
-            val end = minOf(start + MAX_CHUNK_SIZE, text.length)
-
-            // Find sentence boundary if possible
-            val chunk =
-                if (end < text.length) {
-                    // Look for sentence ending within last 200 chars
-                    val searchStart = maxOf(end - 200, start)
-                    val sentenceEnd = text.substring(searchStart, end).lastIndexOfAny(charArrayOf('.', '!', '?', '\n'))
-
-                    if (sentenceEnd >= 0) {
-                        text.substring(start, searchStart + sentenceEnd + 1).trim()
-                    } else {
-                        // No sentence boundary found, split at word
-                        val lastSpace = text.substring(start, end).lastIndexOf(' ')
-                        if (lastSpace >= 0) {
-                            text.substring(start, start + lastSpace).trim()
-                        } else {
-                            text.substring(start, end).trim()
-                        }
-                    }
-                } else {
-                    text.substring(start).trim()
-                }
-
-            if (chunk.isNotBlank()) {
-                chunks.add(chunk)
-            }
-
-            // Move start forward, with overlap
-            start += chunk.length - CHUNK_OVERLAP
-            if (start >= text.length) break
-        }
-
-        return chunks
-    }
 
     /**
      * Index a single chunk into RAG.
