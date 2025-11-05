@@ -204,12 +204,15 @@ class TikaDocumentProcessor(
         val pdf = PDFParserConfig()
         runCatching {
             val enumClass = Class.forName("org.apache.tika.parser.pdf.PDFParserConfig\$OCR_STRATEGY")
-            val ocrAndText = java.lang.Enum.valueOf(enumClass as Class<out Enum<*>>, "OCR_AND_TEXT")
+            val constants = enumClass.enumConstants?.filterIsInstance<Enum<*>>() ?: emptyList()
+            val ocrAndText = constants.firstOrNull { it.name == "OCR_AND_TEXT" }
             val setOcrMethod =
                 PDFParserConfig::class.java.methods.firstOrNull {
                     it.name == "setOcrStrategy" && it.parameterTypes.size == 1
                 }
-            setOcrMethod?.invoke(pdf, ocrAndText)
+            if (ocrAndText != null && setOcrMethod != null) {
+                setOcrMethod.invoke(pdf, ocrAndText)
+            }
         }.onFailure { e ->
             logger.debug { "PDFParserConfig OCR_STRATEGY not set explicitly: ${e.message}" }
         }

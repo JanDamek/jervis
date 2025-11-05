@@ -20,8 +20,8 @@ class JiraPollingScheduler(
      * Runs every 5 minutes with 1 minute initial delay.
      */
     @Scheduled(
-        fixedDelayString = "{jira.sync.polling-interval-ms:1800000}",
-        initialDelayString = "{jira.sync.initial-delay-ms:60000}",
+        fixedDelayString = "\${jira.sync.polling-interval-ms:1800000}",
+        initialDelayString = "\${jira.sync.initial-delay-ms:60000}",
     )
     suspend fun pollNextClient() {
         runCatching {
