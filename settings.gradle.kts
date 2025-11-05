@@ -28,4 +28,5 @@ include(
     ":service-tika",
     ":service-joern",
     ":service-whisper",
+    ":mobile",
 )
