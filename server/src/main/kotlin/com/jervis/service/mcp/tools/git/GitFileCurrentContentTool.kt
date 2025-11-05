@@ -13,6 +13,7 @@ import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.io.path.readText
 
 /**
@@ -192,13 +193,16 @@ class GitFileCurrentContentTool(
                 ensureBranchCheckedOut(gitDir, branch)
             }
 
-            val fullPath = gitDir.resolve(filePath)
+            val resolved = resolvePathWithHeuristics(project, gitDir, filePath)
+            val resolvedPath = resolved.first
+            val triedPaths = resolved.second
 
-            if (!Files.exists(fullPath)) {
-                throw IllegalStateException("File not found: $filePath")
+            if (!Files.exists(resolvedPath)) {
+                val attempts = triedPaths.joinToString(" | ") { it.toString() }
+                throw IllegalStateException("File not found: $filePath (tried: $attempts)")
             }
 
-            val allLines = fullPath.readText().lines()
+            val allLines = resolvedPath.readText().lines()
             val lineCount = allLines.size
 
             val content =
@@ -214,6 +218,58 @@ class GitFileCurrentContentTool(
                 truncated = lineCount > maxLines,
             )
         }
+
+    private fun resolvePathWithHeuristics(
+        project: com.jervis.entity.ProjectDocument,
+        gitDir: Path,
+        filePath: String,
+    ): Pair<Path, List<Path>> {
+        val cleaned = filePath.trim().trimStart('/')
+        val tried = arrayListOf<Path>()
+
+        fun attempt(rel: String): Path = gitDir.resolve(rel)
+
+        // 1) As provided
+        tried += attempt(cleaned)
+        if (Files.exists(tried.last())) return tried.last() to tried
+
+        // 2) If starts with project.projectPath → strip it
+        project.projectPath?.let { projPath ->
+            val norm = projPath.trim('/','\\')
+            if (cleaned.startsWith("$norm/")) {
+                val stripped = cleaned.removePrefix("$norm/")
+                tried += attempt(stripped)
+                if (Files.exists(tried.last())) return tried.last() to tried
+            }
+            // 3) Try prefixing with projectPath (sparse checkout may keep subtree)
+            val prefixed = "$norm/$cleaned"
+            tried += attempt(prefixed)
+            if (Files.exists(tried.last())) return tried.last() to tried
+        }
+
+        // 4) If starts with project name → strip it
+        val projectName = project.name.trim('/','\\')
+        if (cleaned.startsWith("$projectName/")) {
+            val stripped = cleaned.removePrefix("$projectName/")
+            tried += attempt(stripped)
+            if (Files.exists(tried.last())) return tried.last() to tried
+        }
+
+        // 5) Last attempt: try lowercase/uppercase normalization for first segment
+        val firstSep = cleaned.indexOf('/')
+        if (firstSep > 0) {
+            val first = cleaned.substring(0, firstSep)
+            val rest = cleaned.substring(firstSep + 1)
+            val variants = listOf(first.lowercase(), first.uppercase())
+            for (v in variants) {
+                val rel = "$v/$rest"
+                tried += attempt(rel)
+                if (Files.exists(tried.last())) return tried.last() to tried
+            }
+        }
+
+        return tried.last() to tried
+    }
 
     private data class FileContent(
         val content: String,
