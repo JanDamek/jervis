@@ -18,6 +18,7 @@ import java.time.ZoneId
 @Service
 class UserTaskService(
     private val userTaskRepository: UserTaskMongoRepository,
+    private val notificationsPublisher: com.jervis.service.notification.NotificationsPublisher,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -49,7 +50,10 @@ class UserTaskService(
         val saved = userTaskRepository.save(document)
 
         logger.info { "Created user task: ${saved.id} - $title" }
-        return saved.toDomain()
+        val domain = saved.toDomain()
+        // Broadcast notification about new user task
+        notificationsPublisher.publishUserTaskCreated(clientId = clientId, task = domain, timestamp = Instant.now().toString())
+        return domain
     }
 
     fun findActiveTasksByClient(clientId: ObjectId): Flow<UserTask> =
