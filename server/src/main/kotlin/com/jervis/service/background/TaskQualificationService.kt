@@ -296,15 +296,8 @@ class TaskQualificationService(
                 is QualifierLlmGateway.QualifierDecision.Discard -> {
                     logger.info { "Task ${task.id} (${task.taskType}) DISCARDED by qualifier in ${duration}ms - spam/noise" }
 
-                    // Store qualification notes before deletion (for audit trail)
-                    try {
-                        pendingTaskService.mergeContext(
-                            task.id,
-                            mapOf("qualificationNotes" to "DISCARDED: Spam/noise detected"),
-                        )
-                    } catch (e: Exception) {
-                        logger.warn(e) { "Failed to store qualification notes for discarded task ${task.id}" }
-                    }
+                    // Note: do not mutate context in non-NEW states; log for audit and delete (ephemeral)
+                    logger.info { "QUALIFICATION_NOTES: task=${task.id} note=DISCARDED: Spam/noise detected" }
 
                     pendingTaskService.deleteTask(task.id)
                 }
@@ -312,15 +305,8 @@ class TaskQualificationService(
                 is QualifierLlmGateway.QualifierDecision.Delegate -> {
                     logger.debug { "Task ${task.id} (${task.taskType}) DELEGATED in ${duration}ms to strong model" }
 
-                    // Store qualification notes (reason from qualifier)
-                    try {
-                        pendingTaskService.mergeContext(
-                            task.id,
-                            mapOf("qualificationNotes" to "DELEGATED: Actionable content"),
-                        )
-                    } catch (e: Exception) {
-                        logger.warn(e) { "Failed to store qualification notes for delegated task ${task.id}" }
-                    }
+                    // Note: do not mutate context in non-NEW states; log for audit only
+                    logger.info { "QUALIFICATION_NOTES: task=${task.id} note=DELEGATED: Actionable content" }
 
                     pendingTaskService.updateState(
                         task.id,
