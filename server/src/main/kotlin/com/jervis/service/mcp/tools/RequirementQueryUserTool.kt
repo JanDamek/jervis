@@ -2,7 +2,7 @@ package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.plan.Plan
-import com.jervis.domain.requirement.RequirementStatus
+import com.jervis.domain.requirement.RequirementStatusEnum
 import com.jervis.repository.mongo.UserRequirementMongoRepository
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
@@ -66,12 +66,12 @@ class RequirementQueryUserTool(
                 requirementRepository.findByClientIdAndProjectIdAndStatus(
                     plan.clientDocument.id,
                     plan.projectDocument!!.id,
-                    RequirementStatus.ACTIVE,
+                    RequirementStatusEnum.ACTIVE,
                 )
             } else {
                 requirementRepository.findByClientIdAndStatus(
                     plan.clientDocument.id,
-                    RequirementStatus.ACTIVE,
+                    RequirementStatusEnum.ACTIVE,
                 )
             }
 

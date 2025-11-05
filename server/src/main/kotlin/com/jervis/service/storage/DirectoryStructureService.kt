@@ -2,7 +2,7 @@ package com.jervis.service.storage
 
 import com.jervis.configuration.properties.DataRootProperties
 import com.jervis.domain.storage.DirectoryStructure
-import com.jervis.domain.storage.ProjectSubdirectory
+import com.jervis.domain.storage.ProjectSubdirectoryEnum
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.ProjectDocument
 import jakarta.annotation.PostConstruct
@@ -283,7 +283,7 @@ class DirectoryStructureService(
     fun resolveProjectPath(
         clientId: ObjectId,
         projectId: ObjectId,
-        subdirectory: ProjectSubdirectory,
+        subdirectory: ProjectSubdirectoryEnum,
         relativePath: String,
     ): Path = projectDir(clientId, projectId).resolve(subdirectory.dirName).resolve(relativePath)
 
@@ -303,7 +303,7 @@ class DirectoryStructureService(
         clientId: ObjectId,
         projectId: ObjectId,
         givenPath: String,
-        preferred: ProjectSubdirectory? = null,
+        preferred: ProjectSubdirectoryEnum? = null,
     ): Path {
         val raw = givenPath.trim().trim('"', '\'', '`')
         if (raw.isEmpty()) error("Empty path provided")
@@ -322,7 +322,7 @@ class DirectoryStructureService(
         val projectBase = projectDir(clientId, projectId)
 
         // If path already starts with a known subdirectory, try directly under project
-        ProjectSubdirectory.entries.firstOrNull { cleaned.startsWith(it.dirName + "/") }?.let {
+        ProjectSubdirectoryEnum.entries.firstOrNull { cleaned.startsWith(it.dirName + "/") }?.let {
             val p = projectBase.resolve(cleaned).normalize()
             if (Files.exists(p)) return p
         }
@@ -335,8 +335,8 @@ class DirectoryStructureService(
         }
 
         // Preferred subdir first (if any)
-        val subdirs: List<ProjectSubdirectory> =
-            (preferred?.let { listOf(it) } ?: emptyList()) + ProjectSubdirectory.entries.filter { it != preferred }
+        val subdirs: List<ProjectSubdirectoryEnum> =
+            (preferred?.let { listOf(it) } ?: emptyList()) + ProjectSubdirectoryEnum.entries.filter { it != preferred }
 
         // 1) Under preferred/each known subdir
         for (sd in subdirs) {
@@ -354,8 +354,11 @@ class DirectoryStructureService(
         throw IllegalStateException("File not found for provided path: $givenPath (tried: $attempts)")
     }
 
-    fun resolveExistingProjectPath(project: ProjectDocument, givenPath: String, preferred: ProjectSubdirectory? = null): Path =
-        resolveExistingProjectPath(project.clientId, project.id, givenPath, preferred)
+    fun resolveExistingProjectPath(
+        project: ProjectDocument,
+        givenPath: String,
+        preferred: ProjectSubdirectoryEnum? = null,
+    ): Path = resolveExistingProjectPath(project.clientId, project.id, givenPath, preferred)
 
     fun resolveTmpScrapingPath(fileName: String): Path = tmpScrapingDir().resolve(fileName)
 

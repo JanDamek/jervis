@@ -1,9 +1,9 @@
 package com.jervis.service
 
-import com.jervis.dto.ConfluenceAccountCreateDto
-import com.jervis.dto.ConfluenceAccountDto
-import com.jervis.dto.ConfluenceAccountUpdateDto
-import com.jervis.dto.ConfluencePageDto
+import com.jervis.dto.confluence.ConfluenceAccountCreateDto
+import com.jervis.dto.confluence.ConfluenceAccountDto
+import com.jervis.dto.confluence.ConfluenceAccountUpdateDto
+import com.jervis.dto.confluence.ConfluencePageDto
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestParam

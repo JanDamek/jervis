@@ -67,4 +67,8 @@ class HttpInterfaceClientConfig {
     @Bean
     fun userTaskClient(webClient: WebClient): IUserTaskService =
         createHttpServiceProxyFactory(webClient).createClient(IUserTaskService::class.java)
+
+    @Bean
+    fun ragSearchClient(webClient: WebClient): com.jervis.service.IRagSearchService =
+        createHttpServiceProxyFactory(webClient).createClient(com.jervis.service.IRagSearchService::class.java)
 }

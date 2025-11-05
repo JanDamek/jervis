@@ -1,7 +1,7 @@
 package com.jervis.service.sender
 
+import com.jervis.domain.MessageChannelEnum
 import com.jervis.domain.sender.MessageLink
-import com.jervis.entity.MessageChannel
 import com.jervis.mapper.toDomain
 import com.jervis.mapper.toEntity
 import com.jervis.repository.mongo.MessageLinkMongoRepository
@@ -44,7 +44,7 @@ class MessageLinkService(
 
     suspend fun createLink(
         messageId: String,
-        channel: MessageChannel,
+        channel: MessageChannelEnum,
         threadId: ObjectId,
         senderProfileId: ObjectId,
         subject: String?,
@@ -89,7 +89,7 @@ class MessageLinkService(
     ): MessageLink =
         createLink(
             messageId = email.messageId,
-            channel = MessageChannel.EMAIL,
+            channel = MessageChannelEnum.EMAIL,
             threadId = threadId,
             senderProfileId = senderProfileId,
             subject = email.subject,

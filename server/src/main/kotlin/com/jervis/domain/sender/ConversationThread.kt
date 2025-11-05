@@ -1,9 +1,8 @@
 package com.jervis.domain.sender
 
-import com.jervis.entity.ConversationCategory
-import com.jervis.entity.MessageChannel
-import com.jervis.entity.Priority
-import com.jervis.entity.ThreadStatus
+import com.jervis.domain.confluence.ConversationCategoryEnum
+import com.jervis.domain.confluence.PriorityEnum
+import com.jervis.domain.confluence.ThreadStatusEnum
 import org.bson.types.ObjectId
 import java.time.Instant
 
@@ -14,9 +13,9 @@ data class ConversationThread(
     val channelMappings: List<ChannelMapping>,
     val senderProfileIds: List<ObjectId>,
     val participantSummary: String?,
-    val category: ConversationCategory,
-    val priority: Priority,
-    val status: ThreadStatus,
+    val category: ConversationCategoryEnum,
+    val priorityEnum: PriorityEnum,
+    val status: ThreadStatusEnum,
     val summary: String?,
     val keyPoints: List<String>,
     val lastSummaryUpdate: Instant?,
@@ -32,19 +31,4 @@ data class ConversationThread(
     val projectId: ObjectId?,
     val clientId: ObjectId,
     val tags: List<String>,
-)
-
-data class ActionItem(
-    val description: String,
-    val assignedTo: String?,
-    val deadline: Instant?,
-    val completed: Boolean,
-    val createdAt: Instant,
-)
-
-data class ChannelMapping(
-    val channel: MessageChannel,
-    val externalId: String,
-    val externalThreadId: String?,
-    val addedAt: Instant,
 )

@@ -3,9 +3,12 @@ package com.jervis.service.jira
 import com.jervis.domain.jira.JiraProjectKey
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
+import com.jervis.repository.mongo.JiraConnectionMongoRepository
+import com.jervis.repository.mongo.JiraIssueIndexMongoRepository
+import com.jervis.repository.mongo.ProjectMongoRepository
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
-import com.jervis.service.rag.VectorStoreIndexService
+import com.jervis.service.text.TextChunkingService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withContext
@@ -19,15 +22,12 @@ class JiraIndexingOrchestrator(
     private val selection: JiraSelectionService,
     private val api: JiraApiClient,
     private val auth: JiraAuthService,
-    private val emailSignal: JiraEmailSignalService,
     private val embeddingGateway: EmbeddingGateway,
     private val vectorStorage: VectorStorageRepository,
-    private val vectorStoreIndexService: VectorStoreIndexService,
-    private val projectRepository: com.jervis.repository.mongo.ProjectMongoRepository,
-    private val clientRepository: com.jervis.repository.mongo.ClientMongoRepository,
-    private val connectionRepository: com.jervis.repository.mongo.JiraConnectionMongoRepository,
-    private val issueIndexRepository: com.jervis.repository.mongo.JiraIssueIndexMongoRepository,
-    private val textChunkingService: com.jervis.service.text.TextChunkingService,
+    private val projectRepository: ProjectMongoRepository,
+    private val connectionRepository: JiraConnectionMongoRepository,
+    private val issueIndexRepository: JiraIssueIndexMongoRepository,
+    private val textChunkingService: TextChunkingService,
 ) {
     private val logger = KotlinLogging.logger {}
 

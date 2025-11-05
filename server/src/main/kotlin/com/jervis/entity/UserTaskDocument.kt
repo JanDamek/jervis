@@ -1,8 +1,8 @@
 package com.jervis.entity
 
-import com.jervis.domain.task.TaskPriority
+import com.jervis.domain.task.TaskPriorityEnum
 import com.jervis.domain.task.TaskSourceType
-import com.jervis.domain.task.TaskStatus
+import com.jervis.domain.task.TaskStatusEnum
 import com.jervis.domain.task.UserTask
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
@@ -37,8 +37,8 @@ data class UserTaskDocument(
             id = id,
             title = title,
             description = description,
-            priority = TaskPriority.valueOf(priority),
-            status = TaskStatus.valueOf(status),
+            priority = TaskPriorityEnum.valueOf(priority),
+            status = TaskStatusEnum.valueOf(status),
             dueDate = dueDate,
             projectId = projectId,
             clientId = clientId,

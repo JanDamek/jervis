@@ -11,8 +11,8 @@ data class UserTask(
     val id: ObjectId = ObjectId(),
     val title: String,
     val description: String? = null,
-    val priority: TaskPriority = TaskPriority.MEDIUM,
-    val status: TaskStatus = TaskStatus.TODO,
+    val priority: TaskPriorityEnum = TaskPriorityEnum.MEDIUM,
+    val status: TaskStatusEnum = TaskStatusEnum.TODO,
     val dueDate: Instant? = null,
     val projectId: ObjectId? = null,
     val clientId: ObjectId,
@@ -22,17 +22,3 @@ data class UserTask(
     val createdAt: Instant = Instant.now(),
     val completedAt: Instant? = null,
 )
-
-enum class TaskPriority {
-    LOW,
-    MEDIUM,
-    HIGH,
-    URGENT,
-}
-
-enum class TaskStatus {
-    TODO,
-    IN_PROGRESS,
-    COMPLETED,
-    CANCELLED,
-}

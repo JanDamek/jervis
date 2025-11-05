@@ -1,10 +1,10 @@
 package com.jervis.mapper
 
+import com.jervis.domain.confluence.ActionItemEmbedded
+import com.jervis.domain.confluence.ChannelMappingEmbedded
 import com.jervis.domain.sender.ActionItem
 import com.jervis.domain.sender.ChannelMapping
 import com.jervis.domain.sender.ConversationThread
-import com.jervis.entity.ActionItemEmbedded
-import com.jervis.entity.ChannelMappingEmbedded
 import com.jervis.entity.ConversationThreadDocument
 
 /**
@@ -21,7 +21,7 @@ fun ConversationThreadDocument.toDomain(): ConversationThread =
         senderProfileIds = senderProfileIds,
         participantSummary = participantSummary,
         category = category,
-        priority = priority,
+        priorityEnum = priorityEnum,
         status = status,
         summary = summary,
         keyPoints = keyPoints,
@@ -50,7 +50,7 @@ fun ConversationThread.toEntity(): ConversationThreadDocument =
         senderProfileIds = senderProfileIds,
         participantSummary = participantSummary,
         category = category,
-        priority = priority,
+        priorityEnum = priorityEnum,
         status = status,
         summary = summary,
         keyPoints = keyPoints,

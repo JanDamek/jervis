@@ -1,9 +1,9 @@
 package com.jervis.service.notification
 
 import com.jervis.domain.task.UserTask
+import com.jervis.domain.websocket.WebSocketChannelTypeEnum
 import com.jervis.service.notification.domain.PlanStatusChangeEvent
 import com.jervis.service.notification.domain.StepCompletionEvent
-import com.jervis.service.websocket.WebSocketChannelType
 import com.jervis.service.websocket.WebSocketSessionManager
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -31,7 +31,7 @@ class NotificationsPublisher(
                 stepStatus = event.stepStatus.name,
                 timestamp = event.timestamp.toString(),
             )
-        sessionManager.broadcastToChannel(json.encodeToString(dto), WebSocketChannelType.NOTIFICATIONS)
+        sessionManager.broadcastToChannel(json.encodeToString(dto), WebSocketChannelTypeEnum.NOTIFICATIONS)
     }
 
     @EventListener
@@ -43,10 +43,14 @@ class NotificationsPublisher(
                 planStatus = event.planStatusEnum.name,
                 timestamp = event.timestamp.toString(),
             )
-        sessionManager.broadcastToChannel(json.encodeToString(dto), WebSocketChannelType.NOTIFICATIONS)
+        sessionManager.broadcastToChannel(json.encodeToString(dto), WebSocketChannelTypeEnum.NOTIFICATIONS)
     }
 
-    fun publishUserTaskCreated(clientId: ObjectId, task: UserTask, timestamp: String) {
+    fun publishUserTaskCreated(
+        clientId: ObjectId,
+        task: UserTask,
+        timestamp: String,
+    ) {
         val dto =
             UserTaskCreatedEventDtoD(
                 clientId = clientId.toHexString(),
@@ -54,6 +58,6 @@ class NotificationsPublisher(
                 title = task.title,
                 timestamp = timestamp,
             )
-        sessionManager.broadcastToChannel(json.encodeToString(dto), WebSocketChannelType.NOTIFICATIONS)
+        sessionManager.broadcastToChannel(json.encodeToString(dto), WebSocketChannelTypeEnum.NOTIFICATIONS)
     }
 }

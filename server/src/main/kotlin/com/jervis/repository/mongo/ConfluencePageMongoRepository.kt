@@ -1,7 +1,7 @@
 package com.jervis.repository.mongo
 
+import com.jervis.domain.confluence.ConfluencePageStateEnum
 import com.jervis.entity.ConfluencePageDocument
-import com.jervis.entity.ConfluencePageState
 import kotlinx.coroutines.flow.Flow
 import org.bson.types.ObjectId
 import org.springframework.data.mongodb.repository.Query
@@ -40,6 +40,6 @@ interface ConfluencePageMongoRepository : CoroutineCrudRepository<ConfluencePage
     @Query(value = "{ 'accountId': ?0, 'state': ?1 }", count = true)
     suspend fun countByAccountIdAndState(
         accountId: ObjectId,
-        state: ConfluencePageState,
+        state: ConfluencePageStateEnum,
     ): Long
 }

@@ -1,5 +1,7 @@
 package com.jervis.service.confluence.processor
 
+import com.jervis.common.client.ITikaClient
+import com.jervis.domain.confluence.ConfluenceContentResult
 import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
@@ -7,6 +9,7 @@ import com.jervis.entity.ConfluencePageDocument
 import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.rag.VectorStoreIndexService
+import com.jervis.service.text.TextChunkingService
 import mu.KotlinLogging
 import org.jsoup.Jsoup
 import org.springframework.stereotype.Service
@@ -36,8 +39,8 @@ class ConfluenceContentProcessor(
     private val embeddingGateway: EmbeddingGateway,
     private val vectorStorage: VectorStorageRepository,
     private val vectorStoreIndexService: VectorStoreIndexService,
-    private val tikaClient: com.jervis.common.client.ITikaClient,
-    private val textChunkingService: com.jervis.service.text.TextChunkingService,
+    private val tikaClient: ITikaClient,
+    private val textChunkingService: TextChunkingService,
 ) {
     /**
      * Process page content and index into RAG.
@@ -261,10 +264,3 @@ class ConfluenceContentProcessor(
         val externalLinks: List<String>,
     )
 }
-
-data class ConfluenceContentResult(
-    val indexedChunks: Int,
-    val internalLinks: List<String>,
-    val externalLinks: List<String>,
-    val plainText: String,
-)

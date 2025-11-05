@@ -1,5 +1,6 @@
 package com.jervis.service.websocket
 
+import com.jervis.domain.websocket.WebSocketChannelTypeEnum
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
 import org.springframework.web.reactive.socket.WebSocketHandler
@@ -17,7 +18,7 @@ class DebugWebSocketHandler(
     }
 
     override fun handle(session: WebSocketSession): Mono<Void> {
-        val sessionId = sessionManager.registerSession(session, WebSocketChannelType.DEBUG)
+        val sessionId = sessionManager.registerSession(session, WebSocketChannelTypeEnum.DEBUG)
         logger.info { "Debug WebSocket client connected: $sessionId from ${session.handshakeInfo.remoteAddress}" }
 
         return session

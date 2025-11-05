@@ -1,8 +1,8 @@
 package com.jervis.service.task
 
-import com.jervis.domain.task.TaskPriority
+import com.jervis.domain.task.TaskPriorityEnum
 import com.jervis.domain.task.TaskSourceType
-import com.jervis.domain.task.TaskStatus
+import com.jervis.domain.task.TaskStatusEnum
 import com.jervis.domain.task.UserTask
 import com.jervis.entity.UserTaskDocument
 import com.jervis.repository.mongo.UserTaskMongoRepository
@@ -25,7 +25,7 @@ class UserTaskService(
     suspend fun createTask(
         title: String,
         description: String? = null,
-        priority: TaskPriority = TaskPriority.MEDIUM,
+        priority: TaskPriorityEnum = TaskPriorityEnum.MEDIUM,
         dueDate: Instant? = null,
         projectId: ObjectId? = null,
         clientId: ObjectId,
@@ -34,12 +34,13 @@ class UserTaskService(
         metadata: Map<String, String> = emptyMap(),
     ): UserTask {
         if (sourceUri != null) {
-            val existing = userTaskRepository.findFirstByClientIdAndSourceTypeAndSourceUriAndStatusIn(
-                clientId = clientId,
-                sourceType = sourceType.name,
-                sourceUri = sourceUri,
-                status = listOf(TaskStatus.TODO.name, TaskStatus.IN_PROGRESS.name),
-            )
+            val existing =
+                userTaskRepository.findFirstByClientIdAndSourceTypeAndSourceUriAndStatusIn(
+                    clientId = clientId,
+                    sourceType = sourceType.name,
+                    sourceUri = sourceUri,
+                    status = listOf(TaskStatus.TODO.name, TaskStatus.IN_PROGRESS.name),
+                )
             if (existing != null) {
                 logger.info { "Skipped duplicate user task for sourceUri=$sourceUri (existing=${existing.id})" }
                 return existing.toDomain()
@@ -65,7 +66,11 @@ class UserTaskService(
         logger.info { "Created user task: ${saved.id} - $title" }
         val domain = saved.toDomain()
         // Broadcast notification about new user task
-        notificationsPublisher.publishUserTaskCreated(clientId = clientId, task = domain, timestamp = Instant.now().toString())
+        notificationsPublisher.publishUserTaskCreated(
+            clientId = clientId,
+            task = domain,
+            timestamp = Instant.now().toString(),
+        )
         return domain
     }
 
@@ -73,7 +78,7 @@ class UserTaskService(
         userTaskRepository
             .findActiveTasksByClientIdAndStatusIn(
                 clientId = clientId,
-                statuses = listOf(TaskStatus.TODO.name, TaskStatus.IN_PROGRESS.name),
+                statuses = listOf(TaskStatusEnum.TODO.name, TaskStatusEnum.IN_PROGRESS.name),
             ).map { it.toDomain() }
 
     fun findTasksForToday(clientId: ObjectId): Flow<UserTask> {
@@ -86,7 +91,7 @@ class UserTaskService(
                 clientId = clientId,
                 startDate = startOfDay,
                 endDate = endOfDay,
-                statuses = listOf(TaskStatus.TODO.name, TaskStatus.IN_PROGRESS.name),
+                statuses = listOf(TaskStatusEnum.TODO.name, TaskStatusEnum.IN_PROGRESS.name),
             ).map { it.toDomain() }
     }
 
@@ -100,7 +105,7 @@ class UserTaskService(
                 clientId = clientId,
                 startDate = startDate,
                 endDate = endDate,
-                statuses = listOf(TaskStatus.TODO.name, TaskStatus.IN_PROGRESS.name),
+                statuses = listOf(TaskStatusEnum.TODO.name, TaskStatusEnum.IN_PROGRESS.name),
             ).map { it.toDomain() }
 
     fun findActiveTasksByThread(
@@ -110,7 +115,7 @@ class UserTaskService(
         userTaskRepository
             .findActiveByClientAndThreadId(
                 clientId = clientId,
-                statuses = listOf(TaskStatus.TODO.name, TaskStatus.IN_PROGRESS.name),
+                statuses = listOf(TaskStatusEnum.TODO.name, TaskStatusEnum.IN_PROGRESS.name),
                 threadId = threadId.toHexString(),
             ).map { it.toDomain() }
 
@@ -131,7 +136,7 @@ class UserTaskService(
 
         val updated =
             existing.copy(
-                status = TaskStatus.COMPLETED.name,
+                status = TaskStatusEnum.COMPLETED.name,
                 completedAt = Instant.now(),
                 metadata = newMetadata,
             )

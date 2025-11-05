@@ -1,10 +1,10 @@
 package com.jervis.mapper
 
+import com.jervis.domain.email.CommunicationStatsEmbedded
+import com.jervis.domain.email.SenderAliasEmbedded
 import com.jervis.domain.sender.CommunicationStats
 import com.jervis.domain.sender.SenderAlias
 import com.jervis.domain.sender.SenderProfile
-import com.jervis.entity.CommunicationStatsEmbedded
-import com.jervis.entity.SenderAliasEmbedded
 import com.jervis.entity.SenderProfileDocument
 
 /**

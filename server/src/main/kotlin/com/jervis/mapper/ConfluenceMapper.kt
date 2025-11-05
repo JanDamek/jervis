@@ -1,8 +1,8 @@
 package com.jervis.mapper
 
-import com.jervis.dto.ConfluenceAccountDto
-import com.jervis.dto.ConfluenceAccountStatsDto
-import com.jervis.dto.ConfluencePageDto
+import com.jervis.dto.confluence.ConfluenceAccountDto
+import com.jervis.dto.confluence.ConfluenceAccountStatsDto
+import com.jervis.dto.confluence.ConfluencePageDto
 import com.jervis.entity.ConfluenceAccountDocument
 import com.jervis.entity.ConfluencePageDocument
 import com.jervis.service.confluence.state.ConfluenceIndexingStats

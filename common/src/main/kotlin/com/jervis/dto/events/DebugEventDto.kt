@@ -15,17 +15,4 @@ sealed class DebugEventDto {
         val clientId: String? = null,
         val clientName: String? = null,
     ) : DebugEventDto()
-
-    @Serializable
-    @SerialName("ResponseChunk")
-    data class ResponseChunkDto(
-        val sessionId: String,
-        val chunk: String,
-    ) : DebugEventDto()
-
-    @Serializable
-    @SerialName("SessionCompleted")
-    data class SessionCompletedDto(
-        val sessionId: String,
-    ) : DebugEventDto()
 }

@@ -1,6 +1,6 @@
 package com.jervis.repository.mongo
 
-import com.jervis.entity.MessageChannel
+import com.jervis.domain.MessageChannelEnum
 import com.jervis.entity.MessageLinkDocument
 import kotlinx.coroutines.flow.Flow
 import org.bson.types.ObjectId
@@ -23,7 +23,7 @@ interface MessageLinkMongoRepository : CoroutineCrudRepository<MessageLinkDocume
     ): Flow<MessageLinkDocument>
 
     fun findByChannelAndTimestampAfter(
-        channel: MessageChannel,
+        channel: MessageChannelEnum,
         timestamp: Instant,
     ): Flow<MessageLinkDocument>
 

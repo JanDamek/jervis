@@ -1,5 +1,6 @@
 package com.jervis.service.websocket
 
+import com.jervis.domain.websocket.WebSocketChannelTypeEnum
 import jakarta.annotation.PreDestroy
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -10,11 +11,6 @@ import java.util.concurrent.ConcurrentHashMap
 
 private val logger = KotlinLogging.logger {}
 
-enum class WebSocketChannelType {
-    DEBUG,
-    NOTIFICATIONS,
-}
-
 /**
  * Centralized WebSocket session manager with channel-based routing.
  * Separates debug and notification channels to prevent cross-channel message delivery.
@@ -23,14 +19,14 @@ enum class WebSocketChannelType {
 class WebSocketSessionManager {
     private data class SessionInfo(
         val session: WebSocketSession,
-        val channelType: WebSocketChannelType,
+        val channelType: WebSocketChannelTypeEnum,
     )
 
     private val sessions = ConcurrentHashMap<String, SessionInfo>()
 
     fun registerSession(
         session: WebSocketSession,
-        channelType: WebSocketChannelType,
+        channelType: WebSocketChannelTypeEnum,
     ): String {
         val sessionId = session.id
         sessions[sessionId] = SessionInfo(session, channelType)
@@ -45,7 +41,7 @@ class WebSocketSessionManager {
 
     fun broadcastToChannel(
         message: String,
-        channelType: WebSocketChannelType,
+        channelType: WebSocketChannelTypeEnum,
     ) {
         sessions.values
             .filter { it.channelType == channelType && it.session.isOpen }

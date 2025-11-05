@@ -2,6 +2,7 @@ package com.jervis.service.gateway.clients
 
 import com.jervis.configuration.prompts.PromptConfigBase
 import com.jervis.configuration.properties.ModelsProperties
+import com.jervis.domain.gateway.StreamChunk
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProviderEnum
 import kotlinx.coroutines.flow.Flow
@@ -32,12 +33,3 @@ interface ProviderClient {
         debugSessionId: String? = null,
     ): Flow<StreamChunk>
 }
-
-/**
- * Represents a chunk of streaming response from an LLM provider
- */
-data class StreamChunk(
-    val content: String,
-    val isComplete: Boolean = false,
-    val metadata: Map<String, Any> = emptyMap(),
-)

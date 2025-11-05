@@ -1,6 +1,8 @@
 package com.jervis.client
 
 import com.jervis.dto.events.DebugEventDto
+import com.jervis.dto.events.ResponseChunkDto
+import com.jervis.dto.events.SessionCompletedDto
 import com.jervis.service.IDebugWindowService
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -103,14 +105,14 @@ class DebugWebSocketClient(
                     )
                 }
 
-                is DebugEventDto.ResponseChunkDto -> {
+                is ResponseChunkDto -> {
                     debugWindowService.appendResponse(
                         sessionId = event.sessionId,
                         chunk = event.chunk,
                     )
                 }
 
-                is DebugEventDto.SessionCompletedDto -> {
+                is SessionCompletedDto -> {
                     logger.info { "Debug session completed: ${event.sessionId}" }
                     debugWindowService.completeSession(
                         sessionId = event.sessionId,

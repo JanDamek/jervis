@@ -1,7 +1,7 @@
 package com.jervis.entity
 
-import com.jervis.domain.requirement.RequirementPriority
-import com.jervis.domain.requirement.RequirementStatus
+import com.jervis.domain.requirement.RequirementPriorityEnum
+import com.jervis.domain.requirement.RequirementStatusEnum
 import com.jervis.domain.requirement.UserRequirement
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
@@ -16,8 +16,8 @@ data class UserRequirementDocument(
     val title: String,
     val description: String,
     val keywords: List<String> = emptyList(),
-    val priority: RequirementPriority = RequirementPriority.MEDIUM,
-    val status: RequirementStatus = RequirementStatus.ACTIVE,
+    val priority: RequirementPriorityEnum = RequirementPriorityEnum.MEDIUM,
+    val status: RequirementStatusEnum = RequirementStatusEnum.ACTIVE,
     val createdAt: Instant = Instant.now(),
     val completedAt: Instant? = null,
     val metadata: Map<String, String> = emptyMap(),

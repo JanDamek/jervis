@@ -2,7 +2,7 @@ package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.plan.Plan
-import com.jervis.domain.requirement.RequirementStatus
+import com.jervis.domain.requirement.RequirementStatusEnum
 import com.jervis.repository.mongo.UserRequirementMongoRepository
 import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
@@ -65,7 +65,7 @@ class RequirementUpdateUserTool(
             document.copy(
                 status = request.status,
                 completedAt =
-                    if (request.status in listOf(RequirementStatus.COMPLETED, RequirementStatus.CANCELLED)) {
+                    if (request.status in listOf(RequirementStatusEnum.COMPLETED, RequirementStatusEnum.CANCELLED)) {
                         Instant.now()
                     } else {
                         null
@@ -98,6 +98,6 @@ class RequirementUpdateUserTool(
     @Serializable
     data class RequirementUpdateRequest(
         val requirementId: String = "",
-        val status: RequirementStatus = RequirementStatus.ACTIVE,
+        val status: RequirementStatusEnum = RequirementStatusEnum.ACTIVE,
     )
 }
