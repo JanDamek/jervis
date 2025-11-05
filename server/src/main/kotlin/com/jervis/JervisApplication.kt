@@ -17,10 +17,10 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.runApplication
 import org.springframework.context.annotation.ComponentScan
 import org.springframework.context.annotation.PropertySource
-import org.springframework.data.mongodb.repository.config.EnableMongoRepositories
+import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRepositories
 
 @SpringBootApplication
-@EnableMongoRepositories(basePackages = ["com.jervis.repository.mongo"])
+@EnableReactiveMongoRepositories(basePackages = ["com.jervis.repository.mongo"])
 @EnableConfigurationProperties(
     PromptsConfiguration::class,
     DataRootProperties::class,
