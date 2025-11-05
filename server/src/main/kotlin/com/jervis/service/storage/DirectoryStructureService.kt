@@ -287,6 +287,76 @@ class DirectoryStructureService(
         relativePath: String,
     ): Path = projectDir(clientId, projectId).resolve(subdirectory.dirName).resolve(relativePath)
 
+    /**
+     * Resolve an existing file path within a project's workspace using the centralized directory structure.
+     *
+     * Behavior:
+     * - If [givenPath] is absolute and exists, returns it as-is.
+     * - If [givenPath] is relative to workspace root (starts with clients/..), resolves from [workspaceRoot].
+     * - If [givenPath] starts with a known project subdirectory (git/documents/meetings/uploads/audio), it is resolved under the project's root.
+     * - Otherwise, it will try to locate the file under the project's preferred subdirectory (if provided),
+     *   then under each known subdirectory, and finally directly under the project directory.
+     *
+     * Fails fast: throws [IllegalStateException] if the file cannot be found.
+     */
+    fun resolveExistingProjectPath(
+        clientId: ObjectId,
+        projectId: ObjectId,
+        givenPath: String,
+        preferred: ProjectSubdirectory? = null,
+    ): Path {
+        val raw = givenPath.trim().trim('"', '\'', '`')
+        if (raw.isEmpty()) error("Empty path provided")
+
+        val asPath = Paths.get(raw)
+        if (asPath.isAbsolute && Files.exists(asPath)) return asPath
+
+        val cleaned = raw.trimStart('/', '\\')
+
+        // If path is already relative to workspace (clients/...)
+        if (cleaned.startsWith(DirectoryStructure.CLIENTS_DIR + "/")) {
+            val p = workspaceRoot.resolve(cleaned).normalize()
+            if (Files.exists(p)) return p
+        }
+
+        val projectBase = projectDir(clientId, projectId)
+
+        // If path already starts with a known subdirectory, try directly under project
+        ProjectSubdirectory.entries.firstOrNull { cleaned.startsWith(it.dirName + "/") }?.let {
+            val p = projectBase.resolve(cleaned).normalize()
+            if (Files.exists(p)) return p
+        }
+
+        val tried = mutableListOf<Path>()
+
+        fun candidate(p: Path): Path {
+            tried.add(p)
+            return p
+        }
+
+        // Preferred subdir first (if any)
+        val subdirs: List<ProjectSubdirectory> =
+            (preferred?.let { listOf(it) } ?: emptyList()) + ProjectSubdirectory.entries.filter { it != preferred }
+
+        // 1) Under preferred/each known subdir
+        for (sd in subdirs) {
+            val p = candidate(projectBase.resolve(sd.dirName).resolve(cleaned).normalize())
+            if (Files.exists(p)) return p
+        }
+
+        // 2) Directly under project directory
+        run {
+            val p = candidate(projectBase.resolve(cleaned).normalize())
+            if (Files.exists(p)) return p
+        }
+
+        val attempts = tried.joinToString(" | ") { it.toString() }
+        throw IllegalStateException("File not found for provided path: $givenPath (tried: $attempts)")
+    }
+
+    fun resolveExistingProjectPath(project: ProjectDocument, givenPath: String, preferred: ProjectSubdirectory? = null): Path =
+        resolveExistingProjectPath(project.clientId, project.id, givenPath, preferred)
+
     fun resolveTmpScrapingPath(fileName: String): Path = tmpScrapingDir().resolve(fileName)
 
     fun resolveTmpProcessingPath(fileName: String): Path = tmpProcessingDir().resolve(fileName)
