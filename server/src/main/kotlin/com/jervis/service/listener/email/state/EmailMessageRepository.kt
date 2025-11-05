@@ -12,6 +12,8 @@ interface EmailMessageRepository : CoroutineCrudRepository<EmailMessageDocument,
         state: EmailMessageState,
     ): Flow<EmailMessageDocument>
 
+    fun findByState(state: EmailMessageState): Flow<EmailMessageDocument>
+
     fun findByAccountIdAndMessageId(
         accountId: ObjectId,
         messageId: String,
