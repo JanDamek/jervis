@@ -1,15 +1,18 @@
 package com.jervis.service.notification
 
+import com.jervis.domain.task.UserTask
 import com.jervis.service.notification.domain.PlanStatusChangeEvent
 import com.jervis.service.notification.domain.StepCompletionEvent
 import com.jervis.service.websocket.WebSocketChannelType
 import com.jervis.service.websocket.WebSocketSessionManager
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import org.bson.types.ObjectId
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 import com.jervis.dto.events.PlanStatusChangeEventDto as PlanStatusChangeEventDtoD
 import com.jervis.dto.events.StepCompletionEventDto as StepCompletionEventDtoD
+import com.jervis.dto.events.UserTaskCreatedEventDto as UserTaskCreatedEventDtoD
 
 @Component
 class NotificationsPublisher(
@@ -39,6 +42,17 @@ class NotificationsPublisher(
                 planId = event.planId.toHexString(),
                 planStatus = event.planStatusEnum.name,
                 timestamp = event.timestamp.toString(),
+            )
+        sessionManager.broadcastToChannel(json.encodeToString(dto), WebSocketChannelType.NOTIFICATIONS)
+    }
+
+    fun publishUserTaskCreated(clientId: ObjectId, task: UserTask, timestamp: String) {
+        val dto =
+            UserTaskCreatedEventDtoD(
+                clientId = clientId.toHexString(),
+                taskId = task.id.toHexString(),
+                title = task.title,
+                timestamp = timestamp,
             )
         sessionManager.broadcastToChannel(json.encodeToString(dto), WebSocketChannelType.NOTIFICATIONS)
     }
