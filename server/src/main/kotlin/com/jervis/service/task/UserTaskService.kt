@@ -130,13 +130,9 @@ class UserTaskService(
 
     suspend fun cancelTask(taskId: ObjectId): UserTask {
         val existing = userTaskRepository.findById(taskId) ?: error("User task not found: $taskId")
-        val updated =
-            existing.copy(
-                status = TaskStatus.CANCELLED.name,
-                completedAt = Instant.now(),
-            )
-        val saved = userTaskRepository.save(updated)
-        logger.info { "Cancelled user task: ${saved.id}" }
-        return saved.toDomain()
+        // As per requirements, revoking a user task should remove it entirely (no cancelled status persisted)
+        userTaskRepository.deleteById(taskId)
+        logger.info { "Revoked user task deleted: ${existing.id}" }
+        return existing.toDomain()
     }
 }
