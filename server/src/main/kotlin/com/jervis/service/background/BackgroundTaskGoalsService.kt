@@ -44,17 +44,29 @@ class BackgroundTaskGoalsService {
         try {
             val resource = ClassPathResource("background-task-goals.yaml")
             val yaml = Yaml()
-            val data: Map<String, Any> = yaml.load(resource.inputStream)
+            val data: Map<String, Any?> = yaml.load(resource.inputStream)
 
-            val tasksRaw = data["tasks"] as? Map<String, Map<String, String>> ?: emptyMap()
+            val tasksSection = data["tasks"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
             val tasksTyped =
-                tasksRaw.mapValues { (_, value) ->
-                    TaskConfig(
-                        goal = value["goal"] ?: "",
-                        qualifierSystemPrompt = value["qualifierSystemPrompt"],
-                        qualifierUserPrompt = value["qualifierUserPrompt"],
-                    )
-                }
+                tasksSection.entries
+                    .mapNotNull { (k, v) ->
+                        val key = k?.toString() ?: return@mapNotNull null
+                        val valueMap =
+                            (v as? Map<*, *>)
+                                ?.mapNotNull { (ik, iv) ->
+                                    val innerKey = ik?.toString() ?: return@mapNotNull null
+                                    val innerVal = (iv as? String) ?: return@mapNotNull null
+                                    innerKey to innerVal
+                                }?.toMap() ?: emptyMap()
+
+                        key to
+                            TaskConfig(
+                                goal = valueMap["goal"] ?: "",
+                                qualifierSystemPrompt = valueMap["qualifierSystemPrompt"],
+                                qualifierUserPrompt = valueMap["qualifierUserPrompt"],
+                        )
+                    }
+                    .toMap()
 
             logger.debug { "Loaded task configurations: ${tasksTyped.keys}" }
             tasksTyped

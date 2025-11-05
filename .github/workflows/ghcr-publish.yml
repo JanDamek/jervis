@@ -90,6 +90,8 @@ jobs:
             echo "==> Building $image from target $target with tags: ${TAGS[*]}"
             docker buildx build \
               --target "$target" \
+              --cache-from type=gha,scope=${target} \
+              --cache-to type=gha,mode=max,scope=${target} \
               $(tag_args "$image" "${TAGS[@]}") \
               --push \
               .

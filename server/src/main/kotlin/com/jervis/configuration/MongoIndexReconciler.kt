@@ -57,6 +57,7 @@ class MongoIndexReconciler(
             }
     }
 
+    @Suppress("DEPRECATION")
     private suspend fun ensureIndexWithConflictHandling(
         indexOps: ReactiveIndexOperations,
         def: IndexDefinition,
