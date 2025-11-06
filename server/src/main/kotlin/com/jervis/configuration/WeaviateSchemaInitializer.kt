@@ -43,6 +43,7 @@ class WeaviateSchemaInitializer(
                         .schema()
                         .getter()
                         .run()
+                        ?.result
                         ?.classes
                         ?.map { it.className }
                         ?.toSet() ?: emptySet()
