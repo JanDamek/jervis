@@ -42,9 +42,18 @@ FROM gradle:8.5-jdk21 AS builder
 
 WORKDIR /app
 
-# Copy root Gradle files first to leverage cache for dependency resolution
-COPY build.gradle.kts settings.gradle.kts ./
+# Copy Gradle wrapper and version catalog (needed for common-dto)
 COPY gradle gradle/
+COPY gradlew gradlew.bat gradle.properties ./
+
+# Copy and build common-dto (KMP module) to Maven Local first
+COPY common-dto common-dto/
+RUN cd common-dto && \
+    gradle jvmJar publishToMavenLocal --no-daemon && \
+    cd ..
+
+# Copy root Gradle files for main build
+COPY build.gradle.kts settings.gradle.kts ./
 
 # Copy sources
 COPY common-api common-api/
