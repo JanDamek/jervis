@@ -267,7 +267,7 @@ studio jervis-mobile/
 echo "sdk.dir=$ANDROID_HOME" > local.properties
 ```
 
-### "Cannot resolve com.jervis:common"
+### "Cannot resolve com.jervis:common-dto"
 
 **Příčina:** Composite build nefunguje pro KMP vs JVM
 

@@ -47,8 +47,8 @@ COPY build.gradle.kts settings.gradle.kts ./
 COPY gradle gradle/
 
 # Copy sources
-COPY common common/
-COPY common-internal common-internal/
+COPY common-api common-api/
+COPY common-services common-services/
 COPY server server/
 COPY service-tika service-tika/
 COPY service-joern service-joern/

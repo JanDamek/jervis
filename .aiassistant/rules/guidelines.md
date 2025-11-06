@@ -1,7 +1,3 @@
----
-apply: always
----
-
 JERVIS – ARCHITEKTURA A PROGRAMOVACÍ PRAVIDLA
 (verze pro vývoj i AI asistenty)
 
@@ -17,10 +13,9 @@ spravuje data, komunikaci a archiv.
 • UI NÁSTROJE: jediný přístupový bod pro uživatele. V současnosti existuje pouze desktopová varianta, ale architektura
 podporuje více UI rozhraní (např. web, mobilní).
 Každé UI komunikuje se serverem přes API klienta. Desktop je tedy jeden z mnoha potenciálních UI nástrojů.
-• API-CLIENT: knihovna určená pouze pro UI nástroje, zajišťuje komunikaci se serverem.
-• COMMON: společný modul pro všechny UI i server. Obsahuje sdílené typy, utility, datové struktury a základní logiku
-použitelnou v obou směrech.
-• COMMON-INTERNAL: modul určený výhradně pro interní komunikaci mezi službami a serverem. Používají jej pouze:
+• COMMON-API: API kontrakt mezi serverem a desktop UI. Obsahuje Spring @HttpExchange interface definice pro komunikaci.
+• COMMON-DTO: Kotlin Multiplatform modul se sdílenými DTO objekty pro desktop i mobilní aplikace.
+• COMMON-SERVICES: modul určený výhradně pro interní komunikaci mezi službami a serverem. Používají jej pouze:
 • service-ocr → server
 • service-joern → server
 • service-whisper → server
@@ -49,10 +44,10 @@ server/
 ├── mapper → převody mezi Domain, DTO, Entity
 └── resources → konfigurace, definice background úloh
 service-ocr, service-whisper, service-joern → samostatné služby
-common → sdílené třídy, utilitní funkce
-common-internal → interní komunikace mezi službami a serverem
-desktop → uživatelský klient
-api-client → komunikační knihovna pro UI nástroje
+common-api → API kontrakty pro desktop klienta
+common-dto → sdílené DTO objekty (KMP)
+common-services → interní komunikace mezi službami a serverem
+desktop → uživatelský klient (integrovaný HTTP client)
 
 ARCHITEKTONICKÉ ZÁSADY:
 
@@ -192,8 +187,9 @@ ZÁSADY ARCHITEKTONICKÉ DISCIPLÍNY:
 2. Domain model je jediný zdroj pravdy.
 3. Controller slouží jen pro komunikaci.
 4. Repository řeší pouze persistenci.
-5. common obsahuje sdílenou logiku mezi klienty a serverem.
-6. common-internal slouží jen pro interní komunikaci služeb se serverem.
+5. common-api obsahuje API kontrakty pro desktop UI.
+6. common-dto obsahuje sdílené DTO pro všechny UI platformy (desktop, mobile).
+7. common-services slouží jen pro interní komunikaci služeb se serverem.
 7. UI komunikuje pouze přes API klient.
 8. Klienti mezi sebou nemohou sdílet data, pouze projekty v rámci klienta sdílejí RAG.
 9. Server je zodpovědný za orchestrace, řízení procesů, modely a agentní běhy.
