@@ -16,14 +16,19 @@ java {
 
 dependencies {
     implementation(platform("org.springframework.boot:spring-boot-dependencies:${libs.versions.spring.boot.get()}"))
-    implementation(project(":common"))
-    implementation(project(":api-client"))
+    implementation(project(":common-api"))
 
     // Spring Framework
     implementation(libs.spring.boot.starter)
     implementation("org.springframework:spring-context")
+    implementation("org.springframework:spring-web")
     implementation("org.springframework:spring-webflux")
     implementation("io.projectreactor.kotlin:reactor-kotlin-extensions")
+
+    // Ktor WebSocket clients (moved from api-client)
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.cio)
+    implementation(libs.ktor.client.websocket)
 
     // JSON (Jackson) for REST client
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")

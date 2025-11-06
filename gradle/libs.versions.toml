@@ -4,6 +4,7 @@ spring-boot = "3.5.6"
 spring-depMgmt = "1.1.6"
 coroutines = "1.9.0"
 serialization = "1.7.3"
+datetime = "0.6.1"
 ktor = "3.3.0"
 logging = "3.0.5"
 weaviate = "4.7.0"
@@ -39,6 +40,7 @@ kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-c
 kotlinx-coroutines-reactor = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-reactor", version.ref = "coroutines" }
 kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
+kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "datetime" }
 
 # Spring & Boot
 spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" }
@@ -98,6 +100,7 @@ google-cloud-vision = { module = "com.google.cloud:google-cloud-vision" }
 # Testing
 junit-bom = { module = "org.junit:junit-bom" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 
 [plugins]
 spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
