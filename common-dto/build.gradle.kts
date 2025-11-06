@@ -8,11 +8,9 @@ group = "com.jervis"
 version = "1.0.0"
 
 kotlin {
-    jvmToolchain(17)
+    jvmToolchain(21)
 
-    jvm {
-        withJava()
-    }
+    jvm() // withJava() is deprecated and not needed
 
     listOf(
         iosX64(),
