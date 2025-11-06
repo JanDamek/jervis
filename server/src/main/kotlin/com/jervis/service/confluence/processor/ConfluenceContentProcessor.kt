@@ -231,7 +231,7 @@ class ConfluenceContentProcessor(
                 timestamp = page.lastModifiedAt?.toString() ?: Instant.now().toString(),
             )
 
-        // Store in Qdrant TEXT collection
+        // Store in Weaviate TEXT collection
         val vectorStoreId = vectorStorage.store(ModelTypeEnum.EMBEDDING_TEXT, ragDocument, embedding)
 
         // Track in MongoDB (only when projectId is available)

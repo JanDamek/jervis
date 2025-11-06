@@ -8,7 +8,7 @@ import org.springframework.data.repository.kotlin.CoroutineCrudRepository
 import org.springframework.stereotype.Repository
 
 /**
- * Repository for tracking what is indexed in vector store (Qdrant).
+ * Repository for tracking what is indexed in the vector store (Weaviate).
  * Enables branch-aware queries, reindexing only changed parts, and cleanup of stale data.
  */
 @Repository
@@ -107,8 +107,8 @@ interface VectorStoreIndexMongoRepository : CoroutineCrudRepository<VectorStoreI
     ): Long
 
     /**
-     * Find by vector store ID (Qdrant UUID).
-     * Used for reverse lookup from Qdrant to MongoDB.
+     * Find by vector store ID (Weaviate UUID).
+     * Used for reverse lookup from Weaviate to MongoDB.
      */
     suspend fun findByVectorStoreId(vectorStoreId: String): VectorStoreIndexDocument?
 }

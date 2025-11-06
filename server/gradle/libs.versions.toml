@@ -6,7 +6,6 @@ coroutines = "1.9.0"
 serialization = "1.7.3"
 ktor = "3.3.0"
 logging = "3.0.5"
-qdrant = "1.14.0"
 grpc = "1.68.1"
 commons-text = "1.12.0"
 javaparser = "3.25.8"
@@ -55,8 +54,7 @@ slf4j-api = { module = "org.slf4j:slf4j-api" }
 jackson-module-kotlin = { module = "com.fasterxml.jackson.module:jackson-module-kotlin" }
 jackson-dataformat-yaml = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml" }
 
-# Qdrant & gRPC
-qdrant-client = { module = "io.qdrant:client", version.ref = "qdrant" }
+# gRPC
 grpc-protobuf = { module = "io.grpc:grpc-protobuf", version.ref = "grpc" }
 grpc-stub = { module = "io.grpc:grpc-stub", version.ref = "grpc" }
 grpc-netty-shaded = { module = "io.grpc:grpc-netty-shaded", version.ref = "grpc" }

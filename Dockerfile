@@ -152,7 +152,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
 ENTRYPOINT ["sh", "-c", "mkdir -p ${WORK_DATA} && java ${JAVA_OPTS} -Djava.io.tmpdir=${WORK_DATA} -jar /opt/jervis/app.jar"]
 
 # ---------- Final image: jervis-weaviate (vector database with hybrid search)
-FROM semitechnologies/weaviate:1.24.1 AS runtime-weaviate
+FROM semitechnologies/weaviate:latest AS runtime-weaviate
 
 # Note: Base image is minimal and does not provide apt-get. We avoid installing curl
 # and perform readiness checks from the host/CI instead of inside the container.

@@ -37,9 +37,6 @@ dependencies {
 
     // Weaviate client
     implementation(libs.weaviate.client)
-    implementation(libs.grpc.protobuf)
-    implementation(libs.grpc.stub)
-    implementation(libs.grpc.netty.shaded)
 
     // Native DNS resolver for macOS
     implementation(libs.netty.resolver.dns.native.macos) {
@@ -98,4 +95,44 @@ tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
 // Disable Spring Boot executable jar at the root project (no main class here)
 tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
     enabled = false
+}
+
+// Full UI Build - builds all platform distributions
+tasks.register("full-ui-build") {
+    group = "distribution"
+    description = "Build all UI distributions: Android, iOS, Windows, Linux, macOS"
+
+    dependsOn(
+        ":desktop:packageDesktopWindows",
+        ":desktop:packageDesktopLinux",
+        ":desktop:packageDesktopMacOS",
+        ":mobile:assembleAndroidRelease",
+        ":mobile:buildIosRelease",
+    )
+
+    doLast {
+        println(
+            """
+            ═══════════════════════════════════════════════════════
+            ✓ Full UI Build Complete!
+            ═══════════════════════════════════════════════════════
+
+            Desktop Distributions:
+            • Windows: desktop/build/jpackage/*.exe
+            • Linux:   desktop/build/jpackage/*.deb
+            • macOS:   desktop/build/jpackage/*.dmg
+
+            Mobile Distributions:
+            • Android: mobile/build/outputs/bundle/release/*.aab
+            • iOS:     mobile/build/bin/iosArm64/releaseFramework/
+
+            ═══════════════════════════════════════════════════════
+            Ready for deployment:
+            - Android → Google Play
+            - iOS → App Store
+            - Desktop → Website downloads
+            ═══════════════════════════════════════════════════════
+            """.trimIndent(),
+        )
+    }
 }

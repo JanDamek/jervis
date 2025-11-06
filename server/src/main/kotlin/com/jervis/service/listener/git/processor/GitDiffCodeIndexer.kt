@@ -225,7 +225,7 @@ class GitDiffCodeIndexer(
                                 .toString(),
                     )
 
-                // Store in Qdrant CODE collection
+                // Store in Weaviate CODE collection
                 val vectorStoreId = vectorStorage.store(ModelTypeEnum.EMBEDDING_CODE, ragDocument, embedding)
 
                 // Track in MongoDB
@@ -335,7 +335,7 @@ class GitDiffCodeIndexer(
                                         .toString(),
                             )
 
-                        // Store in Qdrant TEXT collection
+                        // Store in Weaviate TEXT collection
                         val vectorStoreId = vectorStorage.store(ModelTypeEnum.EMBEDDING_TEXT, ragDocument, embedding)
 
                         // Track in MongoDB
@@ -472,7 +472,7 @@ class GitDiffCodeIndexer(
                             .toString(),
                 )
 
-            // Store in Qdrant CODE collection
+            // Store in Weaviate CODE collection
             val vectorStoreId = vectorStorage.store(ModelTypeEnum.EMBEDDING_CODE, ragDocument, embedding)
 
             // Track in MongoDB with monoRepoId

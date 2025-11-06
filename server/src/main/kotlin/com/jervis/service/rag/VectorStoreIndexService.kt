@@ -12,7 +12,7 @@ import java.security.MessageDigest
 import java.time.Instant
 
 /**
- * Service for tracking what is indexed in vector store (Qdrant).
+ * Service for tracking what is indexed in the vector store (Weaviate).
  * Provides operations for creating, updating, and querying vector store index records.
  */
 @Service
@@ -25,7 +25,7 @@ class VectorStoreIndexService(
 
     /**
      * Track a new document in vector store for standalone project.
-     * Creates MongoDB record linking source to Qdrant vector.
+     * Creates MongoDB record linking source to Weaviate vector.
      */
     suspend fun trackIndexed(
         projectId: ObjectId,
@@ -353,7 +353,7 @@ class VectorStoreIndexService(
     }
 
     /**
-     * Get vector store IDs for a specific branch (for Qdrant queries).
+     * Get vector store IDs for a specific branch (for Weaviate queries).
      */
     suspend fun getVectorStoreIdsForBranch(
         projectId: ObjectId,

@@ -50,11 +50,8 @@ dependencies {
     // MongoDB Reactive
     implementation(libs.spring.boot.starter.data.mongodb.reactive)
 
-    // Weaviate client (supports async operations)
+    // Weaviate client (HTTP/GraphQL)
     implementation(libs.weaviate.client)
-    implementation(libs.grpc.protobuf)
-    implementation(libs.grpc.stub)
-    implementation(libs.grpc.netty.shaded)
 
     // Native DNS resolver for macOS
     implementation(libs.netty.resolver.dns.native.macos) {
