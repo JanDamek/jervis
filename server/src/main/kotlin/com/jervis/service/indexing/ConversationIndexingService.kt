@@ -74,7 +74,7 @@ class ConversationIndexingService(
                             projectId = plan.projectId,
                             clientId = plan.clientId,
                             ragSourceType = RagSourceType.AGENT,
-                            summary = chunk.text(),
+                            text = chunk.text(),
                             // Universal metadata
                             from = "agent",
                             subject = plan.taskInstruction.take(100),
@@ -83,12 +83,6 @@ class ConversationIndexingService(
                                     .now()
                                     .toString(),
                             parentRef = plan.id.toHexString(),
-                            indexInParent = index,
-                            totalSiblings = chunks.size,
-                            contentType = "conversation",
-                            // Conversation-specific
-                            language = plan.originalLanguage,
-                            symbolName = "conversation-${plan.id}",
                             chunkId = index,
                             chunkOf = chunks.size,
                         )

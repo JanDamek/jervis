@@ -71,7 +71,7 @@ class FileDescriptionProcessor(
                     }
 
                 // Extract metadata and description from agent output
-                val metadata = extractMetadataFromOutput(agentOutput)
+                extractMetadataFromOutput(agentOutput)
                 val description = extractDescriptionFromOutput(agentOutput)
 
                 if (description.isBlank()) {
@@ -92,12 +92,8 @@ class FileDescriptionProcessor(
                         projectId = projectId,
                         clientId = clientId,
                         ragSourceType = RagSourceType.FILE_DESCRIPTION,
-                        summary = description,
+                        text = description,
                         fileName = filePath,
-                        gitCommitHash = commitHash,
-                        className = metadata["className"],
-                        packageName = metadata["packageName"],
-                        language = metadata["language"],
                         createdAt = Instant.now(),
                     )
 

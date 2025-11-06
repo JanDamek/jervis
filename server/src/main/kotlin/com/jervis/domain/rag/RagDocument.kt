@@ -4,61 +4,40 @@ import org.bson.types.ObjectId
 import java.time.Instant
 
 /**
- * Represents a document with content and metadata.
- * This class is used for storing and retrieving documents from the vector database.
+ * Represents a document with content and metadata for Weaviate vector storage.
+ * Optimized for hybrid search (BM25 + vector) with flattened structure.
  */
 data class RagDocument(
-    val projectId: ObjectId? = null,
+    /** Main text content for embedding and BM25 search */
+    val text: String,
+    /** Client ID for data isolation */
     val clientId: ObjectId,
-    val summary: String = "",
+    /** Source type (CODE, EMAIL, CONFLUENCE, etc.) */
     val ragSourceType: RagSourceType,
-    val language: String? = null,
-    val packageName: String? = null,
-    val className: String? = null,
-    val parentClass: String? = null,
-    val methodName: String? = null,
-    val createdAt: Instant = Instant.now(),
-    val gitCommitHash: String? = null,
-    val archivedAt: Instant? = null,
-    // Enhanced metadata fields for Joern-based indexing
-    val lineStart: Int? = null,
-    val lineEnd: Int? = null,
-    /** Symbol name (method/class name from Joern) */
-    val symbolName: String? = null,
-    /** Joern CPG node ID for traceability */
-    val joernNodeId: String? = null,
-    val safetyTags: List<String> = listOf(),
-    val chunkId: Int? = null,
-    val chunkOf: Int? = null,
+    /** Project ID for project-level filtering */
+    val projectId: ObjectId? = null,
+    /** Git branch name */
     val branch: String = "main",
-    /** Backlink to original content for retrieval in backend (e.g., email://<accountId>/<messageId> or url) */
-    val sourceUri: String? = null,
-    // ========== UNIVERSAL METADATA FIELDS (for all source types) ==========
-    /** Universal author/sender/creator (email sender, commit author, meeting organizer, message author) */
+    /** Universal author/sender/creator */
     val from: String? = null,
-    /** Universal title/subject/topic (email subject, meeting title, commit message, document title) */
+    /** Universal title/subject/topic */
     val subject: String? = null,
-    /** Universal temporal marker - ISO 8601 date string (email received, commit date, meeting date, last modified) */
+    /** Universal temporal marker - ISO 8601 */
     val timestamp: String? = null,
-    /** Universal parent reference ID for grouping related chunks (emailMessageId, commitHash, meetingId) */
-    val parentRef: String? = null,
-    /** Universal index within parent (attachment index, chunk index, section index) */
-    val indexInParent: Int? = null,
-    /** Total count of siblings (attachments count, methods in class, sections in document) */
-    val totalSiblings: Int? = null,
-    /** Universal content/file type (MIME type, file extension, language, format) */
-    val contentType: String? = null,
-    /** Universal filename/path (attachment filename, source file, document path, transcript file) */
+    /** Backlink to original source (email://, http://, file://) */
+    val sourceUri: String? = null,
+    /** Filename or path */
     val fileName: String? = null,
-    /**
-     * List of vector store IDs where this document is indexed.
-     * Used for tracking and cleanup when the source document is deleted.
-     * Each entry corresponds to an embedding stored in the vector database.
-     */
-    val vectorStoreIds: List<String> = emptyList(),
-    // ========== CONFLUENCE-SPECIFIC METADATA ==========
-    /** Confluence page ID (used for RagSourceType.CONFLUENCE_PAGE) */
+    /** Confluence page ID */
     val confluencePageId: String? = null,
-    /** Confluence space key (used for RagSourceType.CONFLUENCE_PAGE) */
+    /** Confluence space key */
     val confluenceSpaceKey: String? = null,
+    /** Chunk index in parent document */
+    val chunkId: Int? = null,
+    /** Total chunks in parent document */
+    val chunkOf: Int? = null,
+    /** Parent reference ID for grouping */
+    val parentRef: String? = null,
+    val createdAt: Instant = Instant.now(),
+    val archivedAt: Instant? = null,
 )

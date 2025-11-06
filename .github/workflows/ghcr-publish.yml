@@ -97,7 +97,8 @@ jobs:
               .
           }
 
-          build_push runtime-server  "ghcr.io/$OWNER_LC/jervis-server"
-          build_push runtime-joern   "ghcr.io/$OWNER_LC/jervis-joern"
-          build_push runtime-whisper "ghcr.io/$OWNER_LC/jervis-whisper"
-          build_push runtime-tika    "ghcr.io/$OWNER_LC/jervis-tika"
+          build_push runtime-server   "ghcr.io/$OWNER_LC/jervis-server"
+          build_push runtime-joern    "ghcr.io/$OWNER_LC/jervis-joern"
+          build_push runtime-whisper  "ghcr.io/$OWNER_LC/jervis-whisper"
+          build_push runtime-tika     "ghcr.io/$OWNER_LC/jervis-tika"
+          build_push runtime-weaviate "ghcr.io/$OWNER_LC/jervis-weaviate"

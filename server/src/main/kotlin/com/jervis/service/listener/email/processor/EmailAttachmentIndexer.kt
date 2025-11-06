@@ -87,7 +87,7 @@ class EmailAttachmentIndexer(
                 RagDocument(
                     projectId = projectId,
                     clientId = clientId,
-                    summary = chunk.text(),
+                    text = chunk.text(),
                     ragSourceType = RagSourceType.EMAIL_ATTACHMENT,
                     createdAt = message.receivedAt,
                     sourceUri = "email://${accountId.toHexString()}/${message.messageId}/attachment/$attachmentIndex",
@@ -96,13 +96,9 @@ class EmailAttachmentIndexer(
                     subject = message.subject,
                     timestamp = message.receivedAt.toString(),
                     parentRef = message.messageId,
-                    indexInParent = attachmentIndex,
-                    totalSiblings = message.attachments.size,
-                    contentType = attachment.contentType,
-                    fileName = attachment.fileName,
-                    // Chunking
                     chunkId = chunkIndex,
                     chunkOf = chunks.size,
+                    fileName = attachment.fileName,
                 ),
                 embedding,
             )

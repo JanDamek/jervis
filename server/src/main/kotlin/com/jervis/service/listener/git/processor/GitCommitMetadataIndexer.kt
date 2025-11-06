@@ -21,11 +21,11 @@ import java.time.Instant
 import java.time.format.DateTimeFormatter
 
 /**
- * Indexes Git commit metadata into RAG system WITHOUT LLM calls.
+ * Index Git commit metadata into the RAG system WITHOUT LLM calls.
  * Focuses on commit-level information: author, message, files changed, stats.
  *
- * Architecture follows email indexing pattern:
- * 1. Fetch commits from Git log
+ * Architecture follows the email indexing pattern:
+ * 1. Fetch commits from the Git log
  * 2. Save commit IDs to state manager (MongoDB)
  * 3. Process only NEW commits from state manager
  * 4. Create plain text summary (NO LLM)
@@ -76,8 +76,8 @@ class GitCommitMetadataIndexer(
     // ========== Standalone Project Methods ==========
 
     /**
-     * Index git history for a standalone project following email indexing pattern.
-     * 1. Sync commit IDs from Git log
+     * Index git history for a standalone project following an email indexing pattern.
+     * 1. Sync commit IDs from the Git log
      * 2. Process NEW commits from state manager
      *
      * @param branch current branch name for vector store tracking
@@ -96,7 +96,7 @@ class GitCommitMetadataIndexer(
                 syncCommitIdsFromGit(project, projectPath, maxCommits, branch)
 
                 // Step 2: Process NEW commits (similar to processNewMessages)
-                val result = processNewCommits(project, null, projectPath, branch)
+                val result = processNewCommits(project, projectPath, branch)
 
                 logger.info {
                     "Git history indexing completed for project: ${project.name} - " +
@@ -111,7 +111,7 @@ class GitCommitMetadataIndexer(
         }
 
     /**
-     * Sync commit IDs from Git log to state manager for standalone project.
+     * Sync commit IDs from Git log to state manager for a standalone project.
      * Analogous to EmailIndexingOrchestrator.syncMessageIdsFromImap()
      */
     private suspend fun syncCommitIdsFromGit(
@@ -199,7 +199,7 @@ class GitCommitMetadataIndexer(
                     if (fullCommit != null) {
                         val success = indexMonoRepoGitCommit(clientId, monoRepoId, fullCommit)
                         if (success) {
-                            // Do NOT mark as indexed here; code diff step will mark after processing
+                            // Do NOT mark as indexed here; a code diff step will mark after processing
                             processedCommits++
                         } else {
                             errorCommits++
@@ -219,8 +219,8 @@ class GitCommitMetadataIndexer(
 
     /**
      * Index a single git commit from mono-repo using plain text summary (NO LLM calls).
-     * Creates single embedding from commit metadata for basic searchability.
-     * Detailed analysis happens later in background via PendingTask.
+     * Creates a single embedding from commit metadata for basic searchability.
+     * Detailed analysis happens later in the background via PendingTask.
      */
     private suspend fun indexMonoRepoGitCommit(
         clientId: org.bson.types.ObjectId,
@@ -233,7 +233,7 @@ class GitCommitMetadataIndexer(
 
             val sourceId = "${commit.hash}-metadata"
 
-            // Check if content changed (skip if already indexed with same content)
+            // Check if content changed (skip if already indexed with the same content)
             if (!vectorStoreIndexService.hasContentChangedForMonoRepo(
                     RagSourceType.GIT_HISTORY,
                     sourceId,
@@ -246,29 +246,23 @@ class GitCommitMetadataIndexer(
                 return true
             }
 
-            // Create single embedding for commit metadata
+            // Create a single embedding for commit metadata
             val embedding = embeddingGateway.callEmbedding(ModelTypeEnum.EMBEDDING_TEXT, summary)
 
             val ragDocument =
                 RagDocument(
                     projectId = null, // No projectId for mono-repo commits
                     ragSourceType = RagSourceType.GIT_HISTORY,
-                    summary = summary,
+                    text = summary,
                     clientId = clientId,
                     // Universal metadata
                     from = commit.author,
                     subject = commit.message.lines().firstOrNull() ?: "",
                     timestamp = commit.date,
                     parentRef = commit.hash,
-                    indexInParent = 0,
-                    totalSiblings = 1,
-                    contentType = "git-commit",
-                    // Git-specific
-                    language = "git-commit",
-                    gitCommitHash = commit.hash,
-                    symbolName = "git-commit-${commit.hash.take(8)}",
-                    branch = commit.branch,
                     chunkId = 0,
+                    chunkOf = 1,
+                    branch = commit.branch,
                 )
 
             val vectorStoreId = vectorStorage.store(ModelTypeEnum.EMBEDDING_TEXT, ragDocument, embedding)
@@ -305,7 +299,6 @@ class GitCommitMetadataIndexer(
      */
     private suspend fun processNewCommits(
         project: ProjectDocument,
-        monoRepoId: String?,
         projectPath: Path,
         branch: String,
     ): GitHistoryIndexingResult {
@@ -345,8 +338,8 @@ class GitCommitMetadataIndexer(
 
     /**
      * Index a single git commit using plain text summary (NO LLM calls).
-     * Creates single embedding from commit metadata for basic searchability.
-     * Detailed analysis happens later in background via PendingTask.
+     * Creates a single embedding from commit metadata for basic searchability.
+     * Detailed analysis happens later in the background via PendingTask.
      */
     private suspend fun indexGitCommit(
         project: ProjectDocument,
@@ -358,7 +351,7 @@ class GitCommitMetadataIndexer(
 
             val sourceId = "${commit.hash}-metadata"
 
-            // Check if content changed (skip if already indexed with same content)
+            // Check if content changed (skip if already indexed with the same content)
             if (!vectorStoreIndexService.hasContentChanged(
                     RagSourceType.GIT_HISTORY,
                     sourceId,
@@ -370,29 +363,23 @@ class GitCommitMetadataIndexer(
                 return true
             }
 
-            // Create single embedding for commit metadata
+            // Create a single embedding for commit metadata
             val embedding = embeddingGateway.callEmbedding(ModelTypeEnum.EMBEDDING_TEXT, summary)
 
             val ragDocument =
                 RagDocument(
                     projectId = project.id,
                     ragSourceType = RagSourceType.GIT_HISTORY,
-                    summary = summary,
+                    text = summary,
                     clientId = project.clientId,
                     // Universal metadata
                     from = commit.author,
                     subject = commit.message.lines().firstOrNull() ?: "",
                     timestamp = commit.date,
                     parentRef = commit.hash,
-                    indexInParent = 0,
-                    totalSiblings = 1,
-                    contentType = "git-commit",
-                    // Git-specific
-                    language = "git-commit",
-                    gitCommitHash = commit.hash,
-                    symbolName = "git-commit-${commit.hash.take(8)}",
-                    branch = commit.branch,
                     chunkId = 0,
+                    chunkOf = 1,
+                    branch = commit.branch,
                 )
 
             val vectorStoreId = vectorStorage.store(ModelTypeEnum.EMBEDDING_TEXT, ragDocument, embedding)
@@ -459,7 +446,7 @@ class GitCommitMetadataIndexer(
         }.trim()
 
     /**
-     * Fetch basic commit info from Git log (hash, author, message, date).
+     * Fetch basic commit info from the Git log (hash, author, message, date).
      * Returns lightweight GitCommitInfo for state manager.
      */
     private suspend fun fetchCommitInfoFromGit(
@@ -559,7 +546,7 @@ class GitCommitMetadataIndexer(
                                 val parents = parentsRaw.split(" ").filter { it.isNotBlank() }
                                 val refNames = parts[4]
                                 val tags = extractTagsFromRefNames(refNames)
-                                // Use current branch from parameter (accurate) instead of parsing refNames
+                                // Use the current branch from parameter (accurate) instead of parsing refNames
                                 val branch = currentBranch
 
                                 commit =
@@ -612,31 +599,7 @@ class GitCommitMetadataIndexer(
             }
         }
 
-    /**
-     * Extract branch name from git refnames string
-     */
-    private fun extractBranchFromRefNames(refNames: String): String {
-        if (refNames.isBlank()) return "main"
-
-        val refs = refNames.split(",").map { it.trim() }
-
-        val localBranch = refs.find { it.matches(Regex("^[^/]+$")) && !it.startsWith("tag:") }
-        if (localBranch != null) return localBranch
-
-        val originBranch = refs.find { it.startsWith("origin/") && !it.contains("HEAD") }
-        if (originBranch != null) return originBranch.removePrefix("origin/")
-
-        val headRef = refs.find { it.contains("HEAD ->") }
-        if (headRef != null) {
-            val branchPart = headRef.substringAfter("HEAD ->").trim()
-            if (branchPart.startsWith("origin/")) return branchPart.removePrefix("origin/")
-            return branchPart
-        }
-
-        return "main"
-    }
-
-    /** Extract tags from refnames string (e.g., "tag: v1.19, origin/main") */
+    /** Extract tags from renames string (e.g., "tag: v1.19, origin/main") */
     private fun extractTagsFromRefNames(refNames: String): List<String> =
         refNames
             .split(",")
@@ -646,7 +609,7 @@ class GitCommitMetadataIndexer(
 
     /**
      * Parse changed method/function names for a commit using unified=0 hunks and simple heuristics.
-     * Map key is file path, value is set of method identifiers touched in that file.
+     * Map key is a file path; value is a set of method identifiers touched in that file.
      */
     private fun getChangedMethodsForCommit(
         projectPath: Path,
@@ -685,7 +648,7 @@ class GitCommitMetadataIndexer(
                         }
 
                         line.startsWith("@@ ") -> {
-                            // Try to extract signature after the second @@ if present, e.g., @@ -12,0 +13,0 @@ fun isAuthorized(...)
+                            // Try to extract the signature after the second @@ if present, e.g., @@ -12,0 +13,0 @@ fun isAuthorized(...)
                             val after = line.substringAfterLast("@@").trim()
                             val sig = after.takeIf { it.isNotBlank() } ?: ""
                             val methodFromSig =

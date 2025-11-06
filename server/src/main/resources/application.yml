@@ -29,10 +29,17 @@ spring:
       authentication-database: admin
       auto-index-creation: true
 
-# Qdrant vector database configuration
-qdrant:
-  host: 192.168.100.117
-  port: 6334
+# Vector database configuration
+# Weaviate - hybrid search vector DB with BM25 + semantic search
+weaviate:
+  enabled: true
+  host: 192.168.100.117  # Change to TrueNAS host after deployment
+  port: 8080  # HTTP REST API port
+  scheme: http
+  grpc-port: 50051  # gRPC port for high-performance operations
+  hybrid-search:
+    enabled: true
+    alpha: 0.75  # 0.75 = 75% semantic + 25% keyword (BM25)
 
 server:
   port: 5500
@@ -58,9 +65,9 @@ jervis:
 models: # embedding dimensions configured per model
   EMBEDDING_TEXT:
     - provider: LM_STUDIO
-      model: text-embedding-nomic-embed-text-v2-moe
-      context-length: 512
-      dimension: 768
+      model: text-embedding-bge-m3  # Upgraded from nomic-embed-text-v2-moe for better multilingual support
+      context-length: 4096  # Massively increased from 512 - allows much larger chunks
+      dimension: 1024  # Increased from 768 for better semantic understanding
       concurrency: 8
   #    - provider: OLLAMA
   #      model: text-embedding-nomic-embed-text-v2-moe
@@ -258,8 +265,8 @@ audio:
 # Text chunking configuration
 text:
   chunking:
-    max-tokens: 400
-    overlap-percentage: 10
+    max-tokens: 2048  # Increased to utilize bge-m3's 8192 token context window (with safety margin)
+    overlap-percentage: 15  # Reduced overlap as chunks are now larger
     chars-per-token: 4.0
 
 # Link indexing configuration

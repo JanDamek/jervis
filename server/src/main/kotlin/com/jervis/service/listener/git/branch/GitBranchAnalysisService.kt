@@ -393,14 +393,12 @@ class GitBranchAnalysisService(
             RagDocument(
                 projectId = project.id,
                 clientId = project.clientId,
-                summary = text,
+                text = text,
                 ragSourceType = RagSourceType.GIT_HISTORY,
                 subject = "Branch summary ${summary.branch}",
                 timestamp = summary.generatedAt.toString(),
                 parentRef = summary.headSha,
                 branch = summary.branch,
-                contentType = "git-branch-summary",
-                symbolName = "git-branch-summary:${summary.branch}",
             )
         val vectorId = vectorStorage.store(ModelTypeEnum.EMBEDDING_TEXT, rag, embedding)
         vectorStoreIndexService.trackIndexed(

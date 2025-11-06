@@ -151,6 +151,43 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:${SERVER_PORT}/actuator/health || exit 1
 ENTRYPOINT ["sh", "-c", "mkdir -p ${WORK_DATA} && java ${JAVA_OPTS} -Djava.io.tmpdir=${WORK_DATA} -jar /opt/jervis/app.jar"]
 
+# ---------- Final image: jervis-weaviate (vector database with hybrid search)
+FROM semitechnologies/weaviate:1.24.1 AS runtime-weaviate
+
+USER root
+
+# Install curl for health checks
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Configure environment variables for Weaviate
+ENV PERSISTENCE_DATA_PATH=/var/lib/weaviate \
+    QUERY_DEFAULTS_LIMIT=500 \
+    QUERY_MAXIMUM_RESULTS=10000 \
+    AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true \
+    AUTHENTICATION_APIKEY_ENABLED=false \
+    DEFAULT_VECTORIZER_MODULE=none \
+    ENABLE_MODULES="" \
+    TRACK_VECTOR_DIMENSIONS=true \
+    GOMEMLIMIT=14GiB \
+    GOMAXPROCS=14 \
+    CLUSTER_HOSTNAME=weaviate-node1 \
+    LOG_LEVEL=info
+
+USER weaviate
+
+VOLUME ["/var/lib/weaviate"]
+EXPOSE 8080 50051
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
+    CMD curl -sf http://localhost:8080/v1/.well-known/ready || exit 1
+
+# Start Weaviate (schema will be initialized by server application on first connection)
+ENTRYPOINT ["/bin/weaviate"]
+CMD ["--host", "0.0.0.0", "--port", "8080", "--scheme", "http"]
+
 # ---------- Final image: jervis-server (orchestrator)
 FROM eclipse-temurin:21-jre AS runtime-server
 

@@ -213,14 +213,11 @@ class GitDiffCodeIndexer(
                     RagDocument(
                         projectId = project.id,
                         ragSourceType = RagSourceType.CODE_CHANGE,
-                        summary = "Code change in ${codeChange.filePath}",
+                        text = "Code change in ${codeChange.filePath}",
                         clientId = project.clientId,
                         fileName = codeChange.filePath,
-                        language = codeChange.language,
-                        gitCommitHash = commitHash,
                         branch = branch,
                         chunkId = index,
-                        contentType = "code-diff",
                         from = "git-commit",
                         timestamp =
                             java.time.Instant
@@ -326,14 +323,11 @@ class GitDiffCodeIndexer(
                             RagDocument(
                                 projectId = project.id,
                                 ragSourceType = RagSourceType.CODE_CHANGE,
-                                summary = "Document change in ${codeChange.filePath}",
+                                text = "Document change in ${codeChange.filePath}",
                                 clientId = project.clientId,
                                 fileName = codeChange.filePath,
-                                language = "text",
-                                gitCommitHash = commitHash,
                                 branch = branch,
                                 chunkId = index,
-                                contentType = parseResult.metadata?.contentType ?: "text/plain",
                                 from = "git-commit-tika",
                                 timestamp =
                                     java.time.Instant
@@ -464,16 +458,13 @@ class GitDiffCodeIndexer(
                 RagDocument(
                     projectId = null, // No projectId for mono-repo
                     ragSourceType = RagSourceType.CODE_CHANGE,
-                    summary = "Code change in ${codeChange.filePath}",
+                    text = "Code change in ${codeChange.filePath}",
                     clientId = clientId,
                     // Code-specific metadata
                     fileName = codeChange.filePath,
-                    language = codeChange.language,
-                    gitCommitHash = commitHash,
                     branch = branch,
                     chunkId = index,
                     // Content
-                    contentType = "code-diff",
                     from = "git-commit",
                     timestamp =
                         java.time.Instant

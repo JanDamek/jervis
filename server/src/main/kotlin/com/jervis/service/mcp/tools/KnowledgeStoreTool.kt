@@ -74,12 +74,8 @@ class KnowledgeStoreTool(
                 RagDocument(
                     projectId = plan.projectDocument?.id,
                     ragSourceType = sourceType,
-                    summary = chunk,
+                    text = chunk,
                     clientId = plan.clientDocument.id,
-                    language = null,
-                    packageName = null,
-                    className = null,
-                    methodName = null,
                     createdAt = Instant.now(),
                 )
 
