@@ -79,7 +79,7 @@ class LinkIndexer(
                 RagDocument(
                     projectId = projectId,
                     clientId = clientId,
-                    summary = chunk.text(),
+                    text = chunk.text(),
                     ragSourceType = sourceType,
                     createdAt = createdAt,
                     sourceUri = url,

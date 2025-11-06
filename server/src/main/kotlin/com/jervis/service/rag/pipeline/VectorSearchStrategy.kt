@@ -6,7 +6,6 @@ import com.jervis.repository.vector.VectorStorageRepository
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.rag.domain.DocumentChunk
 import com.jervis.service.rag.domain.RagQuery
-import io.qdrant.client.grpc.JsonWithInt
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import mu.KotlinLogging
@@ -14,6 +13,7 @@ import org.springframework.stereotype.Component
 
 /**
  * Vector-based search strategy that queries both text and code embeddings in parallel.
+ * Uses Weaviate with hybrid search (BM25 + vector) for better keyword + semantic matching.
  */
 @Component
 class VectorSearchStrategy(
@@ -69,6 +69,8 @@ class VectorSearchStrategy(
                 projectId = projectId,
                 clientId = clientId,
                 filter = null,
+                    useHybridSearch = true,
+                    queryText = query.searchTerms,
                 )
 
         logger.info { "VECTOR_SEARCH: $modelTypeEnum returned ${results.size} results for clientId=$clientId, projectId=$projectId" }
@@ -83,19 +85,12 @@ class VectorSearchStrategy(
             }
     }
 
-    private fun extractContent(result: Map<String, JsonWithInt.Value>): String =
-        result["summary"]?.stringValue ?: result["content"]?.stringValue ?: ""
+    @Suppress("UNCHECKED_CAST")
+    private fun extractContent(result: Map<String, Any>): String = result["text"] as? String ?: ""
 
-    private fun extractScore(result: Map<String, JsonWithInt.Value>): Double = result["_score"]?.doubleValue ?: 0.0
+    @Suppress("UNCHECKED_CAST")
+    private fun extractScore(result: Map<String, Any>): Double = (result["_score"] as? Number)?.toDouble() ?: 0.0
 
-    private fun extractMetadata(result: Map<String, JsonWithInt.Value>): Map<String, String> =
-        result.mapValues { (_, value) ->
-            when {
-                value.hasStringValue() -> value.stringValue
-                value.hasIntegerValue() -> value.integerValue.toString()
-                value.hasDoubleValue() -> value.doubleValue.toString()
-                value.hasBoolValue() -> value.boolValue.toString()
-                else -> value.toString()
-            }
-        }
+    @Suppress("UNCHECKED_CAST")
+    private fun extractMetadata(result: Map<String, Any>): Map<String, String> = result.mapValues { (_, value) -> value.toString() }
 }

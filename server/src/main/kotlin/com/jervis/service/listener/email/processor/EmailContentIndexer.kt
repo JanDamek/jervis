@@ -100,7 +100,7 @@ class EmailContentIndexer(
             RagDocument(
                 projectId = projectId,
                 clientId = clientId,
-                summary = chunk.text(),
+                text = chunk.text(),
                 ragSourceType = RagSourceType.EMAIL,
                 createdAt = message.receivedAt,
                 sourceUri = "email://${accountId.toHexString()}/${message.messageId}",
@@ -108,8 +108,6 @@ class EmailContentIndexer(
                 subject = message.subject,
                 timestamp = message.receivedAt.toString(),
                 parentRef = message.messageId,
-                totalSiblings = message.attachments.size,
-                contentType = "text/html",
                 chunkId = chunkIndex,
                 chunkOf = totalChunks,
             ),

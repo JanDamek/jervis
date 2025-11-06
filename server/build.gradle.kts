@@ -50,10 +50,8 @@ dependencies {
     // MongoDB Reactive
     implementation(libs.spring.boot.starter.data.mongodb.reactive)
 
-    // Qdrant and gRPC
-    implementation(libs.qdrant.client) {
-        exclude(group = "com.google.errorprone", module = "error_prone_annotations")
-    }
+    // Weaviate client (supports async operations)
+    implementation(libs.weaviate.client)
     implementation(libs.grpc.protobuf)
     implementation(libs.grpc.stub)
     implementation(libs.grpc.netty.shaded)

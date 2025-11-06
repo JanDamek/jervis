@@ -8,9 +8,9 @@ import com.jervis.configuration.properties.EndpointProperties
 import com.jervis.configuration.properties.IndexingFlowProperties
 import com.jervis.configuration.properties.LinkIndexingProperties
 import com.jervis.configuration.properties.ModelsProperties
-import com.jervis.configuration.properties.QdrantProperties
 import com.jervis.configuration.properties.RetryProperties
 import com.jervis.configuration.properties.TextChunkingProperties
+import com.jervis.configuration.properties.WeaviateProperties
 import com.jervis.configuration.properties.WebClientProperties
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.context.properties.EnableConfigurationProperties
@@ -30,7 +30,7 @@ import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRep
     AudioMonitoringProperties::class,
     WebClientProperties::class,
     ModelsProperties::class,
-    QdrantProperties::class,
+    WeaviateProperties::class,
     RetryProperties::class,
     com.jervis.configuration.properties.BackgroundProperties::class,
     IndexingFlowProperties::class,

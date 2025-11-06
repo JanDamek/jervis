@@ -71,7 +71,7 @@ object ToolResponseBuilder {
         details: String = "",
         results: String = "",
     ): String {
-        val summary = "Analyzed $count $unit"
+        val text = "Analyzed $count $unit"
         val content =
             buildString {
                 if (details.isNotBlank()) {
@@ -84,7 +84,7 @@ object ToolResponseBuilder {
                     append(results)
                 }
             }
-        return buildResponse(toolName, summary, content)
+        return buildResponse(toolName, text, content)
     }
 
     /**
@@ -96,7 +96,7 @@ object ToolResponseBuilder {
         rootInfo: String = "",
         listing: String,
     ): String {
-        val summary = "Listed $itemType"
+        val text = "Listed $itemType"
         val content =
             buildString {
                 if (rootInfo.isNotBlank()) {
@@ -105,6 +105,6 @@ object ToolResponseBuilder {
                 }
                 append(listing)
             }
-        return buildResponse(toolName, summary, content)
+        return buildResponse(toolName, text, content)
     }
 }

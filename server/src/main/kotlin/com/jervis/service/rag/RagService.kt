@@ -4,6 +4,7 @@ import com.jervis.domain.plan.Plan
 import com.jervis.service.rag.domain.DocumentChunk
 import com.jervis.service.rag.domain.RagQuery
 import com.jervis.service.rag.domain.RagResult
+import com.jervis.service.rag.pipeline.HybridSearchStrategy
 import com.jervis.service.rag.pipeline.LlmContentSynthesisStrategy
 import com.jervis.service.rag.pipeline.MetadataBasedDeduplicationStrategy
 import com.jervis.service.rag.pipeline.VectorSearchStrategy
@@ -27,6 +28,7 @@ import org.springframework.stereotype.Service
 @Service
 class RagService(
     private val searchStrategy: VectorSearchStrategy,
+    private val hybridSearchStrategy: HybridSearchStrategy,
     private val synthesisStrategy: LlmContentSynthesisStrategy,
     private val deduplicationStrategy: MetadataBasedDeduplicationStrategy,
 ) {
@@ -95,7 +97,7 @@ class RagService(
         query: RagQuery,
         plan: Plan,
     ): QueryResult {
-        val chunks = searchStrategy.search(query, plan)
+        val chunks = hybridSearchStrategy.search(query, plan)
         val deduplicatedChunks = deduplicationStrategy.deduplicate(chunks)
 
         val topScores = deduplicatedChunks.take(10).map { "%.3f".format(it.score) }.joinToString(", ")
