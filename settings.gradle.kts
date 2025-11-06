@@ -21,10 +21,14 @@ dependencyResolutionManagement {
 
 rootProject.name = "jervis"
 
-// Include common-dto as a composite build (KMP project)
-includeBuild("common-dto") {
-    dependencySubstitution {
-        substitute(module("com.jervis:common-dto")).using(project(":"))
+// Include common-dto as a composite build (KMP project) - only if directory exists
+// In Docker, common-dto is pre-built to mavenLocal before this stage
+val commonDtoDir = file("common-dto")
+if (commonDtoDir.exists() && commonDtoDir.isDirectory) {
+    includeBuild("common-dto") {
+        dependencySubstitution {
+            substitute(module("com.jervis:common-dto")).using(project(":"))
+        }
     }
 }
 

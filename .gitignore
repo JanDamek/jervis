@@ -8,7 +8,7 @@
 /logs/
 /*/build/
 /build
-/.kotlin/
+.kotlin/
 
 # Joern analysis artifacts
 /.joern/
@@ -20,4 +20,3 @@
 /server/logs/
 /python-LoRA/
 /python-workspace/
-/mobile-app/.kotlin/
