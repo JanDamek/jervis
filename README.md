@@ -146,7 +146,7 @@ A lightweight startup screen lets users choose a persona without authentication.
 
 Best practice: Server–UI communication (Desktop and Mobile)
 
-- Contracts live in :common as `I***Service` interfaces annotated with `@HttpExchange`.
+- Contracts live in :common-api as `I***Service` interfaces annotated with `@HttpExchange`.
 - Server controllers implement these interfaces directly (fail fast, no DTO leakage across layers).
 - Desktop and Android create clients from the same interfaces using `HttpServiceClientFactory` in `:api-client`.
 - iOS is non‑JVM; recommended approach is either: (a) implement the same interfaces with a Ktor client on iOS, or (b) (
