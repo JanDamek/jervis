@@ -15,7 +15,7 @@ java {
 dependencies {
     implementation(platform("org.springframework.boot:spring-boot-dependencies:${libs.versions.spring.boot.get()}"))
 
-    implementation(project(":common-internal"))
+    implementation(project(":common-services"))
 
     implementation(libs.spring.boot.starter.webflux)
     implementation("org.springframework.boot:spring-boot-starter-actuator")

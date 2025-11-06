@@ -37,7 +37,7 @@ class ConfluenceRestController(
                 siteUrl = request.siteUrl,
                 accessToken = request.accessToken,
                 refreshToken = request.refreshToken,
-                tokenExpiresAt = request.tokenExpiresAt,
+                tokenExpiresAt = request.tokenExpiresAt?.let { Instant.parse(it) },
                 spaceKeys = request.spaceKeys,
                 isActive = true,
             )

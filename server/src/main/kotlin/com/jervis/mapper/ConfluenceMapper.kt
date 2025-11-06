@@ -21,11 +21,11 @@ fun ConfluenceAccountDocument.toDto(stats: ConfluenceIndexingStats? = null): Con
         siteUrl = siteUrl,
         spaceKeys = spaceKeys,
         isActive = isActive,
-        lastPolledAt = lastPolledAt,
-        lastSuccessfulSyncAt = lastSuccessfulSyncAt,
+        lastPolledAt = lastPolledAt?.toString(),
+        lastSuccessfulSyncAt = lastSuccessfulSyncAt?.toString(),
         lastErrorMessage = lastErrorMessage,
-        createdAt = createdAt,
-        updatedAt = updatedAt,
+        createdAt = createdAt.toString(),
+        updatedAt = updatedAt.toString(),
         stats =
             stats?.let {
                 ConfluenceAccountStatsDto(
@@ -53,7 +53,7 @@ fun ConfluencePageDocument.toDto(): ConfluencePageDto =
         externalLinksCount = externalLinks.size,
         childPagesCount = childPageIds.size,
         lastModifiedBy = lastModifiedBy,
-        lastModifiedAt = lastModifiedAt,
-        lastIndexedAt = lastIndexedAt,
+        lastModifiedAt = lastModifiedAt?.toString(),
+        lastIndexedAt = lastIndexedAt?.toString(),
         errorMessage = errorMessage,
     )

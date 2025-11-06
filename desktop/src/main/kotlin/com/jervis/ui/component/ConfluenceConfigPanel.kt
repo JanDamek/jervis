@@ -261,7 +261,7 @@ class ConfluenceConfigPanel(
                                 refreshTokenField.text
                                     .trim()
                                     .takeIf { it.isNotEmpty() },
-                            tokenExpiresAt = Instant.now().plusSeconds(3600),
+                            tokenExpiresAt = Instant.now().plusSeconds(3600).toString(),
                             spaceKeys = spaceKeys,
                         )
 

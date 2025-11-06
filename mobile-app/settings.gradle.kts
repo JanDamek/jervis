@@ -5,6 +5,7 @@ pluginManagement {
         maven("https://repo.spring.io/milestone")
         maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
         maven("https://jitpack.io")
+        google()
     }
 }
 
@@ -12,28 +13,26 @@ dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
         mavenCentral()
-        mavenLocal()
         maven("https://repo.spring.io/milestone")
         maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
         maven("https://jitpack.io")
+        google()
+        mavenLocal() // For common module from parent project
+    }
+
+    // Use version catalog from parent project
+    versionCatalogs {
+        create("libs") {
+            from(files("../gradle/libs.versions.toml"))
+        }
     }
 }
 
-rootProject.name = "jervis"
-
-// Include common-dto as a composite build (KMP project)
-includeBuild("common-dto") {
+// Include parent project's common-api module via composite build
+includeBuild("..") {
     dependencySubstitution {
-        substitute(module("com.jervis:common-dto")).using(project(":"))
+        substitute(module("com.jervis:common-api")).using(project(":common-api"))
     }
 }
 
-include(
-    ":common-api",
-    ":server",
-    ":desktop",
-    ":common-services",
-    ":service-tika",
-    ":service-joern",
-    ":service-whisper",
-)
+rootProject.name = "mobile-app"

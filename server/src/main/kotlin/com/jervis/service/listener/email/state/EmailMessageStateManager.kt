@@ -6,6 +6,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.isActive
@@ -110,7 +111,10 @@ class EmailMessageStateManager(
         accountId: ObjectId,
         messageId: String,
     ): Boolean {
-        val existing = emailMessageRepository.findByAccountIdAndMessageId(accountId, messageId)
+        val existing =
+            emailMessageRepository
+                .findAllByAccountIdAndMessageIdIn(accountId, listOf(messageId))
+                .firstOrNull()
         if (existing == null) {
             logger.warn { "markMessageIdAsIndexed: message not found for account=$accountId messageId=$messageId" }
             return false
