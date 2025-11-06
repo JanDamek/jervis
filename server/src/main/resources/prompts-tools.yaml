@@ -552,7 +552,7 @@ tools:
       EXAMPLES:
       - "Found inconsistent error handling in EmailProcessor.kt:145 - some exceptions are swallowed silently"
       - "Detected unused OAuth2Service class with complex logic - should evaluate if still needed or remove"
-      - "API deprecation: EmailIndexingProperties uses deprecated Qdrant client methods"
+      - "API deprecation: EmailIndexingProperties uses deprecated Weaviate client methods"
 
       This is a PARAMETRIC tool - no LLM inference, direct execution.
     userPrompt: |

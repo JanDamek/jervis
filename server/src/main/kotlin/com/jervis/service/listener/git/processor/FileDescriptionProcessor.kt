@@ -19,7 +19,7 @@ import java.time.Instant
  * Purpose:
  * - Extract AI-generated file description from agent's analysis
  * - Create TEXT embedding of the description
- * - Store in Qdrant with FILE_DESCRIPTION sourceType
+ * - Store in Weaviate with FILE_DESCRIPTION sourceType
  * - Track in MongoDB for retrieval
  *
  * This completes the flow:
@@ -97,7 +97,7 @@ class FileDescriptionProcessor(
                         createdAt = Instant.now(),
                     )
 
-                // Store in Qdrant
+                // Store in Weaviate
                 val vectorStoreId =
                     vectorStorage.store(
                         ModelTypeEnum.EMBEDDING_TEXT,

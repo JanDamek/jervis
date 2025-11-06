@@ -19,6 +19,9 @@ springdoc = "2.8.9"
 joern = "4.0.439"
 langchain4j = "1.7.1"
 google-cloud-bom = "26.50.0"
+compose = "1.7.3"
+agp = "8.9.1"
+badass-runtime = "2.0.1"
 
 [libraries]
 # Kotlin
@@ -102,3 +105,9 @@ spring-dependency-management = { id = "io.spring.dependency-management", version
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-spring = { id = "org.jetbrains.kotlin.plugin.spring", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "compose" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
+badass-runtime = { id = "org.beryx.runtime", version.ref = "badass-runtime" }

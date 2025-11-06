@@ -9,7 +9,7 @@ import org.springframework.data.mongodb.core.mapping.Document
 import java.time.Instant
 
 /**
- * MongoDB document tracking what is indexed in vector store (Qdrant).
+ * MongoDB document tracking what is indexed in the vector store (Weaviate).
  * Enables:
  * - Branch-aware queries (only show data for current branch)
  * - Reindexing only changed parts (delete old, index new)
@@ -60,8 +60,8 @@ data class VectorStoreIndexDocument(
     val sourceType: RagSourceType, // GIT_HISTORY, CODE_CHANGE, EMAIL, etc.
     val sourceId: String, // e.g. commit hash, file path, email message ID
     // Vector store reference
-    val vectorStoreId: String, // ID in Qdrant (UUID)
-    val vectorStoreName: String, // Collection name in Qdrant
+    val vectorStoreId: String, // ID in Weaviate (UUID)
+    val vectorStoreName: String, // Class name in Weaviate
     // Content hash (for change detection)
     val contentHash: String, // SHA-256 hash of content
     // Metadata for reindexing
@@ -72,5 +72,5 @@ data class VectorStoreIndexDocument(
     val indexedAt: Instant = Instant.now(),
     val lastUpdatedAt: Instant = Instant.now(),
     // Flags
-    val isActive: Boolean = true, // false when deleted from Qdrant
+    val isActive: Boolean = true, // false when deleted from Weaviate
 )

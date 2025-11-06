@@ -29,7 +29,7 @@ import java.time.format.DateTimeFormatter
  * 2. Save commit IDs to state manager (MongoDB)
  * 3. Process only NEW commits from state manager
  * 4. Create plain text summary (NO LLM)
- * 5. Embed and store in Qdrant with vector store tracking
+ * 5. Embed and store in Weaviate with vector store tracking
  * 6. Mark commits as INDEXED after processing
  *
  * Detailed commit analysis happens later via PendingTask system with qualification.
@@ -384,7 +384,7 @@ class GitCommitMetadataIndexer(
 
             val vectorStoreId = vectorStorage.store(ModelTypeEnum.EMBEDDING_TEXT, ragDocument, embedding)
 
-            // Track in MongoDB what was indexed to Qdrant
+            // Track in MongoDB what was indexed to Weaviate
             vectorStoreIndexService.trackIndexed(
                 projectId = project.id,
                 clientId = project.clientId,

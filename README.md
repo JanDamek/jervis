@@ -29,7 +29,7 @@ strict engineering and compliance guidelines.
 - Backend: Spring Boot (coroutines-first)
 - UI: JavaFX (planned/optional) and CLI utilities
 - Multiplatform: Kotlin Multiplatform for shared models/utilities
-- Datastores: MongoDB, Qdrant (vector)
+- Datastores: MongoDB, Weaviate (vector)
 - LLMs: Anthropic Claude, OpenAI GPT, Ollama, LM Studio
 - Protocols: Model Context Protocol (MCP)
 - Build Tool: Gradle (Kotlin DSL)
@@ -57,7 +57,7 @@ strict engineering and compliance guidelines.
                       |                    |
                       v                    v
             +---------+----+       +------+---------+
-            |   MongoDB    |       |     Qdrant     |
+            |   MongoDB    |       |    Weaviate    |
             |  documents   |       |  vector index  |
             +--------------+       +----------------+
 ```
@@ -71,7 +71,7 @@ Prerequisites:
 - JDK 21+
 - Gradle 8.7+ (or use the Gradle Wrapper if present)
 - Node 18+ (only if building UI assets)
-- Docker (optional; for local MongoDB and Qdrant)
+- Docker (optional; for local MongoDB and Weaviate)
 
 Steps:
 
@@ -81,7 +81,8 @@ Steps:
     - Optional: OLLAMA_ENDPOINT, LM_STUDIO_ENDPOINT
 3. Start local services (optional):
     - MongoDB: `docker run -p 27017:27017 mongo:7`
-    - Qdrant: `docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant:latest`
+    - Weaviate:
+      `docker run -p 8080:8080 -p 50051:50051 semitechnologies/weaviate:latest --host 0.0.0.0 --port 8080 --scheme http`
 4. Build and run the server (Gradle):
     - Build: `gradle -q build -x test`
     - Run: `gradle bootRun`
@@ -121,7 +122,7 @@ For the full rule set and rationale, see .junie/guidelines.md.
 - **Language**: Kotlin
 - **Framework**: Spring Boot (WebFlux)
 - **Database**: MongoDB
-- **Vector DB**: Qdrant
+- **Vector DB**: Weaviate
 - **UI**: Java Swing + Static Web (persona selection)
 - **LLMs**: Anthropic Claude, OpenAI GPT, Ollama, LM Studio
 - **Protocols**: MCP (via Koog library)
