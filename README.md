@@ -144,10 +144,13 @@ A lightweight startup screen lets users choose a persona without authentication.
 ## Server–User Component Split
 
 Best practice: Server–UI communication (Desktop and Mobile)
+
 - Contracts live in :common as `I***Service` interfaces annotated with `@HttpExchange`.
 - Server controllers implement these interfaces directly (fail fast, no DTO leakage across layers).
 - Desktop and Android create clients from the same interfaces using `HttpServiceClientFactory` in `:api-client`.
-- iOS is non‑JVM; recommended approach is either: (a) implement the same interfaces with a Ktor client on iOS, or (b) (optional) introduce a thin `service-mobile` adapter that reuses `:api-client` and exposes mobile‑friendly endpoints. Desktop remains the primary UI.
+- iOS is non‑JVM; recommended approach is either: (a) implement the same interfaces with a Ktor client on iOS, or (b) (
+  optional) introduce a thin `service-mobile` adapter that reuses `:api-client` and exposes mobile‑friendly endpoints.
+  Desktop remains the primary UI.
 
 See docs/architecture.md for the architecture diagram, API contract (/api/v0), and rationale for the separation between
 the Server (APIs/business logic) and User (UI/client) layers.
@@ -223,3 +226,37 @@ Notes specific to this repository
   Increasing Docker Desktop’s disk image size is usually necessary for a smooth build experience.
 - After resizing/pruning, if you still encounter space errors, verify the new quota took effect (Docker Desktop →
   Settings → Resources) and re-check usage with docker system df.
+
+---
+
+## Docker multi-stage images and how to build them
+
+This repository uses a single multi‑stage Dockerfile that defines multiple final runtime images:
+
+- runtime-server (Spring Boot orchestrator)
+- runtime-weaviate (Weaviate vector database)
+- runtime-tika (document parsing service)
+- runtime-joern (code analysis service)
+- runtime-whisper (speech‑to‑text service)
+
+Important: A plain `docker build` only produces the last stage (runtime-server). To build other images, specify the
+target explicitly with `--target` and provide your own tag, for example:
+
+- Server (last stage, built by default):
+    - docker build -t jervis-runtime-server:latest .
+- Weaviate:
+    - docker build --target runtime-weaviate -t jervis-runtime-weaviate:latest .
+    - docker run -d --rm --name weaviate -p 8080:8080 jervis-runtime-weaviate:latest
+    - Verify readiness: curl -sf http://localhost:8080/v1/.well-known/ready
+- TiKa:
+    - docker build --target runtime-tika -t jervis-runtime-tika:latest .
+- Joern:
+    - docker build --target runtime-joern -t jervis-runtime-joern:latest .
+- Whisper:
+    - docker build --target runtime-whisper -t jervis-runtime-whisper:latest .
+
+CI workflow
+
+- A GitHub Actions workflow at `.github/workflows/docker-images.yml` builds all targets in a matrix and runs a smoke
+  test for `runtime-weaviate` by starting the container and checking the readiness endpoint from the host.
+- This ensures future PRs won’t break multi‑stage builds or the Weaviate runtime image.

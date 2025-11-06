@@ -154,13 +154,8 @@ ENTRYPOINT ["sh", "-c", "mkdir -p ${WORK_DATA} && java ${JAVA_OPTS} -Djava.io.tm
 # ---------- Final image: jervis-weaviate (vector database with hybrid search)
 FROM semitechnologies/weaviate:1.24.1 AS runtime-weaviate
 
-USER root
-
-# Install curl for health checks
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+# Note: Base image is minimal and does not provide apt-get. We avoid installing curl
+# and perform readiness checks from the host/CI instead of inside the container.
 
 # Configure environment variables for Weaviate
 ENV PERSISTENCE_DATA_PATH=/var/lib/weaviate \
@@ -176,13 +171,8 @@ ENV PERSISTENCE_DATA_PATH=/var/lib/weaviate \
     CLUSTER_HOSTNAME=weaviate-node1 \
     LOG_LEVEL=info
 
-USER weaviate
-
 VOLUME ["/var/lib/weaviate"]
 EXPOSE 8080 50051
-
-HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
-    CMD curl -sf http://localhost:8080/v1/.well-known/ready || exit 1
 
 # Start Weaviate (schema will be initialized by server application on first connection)
 ENTRYPOINT ["/bin/weaviate"]
