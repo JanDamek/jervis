@@ -20,10 +20,11 @@ dependencies {
 
     // Spring Framework
     implementation(libs.spring.boot.starter)
-    implementation("org.springframework:spring-context")
-    implementation("org.springframework:spring-web")
-    implementation("org.springframework:spring-webflux")
+    // Use WebFlux starter to ensure proper configuration and Kotlin coroutine support for HTTP interfaces
+    implementation(libs.spring.boot.starter.webflux)
     implementation("io.projectreactor.kotlin:reactor-kotlin-extensions")
+    // Bridge between Reactor types and Kotlin coroutines (required for suspend HTTP interfaces)
+    implementation(libs.kotlinx.coroutines.reactor)
 
     // Ktor WebSocket clients (moved from api-client)
     implementation(libs.ktor.client.core)
@@ -40,6 +41,9 @@ dependencies {
     // UI & Swing
     implementation(libs.kotlinx.coroutines.swing)
     implementation(libs.flatlaf)
+
+    // Kotlin reflection needed by Spring to adapt suspend HTTP interfaces
+    implementation(libs.kotlin.reflect)
 
     // Logging
     implementation(libs.kotlin.logging)

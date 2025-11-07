@@ -1,23 +1,38 @@
 package com.jervis.mobile.api
 
-import com.jervis.dto.*
+import com.jervis.dto.ChatRequestContextDto
+import com.jervis.dto.ChatRequestDto
+import com.jervis.dto.ChatResponseDto
+import com.jervis.dto.ClientDto
+import com.jervis.dto.ClientProjectLinkDto
+import com.jervis.dto.ProjectDto
 import com.jervis.dto.user.UserTaskCountDto
 import com.jervis.mobile.ChatMessage
 import com.jervis.mobile.MobileBootstrap
 import com.jervis.mobile.MobileSelection
-import io.ktor.client.*
-import io.ktor.client.call.*
-import io.ktor.client.plugins.contentnegotiation.*
-import io.ktor.client.plugins.logging.*
-import io.ktor.client.plugins.websocket.*
-import io.ktor.client.request.*
-import io.ktor.http.*
-import io.ktor.serialization.kotlinx.json.*
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.logging.LogLevel
+import io.ktor.client.plugins.logging.Logging
+import io.ktor.client.plugins.websocket.WebSockets
+import io.ktor.client.request.get
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.datetime.Clock
 import kotlinx.serialization.json.Json
 
 /**
@@ -66,7 +81,7 @@ class KtorMobileAppFacade(
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     // WebSocket session ID (placeholder for now)
-    val wsSessionId: String = "mobile-${System.currentTimeMillis()}"
+    val wsSessionId: String = "mobile-${Clock.System.now().toEpochMilliseconds()}"
 
     fun select(
         clientId: String,
@@ -136,7 +151,11 @@ class KtorMobileAppFacade(
                     from = ChatMessage.Sender.Assistant,
                     text = response.message,
                     contextId = null,
-                    timestamp = System.currentTimeMillis().toString(),
+                    timestamp =
+                        Clock.System
+                            .now()
+                            .toEpochMilliseconds()
+                            .toString(),
                 ),
             )
 
