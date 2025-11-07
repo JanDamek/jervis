@@ -14,10 +14,9 @@ import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.ProjectDocument
-import com.jervis.repository.vector.VectorStorageRepository
-import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.git.GitRemoteClient
 import com.jervis.service.git.collectWithLogging
+import com.jervis.service.rag.RagIndexingService
 import com.jervis.service.rag.VectorStoreIndexService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -38,8 +37,7 @@ import java.nio.file.Path
  */
 @Service
 class GitBranchAnalysisService(
-    private val embeddingGateway: EmbeddingGateway,
-    private val vectorStorage: VectorStorageRepository,
+    private val ragIndexingService: RagIndexingService,
     private val vectorStoreIndexService: VectorStoreIndexService,
     private val gitRemoteClient: GitRemoteClient,
 ) {
@@ -388,7 +386,6 @@ class GitBranchAnalysisService(
             return
         }
 
-        val embedding = embeddingGateway.callEmbedding(ModelTypeEnum.EMBEDDING_TEXT, text)
         val rag =
             RagDocument(
                 projectId = project.id,
@@ -400,14 +397,14 @@ class GitBranchAnalysisService(
                 parentRef = summary.headSha,
                 branch = summary.branch,
             )
-        val vectorId = vectorStorage.store(ModelTypeEnum.EMBEDDING_TEXT, rag, embedding)
+        val result = ragIndexingService.indexDocument(rag, ModelTypeEnum.EMBEDDING_TEXT).getOrThrow()
         vectorStoreIndexService.trackIndexed(
             projectId = project.id,
             clientId = project.clientId,
             branch = summary.branch,
             sourceType = RagSourceType.GIT_HISTORY,
             sourceId = sourceId,
-            vectorStoreId = vectorId,
+            vectorStoreId = result.vectorStoreId,
             vectorStoreName = "git-branch-summary",
             content = text,
             commitHash = summary.headSha,

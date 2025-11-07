@@ -5,11 +5,10 @@ import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
-import com.jervis.repository.vector.VectorStorageRepository
-import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
+import com.jervis.service.rag.RagIndexingService
 import com.jervis.service.text.TextChunkingService
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -22,8 +21,7 @@ import java.time.Instant
  */
 @Service
 class KnowledgeStoreTool(
-    private val embeddingGateway: EmbeddingGateway,
-    private val vectorStorage: VectorStorageRepository,
+    private val ragIndexingService: RagIndexingService,
     private val textChunkingService: TextChunkingService,
     override val promptRepository: PromptRepository,
 ) : McpTool {
@@ -55,33 +53,33 @@ class KnowledgeStoreTool(
             "KNOWLEDGE_STORE_OPERATION: content_length=${content.length}"
         }
 
-        val modelTypeEnum = ModelTypeEnum.EMBEDDING_TEXT
-
         // Chunk the content if it's large
         val chunks = textChunkingService.splitText(content).map { it.text() }
 
         logger.info { "KNOWLEDGE_STORE_CHUNKS: Processing ${chunks.size} chunk(s)" }
 
         val storedIds = mutableListOf<String>()
-        val sourceType = RagSourceType.AGENT
 
         chunks.forEach { chunk ->
-            // Generate embedding for this chunk
-            val embedding = embeddingGateway.callEmbedding(modelTypeEnum, chunk)
-
-            // Create RAG document
             val ragDocument =
                 RagDocument(
                     projectId = plan.projectDocument?.id,
-                    ragSourceType = sourceType,
+                    ragSourceType = RagSourceType.AGENT,
                     text = chunk,
                     clientId = plan.clientDocument.id,
                     createdAt = Instant.now(),
                 )
 
-            // Store in a vector database
-            val pointId = vectorStorage.store(modelTypeEnum, ragDocument, embedding)
-            storedIds.add(pointId)
+            // Use new RagIndexingService
+            val result =
+                ragIndexingService
+                    .indexDocument(ragDocument, ModelTypeEnum.EMBEDDING_TEXT)
+                    .getOrElse { error ->
+                        logger.error { "Failed to index chunk: ${error.message}" }
+                        return ToolResult.error("Failed to store chunk: ${error.message}")
+                    }
+
+            storedIds.add(result.vectorStoreId)
         }
 
         val contextInfo = "client=${plan.clientDocument.name}, project=${plan.projectDocument?.name ?: "none"}"

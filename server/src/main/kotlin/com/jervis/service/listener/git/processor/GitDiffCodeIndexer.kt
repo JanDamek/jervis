@@ -6,8 +6,7 @@ import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.ProjectDocument
-import com.jervis.repository.vector.VectorStorageRepository
-import com.jervis.service.gateway.EmbeddingGateway
+import com.jervis.service.rag.RagIndexingService
 import com.jervis.service.rag.VectorStoreIndexService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -35,8 +34,7 @@ import java.util.Base64
  */
 @Service
 class GitDiffCodeIndexer(
-    private val embeddingGateway: EmbeddingGateway,
-    private val vectorStorage: VectorStorageRepository,
+    private val ragIndexingService: RagIndexingService,
     private val vectorStoreIndexService: VectorStoreIndexService,
     private val tikaClient: ITikaClient,
     private val textChunkingService: com.jervis.service.text.TextChunkingService,
@@ -201,23 +199,33 @@ class GitDiffCodeIndexer(
             try {
                 val sourceId = "$commitHash:${codeChange.filePath}:chunk-$index"
 
-                // Generate CODE embedding with validation
-                val embedding = embeddingGateway.callEmbedding(ModelTypeEnum.EMBEDDING_CODE, chunk)
-
-                // Validate embedding
-                if (embedding.isEmpty() || embedding.all { it == 0f }) {
-                    throw IllegalStateException("Embedding returned empty/zero vector")
-                }
+                val total = codeChunks.size
+                val lang = codeChange.filePath.substringAfterLast('.', missingDelimiterValue = "unknown")
+                val preview =
+                    chunk
+                        .lineSequence()
+                        .take(80)
+                        .joinToString("\n")
+                        .take(1200)
 
                 val ragDocument =
                     RagDocument(
                         projectId = project.id,
                         ragSourceType = RagSourceType.CODE_CHANGE,
-                        text = "Code change in ${codeChange.filePath}",
+                        text =
+                            buildString {
+                                append("CODE_CHANGE ${codeChange.changeType} ")
+                                append("lang=$lang ")
+                                append("file=${codeChange.filePath} ")
+                                append("commit=$commitHash chunk=${index + 1}/$total\n\n")
+                                append(preview)
+                            },
                         clientId = project.clientId,
                         fileName = codeChange.filePath,
                         branch = branch,
                         chunkId = index,
+                        chunkOf = total,
+                        parentRef = commitHash,
                         from = "git-commit",
                         timestamp =
                             java.time.Instant
@@ -225,17 +233,20 @@ class GitDiffCodeIndexer(
                                 .toString(),
                     )
 
-                // Store in Weaviate CODE collection
-                val vectorStoreId = vectorStorage.store(ModelTypeEnum.EMBEDDING_CODE, ragDocument, embedding)
+                // Use RagIndexingService for embedding + storage
+                val result =
+                    ragIndexingService
+                        .indexDocument(ragDocument, ModelTypeEnum.EMBEDDING_CODE)
+                        .getOrThrow()
 
-                // Track in MongoDB
+                // Track in MongoDB (explicit tracking for Git processors)
                 vectorStoreIndexService.trackIndexed(
                     projectId = project.id,
                     clientId = project.clientId,
                     branch = branch,
                     sourceType = RagSourceType.CODE_CHANGE,
                     sourceId = sourceId,
-                    vectorStoreId = vectorStoreId,
+                    vectorStoreId = result.vectorStoreId,
                     vectorStoreName = "code-change-${commitHash.take(8)}-$index",
                     content = chunk,
                     filePath = codeChange.filePath,
@@ -246,7 +257,7 @@ class GitDiffCodeIndexer(
                 indexedChunks++
             } catch (e: Exception) {
                 logger.warn(e) {
-                    "Failed to embed chunk $index of ${codeChange.filePath}: ${e.message}. " +
+                    "Failed to index chunk $index of ${codeChange.filePath}: ${e.message}. " +
                         "File may contain unsupported characters."
                 }
             }
@@ -311,23 +322,31 @@ class GitDiffCodeIndexer(
                     try {
                         val sourceId = "$commitHash:${codeChange.filePath}:text-chunk-$index"
 
-                        // Generate TEXT embedding
-                        val embedding = embeddingGateway.callEmbedding(ModelTypeEnum.EMBEDDING_TEXT, chunk)
-
-                        // Validate embedding
-                        if (embedding.isEmpty() || embedding.all { it == 0f }) {
-                            throw IllegalStateException("Embedding returned empty/zero vector")
-                        }
+                        val total = textChunks.size
+                        val preview =
+                            chunk
+                                .lineSequence()
+                                .take(80)
+                                .joinToString("\n")
+                                .take(1200)
 
                         val ragDocument =
                             RagDocument(
                                 projectId = project.id,
                                 ragSourceType = RagSourceType.CODE_CHANGE,
-                                text = "Document change in ${codeChange.filePath}",
+                                text =
+                                    buildString {
+                                        append("TEXT_CHANGE ")
+                                        append("file=${codeChange.filePath} ")
+                                        append("commit=$commitHash chunk=${index + 1}/$total\n\n")
+                                        append(preview)
+                                    },
                                 clientId = project.clientId,
                                 fileName = codeChange.filePath,
                                 branch = branch,
                                 chunkId = index,
+                                chunkOf = total,
+                                parentRef = commitHash,
                                 from = "git-commit-tika",
                                 timestamp =
                                     java.time.Instant
@@ -335,17 +354,20 @@ class GitDiffCodeIndexer(
                                         .toString(),
                             )
 
-                        // Store in Weaviate TEXT collection
-                        val vectorStoreId = vectorStorage.store(ModelTypeEnum.EMBEDDING_TEXT, ragDocument, embedding)
+                        // Use RagIndexingService for embedding + storage
+                        val result =
+                            ragIndexingService
+                                .indexDocument(ragDocument, ModelTypeEnum.EMBEDDING_TEXT)
+                                .getOrThrow()
 
-                        // Track in MongoDB
+                        // Track in MongoDB (explicit tracking for Git processors)
                         vectorStoreIndexService.trackIndexed(
                             projectId = project.id,
                             clientId = project.clientId,
                             branch = branch,
                             sourceType = RagSourceType.CODE_CHANGE,
                             sourceId = sourceId,
-                            vectorStoreId = vectorStoreId,
+                            vectorStoreId = result.vectorStoreId,
                             vectorStoreName = "text-change-${commitHash.take(8)}-$index",
                             content = chunk,
                             filePath = codeChange.filePath,
@@ -356,7 +378,7 @@ class GitDiffCodeIndexer(
                         indexedChunks++
                     } catch (e: Exception) {
                         logger.warn(e) {
-                            "Failed to embed text chunk $index of ${codeChange.filePath}: ${e.message}"
+                            "Failed to index text chunk $index of ${codeChange.filePath}: ${e.message}"
                         }
                     }
                 }
@@ -452,8 +474,6 @@ class GitDiffCodeIndexer(
             val sourceId = "$commitHash:${codeChange.filePath}:chunk-$index"
 
             // Generate CODE embedding (not TEXT!)
-            val embedding = embeddingGateway.callEmbedding(ModelTypeEnum.EMBEDDING_CODE, chunk)
-
             val ragDocument =
                 RagDocument(
                     projectId = null, // No projectId for mono-repo
@@ -472,17 +492,20 @@ class GitDiffCodeIndexer(
                             .toString(),
                 )
 
-            // Store in Weaviate CODE collection
-            val vectorStoreId = vectorStorage.store(ModelTypeEnum.EMBEDDING_CODE, ragDocument, embedding)
+            // Use RagIndexingService for embedding + storage
+            val result =
+                ragIndexingService
+                    .indexDocument(ragDocument, ModelTypeEnum.EMBEDDING_CODE)
+                    .getOrThrow()
 
-            // Track in MongoDB with monoRepoId
+            // Track in MongoDB with monoRepoId (special mono-repo tracking)
             vectorStoreIndexService.trackIndexedForMonoRepo(
                 clientId = clientId,
                 monoRepoId = monoRepoId,
                 branch = branch,
                 sourceType = RagSourceType.CODE_CHANGE,
                 sourceId = sourceId,
-                vectorStoreId = vectorStoreId,
+                vectorStoreId = result.vectorStoreId,
                 vectorStoreName = "code-change-${commitHash.take(8)}-$index",
                 content = chunk,
                 filePath = codeChange.filePath,

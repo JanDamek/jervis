@@ -4,10 +4,9 @@ import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.ProjectDocument
-import com.jervis.repository.vector.VectorStorageRepository
-import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.git.state.GitCommitInfo
 import com.jervis.service.git.state.GitCommitStateManager
+import com.jervis.service.rag.RagIndexingService
 import com.jervis.service.rag.VectorStoreIndexService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.buffer
@@ -40,8 +39,7 @@ import java.time.format.DateTimeFormatter
  */
 @Service
 class GitCommitMetadataIndexer(
-    private val embeddingGateway: EmbeddingGateway,
-    private val vectorStorage: VectorStorageRepository,
+    private val ragIndexingService: RagIndexingService,
     private val stateManager: GitCommitStateManager,
     private val vectorStoreIndexService: VectorStoreIndexService,
 ) {
@@ -246,9 +244,6 @@ class GitCommitMetadataIndexer(
                 return true
             }
 
-            // Create a single embedding for commit metadata
-            val embedding = embeddingGateway.callEmbedding(ModelTypeEnum.EMBEDDING_TEXT, summary)
-
             val ragDocument =
                 RagDocument(
                     projectId = null, // No projectId for mono-repo commits
@@ -265,7 +260,11 @@ class GitCommitMetadataIndexer(
                     branch = commit.branch,
                 )
 
-            val vectorStoreId = vectorStorage.store(ModelTypeEnum.EMBEDDING_TEXT, ragDocument, embedding)
+            // Use RagIndexingService for embedding + storage
+            val result =
+                ragIndexingService
+                    .indexDocument(ragDocument, ModelTypeEnum.EMBEDDING_TEXT)
+                    .getOrThrow()
 
             // Track in MongoDB with monoRepoId (projectId = null)
             vectorStoreIndexService.trackIndexedForMonoRepo(
@@ -274,7 +273,7 @@ class GitCommitMetadataIndexer(
                 branch = commit.branch,
                 sourceType = RagSourceType.GIT_HISTORY,
                 sourceId = sourceId,
-                vectorStoreId = vectorStoreId,
+                vectorStoreId = result.vectorStoreId,
                 vectorStoreName = "git-commit-${commit.hash.take(8)}",
                 content = summary,
                 filePath = null,
@@ -363,9 +362,6 @@ class GitCommitMetadataIndexer(
                 return true
             }
 
-            // Create a single embedding for commit metadata
-            val embedding = embeddingGateway.callEmbedding(ModelTypeEnum.EMBEDDING_TEXT, summary)
-
             val ragDocument =
                 RagDocument(
                     projectId = project.id,
@@ -382,7 +378,11 @@ class GitCommitMetadataIndexer(
                     branch = commit.branch,
                 )
 
-            val vectorStoreId = vectorStorage.store(ModelTypeEnum.EMBEDDING_TEXT, ragDocument, embedding)
+            // Use RagIndexingService for embedding + storage
+            val result =
+                ragIndexingService
+                    .indexDocument(ragDocument, ModelTypeEnum.EMBEDDING_TEXT)
+                    .getOrThrow()
 
             // Track in MongoDB what was indexed to Weaviate
             vectorStoreIndexService.trackIndexed(
@@ -391,7 +391,7 @@ class GitCommitMetadataIndexer(
                 branch = commit.branch,
                 sourceType = RagSourceType.GIT_HISTORY,
                 sourceId = sourceId,
-                vectorStoreId = vectorStoreId,
+                vectorStoreId = result.vectorStoreId,
                 vectorStoreName = "git-commit-${commit.hash.take(8)}",
                 content = summary,
                 filePath = null,

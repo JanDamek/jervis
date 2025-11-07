@@ -50,9 +50,13 @@ class BackgroundTaskGoalsService {
         try {
             val resource = ClassPathResource("background-task-goals.yaml")
             val yaml = Yaml()
-            val data: Map<String, Any?> = yaml.load(resource.inputStream)
+            val data = yaml.load<Map<String, Any?>>(resource.inputStream) ?: emptyMap()
 
-            val tasksSection: Map<String, Any?> = data["tasks"] as? Map<String, Any?> ?: emptyMap()
+            val tasksSection =
+                when (val tasks = data["tasks"]) {
+                    is Map<*, *> -> tasks.filterKeys { it is String }.mapKeys { it.key as String }
+                    else -> emptyMap()
+                }
             val tasksTyped =
                 tasksSection.entries
                     .map { (k, v) ->

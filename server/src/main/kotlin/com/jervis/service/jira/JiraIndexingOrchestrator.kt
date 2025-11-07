@@ -6,8 +6,7 @@ import com.jervis.domain.rag.RagSourceType
 import com.jervis.repository.mongo.JiraConnectionMongoRepository
 import com.jervis.repository.mongo.JiraIssueIndexMongoRepository
 import com.jervis.repository.mongo.ProjectMongoRepository
-import com.jervis.repository.vector.VectorStorageRepository
-import com.jervis.service.gateway.EmbeddingGateway
+import com.jervis.service.rag.RagIndexingService
 import com.jervis.service.text.TextChunkingService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.toList
@@ -22,8 +21,7 @@ class JiraIndexingOrchestrator(
     private val selection: JiraSelectionService,
     private val api: JiraApiClient,
     private val auth: JiraAuthService,
-    private val embeddingGateway: EmbeddingGateway,
-    private val vectorStorage: VectorStorageRepository,
+    private val ragIndexingService: RagIndexingService,
     private val projectRepository: ProjectMongoRepository,
     private val connectionRepository: JiraConnectionMongoRepository,
     private val issueIndexRepository: JiraIssueIndexMongoRepository,
@@ -154,9 +152,6 @@ class JiraIndexingOrchestrator(
 
         var stored = 0
         chunks.forEachIndexed { index, chunk ->
-            val embedding =
-                embeddingGateway.callEmbedding(com.jervis.domain.model.ModelTypeEnum.EMBEDDING_TEXT, chunk.text())
-
             val rag =
                 RagDocument(
                     projectId = null, // unknown here; Jira is client-level context
@@ -171,7 +166,7 @@ class JiraIndexingOrchestrator(
                     chunkId = index,
                     chunkOf = chunks.size,
                 )
-            vectorStorage.store(com.jervis.domain.model.ModelTypeEnum.EMBEDDING_TEXT, rag, embedding)
+            ragIndexingService.indexDocument(rag, com.jervis.domain.model.ModelTypeEnum.EMBEDDING_TEXT)
             stored++
         }
 
@@ -215,8 +210,6 @@ class JiraIndexingOrchestrator(
             if (chunks.isEmpty()) return@collect
 
             chunks.forEachIndexed { index, chunk ->
-                val embedding =
-                    embeddingGateway.callEmbedding(com.jervis.domain.model.ModelTypeEnum.EMBEDDING_TEXT, chunk.text())
                 val rag =
                     RagDocument(
                         projectId = null,
@@ -231,7 +224,7 @@ class JiraIndexingOrchestrator(
                         chunkId = index,
                         chunkOf = chunks.size,
                     )
-                vectorStorage.store(com.jervis.domain.model.ModelTypeEnum.EMBEDDING_TEXT, rag, embedding)
+                ragIndexingService.indexDocument(rag, com.jervis.domain.model.ModelTypeEnum.EMBEDDING_TEXT)
             }
 
             lastProcessedId = commentId

@@ -2,13 +2,11 @@ package com.jervis.service.link
 
 import com.jervis.configuration.properties.LinkIndexingProperties
 import com.jervis.domain.model.ModelTypeEnum
-import com.jervis.domain.rag.EmbeddingType
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.IndexedLinkDocument
 import com.jervis.repository.mongo.IndexedLinkMongoRepository
-import com.jervis.repository.vector.VectorStorageRepository
-import com.jervis.service.gateway.EmbeddingGateway
+import com.jervis.service.rag.RagIndexingService
 import com.jervis.service.text.TextChunkingService
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -19,8 +17,7 @@ private val logger = KotlinLogging.logger {}
 
 @Service
 class LinkIndexer(
-    private val embeddingGateway: EmbeddingGateway,
-    private val vectorStorage: VectorStorageRepository,
+    private val ragIndexingService: RagIndexingService,
     private val textChunkingService: TextChunkingService,
     private val linkContentService: LinkContentService,
     private val indexedLinkRepo: IndexedLinkMongoRepository,
@@ -72,10 +69,7 @@ class LinkIndexer(
         logger.debug { "Split link content from $url into ${chunks.size} chunks" }
 
         chunks.forEachIndexed { chunkIndex, chunk ->
-            val embedding = embeddingGateway.callEmbedding(ModelTypeEnum.EMBEDDING_TEXT, chunk.text())
-
-            vectorStorage.store(
-                EmbeddingType.EMBEDDING_TEXT,
+            ragIndexingService.indexDocument(
                 RagDocument(
                     projectId = projectId,
                     clientId = clientId,
@@ -87,7 +81,7 @@ class LinkIndexer(
                     chunkId = chunkIndex,
                     chunkOf = chunks.size,
                 ),
-                embedding,
+                ModelTypeEnum.EMBEDDING_TEXT,
             )
         }
 

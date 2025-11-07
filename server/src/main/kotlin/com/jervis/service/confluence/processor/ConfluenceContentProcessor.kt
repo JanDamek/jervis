@@ -6,8 +6,7 @@ import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.ConfluencePageDocument
-import com.jervis.repository.vector.VectorStorageRepository
-import com.jervis.service.gateway.EmbeddingGateway
+import com.jervis.service.rag.RagIndexingService
 import com.jervis.service.rag.VectorStoreIndexService
 import com.jervis.service.text.TextChunkingService
 import mu.KotlinLogging
@@ -36,8 +35,7 @@ private val logger = KotlinLogging.logger {}
  */
 @Service
 class ConfluenceContentProcessor(
-    private val embeddingGateway: EmbeddingGateway,
-    private val vectorStorage: VectorStorageRepository,
+    private val ragIndexingService: RagIndexingService,
     private val vectorStoreIndexService: VectorStoreIndexService,
     private val tikaClient: ITikaClient,
     private val textChunkingService: TextChunkingService,
@@ -207,14 +205,6 @@ class ConfluenceContentProcessor(
         chunk: String,
         chunkIndex: Int,
     ) {
-        // Generate TEXT embedding
-        val embedding = embeddingGateway.callEmbedding(ModelTypeEnum.EMBEDDING_TEXT, chunk)
-
-        // Validate embedding
-        if (embedding.isEmpty() || embedding.all { it == 0f }) {
-            throw IllegalStateException("Embedding returned empty/zero vector for page ${page.pageId}")
-        }
-
         // Create RAG document
         val ragDocument =
             RagDocument(
@@ -231,8 +221,11 @@ class ConfluenceContentProcessor(
                 timestamp = page.lastModifiedAt?.toString() ?: Instant.now().toString(),
             )
 
-        // Store in Weaviate TEXT collection
-        val vectorStoreId = vectorStorage.store(ModelTypeEnum.EMBEDDING_TEXT, ragDocument, embedding)
+        // Index using RagIndexingService (handles embedding + storage)
+        val result =
+            ragIndexingService
+                .indexDocument(ragDocument, ModelTypeEnum.EMBEDDING_TEXT)
+                .getOrThrow()
 
         // Track in MongoDB (only when projectId is available)
         val pid = page.projectId
@@ -243,7 +236,7 @@ class ConfluenceContentProcessor(
                 branch = "confluence",
                 sourceType = RagSourceType.CONFLUENCE_PAGE,
                 sourceId = "${page.pageId}:chunk-$chunkIndex",
-                vectorStoreId = vectorStoreId,
+                vectorStoreId = result.vectorStoreId,
                 vectorStoreName = "confluence-${page.pageId}-$chunkIndex",
                 content = chunk,
                 filePath = null,
