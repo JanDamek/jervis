@@ -97,24 +97,22 @@ tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
     enabled = false
 }
 
-// Full UI Build - builds all platform distributions
+// Desktop build task - builds desktop distributions only (no mobile-app)
 tasks.register("full-ui-build") {
     group = "distribution"
-    description = "Build all UI distributions: Android, iOS, Windows, Linux, macOS"
+    description = "Build desktop distributions: Windows, Linux, macOS"
 
     dependsOn(
         ":desktop:packageDesktopWindows",
         ":desktop:packageDesktopLinux",
         ":desktop:packageDesktopMacOS",
-        ":mobile:assembleAndroidRelease",
-        ":mobile:buildIosRelease",
     )
 
     doLast {
         println(
             """
             ═══════════════════════════════════════════════════════
-            ✓ Full UI Build Complete!
+            ✓ Desktop Build Complete!
             ═══════════════════════════════════════════════════════
 
             Desktop Distributions:
@@ -122,14 +120,8 @@ tasks.register("full-ui-build") {
             • Linux:   desktop/build/jpackage/*.deb
             • macOS:   desktop/build/jpackage/*.dmg
 
-            Mobile Distributions:
-            • Android: mobile/build/outputs/bundle/release/*.aab
-            • iOS:     mobile/build/bin/iosArm64/releaseFramework/
-
             ═══════════════════════════════════════════════════════
             Ready for deployment:
-            - Android → Google Play
-            - iOS → App Store
             - Desktop → Website downloads
             ═══════════════════════════════════════════════════════
             """.trimIndent(),

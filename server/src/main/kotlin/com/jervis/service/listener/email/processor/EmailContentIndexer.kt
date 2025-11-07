@@ -3,12 +3,10 @@ package com.jervis.service.listener.email.processor
 import com.jervis.common.client.ITikaClient
 import com.jervis.common.dto.TikaProcessRequest
 import com.jervis.domain.model.ModelTypeEnum
-import com.jervis.domain.rag.EmbeddingType
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
-import com.jervis.repository.vector.VectorStorageRepository
-import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.service.listener.email.imap.ImapMessage
+import com.jervis.service.rag.RagIndexingService
 import com.jervis.service.text.TextChunkingService
 import dev.langchain4j.data.segment.TextSegment
 import mu.KotlinLogging
@@ -20,8 +18,7 @@ private val logger = KotlinLogging.logger {}
 
 @Service
 class EmailContentIndexer(
-    private val embeddingGateway: EmbeddingGateway,
-    private val vectorStorage: VectorStorageRepository,
+    private val ragIndexingService: RagIndexingService,
     private val textChunkingService: TextChunkingService,
     private val tikaClient: ITikaClient,
 ) {
@@ -93,10 +90,7 @@ class EmailContentIndexer(
         chunkIndex: Int,
         totalChunks: Int,
     ): String {
-        val embedding = embeddingGateway.callEmbedding(ModelTypeEnum.EMBEDDING_TEXT, chunk.text())
-
-        return vectorStorage.store(
-            EmbeddingType.EMBEDDING_TEXT,
+        val document =
             RagDocument(
                 projectId = projectId,
                 clientId = clientId,
@@ -110,8 +104,11 @@ class EmailContentIndexer(
                 parentRef = message.messageId,
                 chunkId = chunkIndex,
                 chunkOf = totalChunks,
-            ),
-            embedding,
-        )
+            )
+
+        return ragIndexingService
+            .indexDocument(document, ModelTypeEnum.EMBEDDING_TEXT)
+            .getOrThrow()
+            .vectorStoreId
     }
 }

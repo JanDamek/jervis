@@ -5,8 +5,7 @@ import com.jervis.domain.plan.Plan
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
 import com.jervis.dto.ChatResponse
-import com.jervis.repository.vector.VectorStorageRepository
-import com.jervis.service.gateway.EmbeddingGateway
+import com.jervis.service.rag.RagIndexingService
 import com.jervis.service.text.TextChunkingService
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -22,8 +21,7 @@ import org.springframework.stereotype.Service
 @Service
 class ConversationIndexingService(
     private val textChunkingService: TextChunkingService,
-    private val embeddingGateway: EmbeddingGateway,
-    private val vectorStorage: VectorStorageRepository,
+    private val ragIndexingService: RagIndexingService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -67,8 +65,6 @@ class ConversationIndexingService(
             // Store each chunk
             for ((index, chunk) in chunks.withIndex()) {
                 try {
-                    val embedding = embeddingGateway.callEmbedding(ModelTypeEnum.EMBEDDING_TEXT, chunk.text())
-
                     val ragDocument =
                         RagDocument(
                             projectId = plan.projectId,
@@ -87,7 +83,7 @@ class ConversationIndexingService(
                             chunkOf = chunks.size,
                         )
 
-                    vectorStorage.store(ModelTypeEnum.EMBEDDING_TEXT, ragDocument, embedding)
+                    ragIndexingService.indexDocument(ragDocument, ModelTypeEnum.EMBEDDING_TEXT)
                 } catch (e: Exception) {
                     logger.error(e) { "CONVERSATION_INDEXING: Failed to store chunk $index" }
                 }

@@ -3,8 +3,6 @@ package com.jervis.service.indexing
 import com.jervis.common.client.IWhisperClient
 import com.jervis.common.dto.WhisperResultDto
 import com.jervis.configuration.properties.AudioMonitoringProperties
-import com.jervis.repository.vector.VectorStorageRepository
-import com.jervis.service.gateway.EmbeddingGateway
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.nio.file.Files
@@ -27,8 +25,6 @@ import kotlin.io.path.isRegularFile
 @Service
 class AudioTranscriptIndexingService(
     private val whisperClient: IWhisperClient,
-    private val embeddingGateway: EmbeddingGateway,
-    private val vectorStorage: VectorStorageRepository,
     private val audioMonitoringProps: AudioMonitoringProperties,
 ) {
     companion object {

@@ -4,8 +4,7 @@ import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
 import com.jervis.domain.task.PendingTask
-import com.jervis.repository.vector.VectorStorageRepository
-import com.jervis.service.gateway.EmbeddingGateway
+import com.jervis.service.rag.RagIndexingService
 import com.jervis.service.rag.VectorStoreIndexService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -30,8 +29,7 @@ import java.time.Instant
  */
 @Service
 class FileDescriptionProcessor(
-    private val embeddingGateway: EmbeddingGateway,
-    private val vectorStorage: VectorStorageRepository,
+    private val ragIndexingService: RagIndexingService,
     private val vectorStoreIndexService: VectorStoreIndexService,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -79,13 +77,6 @@ class FileDescriptionProcessor(
                     return@withContext false
                 }
 
-                // Create TEXT embedding of description
-                val embedding =
-                    embeddingGateway.callEmbedding(
-                        ModelTypeEnum.EMBEDDING_TEXT,
-                        description,
-                    )
-
                 // Create RAG document
                 val ragDocument =
                     RagDocument(
@@ -97,13 +88,11 @@ class FileDescriptionProcessor(
                         createdAt = Instant.now(),
                     )
 
-                // Store in Weaviate
-                val vectorStoreId =
-                    vectorStorage.store(
-                        ModelTypeEnum.EMBEDDING_TEXT,
-                        ragDocument,
-                        embedding,
-                    )
+                // Use RagIndexingService for embedding + storage
+                val result =
+                    ragIndexingService
+                        .indexDocument(ragDocument, ModelTypeEnum.EMBEDDING_TEXT)
+                        .getOrThrow()
 
                 // Track in MongoDB for management
                 val fileName = filePath.substringAfterLast("/")
@@ -115,7 +104,7 @@ class FileDescriptionProcessor(
                     branch = branch,
                     sourceType = RagSourceType.FILE_DESCRIPTION,
                     sourceId = "$filePath-description",
-                    vectorStoreId = vectorStoreId,
+                    vectorStoreId = result.vectorStoreId,
                     vectorStoreName = "file-description-$fileName",
                     content = description,
                     filePath = filePath,
@@ -123,7 +112,7 @@ class FileDescriptionProcessor(
                 )
 
                 logger.info {
-                    "Stored file description for $filePath (commit ${commitHash.take(8)}) - vectorStoreId=$vectorStoreId"
+                    "Stored file description for $filePath (commit ${commitHash.take(8)}) - vectorStoreId=${result.vectorStoreId}"
                 }
 
                 true

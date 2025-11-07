@@ -1,3 +1,7 @@
+---
+apply: always
+---
+
 JERVIS – ARCHITEKTURA A PROGRAMOVACÍ PRAVIDLA
 (verze pro vývoj i AI asistenty)
 
@@ -90,6 +94,9 @@ HLAVNÍ JAZYK:
 • Coroutines jako výchozí pro asynchronní logiku.
 • Reactor pouze pro interop.
 • Všude kde to je jen trochu možné používen NonNull hodnoty.
+• Vždy přepis veškerou závislost, nikdy nedělej *deprecated* označení, nepoužívej supressed pro deprecated místa. Vývoj
+je jen náš, klidně přepiš půl aplikace pokud to odstraní chbnou závislost.
+• Nesnaž se udržet zpětnou kompatibilitu, není na kodu nic jiného zavislé, bždy použij best practice řešení.
 
 KOMUNIKACE:
 • Pro spojení mezi modulý se používá výhradně @HttpExchange přes REST API.

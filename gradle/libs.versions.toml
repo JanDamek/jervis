@@ -1,27 +1,27 @@
 [versions]
-kotlin = "2.2.0"
-spring-boot = "3.5.6"
-spring-depMgmt = "1.1.6"
-coroutines = "1.9.0"
-serialization = "1.7.3"
-datetime = "0.6.1"
-ktor = "3.3.0"
+angus = "2.0.3"
+kotlin = "2.2.21"
+spring-boot = "3.5.7"
+spring-depMgmt = "1.1.7"
+coroutines = "1.10.2"
+serialization = "1.9.0"
+datetime = "0.7.1"
+ktor = "3.3.2"
 logging = "3.0.5"
-weaviate = "4.7.0"
-grpc = "1.68.1"
-commons-text = "1.12.0"
-javaparser = "3.25.8"
-jsoup = "1.17.2"
-tika = "3.1.0"
-java-diff-utils = "4.12"
-guava = "33.4.1-jre"
-flatlaf = "3.6.1"
-springdoc = "2.8.9"
+weaviate = "5.5.0"
+commons-text = "1.14.0"
+javaparser = "3.27.1"
+jsoup = "1.21.2"
+tika = "3.2.3"
+java-diff-utils = "4.16"
+guava = "33.5.0-jre"
+flatlaf = "3.6.2"
+springdoc = "2.8.14"
 joern = "4.0.439"
-langchain4j = "1.7.1"
-google-cloud-bom = "26.50.0"
-compose = "1.7.3"
-agp = "8.9.1"
+langchain4j = "1.8.0"
+google-cloud-bom = "26.71.0"
+compose = "1.9.3"
+agp = "8.12.3"
 badass-runtime = "2.0.1"
 
 [libraries]
@@ -33,7 +33,7 @@ kotlin-compiler-embeddable = { module = "org.jetbrains.kotlin:kotlin-compiler-em
 # Jakarta Mail (API + implementation managed by Spring Boot BOM)
 jakarta-mail-api = { module = "jakarta.mail:jakarta.mail-api" }
 angus-mail = { module = "org.eclipse.angus:angus-mail" }
-angus-activation = { module = "org.eclipse.angus:angus-activation", version = "2.0.2" }
+angus-activation = { module = "org.eclipse.angus:angus-activation", version.ref = "angus" }
 
 # KotlinX
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -70,9 +70,6 @@ jackson-dataformat-yaml = { module = "com.fasterxml.jackson.dataformat:jackson-d
 
 # Weaviate & gRPC
 weaviate-client = { module = "io.weaviate:client", version.ref = "weaviate" }
-grpc-protobuf = { module = "io.grpc:grpc-protobuf", version.ref = "grpc" }
-grpc-stub = { module = "io.grpc:grpc-stub", version.ref = "grpc" }
-grpc-netty-shaded = { module = "io.grpc:grpc-netty-shaded", version.ref = "grpc" }
 
 # Netty native DNS resolver for macOS (version managed by Spring BOM)
 netty-resolver-dns-native-macos = { module = "io.netty:netty-resolver-dns-native-macos" }
