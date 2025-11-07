@@ -8,6 +8,7 @@ import io.weaviate.client.Config
 import io.weaviate.client.WeaviateClient
 import io.weaviate.client.v1.graphql.query.argument.HybridArgument
 import io.weaviate.client.v1.graphql.query.argument.NearVectorArgument
+import io.weaviate.client.v1.graphql.query.argument.WhereArgument
 import io.weaviate.client.v1.graphql.query.fields.Field
 import jakarta.annotation.PreDestroy
 import kotlinx.coroutines.Dispatchers
@@ -192,7 +193,7 @@ class WeaviateVectorRepository(
 
         // Apply filters
         query.filters.toWhereFilter()?.let { whereFilter ->
-            queryBuilder.withWhere(whereFilter)
+            queryBuilder.withWhere(WhereArgument.builder().filter(whereFilter).build())
         }
 
         // Apply hybrid or pure vector search
