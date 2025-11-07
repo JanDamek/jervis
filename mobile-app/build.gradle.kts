@@ -47,6 +47,7 @@ kotlin {
 
             // Kotlin
             implementation(libs.kotlinx.coroutines.core)
+            implementation(libs.kotlinx.datetime)
 
             // Ktor for HTTP (multiplatform compatible)
             implementation(libs.ktor.client.core)

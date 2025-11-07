@@ -87,6 +87,21 @@ class LinkSafetyQualifier(
             "verify-email",
             "confirm-email",
             "activate-account",
+            // Calendar/Invite action links (must not trigger RSVP or auto-actions)
+            "action=accept",
+            "action=decline",
+            "action=tentative",
+            "event?action=accept",
+            "event?action=decline",
+            "event?action=tentative",
+            "rsvp",
+            "meetingresponse",
+            "meeting-response",
+            "respond=accept",
+            "respond=decline",
+            "respond=tentative",
+            "/calendar/response",
+            "/calendar/action",
             // Action/tracking codes (Czech: kód, kod)
             "/kod/",
             "/code/",
@@ -109,6 +124,23 @@ class LinkSafetyQualifier(
             "account-settings",
             "delete-account",
             "deactivate",
+            // Additional invite/action variants
+            "invite-response",
+            "meetingrequest",
+            "meeting-request",
+            "accept-invite",
+            "accept_invite",
+            "acceptinvite",
+            "decline-invite",
+            "decline_invite",
+            "declineinvite",
+            "calendar/rsvp",
+            "/calendar/event",
+            "calendar/render",
+            "accept=yes",
+            "decline=yes",
+            "status=accepted",
+            "status=declined",
         )
 
     // Domains that are blacklisted
@@ -124,6 +156,17 @@ class LinkSafetyQualifier(
             "mailgun.info",
             "click.pstmrk.it", // Postmark tracking
             "links.newsletter", // Generic newsletter links
+            // Calendar/Invite and provider action domains (block to avoid RSVP or account actions)
+            "mail.google.com",
+            "calendar.google.com",
+            "accounts.google.com",
+            "outlook.office.com",
+            "outlook.com",
+            // Security/tracking wrappers (block; typically tracking/redirector)
+            "safelinks.protection.outlook.com",
+            "urldefense.proofpoint.com",
+            "protect.mimecast.com",
+            "lnks.gd",
         )
 
     // Known safe domains (documentation, knowledge bases, e-commerce)
