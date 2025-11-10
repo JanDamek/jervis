@@ -1,10 +1,12 @@
 package com.jervis.service.confluence
 
 import com.jervis.domain.confluence.ConfluencePageContent
+import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.ConfluenceAccountDocument
 import com.jervis.service.confluence.processor.ConfluenceContentProcessor
 import com.jervis.service.confluence.processor.ConfluenceTaskCreator
 import com.jervis.service.confluence.state.ConfluencePageStateManager
+import com.jervis.service.link.LinkIndexingService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import mu.KotlinLogging
@@ -35,6 +37,7 @@ class ConfluenceContinuousIndexer(
     private val contentProcessor: ConfluenceContentProcessor,
     private val taskCreator: ConfluenceTaskCreator,
     private val flowProps: com.jervis.configuration.properties.IndexingFlowProperties,
+    private val linkIndexingService: LinkIndexingService,
 ) : com.jervis.service.indexing.AbstractContinuousIndexer<ConfluenceAccountDocument, com.jervis.entity.ConfluencePageDocument>() {
     override val indexerName: String = "ConfluenceContinuousIndexer"
     override val bufferSize: Int get() = flowProps.bufferSize
@@ -69,6 +72,25 @@ class ConfluenceContinuousIndexer(
             externalLinks = res.externalLinks,
             childPageIds = emptyList(),
         )
+
+        // Index links separately for better discoverability
+        val allLinks = res.internalLinks + res.externalLinks
+        if (allLinks.isNotEmpty()) {
+            logger.info { "CONFLUENCE_LINKS: Indexing ${allLinks.size} links from page ${item.pageId}" }
+            allLinks.forEach { url ->
+                runCatching {
+                    linkIndexingService.indexUrl(
+                        url = url,
+                        projectId = item.projectId,
+                        clientId = item.clientId,
+                        sourceType = RagSourceType.CONFLUENCE_LINK_CONTENT,
+                        parentRef = item.pageId,
+                    )
+                }.onFailure { e ->
+                    logger.warn { "Failed to index link $url from Confluence page ${item.pageId}: ${e.message}" }
+                }
+            }
+        }
 
         return IndexingResult(
             success = success,

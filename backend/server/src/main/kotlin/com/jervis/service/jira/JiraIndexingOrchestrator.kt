@@ -6,6 +6,7 @@ import com.jervis.domain.rag.RagSourceType
 import com.jervis.repository.mongo.JiraConnectionMongoRepository
 import com.jervis.repository.mongo.JiraIssueIndexMongoRepository
 import com.jervis.repository.mongo.ProjectMongoRepository
+import com.jervis.service.link.LinkIndexingService
 import com.jervis.service.rag.RagIndexingService
 import com.jervis.service.text.TextChunkingService
 import kotlinx.coroutines.Dispatchers
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.bson.types.ObjectId
+import org.jsoup.Jsoup
 import org.springframework.stereotype.Service
 import java.time.Instant
 
@@ -26,6 +28,8 @@ class JiraIndexingOrchestrator(
     private val connectionRepository: JiraConnectionMongoRepository,
     private val issueIndexRepository: JiraIssueIndexMongoRepository,
     private val textChunkingService: TextChunkingService,
+    private val linkIndexingService: LinkIndexingService,
+    private val jiraAttachmentIndexer: JiraAttachmentIndexer,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -88,7 +92,7 @@ class JiraIndexingOrchestrator(
                                     tenantHost,
                                 )
                             } else {
-                                // Deep: summary + comments
+                                // Deep: summary + comments + attachments
                                 indexIssueSummaryShallow(
                                     clientId,
                                     issue.key,
@@ -103,6 +107,13 @@ class JiraIndexingOrchestrator(
                                     clientId = clientId,
                                     issueKey = issue.key,
                                     project = projectKey,
+                                    tenantHost = tenantHost,
+                                )
+                                // Index attachments (screenshots, docs, logs, etc.)
+                                jiraAttachmentIndexer.indexIssueAttachments(
+                                    conn = connValid,
+                                    issueKey = issue.key,
+                                    clientId = clientId,
                                     tenantHost = tenantHost,
                                 )
                             }
@@ -188,7 +199,7 @@ class JiraIndexingOrchestrator(
 
         api.fetchIssueComments(conn, issueKey).collect { pair ->
             val commentId = pair.first
-            val body = pair.second
+            val body = pair.second // Already plain text (HTML was stripped in API client)
 
             if (!process) {
                 if (commentId == lastProcessedId) {
@@ -199,11 +210,25 @@ class JiraIndexingOrchestrator(
 
             if (body.isBlank()) return@collect
 
+            // Note: body is already plain text, but we need HTML to extract links properly
+            // The links are already stripped by stripHtml in StubJiraApiClient
+            // We'll extract URLs from the plain text as a workaround
+            val links = extractLinksFromText(body)
+
             val text =
                 buildString {
                     appendLine("Issue: $issueKey  Project: ${project.value}")
                     appendLine("CommentId: $commentId")
                     appendLine("Comment: $body")
+
+                    // Add links section for better searchability (similar to email indexing)
+                    if (links.isNotEmpty()) {
+                        appendLine()
+                        appendLine("--- Links in this comment ---")
+                        links.forEach { url ->
+                            appendLine("Link: $url")
+                        }
+                    }
                 }.trim()
 
             val chunks = textChunkingService.splitText(text)
@@ -225,6 +250,23 @@ class JiraIndexingOrchestrator(
                         chunkOf = chunks.size,
                     )
                 ragIndexingService.indexDocument(rag, com.jervis.domain.model.ModelTypeEnum.EMBEDDING_TEXT)
+            }
+
+            // Index links separately
+            if (links.isNotEmpty()) {
+                links.forEach { url ->
+                    runCatching {
+                        linkIndexingService.indexUrl(
+                            url = url,
+                            projectId = null,
+                            clientId = clientId,
+                            sourceType = RagSourceType.JIRA_LINK_CONTENT,
+                            parentRef = issueKey,
+                        )
+                    }.onFailure { e ->
+                        logger.warn { "Failed to index link $url from Jira comment $commentId: ${e.message}" }
+                    }
+                }
             }
 
             lastProcessedId = commentId
@@ -254,5 +296,14 @@ class JiraIndexingOrchestrator(
             issueIndexRepository.save(newDoc)
             logger.info { "JIRA_INDEX: Stored $processedCount new comments for $issueKey" }
         }
+    }
+
+    /**
+     * Extract URLs from plain text.
+     * Used for Jira comments where HTML has already been stripped.
+     */
+    private fun extractLinksFromText(text: String): List<String> {
+        val urlPattern = Regex("""https?://[^\s<>"{}|\\^`\[\]]+""")
+        return urlPattern.findAll(text).map { it.value }.distinct().toList()
     }
 }

@@ -70,6 +70,15 @@ enum class RagSourceType {
     /** Jira issues and comments */
     JIRA,
 
+    /** Link content from Jira comments */
+    JIRA_LINK_CONTENT,
+
+    /** Jira issue attachments extracted via Tika */
+    JIRA_ATTACHMENT,
+
     /** Confluence documentation pages */
     CONFLUENCE_PAGE,
+
+    /** Link content from Confluence pages */
+    CONFLUENCE_LINK_CONTENT,
 }
