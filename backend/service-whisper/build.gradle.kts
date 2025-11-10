@@ -25,7 +25,13 @@ dependencies {
     implementation(libs.kotlinx.coroutines.reactor)
     implementation(libs.kotlin.stdlib)
     implementation(libs.kotlin.reflect)
-    implementation(libs.kotlinx.serialization.json)
+
+    // Force correct kotlinx-serialization version (Spring Boot BOM has older version)
+    implementation(libs.kotlinx.serialization.json) {
+        version {
+            strictly(libs.versions.serialization.get())
+        }
+    }
 
     testImplementation(libs.junit.jupiter)
 }
