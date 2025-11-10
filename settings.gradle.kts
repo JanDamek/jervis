@@ -30,11 +30,19 @@ includeBuild("shared/common-dto") {
     }
 }
 
-include(
-    ":shared:common-api",
-    ":shared:domain",
-    ":shared:ui-common"
-)
+// Shared modules - skip ui-common in Docker build (requires Compose plugin)
+if (System.getenv("DOCKER_BUILD") != "true") {
+    include(
+        ":shared:common-api",
+        ":shared:domain",
+        ":shared:ui-common"
+    )
+} else {
+    include(
+        ":shared:common-api",
+        ":shared:domain"
+    )
+}
 
 // Backend modules (JVM-only)
 include(
@@ -45,8 +53,10 @@ include(
     ":backend:service-whisper"
 )
 
-// Application launchers
-include(
-    ":apps:desktop",
-    ":apps:mobile"
-)
+// Application launchers - skip in Docker build
+if (System.getenv("DOCKER_BUILD") != "true") {
+    include(
+        ":apps:desktop",
+        ":apps:mobile"
+    )
+}

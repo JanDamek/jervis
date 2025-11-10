@@ -47,12 +47,12 @@ kotlin {
 
 android {
     namespace = "com.jervis.mobile"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.jervis.mobile"
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0.0"
     }

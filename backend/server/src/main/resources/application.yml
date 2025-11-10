@@ -91,11 +91,11 @@ models: # embedding dimensions configured per model
       context-length: 32768
       num-predict: 4096
       concurrency: 1
-    - provider: GOOGLE
-      model: gemini-2.5-pro-latest
-      context-length: 1048576
-      num-predict: 65536
-      concurrency: 1
+#    - provider: GOOGLE
+#      model: gemini-2.5-pro-latest
+#      context-length: 1048576
+#      num-predict: 65536
+#      concurrency: 1
 
   CODER:
     - provider: OLLAMA
@@ -104,11 +104,11 @@ models: # embedding dimensions configured per model
       num-predict: 4096
       quick: false
       concurrency: 1
-    - provider: GOOGLE
-      model: gemini-2.5-pro-latest
-      context-length: 1048576
-      num-predict: 65536
-      concurrency: 1
+#    - provider: GOOGLE
+#      model: gemini-2.5-pro-latest
+#      context-length: 1048576
+#      num-predict: 65536
+#      concurrency: 1
 
   PLANNER:
     - provider: OLLAMA
@@ -116,11 +116,11 @@ models: # embedding dimensions configured per model
       context-length: 32768
       num-predict: 8192
       concurrency: 1
-    - provider: GOOGLE
-      model: gemini-2.5-pro-latest
-      context-length: 1048576
-      num-predict: 65536
-      concurrency: 1
+#    - provider: GOOGLE
+#      model: gemini-2.5-pro-latest
+#      context-length: 1048576
+#      num-predict: 65536
+#      concurrency: 1
 
   JOERN:
     - provider: OLLAMA
@@ -135,11 +135,11 @@ models: # embedding dimensions configured per model
       context-length: 32768
       num-predict: 4096
       concurrency: 1
-    - provider: GOOGLE
-      model: gemini-2.5-pro-latest
-      context-length: 1048576
-      num-predict: 65536
-      concurrency: 1
+#    - provider: GOOGLE
+#      model: gemini-2.5-pro-latest
+#      context-length: 1048576
+#      num-predict: 65536
+#      concurrency: 1
 
   GENERIC_CODE_MODEL:
     - provider: OLLAMA
@@ -147,11 +147,11 @@ models: # embedding dimensions configured per model
       context-length: 32768
       num-predict: 8192
       concurrency: 1
-    - provider: GOOGLE
-      model: gemini-2.5-pro-latest
-      context-length: 1048576
-      concurrency: 1
-      num-predict: 65536
+#    - provider: GOOGLE
+#      model: gemini-2.5-pro-latest
+#      context-length: 1048576
+#      concurrency: 1
+#      num-predict: 65536
 
   # Heavy models - BATCH PROCESSING ONLY due to P40 VRAM limitations
   HEAVY_TEXT_MODEL:
@@ -161,16 +161,16 @@ models: # embedding dimensions configured per model
       num-predict: 8192
       quick: false
       concurrency: 1
-    - provider: GOOGLE
-      model: gemini-2.5-pro-latest
-      context-length: 1048576
-      num-predict: 65536
-      concurrency: 1
-    - provider: OPENAI
-      model: gpt-4o
-      context-length: 16384
-      quick: false
-      concurrency: 1
+#    - provider: GOOGLE
+#      model: gemini-2.5-pro-latest
+#      context-length: 1048576
+#      num-predict: 65536
+#      concurrency: 1
+#    - provider: OPENAI
+#      model: gpt-4o
+#      context-length: 16384
+#      quick: false
+#      concurrency: 1
 
   HEAVY_CODE_MODEL:
     - provider: OLLAMA
@@ -179,11 +179,11 @@ models: # embedding dimensions configured per model
       num-predict: 8192
       quick: false
       concurrency: 1
-    - provider: GOOGLE
-      model: gemini-2.5-pro-latest
-      context-length: 1048576
-      num-predict: 65536
-      concurrency: 1
+#    - provider: GOOGLE
+#      model: gemini-2.5-pro-latest
+#      context-length: 1048576
+#      num-predict: 65536
+#      concurrency: 1
 
   QUICK:
     - provider: OLLAMA_QUALIFIER
@@ -201,13 +201,13 @@ models: # embedding dimensions configured per model
 endpoints:
   openai:
     api-key: ${OPENAI_API_KEY}
-    base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1/}
+    base-url: https://api.openai.com/v1/
   anthropic:
     api-key: ${ANTHROPIC_API_KEY}
-    base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com/}
+    base-url: https://api.anthropic.com/
   google:
     api-key: ${GOOGLE_API_KEY}
-    base-url: ${GOOGLE_BASE_URL:https://generativelanguage.googleapis.com/}
+    base-url: https://generativelanguage.googleapis.com/
   ollama:
     primary:
       base-url: ${OLLAMA_BASE_URL:http://192.168.100.117:11434/}

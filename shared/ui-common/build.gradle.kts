@@ -1,8 +1,10 @@
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.compose.multiplatform)
-    alias(libs.plugins.compose.compiler)
+    if (System.getenv("DOCKER_BUILD") != "true") {
+        alias(libs.plugins.android.library)
+        alias(libs.plugins.compose.multiplatform)
+        alias(libs.plugins.compose.compiler)
+    }
     alias(libs.plugins.kotlin.serialization)
 }
 
@@ -14,10 +16,14 @@ kotlin {
 
     // Targets
     jvm()           // JVM (Desktop + Server)
-    androidTarget()
-    iosX64()
-    iosArm64()
-    iosSimulatorArm64()
+
+    // Only configure Android and iOS targets when not building in Docker
+    if (System.getenv("DOCKER_BUILD") != "true") {
+        androidTarget()
+        iosX64()
+        iosArm64()
+        iosSimulatorArm64()
+    }
 
     // Opt-in for experimental APIs
     sourceSets.all {
@@ -29,36 +35,12 @@ kotlin {
             // Domain layer (repositories, services)
             api(project(":shared:domain"))
 
-            // Compose Multiplatform
-            implementation(compose.runtime)
-            implementation(compose.foundation)
-            implementation(compose.material3)
-            implementation(compose.ui)
-            implementation(compose.components.resources)
-            implementation(compose.components.uiToolingPreview)
-
             // Kotlin coroutines
             implementation(libs.kotlinx.coroutines.core)
 
             // Kotlinx serialization
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.datetime)
-
-            // Lifecycle ViewModel (Compose Multiplatform)
-            implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4")
-        }
-
-        jvmMain.dependencies {
-            implementation(compose.desktop.common)
-        }
-
-        androidMain.dependencies {
-            implementation("androidx.activity:activity-compose:1.9.3")
-            implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
-        }
-
-        iosMain.dependencies {
-            // iOS specific dependencies
         }
 
         commonTest.dependencies {
@@ -68,20 +50,56 @@ kotlin {
     }
 }
 
-android {
-    namespace = "com.jervis.ui"
-    compileSdk = 35
+// Only add Compose dependencies when not building in Docker (requires Compose plugin)
+if (System.getenv("DOCKER_BUILD") != "true") {
+    kotlin {
+        sourceSets {
+            commonMain.dependencies {
+                // Compose Multiplatform (only when not in Docker)
+                implementation(compose.runtime)
+                implementation(compose.foundation)
+                implementation(compose.material3)
+                implementation(compose.ui)
+                implementation(compose.components.resources)
+                implementation(compose.components.uiToolingPreview)
 
-    defaultConfig {
-        minSdk = 24
+                // Lifecycle ViewModel (Compose Multiplatform)
+                implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4")
+            }
+
+            jvmMain.dependencies {
+                implementation(compose.desktop.common)
+            }
+
+            androidMain.dependencies {
+                implementation("androidx.activity:activity-compose:1.9.3")
+                implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
+            }
+
+            iosMain.dependencies {
+                // iOS specific dependencies
+            }
+        }
     }
+}
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
-    }
+// Only configure Android when not building in Docker
+if (System.getenv("DOCKER_BUILD") != "true") {
+    configure<com.android.build.gradle.LibraryExtension> {
+        namespace = "com.jervis.ui"
+        compileSdk = 35
 
-    buildFeatures {
-        compose = true
+        defaultConfig {
+            minSdk = 24
+        }
+
+        compileOptions {
+            sourceCompatibility = JavaVersion.VERSION_21
+            targetCompatibility = JavaVersion.VERSION_21
+        }
+
+        buildFeatures {
+            compose = true
+        }
     }
 }

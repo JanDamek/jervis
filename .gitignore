@@ -12,6 +12,10 @@
 /**/build/
 /build
 .kotlin/
+/*.jar
+/*/*.jar
+/**/*.jar
+/**/*/*.jar
 
 # Joern analysis artifacts
 /.joern/

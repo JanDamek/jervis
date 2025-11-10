@@ -1,7 +1,9 @@
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.android.library)
+    if (System.getenv("DOCKER_BUILD") != "true") {
+        alias(libs.plugins.android.library)
+    }
 }
 
 group = "com.jervis"
@@ -12,10 +14,14 @@ kotlin {
 
     // Targets
     jvm()           // JVM (Desktop + Server)
-    androidTarget() // Android
-    iosX64()
-    iosArm64()
-    iosSimulatorArm64()
+
+    // Only configure Android and iOS targets when not building in Docker
+    if (System.getenv("DOCKER_BUILD") != "true") {
+        androidTarget() // Android
+        iosX64()
+        iosArm64()
+        iosSimulatorArm64()
+    }
 
     sourceSets {
         commonMain.dependencies {
@@ -39,12 +45,14 @@ kotlin {
             implementation(libs.ktor.client.cio)
         }
 
-        androidMain.dependencies {
-            implementation(libs.ktor.client.cio)
-        }
+        if (System.getenv("DOCKER_BUILD") != "true") {
+            androidMain.dependencies {
+                implementation(libs.ktor.client.cio)
+            }
 
-        iosMain.dependencies {
-            implementation(libs.ktor.client.darwin)
+            iosMain.dependencies {
+                implementation(libs.ktor.client.darwin)
+            }
         }
 
         commonTest.dependencies {
@@ -54,16 +62,19 @@ kotlin {
     }
 }
 
-android {
-    namespace = "com.jervis.domain"
-    compileSdk = 35
+// Only configure Android when not building in Docker
+if (System.getenv("DOCKER_BUILD") != "true") {
+    configure<com.android.build.gradle.LibraryExtension> {
+        namespace = "com.jervis.domain"
+        compileSdk = 35
 
-    defaultConfig {
-        minSdk = 24
-    }
+        defaultConfig {
+            minSdk = 24
+        }
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
+        compileOptions {
+            sourceCompatibility = JavaVersion.VERSION_21
+            targetCompatibility = JavaVersion.VERSION_21
+        }
     }
 }

@@ -3,18 +3,29 @@
 # - Evaluates Gradle task to deterministically get Joern version
 # - This layer only changes when Gradle configuration changes
 # ============================================
-FROM gradle:8.5-jdk21 AS joern-version
+FROM gradle:9.1.0-jdk21-corretto AS joern-version
 
 WORKDIR /app
 
 # Copy only the minimal Gradle files required to evaluate the joern version task
-COPY settings.gradle.kts build.gradle.kts ./
+COPY settings.gradle.kts build.gradle.kts gradle.properties ./
 COPY gradle gradle/
-COPY server/build.gradle.kts server/build.gradle.kts
+# Need to copy build.gradle.kts files for all modules included in settings (except ui-common)
+# Also copy common-dto since it's an includeBuild
+COPY shared/common-dto/build.gradle.kts shared/common-dto/build.gradle.kts
+COPY shared/common-api/build.gradle.kts shared/common-api/build.gradle.kts
+COPY shared/domain/build.gradle.kts shared/domain/build.gradle.kts
+COPY backend/common-services/build.gradle.kts backend/common-services/build.gradle.kts
+COPY backend/server/build.gradle.kts backend/server/build.gradle.kts
+COPY backend/service-tika/build.gradle.kts backend/service-tika/build.gradle.kts
+COPY backend/service-joern/build.gradle.kts backend/service-joern/build.gradle.kts
+COPY backend/service-whisper/build.gradle.kts backend/service-whisper/build.gradle.kts
 
 # Calculate Joern version once; this layer is stable unless Gradle files change
-RUN JOERN_VERSION=$(gradle -q :server:printJoernVersion --no-daemon) \
-    && echo "$JOERN_VERSION" > /joern-version.txt
+# Set DOCKER_BUILD to skip app modules and ui-common in settings.gradle.kts
+RUN export DOCKER_BUILD=true && \
+    JOERN_VERSION=$(gradle -q :backend:server:printJoernVersion --no-daemon) && \
+    echo "$JOERN_VERSION" > /joern-version.txt
 
 # ============================================
 # Stage: Download and install Joern (rebuilds only if version changes)
@@ -38,7 +49,7 @@ RUN apk add --no-cache \
 # ============================================
 # Stage: Build the application (always part of image creation)
 # ============================================
-FROM gradle:8.5-jdk21 AS builder
+FROM gradle:9.1.0-jdk21-corretto AS builder
 
 WORKDIR /app
 
@@ -46,30 +57,47 @@ WORKDIR /app
 COPY gradle gradle/
 COPY gradlew gradlew.bat gradle.properties ./
 
-# Copy and build common-dto (KMP module) to Maven Local first
-COPY common-dto common-dto/
-RUN cd common-dto && \
-    gradle jvmJar publishToMavenLocal --no-daemon && \
-    cd ..
-
 # Copy root Gradle files for main build
 COPY build.gradle.kts settings.gradle.kts ./
 
-# Copy sources
-COPY common-api common-api/
-COPY common-services common-services/
-COPY server server/
-COPY service-tika service-tika/
-COPY service-joern service-joern/
-COPY service-whisper service-whisper/
+# Copy common-dto (needed as includeBuild dependency)
+COPY shared/common-dto shared/common-dto/
 
-# Build required modules (skip tests for speed)
-RUN gradle -x test --no-daemon :server:bootJar :service-tika:bootJar :service-joern:bootJar :service-whisper:bootJar
+# Copy shared modules (skip ui-common - not needed for backend)
+COPY shared/common-api shared/common-api/
+COPY shared/domain shared/domain/
+
+# Copy backend modules
+COPY backend/common-services backend/common-services/
+COPY backend/server backend/server/
+COPY backend/service-tika backend/service-tika/
+COPY backend/service-joern backend/service-joern/
+COPY backend/service-whisper backend/service-whisper/
+
+# Build backend modules one by one to reduce memory pressure
+# Set DOCKER_BUILD env var to skip iOS/Android targets and Compose dependencies
+# Use lower memory settings and build services sequentially
+RUN DOCKER_BUILD=true GRADLE_OPTS="-Xmx1g -XX:MaxMetaspaceSize=512m" \
+    gradle -x test --no-daemon \
+    :backend:common-services:jar \
+    :backend:service-tika:bootJar \
+    && rm -rf /root/.gradle/caches/build-cache-*
+
+RUN DOCKER_BUILD=true GRADLE_OPTS="-Xmx1g -XX:MaxMetaspaceSize=512m" \
+    gradle -x test --no-daemon \
+    :backend:service-joern:bootJar \
+    :backend:service-whisper:bootJar \
+    && rm -rf /root/.gradle/caches/build-cache-*
+
+RUN DOCKER_BUILD=true GRADLE_OPTS="-Xmx1g -XX:MaxMetaspaceSize=512m" \
+    gradle -x test --no-daemon \
+    :backend:server:bootJar \
+    && rm -rf /root/.gradle/caches/build-cache-*
 
 # ============================================
 # Stage: TiKa base (rarely changes)
 # ============================================
-FROM eclipse-temurin:21-jre AS tika-base
+FROM eclipse-temurin:21-jdk-jammy AS tika-base
 
 # Install required tools and TiKa dependencies
 RUN apt-get update && \
@@ -113,10 +141,10 @@ ENV TIKA_OCR_TIMEOUT_MS=120000
 # Stage: Final images for each service
 # ============================================
 
-# ---------- Final image: jervis-tima
+# ---------- Final image: jervis-tika
 FROM tika-base AS runtime-tika
 WORKDIR /opt/jervis
-COPY --from=builder /app/service-tika/build/libs/*.jar app.jar
+COPY --from=builder /app/backend/service-tika/build/libs/*.jar app.jar
 ENV SERVER_PORT=8080 JAVA_OPTS="-Xmx2g -Xms512m" WORK_DATA=/opt/jervis/work
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
@@ -124,13 +152,15 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
 ENTRYPOINT ["sh", "-c", "WD=${WORK_DATA}; if [ -z \"$WD\" ]; then WD=$(printenv WORK-DATA || true); fi; if [ -z \"$WD\" ]; then WD=/opt/jervis/work; fi; mkdir -p $WD && java ${JAVA_OPTS} -Djava.io.tmpdir=$WD -jar /opt/jervis/app.jar"]
 
 # ---------- Final image: jervis-joern
-FROM eclipse-temurin:21-jre AS runtime-joern
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+FROM eclipse-temurin:21-jre-jammy AS runtime-joern
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
 ENV JOERN_HOME=/opt/joern
 COPY --from=joern-install /opt/joern ${JOERN_HOME}
 ENV PATH="${JOERN_HOME}/joern-cli:${PATH}"
 WORKDIR /opt/jervis
-COPY --from=builder /app/service-joern/build/libs/*.jar app.jar
+COPY --from=builder /app/backend/service-joern/build/libs/*.jar app.jar
 ENV SERVER_PORT=8080 JAVA_OPTS="-Xmx2g -Xms512m" WORK_DATA=/opt/jervis/work
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
@@ -138,9 +168,10 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
 ENTRYPOINT ["sh", "-c", "mkdir -p ${WORK_DATA} && java ${JAVA_OPTS} -Djava.io.tmpdir=${WORK_DATA} -jar /opt/jervis/app.jar"]
 
 # ---------- Whisper base (simple runtime)
-FROM eclipse-temurin:21-jre AS whisper-base
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    python3 python3-venv ffmpeg libgomp1 ca-certificates curl \
+FROM eclipse-temurin:21-jre-jammy AS whisper-base
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    python3 python3-venv python3-pip ffmpeg libgomp1 ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 ENV VIRTUAL_ENV=/opt/venv
 RUN python3 -m venv "$VIRTUAL_ENV"
@@ -153,7 +184,7 @@ RUN python -c "import faster_whisper, sys; print('faster-whisper', faster_whispe
 # ---------- Final image: jervis-whisper
 FROM whisper-base AS runtime-whisper
 WORKDIR /opt/jervis
-COPY --from=builder /app/service-whisper/build/libs/*.jar app.jar
+COPY --from=builder /app/backend/service-whisper/build/libs/*.jar app.jar
 ENV SERVER_PORT=8080 JAVA_OPTS="-Xmx2g -Xms512m" WORK_DATA=/opt/jervis/work
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
@@ -188,7 +219,7 @@ ENTRYPOINT ["/bin/weaviate"]
 CMD ["--host", "0.0.0.0", "--port", "8080", "--scheme", "http"]
 
 # ---------- Final image: jervis-server (orchestrator)
-FROM eclipse-temurin:21-jre AS runtime-server
+FROM eclipse-temurin:21-jre-jammy AS runtime-server
 
 # Ensure required CLI tools are available for Git-based operations executed by server tools
 RUN apt-get update && \
@@ -200,7 +231,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/jervis
-COPY --from=builder /app/server/build/libs/*.jar app.jar
+COPY --from=builder /app/backend/server/build/libs/*.jar app.jar
 ENV SERVER_PORT=5500 JAVA_OPTS="-Xmx4g -Xms1g" DATA_ROOT_DIR=/opt/jervis/data WORK_DATA=/opt/jervis/work
 EXPOSE 5500
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
