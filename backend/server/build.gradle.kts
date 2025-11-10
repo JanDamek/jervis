@@ -12,6 +12,15 @@ java {
     }
 }
 
+configurations.all {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "org.jetbrains.kotlinx" && requested.name.startsWith("kotlinx-serialization")) {
+            useVersion(libs.versions.serialization.get())
+            because("Spring Boot BOM has outdated version; align with Ktor requirements")
+        }
+    }
+}
+
 configurations.configureEach {
     exclude(group = "javax.activation", module = "activation")
     exclude(group = "com.sun.mail", module = "javax.mail")
@@ -19,6 +28,7 @@ configurations.configureEach {
 }
 
 dependencies {
+    implementation(enforcedPlatform("org.jetbrains.kotlinx:kotlinx-serialization-bom:${libs.versions.serialization.get()}"))
     implementation(platform("org.springframework.boot:spring-boot-dependencies:${libs.versions.spring.boot.get()}"))
 
     implementation(project(":shared:common-api"))
@@ -33,12 +43,7 @@ dependencies {
     implementation(libs.kotlin.stdlib)
     implementation(libs.kotlin.reflect)
 
-    // Force correct kotlinx-serialization version (Spring Boot BOM has older version)
-    implementation(libs.kotlinx.serialization.json) {
-        version {
-            strictly(libs.versions.serialization.get())
-        }
-    }
+    implementation(libs.kotlinx.serialization.json)
 
     // Ktor HTTP client for integrations
     implementation(libs.ktor.client.core)
