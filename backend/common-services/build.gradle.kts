@@ -15,7 +15,13 @@ dependencies {
 
     implementation(libs.kotlin.stdlib)
     implementation(libs.kotlin.reflect)
-    implementation(libs.kotlinx.serialization.json)
+
+    // Force correct kotlinx-serialization version (Spring Boot BOM has older version)
+    implementation(libs.kotlinx.serialization.json) {
+        version {
+            strictly(libs.versions.serialization.get())
+        }
+    }
 
     // Spring 6 HTTP interfaces annotations (@HttpExchange)
     implementation("org.springframework:spring-web")
