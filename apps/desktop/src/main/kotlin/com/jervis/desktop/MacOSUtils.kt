@@ -1,0 +1,77 @@
+package com.jervis.desktop
+
+import java.awt.Taskbar
+import javax.imageio.ImageIO
+
+/**
+ * Utilities for macOS-specific features like dock badge
+ */
+object MacOSUtils {
+    private val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
+    private var dockIconSet = false
+
+    /**
+     * Set dock icon (macOS only)
+     * Should be called at app startup
+     */
+    fun setDockIcon() {
+        if (!isMacOS || dockIconSet) return
+
+        try {
+            val iconStream = MacOSUtils::class.java.classLoader.getResourceAsStream("icons/jervis_icon.png")
+            val image = iconStream?.use { ImageIO.read(it) }
+
+            if (image != null && Taskbar.isTaskbarSupported()) {
+                val taskbar = Taskbar.getTaskbar()
+                if (taskbar.isSupported(Taskbar.Feature.ICON_IMAGE)) {
+                    taskbar.iconImage = image
+                    dockIconSet = true
+                    println("Dock icon set successfully")
+                }
+            }
+        } catch (e: Exception) {
+            println("Failed to set dock icon: ${e.message}")
+        }
+    }
+
+    /**
+     * Set dock badge count (macOS only)
+     * Shows a red badge with number on the dock icon
+     */
+    fun setDockBadgeCount(count: Int) {
+        if (!isMacOS) return
+
+        try {
+            if (Taskbar.isTaskbarSupported()) {
+                val taskbar = Taskbar.getTaskbar()
+                if (taskbar.isSupported(Taskbar.Feature.ICON_BADGE_TEXT)) {
+                    val text = if (count > 0) count.toString() else null
+                    // Use reflection to call setIconBadge (macOS-specific method)
+                    val method = taskbar.javaClass.methods.firstOrNull {
+                        it.name == "setIconBadge" && it.parameterCount == 1
+                    }
+                    method?.invoke(taskbar, text)
+                }
+            }
+        } catch (e: Exception) {
+            println("Failed to update dock badge: ${e.message}")
+        }
+    }
+
+    /**
+     * Show macOS system notification
+     */
+    fun showNotification(title: String, message: String) {
+        if (!isMacOS) return
+
+        try {
+            val cmd = arrayOf(
+                "osascript", "-e",
+                "display notification \"$message\" with title \"$title\""
+            )
+            Runtime.getRuntime().exec(cmd)
+        } catch (e: Exception) {
+            println("Failed to show notification: ${e.message}")
+        }
+    }
+}

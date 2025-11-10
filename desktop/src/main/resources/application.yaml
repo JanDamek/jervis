@@ -1,8 +1,0 @@
-spring:
-  main:
-    web-application-type: none
-    banner-mode: off
-
-jervis:
-  server:
-    url: http://192.168.100.117:5500
