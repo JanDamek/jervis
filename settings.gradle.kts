@@ -2,6 +2,7 @@ pluginManagement {
     repositories {
         gradlePluginPortal()
         mavenCentral()
+        google()
         maven("https://repo.spring.io/milestone")
         maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
         maven("https://jitpack.io")
@@ -13,6 +14,7 @@ dependencyResolutionManagement {
     repositories {
         mavenCentral()
         mavenLocal()
+        google()
         maven("https://repo.spring.io/milestone")
         maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
         maven("https://jitpack.io")
@@ -21,23 +23,30 @@ dependencyResolutionManagement {
 
 rootProject.name = "jervis"
 
-// Include common-dto as a composite build (KMP project) - only if directory exists
-// In Docker, common-dto is pre-built to mavenLocal before this stage
-val commonDtoDir = file("common-dto")
-if (commonDtoDir.exists() && commonDtoDir.isDirectory) {
-    includeBuild("common-dto") {
-        dependencySubstitution {
-            substitute(module("com.jervis:common-dto")).using(project(":"))
-        }
+// Shared modules (KMP) - common-dto as composite build for plugin isolation
+includeBuild("shared/common-dto") {
+    dependencySubstitution {
+        substitute(module("com.jervis:common-dto")).using(project(":"))
     }
 }
 
 include(
-    ":common-api",
-    ":server",
-    ":desktop",
-    ":common-services",
-    ":service-tika",
-    ":service-joern",
-    ":service-whisper",
+    ":shared:common-api",
+    ":shared:domain",
+    ":shared:ui-common"
+)
+
+// Backend modules (JVM-only)
+include(
+    ":backend:common-services",
+    ":backend:server",
+    ":backend:service-tika",
+    ":backend:service-joern",
+    ":backend:service-whisper"
+)
+
+// Application launchers
+include(
+    ":apps:desktop",
+    ":apps:mobile"
 )

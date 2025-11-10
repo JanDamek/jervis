@@ -1,0 +1,43 @@
+package com.jervis.ui
+
+import androidx.compose.runtime.*
+import com.jervis.di.createJervisServices
+import com.jervis.repository.JervisRepository
+
+/**
+ * Main Jervis Application Composable
+ * Shared across Desktop, Android, iOS
+ *
+ * @param serverBaseUrl Base URL of the Jervis server (e.g., "http://localhost:5500")
+ * @param defaultClientId Optional default client ID
+ * @param defaultProjectId Optional default project ID
+ */
+@Composable
+fun JervisApp(
+    serverBaseUrl: String,
+    defaultClientId: String? = null,
+    defaultProjectId: String? = null,
+) {
+    // Initialize services
+    val services = remember { createJervisServices(serverBaseUrl) }
+
+    // Create repository
+    val repository = remember {
+        JervisRepository(
+            clientService = services.clientService,
+            projectService = services.projectService,
+            userTaskService = services.userTaskService,
+            ragSearchService = services.ragSearchService,
+            taskSchedulingService = services.taskSchedulingService,
+            agentOrchestratorService = services.agentOrchestratorService,
+            errorLogService = services.errorLogService,
+        )
+    }
+
+    // Launch main app
+    App(
+        repository = repository,
+        defaultClientId = defaultClientId,
+        defaultProjectId = defaultProjectId,
+    )
+}

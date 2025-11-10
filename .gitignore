@@ -1,12 +1,15 @@
 # Project exclude paths
 .idea
 .gradle
-
+/.gradle
+/*/.gradle
+/**/.gradle
 *.iml
 
 /target/
 /logs/
 /*/build/
+/**/build/
 /build
 .kotlin/
 
@@ -20,3 +23,8 @@
 /server/logs/
 /python-LoRA/
 /python-workspace/
+/.kotlin/
+/buildSrc/
+/build/
+/shared/ui-common/build/
+/apps/desktop/build/
