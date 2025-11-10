@@ -12,6 +12,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
+import org.bson.types.ObjectId
 import java.time.Instant
 
 private val logger = KotlinLogging.logger {}
@@ -152,13 +153,31 @@ class TaskCreateUserTaskTool(
                     }
                 }
 
+            // Determine effective projectId: default from plan, but allow email-scoped override
+            var effectiveProjectId: ObjectId? = plan.projectId
+            if (sourceType == TaskSourceType.EMAIL) {
+                // support multiple metadata key variants that might be provided by external tools
+                val projectScopedFlag =
+                    enrichedMetadata["projectScoped"] ?: enrichedMetadata["email.projectScoped"] ?: "false"
+                val projectIdHex =
+                    enrichedMetadata["projectId"] ?: enrichedMetadata["emailProjectId"] ?: enrichedMetadata["email.projectId"]
+
+                if (projectScopedFlag.equals("true", ignoreCase = true) && !projectIdHex.isNullOrBlank()) {
+                    try {
+                        effectiveProjectId = ObjectId(projectIdHex)
+                    } catch (e: Exception) {
+                        logger.warn(e) { "Invalid projectId in metadata: $projectIdHex - falling back to plan.projectId" }
+                    }
+                }
+            }
+
             val task =
                 userTaskService.createTask(
                     title = request.title,
                     description = combinedDescription,
                     priority = priority,
                     dueDate = dueDate,
-                    projectId = plan.projectId,
+                    projectId = effectiveProjectId,
                     clientId = plan.clientId,
                     sourceType = sourceType,
                     sourceUri = request.sourceUri,
