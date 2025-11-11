@@ -37,6 +37,7 @@ class ConfluencePollingScheduler(
     private val accountRepository: ConfluenceAccountMongoRepository,
     private val confluenceApiClient: ConfluenceApiClient,
     private val stateManager: ConfluencePageStateManager,
+    private val configCache: com.jervis.service.cache.ClientProjectConfigCache,
 ) {
     /**
      * Poll next Confluence account (oldest lastPolledAt first).
@@ -166,12 +167,21 @@ class ConfluencePollingScheduler(
                     // Construct page URL
                     val pageUrl = "${account.siteUrl}/wiki/spaces/$spaceKey/pages/${page.id}"
 
+                    // Determine projectId: check space mapping first, fallback to account.projectId
+                    val projectId =
+                        try {
+                            configCache.getProjectForConfluenceSpace(account.clientId, spaceKey) ?: account.projectId
+                        } catch (e: Exception) {
+                            logger.warn(e) { "Failed to load Confluence space mapping from cache, using account projectId" }
+                            account.projectId
+                        }
+
                     // Save or update page, returns true if NEW/changed
                     val isNewOrChanged =
                         stateManager.saveOrUpdatePage(
                             accountId = account.id,
                             clientId = account.clientId,
-                            projectId = account.projectId,
+                            projectId = projectId,
                             spaceKey = spaceKey,
                             page = page,
                             url = pageUrl,

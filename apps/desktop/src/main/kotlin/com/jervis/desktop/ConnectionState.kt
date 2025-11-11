@@ -64,6 +64,10 @@ class ConnectionManager(private val serverBaseUrl: String) {
                     taskSchedulingService = services!!.taskSchedulingService,
                     agentOrchestratorService = services!!.agentOrchestratorService,
                     errorLogService = services!!.errorLogService,
+                    integrationSettingsService = services!!.integrationSettingsService,
+                    gitConfigurationService = services!!.gitConfigurationService,
+                    jiraSetupService = services!!.jiraSetupService,
+                    emailAccountService = services!!.emailAccountService,
                 )
 
                 // Try a simple test call to verify connectivity

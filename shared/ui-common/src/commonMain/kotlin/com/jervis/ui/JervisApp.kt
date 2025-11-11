@@ -31,6 +31,10 @@ fun JervisApp(
             taskSchedulingService = services.taskSchedulingService,
             agentOrchestratorService = services.agentOrchestratorService,
             errorLogService = services.errorLogService,
+            integrationSettingsService = services.integrationSettingsService,
+            gitConfigurationService = services.gitConfigurationService,
+            jiraSetupService = services.jiraSetupService,
+            emailAccountService = services.emailAccountService,
         )
     }
 

@@ -12,20 +12,23 @@ import java.time.Instant
 @Service
 class ClientService(
     private val clientRepository: ClientMongoRepository,
+    private val configCache: com.jervis.service.cache.ClientProjectConfigCache,
 ) {
     private val logger = KotlinLogging.logger {}
 
     suspend fun create(clientName: String): ClientDocument {
         val document = ClientDocument(name = clientName)
         val saved = clientRepository.save(document)
-        logger.info { "Created client ${saved.name}" }
+        configCache.invalidateAll()
+        logger.info { "Created client ${saved.name}, cache invalidated" }
         return saved
     }
 
     suspend fun create(client: ClientDocument): ClientDocument {
         val newClient = client.copy(id = ObjectId.get(), createdAt = Instant.now(), updatedAt = Instant.now())
         val saved = clientRepository.save(newClient)
-        logger.info { "Created client ${saved.name} with id ${saved.id}" }
+        configCache.invalidateAll()
+        logger.info { "Created client ${saved.name} with id ${saved.id}, cache invalidated" }
         return saved
     }
 
@@ -88,7 +91,8 @@ class ClientService(
             )
 
         val updated = clientRepository.save(merged)
-        logger.info { "Updated client ${updated.name}" }
+        configCache.invalidateAll()
+        logger.info { "Updated client ${updated.name}, cache invalidated" }
         return updated
     }
 
@@ -96,7 +100,8 @@ class ClientService(
         val existing =
             clientRepository.findById(id) ?: return
         clientRepository.delete(existing)
-        logger.info { "Deleted client ${existing.name}" }
+        configCache.invalidateAll()
+        logger.info { "Deleted client ${existing.name}, cache invalidated" }
     }
 
     suspend fun list(): List<ClientDocument> = clientRepository.findAll().map { it }.toList()

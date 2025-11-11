@@ -3,6 +3,8 @@ package com.jervis.desktop.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -141,6 +143,7 @@ fun ProjectsWindow(repository: JervisRepository) {
     if (showCreateDialog || selectedProject != null) {
         ProjectDialog(
             project = selectedProject,
+            repository = repository,
             onDismiss = {
                 showCreateDialog = false
                 selectedProject = null
@@ -206,20 +209,69 @@ private fun ProjectCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProjectDialog(
     project: ProjectDto?,
+    repository: JervisRepository,
     onDismiss: () -> Unit,
     onSave: (ProjectDto) -> Unit
 ) {
     var name by remember { mutableStateOf(project?.name ?: "") }
     var clientId by remember { mutableStateOf(project?.clientId ?: "") }
 
+    // Integration overrides state
+    var showIntegrationSection by remember { mutableStateOf(false) }
+    var jiraProjectKey by remember { mutableStateOf("") }
+    var confluenceSpaceKey by remember { mutableStateOf("") }
+    var confluenceRootPageId by remember { mutableStateOf("") }
+    var availableJiraProjects by remember { mutableStateOf<List<com.jervis.dto.jira.JiraProjectRefDto>>(emptyList()) }
+    var isLoadingIntegrations by remember { mutableStateOf(false) }
+    var integrationMessage by remember { mutableStateOf<String?>(null) }
+
+    val scope = rememberCoroutineScope()
+
+    // Load integration status when project is being edited
+    LaunchedEffect(project?.id, showIntegrationSection) {
+        if (project != null && showIntegrationSection && !isLoadingIntegrations) {
+            isLoadingIntegrations = true
+            integrationMessage = null
+
+            // Load project status
+            runCatching {
+                val status = repository.integrationSettings.getProjectStatus(project.id)
+                jiraProjectKey = status.overrideJiraProjectKey ?: ""
+                confluenceSpaceKey = status.overrideConfluenceSpaceKey ?: ""
+                confluenceRootPageId = status.overrideConfluenceRootPageId ?: ""
+            }.onFailure { e ->
+                integrationMessage = "Failed to load project status: ${e.message}"
+            }
+
+            // Load available Jira projects
+            if (clientId.isNotEmpty()) {
+                runCatching {
+                    availableJiraProjects = repository.jiraSetup.listProjects(clientId)
+                }.onFailure { e ->
+                    integrationMessage = "Failed to load Jira projects: ${e.message}"
+                }
+            }
+
+            isLoadingIntegrations = false
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (project == null) "Create Project" else "Edit Project") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 600.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Basic Info Section
+                Text("Basic Information", style = MaterialTheme.typography.titleSmall)
+
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -230,8 +282,128 @@ private fun ProjectDialog(
                     value = clientId,
                     onValueChange = { clientId = it },
                     label = { Text("Client ID") },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = project == null // Don't allow changing client after creation
                 )
+
+                // Integration Overrides Section (only for existing projects)
+                if (project != null) {
+                    HorizontalDivider()
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Integration Overrides", style = MaterialTheme.typography.titleSmall)
+                        IconButton(onClick = { showIntegrationSection = !showIntegrationSection }) {
+                            Icon(
+                                if (showIntegrationSection) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                contentDescription = if (showIntegrationSection) "Collapse" else "Expand"
+                            )
+                        }
+                    }
+
+                    if (showIntegrationSection) {
+                        if (isLoadingIntegrations) {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                            }
+                        } else {
+                            Text(
+                                "Map this project to specific Jira projects and Confluence spaces",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            // Jira Project Dropdown
+                            Text("Jira Project", style = MaterialTheme.typography.labelMedium)
+
+                            var jiraExpanded by remember { mutableStateOf(false) }
+
+                            ExposedDropdownMenuBox(
+                                expanded = jiraExpanded,
+                                onExpandedChange = { jiraExpanded = it }
+                            ) {
+                                OutlinedTextField(
+                                    value = if (jiraProjectKey.isBlank()) "None - use client default" else jiraProjectKey,
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text("Jira Project (optional)") },
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = jiraExpanded) },
+                                    modifier = Modifier.fillMaxWidth().menuAnchor()
+                                )
+
+                                ExposedDropdownMenu(
+                                    expanded = jiraExpanded,
+                                    onDismissRequest = { jiraExpanded = false }
+                                ) {
+                                    // Clear option
+                                    DropdownMenuItem(
+                                        text = { Text("None (use client default)") },
+                                        onClick = {
+                                            jiraProjectKey = ""
+                                            jiraExpanded = false
+                                        }
+                                    )
+
+                                    // Available projects
+                                    availableJiraProjects.forEach { jiraProject ->
+                                        DropdownMenuItem(
+                                            text = { Text("${jiraProject.key}: ${jiraProject.name}") },
+                                            onClick = {
+                                                jiraProjectKey = jiraProject.key
+                                                jiraExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Confluence Space
+                            Text("Confluence Space", style = MaterialTheme.typography.labelMedium)
+                            OutlinedTextField(
+                                value = confluenceSpaceKey,
+                                onValueChange = { confluenceSpaceKey = it },
+                                label = { Text("Space Key (optional)") },
+                                modifier = Modifier.fillMaxWidth(),
+                                placeholder = { Text("e.g., PROJ") },
+                                supportingText = { Text("Leave empty to use client default") }
+                            )
+
+                            OutlinedTextField(
+                                value = confluenceRootPageId,
+                                onValueChange = { confluenceRootPageId = it },
+                                label = { Text("Root Page ID (optional)") },
+                                modifier = Modifier.fillMaxWidth(),
+                                placeholder = { Text("e.g., 123456789") },
+                                supportingText = { Text("Starting page for project docs") }
+                            )
+
+                            if (integrationMessage != null) {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (integrationMessage!!.contains("Failed")) {
+                                            MaterialTheme.colorScheme.errorContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.primaryContainer
+                                        }
+                                    )
+                                ) {
+                                    Text(
+                                        text = integrationMessage!!,
+                                        modifier = Modifier.padding(8.dp),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -242,6 +414,25 @@ private fun ProjectDialog(
                         clientId = clientId
                     )
                     onSave(newProject)
+
+                    // Save integration overrides if project exists and section was opened
+                    if (project != null && showIntegrationSection) {
+                        scope.launch {
+                            runCatching {
+                                repository.integrationSettings.setProjectOverrides(
+                                    com.jervis.dto.integration.ProjectIntegrationOverridesDto(
+                                        projectId = project.id,
+                                        jiraProjectKey = if (jiraProjectKey.isBlank()) "" else jiraProjectKey,
+                                        confluenceSpaceKey = if (confluenceSpaceKey.isBlank()) "" else confluenceSpaceKey,
+                                        confluenceRootPageId = if (confluenceRootPageId.isBlank()) "" else confluenceRootPageId
+                                    )
+                                )
+                                integrationMessage = "Integration overrides saved successfully"
+                            }.onFailure { e ->
+                                integrationMessage = "Failed to save overrides: ${e.message}"
+                            }
+                        }
+                    }
                 },
                 enabled = name.isNotBlank()
             ) {

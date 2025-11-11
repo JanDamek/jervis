@@ -197,6 +197,14 @@ class WeaviateVectorRepository(
             queryBuilder.withWhere(WhereArgument.builder().filter(whereFilter).build())
         }
 
+        // Log embedding vector details for debugging
+        val embFirstFive = query.embedding.take(5).joinToString(", ") { "%.4f".format(it) }
+        logger.info {
+            "WEAVIATE_SEARCH: className=$className, embeddingSize=${query.embedding.size}, " +
+                "embeddingFirst5=[$embFirstFive], embeddingSum=${"%.4f".format(query.embedding.sum())}, " +
+                "limit=${query.limit}, minScore=${query.minScore}"
+        }
+
         // Apply hybrid or pure vector search
         val hybrid = query.hybridSearch
         if (hybrid != null && properties.hybridSearch.enabled) {
@@ -231,11 +239,18 @@ class WeaviateVectorRepository(
                 }
             }
 
-            logger.debug {
-                "Hybrid search: alpha=${hybrid.alpha}, minScore=${query.minScore}, limit=${query.limit}"
+            val hybridArg = hybridArgBuilder.build()
+
+            logger.info {
+                "WEAVIATE_HYBRID: Executing hybrid search with:\n" +
+                    "  query='${hybrid.queryText}'\n" +
+                    "  alpha=${hybrid.alpha} (1.0=pure vector, 0.0=pure BM25)\n" +
+                    "  minScore=${query.minScore}\n" +
+                    "  limit=${query.limit}\n" +
+                    "  embeddingProvided=${query.embedding.isNotEmpty()}"
             }
 
-            queryBuilder.withHybrid(hybridArgBuilder.build())
+            queryBuilder.withHybrid(hybridArg)
         } else {
             // Pure vector search with distance threshold
             logger.debug {
@@ -263,8 +278,13 @@ class WeaviateVectorRepository(
 
         if (parsed.isNotEmpty()) {
             val scores = parsed.take(5).map { "%.3f".format(it.score) }.joinToString(", ")
+            val ids = parsed.take(5).map { it.id.takeLast(8) }.joinToString(", ")
+            val textPreviews = parsed.take(3).map { it.text.take(50).replace("\n", " ") }
             logger.info {
-                "Weaviate returned ${parsed.size} results (filtered by database). Top scores: [$scores]"
+                "Weaviate returned ${parsed.size} results (filtered by database).\n" +
+                    "  Top 5 scores: [$scores]\n" +
+                    "  Top 5 IDs (last 8 chars): [$ids]\n" +
+                    "  Top 3 text previews: ${textPreviews.joinToString(" | ")}"
             }
         }
 
