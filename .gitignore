@@ -16,6 +16,7 @@
 /*/*.jar
 /**/*.jar
 /**/*/*.jar
+!gradle/wrapper/gradle-wrapper.jar
 
 # Joern analysis artifacts
 /.joern/
