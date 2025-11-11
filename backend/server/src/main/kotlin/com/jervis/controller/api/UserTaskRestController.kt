@@ -45,7 +45,7 @@ class UserTaskRestController(
         // TODO: Implement full routing logic as per docs/USER_TASK_TO_AGENT_FLOW.md
         // For now, just return the task unchanged
         val tid = ObjectId(taskId)
-        val task = userTaskService.findById(tid) ?: throw IllegalArgumentException("Task not found")
+        val task = userTaskService.getTaskById(tid) ?: throw IllegalArgumentException("Task not found")
         return task.toDto()
     }
 }

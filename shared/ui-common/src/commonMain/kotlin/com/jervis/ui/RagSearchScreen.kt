@@ -341,7 +341,8 @@ fun RagSearchScreen(
                                 .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            RagDetailField("Score", String.format("%.4f", selectedResult!!.score))
+                            val scoreText = selectedResult!!.score.toString().take(6)
+                            RagDetailField("Score", scoreText)
                             selectedResult!!.metadata["sourceType"]?.let {
                                 RagDetailField("Source Type", it)
                             }
@@ -435,7 +436,7 @@ private fun RagResultCard(
                     color = MaterialTheme.colorScheme.primary
                 )
                 Text(
-                    text = String.format("%.3f", result.score),
+                    text = result.score.toString().take(5),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
