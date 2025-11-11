@@ -43,6 +43,12 @@ weaviate:
 
 server:
   port: 5500
+  ssl:
+    enabled: true
+    key-store: classpath:keystore.p12
+    key-store-password: changeit
+    key-store-type: PKCS12
+    key-alias: jervis
   netty:
     connection-timeout: 600s # 10 minutes for long-running agent operations
     idle-timeout: 600s

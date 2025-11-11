@@ -236,6 +236,82 @@ IMPLEMENTACE
 – formPanel { row(label, field); fullWidth(component) }
 • Každé nové okno a panel používej tyto stavební bloky.
 
+## Platform Priorities
+
+### 1. Desktop (PRIMARY - Must Have Everything First)
+- **Status**: Main application platform
+- **All features must be implemented here first**
+- Desktop has full functionality including:
+    - Multiple windows
+    - System tray
+    - WebSocket/Debug console
+    - All settings tabs
+    - All management screens
+
+### 2. iOS (SECONDARY - Priority 1)
+- **Status**: TestFlight ready
+- **Auto-sync with Desktop**: All Desktop features must be ported to iOS
+- **Adaptations**:
+    - Multiple windows → Single screen with navigation
+    - Desktop-specific features (tray, etc.) → Omit with TODO
+    - Small screen → Split into multiple screens
+
+### 3. Android (TERTIARY - Priority 2)
+- **Status**: Backup application
+- **Target device**: Samsung Fold (large screen baseline)
+- **Auto-sync with Desktop**: All Desktop features must be ported to Android
+- **Same structure as iOS**: Share all screens and navigation
+- **Icon**: Use same icon as Desktop
+
+## Implementation Rules
+
+### Rule 1: Desktop First
+```
+Desktop Implementation → iOS Port → Android Port
+```
+Never implement a feature in mobile before it exists in Desktop.
+
+### Rule 2: Shared Code
+All UI screens live in `shared/ui-common`:
+```
+shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
+├── MainScreen.kt          # Chat interface
+├── SettingsScreen.kt      # Settings management
+├── UserTasksScreen.kt     # User tasks
+├── ErrorLogsScreen.kt     # Error logs
+├── RagSearchScreen.kt     # RAG search
+├── SchedulerScreen.kt     # Task scheduler
+├── ClientsScreen.kt       # Client management
+├── ProjectsScreen.kt      # Project management
+└── navigation/
+    └── AppNavigator.kt    # Mobile navigation
+```
+
+### Rule 3: Platform-Specific Entry Points
+- **Desktop**: `apps/desktop/src/main/kotlin/com/jervis/desktop/Main.kt` (multiple windows)
+- **iOS**: `apps/mobile/src/iosMain/kotlin/com/jervis/mobile/Main.kt` (single screen + navigation)
+- **Android**: `apps/mobile/src/androidMain/kotlin/com/jervis/mobile/MainActivity.kt` (single screen + navigation)
+
+### Rule 4: Unimplementable Features → TODO
+If a Desktop feature cannot be implemented on mobile (e.g., system tray, multiple windows):
+```kotlin
+// TODO: Desktop feature - System tray not available on mobile
+// Desktop implementation: apps/desktop/src/main/kotlin/com/jervis/desktop/Main.kt:50-72
+```
+
+### Adding a New Feature
+1. **Implement in Desktop** (`apps/desktop/`)
+2. **Extract shared logic** to `shared/ui-common/`
+3. **Port to iOS** (update `apps/mobile/src/iosMain/`)
+4. **Port to Android** (update `apps/mobile/src/androidMain/`)
+5. **Test on all platforms**
+
+### Updating Existing Feature
+1. **Update Desktop first**
+2. **Update shared code**
+3. **Verify iOS still works**
+4. **Verify Android still works**
+
 USER TASKS OKNO
 • Zobraz seznam "user-tasks" (čekající na uživatele) v tabulce.
 • Horní lišta "Quick Actions" (placeholder), akce budou doplněny podle typu task.

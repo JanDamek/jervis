@@ -34,12 +34,86 @@ fun MainScreen(
     onProjectSelected: (String) -> Unit,
     onInputChanged: (String) -> Unit,
     onSendClick: () -> Unit,
+    onNavigate: (com.jervis.ui.navigation.Screen) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    var showMenu by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("JERVIS Assistant") },
+                actions = {
+                    IconButton(onClick = { showMenu = true }) {
+                        Text("⋮", style = MaterialTheme.typography.headlineMedium)
+                    }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        // Management (mirrors Desktop: Clients/Projects windows)
+                        DropdownMenuItem(
+                            text = { Text("Clients") },
+                            onClick = {
+                                showMenu = false
+                                onNavigate(com.jervis.ui.navigation.Screen.Clients)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Projects") },
+                            onClick = {
+                                showMenu = false
+                                onNavigate(com.jervis.ui.navigation.Screen.Projects)
+                            }
+                        )
+                        HorizontalDivider()
+
+                        // Configuration (mirrors Desktop: Settings window)
+                        DropdownMenuItem(
+                            text = { Text("Settings") },
+                            onClick = {
+                                showMenu = false
+                                onNavigate(com.jervis.ui.navigation.Screen.Settings)
+                            }
+                        )
+                        HorizontalDivider()
+
+                        // Tasks & Scheduling (mirrors Desktop: UserTasks/Scheduler windows)
+                        DropdownMenuItem(
+                            text = { Text("User Tasks") },
+                            onClick = {
+                                showMenu = false
+                                onNavigate(com.jervis.ui.navigation.Screen.UserTasks)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Scheduler") },
+                            onClick = {
+                                showMenu = false
+                                onNavigate(com.jervis.ui.navigation.Screen.Scheduler)
+                            }
+                        )
+                        HorizontalDivider()
+
+                        // Search & Logs (mirrors Desktop: RAGSearch/ErrorLogs windows)
+                        DropdownMenuItem(
+                            text = { Text("RAG Search") },
+                            onClick = {
+                                showMenu = false
+                                onNavigate(com.jervis.ui.navigation.Screen.RagSearch)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Error Logs") },
+                            onClick = {
+                                showMenu = false
+                                onNavigate(com.jervis.ui.navigation.Screen.ErrorLogs)
+                            }
+                        )
+
+                        // TODO: Desktop Debug Console (WebSocket) - not yet implemented for mobile
+                    }
+                },
                 colors =
                     TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.primaryContainer,

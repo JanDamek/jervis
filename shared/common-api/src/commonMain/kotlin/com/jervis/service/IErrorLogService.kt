@@ -13,6 +13,11 @@ interface IErrorLogService {
         @Query("limit") limit: Int = 200,
     ): List<ErrorLogDto>
 
+    @GET("api/error-logs/all")
+    suspend fun listAll(
+        @Query("limit") limit: Int = 200,
+    ): List<ErrorLogDto>
+
     @GET("api/error-logs/{id}")
     suspend fun get(
         @Path("id") id: String,

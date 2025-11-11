@@ -18,6 +18,12 @@ class ErrorLogRestController(
     ): List<ErrorLogDto> =
         service.list(ObjectId(clientId), limit).map { it.toDto() }
 
+    @GetMapping("/all")
+    override suspend fun listAll(
+        @RequestParam("limit", defaultValue = "200") limit: Int
+    ): List<ErrorLogDto> =
+        service.listAll(limit).map { it.toDto() }
+
     @GetMapping("/{id}")
     override suspend fun get(@PathVariable("id") id: String): ErrorLogDto = service.get(ObjectId(id)).toDto()
 

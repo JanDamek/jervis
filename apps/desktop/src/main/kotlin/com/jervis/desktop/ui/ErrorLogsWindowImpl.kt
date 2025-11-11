@@ -29,43 +29,17 @@ fun ErrorLogsWindowContent(repository: JervisRepository) {
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var selectedLogId by remember { mutableStateOf<String?>(null) }
-    var currentClientId by remember { mutableStateOf<String?>(null) }
-    var showClientSelector by remember { mutableStateOf(false) }
-    var showConfirmDialog by remember { mutableStateOf(false) }
-    var clients by remember { mutableStateOf<List<ClientDto>>(emptyList()) }
 
     val scope = rememberCoroutineScope()
     @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current
 
-    // Load clients on mount
-    LaunchedEffect(Unit) {
-        scope.launch {
-            try {
-                clients = repository.clients.listClients()
-                // Auto-select first client if available
-                if (clients.isNotEmpty() && currentClientId == null) {
-                    currentClientId = clients.first().id
-                }
-            } catch (e: Exception) {
-                errorMessage = "Failed to load clients: ${e.message}"
-            }
-        }
-    }
-
-    // Load error logs when client changes
     fun loadErrorLogs() {
-        val clientId = currentClientId
-        if (clientId == null) {
-            showClientSelector = true
-            return
-        }
-
         scope.launch {
             isLoading = true
             errorMessage = null
             try {
-                errorLogs = repository.errorLogs.listErrorLogs(clientId, 500)
+                errorLogs = repository.errorLogs.listAllErrorLogs(500)
             } catch (e: Exception) {
                 errorMessage = "Failed to load error logs: ${e.message}"
             } finally {
@@ -74,32 +48,14 @@ fun ErrorLogsWindowContent(repository: JervisRepository) {
         }
     }
 
-    // Auto-load when client is selected
-    LaunchedEffect(currentClientId) {
-        if (currentClientId != null) {
-            loadErrorLogs()
-        }
-    }
+    // Load on mount
+    LaunchedEffect(Unit) { loadErrorLogs() }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Column {
-                        Text("Server Error Logs")
-                        currentClientId?.let { clientId ->
-                            val clientName = clients.find { it.id == clientId }?.name ?: clientId
-                            Text(
-                                text = "Client: $clientName",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
-                },
+                title = { Text("Server Error Logs") },
                 actions = {
-                    IconButton(onClick = { showClientSelector = true }) {
-                        Icon(Icons.Default.Person, "Select Client")
-                    }
                     IconButton(onClick = { loadErrorLogs() }) {
                         Icon(Icons.Default.Refresh, "Refresh")
                     }
@@ -109,18 +65,6 @@ fun ErrorLogsWindowContent(repository: JervisRepository) {
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when {
-                currentClientId == null -> {
-                    Column(
-                        modifier = Modifier.align(Alignment.Center).padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text("Please select a client first")
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Button(onClick = { showClientSelector = true }) {
-                            Text("Select Client")
-                        }
-                    }
-                }
                 isLoading -> {
                     CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                 }
@@ -153,7 +97,7 @@ fun ErrorLogsWindowContent(repository: JervisRepository) {
                             tint = MaterialTheme.colorScheme.primary
                         )
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text("No error logs for this client")
+                        Text("No errors recorded")
                     }
                 }
                 else -> {
@@ -220,17 +164,6 @@ fun ErrorLogsWindowContent(repository: JervisRepository) {
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text("Delete Selected")
                             }
-
-                            Button(
-                                onClick = { showConfirmDialog = true },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.error
-                                )
-                            ) {
-                                Icon(Icons.Default.DeleteForever, null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Delete All for Client")
-                            }
                         }
 
                         // Error logs table
@@ -243,55 +176,6 @@ fun ErrorLogsWindowContent(repository: JervisRepository) {
                 }
             }
         }
-    }
-
-    // Client selector dialog
-    if (showClientSelector) {
-        ClientSelectorDialog(
-            clients = clients,
-            currentClientId = currentClientId,
-            onClientSelected = { clientId ->
-                currentClientId = clientId
-                showClientSelector = false
-            },
-            onDismiss = { showClientSelector = false }
-        )
-    }
-
-    // Confirm delete all dialog
-    if (showConfirmDialog) {
-        AlertDialog(
-            onDismissRequest = { showConfirmDialog = false },
-            title = { Text("Confirm Delete") },
-            text = { Text("Really delete all error logs for this client?") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        currentClientId?.let { clientId ->
-                            scope.launch {
-                                try {
-                                    repository.errorLogs.deleteAllForClient(clientId)
-                                    showConfirmDialog = false
-                                    loadErrorLogs()
-                                } catch (e: Exception) {
-                                    errorMessage = "Failed to delete all: ${e.message}"
-                                }
-                            }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("Delete All")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showConfirmDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
     }
 }
 

@@ -14,5 +14,9 @@ interface ErrorLogMongoRepository : ReactiveMongoRepository<ErrorLogDocument, Ob
         pageable: Pageable,
     ): Flow<ErrorLogDocument>
 
+    fun findAllByOrderByCreatedAtDesc(
+        pageable: Pageable,
+    ): Flow<ErrorLogDocument>
+
     suspend fun deleteAllByClientId(clientId: ObjectId): Long
 }

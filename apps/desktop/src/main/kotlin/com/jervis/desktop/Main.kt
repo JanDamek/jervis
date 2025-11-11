@@ -25,7 +25,7 @@ fun main() = application {
     // Set dock icon on macOS
     MacOSUtils.setDockIcon()
 
-    val serverBaseUrl = System.getProperty("jervis.server.url") ?: "http://localhost:5500/"
+    val serverBaseUrl = System.getProperty("jervis.server.url") ?: "https://localhost:5500/"
 
     // Connection manager with automatic retry
     val connectionManager = rememberConnectionManager(serverBaseUrl)

@@ -6,6 +6,8 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import com.jervis.repository.JervisRepository
+import com.jervis.ui.navigation.AppNavigator
+import com.jervis.ui.navigation.Screen
 
 /**
  * Root Compose Application
@@ -20,6 +22,7 @@ fun App(
 ) {
     val viewModel = remember { MainViewModel(repository, defaultClientId, defaultProjectId) }
     val snackbarHostState = remember { SnackbarHostState() }
+    val navigator = remember { AppNavigator() }
 
     // Observe error messages and show snackbar
     val errorMessage by viewModel.errorMessage.collectAsState()
@@ -45,21 +48,53 @@ fun App(
         val chatMessages by viewModel.chatMessages.collectAsState()
         val inputText by viewModel.inputText.collectAsState()
         val isLoading by viewModel.isLoading.collectAsState()
+        val currentScreen by navigator.currentScreen.collectAsState()
 
-        MainScreen(
-            clients = clients,
-            projects = projects,
-            selectedClientId = selectedClientId,
-            selectedProjectId = selectedProjectId,
-            chatMessages = chatMessages,
-            inputText = inputText,
-            isLoading = isLoading,
-            onClientSelected = viewModel::selectClient,
-            onProjectSelected = viewModel::selectProject,
-            onInputChanged = viewModel::updateInputText,
-            onSendClick = viewModel::sendMessage,
-            modifier = modifier,
-        )
+        when (currentScreen) {
+            Screen.Main -> MainScreen(
+                clients = clients,
+                projects = projects,
+                selectedClientId = selectedClientId,
+                selectedProjectId = selectedProjectId,
+                chatMessages = chatMessages,
+                inputText = inputText,
+                isLoading = isLoading,
+                onClientSelected = viewModel::selectClient,
+                onProjectSelected = viewModel::selectProject,
+                onInputChanged = viewModel::updateInputText,
+                onSendClick = viewModel::sendMessage,
+                onNavigate = navigator::navigateTo,
+                modifier = modifier,
+            )
+            Screen.Clients -> ClientsScreen(
+                repository = repository,
+                onBack = { navigator.navigateTo(Screen.Main) }
+            )
+            Screen.Projects -> ProjectsScreen(
+                repository = repository,
+                onBack = { navigator.navigateTo(Screen.Main) }
+            )
+            Screen.Settings -> SettingsScreen(
+                repository = repository,
+                onBack = { navigator.navigateTo(Screen.Main) }
+            )
+            Screen.UserTasks -> UserTasksScreen(
+                repository = repository,
+                onBack = { navigator.navigateTo(Screen.Main) }
+            )
+            Screen.ErrorLogs -> ErrorLogsScreen(
+                repository = repository,
+                onBack = { navigator.navigateTo(Screen.Main) }
+            )
+            Screen.RagSearch -> RagSearchScreen(
+                repository = repository,
+                onBack = { navigator.navigateTo(Screen.Main) }
+            )
+            Screen.Scheduler -> SchedulerScreen(
+                repository = repository,
+                onBack = { navigator.navigateTo(Screen.Main) }
+            )
+        }
 
         SnackbarHost(hostState = snackbarHostState)
     }
