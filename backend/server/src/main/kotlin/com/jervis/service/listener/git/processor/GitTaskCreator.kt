@@ -4,6 +4,7 @@ import com.jervis.domain.task.PendingTask
 import com.jervis.domain.task.PendingTaskTypeEnum
 import com.jervis.entity.ProjectDocument
 import com.jervis.service.background.PendingTaskService
+import com.jervis.service.text.TextNormalizationService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -28,6 +29,7 @@ import java.nio.file.Path
 @Service
 class GitTaskCreator(
     private val pendingTaskService: PendingTaskService,
+    private val textNormalizationService: TextNormalizationService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -174,11 +176,13 @@ class GitTaskCreator(
             return "[Binary file omitted at $commitHash:$filePath, size=${bytes.size} bytes]"
         }
 
-        val text = sample.toString(Charsets.UTF_8)
+        val rawText = sample.toString(Charsets.UTF_8)
+        val normalizedText = textNormalizationService.normalizePreservingCode(rawText)
+
         return if (bytes.size > MAX_FILE_BYTES) {
-            text + "\n\n[Truncated: ${bytes.size - MAX_FILE_BYTES} more bytes omitted]"
+            normalizedText + "\n\n[Truncated: ${bytes.size - MAX_FILE_BYTES} more bytes omitted]"
         } else {
-            text
+            normalizedText
         }
     }
 

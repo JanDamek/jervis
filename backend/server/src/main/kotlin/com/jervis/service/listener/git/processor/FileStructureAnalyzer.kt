@@ -4,6 +4,7 @@ import com.jervis.domain.task.PendingTask
 import com.jervis.domain.task.PendingTaskTypeEnum
 import com.jervis.entity.ProjectDocument
 import com.jervis.service.background.PendingTaskService
+import com.jervis.service.text.TextNormalizationService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -32,6 +33,7 @@ import kotlin.io.path.readText
 @Service
 class FileStructureAnalyzer(
     private val pendingTaskService: PendingTaskService,
+    private val textNormalizationService: TextNormalizationService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -230,6 +232,7 @@ class FileStructureAnalyzer(
     /**
      * Read file content with line limit to avoid huge files.
      * Returns null if file doesn't exist or can't be read.
+     * Normalizes code to ensure consistent format (escape sequences, whitespace, etc).
      */
     private fun readFileWithLimit(
         path: Path,
@@ -240,7 +243,10 @@ class FileStructureAnalyzer(
                 return null
             }
 
-            val lines = path.readText().lines()
+            val rawContent = path.readText()
+            val normalizedContent = textNormalizationService.normalizePreservingCode(rawContent)
+            val lines = normalizedContent.lines()
+
             return if (lines.size <= maxLines) {
                 lines.joinToString("\n")
             } else {
