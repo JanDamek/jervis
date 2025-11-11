@@ -34,12 +34,11 @@ fun main() = application {
     // Window state
     var showMainWindow by remember { mutableStateOf(true) }
     var showSettings by remember { mutableStateOf(false) }
+    var settingsInitialTab by remember { mutableStateOf(0) }
     var showUserTasks by remember { mutableStateOf(false) }
     var showErrorLogs by remember { mutableStateOf(false) }
     var showRagSearch by remember { mutableStateOf(false) }
     var showScheduler by remember { mutableStateOf(false) }
-    var showProjects by remember { mutableStateOf(false) }
-    var showClients by remember { mutableStateOf(false) }
     var showDebug by remember { mutableStateOf(false) }
 
     // Error notifications popup
@@ -56,8 +55,8 @@ fun main() = application {
         menu = {
             Item("Open Main Window", onClick = { showMainWindow = true })
             Separator()
-            Item("Projects", onClick = { showProjects = true })
-            Item("Clients", onClick = { showClients = true })
+            Item("Projects", onClick = { settingsInitialTab = 1; showSettings = true })
+            Item("Clients", onClick = { settingsInitialTab = 0; showSettings = true })
             Separator()
             Item("User Tasks", onClick = { showUserTasks = true })
             Item("Error Logs", onClick = { showErrorLogs = true })
@@ -88,8 +87,8 @@ fun main() = application {
                 Item("Exit", onClick = { exitApplication() })
             }
             Menu("View") {
-                Item("Projects", onClick = { showProjects = true })
-                Item("Clients", onClick = { showClients = true })
+                Item("Projects", onClick = { settingsInitialTab = 1; showSettings = true })
+                Item("Clients", onClick = { settingsInitialTab = 0; showSettings = true })
                 Separator()
                 Item("User Tasks", onClick = { showUserTasks = true })
                 Item("Error Logs", onClick = { showErrorLogs = true })
@@ -122,31 +121,10 @@ fun main() = application {
             title = "Settings",
             state = rememberWindowState(width = 900.dp, height = 700.dp)
         ) {
-            SettingsWindow(repository = repository)
+            SettingsWindow(repository = repository, initialTabIndex = settingsInitialTab)
         }
     }
 
-    // Projects Window
-    if (showProjects && repository != null) {
-        Window(
-            onCloseRequest = { showProjects = false },
-            title = "Projects",
-            state = rememberWindowState(width = 900.dp, height = 600.dp)
-        ) {
-            ProjectsWindow(repository = repository)
-        }
-    }
-
-    // Clients Window
-    if (showClients && repository != null) {
-        Window(
-            onCloseRequest = { showClients = false },
-            title = "Clients",
-            state = rememberWindowState(width = 800.dp, height = 600.dp)
-        ) {
-            ClientsWindow(repository = repository)
-        }
-    }
 
     // User Tasks Window
     if (showUserTasks && repository != null) {

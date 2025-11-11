@@ -69,7 +69,11 @@ object NetworkModule {
             ragSearchService = ktorfit.createIRagSearchService(),
             taskSchedulingService = ktorfit.createITaskSchedulingService(),
             agentOrchestratorService = ktorfit.createIAgentOrchestratorService(),
-            errorLogService = ktorfit.createIErrorLogService()
+            errorLogService = ktorfit.createIErrorLogService(),
+            integrationSettingsService = ktorfit.createIIntegrationSettingsService(),
+            gitConfigurationService = ktorfit.createIGitConfigurationService(),
+            jiraSetupService = ktorfit.createIJiraSetupService(),
+            emailAccountService = ktorfit.createIEmailAccountService(),
         )
     }
 
@@ -84,7 +88,11 @@ object NetworkModule {
         val ragSearchService: IRagSearchService,
         val taskSchedulingService: ITaskSchedulingService,
         val agentOrchestratorService: IAgentOrchestratorService,
-        val errorLogService: IErrorLogService
+        val errorLogService: IErrorLogService,
+        val integrationSettingsService: IIntegrationSettingsService,
+        val gitConfigurationService: IGitConfigurationService,
+        val jiraSetupService: IJiraSetupService,
+        val emailAccountService: IEmailAccountService,
     )
 }
 

@@ -14,6 +14,10 @@ class JervisRepository(
     taskSchedulingService: ITaskSchedulingService,
     agentOrchestratorService: IAgentOrchestratorService,
     errorLogService: IErrorLogService,
+    integrationSettingsService: IIntegrationSettingsService,
+    gitConfigurationService: IGitConfigurationService,
+    jiraSetupService: IJiraSetupService,
+    emailAccountService: IEmailAccountService,
 ) {
     val clients: ClientRepository = ClientRepository(clientService)
     val projects: ProjectRepository = ProjectRepository(projectService)
@@ -22,4 +26,8 @@ class JervisRepository(
     val scheduledTasks: ScheduledTaskRepository = ScheduledTaskRepository(taskSchedulingService, agentOrchestratorService)
     val errorLogs: ErrorLogRepository = ErrorLogRepository(errorLogService)
     val agentChat: AgentChatRepository = AgentChatRepository(agentOrchestratorService)
+    val integrationSettings: IntegrationSettingsRepository = IntegrationSettingsRepository(integrationSettingsService)
+    val gitConfiguration: GitConfigurationRepository = GitConfigurationRepository(gitConfigurationService)
+    val jiraSetup: JiraSetupRepository = JiraSetupRepository(jiraSetupService)
+    val emailAccounts: EmailAccountRepository = EmailAccountRepository(emailAccountService)
 }

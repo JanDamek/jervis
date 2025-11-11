@@ -141,9 +141,9 @@ class RagSearchService(
         // Generate embedding for query
         val embedding = embeddingGateway.callEmbedding(modelType, query)
 
+        val embeddingInfo = "size=${embedding.size}, first5=[${embedding.take(5).joinToString(", ") { "%.4f".format(it) }}], sum=%.4f".format(embedding.sum())
         logger.info {
-            "Generated embedding for query '$query' ($modelType): " +
-                "size=${embedding.size}, first3=${embedding.take(3)}, sum=${embedding.sum()}"
+            "Generated embedding for query '$query' ($modelType): $embeddingInfo"
         }
 
         // Build filters

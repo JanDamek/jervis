@@ -30,6 +30,7 @@ class JiraIndexingOrchestrator(
     private val textChunkingService: TextChunkingService,
     private val linkIndexingService: LinkIndexingService,
     private val jiraAttachmentIndexer: JiraAttachmentIndexer,
+    private val configCache: com.jervis.service.cache.ClientProjectConfigCache,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -47,19 +48,29 @@ class JiraIndexingOrchestrator(
                         logger.warn { "JIRA_INDEX: Missing selections for client=${clientId.toHexString()} - ${e.message}" }
                     }.getOrElse { return@withContext }
 
-            // Resolve effective Jira project keys across all projects for this client (override per project or fall back to client's primary project)
-            val effectiveProjectKeys: Set<String> =
+            // Build mapping: Jira project key → Jervis projectId
+            // Uses in-memory cache for instant access, no DB roundtrip
+            val jiraProjectMapping: Map<String, ObjectId> =
                 try {
-                    val projects = projectRepository.findAll().toList().filter { it.clientId == clientId }
-                    val keys = projects.mapNotNull { it.overrides?.jiraProjectKey ?: primaryProject.value }
-                    keys.toSet()
+                    val projects = configCache.getProjectsForClient(clientId)
+                    projects.mapNotNull { project ->
+                        project.overrides?.jiraProjectKey?.let { jiraKey ->
+                            jiraKey to project.id
+                        }
+                    }.toMap()
                 } catch (e: Exception) {
-                    logger.warn(
-                        e,
-                    ) {
-                        "JIRA_INDEX: Failed to enumerate projects for client=${clientId.toHexString()}, falling back to primary project only"
-                    }
-                    setOf(primaryProject.value)
+                    logger.warn(e) { "JIRA_INDEX: Failed to load Jira project mapping from cache for client=${clientId.toHexString()}" }
+                    emptyMap()
+                }
+
+            // Fetch ALL Jira projects for this client (not just mapped ones)
+            val connValid = selection.getConnection(clientId).let { auth.ensureValidToken(it) }
+            val allJiraProjects: List<JiraProjectKey> =
+                try {
+                    api.listProjects(connValid).map { (key, _) -> key }
+                } catch (e: Exception) {
+                    logger.warn(e) { "JIRA_INDEX: Failed to list all Jira projects for client=${clientId.toHexString()}, falling back to primary project only" }
+                    listOf(primaryProject)
                 }
 
             // Determine incremental window based on last sync
@@ -68,17 +79,17 @@ class JiraIndexingOrchestrator(
             val baseJqlSuffix =
                 if (lastSyncedAt == null) "AND updated >= -30d ORDER BY updated DESC" else "ORDER BY updated DESC"
 
-            effectiveProjectKeys.forEach { key ->
+            allJiraProjects.forEach { projectKey ->
+                val key = projectKey.value
                 val jql = "project = $key $baseJqlSuffix"
+                val jervisProjectId = jiraProjectMapping[key] // null if not mapped
 
                 runCatching {
-                    val connValid = selection.getConnection(clientId).let { auth.ensureValidToken(it) }
                     val tenantHost = connValid.tenant.value
                     api
                         .searchIssues(connValid, jql, updatedSinceEpochMs = lastSyncedAt?.toEpochMilli())
                         .collect { issue ->
                             val assignedToMe = issue.assignee?.value == me.value
-                            val projectKey = JiraProjectKey(key)
                             if (!assignedToMe) {
                                 // Shallow: one compact narrative chunk
                                 indexIssueSummaryShallow(
@@ -90,6 +101,7 @@ class JiraIndexingOrchestrator(
                                     issue.status,
                                     issue.updated,
                                     tenantHost,
+                                    jervisProjectId,
                                 )
                             } else {
                                 // Deep: summary + comments + attachments
@@ -102,12 +114,14 @@ class JiraIndexingOrchestrator(
                                     issue.status,
                                     issue.updated,
                                     tenantHost,
+                                    jervisProjectId,
                                 )
                                 indexIssueCommentsDeep(
                                     clientId = clientId,
                                     issueKey = issue.key,
                                     project = projectKey,
                                     tenantHost = tenantHost,
+                                    jervisProjectId = jervisProjectId,
                                 )
                                 // Index attachments (screenshots, docs, logs, etc.)
                                 jiraAttachmentIndexer.indexIssueAttachments(
@@ -115,6 +129,7 @@ class JiraIndexingOrchestrator(
                                     issueKey = issue.key,
                                     clientId = clientId,
                                     tenantHost = tenantHost,
+                                    projectId = jervisProjectId,
                                 )
                             }
                         }
@@ -124,7 +139,7 @@ class JiraIndexingOrchestrator(
                 }
             }
 
-            logger.info { "JIRA_INDEX: Done for client=${clientId.toHexString()} (projects=${effectiveProjectKeys.size})" }
+            logger.info { "JIRA_INDEX: Done for client=${clientId.toHexString()} (projects=${allJiraProjects.size})" }
 
             // Update last synced timestamp on successful completion
             runCatching {
@@ -147,6 +162,7 @@ class JiraIndexingOrchestrator(
         status: String,
         updated: Instant,
         tenantHost: String,
+        jervisProjectId: ObjectId?,
     ) {
         val text =
             buildString {
@@ -165,7 +181,7 @@ class JiraIndexingOrchestrator(
         chunks.forEachIndexed { index, chunk ->
             val rag =
                 RagDocument(
-                    projectId = null, // unknown here; Jira is client-level context
+                    projectId = jervisProjectId, // Map to Jervis project if exists
                     clientId = clientId,
                     text = chunk.text(),
                     ragSourceType = RagSourceType.JIRA,
@@ -181,8 +197,8 @@ class JiraIndexingOrchestrator(
             stored++
         }
 
-        // We cannot use trackIndexed() which requires projectId. If a client-level tracking exists later, switch to it.
-        logger.info { "JIRA_INDEX: Stored shallow summary for $issueKey chunks=$stored" }
+        val projectInfo = if (jervisProjectId != null) " projectId=${jervisProjectId.toHexString()}" else ""
+        logger.info { "JIRA_INDEX: Stored shallow summary for $issueKey chunks=$stored$projectInfo" }
     }
 
     private suspend fun indexIssueCommentsDeep(
@@ -190,6 +206,7 @@ class JiraIndexingOrchestrator(
         issueKey: String,
         project: JiraProjectKey,
         tenantHost: String,
+        jervisProjectId: ObjectId?,
     ) {
         val conn = selection.getConnection(clientId).let { auth.ensureValidToken(it) }
         val indexDoc = issueIndexRepository.findByClientIdAndIssueKey(clientId, issueKey)
@@ -237,7 +254,7 @@ class JiraIndexingOrchestrator(
             chunks.forEachIndexed { index, chunk ->
                 val rag =
                     RagDocument(
-                        projectId = null,
+                        projectId = jervisProjectId,
                         clientId = clientId,
                         text = chunk.text(),
                         ragSourceType = RagSourceType.JIRA,
@@ -258,7 +275,7 @@ class JiraIndexingOrchestrator(
                     runCatching {
                         linkIndexingService.indexUrl(
                             url = url,
-                            projectId = null,
+                            projectId = jervisProjectId,
                             clientId = clientId,
                             sourceType = RagSourceType.JIRA_LINK_CONTENT,
                             parentRef = issueKey,

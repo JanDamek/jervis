@@ -180,6 +180,7 @@ class JiraSetupRestController(
                 tenant = conn.tenant.value,
                 email = conn.email,
                 tokenPresent = conn.accessToken.isNotBlank(),
+                apiToken = conn.accessToken.takeIf { it.isNotBlank() },
                 primaryProject = conn.primaryProject?.value,
                 mainBoard = conn.mainBoard?.value,
                 preferredUser = conn.preferredUser?.value,

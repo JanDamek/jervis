@@ -22,6 +22,7 @@ class IntegrationSettingsRestController(
     private val projectRepository: ProjectMongoRepository,
     private val jiraConnectionRepository: JiraConnectionMongoRepository,
     private val errorPublisher: com.jervis.service.notification.ErrorNotificationsPublisher,
+    private val configCache: com.jervis.service.cache.ClientProjectConfigCache,
 ) : IIntegrationSettingsService {
     private val logger = KotlinLogging.logger {}
 
@@ -127,7 +128,11 @@ class IntegrationSettingsRestController(
             )
         val updated: ProjectDocument = project.copy(overrides = updatedOverrides, updatedAt = Instant.now())
         projectRepository.save(updated)
-        logger.info { "INTEGRATION_SETTINGS: Updated project overrides for project ${updated.id}" }
+
+        // Invalidate cache for this client so changes propagate immediately
+        configCache.invalidateClient(project.clientId)
+
+        logger.info { "INTEGRATION_SETTINGS: Updated project overrides for project ${updated.id}, cache invalidated" }
         return getProjectStatus(updated.id.toHexString())
     }
 }

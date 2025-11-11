@@ -48,6 +48,7 @@ class JiraAttachmentIndexer(
         issueKey: String,
         clientId: ObjectId,
         tenantHost: String,
+        projectId: ObjectId? = null,
     ) = withContext(Dispatchers.IO) {
         logger.debug { "JIRA_ATTACHMENT: Fetching attachments for issue $issueKey" }
 
@@ -70,6 +71,7 @@ class JiraAttachmentIndexer(
                         attachmentIndex = index,
                         clientId = clientId,
                         tenantHost = tenantHost,
+                        projectId = projectId,
                     )
                 } catch (e: Exception) {
                     logger.warn(e) { "JIRA_ATTACHMENT: Failed to index attachment ${attachment.filename} for issue $issueKey" }
@@ -87,6 +89,7 @@ class JiraAttachmentIndexer(
         attachmentIndex: Int,
         clientId: ObjectId,
         tenantHost: String,
+        projectId: ObjectId?,
     ) {
         logger.debug { "JIRA_ATTACHMENT: Processing ${attachment.filename} (${attachment.mimeType})" }
 
@@ -121,7 +124,7 @@ class JiraAttachmentIndexer(
         chunks.forEachIndexed { chunkIndex, chunk ->
             ragIndexingService.indexDocument(
                 RagDocument(
-                    projectId = null, // Jira is client-level context
+                    projectId = projectId, // Map to Jervis project if exists
                     clientId = clientId,
                     text = chunk.text(),
                     ragSourceType = RagSourceType.JIRA_ATTACHMENT,

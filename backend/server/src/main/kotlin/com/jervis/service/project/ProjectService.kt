@@ -17,6 +17,7 @@ class ProjectService(
     private val projectRepository: ProjectMongoRepository,
     private val gitRepositoryService: GitRepositoryService,
     private val directoryStructureService: DirectoryStructureService,
+    private val configCache: com.jervis.service.cache.ClientProjectConfigCache,
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -80,10 +81,13 @@ class ProjectService(
 
         directoryStructureService.ensureProjectDirectories(savedProject.clientId, savedProject.id)
 
+        // Invalidate cache for this client so changes propagate immediately
+        configCache.invalidateClient(savedProject.clientId)
+
         if (isNew) {
-            logger.info { "Created new project: ${savedProject.name}" }
+            logger.info { "Created new project: ${savedProject.name}, cache invalidated" }
         } else {
-            logger.info { "Updated project: ${savedProject.name}" }
+            logger.info { "Updated project: ${savedProject.name}, cache invalidated" }
         }
 
         return savedProject.toDto()
@@ -96,7 +100,11 @@ class ProjectService(
         }
 
         projectRepository.delete(projectDoc)
-        logger.info { "Deleted project: ${projectDoc.name}" }
+
+        // Invalidate cache for this client so deletion propagates immediately
+        configCache.invalidateClient(projectDoc.clientId)
+
+        logger.info { "Deleted project: ${projectDoc.name}, cache invalidated" }
     }
 
     suspend fun getProjectByName(name: String?): ProjectDocument =
