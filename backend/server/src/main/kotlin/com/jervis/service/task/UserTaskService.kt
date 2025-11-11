@@ -74,6 +74,9 @@ class UserTaskService(
         return domain
     }
 
+    suspend fun getTaskById(taskId: ObjectId): UserTask? =
+        userTaskRepository.findById(taskId)?.toDomain()
+
     fun findActiveTasksByClient(clientId: ObjectId): Flow<UserTask> =
         userTaskRepository
             .findActiveTasksByClientIdAndStatusIn(
