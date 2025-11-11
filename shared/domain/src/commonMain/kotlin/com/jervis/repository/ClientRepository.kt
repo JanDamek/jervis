@@ -45,4 +45,11 @@ class ClientRepository(
     suspend fun deleteClient(id: String) {
         clientService.deleteClient(id)
     }
+
+    /**
+     * Update last selected project for client
+     */
+    suspend fun updateLastSelectedProject(clientId: String, projectId: String?): ClientDto {
+        return clientService.updateLastSelectedProject(clientId, projectId)
+    }
 }

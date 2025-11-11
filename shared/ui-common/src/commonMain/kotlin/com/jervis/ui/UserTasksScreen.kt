@@ -1,11 +1,20 @@
 package com.jervis.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.jervis.dto.user.TaskRoutingMode
+import com.jervis.dto.user.UserTaskDto
 import com.jervis.repository.JervisRepository
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -13,6 +22,94 @@ fun UserTasksScreen(
     repository: JervisRepository,
     onBack: () -> Unit
 ) {
+    var tasks by remember { mutableStateOf<List<UserTaskDto>>(emptyList()) }
+    var allTasks by remember { mutableStateOf<List<UserTaskDto>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var filterText by remember { mutableStateOf("") }
+    var selectedTask by remember { mutableStateOf<UserTaskDto?>(null) }
+    var showRevokeConfirm by remember { mutableStateOf(false) }
+    var additionalInput by remember { mutableStateOf("") }
+    var isSending by remember { mutableStateOf(false) }
+
+    val scope = rememberCoroutineScope()
+
+    // Apply filter
+    fun applyFilter() {
+        val query = filterText.trim().lowercase()
+        tasks = if (query.isBlank()) {
+            allTasks
+        } else {
+            allTasks.filter { task ->
+                task.title.lowercase().contains(query) ||
+                (task.description?.lowercase()?.contains(query) == true) ||
+                task.sourceType.lowercase().contains(query) ||
+                (task.projectId?.lowercase()?.contains(query) == true)
+            }
+        }
+    }
+
+    // Load tasks from all clients
+    fun loadTasks() {
+        scope.launch {
+            isLoading = true
+            errorMessage = null
+            try {
+                val clients = repository.clients.listClients()
+                val allTasksList = mutableListOf<UserTaskDto>()
+
+                for (client in clients) {
+                    try {
+                        client.id?.let { clientId ->
+                            val clientTasks = repository.userTasks.listActive(clientId)
+                            allTasksList.addAll(clientTasks)
+                        }
+                    } catch (e: Exception) {
+                        // Continue loading other clients' tasks even if one fails
+                    }
+                }
+
+                // Sort by age (older first)
+                allTasks = allTasksList.sortedBy { it.createdAtEpochMillis }
+                applyFilter()
+            } catch (e: Exception) {
+                errorMessage = "Failed to load tasks: ${e.message}"
+            } finally {
+                isLoading = false
+            }
+        }
+    }
+
+    // Handle revoke
+    fun handleRevoke() {
+        val task = selectedTask ?: return
+        scope.launch {
+            try {
+                repository.userTasks.cancel(task.id)
+                showRevokeConfirm = false
+                selectedTask = null
+                loadTasks()
+            } catch (e: Exception) {
+                errorMessage = "Failed to revoke task: ${e.message}"
+            }
+        }
+    }
+
+    // Load on mount
+    LaunchedEffect(Unit) {
+        loadTasks()
+    }
+
+    // Apply filter when filterText changes
+    LaunchedEffect(filterText) {
+        applyFilter()
+    }
+
+    // Clear additional input when selected task changes
+    LaunchedEffect(selectedTask) {
+        additionalInput = ""
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -20,6 +117,11 @@ fun UserTasksScreen(
                 navigationIcon = {
                     TextButton(onClick = onBack) {
                         Text("← Back")
+                    }
+                },
+                actions = {
+                    TextButton(onClick = { loadTasks() }) {
+                        Text("🔄 Refresh")
                     }
                 }
             )
@@ -29,25 +131,384 @@ fun UserTasksScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(16.dp)
         ) {
-            Text(
-                "User Tasks",
-                style = MaterialTheme.typography.headlineMedium
-            )
-            Text(
-                "View and manage tasks assigned to you",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            // Filter field
+            OutlinedTextField(
+                value = filterText,
+                onValueChange = { filterText = it },
+                label = { Text("Filter") },
+                placeholder = { Text("Search by title, description, source, or project...") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
             )
 
-            // TODO: Load and display user tasks from repository
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("No tasks yet", style = MaterialTheme.typography.bodyMedium)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Main content area
+            Row(
+                modifier = Modifier.fillMaxSize().weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Tasks list (left side)
+                Card(
+                    modifier = Modifier.weight(0.6f).fillMaxHeight(),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // Header with action buttons
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Tasks (${tasks.size})",
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.padding(8.dp)
+                            )
+                            Button(
+                                onClick = { showRevokeConfirm = true },
+                                enabled = selectedTask != null,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.error
+                                )
+                            ) {
+                                Text("🗑️ Revoke")
+                            }
+                        }
+
+                        HorizontalDivider()
+
+                        when {
+                            isLoading -> {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator()
+                                }
+                            }
+                            errorMessage != null -> {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(16.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Text(
+                                        text = errorMessage!!,
+                                        color = MaterialTheme.colorScheme.error,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                    )
+                                    Button(
+                                        onClick = { loadTasks() },
+                                        modifier = Modifier.padding(top = 8.dp)
+                                    ) {
+                                        Text("Retry")
+                                    }
+                                }
+                            }
+                            tasks.isEmpty() -> {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("No tasks found", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            else -> {
+                                LazyColumn(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    items(tasks) { task ->
+                                        UserTaskRow(
+                                            task = task,
+                                            isSelected = selectedTask?.id == task.id,
+                                            onClick = { selectedTask = task }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Task details (right side)
+                Card(
+                    modifier = Modifier.weight(0.4f).fillMaxHeight(),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        Text(
+                            text = "Task Details",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(16.dp)
+                        )
+                        HorizontalDivider()
+
+                        if (selectedTask != null) {
+                            Column(
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                // Scrollable details
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(16.dp)
+                                        .verticalScroll(rememberScrollState()),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    TaskDetailField("Title", selectedTask!!.title)
+                                    TaskDetailField("Priority", selectedTask!!.priority)
+                                    TaskDetailField("Status", selectedTask!!.status)
+                                    selectedTask!!.dueDateEpochMillis?.let {
+                                        TaskDetailField("Due", formatDateTime(it))
+                                    }
+                                    TaskDetailField("Project", selectedTask!!.projectId ?: "-")
+                                    TaskDetailField("Source Type", selectedTask!!.sourceType)
+
+                                    if (!selectedTask!!.sourceUri.isNullOrBlank()) {
+                                        TaskDetailField("Source Link", selectedTask!!.sourceUri!!)
+                                    }
+
+                                    if (!selectedTask!!.description.isNullOrBlank()) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(
+                                            text = "Description:",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = selectedTask!!.description!!,
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                    }
+                                }
+
+                                // Input area for additional instructions
+                                HorizontalDivider()
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = "Additional Instructions (optional):",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    OutlinedTextField(
+                                        value = additionalInput,
+                                        onValueChange = { additionalInput = it },
+                                        modifier = Modifier.fillMaxWidth().height(100.dp),
+                                        placeholder = { Text("Add any additional context or instructions...") },
+                                        maxLines = 4,
+                                        enabled = !isSending
+                                    )
+
+                                    // Direct send buttons
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Button(
+                                            onClick = {
+                                                scope.launch {
+                                                    isSending = true
+                                                    try {
+                                                        repository.userTasks.sendToAgent(
+                                                            selectedTask!!.id,
+                                                            TaskRoutingMode.DIRECT_TO_AGENT,
+                                                            additionalInput.takeIf { it.isNotBlank() }
+                                                        )
+                                                        additionalInput = ""
+                                                        loadTasks()
+                                                    } catch (e: Exception) {
+                                                        errorMessage = e.message ?: "Failed to send to agent"
+                                                    } finally {
+                                                        isSending = false
+                                                    }
+                                                }
+                                            },
+                                            modifier = Modifier.weight(1f),
+                                            enabled = !isSending,
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.primary
+                                            )
+                                        ) {
+                                            Text("⚡ To Agent")
+                                        }
+                                        Button(
+                                            onClick = {
+                                                scope.launch {
+                                                    isSending = true
+                                                    try {
+                                                        repository.userTasks.sendToAgent(
+                                                            selectedTask!!.id,
+                                                            TaskRoutingMode.BACK_TO_PENDING,
+                                                            additionalInput.takeIf { it.isNotBlank() }
+                                                        )
+                                                        additionalInput = ""
+                                                        loadTasks()
+                                                    } catch (e: Exception) {
+                                                        errorMessage = e.message ?: "Failed to send to pending"
+                                                    } finally {
+                                                        isSending = false
+                                                    }
+                                                }
+                                            },
+                                            modifier = Modifier.weight(1f),
+                                            enabled = !isSending,
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.secondary
+                                            )
+                                        ) {
+                                            Text("📋 To Pending")
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "Select a task to view details",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
     }
+
+    // Revoke confirmation dialog
+    if (showRevokeConfirm && selectedTask != null) {
+        AlertDialog(
+            onDismissRequest = { showRevokeConfirm = false },
+            title = { Text("Confirm Revoke") },
+            text = { Text("Are you sure you want to revoke this task?") },
+            confirmButton = {
+                Button(
+                    onClick = { handleRevoke() },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Revoke")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showRevokeConfirm = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun UserTaskRow(
+    task: UserTaskDto,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick,
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isSelected) 4.dp else 1.dp
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = task.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 2
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Badge { Text(task.priority) }
+                        Badge { Text(task.status) }
+                    }
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = task.sourceType,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    task.dueDateEpochMillis?.let {
+                        Text(
+                            text = formatDate(it),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            if (!task.projectId.isNullOrBlank()) {
+                Text(
+                    text = "Project: ${task.projectId}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskDetailField(label: String, value: String) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "$label:",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium
+        )
+    }
+}
+
+private fun formatDate(epochMillis: Long): String {
+    // Simple formatting - in real app use platform-specific date formatter
+    return epochMillis.toString() // Placeholder
+}
+
+private fun formatDateTime(epochMillis: Long): String {
+    return formatDate(epochMillis)
 }

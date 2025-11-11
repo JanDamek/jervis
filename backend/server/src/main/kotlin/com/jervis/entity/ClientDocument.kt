@@ -47,6 +47,7 @@ data class ClientDocument(
     val dependsOnProjects: List<ObjectId> = emptyList(),
     val isDisabled: Boolean = false,
     val disabledProjects: List<ObjectId> = emptyList(),
+    val lastSelectedProjectId: ObjectId? = null,
     val createdAt: Instant = Instant.now(),
     val updatedAt: Instant = Instant.now(),
 )

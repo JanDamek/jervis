@@ -1,6 +1,8 @@
 package com.jervis.desktop
 
+import java.awt.Desktop
 import java.awt.Taskbar
+import java.awt.desktop.AppReopenedListener
 import javax.imageio.ImageIO
 
 /**
@@ -31,6 +33,27 @@ object MacOSUtils {
             }
         } catch (e: Exception) {
             println("Failed to set dock icon: ${e.message}")
+        }
+    }
+
+    /**
+     * Register handler for dock icon click (macOS only)
+     * Calls the provided callback when user clicks on dock icon
+     */
+    fun setDockIconClickHandler(onDockIconClick: () -> Unit) {
+        if (!isMacOS) return
+
+        try {
+            if (Desktop.isDesktopSupported()) {
+                val desktop = Desktop.getDesktop()
+                desktop.setOpenURIHandler { null } // Enable app reopening
+                desktop.addAppEventListener(AppReopenedListener {
+                    onDockIconClick()
+                })
+                println("Dock icon click handler registered")
+            }
+        } catch (e: Exception) {
+            println("Failed to register dock icon click handler: ${e.message}")
         }
     }
 

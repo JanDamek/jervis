@@ -36,4 +36,15 @@ class ClientRestController(
     override suspend fun deleteClient(@PathVariable id: String) {
         clientService.delete(ObjectId(id))
     }
+
+    @PatchMapping("/{id}/last-selected-project")
+    override suspend fun updateLastSelectedProject(
+        @PathVariable id: String,
+        @RequestParam projectId: String?
+    ): ClientDto {
+        val client = clientService.getClientById(ObjectId(id))
+            ?: throw IllegalArgumentException("Client not found")
+        val updated = client.copy(lastSelectedProjectId = projectId)
+        return clientService.update(updated).toDto()
+    }
 }
