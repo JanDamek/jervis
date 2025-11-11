@@ -20,6 +20,8 @@ data class RagDocument(
     val branch: String = "main",
     /** Universal author/sender/creator */
     val from: String? = null,
+    /** Universal recipient (for emails, messages) */
+    val to: String? = null,
     /** Universal title/subject/topic */
     val subject: String? = null,
     /** Universal temporal marker - ISO 8601 */

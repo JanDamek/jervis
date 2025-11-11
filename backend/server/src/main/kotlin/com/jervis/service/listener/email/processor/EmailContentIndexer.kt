@@ -8,6 +8,7 @@ import com.jervis.domain.rag.RagSourceType
 import com.jervis.service.listener.email.imap.ImapMessage
 import com.jervis.service.rag.RagIndexingService
 import com.jervis.service.text.TextChunkingService
+import com.jervis.service.text.TextNormalizationService
 import dev.langchain4j.data.segment.TextSegment
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -21,6 +22,7 @@ class EmailContentIndexer(
     private val ragIndexingService: RagIndexingService,
     private val textChunkingService: TextChunkingService,
     private val tikaClient: ITikaClient,
+    private val textNormalizationService: TextNormalizationService,
 ) {
     suspend fun indexEmailContent(
         message: ImapMessage,
@@ -32,7 +34,8 @@ class EmailContentIndexer(
 
         return runCatching {
             val plainText = extractPlainText(message.content)
-            val chunks = splitEmailContent(plainText)
+            val normalizedText = textNormalizationService.normalize(plainText)
+            val chunks = splitEmailContent(normalizedText)
             logger.debug { "Split email ${message.messageId} into ${chunks.size} chunks" }
 
             var firstDocumentId: String? = null

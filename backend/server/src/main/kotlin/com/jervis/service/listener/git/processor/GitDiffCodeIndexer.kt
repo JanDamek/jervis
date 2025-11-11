@@ -8,6 +8,7 @@ import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.ProjectDocument
 import com.jervis.service.rag.RagIndexingService
 import com.jervis.service.rag.VectorStoreIndexService
+import com.jervis.service.text.TextNormalizationService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -38,6 +39,7 @@ class GitDiffCodeIndexer(
     private val vectorStoreIndexService: VectorStoreIndexService,
     private val tikaClient: ITikaClient,
     private val textChunkingService: com.jervis.service.text.TextChunkingService,
+    private val textNormalizationService: TextNormalizationService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -394,7 +396,10 @@ class GitDiffCodeIndexer(
     /**
      * Chunk text into smaller pieces for embedding
      */
-    private fun chunkText(text: String): List<String> = textChunkingService.splitText(text).map { it.text() }
+    private fun chunkText(text: String): List<String> {
+        val normalizedText = textNormalizationService.normalize(text)
+        return textChunkingService.splitText(normalizedText).map { it.text() }
+    }
 
     // ========== Mono-Repo Methods ==========
 
@@ -627,8 +632,11 @@ class GitDiffCodeIndexer(
     /**
      * Create code chunks from code change using TextChunkingService.
      */
-    private fun createCodeChunks(codeChange: CodeChange): List<String> =
-        textChunkingService.splitText(codeChange.addedLines.joinToString("\n")).map { it.text() }
+    private fun createCodeChunks(codeChange: CodeChange): List<String> {
+        val codeText = codeChange.addedLines.joinToString("\n")
+        val normalizedCode = textNormalizationService.normalizePreservingCode(codeText)
+        return textChunkingService.splitText(normalizedCode).map { it.text() }
+    }
 
     /**
      * Detect programming language from file path
