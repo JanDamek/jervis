@@ -63,6 +63,16 @@ class ErrorLogService(
                 .map { it.toDomain() }
         }
 
+    suspend fun listAll(
+        limit: Int,
+    ): List<ErrorLog> =
+        withContext(Dispatchers.IO) {
+            repository
+                .findAllByOrderByCreatedAtDesc(PageRequest.of(0, limit))
+                .toList()
+                .map { it.toDomain() }
+        }
+
     suspend fun get(id: ObjectId): ErrorLog =
         withContext(Dispatchers.IO) {
             repository.findById(id).awaitFirstOrNull()?.toDomain()

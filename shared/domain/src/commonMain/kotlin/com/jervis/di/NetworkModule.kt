@@ -11,6 +11,12 @@ import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.Json
 
 /**
+ * Platform-specific HTTP client creation with SSL configuration
+ * Each platform implements its own way of handling self-signed certificates
+ */
+expect fun createPlatformHttpClient(block: HttpClientConfig<*>.() -> Unit): HttpClient
+
+/**
  * Network module for dependency injection
  * Creates Ktorfit client and all service instances
  */
@@ -18,9 +24,10 @@ object NetworkModule {
 
     /**
      * Create HTTP client with common configuration
+     * Supports self-signed certificates for all platforms
      */
     fun createHttpClient(): HttpClient {
-        return HttpClient {
+        return createPlatformHttpClient {
             install(ContentNegotiation) {
                 json(Json {
                     prettyPrint = true

@@ -12,6 +12,13 @@ class ErrorLogRepository(
 ) {
 
     /**
+     * List all error logs (global, no client filter)
+     */
+    suspend fun listAllErrorLogs(limit: Int = 500): List<ErrorLogDto> {
+        return errorLogService.listAll(limit)
+    }
+
+    /**
      * List error logs for a client
      */
     suspend fun listErrorLogs(clientId: String, limit: Int = 500): List<ErrorLogDto> {
