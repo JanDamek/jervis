@@ -25,4 +25,10 @@ interface IClientService {
 
     @DELETE("api/clients/{id}")
     suspend fun deleteClient(@Path("id") id: String)
+
+    @PATCH("api/clients/{id}/last-selected-project")
+    suspend fun updateLastSelectedProject(
+        @Path("id") id: String,
+        @Query projectId: String?
+    ): ClientDto
 }

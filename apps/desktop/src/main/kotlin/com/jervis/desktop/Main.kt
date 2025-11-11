@@ -22,24 +22,26 @@ import java.awt.Dimension
  * All configuration happens in the desktop app - no web admin.
  */
 fun main() = application {
-    // Set dock icon on macOS
-    MacOSUtils.setDockIcon()
-
     val serverBaseUrl = System.getProperty("jervis.server.url") ?: "https://localhost:5500/"
+
+    // Window state
+    var showMainWindow by remember { mutableStateOf(true) }
+    var showDebug by remember { mutableStateOf(false) }
+
+    // Set dock icon and click handler on macOS
+    LaunchedEffect(Unit) {
+        MacOSUtils.setDockIcon()
+        MacOSUtils.setDockIconClickHandler {
+            showMainWindow = true
+        }
+    }
 
     // Connection manager with automatic retry
     val connectionManager = rememberConnectionManager(serverBaseUrl)
     val repository = connectionManager.repository
 
-    // Window state
-    var showMainWindow by remember { mutableStateOf(true) }
-    var showSettings by remember { mutableStateOf(false) }
-    var settingsInitialTab by remember { mutableStateOf(0) }
-    var showUserTasks by remember { mutableStateOf(false) }
-    var showErrorLogs by remember { mutableStateOf(false) }
-    var showRagSearch by remember { mutableStateOf(false) }
-    var showScheduler by remember { mutableStateOf(false) }
-    var showDebug by remember { mutableStateOf(false) }
+    // Shared navigator for main window navigation
+    val navigator = remember { com.jervis.ui.navigation.AppNavigator() }
 
     // Error notifications popup
     val errorNotifications = connectionManager.errorNotifications
@@ -53,19 +55,43 @@ fun main() = application {
         tooltip = "JERVIS Assistant",
         onAction = { showMainWindow = true },
         menu = {
-            Item("Open Main Window", onClick = { showMainWindow = true })
+            Item("Open Main Window", onClick = {
+                showMainWindow = true
+                navigator.navigateTo(com.jervis.ui.navigation.Screen.Main)
+            })
             Separator()
-            Item("Projects", onClick = { settingsInitialTab = 1; showSettings = true })
-            Item("Clients", onClick = { settingsInitialTab = 0; showSettings = true })
+            Item("Projects", onClick = {
+                showMainWindow = true
+                navigator.navigateTo(com.jervis.ui.navigation.Screen.Projects)
+            })
+            Item("Clients", onClick = {
+                showMainWindow = true
+                navigator.navigateTo(com.jervis.ui.navigation.Screen.Clients)
+            })
             Separator()
-            Item("User Tasks", onClick = { showUserTasks = true })
-            Item("Error Logs", onClick = { showErrorLogs = true })
+            Item("User Tasks", onClick = {
+                showMainWindow = true
+                navigator.navigateTo(com.jervis.ui.navigation.Screen.UserTasks)
+            })
+            Item("Error Logs", onClick = {
+                showMainWindow = true
+                navigator.navigateTo(com.jervis.ui.navigation.Screen.ErrorLogs)
+            })
             Separator()
-            Item("RAG Search", onClick = { showRagSearch = true })
-            Item("Scheduler", onClick = { showScheduler = true })
+            Item("RAG Search", onClick = {
+                showMainWindow = true
+                navigator.navigateTo(com.jervis.ui.navigation.Screen.RagSearch)
+            })
+            Item("Scheduler", onClick = {
+                showMainWindow = true
+                navigator.navigateTo(com.jervis.ui.navigation.Screen.Scheduler)
+            })
             Separator()
             Item("Debug Console", onClick = { showDebug = true })
-            Item("Settings", onClick = { showSettings = true })
+            Item("Settings", onClick = {
+                showMainWindow = true
+                navigator.navigateTo(com.jervis.ui.navigation.Screen.Settings)
+            })
             Separator()
             Item("Exit", onClick = ::exitApplication)
         }
@@ -78,23 +104,25 @@ fun main() = application {
             title = "JERVIS Assistant",
             state = rememberWindowState(width = 1200.dp, height = 800.dp)
         ) {
-        window.minimumSize = Dimension(800, 600)
+            window.minimumSize = Dimension(800, 600)
 
         MenuBar {
             Menu("File") {
-                Item("Settings", onClick = { showSettings = true })
+                Item("Settings", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.Settings) })
                 Separator()
                 Item("Exit", onClick = { exitApplication() })
             }
             Menu("View") {
-                Item("Projects", onClick = { settingsInitialTab = 1; showSettings = true })
-                Item("Clients", onClick = { settingsInitialTab = 0; showSettings = true })
+                Item("Home", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.Main) })
                 Separator()
-                Item("User Tasks", onClick = { showUserTasks = true })
-                Item("Error Logs", onClick = { showErrorLogs = true })
+                Item("Projects", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.Projects) })
+                Item("Clients", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.Clients) })
                 Separator()
-                Item("RAG Search", onClick = { showRagSearch = true })
-                Item("Scheduler", onClick = { showScheduler = true })
+                Item("User Tasks", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.UserTasks) })
+                Item("Error Logs", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.ErrorLogs) })
+                Separator()
+                Item("RAG Search", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.RagSearch) })
+                Item("Scheduler", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.Scheduler) })
                 Separator()
                 Item("Debug Console", onClick = { showDebug = true })
             }
@@ -107,70 +135,14 @@ fun main() = application {
 
             // Main chat interface - show connection status if not connected
             if (repository != null) {
-                MainContent(repository = repository)
+                MainContent(repository = repository, navigator = navigator)
             } else {
                 ConnectionStatusScreen(connectionManager.status, serverBaseUrl)
             }
         }
     }
 
-    // Settings Window
-    if (showSettings && repository != null) {
-        Window(
-            onCloseRequest = { showSettings = false },
-            title = "Settings",
-            state = rememberWindowState(width = 900.dp, height = 700.dp)
-        ) {
-            SettingsWindow(repository = repository, initialTabIndex = settingsInitialTab)
-        }
-    }
-
-
-    // User Tasks Window
-    if (showUserTasks && repository != null) {
-        Window(
-            onCloseRequest = { showUserTasks = false },
-            title = "User Tasks",
-            state = rememberWindowState(width = 800.dp, height = 600.dp)
-        ) {
-            UserTasksWindow(repository = repository)
-        }
-    }
-
-    // Error Logs Window
-    if (showErrorLogs && repository != null) {
-        Window(
-            onCloseRequest = { showErrorLogs = false },
-            title = "Error Logs",
-            state = rememberWindowState(width = 900.dp, height = 700.dp)
-        ) {
-            ErrorLogsWindow(repository = repository)
-        }
-    }
-
-    // RAG Search Window
-    if (showRagSearch && repository != null) {
-        Window(
-            onCloseRequest = { showRagSearch = false },
-            title = "RAG Search",
-            state = rememberWindowState(width = 800.dp, height = 600.dp)
-        ) {
-            RagSearchWindow(repository = repository)
-        }
-    }
-
-    // Scheduler Window
-    if (showScheduler && repository != null) {
-        Window(
-            onCloseRequest = { showScheduler = false },
-            title = "Scheduler",
-            state = rememberWindowState(width = 900.dp, height = 700.dp)
-        ) {
-            SchedulerWindow(repository = repository)
-        }
-    }
-
-    // Debug Window
+    // Debug Window - desktop-only feature for monitoring LLM calls
     if (showDebug) {
         Window(
             onCloseRequest = { showDebug = false },
@@ -192,7 +164,8 @@ fun main() = application {
                 onDismiss = { dismissedErrorId = lastError.timestamp },
                 onViewAllErrors = {
                     dismissedErrorId = lastError.timestamp
-                    showErrorLogs = true
+                    showMainWindow = true
+                    navigator.navigateTo(com.jervis.ui.navigation.Screen.ErrorLogs)
                 }
             )
         }

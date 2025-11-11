@@ -24,4 +24,5 @@ data class ClientDto(
     val dependsOnProjects: List<String> = emptyList(),
     val isDisabled: Boolean = false,
     val disabledProjects: List<String> = emptyList(),
+    val lastSelectedProjectId: String? = null,
 )

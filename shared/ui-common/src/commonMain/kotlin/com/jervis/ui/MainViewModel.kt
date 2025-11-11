@@ -53,7 +53,7 @@ class MainViewModel(
 
         // Auto-load projects if client is pre-selected
         _selectedClientId.value?.let { clientId ->
-            loadProjectsForClient(clientId)
+            selectClient(clientId)
         }
     }
 
@@ -73,17 +73,23 @@ class MainViewModel(
 
     fun selectClient(clientId: String) {
         _selectedClientId.value = clientId
-        _selectedProjectId.value = null // Reset project selection
+        _selectedProjectId.value = null // Reset project selection temporarily
         _projects.value = emptyList()
-        loadProjectsForClient(clientId)
-    }
 
-    private fun loadProjectsForClient(clientId: String) {
+        // Load projects and restore last selected
         scope.launch {
             _isLoading.value = true
             try {
                 val projectList = repository.projects.listProjectsForClient(clientId)
                 _projects.value = projectList
+
+                // Restore last selected project if available
+                val client = _clients.value.find { it.id == clientId }
+                client?.lastSelectedProjectId?.let { lastProjectId ->
+                    if (projectList.any { it.id == lastProjectId }) {
+                        _selectedProjectId.value = lastProjectId
+                    }
+                }
             } catch (e: Exception) {
                 _errorMessage.value = "Failed to load projects: ${e.message}"
             } finally {
@@ -94,6 +100,22 @@ class MainViewModel(
 
     fun selectProject(projectId: String) {
         _selectedProjectId.value = projectId
+
+        // Save selection to server
+        val clientId = _selectedClientId.value
+        if (clientId != null) {
+            scope.launch {
+                try {
+                    val updatedClient = repository.clients.updateLastSelectedProject(clientId, projectId)
+                    // Update local cache
+                    _clients.value = _clients.value.map {
+                        if (it.id == clientId) updatedClient else it
+                    }
+                } catch (e: Exception) {
+                    // Silent fail - not critical
+                }
+            }
+        }
     }
 
     fun updateInputText(text: String) {

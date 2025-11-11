@@ -49,9 +49,9 @@ dependencies {
 // Server URL configuration
 val serverUrls =
     mapOf(
-        "local" to "http://localhost:5500/",
-        "remote" to "http://192.168.100.117:5500/",
-        "public" to "http://home.damek-soft.eu:5500/",
+        "local" to "https://localhost:5500/",
+        "remote" to "https://192.168.100.117:5500/",
+        "public" to "https://home.damek-soft.eu:5500/",
     )
 
 val currentProfile = findProperty("jervis.profile")?.toString() ?: "local"

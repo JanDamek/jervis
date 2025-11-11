@@ -1,5 +1,6 @@
 package com.jervis.repository
 
+import com.jervis.dto.user.TaskRoutingMode
 import com.jervis.dto.user.UserTaskCountDto
 import com.jervis.dto.user.UserTaskDto
 import com.jervis.service.IUserTaskService
@@ -31,5 +32,19 @@ class UserTaskRepository(
      */
     suspend fun cancel(taskId: String): UserTaskDto {
         return userTaskService.cancel(taskId)
+    }
+
+    /**
+     * Send user task to agent orchestrator with optional additional input
+     * @param taskId Task ID to send
+     * @param routingMode How to route the task (directly to agent or back to pending)
+     * @param additionalInput Optional user comment/instructions
+     */
+    suspend fun sendToAgent(
+        taskId: String,
+        routingMode: TaskRoutingMode,
+        additionalInput: String? = null
+    ): UserTaskDto {
+        return userTaskService.sendToAgent(taskId, routingMode, additionalInput)
     }
 }

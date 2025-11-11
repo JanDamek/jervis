@@ -19,10 +19,11 @@ fun App(
     defaultClientId: String? = null,
     defaultProjectId: String? = null,
     modifier: Modifier = Modifier,
+    navigator: AppNavigator? = null,
 ) {
     val viewModel = remember { MainViewModel(repository, defaultClientId, defaultProjectId) }
     val snackbarHostState = remember { SnackbarHostState() }
-    val navigator = remember { AppNavigator() }
+    val appNavigator = navigator ?: remember { AppNavigator() }
 
     // Observe error messages and show snackbar
     val errorMessage by viewModel.errorMessage.collectAsState()
@@ -48,7 +49,7 @@ fun App(
         val chatMessages by viewModel.chatMessages.collectAsState()
         val inputText by viewModel.inputText.collectAsState()
         val isLoading by viewModel.isLoading.collectAsState()
-        val currentScreen by navigator.currentScreen.collectAsState()
+        val currentScreen by appNavigator.currentScreen.collectAsState()
 
         when (currentScreen) {
             Screen.Main -> MainScreen(
@@ -63,36 +64,36 @@ fun App(
                 onProjectSelected = viewModel::selectProject,
                 onInputChanged = viewModel::updateInputText,
                 onSendClick = viewModel::sendMessage,
-                onNavigate = navigator::navigateTo,
+                onNavigate = appNavigator::navigateTo,
                 modifier = modifier,
             )
             Screen.Clients -> ClientsScreen(
                 repository = repository,
-                onBack = { navigator.navigateTo(Screen.Main) }
+                onBack = { appNavigator.navigateTo(Screen.Main) }
             )
             Screen.Projects -> ProjectsScreen(
                 repository = repository,
-                onBack = { navigator.navigateTo(Screen.Main) }
+                onBack = { appNavigator.navigateTo(Screen.Main) }
             )
             Screen.Settings -> SettingsScreen(
                 repository = repository,
-                onBack = { navigator.navigateTo(Screen.Main) }
+                onBack = { appNavigator.navigateTo(Screen.Main) }
             )
             Screen.UserTasks -> UserTasksScreen(
                 repository = repository,
-                onBack = { navigator.navigateTo(Screen.Main) }
+                onBack = { appNavigator.navigateTo(Screen.Main) }
             )
             Screen.ErrorLogs -> ErrorLogsScreen(
                 repository = repository,
-                onBack = { navigator.navigateTo(Screen.Main) }
+                onBack = { appNavigator.navigateTo(Screen.Main) }
             )
             Screen.RagSearch -> RagSearchScreen(
                 repository = repository,
-                onBack = { navigator.navigateTo(Screen.Main) }
+                onBack = { appNavigator.navigateTo(Screen.Main) }
             )
             Screen.Scheduler -> SchedulerScreen(
                 repository = repository,
-                onBack = { navigator.navigateTo(Screen.Main) }
+                onBack = { appNavigator.navigateTo(Screen.Main) }
             )
         }
 

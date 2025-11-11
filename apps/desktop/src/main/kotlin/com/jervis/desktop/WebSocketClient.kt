@@ -12,6 +12,10 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.serialization.json.Json
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
+import javax.net.ssl.SSLContext
+import javax.net.ssl.X509TrustManager
 import kotlin.math.min
 
 /**
@@ -22,6 +26,21 @@ class WebSocketClient(private val serverBaseUrl: String) {
     private val json = Json { ignoreUnknownKeys = true }
 
     private val client = HttpClient(CIO) {
+        engine {
+            https {
+                // Accept all certificates for development (self-signed certificates)
+                val trustAllCerts = object : X509TrustManager {
+                    override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
+                    override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {}
+                    override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+                }
+
+                val sslContext = SSLContext.getInstance("TLS")
+                sslContext.init(null, arrayOf(trustAllCerts), SecureRandom())
+
+                trustManager = trustAllCerts
+            }
+        }
         install(WebSockets) {
             pingIntervalMillis = 20_000
             maxFrameSize = Long.MAX_VALUE
