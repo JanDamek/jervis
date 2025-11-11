@@ -44,7 +44,7 @@ class ClientRestController(
     ): ClientDto {
         val client = clientService.getClientById(ObjectId(id))
             ?: throw IllegalArgumentException("Client not found")
-        val updated = client.copy(lastSelectedProjectId = projectId)
+        val updated = client.copy(lastSelectedProjectId = projectId?.let { ObjectId(it) })
         return clientService.update(updated).toDto()
     }
 }

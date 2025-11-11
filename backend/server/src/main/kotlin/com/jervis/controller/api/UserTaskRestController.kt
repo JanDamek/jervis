@@ -1,5 +1,6 @@
 package com.jervis.controller.api
 
+import com.jervis.dto.user.TaskRoutingMode
 import com.jervis.dto.user.UserTaskCountDto
 import com.jervis.dto.user.UserTaskDto
 import com.jervis.service.IUserTaskService
@@ -33,6 +34,19 @@ class UserTaskRestController(
         val tid = ObjectId(taskId)
         val updated = userTaskService.cancelTask(tid)
         return updated.toDto()
+    }
+
+    @PostMapping("/send-to-agent")
+    override suspend fun sendToAgent(
+        @RequestParam taskId: String,
+        @RequestParam routingMode: TaskRoutingMode,
+        @RequestBody additionalInput: String?
+    ): UserTaskDto {
+        // TODO: Implement full routing logic as per docs/USER_TASK_TO_AGENT_FLOW.md
+        // For now, just return the task unchanged
+        val tid = ObjectId(taskId)
+        val task = userTaskService.findById(tid) ?: throw IllegalArgumentException("Task not found")
+        return task.toDto()
     }
 }
 
