@@ -8,6 +8,7 @@ import com.jervis.entity.IndexedLinkDocument
 import com.jervis.repository.mongo.IndexedLinkMongoRepository
 import com.jervis.service.rag.RagIndexingService
 import com.jervis.service.text.TextChunkingService
+import com.jervis.service.text.TextNormalizationService
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -19,6 +20,7 @@ private val logger = KotlinLogging.logger {}
 class LinkIndexer(
     private val ragIndexingService: RagIndexingService,
     private val textChunkingService: TextChunkingService,
+    private val textNormalizationService: TextNormalizationService,
     private val linkContentService: LinkContentService,
     private val indexedLinkRepo: IndexedLinkMongoRepository,
     private val props: LinkIndexingProperties,
@@ -65,7 +67,8 @@ class LinkIndexer(
                 link.plainText
             }
 
-        val chunks = textChunkingService.splitText(plainText)
+        val normalizedText = textNormalizationService.normalize(plainText)
+        val chunks = textChunkingService.splitText(normalizedText)
         logger.debug { "Split link content from $url into ${chunks.size} chunks" }
 
         chunks.forEachIndexed { chunkIndex, chunk ->

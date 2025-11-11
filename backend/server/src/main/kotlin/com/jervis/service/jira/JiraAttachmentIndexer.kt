@@ -8,6 +8,7 @@ import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
 import com.jervis.service.rag.RagIndexingService
 import com.jervis.service.text.TextChunkingService
+import com.jervis.service.text.TextNormalizationService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -37,6 +38,7 @@ class JiraAttachmentIndexer(
     private val ragIndexingService: RagIndexingService,
     private val tikaClient: ITikaClient,
     private val textChunkingService: TextChunkingService,
+    private val textNormalizationService: TextNormalizationService,
     private val webClientBuilder: WebClient.Builder,
 ) {
     /**
@@ -117,8 +119,9 @@ class JiraAttachmentIndexer(
             return
         }
 
-        // Chunk and index
-        val chunks = textChunkingService.splitText(processingResult.plainText)
+        // Normalize, chunk and index
+        val normalizedText = textNormalizationService.normalize(processingResult.plainText)
+        val chunks = textChunkingService.splitText(normalizedText)
         logger.debug { "JIRA_ATTACHMENT: Split ${attachment.filename} into ${chunks.size} chunks" }
 
         chunks.forEachIndexed { chunkIndex, chunk ->

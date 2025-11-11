@@ -23,6 +23,7 @@ fun RagDocument.toWeaviateProperties(): Map<String, Any> =
         // Optional fields (only add if non-null)
         projectId?.let { put("projectId", it.toString()) }
         from?.let { put("from", it) }
+        to?.let { put("to", it) }
         subject?.let { put("subject", it) }
         timestamp?.let { put("timestamp", it) }
         sourceUri?.let { put("sourceUri", it) }

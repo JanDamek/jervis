@@ -9,6 +9,7 @@ import com.jervis.entity.ConfluencePageDocument
 import com.jervis.service.rag.RagIndexingService
 import com.jervis.service.rag.VectorStoreIndexService
 import com.jervis.service.text.TextChunkingService
+import com.jervis.service.text.TextNormalizationService
 import mu.KotlinLogging
 import org.jsoup.Jsoup
 import org.springframework.stereotype.Service
@@ -39,6 +40,7 @@ class ConfluenceContentProcessor(
     private val vectorStoreIndexService: VectorStoreIndexService,
     private val tikaClient: ITikaClient,
     private val textChunkingService: TextChunkingService,
+    private val textNormalizationService: TextNormalizationService,
     private val linkSafetyQualifier: com.jervis.service.link.LinkSafetyQualifier,
 ) {
     /**
@@ -67,8 +69,9 @@ class ConfluenceContentProcessor(
                 )
             }
 
-            // Chunk content via TextChunkingService
-            val segments = textChunkingService.splitText(parsed.plainText)
+            // Normalize and chunk content via TextChunkingService
+            val normalizedText = textNormalizationService.normalize(parsed.plainText)
+            val segments = textChunkingService.splitText(normalizedText)
             logger.debug { "Created ${segments.size} chunks for page ${page.pageId}" }
 
             var indexedChunks = 0
