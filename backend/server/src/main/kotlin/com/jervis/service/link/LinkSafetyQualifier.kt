@@ -54,6 +54,33 @@ class LinkSafetyQualifier(
         }
     }
 
+    // Image tracking patterns (tracking pixels, beacons)
+    private val imageTrackingPatterns =
+        listOf(
+            "pixel.gif",
+            "pixel.png",
+            "tracker.gif",
+            "tracker.png",
+            "beacon.png",
+            "beacon.gif",
+            "1x1.gif",
+            "1x1.png",
+            "track.gif",
+            "track.png",
+            "open.gif",
+            "open.png",
+            "view.gif",
+            "view.png",
+            "/pixel/",
+            "/track/",
+            "/open/",
+            "/view/",
+            "/beacon/",
+            "/img/pixel",
+            "/img/track",
+            "/img/open",
+        )
+
     // Critical patterns that must NEVER be indexed
     private val blacklistPatterns =
         listOf(
@@ -266,8 +293,23 @@ class LinkSafetyQualifier(
         val uri = URI.create(url)
         val normalizedUrl = url.lowercase()
         val domain = uri.host?.lowercase() ?: ""
+        val path = uri.path?.lowercase() ?: ""
 
-        // Level 2: Blacklist patterns (most important - never index these!)
+        // Level 2: Image tracking detection (tracking pixels, beacons)
+        // Check if URL is an image AND matches tracking patterns
+        if (path.matches(Regex(".*\\.(gif|png|jpg|jpeg)$"))) {
+            imageTrackingPatterns
+                .firstOrNull { pattern ->
+                    normalizedUrl.contains(pattern, ignoreCase = true)
+                }?.let { pattern ->
+                    return SafetyResult(
+                        SafetyResult.Decision.UNSAFE,
+                        "Image tracking pixel detected: $pattern",
+                    )
+                }
+        }
+
+        // Level 3: Blacklist patterns (most important - never index these!)
         blacklistPatterns
             .firstOrNull { pattern ->
                 normalizedUrl.contains(pattern, ignoreCase = true)
@@ -278,7 +320,7 @@ class LinkSafetyQualifier(
                 )
             }
 
-        // Level 3: Blacklist domains
+        // Level 4: Blacklist domains
         blacklistDomains
             .firstOrNull { blacklistDomain ->
                 domain.contains(blacklistDomain, ignoreCase = true)
@@ -289,7 +331,7 @@ class LinkSafetyQualifier(
                 )
             }
 
-        // Level 4: Whitelist domains (safe, no need for LLM)
+        // Level 5: Whitelist domains (safe, no need for LLM)
         whitelistDomains
             .firstOrNull { whitelistDomain ->
                 domain.contains(whitelistDomain, ignoreCase = true)
@@ -300,7 +342,7 @@ class LinkSafetyQualifier(
                 )
             }
 
-        // Level 5: Check for tracking parameters
+        // Level 6: Check for tracking parameters
         val query = uri.query ?: ""
         if (query.contains("utm_") ||
             query.contains("email_id") ||
@@ -310,7 +352,7 @@ class LinkSafetyQualifier(
             return qualifyWithLlm(url, "Contains tracking parameters")
         }
 
-        // Level 6: Token/key parameters - use LLM only for authentication-looking patterns
+        // Level 7: Token/key parameters - use LLM only for authentication-looking patterns
         if (url.contains("?token=") || url.contains("&key=") || url.contains("?key=")) {
             return qualifyWithLlm(url, "Contains token/key parameter")
         }
