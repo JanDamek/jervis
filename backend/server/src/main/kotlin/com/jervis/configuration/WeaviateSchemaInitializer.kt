@@ -5,6 +5,7 @@ import com.jervis.configuration.properties.WeaviateProperties
 import com.jervis.domain.model.ModelTypeEnum
 import io.weaviate.client.Config
 import io.weaviate.client.WeaviateClient
+import io.weaviate.client.v1.misc.model.VectorIndexConfig
 import io.weaviate.client.v1.schema.model.DataType
 import io.weaviate.client.v1.schema.model.Property
 import io.weaviate.client.v1.schema.model.Tokenization
@@ -17,11 +18,18 @@ import org.springframework.stereotype.Component
 /**
  * Initializes Weaviate schema (collections) on application startup.
  * Creates SemanticText and SemanticCode collections with proper configuration for hybrid search.
+ *
+ * Includes automatic migration:
+ * - Detects schema configuration changes (distance metric, HNSW params, dimensions)
+ * - Automatically deletes old collections and vector-dependent MongoDB data
+ * - Recreates collections with new configuration
+ * - Requires manual re-indexing after migration
  */
 @Component
 class WeaviateSchemaInitializer(
     private val weaviateProperties: WeaviateProperties,
     private val modelsProperties: ModelsProperties,
+    private val migrationService: com.jervis.service.rag.WeaviateMigrationService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -37,7 +45,20 @@ class WeaviateSchemaInitializer(
                 logger.info { "Initializing Weaviate schema..." }
                 val client = createClient()
 
-                // Get existing classes
+                // Check if migration is needed
+                val migrationNeeded = migrationService.isMigrationNeeded()
+
+                if (migrationNeeded && weaviateProperties.autoMigrate.enabled) {
+                    logger.warn { "Schema migration required - performing automatic migration" }
+                    migrationService.performMigration(client)
+                } else if (migrationNeeded && !weaviateProperties.autoMigrate.enabled) {
+                    throw IllegalStateException(
+                        "Weaviate schema configuration changed but auto-migration is disabled. " +
+                            "Enable weaviate.auto-migrate.enabled or manually migrate the schema.",
+                    )
+                }
+
+                // Get existing classes after potential migration
                 val existingClasses =
                     client
                         .schema()
@@ -221,12 +242,28 @@ class WeaviateSchemaInitializer(
                     .build(),
             )
 
+        // Configure HNSW vector index for optimal similarity search
+        // Using COSINE distance for L2-normalized embeddings (BGE-M3, nomic-embed)
+        val vectorIndexConfig =
+            VectorIndexConfig
+                .builder()
+                .distance("cosine") // COSINE distance for normalized vectors
+                .ef(128) // Runtime search quality (higher = better recall, slower)
+                .efConstruction(256) // Index build quality (higher = better index, slower build)
+                .maxConnections(64) // HNSW graph connections (higher = better recall, more memory)
+                .dynamicEfMin(100) // Dynamic ef adjustment
+                .dynamicEfMax(500)
+                .dynamicEfFactor(8)
+                .flatSearchCutoff(40000) // Use brute-force for small collections
+                .build()
+
         val weaviateClass =
             WeaviateClass
                 .builder()
                 .className(className)
                 .description("$className collection for hybrid search (BM25 + vector)")
-                .vectorizer("none")
+                .vectorizer("none") // We provide our own embeddings
+                .vectorIndexConfig(vectorIndexConfig)
                 .properties(properties)
                 .build()
 

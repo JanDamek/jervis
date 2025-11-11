@@ -65,6 +65,15 @@ class WeaviateVectorRepository(
                 val className = WeaviateCollections.forModelType(collectionType)
                 val objectId = UUID.randomUUID().toString()
 
+                // Validate embedding
+                require(embedding.isNotEmpty()) { "Embedding is empty for $className" }
+                require(embedding.all { it.isFinite() }) { "Embedding contains non-finite values for $className" }
+                expectedDimension(collectionType)?.let { expected ->
+                    require(embedding.size == expected) {
+                        "Embedding dimension mismatch for $className: expected $expected, got ${embedding.size}"
+                    }
+                }
+
                 logger.debug {
                     "Storing document in $className: sourceType=${document.ragSourceType}, " +
                         "client=${document.clientId}, project=${document.projectId}, branch=${document.branch}"
@@ -157,6 +166,22 @@ class WeaviateVectorRepository(
         className: String,
         query: VectorQuery,
     ): List<SearchResult> {
+        // Validate embedding
+        require(query.embedding.isNotEmpty()) { "Search embedding is empty for $className" }
+        require(query.embedding.all { it.isFinite() }) { "Search embedding contains non-finite values for $className" }
+
+        // Validate expected dimension if available
+        val expectedDim = when (className) {
+            WeaviateCollections.forModelType(com.jervis.domain.model.ModelTypeEnum.EMBEDDING_TEXT) -> expectedDimension(com.jervis.domain.model.ModelTypeEnum.EMBEDDING_TEXT)
+            WeaviateCollections.forModelType(com.jervis.domain.model.ModelTypeEnum.EMBEDDING_CODE) -> expectedDimension(com.jervis.domain.model.ModelTypeEnum.EMBEDDING_CODE)
+            else -> null
+        }
+        expectedDim?.let { expected ->
+            require(query.embedding.size == expected) {
+                "Search embedding dimension mismatch for $className: expected $expected, got ${query.embedding.size}"
+            }
+        }
+
         // Build GraphQL query fields
         val fields =
             listOf(
@@ -252,17 +277,25 @@ class WeaviateVectorRepository(
 
             queryBuilder.withHybrid(hybridArg)
         } else {
-            // Pure vector search with distance threshold
+            // Pure vector search with COSINE similarity threshold
+            // For COSINE distance: 0.0 = identical, 2.0 = opposite
+            // minScore is similarity (0-1), so we need: distance = 1.0 - minScore
+            // But Weaviate COSINE uses certainty (0-1) not distance
+            // certainty = 1 - (distance / 2) = similarity for normalized vectors
             logger.debug {
-                "Using pure vector search: minScore=${query.minScore}, limit=${query.limit}"
+                "Using pure vector search with COSINE: minScore=${query.minScore}, limit=${query.limit}"
             }
-            queryBuilder.withNearVector(
-                NearVectorArgument
-                    .builder()
-                    .vector(query.embedding.toTypedArray())
-                    .distance(1.0f - query.minScore)
-                    .build(),
-            )
+
+            val nearVectorBuilder = NearVectorArgument
+                .builder()
+                .vector(query.embedding.toTypedArray())
+
+            // Apply certainty threshold if minScore > 0
+            if (query.minScore > 0.0f) {
+                nearVectorBuilder.certainty(query.minScore)
+            }
+
+            queryBuilder.withNearVector(nearVectorBuilder.build())
         }
 
         // Execute query
@@ -289,6 +322,17 @@ class WeaviateVectorRepository(
         }
 
         return parsed
+    }
+
+    private fun expectedDimension(type: ModelTypeEnum): Int? {
+        val modelList = modelsProperties.models[type] ?: emptyList()
+        if (modelList.isEmpty()) return null
+        val dimensions = modelList.mapNotNull { it.dimension }.distinct()
+        return when {
+            dimensions.isEmpty() -> null
+            dimensions.size > 1 -> null
+            else -> dimensions.first()
+        }
     }
 
     private fun validateEmbeddingDimensions() {

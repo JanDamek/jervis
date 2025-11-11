@@ -10,9 +10,17 @@ data class WeaviateProperties(
     val scheme: String = "http",
     val grpcPort: Int = 50051,
     val hybridSearch: HybridSearchProperties = HybridSearchProperties(),
+    val autoMigrate: AutoMigrateProperties = AutoMigrateProperties(),
 ) {
     data class HybridSearchProperties(
         val enabled: Boolean = false,
         val alpha: Double = 0.75,
+    )
+
+    data class AutoMigrateProperties(
+        val enabled: Boolean = true, // Enable automatic schema migration
+        val countdownSeconds: Int = 10, // Countdown before migration starts (abort opportunity)
+        val requireConfirmation: Boolean = false, // Require manual confirmation via API endpoint
+        val dryRun: Boolean = false, // Log what would be deleted without actually deleting
     )
 }

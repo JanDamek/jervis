@@ -20,13 +20,14 @@ class OllamaEmbeddingClient(
         model: String,
         text: String,
     ): List<Float> {
-        val body = mapOf("model" to model, "prompt" to text)
+        // Ollama embeddings API expects { model, input } at /api/embeddings
+        val body = mapOf("model" to model, "input" to text)
 
         return try {
             val response =
                 client
                     .post()
-                    .uri("/embeddings")
+                    .uri("/api/embeddings")
                     .bodyValue(body)
                     .retrieve()
                     .awaitBody<OllamaEmbeddingResponse>()
