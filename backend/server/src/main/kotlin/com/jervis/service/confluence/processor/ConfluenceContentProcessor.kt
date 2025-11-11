@@ -39,6 +39,7 @@ class ConfluenceContentProcessor(
     private val vectorStoreIndexService: VectorStoreIndexService,
     private val tikaClient: ITikaClient,
     private val textChunkingService: TextChunkingService,
+    private val linkSafetyQualifier: com.jervis.service.link.LinkSafetyQualifier,
 ) {
     /**
      * Process page content and index into RAG.
@@ -107,7 +108,9 @@ class ConfluenceContentProcessor(
         htmlContent: String,
         baseUrl: String,
     ): ParsedContent {
-        val doc = Jsoup.parse(htmlContent, baseUrl)
+        // SECURITY: Remove tracking pixels and malicious elements BEFORE any processing
+        val sanitizedHtml = removeTrackingPixels(htmlContent)
+        val doc = Jsoup.parse(sanitizedHtml, baseUrl)
 
         // Extract all links before cleaning
         val allLinks =
@@ -121,10 +124,21 @@ class ConfluenceContentProcessor(
         // Classify links
         val (internalLinks, externalLinks) = classifyLinks(allLinks, baseUrl)
 
+        // SECURITY: Filter internal links through safety qualifier
+        // Prevents following malicious internal Confluence links (rare but possible)
+        val safeInternalLinks = filterSafeLinks(internalLinks)
+        val blockedInternalCount = internalLinks.size - safeInternalLinks.size
+        if (blockedInternalCount > 0) {
+            logger.warn {
+                "Blocked $blockedInternalCount internal Confluence links " +
+                    "(action/tracking/unsubscribe patterns detected)"
+            }
+        }
+
         // Extract plain text using Tika (authoritative plain text conversion)
         val plainText =
             try {
-                val bytes = htmlContent.toByteArray(Charsets.UTF_8)
+                val bytes = sanitizedHtml.toByteArray(Charsets.UTF_8)
                 val result =
                     tikaClient.process(
                         com.jervis.common.dto.TikaProcessRequest(
@@ -154,7 +168,7 @@ class ConfluenceContentProcessor(
 
         return ParsedContent(
             plainText = plainText,
-            internalLinks = internalLinks,
+            internalLinks = safeInternalLinks, // Return only safe internal links
             externalLinks = externalLinks,
         )
     }
@@ -248,6 +262,62 @@ class ConfluenceContentProcessor(
         }
 
         logger.debug { "Indexed chunk $chunkIndex for page ${page.pageId}" }
+    }
+
+    /**
+     * Remove tracking pixels and malicious elements from HTML.
+     * SECURITY: Prevents tracking pixel activation during indexing.
+     *
+     * Removes:
+     * - 1x1 images (tracking pixels)
+     * - Images with tracking/pixel/beacon in URL
+     * - Images from known tracking domains
+     * - Script tags (shouldn't be in Confluence but defense in depth)
+     * - Iframe tags (prevent embedded trackers)
+     */
+    private fun removeTrackingPixels(html: String): String {
+        val doc = Jsoup.parse(html)
+
+        // Remove 1x1 tracking pixels
+        doc.select("img[width='1']").remove()
+        doc.select("img[height='1']").remove()
+
+        // Remove images with tracking keywords in src
+        doc.select("img[src*='tracking'], img[src*='pixel'], img[src*='beacon']").remove()
+        doc.select("img[src*='track.'], img[src*='open.'], img[src*='view.']").remove()
+
+        // Remove images from known tracking domains
+        doc.select("img[src*='list-manage.com']").remove()
+        doc.select("img[src*='sendgrid.net']").remove()
+        doc.select("img[src*='mailgun.']").remove()
+        doc.select("img[src*='mandrillapp.com']").remove()
+
+        // Remove script tags (defense in depth - shouldn't be in Confluence)
+        doc.select("script").remove()
+
+        // Remove iframes (can contain tracking beacons)
+        doc.select("iframe").remove()
+
+        logger.debug { "Sanitized HTML: removed tracking elements" }
+
+        return doc.html()
+    }
+
+    /**
+     * Filter links through safety qualifier to remove action/tracking links.
+     * SECURITY: Prevents following internal Confluence links that could trigger actions.
+     */
+    private suspend fun filterSafeLinks(links: List<String>): List<String> {
+        return links.filter { link ->
+            val result = linkSafetyQualifier.qualifyLink(link)
+            when (result.decision) {
+                com.jervis.service.link.LinkSafetyQualifier.SafetyResult.Decision.SAFE -> true
+                else -> {
+                    logger.info { "Blocked internal Confluence link: $link (${result.reason})" }
+                    false
+                }
+            }
+        }
     }
 
     private data class ParsedContent(
