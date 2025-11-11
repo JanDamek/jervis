@@ -4,6 +4,7 @@ import com.jervis.common.client.ITikaClient
 import com.jervis.domain.task.PendingTaskTypeEnum
 import com.jervis.service.background.PendingTaskService
 import com.jervis.service.listener.email.imap.ImapMessage
+import com.jervis.service.text.TextNormalizationService
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -14,6 +15,7 @@ private val logger = KotlinLogging.logger {}
 class EmailTaskCreator(
     private val pendingTaskService: PendingTaskService,
     private val tikaClient: ITikaClient,
+    private val textNormalizationService: TextNormalizationService,
 ) {
     companion object {
         private const val MAX_CONTENT_BYTES = 12 * 1024 * 1024 // 12 MiB headroom to stay under Mongo 16MB limit
@@ -134,12 +136,7 @@ class EmailTaskCreator(
         // Remove URLs (they're indexed separately)
         val withoutUrls = URL_PATTERN.replace(plainText, "[URL]")
 
-        // Normalize whitespace
-        return withoutUrls
-            .lines()
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-            .joinToString("\n")
-            .trim()
+        // Normalize whitespace using centralized service
+        return textNormalizationService.normalize(withoutUrls)
     }
 }

@@ -96,7 +96,7 @@ class ConfluenceContentProcessor(
                 indexedChunks = indexedChunks,
                 internalLinks = parsed.internalLinks,
                 externalLinks = parsed.externalLinks,
-                plainText = parsed.plainText,
+                plainText = normalizedText, // Return normalized text for pending tasks
             )
         } catch (e: Exception) {
             logger.error(e) { "Failed to process page ${page.pageId}" }
