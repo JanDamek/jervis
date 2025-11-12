@@ -231,9 +231,9 @@ class AgentOrchestratorService(
                     try {
                         val success = fileDescriptionProcessor.processAnalysisResult(task, response.message)
                         if (success) {
-                            logger.info { "FILE_STRUCTURE_ANALYSIS: Successfully stored description for ${task.context["filePath"]}" }
+                            logger.info { "FILE_STRUCTURE_ANALYSIS: Successfully stored description" }
                         } else {
-                            logger.warn { "FILE_STRUCTURE_ANALYSIS: Failed to store description for ${task.context["filePath"]}" }
+                            logger.warn { "FILE_STRUCTURE_ANALYSIS: Failed to store description" }
                         }
                     } catch (e: Exception) {
                         logger.error(e) { "FILE_STRUCTURE_ANALYSIS: Error storing description: ${e.message}" }
@@ -265,23 +265,7 @@ class AgentOrchestratorService(
                 appendLine()
             }
 
-            // Append qualification notes if present
-            task.context["qualificationNotes"]?.let { notes ->
-                if (notes.isNotBlank()) {
-                    appendLine("QUALIFICATION_NOTES:")
-                    appendLine(notes)
-                    appendLine()
-                }
-            }
-
-            // Append dynamic goal if present (per-task specialization)
-            task.context["dynamicGoal"]?.let { goal ->
-                if (goal.isNotBlank()) {
-                    appendLine("DYNAMIC_GOAL:")
-                    appendLine(goal)
-                    appendLine()
-                }
-            }
+            // All information (including qualification notes and dynamic goals) is now in content
         }
 
     private suspend fun findingInRAG(plan: Plan) {

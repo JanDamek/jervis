@@ -68,35 +68,19 @@ class GitTaskCreator(
                     "by ${commitData.author} in project ${project.name}"
             }
 
-            // Build context map for task
-            val context =
-                buildMap<String, String> {
-                    put("commitHash", commitData.commitHash)
-                    put("author", commitData.author)
-                    put("message", commitData.message)
-                    put("branch", commitData.branch)
-                    put("additions", commitData.additions.toString())
-                    put("deletions", commitData.deletions.toString())
-                    put("changedFilesCount", commitData.changedFiles.size.toString())
-                    put("projectPath", projectPath.toString())
-                    // Canonical source for idempotency/traceability
-                    put("sourceUri", "git://${project.id.toHexString()}/${commitData.commitHash}")
-                    // Provide explicit file list for decision without RAG
-                    if (commitData.changedFiles.isNotEmpty()) {
-                        put("changedFiles", commitData.changedFiles.joinToString(","))
-                    }
-                }
-
-            // Build content string with detailed information and full file contents
+            // Everything in content - simple and clear
             val content =
                 buildString {
                     appendLine("Commit Analysis Required")
+                    appendLine()
+                    appendLine("Project: ${project.name}")
                     appendLine("Commit: ${commitData.commitHash}")
                     appendLine("Author: ${commitData.author}")
-                    appendLine("Message: ${commitData.message}")
                     appendLine("Branch: ${commitData.branch}")
+                    appendLine("Message: ${commitData.message}")
                     appendLine("Changes: +${commitData.additions}/-${commitData.deletions}")
                     appendLine("Files changed: ${commitData.changedFiles.size}")
+                    appendLine("Source: git://${project.id.toHexString()}/${commitData.commitHash}")
                     appendLine()
                     appendLine("Analysis Goals:")
                     appendLine("- Find potential bugs in code changes")
@@ -132,7 +116,7 @@ class GitTaskCreator(
                     content = finalContent,
                     projectId = project.id,
                     clientId = project.clientId,
-                    context = context,
+                    sourceUri = "git://${project.id.toHexString()}/${commitData.commitHash}",
                 )
 
             logger.info {

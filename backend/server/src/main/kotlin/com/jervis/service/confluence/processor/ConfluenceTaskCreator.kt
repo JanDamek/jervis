@@ -41,56 +41,41 @@ class ConfluenceTaskCreator(
     ) {
         logger.info { "Creating analysis task for Confluence page: ${page.title} (${page.pageId})" }
 
-        // Build task content with page metadata
+        // Everything in content - simple and clear
         val taskContent =
             buildString {
-                appendLine("CONFLUENCE PAGE ANALYSIS")
-                appendLine("=======================")
+                appendLine("Confluence Page Analysis Required")
                 appendLine()
                 appendLine("Page: ${page.title}")
                 appendLine("Space: ${page.spaceKey}")
+                appendLine("Page ID: ${page.pageId}")
                 appendLine("URL: ${page.url}")
                 appendLine("Version: ${page.lastKnownVersion}")
-                appendLine("Last Modified: ${page.lastModifiedAt ?: "Unknown"}")
-                appendLine("Modified By: ${page.lastModifiedBy ?: "Unknown"}")
+                appendLine("Last Modified: ${page.lastModifiedAt ?: "Unknown"} by ${page.lastModifiedBy ?: "Unknown"}")
+                appendLine("Source: confluence://${page.accountId.toHexString()}/${page.pageId}")
+
+                page.parentPageId?.let { appendLine("Parent Page ID: $it") }
+
                 appendLine()
                 appendLine("Links:")
-                appendLine("- Internal: ${page.internalLinks.size}")
-                appendLine("- External: ${page.externalLinks.size}")
-                appendLine("- Children: ${page.childPageIds.size}")
+                appendLine("- Internal links: ${page.internalLinks.size}")
+                if (page.internalLinks.isNotEmpty()) {
+                    appendLine("  ${page.internalLinks.joinToString(", ")}")
+                }
+                appendLine("- External links: ${page.externalLinks.size}")
+                if (page.externalLinks.isNotEmpty()) {
+                    appendLine("  ${page.externalLinks.take(10).joinToString(", ")}")
+                }
+                appendLine("- Child pages: ${page.childPageIds.size}")
+
                 appendLine()
-                appendLine("CONTENT:")
+                appendLine("=== PAGE CONTENT ===")
                 appendLine(plainText.take(10000)) // Limit content for task creation (full content in RAG)
                 if (plainText.length > 10000) {
                     appendLine()
                     appendLine("[... content truncated, full text available via RAG search ...]")
                 }
-            }
-
-        // Build context map with all page metadata
-        val context =
-            buildMap {
-                put("pageId", page.pageId)
-                put("spaceKey", page.spaceKey)
-                put("title", page.title)
-                put("url", page.url)
-                put("version", page.lastKnownVersion.toString())
-                // Canonical source reference for idempotency/traceability
-                put("sourceUri", "confluence://${page.accountId.toHexString()}/${page.pageId}")
-                page.parentPageId?.let { put("parentPageId", it) }
-                page.lastModifiedBy?.let { put("lastModifiedBy", it) }
-                page.lastModifiedAt?.let { put("lastModifiedAt", it.toString()) }
-                put("internalLinksCount", page.internalLinks.size.toString())
-                put("externalLinksCount", page.externalLinks.size.toString())
-                put("childPagesCount", page.childPageIds.size.toString())
-
-                // Add links for analysis
-                if (page.internalLinks.isNotEmpty()) {
-                    put("internalLinks", page.internalLinks.joinToString(","))
-                }
-                if (page.externalLinks.isNotEmpty()) {
-                    put("externalLinks", page.externalLinks.take(10).joinToString(",")) // Limit external
-                }
+                appendLine("=== END PAGE CONTENT ===")
             }
 
         // Create pending task
@@ -98,9 +83,9 @@ class ConfluenceTaskCreator(
             pendingTaskService.createTask(
                 taskType = PendingTaskTypeEnum.CONFLUENCE_PAGE_ANALYSIS,
                 content = taskContent,
-                context = context,
                 clientId = page.clientId,
                 projectId = page.projectId,
+                sourceUri = "confluence://${page.accountId.toHexString()}/${page.pageId}",
             )
 
             logger.info {

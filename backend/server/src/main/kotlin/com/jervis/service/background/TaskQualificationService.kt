@@ -180,9 +180,9 @@ class TaskQualificationService(
             pendingTaskService.createTask(
                 taskType = PendingTaskTypeEnum.EMAIL_PROCESSING,
                 content = formatEmailContent(email),
-                context = baseContext,
                 clientId = clientId,
                 projectId = projectId,
+                sourceUri = "email://${email.messageId}", // Approximate - actual accountId not available here
             )
 
         // Requirement: writing pending task must atomically flip email state to INDEXED
@@ -241,51 +241,18 @@ class TaskQualificationService(
 
     /**
      * Build mapping values for qualifier prompt placeholders from task data.
-     * Different task types require different context values from task.context.
+     * All information is now in content field - just pass it through.
      */
     private fun buildMappingValues(
         task: PendingTask,
         truncatedContent: String,
     ): Map<String, String> =
         buildMap {
-            // Default: all tasks get 'content' placeholder
+            // All tasks get 'content' placeholder with complete information
             put("content", truncatedContent)
 
-            // Task-specific placeholders from context
-            when (task.taskType) {
-                PendingTaskTypeEnum.FILE_STRUCTURE_ANALYSIS -> {
-                    // Qualifier prompt expects: {filePath}, {contentPreview}
-                    task.context["filePath"]?.let { put("filePath", it) }
-                    task.context["fileContent"]?.let {
-                        val preview = it.take(500) // First 500 chars as preview
-                        put("contentPreview", preview)
-                    } ?: put("contentPreview", truncatedContent.take(500))
-                }
-
-                PendingTaskTypeEnum.CONFLUENCE_PAGE_ANALYSIS -> {
-                    // Qualifier prompt expects: {title}, {spaceKey}, {version}, and uses {content}
-                    put("title", task.context["title"] ?: "")
-                    put("spaceKey", task.context["spaceKey"] ?: "")
-                    put("version", task.context["version"] ?: "")
-                    // Provide counts if present
-                    task.context["internalLinksCount"]?.let { put("internalLinksCount", it) }
-                    task.context["externalLinksCount"]?.let { put("externalLinksCount", it) }
-                }
-
-                PendingTaskTypeEnum.COMMIT_ANALYSIS -> {
-                    // Qualifier prompt uses {content} from commit message + stats
-                    // No additional placeholders needed
-                }
-
-                PendingTaskTypeEnum.EMAIL_PROCESSING -> {
-                    // Email qualification uses {content} with FROM/SUBJECT/BODY
-                    // No additional placeholders needed
-                }
-
-                else -> {
-                    // Other task types use default {content} only
-                }
-            }
+            // All metadata is already in content as formatted text
+            // No need to extract individual fields
         }
 
     private suspend fun qualifyTask(task: PendingTask) {

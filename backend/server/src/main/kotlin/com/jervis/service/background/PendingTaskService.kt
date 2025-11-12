@@ -23,7 +23,7 @@ class PendingTaskService(
         content: String? = null,
         projectId: ObjectId? = null,
         clientId: ObjectId,
-        context: Map<String, String> = emptyMap(),
+        sourceUri: String? = null,
     ): PendingTask {
         // Idempotency: for selected types with canonical sourceUri, do not create duplicates
         val dedupeBySourceUriTypes =
@@ -34,15 +34,12 @@ class PendingTaskService(
                 PendingTaskTypeEnum.FILE_STRUCTURE_ANALYSIS,
                 PendingTaskTypeEnum.PROJECT_DESCRIPTION_UPDATE,
             )
-        if (taskType in dedupeBySourceUriTypes) {
-            val sourceUri = context["sourceUri"]
-            if (!sourceUri.isNullOrBlank()) {
-                val existing =
-                    pendingTaskRepository.findFirstByClientAndTypeAndSourceUri(clientId, taskType.name, sourceUri)
-                if (existing != null) {
-                    logger.info { "Reusing existing pending task ${existing.id} for ${taskType.name} sourceUri=$sourceUri" }
-                    return existing.toDomain()
-                }
+        if (taskType in dedupeBySourceUriTypes && !sourceUri.isNullOrBlank()) {
+            val existing =
+                pendingTaskRepository.findFirstByClientAndTypeAndSourceUri(clientId, taskType.name, sourceUri)
+            if (existing != null) {
+                logger.info { "Reusing existing pending task ${existing.id} for ${taskType.name} sourceUri=$sourceUri" }
+                return existing.toDomain()
             }
         }
 
@@ -52,9 +49,9 @@ class PendingTaskService(
                 content = content,
                 projectId = projectId,
                 clientId = clientId,
+                sourceUri = sourceUri,
                 // Current pipeline does not have explicit indexing step yet; start at READY_FOR_QUALIFICATION
                 state = PendingTaskState.READY_FOR_QUALIFICATION,
-                context = context,
             )
 
         val document = PendingTaskDocument.fromDomain(task)
@@ -95,9 +92,7 @@ class PendingTaskService(
     ) {
         val task = pendingTaskRepository.findById(taskId) ?: return
         if (PendingTaskState.valueOf(task.state) != from) return
-        val unitId = task.context["unitId"] ?: "?"
-        val contentHash = task.context["contentHash"] ?: "?"
-        logger.info { "TASK_COMPLETED_DELETE: id=$taskId unit=$unitId hash=$contentHash" }
+        logger.info { "TASK_COMPLETED_DELETE: id=$taskId type=${task.type} sourceUri=${task.sourceUri}" }
         pendingTaskRepository.deleteById(taskId)
     }
 
@@ -116,6 +111,9 @@ class PendingTaskService(
                 appendLine("Pending task ${domain.id} failed in state ${domain.state}")
                 appendLine("Reason: $reason")
                 error?.let { appendLine("Error: $it") }
+                appendLine()
+                appendLine("Task Content:")
+                appendLine(domain.content?.take(500) ?: "(no content)")
             }
         val userTask =
             userTaskService.createTask(
@@ -124,15 +122,13 @@ class PendingTaskService(
                 projectId = domain.projectId,
                 clientId = domain.clientId,
                 sourceType = com.jervis.domain.task.TaskSourceType.AGENT_SUGGESTION,
-                sourceUri = null, // No cross-collection link to pending-task
+                sourceUri = domain.sourceUri,
                 metadata =
                     mapOf(
-                        // Snapshot without cross-collection references
                         "snapshot_taskType" to domain.taskType.name,
                         "snapshot_state" to domain.state.name,
-                        "snapshot_unitId" to (domain.context["unitId"] ?: ""),
-                        "snapshot_contentHash" to (domain.context["contentHash"] ?: ""),
-                    ) + domain.context.mapKeys { (k, _) -> "snapshot_context_$k" },
+                        "snapshot_sourceUri" to (domain.sourceUri ?: ""),
+                    ),
             )
         logger.info { "TASK_FAILED_ESCALATED: id=$taskId userTaskId=${userTask.id} reason=$reason" }
         pendingTaskRepository.deleteById(taskId)
@@ -145,33 +141,6 @@ class PendingTaskService(
         runCatching { updateState(taskId, PendingTaskState.READY_FOR_QUALIFICATION, PendingTaskState.QUALIFYING) }
             .getOrNull()
 
-    /**
-     * Merge additional context into existing task.
-     * Validates that all values are non-blank (fail fast on blank values).
-     * Allowed only in NEW state.
-     */
-    suspend fun mergeContext(
-        taskId: ObjectId,
-        contextPatch: Map<String, String>,
-    ): PendingTask {
-        val taskDoc =
-            pendingTaskRepository.findById(taskId) ?: throw IllegalArgumentException("Task not found: $taskId")
-        require(taskDoc.state == PendingTaskState.NEW.name) {
-            "Cannot merge context in state ${taskDoc.state} for task $taskId"
-        }
-
-        // Fail fast: reject blank values
-        contextPatch.forEach { (key, value) ->
-            require(value.isNotBlank()) { "Context key '$key' has blank value for task $taskId" }
-        }
-
-        val merged = taskDoc.copy(context = taskDoc.context + contextPatch)
-        val saved = pendingTaskRepository.save(merged)
-
-        logger.info { "TASK_CONTEXT_MERGE: Task ${taskId.toHexString()} merged keys ${contextPatch.keys.joinToString(", ")}" }
-
-        return saved.toDomain()
-    }
 
     suspend fun failAndEscalateToUserTask(
         task: PendingTask,
@@ -184,6 +153,9 @@ class PendingTaskService(
                 appendLine("Pending task ${task.id} failed in state ${task.state}")
                 appendLine("Reason: $reason")
                 error?.message?.let { appendLine("Error: $it") }
+                appendLine()
+                appendLine("Task Content:")
+                appendLine(task.content?.take(500) ?: "(no content)")
             }
         val userTask =
             userTaskService.createTask(
@@ -192,13 +164,13 @@ class PendingTaskService(
                 projectId = task.projectId,
                 clientId = task.clientId,
                 sourceType = com.jervis.domain.task.TaskSourceType.AGENT_SUGGESTION,
-                sourceUri = null, // No cross-collection link to pending-task
+                sourceUri = task.sourceUri,
                 metadata =
                     mapOf(
-                        // Snapshot without cross-collection references
                         "snapshot_taskType" to task.taskType.name,
                         "snapshot_state" to task.state.name,
-                    ) + task.context.mapKeys { (k, _) -> "snapshot_context_$k" },
+                        "snapshot_sourceUri" to (task.sourceUri ?: ""),
+                    ),
             )
         logger.info { "TASK_FAILED_ESCALATED: pending=${task.id} -> userTask=${userTask.id} reason=$reason" }
         // Delete pending task after escalation

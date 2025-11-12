@@ -56,17 +56,23 @@ class FileDescriptionProcessor(
                     }
 
                 val clientId = task.clientId
-                val filePath =
-                    task.context["filePath"] ?: run {
-                        logger.warn { "Task ${task.id} has no filePath in context" }
-                        return@withContext false
-                    }
 
-                val commitHash =
-                    task.context["commitHash"] ?: run {
-                        logger.warn { "Task ${task.id} has no commitHash in context" }
-                        return@withContext false
-                    }
+                // Extract filePath and commitHash from sourceUri
+                // Format: gitfile://projectId/commitHash/filePath
+                val sourceUri = task.sourceUri ?: run {
+                    logger.warn { "Task ${task.id} has no sourceUri" }
+                    return@withContext false
+                }
+
+                val uriPattern = Regex("""gitfile://[^/]+/([^/]+)/(.+)""")
+                val match = uriPattern.matchEntire(sourceUri)
+                if (match == null) {
+                    logger.warn { "Task ${task.id} has invalid sourceUri format: $sourceUri" }
+                    return@withContext false
+                }
+
+                val commitHash = match.groupValues[1]
+                val filePath = match.groupValues[2]
 
                 // Extract metadata and description from agent output
                 extractMetadataFromOutput(agentOutput)
@@ -96,7 +102,7 @@ class FileDescriptionProcessor(
 
                 // Track in MongoDB for management
                 val fileName = filePath.substringAfterLast("/")
-                val branch = task.context["branch"] ?: "main"
+                val branch = "main" // Default branch
 
                 vectorStoreIndexService.trackIndexed(
                     projectId = projectId,
