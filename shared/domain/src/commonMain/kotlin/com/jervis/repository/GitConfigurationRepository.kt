@@ -2,6 +2,7 @@ package com.jervis.repository
 
 import com.jervis.dto.ClientDto
 import com.jervis.dto.GitCredentialsDto
+import com.jervis.dto.GitBranchListDto
 import com.jervis.dto.GitSetupRequestDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ProjectGitOverrideRequestDto
@@ -28,6 +29,12 @@ class GitConfigurationRepository(
 
     suspend fun getGitCredentials(clientId: String): GitCredentialsDto? =
         service.getGitCredentials(clientId)
+
+    suspend fun listRemoteBranches(clientId: String, repoUrl: String? = null): GitBranchListDto =
+        service.listRemoteBranches(clientId, repoUrl)
+
+    suspend fun setDefaultBranch(clientId: String, branch: String): ClientDto =
+        service.setDefaultBranch(clientId, branch)
 
     suspend fun setupGitOverrideForProject(projectId: String, request: ProjectGitOverrideRequestDto): ProjectDto =
         service.setupGitOverrideForProject(projectId, request)

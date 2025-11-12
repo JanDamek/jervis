@@ -3,6 +3,7 @@ package com.jervis.controller.api
 import com.jervis.dto.ClientDto
 import com.jervis.dto.CloneResultDto
 import com.jervis.dto.GitCredentialsDto
+import com.jervis.dto.GitBranchListDto
 import com.jervis.dto.GitSetupRequestDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ProjectGitOverrideRequestDto
@@ -178,5 +179,29 @@ class GitConfigurationRestController(
         }
 
         return credentials
+    }
+
+    @GetMapping("/clients/{clientId}/branches")
+    override suspend fun listRemoteBranches(
+        @PathVariable clientId: String,
+        @RequestParam(required = false) repoUrl: String?,
+    ): GitBranchListDto {
+        logger.info { "Listing remote branches for client: $clientId" }
+        return gitConfigurationService.listRemoteBranches(ObjectId(clientId), repoUrl)
+    }
+
+    @PostMapping("/clients/{clientId}/default-branch")
+    override suspend fun setDefaultBranch(
+        @PathVariable clientId: String,
+        @RequestParam branch: String,
+    ): ClientDto {
+        logger.info { "Setting default branch for client: $clientId -> $branch" }
+        val result = gitConfigurationService.updateDefaultBranch(ObjectId(clientId), branch)
+        if (result.isFailure) {
+            throw IllegalStateException("Failed to set default branch: ${result.exceptionOrNull()?.message}")
+        }
+        val client = clientService.getClientById(ObjectId(clientId))
+            ?: throw IllegalStateException("Client not found after update: $clientId")
+        return client.toDto()
     }
 }

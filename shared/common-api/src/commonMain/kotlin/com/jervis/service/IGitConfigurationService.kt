@@ -3,6 +3,7 @@ package com.jervis.service
 import com.jervis.dto.ClientDto
 import com.jervis.dto.CloneResultDto
 import com.jervis.dto.GitCredentialsDto
+import com.jervis.dto.GitBranchListDto
 import com.jervis.dto.GitSetupRequestDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ProjectGitOverrideRequestDto
@@ -17,7 +18,7 @@ import de.jensklingenberg.ktorfit.http.Query
  * Used by desktop client to configure Git settings for clients and projects.
  * Handles both client-level and project-level Git configuration including credentials.
  */
-interface IGitConfigurationService {
+  interface IGitConfigurationService {
     /**
      * Sets up complete Git configuration for a client including credentials.
      * Credentials are encrypted and stored directly in ClientDocument.
@@ -83,6 +84,25 @@ interface IGitConfigurationService {
     suspend fun getGitCredentials(
         @Path clientId: String,
     ): GitCredentialsDto?
+
+    /**
+     * List remote branches for a client's configured repository (or provided repoUrl override).
+     * Returns discovered default branch (if resolvable) and list of remote branch names.
+     */
+    @GET("api/v1/git/clients/{clientId}/branches")
+    suspend fun listRemoteBranches(
+        @Path clientId: String,
+        @Query("repoUrl") repoUrl: String? = null,
+    ): GitBranchListDto
+
+    /**
+     * Update client's default branch to the selected remote branch.
+     */
+    @POST("api/v1/git/clients/{clientId}/default-branch")
+    suspend fun setDefaultBranch(
+        @Path clientId: String,
+        @Query("branch") branch: String,
+    ): ClientDto
 
     /**
      * Setup Git override configuration for a project.
