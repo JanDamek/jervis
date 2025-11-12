@@ -81,6 +81,8 @@ object NetworkModule {
             gitConfigurationService = ktorfit.createIGitConfigurationService(),
             jiraSetupService = ktorfit.createIJiraSetupService(),
             emailAccountService = ktorfit.createIEmailAccountService(),
+            // Use generic create for newly added service to avoid missing generated helpers during bootstrap
+            indexingStatusService = ktorfit.create<IIndexingStatusService>(),
         )
     }
 
@@ -100,6 +102,7 @@ object NetworkModule {
         val gitConfigurationService: IGitConfigurationService,
         val jiraSetupService: IJiraSetupService,
         val emailAccountService: IEmailAccountService,
+        val indexingStatusService: IIndexingStatusService,
     )
 }
 

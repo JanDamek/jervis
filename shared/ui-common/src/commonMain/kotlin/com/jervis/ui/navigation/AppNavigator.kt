@@ -26,6 +26,10 @@ sealed class Screen {
     object RagSearch : Screen()
     object ErrorLogs : Screen()
 
+    // Indexing status overview and details
+    object IndexingStatus : Screen()
+    data class IndexingToolDetail(val toolKey: String) : Screen()
+
     // TODO: Desktop Debug Console (WebSocket) - not yet implemented for mobile
 }
 

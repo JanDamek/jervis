@@ -35,6 +35,7 @@ fun JervisApp(
             gitConfigurationService = services.gitConfigurationService,
             jiraSetupService = services.jiraSetupService,
             emailAccountService = services.emailAccountService,
+            indexingStatusService = services.indexingStatusService,
         )
     }
 
