@@ -15,8 +15,5 @@ import kotlinx.serialization.Serializable
 data class ChatRequestContextDto(
     val clientId: String,
     val projectId: String,
-    val autoScope: Boolean = false,
     val quick: Boolean = false,
-    val confirmedScope: Boolean = false,
-    val existingContextId: String? = null,
 )

@@ -55,7 +55,6 @@ class LMStudioController(
                         clientId =
                             project.clientId.toString(),
                         projectId = project.id.toString(),
-                        autoScope = false,
                     ),
                 background = false,
             )
@@ -90,7 +89,6 @@ class LMStudioController(
                     ChatRequestContext(
                         clientId = defaultProject.clientId.toString(),
                         projectId = defaultProject.id.toString(),
-                        autoScope = false,
                     ),
                 background = false,
             )

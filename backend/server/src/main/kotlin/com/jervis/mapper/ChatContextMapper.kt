@@ -7,8 +7,5 @@ fun ChatRequestContextDto.toDomain() =
     ChatRequestContext(
         clientId = this.clientId,
         projectId = this.projectId,
-        autoScope = this.autoScope,
         quick = this.quick,
-        confirmedScope = this.confirmedScope,
-        existingContextId = this.existingContextId,
     )

@@ -3,7 +3,6 @@ package com.jervis.ui
 import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ui.ChatMessage
-import com.jervis.dto.ui.MobileBootstrap
 import com.jervis.repository.JervisRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -108,9 +107,10 @@ class MainViewModel(
                 try {
                     val updatedClient = repository.clients.updateLastSelectedProject(clientId, projectId)
                     // Update local cache
-                    _clients.value = _clients.value.map {
-                        if (it.id == clientId) updatedClient else it
-                    }
+                    _clients.value =
+                        _clients.value.map {
+                            if (it.id == clientId) updatedClient else it
+                        }
                 } catch (e: Exception) {
                     // Silent fail - not critical
                 }
@@ -135,11 +135,12 @@ class MainViewModel(
         }
 
         // Add user message to chat
-        _chatMessages.value = _chatMessages.value + ChatMessage(
-            from = ChatMessage.Sender.Me,
-            text = text,
-            contextId = projectId
-        )
+        _chatMessages.value = _chatMessages.value +
+            ChatMessage(
+                from = ChatMessage.Sender.Me,
+                text = text,
+                contextId = projectId,
+            )
 
         scope.launch {
             _isLoading.value = true
@@ -151,15 +152,15 @@ class MainViewModel(
                     text = text,
                     clientId = clientId,
                     projectId = projectId,
-                    wsSessionId = null
                 )
 
                 // Add confirmation message
-                _chatMessages.value = _chatMessages.value + ChatMessage(
-                    from = ChatMessage.Sender.Assistant,
-                    text = "Message sent to agent orchestrator. Monitor via notifications.",
-                    contextId = projectId
-                )
+                _chatMessages.value = _chatMessages.value +
+                    ChatMessage(
+                        from = ChatMessage.Sender.Assistant,
+                        text = "Message sent to agent orchestrator. Monitor via notifications.",
+                        contextId = projectId,
+                    )
             } catch (e: Exception) {
                 _errorMessage.value = "Failed to send message: ${e.message}"
             } finally {

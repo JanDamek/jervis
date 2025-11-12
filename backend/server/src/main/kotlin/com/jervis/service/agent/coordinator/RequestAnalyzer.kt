@@ -7,10 +7,13 @@ import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
 /**
- * Service for analyzing incoming user requests and extracting key information.
+ * Analyzes incoming requests and produces a structured view used by the planner.
  *
- * For background tasks, skips LLM calls and returns simplified analysis to improve performance.
- * For foreground tasks, performs full LLM analysis including language detection, checklist generation, and RAG query extraction.
+ * Behavior by mode:
+ * - Foreground (backgroundMode=false): Performs full LLM analysis (language detection, checklist, initial RAG queries).
+ * - Background (backgroundMode=true): Pass through mode for pending background tasks – no LLM call, no heuristics.
+ *   The input text is treated as already normalized instruction, and an optional customGoal is placed into the checklist
+ *   to drive the planner deterministically for the specific background task type.
  */
 @Service
 class RequestAnalyzer(
@@ -19,22 +22,26 @@ class RequestAnalyzer(
     private val logger = KotlinLogging.logger {}
 
     /**
-     * Analyzes user request and extracts structured information.
+     * Analyze a request and extract structured information for planning.
      *
-     * @param text User's request text
-     * @param quick Quick mode flag (passed to LLM for potentially faster response)
-     * @param backgroundMode If true, skips LLM call and returns simplified analysis
-     * @return Analysis result containing English text, language, checklist, and RAG queries
+     * Foreground mode runs a full LLM analysis. Background mode is a pass-through for pending tasks
+     * where the agent must deterministically resolve the task using a content-only policy.
+     *
+     * @param text User request or background task content
+     * @param quick Hint for LLM to prefer a faster path if available
+     * @param backgroundMode If true, returns pass-through analysis without contacting LLM
+     * @param goalPrompt Optional single prompt used for background tasks; mapped into a checklist when provided
+     * @return Analysis result used by planner
      */
     suspend fun analyze(
         text: String,
         quick: Boolean,
         backgroundMode: Boolean,
-        customGoals: List<String> = emptyList(),
+        goalPrompt: String? = null,
     ): AnalysisResult {
         if (backgroundMode) {
-            logger.debug { "REQUEST_ANALYZER: Background mode - using simplified analysis without LLM" }
-            return createSimplifiedAnalysis(text, customGoals)
+            logger.debug { "REQUEST_ANALYZER: Background mode - pass-through analysis (no LLM)" }
+            return createBackgroundPassThroughAnalysis(text, goalPrompt)
         }
 
         logger.debug { "REQUEST_ANALYZER: Performing full LLM analysis" }
@@ -45,25 +52,27 @@ class RequestAnalyzer(
                     mappingValue = mapOf("userText" to text),
                     quick = quick,
                     responseSchema = AnalysisResult(),
-                    backgroundMode = backgroundMode,
+                    backgroundMode = false,
                 )
 
         return result.result
     }
 
     /**
-     * Creates simplified analysis for background tasks without calling LLM.
-     * Background tasks typically have clear instructions and don't need deep analysis.
+     * Create pass-through analysis for background pending tasks.
+     *
+     * No LLM call is made. The input [text] becomes the English instruction and
+     * the optional [customGoal] is injected as a single-item checklist to steer planning.
      */
-    private fun createSimplifiedAnalysis(
+    private fun createBackgroundPassThroughAnalysis(
         text: String,
-        customGoals: List<String> = emptyList(),
+        customGoal: String? = null,
     ): AnalysisResult =
         AnalysisResult(
             englishText = text,
             originalLanguage = "EN",
             contextName = "Background Task",
-            questionChecklist = customGoals,
+            questionChecklist = customGoal?.let { listOf(it) } ?: emptyList(),
             initialRagQueries = emptyList(),
         )
 
@@ -72,7 +81,7 @@ class RequestAnalyzer(
         val englishText: String = "",
         val originalLanguage: String = "",
         val contextName: String = "",
-        val questionChecklist: List<String> = listOf(""),
-        val initialRagQueries: List<String> = listOf(""),
+        val questionChecklist: List<String> = emptyList(),
+        val initialRagQueries: List<String> = emptyList(),
     )
 }
