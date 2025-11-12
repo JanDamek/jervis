@@ -232,6 +232,18 @@ class GitRemoteClient {
 
     private fun isRetryableError(error: Throwable): Boolean {
         val message = error.message ?: return false
+
+        // Non-retryable errors - SSH authentication/configuration issues
+        if (message.contains("Host key verification failed", ignoreCase = true) ||
+            message.contains("Permission denied", ignoreCase = true) ||
+            message.contains("publickey", ignoreCase = true) ||
+            message.contains("Authentication failed", ignoreCase = true) ||
+            message.contains("Could not read from remote repository", ignoreCase = true)
+        ) {
+            return false
+        }
+
+        // Retryable errors - network/temporary issues
         return message.contains("kex_exchange_identification", ignoreCase = true) ||
             message.contains("Connection closed", ignoreCase = true) ||
             message.contains("banner exchange", ignoreCase = true) ||

@@ -9,6 +9,7 @@ import mu.KLogger
 /**
  * Collect Git operation Flow with standardized logging.
  * Handles all GitOperationResult types with structured logging.
+ * Does NOT log errors - lets caller handle error logging to avoid duplication.
  */
 suspend fun Flow<GitOperationResult>.collectWithLogging(
     logger: KLogger,
@@ -27,8 +28,5 @@ suspend fun Flow<GitOperationResult>.collectWithLogging(
 
                 is GitOperationResult.Completed -> logger.info { "Completed ${result.operation} for $context" }
             }
-        }.catch { e ->
-            logger.error(e) { "Git operation failed for $context" }
-            throw e
         }.collect()
 }
