@@ -38,6 +38,7 @@ class ConfluenceContinuousIndexer(
     private val taskCreator: ConfluenceTaskCreator,
     private val flowProps: com.jervis.configuration.properties.IndexingFlowProperties,
     private val linkIndexingService: LinkIndexingService,
+    private val accountService: ConfluenceAccountService,
 ) : com.jervis.service.indexing.AbstractContinuousIndexer<ConfluenceAccountDocument, com.jervis.entity.ConfluencePageDocument>() {
     override val indexerName: String = "ConfluenceContinuousIndexer"
     override val bufferSize: Int get() = flowProps.bufferSize
@@ -49,7 +50,14 @@ class ConfluenceContinuousIndexer(
     override suspend fun fetchContentIO(
         account: ConfluenceAccountDocument,
         item: com.jervis.entity.ConfluencePageDocument,
-    ): Any? = confluenceApiClient.getPageContent(account, item.pageId)
+    ): Any? =
+        try {
+            confluenceApiClient.getPageContent(account, item.pageId)
+        } catch (e: ConfluenceAuthException) {
+            // Mark account as invalid to avoid further attempts
+            runCatching { accountService.markAuthInvalid(account, e.message) }
+            null
+        }
 
     override suspend fun processAndIndex(
         account: ConfluenceAccountDocument,

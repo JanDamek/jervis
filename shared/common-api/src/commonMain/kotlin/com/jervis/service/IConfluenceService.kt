@@ -56,4 +56,9 @@ interface IConfluenceService {
     suspend fun getAccountStats(
         @Path accountId: String,
     ): ConfluenceAccountDto
+
+    @POST("api/v1/confluence/accounts/{accountId}/test-connection")
+    suspend fun testConnection(
+        @Path accountId: String,
+    ): ConfluenceAccountDto
 }

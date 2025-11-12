@@ -9,6 +9,7 @@ import com.jervis.mapper.toDto
 import com.jervis.repository.mongo.ConfluenceAccountMongoRepository
 import com.jervis.repository.mongo.ConfluencePageMongoRepository
 import com.jervis.service.confluence.ConfluencePollingScheduler
+import com.jervis.service.confluence.ConfluenceAccountService
 import com.jervis.service.confluence.state.ConfluencePageStateManager
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
@@ -25,6 +26,7 @@ class ConfluenceRestController(
     private val pageRepository: ConfluencePageMongoRepository,
     private val stateManager: ConfluencePageStateManager,
     private val pollingScheduler: ConfluencePollingScheduler,
+    private val accountService: ConfluenceAccountService,
 ) : com.jervis.service.IConfluenceService {
     @PostMapping("/accounts")
     override suspend fun createAccount(@RequestBody request: ConfluenceAccountCreateDto): ConfluenceAccountDto {
@@ -129,5 +131,11 @@ class ConfluenceRestController(
         val stats = stateManager.getStats(account.id)
 
         return account.toDto(stats)
+    }
+
+    @PostMapping("/accounts/{accountId}/test-connection")
+    override suspend fun testConnection(@PathVariable accountId: String): ConfluenceAccountDto {
+        val account = accountService.testConnection(ObjectId(accountId))
+        return account.toDto()
     }
 }

@@ -12,8 +12,11 @@ import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -56,12 +59,17 @@ class ConfluenceApiClient {
             do {
                 val client = createHttpClient(account)
                 try {
-                    val response =
-                        client
-                            .get("${account.siteUrl}/wiki/api/v2/spaces") {
-                                parameter("limit", 250)
-                                cursor?.let { parameter("cursor", it) }
-                            }.body<SpacesResponseDto>()
+                    val httpResponse: HttpResponse =
+                        client.get("${account.siteUrl}/wiki/api/v2/spaces") {
+                            parameter("limit", 250)
+                            cursor?.let { parameter("cursor", it) }
+                        }
+
+                    if (!httpResponse.status.isSuccess()) {
+                        handleHttpError(account, httpResponse)
+                    }
+
+                    val response = httpResponse.body<SpacesResponseDto>()
 
                     response.results.forEach { emit(it.toDomain()) }
                     cursor = response.links?.next?.let { extractCursor(it) }
@@ -85,14 +93,19 @@ class ConfluenceApiClient {
             do {
                 val client = createHttpClient(account)
                 try {
-                    val response =
-                        client
-                            .get("${account.siteUrl}/wiki/api/v2/pages") {
-                                parameter("space-key", spaceKey)
-                                parameter("limit", 250)
-                                parameter("sort", "-modified-date")
-                                cursor?.let { parameter("cursor", it) }
-                            }.body<PagesResponseDto>()
+                    val httpResponse: HttpResponse =
+                        client.get("${account.siteUrl}/wiki/api/v2/pages") {
+                            parameter("space-key", spaceKey)
+                            parameter("limit", 250)
+                            parameter("sort", "-modified-date")
+                            cursor?.let { parameter("cursor", it) }
+                        }
+
+                    if (!httpResponse.status.isSuccess()) {
+                        handleHttpError(account, httpResponse)
+                    }
+
+                    val response = httpResponse.body<PagesResponseDto>()
 
                     for (pageDto in response.results) {
                         val pageDomain = pageDto.toDomain()
@@ -120,11 +133,16 @@ class ConfluenceApiClient {
     ): ConfluencePageContent? {
         val client = createHttpClient(account)
         return try {
-            val response =
-                client
-                    .get("${account.siteUrl}/wiki/api/v2/pages/$pageId") {
-                        parameter("body-format", "storage")
-                    }.body<ConfluencePageContentDto>()
+            val httpResponse: HttpResponse =
+                client.get("${account.siteUrl}/wiki/api/v2/pages/$pageId") {
+                    parameter("body-format", "storage")
+                }
+
+            if (!httpResponse.status.isSuccess()) {
+                handleHttpError(account, httpResponse)
+            }
+
+            val response = httpResponse.body<ConfluencePageContentDto>()
 
             response.toDomain()
         } catch (e: Exception) {
@@ -145,12 +163,17 @@ class ConfluenceApiClient {
             do {
                 val client = createHttpClient(account)
                 try {
-                    val response =
-                        client
-                            .get("${account.siteUrl}/wiki/api/v2/pages/$pageId/children") {
-                                parameter("limit", 250)
-                                cursor?.let { parameter("cursor", it) }
-                            }.body<PagesResponseDto>()
+                    val httpResponse: HttpResponse =
+                        client.get("${account.siteUrl}/wiki/api/v2/pages/$pageId/children") {
+                            parameter("limit", 250)
+                            cursor?.let { parameter("cursor", it) }
+                        }
+
+                    if (!httpResponse.status.isSuccess()) {
+                        handleHttpError(account, httpResponse)
+                    }
+
+                    val response = httpResponse.body<PagesResponseDto>()
 
                     response.results.forEach { emit(it.toDomain()) }
                     cursor = response.links?.next?.let { extractCursor(it) }
@@ -179,7 +202,19 @@ class ConfluenceApiClient {
             .substringAfter("cursor=", "")
             .substringBefore("&")
             .takeIf { it.isNotBlank() }
+
+    private suspend fun handleHttpError(account: ConfluenceAccountDocument, httpResponse: HttpResponse) {
+        val status = httpResponse.status.value
+        val body = runCatching { httpResponse.bodyAsText() }.getOrElse { "" }
+        if (status == 401 || status == 403) {
+            throw ConfluenceAuthException("Authentication failed for account ${account.id}: HTTP $status ${body.take(200)}")
+        } else {
+            throw IllegalStateException("Confluence API error: HTTP $status ${body.take(200)}")
+        }
+    }
 }
+
+class ConfluenceAuthException(message: String) : RuntimeException(message)
 
 // ========== Internal API Response DTOs ==========
 
