@@ -85,7 +85,6 @@ class ConfluenceTaskCreator(
                 content = taskContent,
                 clientId = page.clientId,
                 projectId = page.projectId,
-                sourceUri = "confluence://${page.accountId.toHexString()}/${page.pageId}",
             )
 
             logger.info {

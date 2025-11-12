@@ -154,7 +154,6 @@ class ProjectDescriptionUpdater(
             content = content,
             projectId = project.id,
             clientId = project.clientId,
-            sourceUri = "project://${project.id.toHexString()}/description-update",
         )
     }
 }

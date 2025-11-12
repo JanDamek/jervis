@@ -17,13 +17,11 @@ data class PendingTaskDocument(
     @Indexed
     @Field("taskType") // Map to existing MongoDB field name
     val type: String,
-    val content: String? = null,
+    val content: String,
     @Indexed
     val projectId: ObjectId? = null,
     @Indexed
     val clientId: ObjectId? = null,
-    @Indexed
-    val sourceUri: String? = null, // For deduplication
     @Indexed
     val createdAt: Instant = Instant.now(),
     @Indexed
@@ -36,7 +34,6 @@ data class PendingTaskDocument(
             content = content,
             projectId = projectId,
             clientId = clientId ?: error("PendingTaskDocument $id has null clientId"),
-            sourceUri = sourceUri,
             createdAt = createdAt,
             state = PendingTaskState.valueOf(state),
         )
@@ -49,7 +46,6 @@ data class PendingTaskDocument(
                 content = domain.content,
                 projectId = domain.projectId,
                 clientId = domain.clientId,
-                sourceUri = domain.sourceUri,
                 createdAt = domain.createdAt,
                 state = domain.state.name,
             )

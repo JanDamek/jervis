@@ -7,20 +7,23 @@ import java.time.Instant
  * Represents a pending background task awaiting processing.
  *
  * Design Philosophy:
- * - All task information in `content` field as plain text
- * - No complex context maps - everything model needs is in content
- * - sourceUri only for idempotency/deduplication
+ * - All task information lives in the `content` field as plain text.
+ * - No context/enrichment maps. The model must rely on `content` only.
+ * No extra context maps or out-of-band identifiers are allowed.
+ * If provenance is needed, include a "Source:" line inside content, for example:
+ * - Source: email://<accountId>/<messageId>
+ * - Source: confluence://<accountId>/<pageId>
+ * - Source: gitfile://<projectId>/<commitHash>/<filePath>
+ * - Source: project://<projectId>/description-update
  *
  * @property content Complete task description with all data (text format)
- * @property sourceUri Canonical URI for deduplication (e.g., "email://account/msgid", "git://project/commit")
  */
 data class PendingTask(
     val id: ObjectId = ObjectId(),
     val taskType: PendingTaskTypeEnum,
-    val content: String? = null,
+    val content: String,
     val projectId: ObjectId? = null,
     val clientId: ObjectId,
-    val sourceUri: String? = null,
     val createdAt: Instant = Instant.now(),
     val state: PendingTaskState = PendingTaskState.NEW,
 )
