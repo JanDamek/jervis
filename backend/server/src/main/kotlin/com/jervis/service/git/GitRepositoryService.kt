@@ -105,7 +105,7 @@ class GitRepositoryService(
         gitDir.parent?.toFile()?.mkdirs()
 
         val envVars = buildGitEnvironment(authContext)
-        val branch = getBranchName(project)
+        val initialBranch = getBranchName(project)
         val sparseCheckoutPath =
             if (project.projectPath != null && project.overrides?.gitRemoteUrl == null) {
                 project.projectPath
@@ -113,16 +113,45 @@ class GitRepositoryService(
                 null
             }
 
-        gitRemoteClient
-            .clone(
-                repoUrl = repoUrl,
-                targetPath = gitDir,
-                branch = branch,
-                envVars = envVars,
-                sparseCheckoutPath = sparseCheckoutPath,
-            ).collectWithLogging(logger, project.name)
+        try {
+            gitRemoteClient
+                .clone(
+                    repoUrl = repoUrl,
+                    targetPath = gitDir,
+                    branch = initialBranch,
+                    envVars = envVars,
+                    sparseCheckoutPath = sparseCheckoutPath,
+                ).collectWithLogging(logger, project.name)
+            logger.info { "Successfully cloned repository for project: ${project.name}" }
+        } catch (e: Exception) {
+            if (!isBranchNotFoundError(e.message)) {
+                throw e
+            }
 
-        logger.info { "Successfully cloned repository for project: ${project.name}" }
+            logger.warn { "Branch '$initialBranch' not found for ${project.name}. Attempting fallback discovery." }
+            // Discover branches from remote and choose likely default
+            val (defaultRemote, remoteBranches) = runLsRemote(repoUrl, envVars)
+            val chosen = chooseLikelyDefaultBranch(defaultRemote, remoteBranches)
+            logger.info { "Fallback selected branch '$chosen' for ${project.name}" }
+
+            // Update client defaultBranch and persist
+            updateClientDefaultBranch(project, chosen)
+
+            // Clean any partial directory to allow re-clone
+            safeDeleteDirectory(gitDir)
+            gitDir.parent?.toFile()?.mkdirs()
+
+            // Retry clone with chosen branch
+            gitRemoteClient
+                .clone(
+                    repoUrl = repoUrl,
+                    targetPath = gitDir,
+                    branch = chosen,
+                    envVars = envVars,
+                    sparseCheckoutPath = sparseCheckoutPath,
+                ).collectWithLogging(logger, project.name)
+            logger.info { "Successfully cloned repository for project: ${project.name} on fallback branch '$chosen'" }
+        }
     }
 
     private suspend fun pullRepository(
@@ -134,17 +163,36 @@ class GitRepositoryService(
 
         val repoUrl = getRepositoryUrl(project) ?: throw IllegalStateException("No repository URL")
         val envVars = buildGitEnvironment(authContext)
-        val branch = getBranchName(project)
+        val initialBranch = getBranchName(project)
 
-        gitRemoteClient
-            .pull(
-                repoUrl = repoUrl,
-                workingDir = gitDir,
-                branch = branch,
-                envVars = envVars,
-            ).collectWithLogging(logger, project.name)
+        try {
+            gitRemoteClient
+                .pull(
+                    repoUrl = repoUrl,
+                    workingDir = gitDir,
+                    branch = initialBranch,
+                    envVars = envVars,
+                ).collectWithLogging(logger, project.name)
+            logger.info { "Successfully pulled latest changes for project: ${project.name}" }
+        } catch (e: Exception) {
+            if (!isBranchNotFoundError(e.message)) {
+                throw e
+            }
+            logger.warn { "Branch '$initialBranch' not found during pull for ${project.name}. Attempting fallback discovery." }
+            val (defaultRemote, remoteBranches) = runLsRemote(repoUrl, envVars)
+            val chosen = chooseLikelyDefaultBranch(defaultRemote, remoteBranches)
+            logger.info { "Fallback selected branch '$chosen' for ${project.name}" }
+            updateClientDefaultBranch(project, chosen)
 
-        logger.info { "Successfully pulled latest changes for project: ${project.name}" }
+            gitRemoteClient
+                .pull(
+                    repoUrl = repoUrl,
+                    workingDir = gitDir,
+                    branch = chosen,
+                    envVars = envVars,
+                ).collectWithLogging(logger, project.name)
+            logger.info { "Successfully pulled latest changes for project: ${project.name} on fallback branch '$chosen'" }
+        }
     }
 
     private suspend fun getBranchName(project: ProjectDocument): String {
@@ -281,6 +329,70 @@ class GitRepositoryService(
             logger.debug(e) { "Could not extract repo URL from git config at $gitDir" }
             null
         }
+
+    // ===== Branch discovery + fallback helpers =====
+
+    private fun isBranchNotFoundError(message: String?): Boolean {
+        if (message == null) return false
+        val m = message.lowercase()
+        return m.contains("remote branch") && m.contains("not found") ||
+            m.contains("pathspec") && m.contains("did not match") ||
+            m.contains("invalid reference") ||
+            m.contains("couldn't find remote ref") ||
+            m.contains("could not find remote ref")
+    }
+
+    private fun runLsRemote(repoUrl: String, env: Map<String, String>): Pair<String?, List<String>> {
+        val processBuilder = ProcessBuilder("git", "ls-remote", "--heads", "--symref", repoUrl)
+        processBuilder.redirectErrorStream(true)
+        processBuilder.environment().putAll(env)
+        val process = processBuilder.start()
+        val output = process.inputStream.bufferedReader().use { it.readText() }
+        val exit = process.waitFor()
+        if (exit != 0) {
+            throw IllegalStateException("git ls-remote failed (${exit}): ${output.trim()}")
+        }
+
+        var defaultBranch: String? = null
+        val branches = mutableListOf<String>()
+        output.lineSequence().forEach { line ->
+            if (line.startsWith("ref:") && line.contains("\tHEAD")) {
+                defaultBranch = line.substringAfter("refs/heads/").substringBefore('\t')
+            }
+            if ("refs/heads/" in line && !line.startsWith("ref:")) {
+                val name = line.substringAfter("refs/heads/").trim()
+                branches.add(name.split("\t", " ").first())
+            }
+        }
+        return defaultBranch to branches.distinct().sorted()
+    }
+
+    private fun chooseLikelyDefaultBranch(defaultRemote: String?, branches: List<String>): String {
+        val normalized = branches.map { it.trim() }
+        if (!defaultRemote.isNullOrBlank() && normalized.contains(defaultRemote)) return defaultRemote
+        val candidates = listOf("main", "master", "trunk", "develop", "dev")
+        val found = candidates.firstOrNull { c -> normalized.any { it.equals(c, ignoreCase = true) } }
+        return found ?: normalized.firstOrNull() ?: "main"
+    }
+
+    private suspend fun updateClientDefaultBranch(project: ProjectDocument, newBranch: String) {
+        val client = clientMongoRepository.findById(project.clientId)
+        if (client != null && client.defaultBranch != newBranch) {
+            val updated = client.copy(defaultBranch = newBranch)
+            clientMongoRepository.save(updated)
+            logger.info { "Updated client ${client.id} defaultBranch to '$newBranch'" }
+        }
+    }
+
+    private fun safeDeleteDirectory(dir: Path) {
+        try {
+            val file = dir.toFile()
+            if (!file.exists()) return
+            file.walkBottomUp().forEach { it.delete() }
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to cleanup directory $dir before fallback clone" }
+        }
+    }
 
     /**
      * Get the current branch name for a repository path.

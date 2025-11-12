@@ -3,6 +3,7 @@ package com.jervis.service.git
 import com.jervis.domain.git.GitAuthTypeEnum
 import com.jervis.domain.git.GitConfig
 import com.jervis.dto.GitCredentialsDto
+import com.jervis.dto.GitBranchListDto
 import com.jervis.dto.GitSetupRequestDto
 import com.jervis.dto.ProjectGitOverrideRequestDto
 import com.jervis.repository.mongo.ClientMongoRepository
@@ -102,6 +103,27 @@ class GitConfigurationService(
                 Result.success(Unit)
             } catch (e: Exception) {
                 logger.error(e) { "Failed to setup Git for client: $clientId" }
+                Result.failure(e)
+            }
+        }
+
+    /**
+     * Update client's default branch. Persist to Mongo.
+     */
+    suspend fun updateDefaultBranch(clientId: ObjectId, branch: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            try {
+                val client = clientRepository.findById(clientId)
+                    ?: return@withContext Result.failure(IllegalArgumentException("Client not found: $clientId"))
+                if (client.defaultBranch == branch) {
+                    return@withContext Result.success(Unit)
+                }
+                val updated = client.copy(defaultBranch = branch)
+                clientRepository.save(updated)
+                logger.info { "Client $clientId defaultBranch updated to '$branch'" }
+                Result.success(Unit)
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to update default branch for client: $clientId" }
                 Result.failure(e)
             }
         }
@@ -306,6 +328,59 @@ class GitConfigurationService(
     suspend fun getProjectGitCredentials(projectId: ObjectId): GitCredentialsDto? {
         logger.warn { "getProjectGitCredentials is deprecated - Git config moved to client level" }
         return null // No project-level git credentials anymore
+    }
+
+    /**
+     * List remote branches for a client's configured repository (or provided override URL).
+     * Attempts to resolve default branch via `git ls-remote --symref` (HEAD) and returns known heads.
+     */
+    suspend fun listRemoteBranches(clientId: ObjectId, repoUrl: String?): GitBranchListDto =
+        withContext(Dispatchers.IO) {
+            val client = clientRepository.findById(clientId)
+                ?: throw IllegalArgumentException("Client not found: $clientId")
+
+            val effectiveUrl = repoUrl?.takeIf { it.isNotBlank() } ?: client.monoRepoUrl
+            require(!effectiveUrl.isNullOrBlank()) { "No repository URL configured for client and none provided" }
+
+            val env = mutableMapOf<String, String>()
+            // Reuse validate auth env building (simple): SSH via GIT_SSH wrapper if present in config
+            client.gitConfig?.sshPrivateKey?.takeIf { it.isNotBlank() }?.let { privateKey ->
+                val tempKeyDir = directoryStructureService.tempDir().resolve("git-branches-$clientId")
+                val sshWrapper = sshKeyManager.createTemporarySshKey(tempKeyDir, privateKey)
+                env["GIT_SSH"] = sshWrapper.toAbsolutePath().toString()
+            }
+
+            val (defaultBranch, branches) = runLsRemote(effectiveUrl!!, env)
+            GitBranchListDto(defaultBranch = defaultBranch, branches = branches)
+        }
+
+    private fun runLsRemote(repoUrl: String, env: Map<String, String>): Pair<String?, List<String>> {
+        // Use: git ls-remote --heads --symref <url>
+        val processBuilder = ProcessBuilder("git", "ls-remote", "--heads", "--symref", repoUrl)
+        processBuilder.redirectErrorStream(true)
+        processBuilder.environment().putAll(env)
+        val process = processBuilder.start()
+        val output = process.inputStream.bufferedReader().use { it.readText() }
+        val exit = process.waitFor()
+        if (exit != 0) {
+            throw IllegalStateException("git ls-remote failed (${exit}): ${output.trim()}")
+        }
+
+        var defaultBranch: String? = null
+        val branches = mutableListOf<String>()
+        output.lineSequence().forEach { line ->
+            // Example head line: ref: refs/heads/main	HEAD
+            if (line.startsWith("ref:") && line.contains("\tHEAD")) {
+                defaultBranch = line.substringAfter("refs/heads/").substringBefore('\t')
+            }
+            // Heads lines: <sha>\trefs/heads/<name>
+            if ("refs/heads/" in line && !line.startsWith("ref:")) {
+                val name = line.substringAfter("refs/heads/").trim()
+                // 'name' may still contain whitespace or tabs; cut at whitespace
+                branches.add(name.split("\t", " ").first())
+            }
+        }
+        return defaultBranch to branches.distinct().sorted()
     }
 
     /**
