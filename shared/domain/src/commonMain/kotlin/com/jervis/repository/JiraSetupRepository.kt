@@ -3,7 +3,9 @@ package com.jervis.repository
 import com.jervis.dto.jira.JiraApiTokenSaveRequestDto
 import com.jervis.dto.jira.JiraApiTokenTestRequestDto
 import com.jervis.dto.jira.JiraApiTokenTestResponseDto
+import com.jervis.dto.jira.JiraBoardRefDto
 import com.jervis.dto.jira.JiraProjectRefDto
+import com.jervis.dto.jira.JiraProjectSelectionDto
 import com.jervis.dto.jira.JiraSetupStatusDto
 import com.jervis.service.IJiraSetupService
 
@@ -28,4 +30,16 @@ class JiraSetupRepository(
 
     suspend fun testConnection(clientId: String): JiraSetupStatusDto =
         service.testConnection(clientId)
+
+    /**
+     * Sets the primary Jira project for the client.
+     */
+    suspend fun setPrimaryProject(clientId: String, projectKey: String): JiraSetupStatusDto =
+        service.setPrimaryProject(JiraProjectSelectionDto(clientId = clientId, projectKey = projectKey))
+
+    /**
+     * Lists Jira boards for the client, optionally filtered by project key.
+     */
+    suspend fun listBoards(clientId: String, projectKey: String? = null): List<JiraBoardRefDto> =
+        service.listBoards(clientId = clientId, projectKey = projectKey)
 }
