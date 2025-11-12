@@ -55,52 +55,51 @@ class GitTaskCreator(
     )
 
     /**
-     * Create pending task for commit analysis
+     * Create pending task for single file analysis in commit.
+     * One task per file = cleaner, more focused analysis.
      */
-    suspend fun createCommitAnalysisTask(
+    suspend fun createFileAnalysisTask(
         project: ProjectDocument,
         projectPath: Path,
         commitData: CommitData,
+        filePath: String,
     ): PendingTask =
         withContext(Dispatchers.IO) {
             logger.info {
-                "Creating commit analysis task for ${commitData.commitHash.take(8)} " +
-                    "by ${commitData.author} in project ${project.name}"
+                "Creating file analysis task for ${commitData.commitHash.take(8)}:$filePath " +
+                    "in project ${project.name}"
             }
+
+            // Get diff for this specific file
+            val fileDiff =
+                try {
+                    gitDiffFile(projectPath, commitData.commitHash, filePath)
+                } catch (e: Exception) {
+                    "[Could not retrieve diff for $filePath at ${commitData.commitHash}: ${e.message}]"
+                }
 
             // Everything in content - simple and clear
             val content =
                 buildString {
-                    appendLine("Commit Analysis Required")
+                    appendLine("File Change Analysis Required")
                     appendLine()
                     appendLine("Project: ${project.name}")
                     appendLine("Commit: ${commitData.commitHash}")
                     appendLine("Author: ${commitData.author}")
                     appendLine("Branch: ${commitData.branch}")
                     appendLine("Message: ${commitData.message}")
-                    appendLine("Changes: +${commitData.additions}/-${commitData.deletions}")
-                    appendLine("Files changed: ${commitData.changedFiles.size}")
-                    appendLine("Source: git://${project.id.toHexString()}/${commitData.commitHash}")
+                    appendLine("File: $filePath")
+                    appendLine("Source: git://${project.id.toHexString()}/${commitData.commitHash}/$filePath")
                     appendLine()
                     appendLine("Analysis Goals:")
                     appendLine("- Find potential bugs in code changes")
                     appendLine("- Detect gaps in application architecture")
                     appendLine("- Link to requirements from meetings, planning, documentation")
-                    appendLine("- Verify commit doesn't break application")
+                    appendLine("- Verify changes don't break application")
                     appendLine()
-                    appendLine("Changed Files – Full Content at Commit:")
-                    for (path in commitData.changedFiles) {
-                        appendLine()
-                        appendLine("=== FILE: $path ===")
-                        val fileContent =
-                            try {
-                                gitShowFile(projectPath, commitData.commitHash, path)
-                            } catch (e: Exception) {
-                                "[Could not retrieve content for $path at ${commitData.commitHash}: ${e.message}]"
-                            }
-                        appendLine(fileContent)
-                        appendLine("=== END FILE: $path ===")
-                    }
+                    appendLine("=== DIFF ===")
+                    appendLine(fileDiff)
+                    appendLine("=== END DIFF ===")
                 }
 
             val finalContent =
@@ -116,17 +115,17 @@ class GitTaskCreator(
                     content = finalContent,
                     projectId = project.id,
                     clientId = project.clientId,
-                    sourceUri = "git://${project.id.toHexString()}/${commitData.commitHash}",
+                    sourceUri = "git://${project.id.toHexString()}/${commitData.commitHash}/$filePath",
                 )
 
             logger.info {
-                "Created commit analysis task ${created.id} for commit ${commitData.commitHash.take(8)}"
+                "Created file analysis task ${created.id} for ${commitData.commitHash.take(8)}:$filePath"
             }
 
             created
         }
 
-    private fun gitShowFile(
+    private fun gitDiffFile(
         repoPath: Path,
         commitHash: String,
         filePath: String,
@@ -134,8 +133,11 @@ class GitTaskCreator(
         val process =
             ProcessBuilder(
                 "git",
-                "show",
-                "$commitHash:$filePath",
+                "diff",
+                "$commitHash^",
+                commitHash,
+                "--",
+                filePath,
             ).directory(repoPath.toFile())
                 .redirectErrorStream(true)
                 .start()
@@ -149,7 +151,7 @@ class GitTaskCreator(
                 } catch (_: Exception) {
                     "exit=$exit, ${bytes.size} bytes"
                 }
-            throw IllegalStateException("git show failed for $filePath at $commitHash: $msg")
+            throw IllegalStateException("git diff failed for $filePath at $commitHash: $msg")
         }
 
         // Detect binary by presence of NUL or many control chars
@@ -160,18 +162,19 @@ class GitTaskCreator(
             return "[Binary file omitted at $commitHash:$filePath, size=${bytes.size} bytes]"
         }
 
-        val rawText = sample.toString(Charsets.UTF_8)
-        val normalizedText = textNormalizationService.normalizePreservingCode(rawText)
+        val rawDiff = sample.toString(Charsets.UTF_8)
+        val normalizedDiff = textNormalizationService.normalizePreservingCode(rawDiff)
 
         return if (bytes.size > MAX_FILE_BYTES) {
-            normalizedText + "\n\n[Truncated: ${bytes.size - MAX_FILE_BYTES} more bytes omitted]"
+            normalizedDiff + "\n\n[Truncated: ${bytes.size - MAX_FILE_BYTES} more bytes omitted]"
         } else {
-            normalizedText
+            normalizedDiff
         }
     }
 
     /**
-     * Create multiple commit analysis tasks in batch
+     * Create file analysis tasks for all changed files in commits.
+     * One task per file for focused analysis.
      */
     suspend fun createCommitAnalysisTasks(
         project: ProjectDocument,
@@ -179,25 +182,55 @@ class GitTaskCreator(
         commits: List<CommitData>,
     ): List<PendingTask> =
         withContext(Dispatchers.IO) {
-            logger.info { "Creating ${commits.size} commit analysis tasks for project ${project.name}" }
+            logger.info { "Creating file analysis tasks for ${commits.size} commits in project ${project.name}" }
 
             val tasks = mutableListOf<PendingTask>()
 
             for (commit in commits) {
-                try {
-                    val task = createCommitAnalysisTask(project, projectPath, commit)
-                    tasks.add(task)
-                } catch (e: Exception) {
-                    logger.error(e) {
-                        "Failed to create commit analysis task for ${commit.commitHash.take(8)}"
+                for (filePath in commit.changedFiles) {
+                    // Skip lock files and generated files
+                    if (shouldSkipFileInCommitAnalysis(filePath)) {
+                        logger.debug { "Skipping file $filePath in commit ${commit.commitHash.take(8)}" }
+                        continue
+                    }
+
+                    try {
+                        val task = createFileAnalysisTask(project, projectPath, commit, filePath)
+                        tasks.add(task)
+                    } catch (e: Exception) {
+                        logger.error(e) {
+                            "Failed to create file analysis task for ${commit.commitHash.take(8)}:$filePath"
+                        }
                     }
                 }
             }
 
             logger.info {
-                "Created ${tasks.size} commit analysis tasks for project ${project.name}"
+                "Created ${tasks.size} file analysis tasks for project ${project.name}"
             }
 
             tasks
         }
+
+    /**
+     * Check if file should be skipped in commit analysis.
+     * Skip lock files, large generated files that pollute the analysis.
+     */
+    private fun shouldSkipFileInCommitAnalysis(filePath: String): Boolean {
+        val lowerPath = filePath.lowercase()
+        return lowerPath.endsWith("package-lock.json") ||
+            lowerPath.endsWith("yarn.lock") ||
+            lowerPath.endsWith("pnpm-lock.yaml") ||
+            lowerPath.endsWith("composer.lock") ||
+            lowerPath.endsWith("gemfile.lock") ||
+            lowerPath.endsWith("cargo.lock") ||
+            lowerPath.endsWith("poetry.lock") ||
+            lowerPath.endsWith("pipfile.lock") ||
+            lowerPath.contains("/.gradle/") ||
+            lowerPath.contains("/build/") ||
+            lowerPath.contains("/target/") ||
+            lowerPath.contains("/node_modules/") ||
+            lowerPath.contains("/dist/") ||
+            lowerPath.contains("/out/")
+    }
 }

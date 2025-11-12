@@ -418,10 +418,10 @@ class GitIndexingOrchestrator(
                     val commitData = getCommitData(projectPath, commitDoc.commitHash, branch)
 
                     if (commitData != null) {
-                        // 1. Create COMMIT_ANALYSIS task
-                        taskCreator.createCommitAnalysisTask(project, projectPath, commitData)
+                        // 1. Create COMMIT_ANALYSIS tasks (one per file with diff)
+                        val commitAnalysisTasks = taskCreator.createCommitAnalysisTasks(project, projectPath, listOf(commitData))
                         createdTasks.add(commitData)
-                        commitTaskCount++
+                        commitTaskCount += commitAnalysisTasks.size
                         recentCommitHashes.add(commitData.commitHash)
 
                         // 2. Create FILE_STRUCTURE_ANALYSIS tasks for changed files

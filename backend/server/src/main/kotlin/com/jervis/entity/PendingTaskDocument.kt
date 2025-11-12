@@ -7,6 +7,7 @@ import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.Indexed
 import org.springframework.data.mongodb.core.mapping.Document
+import org.springframework.data.mongodb.core.mapping.Field
 import java.time.Instant
 
 @Document(collection = "pending_tasks")
@@ -14,7 +15,8 @@ data class PendingTaskDocument(
     @Id
     val id: ObjectId = ObjectId(),
     @Indexed
-    val type: String, // Renamed from taskType for clarity
+    @Field("taskType") // Map to existing MongoDB field name
+    val type: String,
     val content: String? = null,
     @Indexed
     val projectId: ObjectId? = null,
