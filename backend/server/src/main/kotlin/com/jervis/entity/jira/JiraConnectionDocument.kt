@@ -15,6 +15,7 @@ import java.time.Instant
 @Document(collection = "jira_connections")
 @CompoundIndexes(
     CompoundIndex(name = "client_tenant_unique", def = "{'clientId': 1, 'tenant': 1}", unique = true),
+    CompoundIndex(name = "auth_status_idx", def = "{'clientId': 1, 'tenant': 1, 'updatedAt': 1, 'authStatus': 1}"),
 )
 data class JiraConnectionDocument(
     @Id
@@ -39,6 +40,12 @@ data class JiraConnectionDocument(
     val primaryProject: String? = null,
     /** Last successful Jira indexing sync timestamp */
     val lastSyncedAt: Instant? = null,
+    /** Authentication status for Atlassian (Jira) connection: UNKNOWN | VALID | INVALID */
+    val authStatus: String = "UNKNOWN",
+    /** Last error message (including auth error if applicable). */
+    val lastErrorMessage: String? = null,
+    /** When authentication was last tested (via UI or during API call). */
+    val lastAuthCheckedAt: Instant? = null,
     @Indexed
     val updatedAt: Instant = Instant.now(),
 )

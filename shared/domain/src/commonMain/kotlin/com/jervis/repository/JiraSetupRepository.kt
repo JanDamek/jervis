@@ -25,4 +25,7 @@ class JiraSetupRepository(
 
     suspend fun listProjects(clientId: String): List<JiraProjectRefDto> =
         service.listProjects(clientId)
+
+    suspend fun testConnection(clientId: String): JiraSetupStatusDto =
+        service.testConnection(clientId)
 }

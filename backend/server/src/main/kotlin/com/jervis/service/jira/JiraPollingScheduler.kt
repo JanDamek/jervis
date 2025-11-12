@@ -31,10 +31,10 @@ class JiraPollingScheduler(
                 return
             }
 
-            // Only process connections considered active (expiresAt in future)
-            val active = all.filter { it.expiresAt.isAfter(Instant.now()) }
+            // Only process connections considered active (expiresAt in future) AND with VALID authentication
+            val active = all.filter { it.expiresAt.isAfter(Instant.now()) && it.authStatus == "VALID" }
             if (active.isEmpty()) {
-                logger.debug { "No active Jira connections to poll" }
+                logger.debug { "No active VALID Jira connections to poll" }
                 return
             }
 

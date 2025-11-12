@@ -51,23 +51,6 @@ fun MainScreen(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false }
                     ) {
-                        // Management (mirrors Desktop: Clients/Projects windows)
-                        DropdownMenuItem(
-                            text = { Text("Clients") },
-                            onClick = {
-                                showMenu = false
-                                onNavigate(com.jervis.ui.navigation.Screen.Clients)
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Projects") },
-                            onClick = {
-                                showMenu = false
-                                onNavigate(com.jervis.ui.navigation.Screen.Projects)
-                            }
-                        )
-                        HorizontalDivider()
-
                         // Configuration (mirrors Desktop: Settings window)
                         DropdownMenuItem(
                             text = { Text("Settings") },
