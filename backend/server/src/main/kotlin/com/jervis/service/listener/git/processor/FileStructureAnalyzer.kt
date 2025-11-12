@@ -147,7 +147,6 @@ class FileStructureAnalyzer(
             content = content,
             projectId = project.id,
             clientId = project.clientId,
-            sourceUri = "gitfile://${project.id.toHexString()}/$commitHash/$filePath",
         )
     }
 

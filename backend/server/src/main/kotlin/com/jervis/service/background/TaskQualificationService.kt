@@ -93,7 +93,7 @@ class TaskQualificationService(
         projectId: ObjectId?,
         ragDocumentId: String?,
     ): QualificationResult {
-        logger.info { "Qualifying email with enrichment: ${email.messageId}" }
+        logger.info { "Qualifying inbound email: ${email.messageId}" }
 
         // 1. Create/find sender profile
         val senderProfile =
@@ -148,33 +148,7 @@ class TaskQualificationService(
             return QualificationResult.Discard(reason = "Routine message")
         }
 
-        // 6. Create task with simple context (just IDs!)
-        val baseContext =
-            mutableMapOf(
-                "senderProfileId" to senderProfile.id.toHexString(),
-                "threadId" to thread.id.toHexString(),
-                "threadKey" to thread.threadId,
-                "threadSubject" to thread.subject,
-                "sourceUri" to sourceUri,
-                "channel" to "EMAIL",
-                "accountId" to accountId.toHexString(),
-                "messageId" to email.messageId,
-                "from" to email.from,
-                "to" to email.to,
-                "subject" to email.subject,
-                "date" to email.receivedAt.toString(),
-                "hasAttachments" to email.attachments.isNotEmpty().toString(),
-            )
-        ragDocumentId?.let { baseContext["ragDocumentId"] = it }
-        if (email.attachments.isNotEmpty()) {
-            baseContext["attachments"] =
-                email.attachments.joinToString(",") { att ->
-                    "${att.fileName}:${att.contentType}:${att.size}"
-                }
-        }
-        if (closedTaskIds.isNotEmpty()) {
-            baseContext["previousTasksClosed"] = closedTaskIds.joinToString(",")
-        }
+        // 6. Create task – all details must be in content, no enrichment/context maps
 
         val task =
             pendingTaskService.createTask(
@@ -182,13 +156,12 @@ class TaskQualificationService(
                 content = formatEmailContent(email),
                 clientId = clientId,
                 projectId = projectId,
-                sourceUri = "email://${email.messageId}", // Approximate - actual accountId not available here
             )
 
         // Requirement: writing pending task must atomically flip email state to INDEXED
         emailMessageStateManager.markMessageIdAsIndexed(accountId, email.messageId)
 
-        logger.info { "Email ${email.messageId} delegated to planner with context and marked as INDEXED" }
+        logger.info { "Email ${email.messageId} delegated to planner and marked as INDEXED" }
         return QualificationResult.Delegate(task = task)
     }
 
@@ -261,7 +234,7 @@ class TaskQualificationService(
 
         try {
             val maxContentChars = 20_000
-            val rawContent = task.content ?: ""
+            val rawContent = task.content
             val truncatedContent =
                 if (rawContent.length > maxContentChars) {
                     val truncated = rawContent.take(maxContentChars)

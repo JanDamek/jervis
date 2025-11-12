@@ -20,28 +20,12 @@ class PendingTaskService(
 
     suspend fun createTask(
         taskType: PendingTaskTypeEnum,
-        content: String? = null,
+        content: String,
         projectId: ObjectId? = null,
         clientId: ObjectId,
-        sourceUri: String? = null,
     ): PendingTask {
-        // Idempotency: for selected types with canonical sourceUri, do not create duplicates
-        val dedupeBySourceUriTypes =
-            setOf(
-                PendingTaskTypeEnum.EMAIL_PROCESSING,
-                PendingTaskTypeEnum.CONFLUENCE_PAGE_ANALYSIS,
-                PendingTaskTypeEnum.COMMIT_ANALYSIS,
-                PendingTaskTypeEnum.FILE_STRUCTURE_ANALYSIS,
-                PendingTaskTypeEnum.PROJECT_DESCRIPTION_UPDATE,
-            )
-        if (taskType in dedupeBySourceUriTypes && !sourceUri.isNullOrBlank()) {
-            val existing =
-                pendingTaskRepository.findFirstByClientAndTypeAndSourceUri(clientId, taskType.name, sourceUri)
-            if (existing != null) {
-                logger.info { "Reusing existing pending task ${existing.id} for ${taskType.name} sourceUri=$sourceUri" }
-                return existing.toDomain()
-            }
-        }
+        // Enforce non-empty content to avoid creating dead/empty tasks
+        require(content.isNotBlank()) { "PendingTask content must be provided and non-blank" }
 
         val task =
             PendingTask(
@@ -49,7 +33,6 @@ class PendingTaskService(
                 content = content,
                 projectId = projectId,
                 clientId = clientId,
-                sourceUri = sourceUri,
                 // Current pipeline does not have explicit indexing step yet; start at READY_FOR_QUALIFICATION
                 state = PendingTaskState.READY_FOR_QUALIFICATION,
             )
@@ -92,7 +75,7 @@ class PendingTaskService(
     ) {
         val task = pendingTaskRepository.findById(taskId) ?: return
         if (PendingTaskState.valueOf(task.state) != from) return
-        logger.info { "TASK_COMPLETED_DELETE: id=$taskId type=${task.type} sourceUri=${task.sourceUri}" }
+        logger.info { "TASK_COMPLETED_DELETE: id=$taskId type=${task.type}" }
         pendingTaskRepository.deleteById(taskId)
     }
 
@@ -113,7 +96,7 @@ class PendingTaskService(
                 error?.let { appendLine("Error: $it") }
                 appendLine()
                 appendLine("Task Content:")
-                appendLine(domain.content?.take(500) ?: "(no content)")
+                appendLine(domain.content.take(500))
             }
         val userTask =
             userTaskService.createTask(
@@ -122,12 +105,10 @@ class PendingTaskService(
                 projectId = domain.projectId,
                 clientId = domain.clientId,
                 sourceType = com.jervis.domain.task.TaskSourceType.AGENT_SUGGESTION,
-                sourceUri = domain.sourceUri,
                 metadata =
                     mapOf(
                         "snapshot_taskType" to domain.taskType.name,
                         "snapshot_state" to domain.state.name,
-                        "snapshot_sourceUri" to (domain.sourceUri ?: ""),
                     ),
             )
         logger.info { "TASK_FAILED_ESCALATED: id=$taskId userTaskId=${userTask.id} reason=$reason" }
@@ -155,7 +136,7 @@ class PendingTaskService(
                 error?.message?.let { appendLine("Error: $it") }
                 appendLine()
                 appendLine("Task Content:")
-                appendLine(task.content?.take(500) ?: "(no content)")
+                appendLine(task.content.take(500))
             }
         val userTask =
             userTaskService.createTask(
@@ -164,12 +145,10 @@ class PendingTaskService(
                 projectId = task.projectId,
                 clientId = task.clientId,
                 sourceType = com.jervis.domain.task.TaskSourceType.AGENT_SUGGESTION,
-                sourceUri = task.sourceUri,
                 metadata =
                     mapOf(
                         "snapshot_taskType" to task.taskType.name,
                         "snapshot_state" to task.state.name,
-                        "snapshot_sourceUri" to (task.sourceUri ?: ""),
                     ),
             )
         logger.info { "TASK_FAILED_ESCALATED: pending=${task.id} -> userTask=${userTask.id} reason=$reason" }

@@ -32,9 +32,7 @@ class AgentOrchestratorService(
     private val stepNotificationService: com.jervis.service.notification.StepNotificationService,
     private val clientMongoRepository: ClientMongoRepository,
     private val projectMongoRepository: ProjectMongoRepository,
-    private val conversationIndexingService: com.jervis.service.indexing.ConversationIndexingService,
     private val backgroundTaskGoalsService: BackgroundTaskGoalsService,
-    private val fileDescriptionProcessor: com.jervis.service.listener.git.processor.FileDescriptionProcessor,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -177,9 +175,6 @@ class AgentOrchestratorService(
                         stepNotificationService.notifyPlanStatusChanged(plan.id, plan.id, plan.status)
                     }
 
-                    // Index conversation for future RAG retrieval (foreground tasks only)
-                    conversationIndexingService.indexConversation(plan, finalResponse)
-
                     finalResponse
                 }
 
@@ -224,27 +219,6 @@ class AgentOrchestratorService(
                     customGoals = goals,
                 )
 
-            // Post-processing for specific task types
-            when (task.taskType) {
-                com.jervis.domain.task.PendingTaskTypeEnum.FILE_STRUCTURE_ANALYSIS -> {
-                    // Extract and store file description in RAG
-                    try {
-                        val success = fileDescriptionProcessor.processAnalysisResult(task, response.message)
-                        if (success) {
-                            logger.info { "FILE_STRUCTURE_ANALYSIS: Successfully stored description" }
-                        } else {
-                            logger.warn { "FILE_STRUCTURE_ANALYSIS: Failed to store description" }
-                        }
-                    } catch (e: Exception) {
-                        logger.error(e) { "FILE_STRUCTURE_ANALYSIS: Error storing description: ${e.message}" }
-                    }
-                }
-
-                else -> {
-                    // No post-processing for other task types
-                }
-            }
-
             response
         } catch (e: Exception) {
             logger.error(e) { "AGENT_BACKGROUND_ERROR: Failed to process task ${task.id}: ${e.message}" }
@@ -259,7 +233,7 @@ class AgentOrchestratorService(
             appendLine("Created: ${task.createdAt}")
             appendLine()
 
-            if (!task.content.isNullOrBlank()) {
+            if (task.content.isNotBlank()) {
                 appendLine("CONTENT:")
                 appendLine(task.content)
                 appendLine()

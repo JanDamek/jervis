@@ -115,7 +115,6 @@ class GitTaskCreator(
                     content = finalContent,
                     projectId = project.id,
                     clientId = project.clientId,
-                    sourceUri = "git://${project.id.toHexString()}/${commitData.commitHash}/$filePath",
                 )
 
             logger.info {

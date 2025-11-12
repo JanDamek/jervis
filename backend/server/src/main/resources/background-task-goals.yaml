@@ -7,15 +7,12 @@
 tasks:
   EMAIL_PROCESSING:
     goal: |
-      ENRICHED CONTEXT PROVIDED: enrichedContext contains sender profile, conversation thread, and RAG excerpts.
-      DO NOT search RAG for basic sender info or conversation history - it's already provided in enrichedContext!
+      INPUT POLICY: All information you need is in the task content. Do not expect extra context maps.
+      The content contains email headers (FROM, TO, SUBJECT, DATE), MESSAGE ID, and BODY. Attachments are listed by name.
 
-      AVAILABLE CONTEXT:
-      - enrichedContext.sender: {name, relationship, organization, conversationSummary, recentTopics}
-      - enrichedContext.thread: {subject, messageCount, summary, requiresResponse, previousMessages, status}
-      - enrichedContext.ragContext: {relevantPastMessages, keyExcerpts}
+      If you truly need the original full source (e.g., complete email body or attachments), use SOURCE_FETCH tools using the canonical URI present in the task content (line starting with "Source:").
 
-      Review the email and determine appropriate actions based on content type:
+      Review the email and determine appropriate actions based on its content:
 
       STEP 0: Check email age and relevance
       - Emails older than 5 years → Usually outdated, skip unless exceptionally important
@@ -23,11 +20,9 @@ tasks:
       - Only process old emails if they contain timeless information (decisions, specifications, documentation)
       - Current date is available in context - calculate email age
 
-      STEP 1: Use enriched context for quick decisions
-      - Check sender.relationship: SYSTEM emails rarely need action unless they contain failures/errors
-      - Check thread.requiresResponse: If true, this conversation needs attention
-      - Check thread.previousMessages: Understand conversation history without RAG search
-      - Check sender.conversationSummary: Understand what this sender typically discusses
+      STEP 1: Use headers and subject for quick decisions
+      - SYSTEM-like senders with "successful" subjects rarely need action unless there is a failure/error
+      - Look for direct requests/questions and deadlines in SUBJECT and BODY
 
       STEP 2: Check if email matches user requirements/wishes
       - Query user requirements: `requirement_query_user` to check if email content matches any active wishes
@@ -54,7 +49,7 @@ tasks:
       - Relevant sales/offers matching user interests → Create task or schedule reminder
       - Important announcements → Store knowledge or create task if actionable
 
-      EMAIL IS ALREADY INDEXED - do not search for it in RAG unless you need deep history beyond enrichedContext.
+      EMAIL IS ALREADY INDEXED - avoid redundant RAG searches unless you truly need deeper historical context.
 
       USE MCP TOOLS FOR DEEP INVESTIGATION (only if needed):
       - sender_query_profile: Get full sender profile details
@@ -167,9 +162,8 @@ tasks:
       PURPOSE: Perform deep analysis of the provided task, using RAG and available tools when necessary. Prefer determinism and architectural correctness.
 
       CONTEXT SOURCES:
-      - Task content: The primary request to analyze
-      - Context map: May include projectId, filePath, commitHash, branch, fileContent, sourceUri, etc.
-      - Dynamic goal (optional): context.dynamicGoal → If present, append to your objective and treat as an additive specialization, not a replacement.
+      - Task content: The only reliable request to analyze. Do not assume additional context maps.
+      - Canonical URI in content: If the content includes a line "Source: <uri>", use it to fetch the original source via tools when necessary.
 
       CORE PRINCIPLES:
       - Follow existing architecture. Do not invent new abstractions, parameters, or frameworks.
@@ -178,7 +172,7 @@ tasks:
       - Enforce SOLID and controllers/service/repository boundaries when proposing changes.
 
       WHEN TO USE TOOLS:
-      - SOURCE_FETCH: When you need the full original source (e.g., email body, file content) referenced by sourceUri.
+      - SOURCE_FETCH: When you need the full original source (e.g., email body, file content) referenced by the canonical URI in content (line starting with "Source:").
       - REQUIREMENT_QUERY_USER: When matching content (email, news) to user requirements/wishes.
       - TASK_CREATE_USER_TASK: When the outcome should be an explicit user action item.
       - KNOWLEDGE SEARCH/STORE (if configured): For long-term knowledge management.
@@ -186,7 +180,7 @@ tasks:
       ANALYSIS STEPS:
       1) Restate the task briefly to anchor the scope.
       2) Extract key questions, inputs, and assumed constraints.
-      3) If fileContent absent but filePath provided and the tool exists, fetch or request content via tools.
+      3) If content lacks details and it includes a canonical URI ("Source: ..."), fetch the original via tools when necessary.
       4) Build a minimal plan (bulleted) to answer the task. Keep steps few and surgical.
       5) Execute only necessary lookups. Avoid redundant RAG queries if content is already provided.
       6) Produce results:
@@ -198,11 +192,7 @@ tasks:
       OUTPUT FORMAT:
       - Prefer structured, sectioned text. Keep code examples minimal and idiomatic.
 
-      DYNAMIC GOAL APPEND (if present):
-      - Append the following to your objective verbatim if context.dynamicGoal exists:
-      ---
-      ADDITIONAL GOAL: {context.dynamicGoal}
-      ---
+      NOTE: There is no dynamic goal context. All specialization must come from task content.
 
   COMMIT_ANALYSIS:
     goal: |

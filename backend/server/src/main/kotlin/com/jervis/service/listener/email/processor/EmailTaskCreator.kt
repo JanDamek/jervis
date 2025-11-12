@@ -36,7 +36,6 @@ class EmailTaskCreator(
                 content = combinedContent,
                 projectId = projectId,
                 clientId = clientId,
-                sourceUri = "email://${accountId.toHexString()}/${message.messageId}",
             )
 
             logger.info { "Created pending task for email ${message.messageId} with ${combinedContent.length} chars" }
