@@ -9,7 +9,7 @@ import com.jervis.service.IAgentOrchestratorService
  * Provides communication with the agent orchestrator
  */
 class AgentChatRepository(
-    private val agentOrchestratorService: IAgentOrchestratorService
+    private val agentOrchestratorService: IAgentOrchestratorService,
 ) {
     /**
      * Send a chat message to the agent orchestrator
@@ -18,26 +18,20 @@ class AgentChatRepository(
         text: String,
         clientId: String,
         projectId: String,
-        wsSessionId: String? = null,
         quick: Boolean = false,
-        autoScope: Boolean = false,
-        confirmedScope: Boolean = false,
-        existingContextId: String? = null
     ) {
-        val context = ChatRequestContextDto(
-            clientId = clientId,
-            projectId = projectId,
-            autoScope = autoScope,
-            quick = quick,
-            confirmedScope = confirmedScope,
-            existingContextId = existingContextId
-        )
+        val context =
+            ChatRequestContextDto(
+                clientId = clientId,
+                projectId = projectId,
+                quick = quick,
+            )
 
-        val request = ChatRequestDto(
-            text = text,
-            context = context,
-            wsSessionId = wsSessionId
-        )
+        val request =
+            ChatRequestDto(
+                text = text,
+                context = context,
+            )
 
         agentOrchestratorService.handle(request)
     }
@@ -50,7 +44,7 @@ class AgentChatRepository(
         taskId: String,
         clientId: String,
         projectId: String,
-        wsSessionId: String? = null
+        wsSessionId: String? = null,
     ) {
         // Prefix with task ID for traceability
         val enrichedInstruction = "User task $taskId: $instruction"
@@ -59,8 +53,7 @@ class AgentChatRepository(
             text = enrichedInstruction,
             clientId = clientId,
             projectId = projectId,
-            wsSessionId = wsSessionId,
-            quick = false
+            quick = false,
         )
     }
 }

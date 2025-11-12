@@ -44,7 +44,7 @@ class AgentOrchestratorService(
         handle(
             text = text,
             clientId = ObjectId(ctx.clientId),
-            projectId = ctx.projectId?.let { ObjectId(it) },
+            projectId = ObjectId(ctx.projectId),
             background = background,
             quick = ctx.quick,
         )
@@ -55,15 +55,15 @@ class AgentOrchestratorService(
         projectId: ObjectId?,
         background: Boolean,
         quick: Boolean = false,
-    ): ChatResponse = handleWithCustomGoals(text, clientId, projectId, background, quick, emptyList())
+    ): ChatResponse = handleWithGoalPrompt(text, clientId, projectId, background, quick, null)
 
-    private suspend fun handleWithCustomGoals(
+    private suspend fun handleWithGoalPrompt(
         text: String,
         clientId: ObjectId,
         projectId: ObjectId?,
         background: Boolean,
         quick: Boolean,
-        customGoals: List<String>,
+        goalPrompt: String?,
     ): ChatResponse {
         val projectIdLog = projectId?.toHexString() ?: "none"
         logger.info { "AGENT_START: Handling query for client='${clientId.toHexString()}', project='$projectIdLog'" }
@@ -74,7 +74,7 @@ class AgentOrchestratorService(
                     text = text,
                     quick = quick,
                     backgroundMode = background,
-                    customGoals = customGoals,
+                    goalPrompt = goalPrompt,
                 )
 
             // Load client document (mandatory)
@@ -99,7 +99,7 @@ class AgentOrchestratorService(
                     backgroundMode = background,
                 )
 
-            findingInRAG(plan)
+            executeInitialRagQueries(plan)
 
             // Mark the plan as RUNNING before entering the planning loop
             plan.status = com.jervis.domain.plan.PlanStatusEnum.RUNNING
@@ -122,7 +122,7 @@ class AgentOrchestratorService(
                 logger.debug { "AGENT_LOOP_PLANNING: All steps executed, asking planner for next steps" }
 
                 if (plan.status != com.jervis.domain.plan.PlanStatusEnum.RUNNING) {
-                    // Plan is no longer running - exit loop to finalize
+                    // Plan is no longer a running-exit loop to finalize
                     logger.info { "AGENT_LOOP_NO_RUNNING_PLAN: Plan not running, exiting loop" }
                     break
                 }
@@ -160,7 +160,7 @@ class AgentOrchestratorService(
                 }
             }
 
-            // Skip finalizer for background tasks - they complete with empty plan
+            // Skip finalizer for background tasks - they complete with an empty plan
             val response =
                 if (background) {
                     logger.info { "AGENT_BACKGROUND_COMPLETE: Background task completed without finalizer" }
@@ -170,7 +170,7 @@ class AgentOrchestratorService(
                 } else {
                     val finalResponse = finalizer.finalize(plan)
 
-                    // Notify UI about finalization if plan is marked as FINALIZED
+                    // Notify UI about finalization if the plan is marked as FINALIZED
                     if (plan.status == com.jervis.domain.plan.PlanStatusEnum.FINALIZED) {
                         stepNotificationService.notifyPlanStatusChanged(plan.id, plan.id, plan.status)
                     }
@@ -196,27 +196,23 @@ class AgentOrchestratorService(
         val clientId = requireNotNull(task.clientId) { "Background task must have clientId" }
         val projectId = task.projectId
 
-        val taskPrompt = buildBackgroundPrompt(task)
+        // Use content-only policy: model works with goals + raw content, nothing else
+        val taskText = task.content
 
-        // Load task-specific goals from YAML
-        val goals =
-            backgroundTaskGoalsService.getGoals(task.taskType)?.let { listOf(it) }
-                ?: run {
-                    logger.warn { "No goals defined for task type ${task.taskType}, using empty goals" }
-                    emptyList()
-                }
-
-        logger.info { "AGENT_BACKGROUND_GOALS: Task ${task.id} has ${goals.size} goal(s)" }
+        // Load task-specific goal from YAML and apply content placeholder if present
+        val goalTemplate = backgroundTaskGoalsService.getGoals(task.taskType)
+        val goalPrompt = goalTemplate.replace("{content}", taskText)
+        logger.info { "AGENT_BACKGROUND_GOAL: Loaded goal template for task ${task.id} (length=${goalPrompt.length})" }
 
         return try {
             val response =
-                handleWithCustomGoals(
-                    text = taskPrompt,
+                handleWithGoalPrompt(
+                    text = taskText,
                     clientId = clientId,
                     projectId = projectId,
                     quick = false,
                     background = true,
-                    customGoals = goals,
+                    goalPrompt = goalPrompt,
                 )
 
             response
@@ -226,23 +222,7 @@ class AgentOrchestratorService(
         }
     }
 
-    private fun buildBackgroundPrompt(task: PendingTask): String =
-        buildString {
-            appendLine("=== BACKGROUND TASK ===")
-            appendLine("Type: ${task.taskType.name}")
-            appendLine("Created: ${task.createdAt}")
-            appendLine()
-
-            if (task.content.isNotBlank()) {
-                appendLine("CONTENT:")
-                appendLine(task.content)
-                appendLine()
-            }
-
-            // All information (including qualification notes and dynamic goals) is now in content
-        }
-
-    private suspend fun findingInRAG(plan: Plan) {
+    private suspend fun executeInitialRagQueries(plan: Plan) {
         if (plan.initialRagQueries.isEmpty()) return
 
         coroutineScope {

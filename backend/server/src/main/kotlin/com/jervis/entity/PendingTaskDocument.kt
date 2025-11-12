@@ -15,7 +15,7 @@ data class PendingTaskDocument(
     @Id
     val id: ObjectId = ObjectId(),
     @Indexed
-    @Field("taskType") // Map to existing MongoDB field name
+    @Field("taskType")
     val type: String,
     val content: String,
     @Indexed
