@@ -60,15 +60,6 @@ fun main() = application {
                 navigator.navigateTo(com.jervis.ui.navigation.Screen.Main)
             })
             Separator()
-            Item("Projects", onClick = {
-                showMainWindow = true
-                navigator.navigateTo(com.jervis.ui.navigation.Screen.Projects)
-            })
-            Item("Clients", onClick = {
-                showMainWindow = true
-                navigator.navigateTo(com.jervis.ui.navigation.Screen.Clients)
-            })
-            Separator()
             Item("User Tasks", onClick = {
                 showMainWindow = true
                 navigator.navigateTo(com.jervis.ui.navigation.Screen.UserTasks)
@@ -114,9 +105,6 @@ fun main() = application {
             }
             Menu("View") {
                 Item("Home", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.Main) })
-                Separator()
-                Item("Projects", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.Projects) })
-                Item("Clients", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.Clients) })
                 Separator()
                 Item("User Tasks", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.UserTasks) })
                 Item("Error Logs", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.ErrorLogs) })

@@ -67,14 +67,6 @@ fun App(
                 onNavigate = appNavigator::navigateTo,
                 modifier = modifier,
             )
-            Screen.Clients -> ClientsScreen(
-                repository = repository,
-                onBack = { appNavigator.navigateTo(Screen.Main) }
-            )
-            Screen.Projects -> ProjectsScreen(
-                repository = repository,
-                onBack = { appNavigator.navigateTo(Screen.Main) }
-            )
             Screen.Settings -> SettingsScreen(
                 repository = repository,
                 onBack = { appNavigator.navigateTo(Screen.Main) }

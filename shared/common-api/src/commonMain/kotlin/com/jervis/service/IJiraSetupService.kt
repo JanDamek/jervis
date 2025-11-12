@@ -59,6 +59,14 @@ interface IJiraSetupService {
         @Body request: JiraUserSelectionDto,
     ): JiraSetupStatusDto
 
+    /**
+     * UI-only action to verify Atlassian token for the client and, on success, enable Jira usage (authStatus → VALID).
+     */
+    @POST("api/jira/setup/test-connection")
+    suspend fun testConnection(
+        @Query clientId: String,
+    ): JiraSetupStatusDto
+
     // Lists for UI selection
     @GET("api/jira/setup/projects")
     suspend fun listProjects(

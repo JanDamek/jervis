@@ -11,10 +11,6 @@ import kotlinx.coroutines.flow.asStateFlow
 sealed class Screen {
     object Main : Screen()
 
-    // Management
-    object Clients : Screen()
-    object Projects : Screen()
-
     // Settings & Configuration
     object Settings : Screen()
 

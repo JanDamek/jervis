@@ -37,6 +37,7 @@ class JiraSetupRestController(
     private val sessionManager: WebSocketSessionManager,
     private val jiraApiClient: com.jervis.service.jira.JiraApiClient,
     private val errorPublisher: com.jervis.service.notification.ErrorNotificationsPublisher,
+    private val jiraConnectionService: com.jervis.service.jira.JiraConnectionService,
 ) : IJiraSetupService {
     private val logger = KotlinLogging.logger {}
     private val json = Json { encodeDefaults = true }
@@ -129,6 +130,21 @@ class JiraSetupRestController(
         logger.info { "JIRA_UI_SETUP: setPreferredUser client=${request.clientId} account=${request.accountId}" }
         return fetchStatus(request.clientId)
     }
+
+    @PostMapping("/test-connection")
+    override suspend fun testConnection(@RequestParam clientId: String): JiraSetupStatusDto =
+        try {
+            jiraConnectionService.testConnection(ObjectId(clientId))
+            logger.info { "JIRA_UI_SETUP: testConnection OK for client=$clientId" }
+            fetchStatus(clientId)
+        } catch (e: Exception) {
+            errorPublisher.publishError(
+                message = "Jira test connection failed for client=$clientId: ${e.message}",
+                stackTrace = e.stackTraceToString(),
+            )
+            // Even on failure, return current status (likely remains INVALID/UNKNOWN)
+            fetchStatus(clientId)
+        }
 
     @GetMapping("/projects")
     override suspend fun listProjects(@RequestParam clientId: String): List<JiraProjectRefDto> =

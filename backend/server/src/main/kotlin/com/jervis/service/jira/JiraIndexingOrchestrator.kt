@@ -31,6 +31,7 @@ class JiraIndexingOrchestrator(
     private val linkIndexingService: LinkIndexingService,
     private val jiraAttachmentIndexer: JiraAttachmentIndexer,
     private val configCache: com.jervis.service.cache.ClientProjectConfigCache,
+    private val connectionService: JiraConnectionService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -38,6 +39,17 @@ class JiraIndexingOrchestrator(
     suspend fun indexClient(clientId: ObjectId) =
         withContext(Dispatchers.IO) {
             logger.info { "JIRA_INDEX: Start for client=${clientId.toHexString()}" }
+
+            // Ensure we have a connection and it's VALID before proceeding
+            val connectionDoc = connectionRepository.findByClientId(clientId)
+            if (connectionDoc == null) {
+                logger.warn { "JIRA_INDEX: No Jira connection configured for client=${clientId.toHexString()}" }
+                return@withContext
+            }
+            if (connectionDoc.authStatus != "VALID") {
+                logger.warn { "JIRA_INDEX: Skipping client=${clientId.toHexString()} due to authStatus=${connectionDoc.authStatus}. Use Test Connection to enable." }
+                return@withContext
+            }
 
             selection.getConnection(clientId).let { auth.ensureValidToken(it) }
 
@@ -69,13 +81,18 @@ class JiraIndexingOrchestrator(
                 try {
                     api.listProjects(connValid).map { (key, _) -> key }
                 } catch (e: Exception) {
+                    // If this looks like an auth error, mark INVALID to stop further attempts until user fixes it
+                    val doc = connectionRepository.findByClientId(clientId)
+                    if (doc != null) {
+                        runCatching { connectionService.markAuthInvalid(doc, e.message) }
+                    }
                     logger.warn(e) { "JIRA_INDEX: Failed to list all Jira projects for client=${clientId.toHexString()}, falling back to primary project only" }
                     listOf(primaryProject)
                 }
 
             // Determine incremental window based on last sync
-            val connDoc = connectionRepository.findByClientId(clientId)
-            val lastSyncedAt = connDoc?.lastSyncedAt
+            val latestConnDoc = connectionRepository.findByClientId(clientId)
+            val lastSyncedAt = latestConnDoc?.lastSyncedAt
             val baseJqlSuffix =
                 if (lastSyncedAt == null) "AND updated >= -30d ORDER BY updated DESC" else "ORDER BY updated DESC"
 
