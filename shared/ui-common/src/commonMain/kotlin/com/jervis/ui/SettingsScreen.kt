@@ -254,6 +254,7 @@ private fun ProjectsTab(repository: JervisRepository) {
     val clients = remember { mutableStateListOf<ClientDto>() }
     val projects = remember { mutableStateListOf<ProjectDto>() }
     var selectedClientId by remember { mutableStateOf<String?>(null) }
+    var availableJiraProjects by remember { mutableStateOf<List<com.jervis.dto.jira.JiraProjectRefDto>>(emptyList()) }
 
     // New project form
     var projectName by remember { mutableStateOf("") }
@@ -272,6 +273,8 @@ private fun ProjectsTab(repository: JervisRepository) {
         loading = true
         error = try {
             projects.clear(); projects += repository.projects.listProjectsForClient(selectedClientId!!)
+            // Preload Jira projects for dropdowns
+            availableJiraProjects = runCatching { repository.jiraSetup.listProjects(selectedClientId!!) }.getOrDefault(emptyList())
             null
         } catch (t: Throwable) { t.message } finally { loading = false }
     }
@@ -322,28 +325,39 @@ private fun ProjectsTab(repository: JervisRepository) {
             Section("Projects") {
                 LazyColumn(modifier = Modifier.fillMaxWidth()) {
                     items(projects, key = { it.id }) { p ->
-                        ProjectRow(
-                            project = p,
-                            onSave = { updated ->
-                                scope.launch {
-                                    try {
-                                        val saved = repository.projects.saveProject(updated)
-                                        val idx = projects.indexOfFirst { it.id == saved.id }
-                                        if (idx >= 0) projects[idx] = saved
-                                        error = null
-                                    } catch (t: Throwable) { error = t.message }
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            ProjectRow(
+                                project = p,
+                                onSave = { updated ->
+                                    scope.launch {
+                                        try {
+                                            val saved = repository.projects.saveProject(updated)
+                                            val idx = projects.indexOfFirst { it.id == saved.id }
+                                            if (idx >= 0) projects[idx] = saved
+                                            error = null
+                                        } catch (t: Throwable) { error = t.message }
+                                    }
+                                },
+                                onDelete = {
+                                    scope.launch {
+                                        try {
+                                            repository.projects.deleteProject(p)
+                                            projects.removeAll { it.id == p.id }
+                                            error = null
+                                        } catch (t: Throwable) { error = t.message }
+                                    }
                                 }
-                            },
-                            onDelete = {
-                                scope.launch {
-                                    try {
-                                        repository.projects.deleteProject(p)
-                                        projects.removeAll { it.id == p.id }
-                                        error = null
-                                    } catch (t: Throwable) { error = t.message }
-                                }
-                            }
-                        )
+                            )
+
+                            // Overrides section (Jira/Confluence/Git/Email)
+                            ProjectOverridesSection(
+                                clientId = selectedClientId!!,
+                                project = p,
+                                repository = repository,
+                                availableJiraProjects = availableJiraProjects,
+                                onError = { error = it }
+                            )
+                        }
                     }
                 }
             }
@@ -514,6 +528,10 @@ private fun IntegrationsTab(repository: JervisRepository) {
     val clients = remember { mutableStateListOf<ClientDto>() }
     var selectedClientId by remember { mutableStateOf<String?>(null) }
     var jiraStatus by remember { mutableStateOf<JiraSetupStatusDto?>(null) }
+    var jiraProjects by remember { mutableStateOf<List<com.jervis.dto.jira.JiraProjectRefDto>>(emptyList()) }
+    var selectedJiraPrimary by remember { mutableStateOf<String?>(null) }
+    var confluenceSpaceKey by remember { mutableStateOf("") }
+    var confluenceRootPageId by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         loading = true
@@ -525,6 +543,13 @@ private fun IntegrationsTab(repository: JervisRepository) {
         loading = true
         error = try {
             jiraStatus = repository.jiraSetup.getStatus(selectedClientId!!)
+            jiraProjects = runCatching { repository.jiraSetup.listProjects(selectedClientId!!) }.getOrDefault(emptyList())
+            // Initialize fields from status
+            selectedJiraPrimary = jiraStatus?.primaryProject
+            repository.integrationSettings.getClientStatus(selectedClientId!!).let { cs ->
+                confluenceSpaceKey = cs.confluenceSpaceKey ?: ""
+                confluenceRootPageId = cs.confluenceRootPageId ?: ""
+            }
             null
         } catch (t: Throwable) { t.message } finally { loading = false }
     }
@@ -559,9 +584,201 @@ private fun IntegrationsTab(repository: JervisRepository) {
                     }
                 }
             }
+
+            Section("Jira Primary Project") {
+                // Dropdown like: simple selectable chips
+                FlowWrap {
+                    jiraProjects.forEach { jp ->
+                        val selected = jp.key == selectedJiraPrimary
+                        Box(
+                            modifier = Modifier
+                                .padding(4.dp)
+                                .border(1.dp, if (selected) Color(0xFF3366FF) else Color.LightGray)
+                                .background(if (selected) Color(0x113366FF) else Color.Transparent)
+                                .clickable {
+                                    selectedJiraPrimary = jp.key
+                                    scope.launch {
+                                        try {
+                                            loading = true
+                                            repository.jiraSetup.setPrimaryProject(selectedClientId!!, jp.key)
+                                            jiraStatus = repository.jiraSetup.getStatus(selectedClientId!!)
+                                            error = null
+                                        } catch (t: Throwable) { error = t.message } finally { loading = false }
+                                    }
+                                }
+                                .padding(6.dp)
+                        ) { BasicText(text = "${jp.key}") }
+                    }
+                }
+            }
+
+            Section("Confluence Defaults (Client)") {
+                LabeledField("Space Key", confluenceSpaceKey) { confluenceSpaceKey = it }
+                LabeledField("Root Page ID", confluenceRootPageId) { confluenceRootPageId = it }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButtonLike("Save") {
+                        scope.launch {
+                            try {
+                                loading = true
+                                repository.integrationSettings.setClientConfluenceDefaults(
+                                    com.jervis.dto.integration.ClientConfluenceDefaultsDto(
+                                        clientId = selectedClientId!!,
+                                        confluenceSpaceKey = confluenceSpaceKey.ifBlank { null },
+                                        confluenceRootPageId = confluenceRootPageId.ifBlank { null },
+                                    )
+                                )
+                                error = null
+                            } catch (t: Throwable) { error = t.message } finally { loading = false }
+                        }
+                    }
+                }
+            }
         }
 
         // TODO: Confluence client status via repository.integrationSettings.getClientStatus(clientId)
+    }
+}
+
+@Composable
+private fun ProjectOverridesSection(
+    clientId: String,
+    project: ProjectDto,
+    repository: JervisRepository,
+    availableJiraProjects: List<com.jervis.dto.jira.JiraProjectRefDto>,
+    onError: (String?) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var message by remember(project.id) { mutableStateOf<String?>(null) }
+
+    // Integration overrides: Jira/Confluence
+    var jiraProjectKey by remember(project.id) { mutableStateOf("") }
+    var jiraBoardId by remember(project.id) { mutableStateOf("") }
+    var confluenceSpaceKey by remember(project.id) { mutableStateOf("") }
+    var confluenceRootPageId by remember(project.id) { mutableStateOf("") }
+
+    // Git override
+    var gitRemoteUrl by remember(project.id) { mutableStateOf("") }
+    var gitAuthType by remember(project.id) { mutableStateOf<com.jervis.domain.git.GitAuthTypeEnum?>(null) }
+    var httpsToken by remember(project.id) { mutableStateOf("") }
+    var httpsUsername by remember(project.id) { mutableStateOf("") }
+    var httpsPassword by remember(project.id) { mutableStateOf("") }
+    var sshPrivateKey by remember(project.id) { mutableStateOf("") }
+    var sshPassphrase by remember(project.id) { mutableStateOf("") }
+
+    // Email override (project-scoped account)
+    var displayName by remember(project.id) { mutableStateOf("") }
+    var email by remember(project.id) { mutableStateOf("") }
+    var projectEmailAccounts by remember(project.id) { mutableStateOf<List<EmailAccountDto>>(emptyList()) }
+
+    Section("Integration Overrides") {
+        // Jira project dropdown via chips
+        BasicText("Jira Project (optional)")
+        FlowWrap {
+            availableJiraProjects.forEach { jp ->
+                val selected = jp.key == jiraProjectKey
+                Box(
+                    modifier = Modifier
+                        .padding(4.dp)
+                        .border(1.dp, if (selected) Color(0xFF3366FF) else Color.LightGray)
+                        .background(if (selected) Color(0x113366FF) else Color.Transparent)
+                        .clickable { jiraProjectKey = if (selected) "" else jp.key }
+                        .padding(6.dp)
+                ) { BasicText(jp.key) }
+            }
+        }
+        LabeledField("Jira Board ID (optional)", jiraBoardId) { jiraBoardId = it }
+        LabeledField("Confluence Space Key (optional)", confluenceSpaceKey) { confluenceSpaceKey = it }
+        LabeledField("Confluence Root Page ID (optional)", confluenceRootPageId) { confluenceRootPageId = it }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButtonLike("Save Overrides") {
+                scope.launch {
+                    runCatching {
+                        repository.integrationSettings.setProjectOverrides(
+                            com.jervis.dto.integration.ProjectIntegrationOverridesDto(
+                                projectId = project.id,
+                                jiraProjectKey = jiraProjectKey.ifBlank { "" },
+                                jiraBoardId = jiraBoardId.ifBlank { null },
+                                confluenceSpaceKey = confluenceSpaceKey.ifBlank { "" },
+                                confluenceRootPageId = confluenceRootPageId.ifBlank { "" },
+                            )
+                        )
+                    }.onSuccess { message = "Integration overrides saved"; onError(null) }
+                        .onFailure { e -> onError(e.message); message = null }
+                }
+            }
+        }
+        message?.let { BasicText(it) }
+    }
+
+    Section("Git Override") {
+        LabeledField("Remote URL", gitRemoteUrl) { gitRemoteUrl = it }
+        EnumSelector("Auth Type", gitAuthType, com.jervis.domain.git.GitAuthTypeEnum.entries) { gitAuthType = it }
+        when (gitAuthType) {
+            com.jervis.domain.git.GitAuthTypeEnum.HTTPS_PAT, com.jervis.domain.git.GitAuthTypeEnum.HTTPS_BASIC -> {
+                LabeledField("HTTPS Token", httpsToken) { httpsToken = it }
+                LabeledField("HTTPS Username (optional)", httpsUsername) { httpsUsername = it }
+                LabeledField("HTTPS Password (optional)", httpsPassword) { httpsPassword = it }
+            }
+            com.jervis.domain.git.GitAuthTypeEnum.SSH_KEY -> {
+                LabeledField("SSH Private Key", sshPrivateKey) { sshPrivateKey = it }
+                LabeledField("SSH Passphrase (optional)", sshPassphrase) { sshPassphrase = it }
+            }
+            com.jervis.domain.git.GitAuthTypeEnum.NONE, null -> {}
+        }
+        TextButtonLike("Save Git Override") {
+            scope.launch {
+                runCatching {
+                    repository.gitConfiguration.setupGitOverrideForProject(
+                        project.id,
+                        com.jervis.dto.ProjectGitOverrideRequestDto(
+                            gitRemoteUrl = gitRemoteUrl.ifBlank { null },
+                            gitAuthType = gitAuthType,
+                            httpsToken = httpsToken.ifBlank { null },
+                            httpsUsername = httpsUsername.ifBlank { null },
+                            httpsPassword = httpsPassword.ifBlank { null },
+                            sshPrivateKey = sshPrivateKey.ifBlank { null },
+                            sshPassphrase = sshPassphrase.ifBlank { null },
+                        )
+                    )
+                }.onSuccess { message = "Git override saved"; onError(null) }
+                    .onFailure { e -> onError(e.message); message = null }
+            }
+        }
+    }
+
+    Section("Email Override (Project)") {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButtonLike("Refresh") {
+                scope.launch {
+                    runCatching { repository.emailAccounts.listEmailAccounts(clientId = clientId, projectId = project.id) }
+                        .onSuccess { projectEmailAccounts = it; onError(null) }
+                        .onFailure { e -> onError(e.message) }
+                }
+            }
+        }
+        projectEmailAccounts.forEach { acc ->
+            BasicText("${acc.displayName} <${acc.email}>")
+        }
+        LabeledField("Display Name", displayName) { displayName = it }
+        LabeledField("Email", email) { email = it }
+        TextButtonLike("Create Project Email") {
+            scope.launch {
+                runCatching {
+                    repository.emailAccounts.createEmailAccount(
+                        CreateOrUpdateEmailAccountRequestDto(
+                            clientId = clientId,
+                            projectId = project.id,
+                            provider = com.jervis.domain.email.EmailProviderEnum.IMAP,
+                            displayName = displayName,
+                            email = email,
+                        )
+                    )
+                }.onSuccess {
+                    displayName = ""; email = ""
+                    onError(null)
+                }.onFailure { e -> onError(e.message) }
+            }
+        }
     }
 }
 
