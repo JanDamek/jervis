@@ -26,6 +26,7 @@ import java.time.Instant
     CompoundIndex(name = "client_active_idx", def = "{'clientId': 1, 'isActive': 1}"),
     CompoundIndex(name = "project_active_idx", def = "{'projectId': 1, 'isActive': 1}"),
     CompoundIndex(name = "last_polled_idx", def = "{'isActive': 1, 'lastPolledAt': 1}"),
+    CompoundIndex(name = "active_auth_idx", def = "{'isActive': 1, 'authStatus': 1, 'lastPolledAt': 1}"),
 )
 data class ConfluenceAccountDocument(
     @Id
@@ -40,9 +41,20 @@ data class ConfluenceAccountDocument(
     val tokenExpiresAt: Instant? = null,
     val spaceKeys: List<String> = emptyList(),
     val isActive: Boolean = true,
+    /**
+     * Authentication status for Atlassian (Confluence) account.
+     * - UNKNOWN: created or not yet validated
+     * - VALID: connection tested via UI button and confirmed working
+     * - INVALID: last auth failed (401/403). Indexing and API calls must NOT use this account
+     *   until user fixes the settings and re-tests the connection in UI.
+     */
+    val authStatus: String = "UNKNOWN",
     val lastPolledAt: Instant? = null,
     val lastSuccessfulSyncAt: Instant? = null,
+    /** Last error message (including auth error if applicable). */
     val lastErrorMessage: String? = null,
+    /** When authentication was last tested (via UI or during API call). */
+    val lastAuthCheckedAt: Instant? = null,
     val createdAt: Instant = Instant.now(),
     val updatedAt: Instant = Instant.now(),
 )

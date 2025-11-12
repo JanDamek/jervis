@@ -38,6 +38,7 @@ class ConfluencePollingScheduler(
     private val confluenceApiClient: ConfluenceApiClient,
     private val stateManager: ConfluencePageStateManager,
     private val configCache: com.jervis.service.cache.ClientProjectConfigCache,
+    private val accountService: ConfluenceAccountService,
 ) {
     /**
      * Poll next Confluence account (oldest lastPolledAt first).
@@ -73,23 +74,29 @@ class ConfluencePollingScheduler(
     }
 
     private suspend fun findNextAccountToPoll(): ConfluenceAccountDocument? =
-        accountRepository.findFirstByIsActiveTrueOrderByLastPolledAtAsc()
+        accountRepository.findFirstByIsActiveTrueAndAuthStatusOrderByLastPolledAtAsc("VALID")
 
     private suspend fun findAccountById(accountId: String): ConfluenceAccountDocument =
         accountRepository.findById(ObjectId(accountId))
             ?: throw IllegalArgumentException("Confluence account not found: $accountId")
 
     private suspend fun processAccountWithTimestampUpdate(account: ConfluenceAccountDocument) {
-        logger.info {
-            "Syncing Confluence pages for account: ${account.siteName} (${account.id})"
+        if (account.authStatus != "VALID") {
+            logger.warn { "Skipping Confluence account ${account.id} (authStatus=${account.authStatus}). Use Test Connection to enable." }
+            return
         }
+
+        logger.info { "Syncing Confluence pages for account: ${account.siteName} (${account.id})" }
 
         try {
             syncPagesForAccount(account)
             updateAccountTimestamp(account.id, success = true)
         } catch (e: Exception) {
-            logger.error(e) {
-                "Failed to sync Confluence account ${account.id}, will retry on next poll cycle"
+            if (e is ConfluenceAuthException) {
+                logger.warn(e) { "Auth error while syncing Confluence account ${account.id}, marking as INVALID" }
+                runCatching { accountService.markAuthInvalid(account, e.message) }
+            } else {
+                logger.error(e) { "Failed to sync Confluence account ${account.id}, will retry on next poll cycle" }
             }
             // Don't update timestamp on failure - account stays as "needs sync"
             updateAccountTimestamp(account.id, success = false, errorMessage = e.message)

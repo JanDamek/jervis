@@ -13,6 +13,11 @@ interface ConfluenceAccountMongoRepository : CoroutineCrudRepository<ConfluenceA
     suspend fun findFirstByIsActiveTrueOrderByLastPolledAtAsc(): ConfluenceAccountDocument?
 
     /**
+     * Find next account to poll that is active AND has valid authentication.
+     */
+    suspend fun findFirstByIsActiveTrueAndAuthStatusOrderByLastPolledAtAsc(authStatus: String): ConfluenceAccountDocument?
+
+    /**
      * Find all active accounts for a client.
      */
     @Query("{ 'clientId': ?0, 'isActive': true }")
