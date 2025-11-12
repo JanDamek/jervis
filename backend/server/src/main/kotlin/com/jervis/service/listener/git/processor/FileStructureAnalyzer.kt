@@ -101,37 +101,31 @@ class FileStructureAnalyzer(
         fileContent: String,
         dynamicGoal: String? = null,
     ): PendingTask {
-        val contentForContext =
+        // Truncate file content if too large
+        val truncatedContent =
             if (fileContent.length > MAX_FILE_CONTENT_FOR_CONTEXT) {
-                fileContent.take(MAX_FILE_CONTENT_FOR_CONTEXT) + "\n\n[... file content truncated for context ...]"
+                fileContent.take(MAX_FILE_CONTENT_FOR_CONTEXT) + "\n\n[... file content truncated ...]"
             } else {
                 fileContent
             }
 
-        val context =
-            mutableMapOf(
-                "projectId" to project.id.toHexString(),
-                "filePath" to filePath,
-                "commitHash" to commitHash,
-                "fileContent" to contentForContext,
-                // Canonical source for idempotency/traceability and decision without RAG
-                "sourceUri" to "gitfile://${project.id.toHexString()}/$commitHash/$filePath",
-            )
-
-        // Add dynamic goal if provided and non-blank
-        dynamicGoal?.takeIf { it.isNotBlank() }?.let {
-            context["dynamicGoal"] = it
-            logger.debug { "Task for $filePath has dynamic goal: ${it.take(100)}" }
-        }
-
+        // Everything in content - simple and clear
         val content =
             buildString {
                 appendLine("File Structure Analysis Required")
                 appendLine()
+                appendLine("Project: ${project.name}")
                 appendLine("File: $filePath")
                 appendLine("Commit: $commitHash")
-                appendLine("Project: ${project.name}")
+                appendLine("Source: gitfile://${project.id.toHexString()}/$commitHash/$filePath")
+
+                dynamicGoal?.takeIf { it.isNotBlank() }?.let {
+                    appendLine()
+                    appendLine("Special Focus: $it")
+                }
+
                 appendLine()
+                appendLine("Task:")
                 appendLine("Analyze this source file and create description:")
                 appendLine("- Class/interface name and purpose")
                 appendLine("- Package and module")
@@ -142,6 +136,10 @@ class FileStructureAnalyzer(
                 appendLine("Store description using knowledge_store with:")
                 appendLine("- sourceType: FILE_DESCRIPTION")
                 appendLine("- metadata: className, packageName, filePath, commitHash")
+                appendLine()
+                appendLine("=== FILE CONTENT ===")
+                appendLine(truncatedContent)
+                appendLine("=== END FILE CONTENT ===")
             }
 
         return pendingTaskService.createTask(
@@ -149,7 +147,7 @@ class FileStructureAnalyzer(
             content = content,
             projectId = project.id,
             clientId = project.clientId,
-            context = context,
+            sourceUri = "gitfile://${project.id.toHexString()}/$commitHash/$filePath",
         )
     }
 

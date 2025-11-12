@@ -29,38 +29,14 @@ class EmailTaskCreator(
         projectId: ObjectId?,
     ) {
         runCatching {
-            val cleanBody = cleanEmailBody(message.content)
-            val combinedContent = buildCombinedContent(message)
-
-            // Build context map for prompt template substitution (used by qualifier and orchestrator)
-            val context =
-                buildMap<String, String> {
-                    put("from", message.from)
-                    put("to", message.to)
-                    put("subject", message.subject)
-                    put("date", message.receivedAt.toString())
-                    put("body", cleanBody)
-                    // Canonical source for idempotency/traceability
-                    put("sourceUri", "email://${accountId.toHexString()}/${message.messageId}")
-                    put("accountId", accountId.toHexString())
-                    put("messageId", message.messageId)
-                    put("hasAttachments", message.attachments.isNotEmpty().toString())
-                    if (message.attachments.isNotEmpty()) {
-                        put(
-                            "attachments",
-                            message.attachments.joinToString(",") { att ->
-                                "${att.fileName}:${att.contentType}:${att.size}"
-                            }
-                                )
-                    }
-                }
+            val combinedContent = buildCombinedContent(message, accountId)
 
             pendingTaskService.createTask(
                 taskType = PendingTaskTypeEnum.EMAIL_PROCESSING,
                 content = combinedContent,
                 projectId = projectId,
                 clientId = clientId,
-                context = context,
+                sourceUri = "email://${accountId.toHexString()}/${message.messageId}",
             )
 
             logger.info { "Created pending task for email ${message.messageId} with ${combinedContent.length} chars" }
@@ -69,16 +45,24 @@ class EmailTaskCreator(
         }
     }
 
-    private suspend fun buildCombinedContent(message: ImapMessage): String {
-        // Clean email body: HTML→plain text, remove URLs
+    private suspend fun buildCombinedContent(
+        message: ImapMessage,
+        accountId: ObjectId,
+    ): String {
+        // Clean email body: HTML→plain text, remove URLs, normalize
         val cleanBody = cleanEmailBody(message.content)
 
+        // Everything in content - simple and clear
         val content =
             buildString {
+                appendLine("Email Processing Required")
+                appendLine()
                 appendLine("FROM: ${message.from}")
                 appendLine("TO: ${message.to}")
                 appendLine("SUBJECT: ${message.subject}")
                 appendLine("DATE: ${message.receivedAt}")
+                appendLine("MESSAGE ID: ${message.messageId}")
+                appendLine("SOURCE: email://${accountId.toHexString()}/${message.messageId}")
                 appendLine()
                 appendLine("BODY:")
                 appendLine(cleanBody)

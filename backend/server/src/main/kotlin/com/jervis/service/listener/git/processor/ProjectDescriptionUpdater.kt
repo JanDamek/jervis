@@ -107,36 +107,26 @@ class ProjectDescriptionUpdater(
         recentCommitHashes: List<String>,
         isInitialUpdate: Boolean,
     ): PendingTask {
-        val context: Map<String, String> =
-            buildMap<String, String> {
-                put("projectId", project.id.toHexString())
-                put("projectName", project.name)
-                put("recentCommitHashes", recentCommitHashes.joinToString(","))
-                put("currentShortDescription", project.shortDescription ?: "")
-                put("currentFullDescription", project.fullDescription ?: "")
-                put("isInitialUpdate", isInitialUpdate.toString())
-                put("commitCount", recentCommitHashes.size.toString())
-                // Canonical source for idempotency/traceability
-                put("sourceUri", "project://" + project.id.toHexString() + "/description-update")
-            }
-
+        // Everything in content - simple and clear
         val content =
             buildString {
                 appendLine("Project Description Update Required")
                 appendLine()
                 appendLine("Project: ${project.name}")
+                appendLine("Project ID: ${project.id.toHexString()}")
+                appendLine("Source: project://${project.id.toHexString()}/description-update")
                 appendLine("Recent commits: ${recentCommitHashes.size}")
                 if (isInitialUpdate) {
-                    appendLine("Type: INITIAL UPDATE (descriptions empty or missing)")
+                    appendLine("Update Type: INITIAL UPDATE (descriptions empty or missing)")
                 } else {
-                    appendLine("Type: NORMAL UPDATE (incremental changes)")
+                    appendLine("Update Type: NORMAL UPDATE (incremental changes)")
                 }
                 appendLine()
-                appendLine("Current descriptions:")
-                appendLine("  Short: ${project.shortDescription?.take(100) ?: "(empty)"}")
-                appendLine("  Full: ${project.fullDescription?.take(200) ?: "(empty)"}")
+                appendLine("Current Descriptions:")
+                appendLine("Short: ${project.shortDescription?.take(100) ?: "(empty)"}")
+                appendLine("Full: ${project.fullDescription?.take(200) ?: "(empty)"}")
                 appendLine()
-                appendLine("Recent commit hashes:")
+                appendLine("Recent Commit Hashes:")
                 recentCommitHashes.take(10).forEach { appendLine("  - ${it.take(8)}") }
                 if (recentCommitHashes.size > 10) {
                     appendLine("  ... and ${recentCommitHashes.size - 10} more")
@@ -164,7 +154,7 @@ class ProjectDescriptionUpdater(
             content = content,
             projectId = project.id,
             clientId = project.clientId,
-            context = context,
+            sourceUri = "project://${project.id.toHexString()}/description-update",
         )
     }
 }

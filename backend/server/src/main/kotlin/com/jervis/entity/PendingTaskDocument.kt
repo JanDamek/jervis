@@ -14,46 +14,42 @@ data class PendingTaskDocument(
     @Id
     val id: ObjectId = ObjectId(),
     @Indexed
-    val taskType: String,
+    val type: String, // Renamed from taskType for clarity
     val content: String? = null,
     @Indexed
     val projectId: ObjectId? = null,
     @Indexed
     val clientId: ObjectId? = null,
     @Indexed
+    val sourceUri: String? = null, // For deduplication
+    @Indexed
     val createdAt: Instant = Instant.now(),
     @Indexed
     val state: String,
-    val context: Map<String, String> = emptyMap(),
 ) {
     fun toDomain(): PendingTask =
         PendingTask(
             id = id,
-            taskType = PendingTaskTypeEnum.valueOf(taskType),
+            taskType = PendingTaskTypeEnum.valueOf(type),
             content = content,
             projectId = projectId,
             clientId = clientId ?: error("PendingTaskDocument $id has null clientId"),
+            sourceUri = sourceUri,
             createdAt = createdAt,
             state = PendingTaskState.valueOf(state),
-            context = context,
         )
 
     companion object {
-        private fun sanitizeKeys(map: Map<String, String>): Map<String, String> =
-            map.mapKeys { (k, _) ->
-                k.replace('.', '_').replace('$', '_')
-            }
-
         fun fromDomain(domain: PendingTask): PendingTaskDocument =
             PendingTaskDocument(
                 id = domain.id,
-                taskType = domain.taskType.name,
+                type = domain.taskType.name,
                 content = domain.content,
                 projectId = domain.projectId,
                 clientId = domain.clientId,
+                sourceUri = domain.sourceUri,
                 createdAt = domain.createdAt,
                 state = domain.state.name,
-                context = sanitizeKeys(domain.context),
             )
     }
 }
