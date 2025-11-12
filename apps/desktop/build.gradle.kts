@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.compose.compiler)
+    id("com.google.devtools.ksp") version "2.2.21-2.0.4"
     id("de.jensklingenberg.ktorfit") version "2.6.4"
 }
 
@@ -44,6 +45,9 @@ dependencies {
 
     // SLF4J implementation (to suppress warning)
     implementation("org.slf4j:slf4j-simple:2.0.9")
+
+    // Ktorfit code generation
+    ksp("de.jensklingenberg.ktorfit:ktorfit-ksp:2.6.4")
 }
 
 // Server URL configuration
