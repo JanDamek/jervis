@@ -352,9 +352,7 @@ tasks:
       {"decision": "discard", "reason": "..."} OR {"decision": "delegate", "reason": "..."}
 
     qualifierUserPrompt: |
-      File: {filePath}
-      Content preview:
-      {contentPreview}
+      {content}
 
       Should this file be analyzed?
 
