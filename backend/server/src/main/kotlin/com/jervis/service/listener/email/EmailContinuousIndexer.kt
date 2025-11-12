@@ -9,6 +9,7 @@ import com.jervis.service.listener.email.imap.ImapMessage
 import com.jervis.service.listener.email.processor.EmailAttachmentIndexer
 import com.jervis.service.listener.email.processor.EmailContentIndexer
 import com.jervis.service.listener.email.state.EmailMessageStateManager
+import com.jervis.service.indexing.status.IndexingStatusRegistry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import mu.KotlinLogging
@@ -30,6 +31,7 @@ class EmailContinuousIndexer(
     private val linkIndexingService: LinkIndexingService,
     private val taskQualificationService: TaskQualificationService,
     private val flowProps: com.jervis.configuration.properties.IndexingFlowProperties,
+    private val indexingRegistry: IndexingStatusRegistry,
 ) : com.jervis.service.indexing.AbstractContinuousIndexer<EmailAccountDocument, com.jervis.service.listener.email.state.EmailMessageDocument>() {
     override val indexerName: String = "EmailContinuousIndexer"
     override val bufferSize: Int get() = flowProps.bufferSize
@@ -82,6 +84,13 @@ class EmailContinuousIndexer(
         )
 
         val success = ragDocumentId != null
+        // Report progress to indexing registry under tool key "email"
+        kotlin.runCatching {
+            val toolKey = "email"
+            // ensure running state started once per process lifecycle
+            indexingRegistry.ensureTool(toolKey, displayName = "Email Indexing")
+            if (success) indexingRegistry.progress(toolKey, processedInc = 1, message = "Indexed email ${'$'}{message.messageId}")
+        }
         return IndexingResult(
             success = success,
             plainText = message.content,
@@ -133,6 +142,11 @@ class EmailContinuousIndexer(
         reason: String,
     ) {
         stateManager.markAsFailed(item)
+        kotlin.runCatching {
+            val toolKey = "email"
+            indexingRegistry.ensureTool(toolKey, displayName = "Email Indexing")
+            indexingRegistry.error(toolKey, "Failed to index messageId=${'$'}{item.messageId}: ${'$'}reason")
+        }
     }
 
     /**
@@ -144,8 +158,10 @@ class EmailContinuousIndexer(
         scope: CoroutineScope,
     ) {
         scope.launch {
+            kotlin.runCatching { indexingRegistry.start("email", displayName = "Email Indexing", message = "Starting continuous email indexing for account ${'$'}{account.id}") }
             runCatching { startContinuousIndexing(account) }
                 .onFailure { e -> logger.error(e) { "Continuous indexer crashed for account ${account.id}" } }
+                .also { kotlin.runCatching { indexingRegistry.finish("email", message = "Email indexer stopped for account ${'$'}{account.id}") } }
         }
     }
 }

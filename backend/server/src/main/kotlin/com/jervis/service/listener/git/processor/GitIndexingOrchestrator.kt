@@ -12,6 +12,7 @@ import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 import java.nio.file.Path
+import com.jervis.service.indexing.status.IndexingStatusRegistry
 
 /**
  * Orchestrates Git indexing workflow by coordinating all processors.
@@ -42,6 +43,7 @@ class GitIndexingOrchestrator(
     private val fileStructureAnalyzer: FileStructureAnalyzer,
     private val projectDescriptionUpdater: ProjectDescriptionUpdater,
     private val gitBranchAnalysisService: com.jervis.service.listener.git.branch.GitBranchAnalysisService,
+    private val indexingRegistry: IndexingStatusRegistry,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -77,6 +79,10 @@ class GitIndexingOrchestrator(
                 "Starting Git indexing orchestration for project: ${project.name}, branch: $branch"
             }
 
+            // Central indexing registry
+            val toolKey = "git"
+            runCatching { indexingRegistry.start(toolKey, displayName = "Git Indexing", message = "Project=${project.name} branch=$branch") }
+
             var totalErrors = 0
 
             // Step 1: Index commit metadata (TEXT embeddings)
@@ -86,6 +92,7 @@ class GitIndexingOrchestrator(
                     commitMetadataIndexer.indexGitHistory(project, projectPath, branch, maxCommits)
                 } catch (e: Exception) {
                     logger.error(e) { "Failed to index commit metadata" }
+                    runCatching { indexingRegistry.error(toolKey, "Commit metadata failed: ${e.message}") }
                     totalErrors++
                     GitCommitMetadataIndexer.GitHistoryIndexingResult(0, 0, 1)
                 }
@@ -94,6 +101,8 @@ class GitIndexingOrchestrator(
                 "Commit metadata indexed: processed=${commitMetadataResult.processedCommits}, " +
                     "errors=${commitMetadataResult.errorCommits}"
             }
+            runCatching { indexingRegistry.progress(toolKey, processedInc = commitMetadataResult.processedCommits, message = "Commit metadata processed=${commitMetadataResult.processedCommits}") }
+            if (commitMetadataResult.errorCommits > 0) runCatching { indexingRegistry.error(toolKey, "Commit metadata errors=${commitMetadataResult.errorCommits}") }
 
             // Step 2: Index code diffs (CODE embeddings)
             logger.info { "Step 2: Indexing code diffs..." }
@@ -102,6 +111,7 @@ class GitIndexingOrchestrator(
                     indexCodeDiffsForNewCommits(project, projectPath, branch)
                 } catch (e: Exception) {
                     logger.error(e) { "Failed to index code diffs" }
+                    runCatching { indexingRegistry.error(toolKey, "Code diffs failed: ${e.message}") }
                     totalErrors++
                     GitDiffCodeIndexer.CodeIndexingResult(0, 0, 1)
                 }
@@ -110,6 +120,8 @@ class GitIndexingOrchestrator(
                 "Code diffs indexed: files=${codeIndexingResult.indexedFiles}, " +
                     "chunks=${codeIndexingResult.indexedChunks}, errors=${codeIndexingResult.errorFiles}"
             }
+            runCatching { indexingRegistry.progress(toolKey, processedInc = codeIndexingResult.indexedFiles, message = "Code files indexed=${codeIndexingResult.indexedFiles}") }
+            if (codeIndexingResult.errorFiles > 0) runCatching { indexingRegistry.error(toolKey, "Code diff errors=${codeIndexingResult.errorFiles}") }
 
             // Step 3: Create pending tasks for commit analysis, file analysis, and description updates
             logger.info { "Step 3: Creating pending tasks for analysis..." }
@@ -118,6 +130,7 @@ class GitIndexingOrchestrator(
                     createAnalysisTasksForNewCommits(project, projectPath, branch)
                 } catch (e: Exception) {
                     logger.error(e) { "Failed to create analysis tasks" }
+                    runCatching { indexingRegistry.error(toolKey, "Task creation failed: ${e.message}") }
                     totalErrors++
                     TaskCreationResult(0, 0, false)
                 }
@@ -127,6 +140,7 @@ class GitIndexingOrchestrator(
                     "${taskResult.fileAnalysisTasks} file structure, " +
                     "description update=${taskResult.descriptionTaskCreated}"
             }
+            runCatching { indexingRegistry.info(toolKey, "Tasks created commits=${taskResult.commitTasks}, fileAnalysis=${taskResult.fileAnalysisTasks}") }
 
             // Step 4: Branch-aware summaries and RAG embedding
             logger.info { "Step 4: Indexing branch summaries for ${project.name}..." }
@@ -156,6 +170,8 @@ class GitIndexingOrchestrator(
                     "desc_update=${taskResult.descriptionTaskCreated}, " +
                     "errors=${finalResult.errors}"
             }
+
+            runCatching { indexingRegistry.finish(toolKey, message = "Completed project=${project.name} branch=$branch") }
 
             finalResult
         }

@@ -110,6 +110,13 @@ fun MainScreen(
                                 onNavigate(com.jervis.ui.navigation.Screen.ErrorLogs)
                             }
                         )
+                        DropdownMenuItem(
+                            text = { Text("Indexing Status") },
+                            onClick = {
+                                showMenu = false
+                                onNavigate(com.jervis.ui.navigation.Screen.IndexingStatus)
+                            }
+                        )
 
                         // TODO: Desktop Debug Console (WebSocket) - not yet implemented for mobile
                     }

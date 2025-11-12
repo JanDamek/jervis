@@ -68,6 +68,7 @@ class ConnectionManager(private val serverBaseUrl: String) {
                     gitConfigurationService = services!!.gitConfigurationService,
                     jiraSetupService = services!!.jiraSetupService,
                     emailAccountService = services!!.emailAccountService,
+                    indexingStatusService = services!!.indexingStatusService,
                 )
 
                 // Try a simple test call to verify connectivity

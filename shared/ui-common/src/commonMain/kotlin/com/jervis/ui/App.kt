@@ -51,7 +51,7 @@ fun App(
         val isLoading by viewModel.isLoading.collectAsState()
         val currentScreen by appNavigator.currentScreen.collectAsState()
 
-        when (currentScreen) {
+        when (val screen = currentScreen) {
             Screen.Main -> MainScreen(
                 clients = clients,
                 projects = projects,
@@ -86,6 +86,16 @@ fun App(
             Screen.ErrorLogs -> ErrorLogsScreen(
                 repository = repository,
                 onBack = { appNavigator.navigateTo(Screen.Main) }
+            )
+            Screen.IndexingStatus -> IndexingStatusScreen(
+                repository = repository,
+                onBack = { appNavigator.navigateTo(Screen.Main) },
+                onOpenDetail = { toolKey -> appNavigator.navigateTo(Screen.IndexingToolDetail(toolKey)) }
+            )
+            is Screen.IndexingToolDetail -> IndexingStatusDetailScreen(
+                repository = repository,
+                toolKey = screen.toolKey,
+                onBack = { appNavigator.navigateTo(Screen.IndexingStatus) }
             )
             Screen.RagSearch -> RagSearchScreen(
                 repository = repository,
