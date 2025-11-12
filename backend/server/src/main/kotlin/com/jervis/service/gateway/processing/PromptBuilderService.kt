@@ -29,7 +29,6 @@ class PromptBuilderService {
         responseSchema: Any?,
     ): String {
         val userPromptTemplate: String = prompt.userPrompt ?: ""
-
         val mappedPrompt = applyMappingValues(userPromptTemplate, mappingValues)
         val languagePrompt = appendLanguageInstruction(mappedPrompt, outputLanguage)
         return appendJsonModeInstructions(languagePrompt, responseSchema)
@@ -60,6 +59,7 @@ class PromptBuilderService {
             }
         return result
     }
+
 
     /**
      * Validates that all placeholders in the template have corresponding values.

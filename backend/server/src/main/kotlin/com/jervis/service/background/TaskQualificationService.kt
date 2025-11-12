@@ -248,11 +248,8 @@ class TaskQualificationService(
         truncatedContent: String,
     ): Map<String, String> =
         buildMap {
-            // All tasks get 'content' placeholder with complete information
+            // Only provide values we truly have. Do not invent.
             put("content", truncatedContent)
-
-            // All metadata is already in content as formatted text
-            // No need to extract individual fields
         }
 
     private suspend fun qualifyTask(task: PendingTask) {
