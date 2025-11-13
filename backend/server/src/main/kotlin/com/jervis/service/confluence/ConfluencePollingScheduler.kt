@@ -3,23 +3,40 @@ package com.jervis.service.confluence
 import com.jervis.entity.ConfluenceAccountDocument
 import com.jervis.repository.mongo.ConfluenceAccountMongoRepository
 import com.jervis.service.confluence.state.ConfluencePageStateManager
+import jakarta.annotation.PostConstruct
+import jakarta.annotation.PreDestroy
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import mu.KotlinLogging
 import org.bson.types.ObjectId
-import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import java.time.Instant
 
 private val logger = KotlinLogging.logger {}
 
 /**
- * Polling scheduler for Confluence documentation - similar to EmailPollingScheduler and GitPollingScheduler.
+ * Polling scheduler for Confluence documentation with intelligent adaptive intervals.
  *
  * Architecture:
- * - Polls oldest account every 5 minutes (fixedDelay = 300_000)
+ * - Polls oldest account with adaptive delay based on last run duration
  * - Discovers new/changed pages by comparing versions
  * - Saves page metadata to MongoDB as NEW
  * - ConfluenceContinuousIndexer picks up NEW pages and processes them
+ *
+ * Adaptive Polling Strategy:
+ * - Run duration < 5 min → next poll in 10 min
+ * - Run duration 5-30 min → next poll in 30 min
+ * - Run duration > 30 min → next poll in 60 min
+ * - Minimum interval: 10 minutes (prevents thrashing)
+ * - Maximum interval: 60 minutes (ensures freshness)
+ * - Startup: runs after 60 seconds
  *
  * Change Detection:
  * - Confluence API provides 'version.number' that increments on edit
@@ -40,26 +57,102 @@ class ConfluencePollingScheduler(
     private val configCache: com.jervis.service.cache.ClientProjectConfigCache,
     private val accountService: ConfluenceAccountService,
 ) {
-    /**
-     * Poll next Confluence account (oldest lastPolledAt first).
-     * Runs every 5 minutes with 1 minute initial delay.
-     */
-    @Scheduled(
-        fixedDelayString = "\${confluence.sync.polling-interval-ms:1800000}",
-        initialDelayString = "\${confluence.sync.initial-delay-ms:60000}",
-    ) // configurable polling
-    suspend fun pollNextAccount() {
-        runCatching {
-            val account = findNextAccountToPoll()
+    private val supervisor = SupervisorJob()
+    private val scope = CoroutineScope(Dispatchers.Default + supervisor)
+    private var pollingJob: Job? = null
 
-            if (account != null) {
-                processAccountWithTimestampUpdate(account)
-            } else {
-                logger.debug { "No active Confluence accounts to poll" }
+    @PostConstruct
+    fun start() {
+        logger.info { "ConfluencePollingScheduler starting with adaptive intervals..." }
+
+        pollingJob =
+            scope.launch {
+                try {
+                    logger.info { "Confluence polling loop STARTED (adaptive 10-60 min intervals)" }
+                    runPollingLoop()
+                } catch (e: Exception) {
+                    logger.error(e) { "Confluence polling loop FAILED to start!" }
+                }
             }
-        }.onFailure { e ->
-            logger.error(e) { "Error during scheduled Confluence poll" }
-            // Scheduler continues - error doesn't stop future polls
+
+        logger.info { "ConfluencePollingScheduler initialization complete" }
+    }
+
+    @PreDestroy
+    fun stop() {
+        logger.info { "ConfluencePollingScheduler stopping..." }
+        pollingJob?.cancel(CancellationException("Application shutdown"))
+        supervisor.cancel(CancellationException("Application shutdown"))
+
+        try {
+            kotlinx.coroutines.runBlocking {
+                kotlinx.coroutines.withTimeout(3000) {
+                    pollingJob?.join()
+                }
+            }
+        } catch (_: Exception) {
+            logger.debug { "ConfluencePollingScheduler shutdown timeout" }
+        }
+    }
+
+    /**
+     * Continuous polling loop with adaptive delay based on run duration.
+     */
+    private suspend fun runPollingLoop() {
+        // Initial delay: 60 seconds after startup
+        delay(60_000)
+
+        while (scope.isActive) {
+            val startTime = System.currentTimeMillis()
+
+            try {
+                val account = findNextAccountToPoll()
+
+                if (account != null) {
+                    processAccountWithTimestampUpdate(account)
+                } else {
+                    logger.debug { "No active Confluence accounts to poll" }
+                }
+            } catch (e: CancellationException) {
+                logger.info { "Confluence polling loop cancelled" }
+                throw e
+            } catch (e: Exception) {
+                logger.error(e) { "Error during Confluence poll cycle" }
+            }
+
+            // Calculate adaptive delay based on run duration
+            val runDurationMs = System.currentTimeMillis() - startTime
+            val nextDelayMs = calculateAdaptiveDelay(runDurationMs)
+
+            logger.info {
+                "Confluence sync completed in ${runDurationMs / 1000}s, next poll in ${nextDelayMs / 1000}s " +
+                    "(${nextDelayMs / 60_000} minutes)"
+            }
+
+            delay(nextDelayMs)
+        }
+
+        logger.warn { "Confluence polling loop exited - scope is no longer active" }
+    }
+
+    /**
+     * Calculate adaptive delay based on last run duration:
+     * - < 5 min run → 10 min delay
+     * - 5-30 min run → 30 min delay
+     * - > 30 min run → 60 min delay
+     * - Min: 10 minutes, Max: 60 minutes
+     */
+    private fun calculateAdaptiveDelay(runDurationMs: Long): Long {
+        val runMinutes = runDurationMs / 60_000
+
+        return when {
+            runMinutes < 5 -> 10 * 60_000L // 10 minutes
+            runMinutes < 30 -> 30 * 60_000L // 30 minutes
+            else -> 60 * 60_000L // 60 minutes
+        }.also { delayMs ->
+            logger.debug {
+                "Adaptive delay calculated: runTime=${runMinutes}min → nextDelay=${delayMs / 60_000}min"
+            }
         }
     }
 
@@ -222,7 +315,7 @@ class ConfluencePollingScheduler(
             account.copy(
                 lastPolledAt = Instant.now(),
                 lastSuccessfulSyncAt = if (success) Instant.now() else account.lastSuccessfulSyncAt,
-                lastErrorMessage = if (success) null else errorMessage?.take(500),
+                lastErrorMessage = if (success) null else errorMessage,
                 updatedAt = Instant.now(),
             )
 

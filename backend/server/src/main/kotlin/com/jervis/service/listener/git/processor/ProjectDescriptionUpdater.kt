@@ -123,8 +123,8 @@ class ProjectDescriptionUpdater(
                 }
                 appendLine()
                 appendLine("Current Descriptions:")
-                appendLine("Short: ${project.shortDescription?.take(100) ?: "(empty)"}")
-                appendLine("Full: ${project.fullDescription?.take(200) ?: "(empty)"}")
+                appendLine("Short: ${project.shortDescription ?: "(empty)"}")
+                appendLine("Full: ${project.fullDescription ?: "(empty)"}")
                 appendLine()
                 appendLine("Recent Commit Hashes:")
                 recentCommitHashes.take(10).forEach { appendLine("  - ${it.take(8)}") }

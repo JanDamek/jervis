@@ -28,6 +28,8 @@ fun ProjectsWindow(repository: JervisRepository) {
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var selectedProject by remember { mutableStateOf<ProjectDto?>(null) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var projectToDelete by remember { mutableStateOf<ProjectDto?>(null) }
 
     val scope = rememberCoroutineScope()
 
@@ -112,14 +114,8 @@ fun ProjectsWindow(repository: JervisRepository) {
                                 project = project,
                                 onEdit = { selectedProject = project },
                                 onDelete = {
-                                    scope.launch {
-                                        try {
-                                            repository.projects.deleteProject(project)
-                                            loadProjects()
-                                        } catch (e: Exception) {
-                                            errorMessage = "Failed to delete: ${e.message}"
-                                        }
-                                    }
+                                    projectToDelete = project
+                                    showDeleteDialog = true
                                 },
                                 onSetDefault = {
                                     scope.launch {
@@ -159,6 +155,38 @@ fun ProjectsWindow(repository: JervisRepository) {
                         errorMessage = "Failed to save: ${e.message}"
                     }
                 }
+            }
+        )
+    }
+
+    // Delete confirmation dialog
+    if (showDeleteDialog && projectToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete Project") },
+            text = { Text("Are you sure you want to delete this project?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            try {
+                                repository.projects.deleteProject(requireNotNull(projectToDelete))
+                                projectToDelete = null
+                                showDeleteDialog = false
+                                loadProjects()
+                            } catch (e: Exception) {
+                                errorMessage = "Failed to delete: ${e.message}"
+                                showDeleteDialog = false
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
             }
         )
     }

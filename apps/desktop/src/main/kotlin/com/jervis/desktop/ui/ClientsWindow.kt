@@ -26,6 +26,8 @@ fun ClientsWindow(repository: JervisRepository) {
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var selectedClient by remember { mutableStateOf<ClientDto?>(null) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var clientIdToDelete by remember { mutableStateOf<String?>(null) }
 
     val scope = rememberCoroutineScope()
 
@@ -110,14 +112,8 @@ fun ClientsWindow(repository: JervisRepository) {
                                 client = client,
                                 onEdit = { selectedClient = client },
                                 onDelete = {
-                                    scope.launch {
-                                        try {
-                                            repository.clients.deleteClient(client.id)
-                                            loadClients()
-                                        } catch (e: Exception) {
-                                            errorMessage = "Failed to delete: ${e.message}"
-                                        }
-                                    }
+                                    clientIdToDelete = client.id
+                                    showDeleteDialog = true
                                 }
                             )
                         }
@@ -150,6 +146,38 @@ fun ClientsWindow(repository: JervisRepository) {
                         errorMessage = "Failed to save: ${e.message}"
                     }
                 }
+            }
+        )
+    }
+
+    // Delete confirmation dialog
+    if (showDeleteDialog && clientIdToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete Client") },
+            text = { Text("Are you sure you want to delete this client?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            try {
+                                repository.clients.deleteClient(requireNotNull(clientIdToDelete))
+                                clientIdToDelete = null
+                                showDeleteDialog = false
+                                loadClients()
+                            } catch (e: Exception) {
+                                errorMessage = "Failed to delete: ${e.message}"
+                                showDeleteDialog = false
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
             }
         )
     }

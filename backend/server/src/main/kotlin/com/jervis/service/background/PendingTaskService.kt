@@ -96,7 +96,7 @@ class PendingTaskService(
                 error?.let { appendLine("Error: $it") }
                 appendLine()
                 appendLine("Task Content:")
-                appendLine(domain.content.take(500))
+                appendLine(domain.content)
             }
         val userTask =
             userTaskService.createTask(
@@ -136,7 +136,7 @@ class PendingTaskService(
                 error?.message?.let { appendLine("Error: $it") }
                 appendLine()
                 appendLine("Task Content:")
-                appendLine(task.content.take(500))
+                appendLine(task.content)
             }
         val userTask =
             userTaskService.createTask(

@@ -3,45 +3,29 @@ package com.jervis.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
-import androidx.compose.material3.*
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.dp
+import com.jervis.domain.email.EmailProviderEnum
+import com.jervis.domain.git.GitAuthTypeEnum
+import com.jervis.domain.git.GitProviderEnum
 import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.email.CreateOrUpdateEmailAccountRequestDto
 import com.jervis.dto.email.EmailAccountDto
 import com.jervis.dto.jira.JiraSetupStatusDto
-import com.jervis.domain.email.EmailProviderEnum
-import com.jervis.domain.git.GitAuthTypeEnum
-import com.jervis.domain.git.GitProviderEnum
 import com.jervis.repository.JervisRepository
-import kotlinx.coroutines.launch
 import com.jervis.ui.util.pickTextFileContent
+import kotlinx.coroutines.launch
 
 /**
  * Settings screen for commonMain without Material3 dependencies.
@@ -50,12 +34,13 @@ import com.jervis.ui.util.pickTextFileContent
 @Composable
 fun SettingsScreen(
     repository: JervisRepository,
-    onBack: () -> Unit
+    onBack: () -> Unit,
 ) {
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .padding(16.dp),
     ) {
         // Header
         Row(
@@ -74,15 +59,23 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun TextButtonLike(text: String, onClick: () -> Unit) {
+private fun TextButtonLike(
+    text: String,
+    onClick: () -> Unit,
+) {
     Button(onClick = onClick) { Text(text) }
 }
 
 // ————— Clients Tab —————
 private sealed interface ClientsMode {
     data object List : ClientsMode
+
     data object Create : ClientsMode
-    data class Edit(val clientId: String, val tab: ClientEditTab = ClientEditTab.Basic) : ClientsMode
+
+    data class Edit(
+        val clientId: String,
+        val tab: ClientEditTab = ClientEditTab.Basic,
+    ) : ClientsMode
 }
 
 private enum class ClientEditTab { Basic, Git, Integrations, Email, Projects }
@@ -98,24 +91,30 @@ private fun ClientsTab(repository: JervisRepository) {
 
     LaunchedEffect(Unit) {
         loading = true
-        error = try {
-            clients.clear()
-            clients += repository.clients.listClients()
-            null
-        } catch (t: Throwable) {
-            t.message
-        } finally {
-            loading = false
-        }
+        error =
+            try {
+                clients.clear()
+                clients += repository.clients.listClients()
+                null
+            } catch (t: Throwable) {
+                t.message
+            } finally {
+                loading = false
+            }
     }
 
     fun refreshClients() {
         scope.launch {
             try {
                 loading = true
-                clients.clear(); clients += repository.clients.listClients()
+                clients.clear()
+                clients += repository.clients.listClients()
                 error = null
-            } catch (t: Throwable) { error = t.message } finally { loading = false }
+            } catch (t: Throwable) {
+                error = t.message
+            } finally {
+                loading = false
+            }
         }
     }
 
@@ -124,37 +123,45 @@ private fun ClientsTab(repository: JervisRepository) {
         error?.let { Text("Error: $it", color = MaterialTheme.colorScheme.error) }
 
         when (val m = mode) {
-            is ClientsMode.List -> ClientsList(
-                clients = clients,
-                onNew = { mode = ClientsMode.Create },
-                onEdit = { clientId -> mode = ClientsMode.Edit(clientId) },
-                onDelete = { clientId ->
-                    scope.launch {
-                        try {
-                            repository.clients.deleteClient(clientId)
-                            clients.removeAll { it.id == clientId }
-                            error = null
-                        } catch (t: Throwable) { error = t.message }
-                    }
-                },
-                onRefresh = { refreshClients() }
-            )
+            is ClientsMode.List ->
+                ClientsList(
+                    clients = clients,
+                    onNew = { mode = ClientsMode.Create },
+                    onEdit = { clientId -> mode = ClientsMode.Edit(clientId) },
+                    onDelete = { clientId ->
+                        scope.launch {
+                            try {
+                                repository.clients.deleteClient(clientId)
+                                clients.removeAll { it.id == clientId }
+                                error = null
+                            } catch (t: Throwable) {
+                                error = t.message
+                            }
+                        }
+                    },
+                    onRefresh = { refreshClients() },
+                )
 
-            ClientsMode.Create -> ClientCreateScreen(
-                repository = repository,
-                onBack = { mode = ClientsMode.List },
-                onCreated = { created ->
-                    clients += created
-                    mode = ClientsMode.Edit(created.id)
-                }
-            )
+            ClientsMode.Create ->
+                ClientCreateScreen(
+                    repository = repository,
+                    onBack = { mode = ClientsMode.List },
+                    onCreated = { created ->
+                        clients += created
+                        mode = ClientsMode.Edit(created.id)
+                    },
+                )
 
-            is ClientsMode.Edit -> ClientEditScreen(
-                repository = repository,
-                clientId = m.clientId,
-                initialTab = m.tab,
-                onBack = { mode = ClientsMode.List; refreshClients() }
-            )
+            is ClientsMode.Edit ->
+                ClientEditScreen(
+                    repository = repository,
+                    clientId = m.clientId,
+                    initialTab = m.tab,
+                    onBack = {
+                        mode = ClientsMode.List
+                        refreshClients()
+                    },
+                )
         }
     }
 }
@@ -167,27 +174,38 @@ private fun ClientsList(
     onDelete: (String) -> Unit,
     onRefresh: () -> Unit,
 ) {
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var clientIdToDelete by remember { mutableStateOf<String?>(null) }
     Section("Clients") {
         LazyColumn(modifier = Modifier.fillMaxWidth()) {
             items(clients, key = { it.id }) { c ->
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onEdit(c.id) }
-                        .padding(8.dp),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { onEdit(c.id) }
+                            .padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text(c.name, style = MaterialTheme.typography.titleMedium)
-                        val desc = buildString {
-                            append("Default branch: "); append(c.defaultBranch)
-                            c.monoRepoUrl?.let { append(" · Repo: "); append(it) }
-                        }
+                        val desc =
+                            buildString {
+                                append("Default branch: ")
+                                append(c.defaultBranch)
+                                c.monoRepoUrl?.let {
+                                    append(" · Repo: ")
+                                    append(it)
+                                }
+                            }
                         Text(desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButtonLike("Delete") { onDelete(c.id) }
+                        IconButton(onClick = {
+                            clientIdToDelete = c.id
+                            showDeleteConfirm = true
+                        }) { Text("🗑️") }
                     }
                 }
                 Divider()
@@ -198,6 +216,25 @@ private fun ClientsList(
             TextButtonLike("New Client") { onNew() }
             TextButtonLike("Refresh") { onRefresh() }
         }
+    }
+
+    if (showDeleteConfirm && clientIdToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete Client") },
+            text = { Text("Are you sure you want to delete this client?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDelete(requireNotNull(clientIdToDelete))
+                        clientIdToDelete = null
+                        showDeleteConfirm = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                ) { Text("Delete") }
+            },
+            dismissButton = { OutlinedButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } },
+        )
     }
 }
 
@@ -234,7 +271,7 @@ private fun ClientCreateScreen(
                                     name = name.ifBlank { "Unnamed" },
                                     monoRepoUrl = monoRepoUrl.ifBlank { null },
                                     defaultBranch = defaultBranch.ifBlank { "main" },
-                                )
+                                ),
                             )
                         }.onSuccess { created ->
                             onCreated(created)
@@ -267,16 +304,21 @@ private fun ClientEditScreen(
 
     LaunchedEffect(clientId) {
         loading = true
-        error = try {
-            val c = repository.clients.getClientById(clientId)
-            client = c
-            if (c != null) {
-                name = c.name
-                monoRepoUrl = c.monoRepoUrl ?: ""
-                defaultBranch = c.defaultBranch
+        error =
+            try {
+                val c = repository.clients.getClientById(clientId)
+                client = c
+                if (c != null) {
+                    name = c.name
+                    monoRepoUrl = c.monoRepoUrl ?: ""
+                    defaultBranch = c.defaultBranch
+                }
+                null
+            } catch (t: Throwable) {
+                t.message
+            } finally {
+                loading = false
             }
-            null
-        } catch (t: Throwable) { t.message } finally { loading = false }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -284,11 +326,12 @@ private fun ClientEditScreen(
             TextButton(onClick = onBack) { Text("Back to Clients") }
             Spacer(Modifier.size(8.dp))
             Column {
-                val titleName = when {
-                    name.isNotBlank() -> name
-                    client?.name?.isNotBlank() == true -> client?.name ?: ""
-                    else -> "(loading…)"
-                }
+                val titleName =
+                    when {
+                        name.isNotBlank() -> name
+                        client?.name?.isNotBlank() == true -> client?.name ?: ""
+                        else -> "(loading…)"
+                    }
                 Text("Client: $titleName", style = MaterialTheme.typography.titleLarge)
                 Text("ID: $clientId", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -319,17 +362,22 @@ private fun ClientEditScreen(
                                 scope.launch {
                                     try {
                                         loading = true
-                                        val updated = repository.clients.updateClient(
-                                            current.id,
-                                            current.copy(
-                                                name = name,
-                                                monoRepoUrl = monoRepoUrl.ifBlank { null },
-                                                defaultBranch = defaultBranch.ifBlank { "main" },
+                                        val updated =
+                                            repository.clients.updateClient(
+                                                current.id,
+                                                current.copy(
+                                                    name = name,
+                                                    monoRepoUrl = monoRepoUrl.ifBlank { null },
+                                                    defaultBranch = defaultBranch.ifBlank { "main" },
+                                                ),
                                             )
-                                        )
                                         client = updated
                                         error = null
-                                    } catch (t: Throwable) { error = t.message } finally { loading = false }
+                                    } catch (t: Throwable) {
+                                        error = t.message
+                                    } finally {
+                                        loading = false
+                                    }
                                 }
                             }
                         }
@@ -381,7 +429,8 @@ private fun ClientEditScreen(
                             TextButtonLike(if (savingGit) "Saving…" else "Save") {
                                 scope.launch {
                                     try {
-                                        loading = true; savingGit = true
+                                        loading = true
+                                        savingGit = true
                                         repository.gitConfiguration.setupGitConfiguration(
                                             clientId,
                                             com.jervis.dto.GitSetupRequestDto(
@@ -394,10 +443,15 @@ private fun ClientEditScreen(
                                                 httpsPassword = httpsPassword.ifBlank { null },
                                                 sshPrivateKey = sshPrivateKey.ifBlank { null },
                                                 sshPassphrase = sshPassphrase.ifBlank { null },
-                                            )
+                                            ),
                                         )
                                         error = null
-                                    } catch (t: Throwable) { error = t.message } finally { loading = false; savingGit = false }
+                                    } catch (t: Throwable) {
+                                        error = t.message
+                                    } finally {
+                                        loading = false
+                                        savingGit = false
+                                    }
                                 }
                             }
                             TextButtonLike(if (loading) "Testing…" else "Test Connection") {
@@ -416,10 +470,14 @@ private fun ClientEditScreen(
                                                 httpsPassword = httpsPassword.ifBlank { null },
                                                 sshPrivateKey = sshPrivateKey.ifBlank { null },
                                                 sshPassphrase = sshPassphrase.ifBlank { null },
-                                            )
+                                            ),
                                         )
                                         error = null
-                                    } catch (t: Throwable) { error = t.message } finally { loading = false }
+                                    } catch (t: Throwable) {
+                                        error = t.message
+                                    } finally {
+                                        loading = false
+                                    }
                                 }
                             }
                         }
@@ -430,11 +488,17 @@ private fun ClientEditScreen(
                             TextButtonLike("Refresh") {
                                 scope.launch {
                                     try {
-                                        val resp = repository.gitConfiguration.listRemoteBranches(clientId, if (repoUrl.isBlank()) null else repoUrl)
+                                        val resp =
+                                            repository.gitConfiguration.listRemoteBranches(
+                                                clientId,
+                                                if (repoUrl.isBlank()) null else repoUrl,
+                                            )
                                         branches = resp.branches
                                         detectedDefault = resp.defaultBranch
                                         error = null
-                                    } catch (t: Throwable) { error = t.message }
+                                    } catch (t: Throwable) {
+                                        error = t.message
+                                    }
                                 }
                             }
                             TextButtonLike("Use Detected Default") {
@@ -443,7 +507,9 @@ private fun ClientEditScreen(
                                         try {
                                             repository.gitConfiguration.setDefaultBranch(clientId, dd)
                                             defBranch = dd
-                                        } catch (t: Throwable) { error = t.message }
+                                        } catch (t: Throwable) {
+                                            error = t.message
+                                        }
                                     }
                                 }
                             }
@@ -479,7 +545,9 @@ private fun ClientEditScreen(
                     } catch (t: Throwable) {
                         error = t.message
                         jiraProjects = emptyList()
-                    } finally { loading = false }
+                    } finally {
+                        loading = false
+                    }
                 }
 
                 Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
@@ -491,12 +559,25 @@ private fun ClientEditScreen(
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 TextButtonLike("Refresh") {
                                     scope.launch {
-                                        try { jiraStatus = repository.jiraSetup.getStatus(clientId) } catch (t: Throwable) { error = t.message }
+                                        try {
+                                            jiraStatus = repository.jiraSetup.getStatus(clientId)
+                                        } catch (t: Throwable) {
+                                            error =
+                                                t.message
+                                        }
                                     }
                                 }
                                 TextButtonLike("Test Connection") {
                                     scope.launch {
-                                        try { jiraStatus = repository.jiraSetup.testConnection(clientId); error = null } catch (t: Throwable) { error = t.message }
+                                        try {
+                                            jiraStatus = repository.jiraSetup.testConnection(clientId)
+                                            error = null
+                                        } catch (
+                                            t: Throwable,
+                                        ) {
+                                            error =
+                                                t.message
+                                        }
                                     }
                                 }
                             }
@@ -518,9 +599,13 @@ private fun ClientEditScreen(
                                                         repository.jiraSetup.setPrimaryProject(clientId, jp.key)
                                                         jiraStatus = repository.jiraSetup.getStatus(clientId)
                                                         error = null
-                                                    } catch (t: Throwable) { error = t.message } finally { loading = false }
+                                                    } catch (t: Throwable) {
+                                                        error = t.message
+                                                    } finally {
+                                                        loading = false
+                                                    }
                                                 }
-                                            }
+                                            },
                                         )
                                     }
                                 }
@@ -542,10 +627,14 @@ private fun ClientEditScreen(
                                                     clientId = clientId,
                                                     confluenceSpaceKey = confluenceSpaceKey.ifBlank { null },
                                                     confluenceRootPageId = confluenceRootPageId.ifBlank { null },
-                                                )
+                                                ),
                                             )
                                             error = null
-                                        } catch (t: Throwable) { error = t.message } finally { loading = false }
+                                        } catch (t: Throwable) {
+                                            error = t.message
+                                        } finally {
+                                            loading = false
+                                        }
                                     }
                                 }
                             }
@@ -560,9 +649,16 @@ private fun ClientEditScreen(
 
                 LaunchedEffect(clientId) {
                     loading = true
-                    error = try {
-                        accounts.clear(); accounts += repository.emailAccounts.listEmailAccounts(clientId = clientId); null
-                    } catch (t: Throwable) { t.message } finally { loading = false }
+                    error =
+                        try {
+                            accounts.clear()
+                            accounts += repository.emailAccounts.listEmailAccounts(clientId = clientId)
+                            null
+                        } catch (t: Throwable) {
+                            t.message
+                        } finally {
+                            loading = false
+                        }
                 }
 
                 when (val m = emailMode) {
@@ -570,31 +666,35 @@ private fun ClientEditScreen(
                         // Avoid nesting LazyColumn inside a vertically scrollable container
                         // to prevent infinite height constraints. The list itself is scrollable.
                         Column(Modifier.fillMaxWidth()) {
+                            var showDeleteConfirm by remember { mutableStateOf(false) }
+                            var accountIdToDelete by remember { mutableStateOf<String?>(null) }
                             Section("Accounts") {
                                 LazyColumn(modifier = Modifier.fillMaxWidth()) {
                                     items(accounts, key = { it.id ?: it.email }) { acc ->
                                         Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(8.dp),
+                                            modifier =
+                                                Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(8.dp),
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
+                                            horizontalArrangement = Arrangement.SpaceBetween,
                                         ) {
                                             Column(Modifier.weight(1f)) {
                                                 Text("${acc.displayName} <${acc.email}>")
-                                                Text("Provider: ${acc.provider}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                Text(
+                                                    "Provider: ${acc.provider}",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
                                             }
                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                 TextButtonLike("Edit") { acc.id?.let { emailMode = EmailMode.Edit(it) } }
-                                                TextButtonLike("Delete") {
-                                                    scope.launch {
-                                                        try {
-                                                            acc.id?.let { repository.emailAccounts.deleteEmailAccount(it) }
-                                                            accounts.removeAll { it.id == acc.id }
-                                                            error = null
-                                                        } catch (t: Throwable) { error = t.message }
+                                                IconButton(onClick = {
+                                                    if (acc.id != null) {
+                                                        accountIdToDelete = acc.id
+                                                        showDeleteConfirm = true
                                                     }
-                                                }
+                                                }) { Text("🗑️") }
                                             }
                                         }
                                         Divider()
@@ -603,11 +703,50 @@ private fun ClientEditScreen(
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     TextButtonLike("Refresh") {
                                         scope.launch {
-                                            try { accounts.clear(); accounts += repository.emailAccounts.listEmailAccounts(clientId = clientId); error = null } catch (t: Throwable) { error = t.message }
+                                            try {
+                                                accounts.clear()
+                                                accounts +=
+                                                    repository.emailAccounts.listEmailAccounts(clientId = clientId)
+                                                error = null
+                                            } catch (
+                                                t: Throwable,
+                                            ) {
+                                                error =
+                                                    t.message
+                                            }
                                         }
                                     }
                                     TextButtonLike("New Account") { emailMode = EmailMode.Create }
                                 }
+                            }
+
+                            if (showDeleteConfirm && accountIdToDelete != null) {
+                                AlertDialog(
+                                    onDismissRequest = { showDeleteConfirm = false },
+                                    title = { Text("Delete Email Account") },
+                                    text = { Text("Are you sure you want to delete this email account?") },
+                                    confirmButton = {
+                                        Button(
+                                            onClick = {
+                                                scope.launch {
+                                                    runCatching { repository.emailAccounts.deleteEmailAccount(requireNotNull(accountIdToDelete)) }
+                                                        .onSuccess {
+                                                            accounts.removeAll { it.id == accountIdToDelete }
+                                                            accountIdToDelete = null
+                                                            showDeleteConfirm = false
+                                                            error = null
+                                                        }
+                                                        .onFailure { e ->
+                                                            error = e.message
+                                                            showDeleteConfirm = false
+                                                        }
+                                                }
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                        ) { Text("Delete") }
+                                    },
+                                    dismissButton = { OutlinedButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } }
+                                )
                             }
                         }
                     }
@@ -620,18 +759,33 @@ private fun ClientEditScreen(
                             onBack = {
                                 emailMode = EmailMode.List
                                 scope.launch {
-                                    runCatching { accounts.clear(); accounts += repository.emailAccounts.listEmailAccounts(clientId = clientId) }
-                                        .onFailure { e -> error = e.message }
+                                    runCatching {
+                                        accounts.clear()
+                                        accounts +=
+                                            repository.emailAccounts.listEmailAccounts(clientId = clientId)
+                                    }.onFailure { e -> error = e.message }
                                 }
                             },
                             onSaved = {
                                 emailMode = EmailMode.List
-                                scope.launch { runCatching { accounts.clear(); accounts += repository.emailAccounts.listEmailAccounts(clientId = clientId) } }
+                                scope.launch {
+                                    runCatching {
+                                        accounts.clear()
+                                        accounts +=
+                                            repository.emailAccounts.listEmailAccounts(clientId = clientId)
+                                    }
+                                }
                             },
                             onDeleted = {
                                 emailMode = EmailMode.List
-                                scope.launch { runCatching { accounts.clear(); accounts += repository.emailAccounts.listEmailAccounts(clientId = clientId) } }
-                            }
+                                scope.launch {
+                                    runCatching {
+                                        accounts.clear()
+                                        accounts +=
+                                            repository.emailAccounts.listEmailAccounts(clientId = clientId)
+                                    }
+                                }
+                            },
                         )
                     }
 
@@ -643,9 +797,15 @@ private fun ClientEditScreen(
                             onBack = { emailMode = EmailMode.List },
                             onSaved = {
                                 emailMode = EmailMode.List
-                                scope.launch { runCatching { accounts.clear(); accounts += repository.emailAccounts.listEmailAccounts(clientId = clientId) } }
+                                scope.launch {
+                                    runCatching {
+                                        accounts.clear()
+                                        accounts +=
+                                            repository.emailAccounts.listEmailAccounts(clientId = clientId)
+                                    }
+                                }
                             },
-                            onDeleted = { emailMode = EmailMode.List }
+                            onDeleted = { emailMode = EmailMode.List },
                         )
                     }
                 }
@@ -672,13 +832,21 @@ private fun ClientProjectsSection(
 
     var creatingNew by remember(clientId) { mutableStateOf(false) }
     var openProjectId by remember(clientId) { mutableStateOf<String?>(null) }
+    var showDeleteConfirm by remember(clientId) { mutableStateOf(false) }
+    var projectIdToDelete by remember(clientId) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(clientId) {
         loading = true
-        error = try {
-            projects.clear(); projects += repository.projects.listProjectsForClient(clientId)
-            null
-        } catch (t: Throwable) { t.message } finally { loading = false }
+        error =
+            try {
+                projects.clear()
+                projects += repository.projects.listProjectsForClient(clientId)
+                null
+            } catch (t: Throwable) {
+                t.message
+            } finally {
+                loading = false
+            }
     }
 
     Column(Modifier.fillMaxWidth()) {
@@ -692,15 +860,10 @@ private fun ClientProjectsSection(
                             project = p,
                             onOpen = { openProjectId = p.id },
                             onDelete = {
-                                scope.launch {
-                                    try {
-                                        repository.projects.deleteProject(p)
-                                        projects.removeAll { it.id == p.id }
-                                        error = null
-                                    } catch (t: Throwable) { error = t.message }
-                                }
+                                projectIdToDelete = p.id
+                                showDeleteConfirm = true
                             },
-                            onSave = { /* no inline save in list view */ }
+                            onSave = { /* no inline save in list view */ },
                         )
                         Divider()
                     }
@@ -711,6 +874,41 @@ private fun ClientProjectsSection(
                     TextButtonLike("New Project") { creatingNew = true }
                 }
             }
+            if (showDeleteConfirm && projectIdToDelete != null) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteConfirm = false },
+                    title = { Text("Delete Project") },
+                    text = { Text("Are you sure you want to delete this project?") },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    val pid = requireNotNull(projectIdToDelete)
+                                    val proj = projects.firstOrNull { it.id == pid }
+                                    if (proj != null) {
+                                        runCatching { repository.projects.deleteProject(proj) }
+                                            .onSuccess {
+                                                projects.removeAll { it.id == pid }
+                                                projectIdToDelete = null
+                                                showDeleteConfirm = false
+                                                error = null
+                                            }
+                                            .onFailure { e ->
+                                                error = e.message
+                                                showDeleteConfirm = false
+                                            }
+                                    } else {
+                                        projectIdToDelete = null
+                                        showDeleteConfirm = false
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        ) { Text("Delete") }
+                    },
+                    dismissButton = { OutlinedButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } }
+                )
+            }
         } else if (creatingNew) {
             ProjectCreateScreen(
                 repository = repository,
@@ -720,7 +918,7 @@ private fun ClientProjectsSection(
                     creatingNew = false
                     projects += created
                     openProjectId = created.id
-                }
+                },
             )
         } else {
             // Project detail sub-page
@@ -741,7 +939,8 @@ private fun ClientProjectsSection(
                         scope.launch {
                             runCatching {
                                 loading = true
-                                projects.clear(); projects += repository.projects.listProjectsForClient(clientId)
+                                projects.clear()
+                                projects += repository.projects.listProjectsForClient(clientId)
                                 error = null
                             }.onFailure { e -> error = e.message }.also { loading = false }
                         }
@@ -753,7 +952,7 @@ private fun ClientProjectsSection(
                     onProjectDeleted = {
                         projects.removeAll { it.id == project.id }
                         openProjectId = null
-                    }
+                    },
                 )
             }
         }
@@ -768,17 +967,24 @@ private fun ProjectRow(
     onOpen: () -> Unit,
 ) {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(8.dp)
-            .border(1.dp, Color.LightGray)
-            .clickable { onOpen() }
-            .padding(8.dp)
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+                .border(1.dp, Color.LightGray)
+                .clickable { onOpen() }
+                .padding(8.dp),
     ) {
         Text(project.name, style = MaterialTheme.typography.titleMedium)
-        project.description?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        project.description?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButtonLike("Delete") { onDelete() }
+            IconButton(onClick = { onDelete() }) { Text("🗑️") }
         }
     }
 }
@@ -812,33 +1018,36 @@ private fun ProjectEditScreen(
     LaunchedEffect(project.id) {
         runCatching { repository.integrationSettings.getProjectStatus(project.id) }
             .onSuccess {
-                integrationInfo = IntegrationInfo(
-                    effectiveJiraProjectKey = it.effectiveJiraProjectKey,
-                    overrideJiraProjectKey = it.overrideJiraProjectKey,
-                    effectiveJiraBoardId = it.effectiveJiraBoardId?.toString(),
-                    overrideJiraBoardId = it.overrideJiraBoardId?.toString(),
-                    effectiveConfluenceSpaceKey = it.effectiveConfluenceSpaceKey,
-                    overrideConfluenceSpaceKey = it.overrideConfluenceSpaceKey,
-                    effectiveConfluenceRootPageId = it.effectiveConfluenceRootPageId,
-                    overrideConfluenceRootPageId = it.overrideConfluenceRootPageId,
-                )
+                integrationInfo =
+                    IntegrationInfo(
+                        effectiveJiraProjectKey = it.effectiveJiraProjectKey,
+                        overrideJiraProjectKey = it.overrideJiraProjectKey,
+                        effectiveJiraBoardId = it.effectiveJiraBoardId?.toString(),
+                        overrideJiraBoardId = it.overrideJiraBoardId?.toString(),
+                        effectiveConfluenceSpaceKey = it.effectiveConfluenceSpaceKey,
+                        overrideConfluenceSpaceKey = it.overrideConfluenceSpaceKey,
+                        effectiveConfluenceRootPageId = it.effectiveConfluenceRootPageId,
+                        overrideConfluenceRootPageId = it.overrideConfluenceRootPageId,
+                    )
                 error = null
-            }
-            .onFailure { e -> error = e.message }
+            }.onFailure { e -> error = e.message }
     }
 
     LaunchedEffect(clientId) {
         // Load client name for breadcrumb/header context
         runCatching { repository.clients.getClientById(clientId) }
             .onSuccess { clientName = it?.name ?: "" }
-            .onFailure { /* fail fast into UI below via error */ error = it.message }
+            .onFailure {
+                // fail fast into UI below via error
+                error = it.message
+            }
 
         runCatching { repository.jiraSetup.getStatus(clientId) }
             .onSuccess { st ->
                 jiraStatus = st
-                availableJiraProjects = if (st.connected) runCatching { repository.jiraSetup.listProjects(clientId) }.getOrDefault(emptyList()) else emptyList()
-            }
-            .onFailure { e ->
+                availableJiraProjects =
+                    if (st.connected) runCatching { repository.jiraSetup.listProjects(clientId) }.getOrDefault(emptyList()) else emptyList()
+            }.onFailure { e ->
                 jiraStatus = null
                 availableJiraProjects = emptyList()
                 error = e.message
@@ -855,7 +1064,7 @@ private fun ProjectEditScreen(
                 Text(
                     "Client: $clientLabel • Project ID: ${project.id}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -876,6 +1085,7 @@ private fun ProjectEditScreen(
         when (selectedTab) {
             ProjectEditTab.Basic -> {
                 Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                    var showDeleteConfirm by remember(project.id) { mutableStateOf(false) }
                     Section("Basic") {
                         LabeledField("Name", name) { name = it }
                         LabeledField("Description", desc) { desc = it }
@@ -890,13 +1100,27 @@ private fun ProjectEditScreen(
                                     }.onFailure { e -> error = e.message }
                                 }
                             }
-                            TextButtonLike("Delete") {
-                                scope.launch {
-                                    runCatching { repository.projects.deleteProject(project) }
-                                        .onSuccess { onProjectDeleted() }
-                                        .onFailure { e -> error = e.message }
-                                }
-                            }
+                            IconButton(onClick = { showDeleteConfirm = true }) { Text("🗑️") }
+                        }
+                        if (showDeleteConfirm) {
+                            AlertDialog(
+                                onDismissRequest = { showDeleteConfirm = false },
+                                title = { Text("Delete Project") },
+                                text = { Text("Are you sure you want to delete this project?") },
+                                confirmButton = {
+                                    Button(
+                                        onClick = {
+                                            scope.launch {
+                                                runCatching { repository.projects.deleteProject(project) }
+                                                    .onSuccess { showDeleteConfirm = false; onProjectDeleted() }
+                                                    .onFailure { e -> error = e.message; showDeleteConfirm = false }
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                    ) { Text("Delete") }
+                                },
+                                dismissButton = { OutlinedButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } }
+                            )
                         }
                     }
                 }
@@ -934,21 +1158,21 @@ private fun ProjectEditScreen(
                             scope.launch {
                                 runCatching { repository.integrationSettings.getProjectStatus(project.id) }
                                     .onSuccess {
-                                        integrationInfo = IntegrationInfo(
-                                            effectiveJiraProjectKey = it.effectiveJiraProjectKey,
-                                            overrideJiraProjectKey = it.overrideJiraProjectKey,
-                                            effectiveJiraBoardId = it.effectiveJiraBoardId?.toString(),
-                                            overrideJiraBoardId = it.overrideJiraBoardId?.toString(),
-                                            effectiveConfluenceSpaceKey = it.effectiveConfluenceSpaceKey,
-                                            overrideConfluenceSpaceKey = it.overrideConfluenceSpaceKey,
-                                            effectiveConfluenceRootPageId = it.effectiveConfluenceRootPageId,
-                                            overrideConfluenceRootPageId = it.overrideConfluenceRootPageId,
-                                        )
+                                        integrationInfo =
+                                            IntegrationInfo(
+                                                effectiveJiraProjectKey = it.effectiveJiraProjectKey,
+                                                overrideJiraProjectKey = it.overrideJiraProjectKey,
+                                                effectiveJiraBoardId = it.effectiveJiraBoardId?.toString(),
+                                                overrideJiraBoardId = it.overrideJiraBoardId?.toString(),
+                                                effectiveConfluenceSpaceKey = it.effectiveConfluenceSpaceKey,
+                                                overrideConfluenceSpaceKey = it.overrideConfluenceSpaceKey,
+                                                effectiveConfluenceRootPageId = it.effectiveConfluenceRootPageId,
+                                                overrideConfluenceRootPageId = it.overrideConfluenceRootPageId,
+                                            )
                                         error = null
-                                    }
-                                    .onFailure { e -> error = e.message }
+                                    }.onFailure { e -> error = e.message }
                             }
-                        }
+                        },
                     )
                 }
             }
@@ -988,7 +1212,7 @@ private fun ProjectCreateScreen(
                                     clientId = clientId,
                                     name = name.ifBlank { "New Project" },
                                     description = desc.ifBlank { null },
-                                )
+                                ),
                             )
                         }.onSuccess { created ->
                             onCreated(created)
@@ -1004,8 +1228,12 @@ private fun ProjectCreateScreen(
 // — Email edit flow —
 private sealed interface EmailMode {
     data object List : EmailMode
+
     data object Create : EmailMode
-    data class Edit(val accountId: String) : EmailMode
+
+    data class Edit(
+        val accountId: String,
+    ) : EmailMode
 }
 
 @Composable
@@ -1033,28 +1261,49 @@ private fun EmailAccountEditScreen(
 
     fun applyPreset(p: EmailProviderEnum) {
         when (p) {
-            EmailProviderEnum.GMAIL -> { serverHost = "imap.gmail.com"; serverPort = "993"; useSsl = true }
-            EmailProviderEnum.SEZNAM -> { serverHost = "imap.seznam.cz"; serverPort = "993"; useSsl = true }
-            EmailProviderEnum.MICROSOFT -> { serverHost = "outlook.office365.com"; serverPort = "993"; useSsl = true }
-            EmailProviderEnum.IMAP -> { serverHost = serverHost; serverPort = serverPort.ifBlank { "993" }; useSsl = true }
+            EmailProviderEnum.GMAIL -> {
+                serverHost = "imap.gmail.com"
+                serverPort = "993"
+                useSsl = true
+            }
+            EmailProviderEnum.SEZNAM -> {
+                serverHost = "imap.seznam.cz"
+                serverPort = "993"
+                useSsl = true
+            }
+            EmailProviderEnum.MICROSOFT -> {
+                serverHost = "outlook.office365.com"
+                serverPort = "993"
+                useSsl = true
+            }
+            EmailProviderEnum.IMAP -> {
+                serverHost = serverHost
+                serverPort = serverPort.ifBlank { "993" }
+                useSsl = true
+            }
         }
     }
 
     LaunchedEffect(accountId) {
         if (accountId == null) return@LaunchedEffect
         loading = true
-        error = try {
-            repository.emailAccounts.getEmailAccount(accountId)?.let { acc ->
-                displayName = acc.displayName
-                email = acc.email
-                provider = acc.provider
-                serverHost = acc.serverHost ?: ""
-                serverPort = acc.serverPort?.toString() ?: "993"
-                username = acc.username ?: ""
-                useSsl = acc.useSsl
+        error =
+            try {
+                repository.emailAccounts.getEmailAccount(accountId)?.let { acc ->
+                    displayName = acc.displayName
+                    email = acc.email
+                    provider = acc.provider
+                    serverHost = acc.serverHost ?: ""
+                    serverPort = acc.serverPort?.toString() ?: "993"
+                    username = acc.username ?: ""
+                    useSsl = acc.useSsl
+                }
+                null
+            } catch (t: Throwable) {
+                t.message
+            } finally {
+                loading = false
             }
-            null
-        } catch (t: Throwable) { t.message } finally { loading = false }
     }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
@@ -1096,7 +1345,7 @@ private fun EmailAccountEditScreen(
                                         serverHost = serverHost.ifBlank { null },
                                         serverPort = serverPort.toIntOrNull(),
                                         useSsl = useSsl,
-                                    )
+                                    ),
                                 )
                             } else {
                                 repository.emailAccounts.updateEmailAccount(
@@ -1112,12 +1361,16 @@ private fun EmailAccountEditScreen(
                                         serverHost = serverHost.ifBlank { null },
                                         serverPort = serverPort.toIntOrNull(),
                                         useSsl = useSsl,
-                                    )
+                                    ),
                                 )
                             }
                             error = null
                             onSaved()
-                        } catch (t: Throwable) { error = t.message } finally { loading = false }
+                        } catch (t: Throwable) {
+                            error = t.message
+                        } finally {
+                            loading = false
+                        }
                     }
                 }
                 if (accountId != null) {
@@ -1128,12 +1381,27 @@ private fun EmailAccountEditScreen(
                                 .onFailure { e -> error = e.message }
                         }
                     }
-                    TextButtonLike("Delete") {
-                        scope.launch {
-                            runCatching { repository.emailAccounts.deleteEmailAccount(accountId) }
-                                .onSuccess { onDeleted() }
-                                .onFailure { e -> error = e.message }
-                        }
+                    var showDeleteConfirm by remember(accountId) { mutableStateOf(false) }
+                    IconButton(onClick = { showDeleteConfirm = true }) { Text("🗑️") }
+                    if (showDeleteConfirm) {
+                        AlertDialog(
+                            onDismissRequest = { showDeleteConfirm = false },
+                            title = { Text("Delete Email Account") },
+                            text = { Text("Are you sure you want to delete this email account?") },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            runCatching { repository.emailAccounts.deleteEmailAccount(accountId) }
+                                                .onSuccess { showDeleteConfirm = false; onDeleted() }
+                                                .onFailure { e -> error = e.message; showDeleteConfirm = false }
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                ) { Text("Delete") }
+                            },
+                            dismissButton = { OutlinedButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } }
+                        )
                     }
                 }
             }
@@ -1176,7 +1444,9 @@ private fun ProjectOverridesSection(
     var useJiraProjectOverride by remember(project.id, initialJiraProjectKey) { mutableStateOf(initialJiraProjectKey != null) }
     var useJiraBoardOverride by remember(project.id, initialJiraBoardId) { mutableStateOf(initialJiraBoardId != null) }
     var useConfluenceSpaceOverride by remember(project.id, initialConfluenceSpaceKey) { mutableStateOf(initialConfluenceSpaceKey != null) }
-    var useConfluenceRootPageOverride by remember(project.id, initialConfluenceRootPageId) { mutableStateOf(initialConfluenceRootPageId != null) }
+    var useConfluenceRootPageOverride by remember(project.id, initialConfluenceRootPageId) {
+        mutableStateOf(initialConfluenceRootPageId != null)
+    }
 
     var jiraProjectKey by remember(project.id, initialJiraProjectKey) { mutableStateOf(initialJiraProjectKey ?: "") }
     var jiraBoardId by remember(project.id, initialJiraBoardId) { mutableStateOf(initialJiraBoardId ?: "") }
@@ -1212,12 +1482,13 @@ private fun ProjectOverridesSection(
                 availableJiraProjects.forEach { jp ->
                     val selected = jp.key == jiraProjectKey
                     Box(
-                        modifier = Modifier
-                            .padding(4.dp)
-                            .border(1.dp, if (selected) Color(0xFF3366FF) else Color.LightGray)
-                            .background(if (selected) Color(0x113366FF) else Color.Transparent)
-                            .clickable { jiraProjectKey = if (selected) "" else jp.key }
-                            .padding(6.dp)
+                        modifier =
+                            Modifier
+                                .padding(4.dp)
+                                .border(1.dp, if (selected) Color(0xFF3366FF) else Color.LightGray)
+                                .background(if (selected) Color(0x113366FF) else Color.Transparent)
+                                .clickable { jiraProjectKey = if (selected) "" else jp.key }
+                                .padding(6.dp),
                     ) { Text(jp.key) }
                 }
             }
@@ -1231,7 +1502,9 @@ private fun ProjectOverridesSection(
         }
         if (useJiraBoardOverride) {
             // If Atlassian connected and project selected, offer board suggestions
-            var jiraBoards by remember(project.id, jiraProjectKey, jiraSuggestionsEnabled) { mutableStateOf<List<com.jervis.dto.jira.JiraBoardRefDto>>(emptyList()) }
+            var jiraBoards by remember(project.id, jiraProjectKey, jiraSuggestionsEnabled) {
+                mutableStateOf<List<com.jervis.dto.jira.JiraBoardRefDto>>(emptyList())
+            }
             LaunchedEffect(jiraSuggestionsEnabled, useJiraBoardOverride, jiraProjectKey) {
                 if (jiraSuggestionsEnabled && useJiraBoardOverride && jiraProjectKey.isNotBlank()) {
                     runCatching { repository.jiraSetup.listBoards(clientId = clientId, projectKey = jiraProjectKey) }
@@ -1255,12 +1528,13 @@ private fun ProjectOverridesSection(
                     jiraBoards.forEach { board ->
                         val selected = jiraBoardId == board.id.toString()
                         Box(
-                            modifier = Modifier
-                                .padding(4.dp)
-                                .border(1.dp, if (selected) Color(0xFF3366FF) else Color.LightGray)
-                                .background(if (selected) Color(0x113366FF) else Color.Transparent)
-                                .clickable { jiraBoardId = board.id.toString() }
-                                .padding(6.dp)
+                            modifier =
+                                Modifier
+                                    .padding(4.dp)
+                                    .border(1.dp, if (selected) Color(0xFF3366FF) else Color.LightGray)
+                                    .background(if (selected) Color(0x113366FF) else Color.Transparent)
+                                    .clickable { jiraBoardId = board.id.toString() }
+                                    .padding(6.dp),
                         ) { Text("${board.id}: ${board.name}") }
                     }
                 }
@@ -1314,41 +1588,48 @@ private fun ProjectOverridesSection(
                 scope.launch {
                     runCatching {
                         // Apply semantics: null = unchanged, "" = clear, non-empty = set
-                        val jiraProjectField = when {
-                            !useJiraProjectOverride -> null
-                            jiraProjectKey.isBlank() -> ""
-                            else -> jiraProjectKey
-                        }
-                        val jiraBoardField = when {
-                            !useJiraBoardOverride -> null
-                            jiraBoardId.isBlank() -> ""
-                            else -> jiraBoardId
-                        }
-                        val confluenceSpaceField = when {
-                            !useConfluenceSpaceOverride -> null
-                            confluenceSpaceKey.isBlank() -> ""
-                            else -> confluenceSpaceKey
-                        }
-                        val confluenceRootPageField = when {
-                            !useConfluenceRootPageOverride -> null
-                            confluenceRootPageId.isBlank() -> ""
-                            else -> confluenceRootPageId
-                        }
-                        val commitUserNameField = when {
-                            !useCommitIdentityOverride -> null
-                            commitUserName.isBlank() -> ""
-                            else -> commitUserName
-                        }
-                        val commitUserEmailField = when {
-                            !useCommitIdentityOverride -> null
-                            commitUserEmail.isBlank() -> ""
-                            else -> commitUserEmail
-                        }
-                        val commitTemplateField = when {
-                            !useCommitMessageOverride -> null
-                            commitMessageTemplate.isBlank() -> ""
-                            else -> commitMessageTemplate
-                        }
+                        val jiraProjectField =
+                            when {
+                                !useJiraProjectOverride -> null
+                                jiraProjectKey.isBlank() -> ""
+                                else -> jiraProjectKey
+                            }
+                        val jiraBoardField =
+                            when {
+                                !useJiraBoardOverride -> null
+                                jiraBoardId.isBlank() -> ""
+                                else -> jiraBoardId
+                            }
+                        val confluenceSpaceField =
+                            when {
+                                !useConfluenceSpaceOverride -> null
+                                confluenceSpaceKey.isBlank() -> ""
+                                else -> confluenceSpaceKey
+                            }
+                        val confluenceRootPageField =
+                            when {
+                                !useConfluenceRootPageOverride -> null
+                                confluenceRootPageId.isBlank() -> ""
+                                else -> confluenceRootPageId
+                            }
+                        val commitUserNameField =
+                            when {
+                                !useCommitIdentityOverride -> null
+                                commitUserName.isBlank() -> ""
+                                else -> commitUserName
+                            }
+                        val commitUserEmailField =
+                            when {
+                                !useCommitIdentityOverride -> null
+                                commitUserEmail.isBlank() -> ""
+                                else -> commitUserEmail
+                            }
+                        val commitTemplateField =
+                            when {
+                                !useCommitMessageOverride -> null
+                                commitMessageTemplate.isBlank() -> ""
+                                else -> commitMessageTemplate
+                            }
                         savingOverrides = true
                         repository.integrationSettings.setProjectOverrides(
                             com.jervis.dto.integration.ProjectIntegrationOverridesDto(
@@ -1360,11 +1641,16 @@ private fun ProjectOverridesSection(
                                 gitCommitUserName = commitUserNameField,
                                 gitCommitUserEmail = commitUserEmailField,
                                 commitMessageTemplate = commitTemplateField,
-                            )
+                            ),
                         )
-                    }.onSuccess { message = "Integration overrides saved"; onError(null); onSaved() }
-                        .onFailure { e -> onError(e.message); message = null }
-                        .also { savingOverrides = false }
+                    }.onSuccess {
+                        message = "Integration overrides saved"
+                        onError(null)
+                        onSaved()
+                    }.onFailure { e ->
+                        onError(e.message)
+                        message = null
+                    }.also { savingOverrides = false }
                 }
             }
             if (savingOverrides) {
@@ -1385,42 +1671,42 @@ private fun ProjectOverridesSection(
         when (val mode = projEmailMode) {
             EmailMode.List -> {
                 Section("Project Email Accounts") {
+                    var showDeleteConfirm by remember(project.id) { mutableStateOf(false) }
+                    var accountIdToDelete by remember(project.id) { mutableStateOf<String?>(null) }
                     if (projectEmailAccounts.isEmpty()) {
-                        InfoBanner("No project email accounts yet. You can create multiple accounts scoped to this project.", isWarning = true)
+                        InfoBanner(
+                            "No project email accounts yet. You can create multiple accounts scoped to this project.",
+                            isWarning = true,
+                        )
                     } else {
                         // Do NOT use LazyColumn here because the parent screen already scrolls vertically.
                         // Using a LazyColumn inside a vertically scrollable parent causes infinite height constraints.
                         Column(modifier = Modifier.fillMaxWidth()) {
                             projectEmailAccounts.forEach { acc ->
                                 Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(8.dp),
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(8.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
                                     Column(Modifier.weight(1f)) {
-                                        Text("${'$'}{acc.displayName} <${'$'}{acc.email}>")
+                                        Text("${acc.displayName} <${acc.email}>")
                                         Text(
-                                            "Provider: ${'$'}{acc.provider}",
+                                            "Provider: ${acc.provider}",
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         TextButtonLike("Edit") { acc.id?.let { projEmailMode = EmailMode.Edit(it) } }
-                                        TextButtonLike("Delete") {
-                                            val accountId = acc.id
-                                            if (accountId != null) {
-                                                scope.launch {
-                                                    runCatching { repository.emailAccounts.deleteEmailAccount(accountId) }
-                                                        .onSuccess {
-                                                            runCatching { repository.emailAccounts.listEmailAccounts(clientId = clientId, projectId = project.id) }
-                                                                .onSuccess { projectEmailAccounts = it }
-                                                        }
-                                                }
+                                        IconButton(onClick = {
+                                            acc.id?.let {
+                                                accountIdToDelete = it
+                                                showDeleteConfirm = true
                                             }
-                                        }
+                                        }) { Text("🗑️") }
                                     }
                                 }
                                 Divider()
@@ -1435,6 +1721,36 @@ private fun ProjectOverridesSection(
                             }
                         }
                         TextButtonLike("New Account") { projEmailMode = EmailMode.Create }
+                    }
+
+                    if (showDeleteConfirm && accountIdToDelete != null) {
+                        AlertDialog(
+                            onDismissRequest = { showDeleteConfirm = false },
+                            title = { Text("Delete Email Account") },
+                            text = { Text("Are you sure you want to delete this email account?") },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            val id = requireNotNull(accountIdToDelete)
+                                            runCatching { repository.emailAccounts.deleteEmailAccount(id) }
+                                                .onSuccess {
+                                                    runCatching { repository.emailAccounts.listEmailAccounts(clientId = clientId, projectId = project.id) }
+                                                        .onSuccess { projectEmailAccounts = it }
+                                                    accountIdToDelete = null
+                                                    showDeleteConfirm = false
+                                                }
+                                                .onFailure { e ->
+                                                    onError(e.message)
+                                                    showDeleteConfirm = false
+                                                }
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                ) { Text("Delete") }
+                            },
+                            dismissButton = { OutlinedButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } }
+                        )
                     }
                 }
             }
@@ -1513,25 +1829,29 @@ private fun ProjectOverridesSection(
         var savingProjectGit by remember(project.id) { mutableStateOf(false) }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButtonLike(if (savingProjectGit) "Saving…" else "Save Git Override") {
-            scope.launch {
-                runCatching {
-                    savingProjectGit = true
-                    repository.gitConfiguration.setupGitOverrideForProject(
-                        project.id,
-                        com.jervis.dto.ProjectGitOverrideRequestDto(
-                            gitRemoteUrl = gitRemoteUrl.ifBlank { null },
-                            gitAuthType = gitAuthType,
-                            httpsToken = httpsToken.ifBlank { null },
-                            httpsUsername = httpsUsername.ifBlank { null },
-                            httpsPassword = httpsPassword.ifBlank { null },
-                            sshPrivateKey = sshPrivateKey.ifBlank { null },
-                            sshPassphrase = sshPassphrase.ifBlank { null },
+                scope.launch {
+                    runCatching {
+                        savingProjectGit = true
+                        repository.gitConfiguration.setupGitOverrideForProject(
+                            project.id,
+                            com.jervis.dto.ProjectGitOverrideRequestDto(
+                                gitRemoteUrl = gitRemoteUrl.ifBlank { null },
+                                gitAuthType = gitAuthType,
+                                httpsToken = httpsToken.ifBlank { null },
+                                httpsUsername = httpsUsername.ifBlank { null },
+                                httpsPassword = httpsPassword.ifBlank { null },
+                                sshPrivateKey = sshPrivateKey.ifBlank { null },
+                                sshPassphrase = sshPassphrase.ifBlank { null },
+                            ),
                         )
-                    )
-                }.onSuccess { message = "Git override saved"; onError(null) }
-                    .onFailure { e -> onError(e.message); message = null }
-                    .also { savingProjectGit = false }
-            }
+                    }.onSuccess {
+                        message = "Git override saved"
+                        onError(null)
+                    }.onFailure { e ->
+                        onError(e.message)
+                        message = null
+                    }.also { savingProjectGit = false }
+                }
             }
             if (savingProjectGit) {
                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -1561,29 +1881,56 @@ private fun EmailTab(repository: JervisRepository) {
 
     LaunchedEffect(Unit) {
         loading = true
-        error = try { clients.clear(); clients += repository.clients.listClients(); null } catch (t: Throwable) { t.message } finally { loading = false }
+        error =
+            try {
+                clients.clear()
+                clients += repository.clients.listClients()
+                null
+            } catch (
+                t: Throwable,
+            ) {
+                t.message
+            } finally {
+                loading =
+                    false
+            }
     }
 
     LaunchedEffect(selectedClientId) {
         if (selectedClientId == null) return@LaunchedEffect
         loading = true
-        error = try { accounts.clear(); accounts += repository.emailAccounts.listEmailAccounts(clientId = selectedClientId); null } catch (t: Throwable) { t.message } finally { loading = false }
+        error =
+            try {
+                accounts.clear()
+                accounts += repository.emailAccounts.listEmailAccounts(clientId = selectedClientId)
+                null
+            } catch (
+                t: Throwable,
+            ) {
+                t.message
+            } finally {
+                loading =
+                    false
+            }
     }
 
     Column(Modifier.fillMaxSize()) {
         error?.let { Text("Error: $it", color = MaterialTheme.colorScheme.error) }
         Section("Select Client") {
-            FlowWrap { clients.forEach { c ->
-                val selected = c.id == selectedClientId
-                Box(
-                    modifier = Modifier
-                        .padding(4.dp)
-                        .border(1.dp, if (selected) Color(0xFF3366FF) else Color.LightGray)
-                        .background(if (selected) Color(0x113366FF) else Color.Transparent)
-                        .clickable { selectedClientId = c.id }
-                        .padding(6.dp)
-                ) { Text(c.name) }
-            } }
+            FlowWrap {
+                clients.forEach { c ->
+                    val selected = c.id == selectedClientId
+                    Box(
+                        modifier =
+                            Modifier
+                                .padding(4.dp)
+                                .border(1.dp, if (selected) Color(0xFF3366FF) else Color.LightGray)
+                                .background(if (selected) Color(0x113366FF) else Color.Transparent)
+                                .clickable { selectedClientId = c.id }
+                                .padding(6.dp),
+                    ) { Text(c.name) }
+                }
+            }
         }
 
         if (selectedClientId != null) {
@@ -1601,36 +1948,50 @@ private fun EmailTab(repository: JervisRepository) {
                         try {
                             loading = true
                             val id = selectedClientId ?: return@launch
-                            val created = repository.emailAccounts.createEmailAccount(
-                                CreateOrUpdateEmailAccountRequestDto(
-                                    clientId = id,
-                                    provider = provider,
-                                    displayName = displayName,
-                                    email = email,
-                                    username = username.ifBlank { null },
-                                    password = password.ifBlank { null },
-                                    serverHost = serverHost.ifBlank { null },
-                                    serverPort = serverPort.toIntOrNull(),
-                                    useSsl = useSsl,
+                            val created =
+                                repository.emailAccounts.createEmailAccount(
+                                    CreateOrUpdateEmailAccountRequestDto(
+                                        clientId = id,
+                                        provider = provider,
+                                        displayName = displayName,
+                                        email = email,
+                                        username = username.ifBlank { null },
+                                        password = password.ifBlank { null },
+                                        serverHost = serverHost.ifBlank { null },
+                                        serverPort = serverPort.toIntOrNull(),
+                                        useSsl = useSsl,
+                                    ),
                                 )
-                            )
                             accounts += created
-                            displayName = ""; email = ""; serverHost = ""; serverPort = "993"; username = ""; password = ""; useSsl = true
+                            displayName = ""
+                            email = ""
+                            serverHost = ""
+                            serverPort = "993"
+                            username = ""
+                            password = ""
+                            useSsl = true
                             error = null
-                        } catch (t: Throwable) { error = t.message } finally { loading = false }
+                        } catch (t: Throwable) {
+                            error = t.message
+                        } finally {
+                            loading = false
+                        }
                     }
                 }
             }
 
             Section("Accounts") {
+                var showDeleteConfirm by remember { mutableStateOf(false) }
+                var accountIdToDelete by remember { mutableStateOf<String?>(null) }
                 LazyColumn(modifier = Modifier.fillMaxWidth()) {
                     items(accounts, key = { it.id ?: it.email }) { acc ->
                         Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(8.dp)
-                                .border(1.dp, Color.LightGray)
-                                .padding(8.dp)
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(8.dp)
+                                    .border(1.dp, Color.LightGray)
+                                    .padding(8.dp),
                         ) {
                             Text("${acc.displayName} <${acc.email}>")
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1639,21 +2000,48 @@ private fun EmailTab(repository: JervisRepository) {
                                         try {
                                             acc.id?.let { repository.emailAccounts.validateEmailAccount(it) }
                                             error = null
-                                        } catch (t: Throwable) { error = t.message }
+                                        } catch (t: Throwable) {
+                                            error = t.message
+                                        }
                                     }
                                 }
-                                TextButtonLike("Delete") {
-                                    scope.launch {
-                                        try {
-                                            acc.id?.let { repository.emailAccounts.deleteEmailAccount(it) }
-                                            accounts.removeAll { it.id == acc.id }
-                                            error = null
-                                        } catch (t: Throwable) { error = t.message }
+                                IconButton(onClick = {
+                                    acc.id?.let {
+                                        accountIdToDelete = it
+                                        showDeleteConfirm = true
                                     }
-                                }
+                                }) { Text("🗑️") }
                             }
                         }
                     }
+                }
+                if (showDeleteConfirm && accountIdToDelete != null) {
+                    AlertDialog(
+                        onDismissRequest = { showDeleteConfirm = false },
+                        title = { Text("Delete Email Account") },
+                        text = { Text("Are you sure you want to delete this email account?") },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        val id = requireNotNull(accountIdToDelete)
+                                        runCatching { repository.emailAccounts.deleteEmailAccount(id) }
+                                            .onSuccess {
+                                                accounts.removeAll { it.id == id }
+                                                accountIdToDelete = null
+                                                showDeleteConfirm = false
+                                            }
+                                            .onFailure { e ->
+                                                error = e.message
+                                                showDeleteConfirm = false
+                                            }
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                            ) { Text("Delete") }
+                        },
+                        dismissButton = { OutlinedButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } }
+                    )
                 }
             }
         }
@@ -1662,12 +2050,16 @@ private fun EmailTab(repository: JervisRepository) {
 
 // ————— Common small UI helpers (foundation-only) —————
 @Composable
-private fun Section(title: String, content: @Composable () -> Unit) {
+private fun Section(
+    title: String,
+    content: @Composable () -> Unit,
+) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
-        colors = CardDefaults.cardColors()
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp),
+        colors = CardDefaults.cardColors(),
     ) {
         Column(Modifier.padding(12.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
@@ -1690,12 +2082,13 @@ private fun <T : Enum<T>> EnumSelector(
             options.forEach { opt ->
                 val selected = opt == value
                 Box(
-                    modifier = Modifier
-                        .padding(4.dp)
-                        .border(1.dp, if (selected) Color(0xFF3366FF) else Color.LightGray)
-                        .background(if (selected) Color(0x113366FF) else Color.Transparent)
-                        .clickable { onChange(if (selected) null else opt) }
-                        .padding(6.dp)
+                    modifier =
+                        Modifier
+                            .padding(4.dp)
+                            .border(1.dp, if (selected) Color(0xFF3366FF) else Color.LightGray)
+                            .background(if (selected) Color(0x113366FF) else Color.Transparent)
+                            .clickable { onChange(if (selected) null else opt) }
+                            .padding(6.dp),
                 ) { Text(opt.name) }
             }
         }
@@ -1703,7 +2096,11 @@ private fun <T : Enum<T>> EnumSelector(
 }
 
 @Composable
-private fun Toggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+private fun Toggle(
+    label: String,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label)
         Spacer(Modifier.size(8.dp))
@@ -1712,13 +2109,17 @@ private fun Toggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit)
 }
 
 @Composable
-private fun LabeledField(label: String, value: String, onChange: (String) -> Unit) {
+private fun LabeledField(
+    label: String,
+    value: String,
+    onChange: (String) -> Unit,
+) {
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         OutlinedTextField(
             value = value,
             onValueChange = onChange,
             label = { Text(label) },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }
@@ -1745,11 +2146,12 @@ private fun SelectableChip(
     val borderColor = if (selected) Color(0xFF3366FF) else Color.LightGray
     val bgColor = if (selected) Color(0x113366FF) else Color.Transparent
     Box(
-        modifier = Modifier
-            .border(1.dp, borderColor)
-            .background(bgColor)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp)
+        modifier =
+            Modifier
+                .border(1.dp, borderColor)
+                .background(bgColor)
+                .clickable(onClick = onClick)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
         Text(text)
     }
@@ -1761,22 +2163,24 @@ private fun InfoBanner(
     isWarning: Boolean = false,
     isError: Boolean = false,
 ) {
-    val bg = when {
-        isError -> MaterialTheme.colorScheme.errorContainer
-        isWarning -> MaterialTheme.colorScheme.tertiaryContainer
-        else -> MaterialTheme.colorScheme.primaryContainer
-    }
-    val fg = when {
-        isError -> MaterialTheme.colorScheme.onErrorContainer
-        isWarning -> MaterialTheme.colorScheme.onTertiaryContainer
-        else -> MaterialTheme.colorScheme.onPrimaryContainer
-    }
+    val bg =
+        when {
+            isError -> MaterialTheme.colorScheme.errorContainer
+            isWarning -> MaterialTheme.colorScheme.tertiaryContainer
+            else -> MaterialTheme.colorScheme.primaryContainer
+        }
+    val fg =
+        when {
+            isError -> MaterialTheme.colorScheme.onErrorContainer
+            isWarning -> MaterialTheme.colorScheme.onTertiaryContainer
+            else -> MaterialTheme.colorScheme.onPrimaryContainer
+        }
     Card(colors = CardDefaults.cardColors(containerColor = bg)) {
         Text(
             text = text,
             color = fg,
             style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(8.dp)
+            modifier = Modifier.padding(8.dp),
         )
     }
 }

@@ -8,5 +8,10 @@ class IndexingStatusRepository(
     private val service: IIndexingStatusService,
 ) {
     suspend fun overview(): IndexingOverviewDto = service.getOverview()
+
     suspend fun detail(toolKey: String): IndexingToolDetailDto = service.getToolDetail(toolKey)
+
+    suspend fun runJiraNow(clientId: String) {
+        service.runJiraNow(clientId)
+    }
 }

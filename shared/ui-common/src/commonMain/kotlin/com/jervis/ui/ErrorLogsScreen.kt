@@ -98,30 +98,16 @@ fun ErrorLogsScreen(
                     }
                 }
                 else -> {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        // Action buttons
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = { showDeleteDialog = true },
-                                enabled = selectedLogId != null,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.error
-                                )
-                            ) {
-                                Text("🗑️ Delete Selected")
-                            }
+                    // Error logs table
+                    ErrorLogsTable(
+                        errorLogs = errorLogs,
+                        selectedLogId = selectedLogId,
+                        onRowSelected = { selectedLogId = it },
+                        onDeleteClick = { logId ->
+                            selectedLogId = logId
+                            showDeleteDialog = true
                         }
-
-                        // Error logs table
-                        ErrorLogsTable(
-                            errorLogs = errorLogs,
-                            selectedLogId = selectedLogId,
-                            onRowSelected = { selectedLogId = it }
-                        )
-                    }
+                    )
                 }
             }
         }
@@ -151,9 +137,7 @@ fun ErrorLogsScreen(
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.error
                     )
-                ) {
-                    Text("Delete")
-                }
+                ) { Text("Delete") }
             },
             dismissButton = {
                 OutlinedButton(onClick = { showDeleteDialog = false }) {
@@ -168,7 +152,8 @@ fun ErrorLogsScreen(
 private fun ErrorLogsTable(
     errorLogs: List<ErrorLogDto>,
     selectedLogId: String?,
-    onRowSelected: (String?) -> Unit
+    onRowSelected: (String?) -> Unit,
+    onDeleteClick: (String) -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -195,12 +180,18 @@ private fun ErrorLogsTable(
                     )
                     Text(
                         text = "Message",
-                        modifier = Modifier.weight(0.65f),
+                        modifier = Modifier.weight(0.55f),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                     )
                     Text(
                         text = "Type",
+                        modifier = Modifier.weight(0.1f),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    )
+                    Text(
+                        text = "Actions",
                         modifier = Modifier.weight(0.1f),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
@@ -238,7 +229,7 @@ private fun ErrorLogsTable(
                     )
                     Text(
                         text = log.message,
-                        modifier = Modifier.weight(0.65f),
+                        modifier = Modifier.weight(0.55f),
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 2,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
@@ -252,6 +243,12 @@ private fun ErrorLogsTable(
                             maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
+                    }
+                    // Delete action
+                    Box(modifier = Modifier.weight(0.1f), contentAlignment = Alignment.CenterEnd) {
+                        IconButton(onClick = { onDeleteClick(log.id) }) {
+                            Text("🗑️")
+                        }
                     }
                 }
             }
