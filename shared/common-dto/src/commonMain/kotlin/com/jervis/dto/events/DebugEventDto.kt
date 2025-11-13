@@ -14,6 +14,7 @@ sealed class DebugEventDto {
         val userPrompt: String,
         val clientId: String? = null,
         val clientName: String? = null,
+        val correlationId: String? = null, // For grouping related LLM sessions
     ) : DebugEventDto()
 
     @Serializable

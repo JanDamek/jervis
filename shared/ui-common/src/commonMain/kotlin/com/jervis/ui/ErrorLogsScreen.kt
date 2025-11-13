@@ -97,68 +97,42 @@ fun ErrorLogsScreen(
                     }
                 }
                 else -> {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        // Action buttons
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            com.jervis.ui.util.DeleteIconButton(
-                                onClick = { showDeleteDialog = true },
-                                enabled = selectedLogId != null,
-                            )
+                    // Error logs table
+                    ErrorLogsTable(
+                        errorLogs = errorLogs,
+                        selectedLogId = selectedLogId,
+                        onRowSelected = { selectedLogId = it },
+                        onDeleteClick = { logId ->
+                            selectedLogId = logId
+                            showDeleteDialog = true
                         }
-
-                        // Error logs table
-                        ErrorLogsTable(
-                            errorLogs = errorLogs,
-                            selectedLogId = selectedLogId,
-                            onRowSelected = { selectedLogId = it },
-                            onDeleteClick = { logId ->
-                                selectedLogId = logId
-                                showDeleteDialog = true
-                            },
-                        )
-                    }
+                    )
                 }
             }
         }
     }
 
     // Delete confirmation dialog
-    if (showDeleteDialog && selectedLogId != null) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Delete Error Log") },
-            text = { Text("Are you sure you want to delete this error log?") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        scope.launch {
-                            try {
-                                repository.errorLogs.deleteErrorLog(selectedLogId!!)
-                                selectedLogId = null
-                                showDeleteDialog = false
-                                loadErrorLogs()
-                            } catch (e: Exception) {
-                                errorMessage = "Failed to delete: ${e.message}"
-                                showDeleteDialog = false
-                            }
-                        }
-                    },
-                    colors =
-                        ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error,
-                        ),
-                ) { Text("Delete") }
-            },
-            dismissButton = {
-                OutlinedButton(onClick = { showDeleteDialog = false }) {
-                    Text("Cancel")
+    com.jervis.ui.util.ConfirmDialog(
+        visible = showDeleteDialog && selectedLogId != null,
+        title = "Delete Error Log",
+        message = "Are you sure you want to delete this error log? This action cannot be undone.",
+        confirmText = "Delete",
+        onConfirm = {
+            scope.launch {
+                try {
+                    repository.errorLogs.deleteErrorLog(selectedLogId!!)
+                    selectedLogId = null
+                    showDeleteDialog = false
+                    loadErrorLogs()
+                } catch (e: Exception) {
+                    errorMessage = "Failed to delete: ${e.message}"
+                    showDeleteDialog = false
                 }
-            },
-        )
-    }
+            }
+        },
+        onDismiss = { showDeleteDialog = false }
+    )
 }
 
 @Composable
@@ -166,7 +140,7 @@ private fun ErrorLogsTable(
     errorLogs: List<ErrorLogDto>,
     selectedLogId: String?,
     onRowSelected: (String?) -> Unit,
-    onDeleteClick: (String) -> Unit,
+    onDeleteClick: (String) -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -200,13 +174,13 @@ private fun ErrorLogsTable(
                     )
                     Text(
                         text = "Type",
-                        modifier = Modifier.weight(0.1f),
+                        modifier = Modifier.weight(0.15f),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                     )
                     Text(
                         text = "Actions",
-                        modifier = Modifier.weight(0.1f),
+                        modifier = Modifier.weight(0.05f),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                     )
@@ -256,18 +230,19 @@ private fun ErrorLogsTable(
                     log.causeType?.let { causeType ->
                         Text(
                             text = causeType.substringAfterLast('.'),
-                            modifier = Modifier.weight(0.1f),
+                            modifier = Modifier.weight(0.15f),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
                             maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         )
-                    }
+                    } ?: Spacer(modifier = Modifier.weight(0.15f))
+
                     // Delete action
-                    Box(modifier = Modifier.weight(0.1f), contentAlignment = Alignment.CenterEnd) {
-                        IconButton(onClick = { onDeleteClick(log.id) }) {
-                            Text("🗑️")
-                        }
+                    Box(modifier = Modifier.weight(0.05f), contentAlignment = Alignment.CenterEnd) {
+                        com.jervis.ui.util.DeleteIconButton(
+                            onClick = { onDeleteClick(log.id) }
+                        )
                     }
                 }
             }

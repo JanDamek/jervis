@@ -10,13 +10,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.user.TaskRoutingMode
 import com.jervis.dto.user.UserTaskDto
 import com.jervis.repository.JervisRepository
+import com.jervis.ui.util.rememberClipboardManager
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -25,14 +25,14 @@ fun UserTasksScreen(
     repository: JervisRepository,
     onBack: () -> Unit
 ) {
-    val clipboard = LocalClipboardManager.current
+    val clipboard = rememberClipboardManager()
     var tasks by remember { mutableStateOf<List<UserTaskDto>>(emptyList()) }
     var allTasks by remember { mutableStateOf<List<UserTaskDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var filterText by remember { mutableStateOf("") }
     var selectedTask by remember { mutableStateOf<UserTaskDto?>(null) }
-    var showRevokeConfirm by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
     var additionalInput by remember { mutableStateOf("") }
     var isSending by remember { mutableStateOf(false) }
 
@@ -84,17 +84,17 @@ fun UserTasksScreen(
         }
     }
 
-    // Handle revoke
-    fun handleRevoke() {
+    // Handle delete
+    fun handleDelete() {
         val task = selectedTask ?: return
         scope.launch {
             try {
                 repository.userTasks.cancel(task.id)
-                showRevokeConfirm = false
+                showDeleteConfirm = false
                 selectedTask = null
                 loadTasks()
             } catch (e: Exception) {
-                errorMessage = "Failed to revoke task: ${e.message}"
+                errorMessage = "Failed to delete task: ${e.message}"
             }
         }
     }
@@ -159,23 +159,11 @@ fun UserTasksScreen(
                 ) {
                     Column(modifier = Modifier.fillMaxSize()) {
                         // Header with action buttons
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Tasks (${tasks.size})",
-                                style = MaterialTheme.typography.titleMedium,
-                                modifier = Modifier.padding(8.dp)
-                            )
-                            com.jervis.ui.util.DeleteIconButton(
-                                onClick = { showRevokeConfirm = true },
-                                enabled = selectedTask != null
-                            )
-                        }
+                        Text(
+                            text = "Tasks (${tasks.size})",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(16.dp)
+                        )
 
                         HorizontalDivider()
 
@@ -227,7 +215,11 @@ fun UserTasksScreen(
                                         UserTaskRow(
                                             task = task,
                                             isSelected = selectedTask?.id == task.id,
-                                            onClick = { selectedTask = task }
+                                            onClick = { selectedTask = task },
+                                            onDelete = {
+                                                selectedTask = task
+                                                showDeleteConfirm = true
+                                            }
                                         )
                                     }
                                 }
@@ -423,36 +415,23 @@ fun UserTasksScreen(
         }
     }
 
-    // Revoke confirmation dialog
-    if (showRevokeConfirm && selectedTask != null) {
-        AlertDialog(
-            onDismissRequest = { showRevokeConfirm = false },
-            title = { Text("Confirm Revoke") },
-            text = { Text("Are you sure you want to revoke this task?") },
-            confirmButton = {
-                Button(
-                    onClick = { handleRevoke() },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("Revoke")
-                }
-            },
-            dismissButton = {
-                OutlinedButton(onClick = { showRevokeConfirm = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
+    // Delete confirmation dialog
+    com.jervis.ui.util.ConfirmDialog(
+        visible = showDeleteConfirm && selectedTask != null,
+        title = "Delete User Task",
+        message = "Are you sure you want to delete this task? This action cannot be undone.",
+        confirmText = "Delete",
+        onConfirm = { handleDelete() },
+        onDismiss = { showDeleteConfirm = false }
+    )
 }
 
 @Composable
 private fun UserTaskRow(
     task: UserTaskDto,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onDelete: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -468,54 +447,64 @@ private fun UserTaskRow(
             defaultElevation = if (isSelected) 4.dp else 1.dp
         )
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp)
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
+            Column(
+                modifier = Modifier.weight(1f)
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = task.title,
-                        style = MaterialTheme.typography.titleSmall,
-                        maxLines = 2
-                    )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.padding(top = 4.dp)
-                    ) {
-                        Badge { Text(task.priority) }
-                        Badge { Text(task.status) }
-                    }
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = task.sourceType,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    task.dueDateEpochMillis?.let {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = formatDate(it),
+                            text = task.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            maxLines = 2
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(top = 4.dp)
+                        ) {
+                            Badge { Text(task.priority) }
+                            Badge { Text(task.status) }
+                        }
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = task.sourceType,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        task.dueDateEpochMillis?.let {
+                            Text(
+                                text = formatDate(it),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
+                }
+
+                if (!task.projectId.isNullOrBlank()) {
+                    Text(
+                        text = "Project: ${task.projectId}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
                 }
             }
 
-            if (!task.projectId.isNullOrBlank()) {
-                Text(
-                    text = "Project: ${task.projectId}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            }
+            com.jervis.ui.util.DeleteIconButton(
+                onClick = { onDelete() }
+            )
         }
     }
 }
