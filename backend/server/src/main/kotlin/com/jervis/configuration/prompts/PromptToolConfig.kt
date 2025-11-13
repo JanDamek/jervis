@@ -1,9 +1,9 @@
 package com.jervis.configuration.prompts
 
-// MCP nástroje – s povinným description
+// MCP tools – description is mandatory
 data class PromptToolConfig(
     override var systemPrompt: String,
     override var userPrompt: String? = null,
-    var description: String, // povinné
+    var description: String,
     override var modelParams: ModelParams,
 ) : PromptConfigBase

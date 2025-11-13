@@ -5,6 +5,8 @@ import com.jervis.domain.plan.Plan
 import com.jervis.domain.plan.PlanStep
 import com.jervis.domain.plan.StepStatusEnum
 import com.jervis.service.gateway.core.LlmGateway
+import com.jervis.service.prompts.ToolSelectorService
+import com.jervis.service.prompts.ToolRequirement
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -17,17 +19,20 @@ import org.springframework.stereotype.Service
 @Service
 class Planner(
     private val llmGateway: LlmGateway,
+    private val toolSelectorService: ToolSelectorService,
 ) {
     private val logger = KotlinLogging.logger {}
 
-    lateinit var availableTools: String
-    lateinit var toolDescriptions: String
-
     @Serializable
-    data class StepDto(
-        val stepToolName: String = "",
+    data class StepPlanDto(
         val stepInstruction: String = "",
         val stepDependsOn: Int = -1,
+    )
+
+    @Serializable
+    data class PlannerResponseDto(
+        val nextSteps: List<StepPlanDto> = emptyList(),
+        val tool_requirements: List<ToolRequirement> = emptyList(),
     )
 
     /**
@@ -41,7 +46,7 @@ class Planner(
             llmGateway.callLlm(
                 type = PromptTypeEnum.PLANNING_CREATE_PLAN_TOOL,
                 quick = plan.quick,
-                responseSchema = listOf(StepDto()),
+                responseSchema = PlannerResponseDto(),
                 mappingValue = buildStepsContext(plan),
                 backgroundMode = plan.backgroundMode,
             )
@@ -52,9 +57,29 @@ class Planner(
             plan.thinkingSequence += thinkContent
         }
 
+        val plannerOut = parsedResponse.result
+        // Audit: log declared tool requirements from planner
+        if (plannerOut.tool_requirements.isNotEmpty()) {
+            logger.info { "[PLANNER_AUDIT] tool_requirements=${plannerOut.tool_requirements.map { it.capability to it.detail }}" }
+        } else {
+            logger.info { "[PLANNER_AUDIT] tool_requirements=[]" }
+        }
+
+        val selectedTools = toolSelectorService.selectTools(plannerOut.tool_requirements)
+        // Audit: log selected tools mapping
+        if (selectedTools.isNotEmpty()) {
+            logger.info { "[TOOL_SELECTOR_AUDIT] selectedTools=${selectedTools.map { it.tool.name to it.params }}" }
+        } else {
+            logger.info { "[TOOL_SELECTOR_AUDIT] selectedTools=[]" }
+        }
+
         val newSteps =
-            parsedResponse.result.mapIndexed { index, dto ->
-                createPlanStep(dto, plan.id, plan.steps.size + index + 1)
+            plannerOut.nextSteps.mapIndexed { index, dto ->
+                val chosenTool =
+                    selectedTools.getOrNull(index)?.tool
+                        ?: selectedTools.firstOrNull()?.tool
+                        ?: PromptTypeEnum.ANALYSIS_REASONING_TOOL
+                createPlanStep(chosenTool, dto, plan.id, plan.steps.size + index + 1)
             }
 
         logger.info { "Suggested ${newSteps.size} next steps for plan ${plan.id}" }
@@ -62,27 +87,19 @@ class Planner(
     }
 
     private fun createPlanStep(
-        dto: StepDto,
+        tool: PromptTypeEnum,
+        dto: StepPlanDto,
         planId: ObjectId,
         order: Int,
-    ): PlanStep {
-        val validToolName =
-            PromptTypeEnum.fromString(dto.stepToolName)
-                ?: correctToolName(dto.stepToolName)
-                ?: run {
-                    logger.error { "[PLANNER_VALIDATION] Invalid step tool name '${dto.stepToolName}', no matching enum or alias found" }
-                    throw IllegalArgumentException("Unknown tool: ${dto.stepToolName}")
-                }
-
-        return PlanStep(
+    ): PlanStep =
+        PlanStep(
             id = ObjectId(),
             order = order,
-            stepToolName = validToolName,
+            stepToolName = tool,
             stepInstruction = dto.stepInstruction,
             stepDependsOn = dto.stepDependsOn,
             status = StepStatusEnum.PENDING,
         )
-    }
 
     /**
      * Attempts to correct common tool name mistakes made by LLM models.
@@ -175,8 +192,6 @@ class Planner(
                     .joinToString("\n") { "${it.stepToolName}:${it.toolResult}" },
             "totalSteps" to plan.steps.size.toString(),
             "questionChecklist" to plan.questionChecklist.joinToString(", "),
-            "availableTools" to availableTools,
-            "toolDescriptions" to toolDescriptions,
             // Add missing placeholders for PLANNING_CREATE_PLAN userPrompt
             "clientDescription" to (
                 plan.clientDocument.description

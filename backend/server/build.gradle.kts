@@ -99,15 +99,6 @@ dependencies {
 
     // LangChain4j for text chunking
     implementation(libs.langchain4j)
-
-    // Google Cloud APIs (commented out for future use)
-    // implementation(platform(libs.google.cloud.bom))
-    // implementation(libs.google.cloud.texttospeech)
-    // implementation(libs.google.cloud.speech)
-    // implementation(libs.google.cloud.translate)
-    // implementation(libs.google.cloud.vision)
-
-    testImplementation(libs.junit.jupiter)
 }
 
 kotlin {

@@ -13,7 +13,7 @@ prompts:
       NEVER respond as if you are creating a task ("Create X", "Send Y").
       ALWAYS respond as if you have planned, scheduled, or completed the action.
       
-      NEVER invent information. Use only provided tool outputs.
+      STRICT: Use only provided tool outputs; NEVER infer missing data.
       If no information found, state clearly and suggest next steps.
       Be concise and actionable.
     userPrompt: |
