@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun ErrorLogsScreen(
     repository: JervisRepository,
-    onBack: () -> Unit
+    onBack: () -> Unit,
 ) {
     var errorLogs by remember { mutableStateOf<List<ErrorLogDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
@@ -54,10 +54,11 @@ fun ErrorLogsScreen(
                     }
                 },
                 actions = {
-                    com.jervis.ui.util.RefreshIconButton(onClick = { loadErrorLogs() })
-                }
+                    com.jervis.ui.util
+                        .RefreshIconButton(onClick = { loadErrorLogs() })
+                },
             )
-        }
+        },
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when {
@@ -67,15 +68,15 @@ fun ErrorLogsScreen(
                 errorMessage != null -> {
                     Column(
                         modifier = Modifier.align(Alignment.Center).padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text(
                             text = errorMessage!!,
-                            color = MaterialTheme.colorScheme.error
+                            color = MaterialTheme.colorScheme.error,
                         )
                         Button(
                             onClick = { loadErrorLogs() },
-                            modifier = Modifier.padding(top = 8.dp)
+                            modifier = Modifier.padding(top = 8.dp),
                         ) {
                             Text("Retry")
                         }
@@ -84,12 +85,12 @@ fun ErrorLogsScreen(
                 errorLogs.isEmpty() -> {
                     Column(
                         modifier = Modifier.align(Alignment.Center).padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text(
                             "✓",
                             style = MaterialTheme.typography.displayLarge,
-                            color = MaterialTheme.colorScheme.primary
+                            color = MaterialTheme.colorScheme.primary,
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text("No errors recorded")
@@ -100,24 +101,25 @@ fun ErrorLogsScreen(
                         // Action buttons
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             com.jervis.ui.util.DeleteIconButton(
                                 onClick = { showDeleteDialog = true },
-                                enabled = selectedLogId != null
+                                enabled = selectedLogId != null,
                             )
                         }
 
-                    // Error logs table
-                    ErrorLogsTable(
-                        errorLogs = errorLogs,
-                        selectedLogId = selectedLogId,
-                        onRowSelected = { selectedLogId = it },
-                        onDeleteClick = { logId ->
-                            selectedLogId = logId
-                            showDeleteDialog = true
-                        }
-                    )
+                        // Error logs table
+                        ErrorLogsTable(
+                            errorLogs = errorLogs,
+                            selectedLogId = selectedLogId,
+                            onRowSelected = { selectedLogId = it },
+                            onDeleteClick = { logId ->
+                                selectedLogId = logId
+                                showDeleteDialog = true
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -144,16 +146,17 @@ fun ErrorLogsScreen(
                             }
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                        ),
                 ) { Text("Delete") }
             },
             dismissButton = {
                 OutlinedButton(onClick = { showDeleteDialog = false }) {
                     Text("Cancel")
                 }
-            }
+            },
         )
     }
 }
@@ -163,48 +166,49 @@ private fun ErrorLogsTable(
     errorLogs: List<ErrorLogDto>,
     selectedLogId: String?,
     onRowSelected: (String?) -> Unit,
-    onDeleteClick: (String) -> Unit
+    onDeleteClick: (String) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         // Header
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                )
+                colors =
+                    CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    ),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
                         text = "Timestamp",
                         modifier = Modifier.weight(0.25f),
                         style = MaterialTheme.typography.labelLarge,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                     )
                     Text(
                         text = "Message",
                         modifier = Modifier.weight(0.55f),
                         style = MaterialTheme.typography.labelLarge,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                     )
                     Text(
                         text = "Type",
                         modifier = Modifier.weight(0.1f),
                         style = MaterialTheme.typography.labelLarge,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                     )
                     Text(
                         text = "Actions",
                         modifier = Modifier.weight(0.1f),
                         style = MaterialTheme.typography.labelLarge,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                     )
                 }
             }
@@ -214,35 +218,40 @@ private fun ErrorLogsTable(
         items(errorLogs) { log ->
             val isSelected = selectedLogId == log.id
             Card(
-                modifier = Modifier.fillMaxWidth().clickable {
-                    onRowSelected(if (isSelected) null else log.id)
-                },
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isSelected)
-                        MaterialTheme.colorScheme.secondaryContainer
-                    else
-                        MaterialTheme.colorScheme.surface
-                ),
-                elevation = CardDefaults.cardElevation(
-                    defaultElevation = if (isSelected) 4.dp else 1.dp
-                )
+                modifier =
+                    Modifier.fillMaxWidth().clickable {
+                        onRowSelected(if (isSelected) null else log.id)
+                    },
+                colors =
+                    CardDefaults.cardColors(
+                        containerColor =
+                            if (isSelected) {
+                                MaterialTheme.colorScheme.secondaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surface
+                            },
+                    ),
+                elevation =
+                    CardDefaults.cardElevation(
+                        defaultElevation = if (isSelected) 4.dp else 1.dp,
+                    ),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(12.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         text = log.createdAt,
                         modifier = Modifier.weight(0.25f),
-                        style = MaterialTheme.typography.bodySmall
+                        style = MaterialTheme.typography.bodySmall,
                     )
                     Text(
                         text = log.message,
                         modifier = Modifier.weight(0.55f),
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 2,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     )
                     log.causeType?.let { causeType ->
                         Text(
@@ -251,7 +260,7 @@ private fun ErrorLogsTable(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
                             maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         )
                     }
                     // Delete action
