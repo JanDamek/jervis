@@ -7,6 +7,7 @@ import com.jervis.dto.GitBranchListDto
 import com.jervis.dto.GitSetupRequestDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ProjectGitOverrideRequestDto
+import com.jervis.dto.GitTestConnectionResponseDto
 import de.jensklingenberg.ktorfit.http.Body
 import de.jensklingenberg.ktorfit.http.GET
 import de.jensklingenberg.ktorfit.http.POST
@@ -45,7 +46,7 @@ import de.jensklingenberg.ktorfit.http.Query
     suspend fun testConnection(
         @Path clientId: String,
         @Body request: GitSetupRequestDto,
-    ): Map<String, Any>
+    ): GitTestConnectionResponseDto
 
     /**
      * Clone client's mono-repository to local storage.

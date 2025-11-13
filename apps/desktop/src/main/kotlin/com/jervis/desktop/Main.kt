@@ -68,6 +68,10 @@ fun main() = application {
                 showMainWindow = true
                 navigator.navigateTo(com.jervis.ui.navigation.Screen.ErrorLogs)
             })
+            Item("Indexing Status", onClick = {
+                showMainWindow = true
+                navigator.navigateTo(com.jervis.ui.navigation.Screen.IndexingStatus)
+            })
             Separator()
             Item("RAG Search", onClick = {
                 showMainWindow = true
@@ -113,6 +117,9 @@ fun main() = application {
                 Item("Scheduler", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.Scheduler) })
                 Separator()
                 Item("Debug Console", onClick = { showDebug = true })
+            }
+            Menu("Indexing") {
+                Item("Indexing Status", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.IndexingStatus) })
             }
             Menu("Help") {
                 Item("About") {

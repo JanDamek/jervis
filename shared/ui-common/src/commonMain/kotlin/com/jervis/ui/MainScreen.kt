@@ -7,6 +7,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
@@ -327,6 +330,7 @@ private fun ChatMessageItem(
     message: ChatMessage,
     modifier: Modifier = Modifier,
 ) {
+    val clipboard = LocalClipboardManager.current
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement =
@@ -362,10 +366,20 @@ private fun ChatMessageItem(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                Text(
-                    text = message.text,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                // Copy button aligned to the end of the bubble
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { clipboard.setText(AnnotatedString(message.text)) }) {
+                        Text("Copy")
+                    }
+                }
+
+                // Selectable message text
+                SelectionContainer {
+                    Text(
+                        text = message.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
             }
         }
     }
