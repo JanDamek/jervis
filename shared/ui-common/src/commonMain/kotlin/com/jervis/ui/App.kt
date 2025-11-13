@@ -75,6 +75,10 @@ fun App(
                 repository = repository,
                 onBack = { appNavigator.navigateTo(Screen.Main) }
             )
+            Screen.PendingTasks -> PendingTasksScreen(
+                repository = repository,
+                onBack = { appNavigator.navigateTo(Screen.Main) }
+            )
             Screen.ErrorLogs -> ErrorLogsScreen(
                 repository = repository,
                 onBack = { appNavigator.navigateTo(Screen.Main) }

@@ -104,12 +104,67 @@ fun IndexingStatusScreen(
                                         Text(
                                             it,
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            color = MaterialTheme.colorScheme.primary,
                                         )
                                     }
-                                    Spacer(Modifier.height(4.dp))
-                                    Text("Processed: ${s.processed}  •  Errors: ${s.errors}")
-                                    s.lastError?.let { Text("Last error: $it", color = MaterialTheme.colorScheme.error) }
+                                    Spacer(Modifier.height(6.dp))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text(
+                                            "✓ Processed: ${s.processed}",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                        if (s.errors > 0) {
+                                            Text(
+                                                "⚠ Errors: ${s.errors}",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.error,
+                                            )
+                                        }
+                                    }
+                                    // Detailed error message if present
+                                    s.lastError?.let { errorMsg ->
+                                        Spacer(Modifier.height(8.dp))
+                                        Card(
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                            ),
+                                        ) {
+                                            Column(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                ) {
+                                                    Text(
+                                                        "⚠",
+                                                        style = MaterialTheme.typography.titleMedium,
+                                                        color = MaterialTheme.colorScheme.error,
+                                                    )
+                                                    Text(
+                                                        "Last Error:",
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                                    )
+                                                }
+                                                Spacer(Modifier.height(4.dp))
+                                                Text(
+                                                    errorMsg,
+                                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                )
+                                            }
+                                        }
+                                    }
+                                    if (s.state.name == "RUNNING") {
+                                        s.runningSince?.let {
+                                            Spacer(Modifier.height(4.dp))
+                                            Text(
+                                                "Running since: $it",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }

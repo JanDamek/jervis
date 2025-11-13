@@ -36,6 +36,7 @@ fun JervisApp(
             jiraSetupService = services.jiraSetupService,
             emailAccountService = services.emailAccountService,
             indexingStatusService = services.indexingStatusService,
+            pendingTaskService = services.pendingTaskService,
         )
     }
 

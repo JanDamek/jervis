@@ -17,6 +17,7 @@ sealed class Screen {
     // Tasks & Scheduling
     object UserTasks : Screen()
     object Scheduler : Screen()
+    object PendingTasks : Screen()
 
     // Search & Logs
     object RagSearch : Screen()
