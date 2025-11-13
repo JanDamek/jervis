@@ -70,11 +70,7 @@ class ConfluenceTaskCreator(
 
                 appendLine()
                 appendLine("=== PAGE CONTENT ===")
-                appendLine(plainText.take(10000)) // Limit content for task creation (full content in RAG)
-                if (plainText.length > 10000) {
-                    appendLine()
-                    appendLine("[... content truncated, full text available via RAG search ...]")
-                }
+                appendLine(plainText)
                 appendLine("=== END PAGE CONTENT ===")
             }
 

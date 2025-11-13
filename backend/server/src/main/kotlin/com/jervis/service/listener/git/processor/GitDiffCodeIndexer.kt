@@ -203,12 +203,6 @@ class GitDiffCodeIndexer(
 
                 val total = codeChunks.size
                 val lang = codeChange.filePath.substringAfterLast('.', missingDelimiterValue = "unknown")
-                val preview =
-                    chunk
-                        .lineSequence()
-                        .take(80)
-                        .joinToString("\n")
-                        .take(1200)
 
                 val ragDocument =
                     RagDocument(
@@ -220,7 +214,7 @@ class GitDiffCodeIndexer(
                                 append("lang=$lang ")
                                 append("file=${codeChange.filePath} ")
                                 append("commit=$commitHash chunk=${index + 1}/$total\n\n")
-                                append(preview)
+                                append(chunk)
                             },
                         clientId = project.clientId,
                         fileName = codeChange.filePath,
@@ -325,12 +319,6 @@ class GitDiffCodeIndexer(
                         val sourceId = "$commitHash:${codeChange.filePath}:text-chunk-$index"
 
                         val total = textChunks.size
-                        val preview =
-                            chunk
-                                .lineSequence()
-                                .take(80)
-                                .joinToString("\n")
-                                .take(1200)
 
                         val ragDocument =
                             RagDocument(
@@ -341,7 +329,7 @@ class GitDiffCodeIndexer(
                                         append("TEXT_CHANGE ")
                                         append("file=${codeChange.filePath} ")
                                         append("commit=$commitHash chunk=${index + 1}/$total\n\n")
-                                        append(preview)
+                                        append(chunk)
                                     },
                                 clientId = project.clientId,
                                 fileName = codeChange.filePath,

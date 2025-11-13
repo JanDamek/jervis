@@ -143,5 +143,5 @@ class PlanExecutor(
     /**
      * Create a brief summary of a tool result for context
      */
-    private fun summarizeToolResult(toolResult: ToolResult?): String = toolResult?.output?.take(200) ?: "No result"
+    private fun summarizeToolResult(toolResult: ToolResult?): String = toolResult?.output ?: "No result"
 }

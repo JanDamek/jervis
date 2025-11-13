@@ -86,6 +86,5 @@ class EmbeddingGateway(
             .replace(Regex("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]"), " ") // Remove control chars only
             .replace(Regex("\\s+"), " ") // Normalize multiple spaces (but preserve single newlines)
             .trim() // Remove leading/trailing spaces
-            .take(8192) // Limit length to reasonable maximum for safety
     }
 }

@@ -11,7 +11,6 @@ import java.time.Instant
  */
 @Service
 class IndexingStatusRegistry {
-
     data class ToolState(
         val toolKey: String,
         var displayName: String,
@@ -22,6 +21,8 @@ class IndexingStatusRegistry {
         var lastError: String? = null,
         var lastRunStartedAt: Instant? = null,
         var lastRunFinishedAt: Instant? = null,
+        /** Short human readable reason/context for current run (or last run) */
+        var reason: String? = null,
         val items: ArrayDeque<Item> = ArrayDeque(),
     )
 
@@ -38,11 +39,19 @@ class IndexingStatusRegistry {
     private val mutex = Mutex()
     private val tools = linkedMapOf<String, ToolState>()
 
-    suspend fun ensureTool(toolKey: String, displayName: String = toolKey): ToolState = mutex.withLock {
-        tools.getOrPut(toolKey) { ToolState(toolKey, displayName) }
-    }
+    suspend fun ensureTool(
+        toolKey: String,
+        displayName: String = toolKey,
+    ): ToolState =
+        mutex.withLock {
+            tools.getOrPut(toolKey) { ToolState(toolKey, displayName) }
+        }
 
-    suspend fun start(toolKey: String, displayName: String = toolKey, message: String? = null) {
+    suspend fun start(
+        toolKey: String,
+        displayName: String = toolKey,
+        message: String? = null,
+    ) {
         mutex.withLock {
             val t = tools.getOrPut(toolKey) { ToolState(toolKey, displayName) }
             t.displayName = displayName
@@ -53,11 +62,16 @@ class IndexingStatusRegistry {
             t.errors = 0
             t.lastError = null
             t.items.clear()
+            t.reason = message // use start message as short reason/context
             message?.let { t.items.add(Item(Instant.now(), "INFO", it)) }
         }
     }
 
-    suspend fun progress(toolKey: String, processedInc: Int = 1, message: String? = null) {
+    suspend fun progress(
+        toolKey: String,
+        processedInc: Int = 1,
+        message: String? = null,
+    ) {
         mutex.withLock {
             val t = tools[toolKey] ?: return
             t.processed += processedInc
@@ -66,14 +80,21 @@ class IndexingStatusRegistry {
         }
     }
 
-    suspend fun info(toolKey: String, message: String) {
+    suspend fun info(
+        toolKey: String,
+        message: String,
+    ) {
         mutex.withLock {
             val t = tools[toolKey] ?: return
             t.items.add(Item(Instant.now(), "INFO", message))
+            t.reason = message // update reason when an info is sent
         }
     }
 
-    suspend fun error(toolKey: String, message: String) {
+    suspend fun error(
+        toolKey: String,
+        message: String,
+    ) {
         mutex.withLock {
             val t = tools[toolKey] ?: return
             t.errors += 1
@@ -82,17 +103,24 @@ class IndexingStatusRegistry {
         }
     }
 
-    suspend fun finish(toolKey: String, message: String? = null) {
+    suspend fun finish(
+        toolKey: String,
+        message: String? = null,
+    ) {
         mutex.withLock {
             val t = tools[toolKey] ?: return
             t.lastRunFinishedAt = Instant.now()
             t.state = State.IDLE
             t.runningSince = null
             message?.let { t.items.add(Item(Instant.now(), "INFO", it)) }
+            // preserve reason (last run context) or clear if requested
         }
     }
 
     suspend fun snapshot(): List<ToolState> = mutex.withLock { tools.values.map { it.copy(items = ArrayDeque(it.items)) } }
 
-    suspend fun toolDetail(toolKey: String): ToolState? = mutex.withLock { tools[toolKey]?.copy(items = ArrayDeque(tools[toolKey]!!.items)) }
+    suspend fun toolDetail(toolKey: String): ToolState? =
+        mutex.withLock {
+            tools[toolKey]?.copy(items = ArrayDeque(tools[toolKey]!!.items))
+        }
 }

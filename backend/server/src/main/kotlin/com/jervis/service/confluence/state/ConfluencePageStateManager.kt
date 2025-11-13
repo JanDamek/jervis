@@ -146,7 +146,7 @@ class ConfluencePageStateManager(
         val updated =
             page.copy(
                 state = ConfluencePageStateEnum.FAILED,
-                errorMessage = errorMessage.take(500), // Truncate long errors
+                errorMessage = errorMessage,
                 updatedAt = Instant.now(),
             )
 

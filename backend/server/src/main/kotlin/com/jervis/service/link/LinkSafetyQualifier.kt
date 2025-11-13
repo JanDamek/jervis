@@ -493,7 +493,7 @@ class LinkSafetyQualifier(
         val patternDoc =
             UnsafeLinkPatternDocument(
                 pattern = pattern,
-                description = description.take(200),
+                description = description,
                 exampleUrl = exampleUrl,
                 matchCount = 1,
                 createdAt = Instant.now(),

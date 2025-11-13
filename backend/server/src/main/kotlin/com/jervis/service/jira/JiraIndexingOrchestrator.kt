@@ -32,141 +32,161 @@ class JiraIndexingOrchestrator(
     private val jiraAttachmentIndexer: JiraAttachmentIndexer,
     private val configCache: com.jervis.service.cache.ClientProjectConfigCache,
     private val connectionService: JiraConnectionService,
+    private val indexingRegistry: com.jervis.service.indexing.status.IndexingStatusRegistry,
 ) {
     private val logger = KotlinLogging.logger {}
 
     /** Entry point for Jira indexing for a client. Safe to call from scheduler. */
     suspend fun indexClient(clientId: ObjectId) =
         withContext(Dispatchers.IO) {
-            logger.info { "JIRA_INDEX: Start for client=${clientId.toHexString()}" }
+            val runReason = "Indexing JIRA for client=${clientId.toHexString()}"
+            kotlin.runCatching { indexingRegistry.start("jira", displayName = "Jira Indexing", message = runReason) }
 
-            // Ensure we have a connection and it's VALID before proceeding
-            val connectionDoc = connectionRepository.findByClientId(clientId)
-            if (connectionDoc == null) {
-                logger.warn { "JIRA_INDEX: No Jira connection configured for client=${clientId.toHexString()}" }
-                return@withContext
-            }
-            if (connectionDoc.authStatus != "VALID") {
-                logger.warn { "JIRA_INDEX: Skipping client=${clientId.toHexString()} due to authStatus=${connectionDoc.authStatus}. Use Test Connection to enable." }
-                return@withContext
-            }
+            try {
+                logger.info { "JIRA_INDEX: Start for client=${clientId.toHexString()}" }
 
-            selection.getConnection(clientId).let { auth.ensureValidToken(it) }
-
-            // Ensure selections exist (fail fast if missing; no background config tasks)
-            val (primaryProject, me) =
-                runCatching { selection.ensureSelectionsOrCreateTasks(clientId) }
-                    .onFailure { e ->
-                        logger.warn { "JIRA_INDEX: Missing selections for client=${clientId.toHexString()} - ${e.message}" }
-                    }.getOrElse { return@withContext }
-
-            // Build mapping: Jira project key → Jervis projectId
-            // Uses in-memory cache for instant access, no DB roundtrip
-            val jiraProjectMapping: Map<String, ObjectId> =
-                try {
-                    val projects = configCache.getProjectsForClient(clientId)
-                    projects.mapNotNull { project ->
-                        project.overrides?.jiraProjectKey?.let { jiraKey ->
-                            jiraKey to project.id
-                        }
-                    }.toMap()
-                } catch (e: Exception) {
-                    logger.warn(e) { "JIRA_INDEX: Failed to load Jira project mapping from cache for client=${clientId.toHexString()}" }
-                    emptyMap()
+                // Ensure we have a connection and it's VALID before proceeding
+                val connectionDoc = connectionRepository.findByClientId(clientId)
+                if (connectionDoc == null) {
+                    logger.warn { "JIRA_INDEX: No Jira connection configured for client=${clientId.toHexString()}" }
+                    return@withContext
+                }
+                if (connectionDoc.authStatus != "VALID") {
+                    logger.warn {
+                        "JIRA_INDEX: Skipping client=${clientId.toHexString()} due to authStatus=${connectionDoc.authStatus}. Use Test Connection to enable."
+                    }
+                    return@withContext
                 }
 
-            // Fetch ALL Jira projects for this client (not just mapped ones)
-            val connValid = selection.getConnection(clientId).let { auth.ensureValidToken(it) }
-            val allJiraProjects: List<JiraProjectKey> =
-                try {
-                    api.listProjects(connValid).map { (key, _) -> key }
-                } catch (e: Exception) {
-                    // If this looks like an auth error, mark INVALID to stop further attempts until user fixes it
+                selection.getConnection(clientId).let { auth.ensureValidToken(it) }
+
+                // Ensure selections exist (fail fast if missing; no background config tasks)
+                val (primaryProject, me) =
+                    runCatching { selection.ensureSelectionsOrCreateTasks(clientId) }
+                        .onFailure { e ->
+                            logger.warn { "JIRA_INDEX: Missing selections for client=${clientId.toHexString()} - ${e.message}" }
+                        }.getOrElse { return@withContext }
+
+                // Build mapping: Jira project key → Jervis projectId
+                // Uses in-memory cache for instant access, no DB roundtrip
+                val jiraProjectMapping: Map<String, ObjectId> =
+                    try {
+                        val projects = configCache.getProjectsForClient(clientId)
+                        projects
+                            .mapNotNull { project ->
+                                project.overrides?.jiraProjectKey?.let { jiraKey ->
+                                    jiraKey to project.id
+                                }
+                            }.toMap()
+                    } catch (e: Exception) {
+                        logger.warn(e) { "JIRA_INDEX: Failed to load Jira project mapping from cache for client=${clientId.toHexString()}" }
+                        emptyMap()
+                    }
+
+                // Fetch ALL Jira projects for this client (not just mapped ones)
+                val connValid = selection.getConnection(clientId).let { auth.ensureValidToken(it) }
+                val allJiraProjects: List<JiraProjectKey> =
+                    try {
+                        api.listProjects(connValid).map { (key, _) -> key }
+                    } catch (e: Exception) {
+                        // If this looks like an auth error, mark INVALID to stop further attempts until user fixes it
+                        val doc = connectionRepository.findByClientId(clientId)
+                        if (doc != null) {
+                            runCatching { connectionService.markAuthInvalid(doc, e.message) }
+                        }
+                        logger.warn(
+                            e,
+                        ) {
+                            "JIRA_INDEX: Failed to list all Jira projects for client=${clientId.toHexString()}, falling back to primary project only"
+                        }
+                        listOf(primaryProject)
+                    }
+
+                // Determine incremental window based on last sync
+                val latestConnDoc = connectionRepository.findByClientId(clientId)
+                val lastSyncedAt = latestConnDoc?.lastSyncedAt
+                val baseJqlSuffix =
+                    if (lastSyncedAt == null) "AND updated >= -30d ORDER BY updated DESC" else "ORDER BY updated DESC"
+
+                allJiraProjects.forEach { projectKey ->
+                    val key = projectKey.value
+                    val jql = "project = $key $baseJqlSuffix"
+                    val jervisProjectId = jiraProjectMapping[key] // null if not mapped
+
+                    runCatching {
+                        val tenantHost = connValid.tenant.value
+                        api
+                            .searchIssues(connValid, jql, updatedSinceEpochMs = lastSyncedAt?.toEpochMilli())
+                            .collect { issue ->
+                                val assignedToMe = issue.assignee?.value == me.value
+                                if (!assignedToMe) {
+                                    // Shallow: one compact narrative chunk
+                                    indexIssueSummaryShallow(
+                                        clientId,
+                                        issue.key,
+                                        projectKey,
+                                        assignedToMe,
+                                        issue.summary,
+                                        issue.status,
+                                        issue.updated,
+                                        tenantHost,
+                                        jervisProjectId,
+                                    )
+                                } else {
+                                    // Deep: summary + comments + attachments
+                                    indexIssueSummaryShallow(
+                                        clientId,
+                                        issue.key,
+                                        projectKey,
+                                        assignedToMe,
+                                        issue.summary,
+                                        issue.status,
+                                        issue.updated,
+                                        tenantHost,
+                                        jervisProjectId,
+                                    )
+                                    indexIssueCommentsDeep(
+                                        clientId = clientId,
+                                        issueKey = issue.key,
+                                        project = projectKey,
+                                        tenantHost = tenantHost,
+                                        jervisProjectId = jervisProjectId,
+                                    )
+                                    // Index attachments (screenshots, docs, logs, etc.)
+                                    jiraAttachmentIndexer.indexIssueAttachments(
+                                        conn = connValid,
+                                        issueKey = issue.key,
+                                        clientId = clientId,
+                                        tenantHost = tenantHost,
+                                        projectId = jervisProjectId,
+                                    )
+                                }
+                            }
+                    }.onFailure { e ->
+                        logger.error(e) { "JIRA_INDEX: search failed for client=${clientId.toHexString()} project=$key" }
+                        // Fail fast: continue other keys but surface error count via logs
+                    }
+                }
+
+                logger.info { "JIRA_INDEX: Done for client=${clientId.toHexString()} (projects=${allJiraProjects.size})" }
+
+                // Update last synced timestamp on successful completion
+                runCatching {
                     val doc = connectionRepository.findByClientId(clientId)
                     if (doc != null) {
-                        runCatching { connectionService.markAuthInvalid(doc, e.message) }
+                        val updated = doc.copy(lastSyncedAt = Instant.now(), updatedAt = Instant.now())
+                        connectionRepository.save(updated)
                     }
-                    logger.warn(e) { "JIRA_INDEX: Failed to list all Jira projects for client=${clientId.toHexString()}, falling back to primary project only" }
-                    listOf(primaryProject)
-                }
-
-            // Determine incremental window based on last sync
-            val latestConnDoc = connectionRepository.findByClientId(clientId)
-            val lastSyncedAt = latestConnDoc?.lastSyncedAt
-            val baseJqlSuffix =
-                if (lastSyncedAt == null) "AND updated >= -30d ORDER BY updated DESC" else "ORDER BY updated DESC"
-
-            allJiraProjects.forEach { projectKey ->
-                val key = projectKey.value
-                val jql = "project = $key $baseJqlSuffix"
-                val jervisProjectId = jiraProjectMapping[key] // null if not mapped
-
-                runCatching {
-                    val tenantHost = connValid.tenant.value
-                    api
-                        .searchIssues(connValid, jql, updatedSinceEpochMs = lastSyncedAt?.toEpochMilli())
-                        .collect { issue ->
-                            val assignedToMe = issue.assignee?.value == me.value
-                            if (!assignedToMe) {
-                                // Shallow: one compact narrative chunk
-                                indexIssueSummaryShallow(
-                                    clientId,
-                                    issue.key,
-                                    projectKey,
-                                    assignedToMe,
-                                    issue.summary,
-                                    issue.status,
-                                    issue.updated,
-                                    tenantHost,
-                                    jervisProjectId,
-                                )
-                            } else {
-                                // Deep: summary + comments + attachments
-                                indexIssueSummaryShallow(
-                                    clientId,
-                                    issue.key,
-                                    projectKey,
-                                    assignedToMe,
-                                    issue.summary,
-                                    issue.status,
-                                    issue.updated,
-                                    tenantHost,
-                                    jervisProjectId,
-                                )
-                                indexIssueCommentsDeep(
-                                    clientId = clientId,
-                                    issueKey = issue.key,
-                                    project = projectKey,
-                                    tenantHost = tenantHost,
-                                    jervisProjectId = jervisProjectId,
-                                )
-                                // Index attachments (screenshots, docs, logs, etc.)
-                                jiraAttachmentIndexer.indexIssueAttachments(
-                                    conn = connValid,
-                                    issueKey = issue.key,
-                                    clientId = clientId,
-                                    tenantHost = tenantHost,
-                                    projectId = jervisProjectId,
-                                )
-                            }
-                        }
                 }.onFailure { e ->
-                    logger.error(e) { "JIRA_INDEX: search failed for client=${clientId.toHexString()} project=$key" }
-                    // Fail fast: continue other keys but surface error count via logs
+                    logger.warn(e) { "JIRA_INDEX: Failed to update lastSyncedAt for client=${clientId.toHexString()}" }
                 }
-            }
-
-            logger.info { "JIRA_INDEX: Done for client=${clientId.toHexString()} (projects=${allJiraProjects.size})" }
-
-            // Update last synced timestamp on successful completion
-            runCatching {
-                val doc = connectionRepository.findByClientId(clientId)
-                if (doc != null) {
-                    val updated = doc.copy(lastSyncedAt = Instant.now(), updatedAt = Instant.now())
-                    connectionRepository.save(updated)
+            } finally {
+                kotlin.runCatching {
+                    indexingRegistry.finish(
+                        "jira",
+                        message = "Jira indexer finished for client=${clientId.toHexString()}",
+                    )
                 }
-            }.onFailure { e ->
-                logger.warn(e) { "JIRA_INDEX: Failed to update lastSyncedAt for client=${clientId.toHexString()}" }
             }
         }
 
@@ -338,6 +358,10 @@ class JiraIndexingOrchestrator(
      */
     private fun extractLinksFromText(text: String): List<String> {
         val urlPattern = Regex("""https?://[^\s<>"{}|\\^`\[\]]+""")
-        return urlPattern.findAll(text).map { it.value }.distinct().toList()
+        return urlPattern
+            .findAll(text)
+            .map { it.value }
+            .distinct()
+            .toList()
     }
 }
