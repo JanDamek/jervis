@@ -26,6 +26,8 @@ data class PendingTaskDocument(
     val createdAt: Instant = Instant.now(),
     @Indexed
     val state: String,
+    @Indexed
+    val correlationId: String? = null, // For distributed tracing - nullable for backward compatibility
 ) {
     fun toDomain(): PendingTask =
         PendingTask(
@@ -36,6 +38,7 @@ data class PendingTaskDocument(
             clientId = clientId ?: error("PendingTaskDocument $id has null clientId"),
             createdAt = createdAt,
             state = PendingTaskState.valueOf(state),
+            correlationId = correlationId ?: id.toHexString(), // Fallback to taskId for old documents
         )
 
     companion object {
@@ -48,6 +51,7 @@ data class PendingTaskDocument(
                 clientId = domain.clientId,
                 createdAt = domain.createdAt,
                 state = domain.state.name,
+                correlationId = domain.correlationId,
             )
     }
 }

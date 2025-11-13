@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service
 class PendingTaskService(
     private val pendingTaskRepository: PendingTaskMongoRepository,
     private val userTaskService: com.jervis.service.task.UserTaskService,
+    private val debugService: com.jervis.service.debug.DebugService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -40,13 +41,28 @@ class PendingTaskService(
         val document = PendingTaskDocument.fromDomain(task)
         val saved = pendingTaskRepository.save(document)
 
-        logger.info { "Created pending task: ${saved.id} - ${taskType.name}, state=${task.state}" }
+        val domainTaskForLog = saved.toDomain()
+        logger.info { "TASK_CREATED: id=${saved.id} correlationId=${domainTaskForLog.correlationId} type=${taskType.name} state=${task.state} clientId=${clientId.toHexString()} projectId=${projectId?.toHexString() ?: "none"} contentLength=${content.length}" }
+
+        // Publish debug event
+        val domainTask = saved.toDomain()
+        debugService.taskCreated(
+            correlationId = domainTask.correlationId,
+            taskId = saved.id.toHexString(),
+            taskType = taskType.name,
+            state = task.state.name,
+            clientId = clientId.toHexString(),
+            projectId = projectId?.toHexString(),
+            contentLength = content.length
+        )
+
         return saved.toDomain()
     }
 
     suspend fun deleteTask(taskId: ObjectId) {
+        val task = pendingTaskRepository.findById(taskId)
         pendingTaskRepository.deleteById(taskId)
-        logger.info { "Deleted pending task: $taskId" }
+        logger.info { "TASK_DELETED: id=$taskId type=${task?.type ?: "unknown"} state=${task?.state ?: "unknown"}" }
     }
 
     fun findTasksByState(state: PendingTaskState): Flow<PendingTask> =
@@ -65,8 +81,20 @@ class PendingTaskService(
         }
         val updated = task.copy(state = next.name)
         val saved = pendingTaskRepository.save(updated)
-        logger.info { "TASK_STATE_CHANGE: id=$taskId from=$expected to=$next" }
-        return saved.toDomain()
+        val domainTaskForLog = saved.toDomain()
+        logger.info { "TASK_STATE_TRANSITION: id=$taskId correlationId=${domainTaskForLog.correlationId} from=$expected to=$next type=${task.type}" }
+
+        // Publish debug event
+        val domainTask = saved.toDomain()
+        debugService.taskStateTransition(
+            correlationId = domainTask.correlationId,
+            taskId = taskId.toHexString(),
+            fromState = expected.name,
+            toState = next.name,
+            taskType = task.type
+        )
+
+        return domainTask
     }
 
     suspend fun finalizeCompleted(
@@ -118,9 +146,14 @@ class PendingTaskService(
 
     fun findTasksReadyForQualification(): Flow<PendingTask> = findTasksByState(PendingTaskState.READY_FOR_QUALIFICATION)
 
-    suspend fun tryClaimForQualification(taskId: ObjectId): PendingTask? =
-        runCatching { updateState(taskId, PendingTaskState.READY_FOR_QUALIFICATION, PendingTaskState.QUALIFYING) }
+    suspend fun tryClaimForQualification(taskId: ObjectId): PendingTask? {
+        val result = runCatching { updateState(taskId, PendingTaskState.READY_FOR_QUALIFICATION, PendingTaskState.QUALIFYING) }
             .getOrNull()
+        if (result != null) {
+            logger.debug { "TASK_CLAIMED_FOR_QUALIFICATION: id=$taskId" }
+        }
+        return result
+    }
 
     fun findAllTasks(): Flow<PendingTask> =
         pendingTaskRepository

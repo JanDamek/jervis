@@ -38,6 +38,7 @@ class TaskQualificationService(
     private val messageLinkService: MessageLinkService,
     private val userTaskService: UserTaskService,
     private val emailMessageStateManager: com.jervis.service.listener.email.state.EmailMessageStateManager,
+    private val debugService: com.jervis.service.debug.DebugService,
 ) {
     /**
      * Process entire Flow of tasks needing qualification.
@@ -227,6 +228,15 @@ class TaskQualificationService(
 
     private suspend fun qualifyTask(task: PendingTask) {
         val startTime = System.currentTimeMillis()
+        logger.info { "QUALIFICATION_START: id=${task.id} correlationId=${task.correlationId} type=${task.taskType}" }
+
+        // Publish debug event
+        debugService.qualificationStart(
+            correlationId = task.correlationId,
+            taskId = task.id.toHexString(),
+            taskType = task.taskType.name
+        )
+
         val taskConfig = backgroundTaskGoalsService.getQualifierPrompts(task.taskType)
 
         val systemPrompt = taskConfig.qualifierSystemPrompt ?: ""
@@ -259,19 +269,31 @@ class TaskQualificationService(
 
             when (decision) {
                 is QualifierLlmGateway.QualifierDecision.Discard -> {
-                    logger.info { "Task ${task.id} (${task.taskType}) DISCARDED by qualifier in ${duration}ms - spam/noise" }
+                    logger.info { "QUALIFICATION_DECISION: id=${task.id} correlationId=${task.correlationId} decision=DISCARD duration=${duration}ms reason=spam/noise" }
 
-                    // Note: do not mutate context in non-NEW states; log for audit and delete (ephemeral)
-                    logger.info { "QUALIFICATION_NOTES: task=${task.id} note=DISCARDED: Spam/noise detected" }
+                    // Publish debug event
+                    debugService.qualificationDecision(
+                        correlationId = task.correlationId,
+                        taskId = task.id.toHexString(),
+                        decision = "DISCARD",
+                        duration = duration,
+                        reason = "spam/noise"
+                    )
 
                     pendingTaskService.deleteTask(task.id)
                 }
 
                 is QualifierLlmGateway.QualifierDecision.Delegate -> {
-                    logger.debug { "Task ${task.id} (${task.taskType}) DELEGATED in ${duration}ms to strong model" }
+                    logger.info { "QUALIFICATION_DECISION: id=${task.id} correlationId=${task.correlationId} decision=DELEGATE duration=${duration}ms reason=actionable" }
 
-                    // Note: do not mutate context in non-NEW states; log for audit only
-                    logger.info { "QUALIFICATION_NOTES: task=${task.id} note=DELEGATED: Actionable content" }
+                    // Publish debug event
+                    debugService.qualificationDecision(
+                        correlationId = task.correlationId,
+                        taskId = task.id.toHexString(),
+                        decision = "DELEGATE",
+                        duration = duration,
+                        reason = "actionable"
+                    )
 
                     pendingTaskService.updateState(
                         task.id,
@@ -282,7 +304,7 @@ class TaskQualificationService(
             }
         } catch (e: Exception) {
             val duration = System.currentTimeMillis() - startTime
-            logger.error(e) { "Qualification failed for task ${task.id} after ${duration}ms, delegating to strong model" }
+            logger.error(e) { "QUALIFICATION_ERROR: id=${task.id} correlationId=${task.correlationId} duration=${duration}ms error=${e.message} - delegating to GPU" }
             // Even if qualifier failed, delegate to strong model by transitioning state
             try {
                 pendingTaskService.updateState(
@@ -291,7 +313,7 @@ class TaskQualificationService(
                     com.jervis.domain.task.PendingTaskState.DISPATCHED_GPU,
                 )
             } catch (ie: Exception) {
-                logger.warn(ie) { "Failed to transition task ${task.id} to DISPATCHED_GPU after qualifier error" }
+                logger.warn(ie) { "QUALIFICATION_FALLBACK_FAILED: id=${task.id} error=${ie.message}" }
             }
         }
     }

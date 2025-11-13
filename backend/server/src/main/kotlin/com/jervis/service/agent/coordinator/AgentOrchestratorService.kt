@@ -33,6 +33,7 @@ class AgentOrchestratorService(
     private val clientMongoRepository: ClientMongoRepository,
     private val projectMongoRepository: ProjectMongoRepository,
     private val backgroundTaskGoalsService: BackgroundTaskGoalsService,
+    private val debugService: com.jervis.service.debug.DebugService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -55,7 +56,7 @@ class AgentOrchestratorService(
         projectId: ObjectId?,
         background: Boolean,
         quick: Boolean = false,
-    ): ChatResponse = handleWithGoalPrompt(text, clientId, projectId, background, quick, null)
+    ): ChatResponse = handleWithGoalPrompt(text, clientId, projectId, background, quick, null, null)
 
     private suspend fun handleWithGoalPrompt(
         text: String,
@@ -64,6 +65,7 @@ class AgentOrchestratorService(
         background: Boolean,
         quick: Boolean,
         goalPrompt: String?,
+        taskCorrelationId: String?, // Pass correlationId from task if available
     ): ChatResponse {
         val projectIdLog = projectId?.toHexString() ?: "none"
         logger.info { "AGENT_START: Handling query for client='${clientId.toHexString()}', project='$projectIdLog'" }
@@ -97,14 +99,33 @@ class AgentOrchestratorService(
                     projectDocument = projectDocument,
                     quick = quick,
                     backgroundMode = background,
+                    correlationId = taskCorrelationId ?: ObjectId.get().toHexString(), // Use task correlationId if available, otherwise generate new
                 )
+
+            // Publish debug event for plan creation
+            // Note: taskId will be passed if this comes from background task, null for chat requests
+            debugService.planCreated(
+                correlationId = plan.correlationId,
+                planId = plan.id.toHexString(),
+                taskId = if (background && taskCorrelationId != null) taskCorrelationId else null,
+                taskInstruction = plan.taskInstruction,
+                backgroundMode = background
+            )
 
             executeInitialRagQueries(plan)
 
             // Mark the plan as RUNNING before entering the planning loop
             plan.status = com.jervis.domain.plan.PlanStatusEnum.RUNNING
+            stepNotificationService.notifyPlanStatusChanged(plan.id, plan.id, plan.status)
 
-            logger.info { "AGENT_LOOP_START: Planning loop for plan: ${plan.id}" }
+            // Publish debug event for plan status change
+            debugService.planStatusChanged(
+                correlationId = plan.correlationId,
+                planId = plan.id.toHexString(),
+                status = plan.status.name
+            )
+
+            logger.info { "AGENT_LOOP_START: Planning loop for plan: ${plan.id} taskInstruction='${plan.taskInstruction}' correlationId=${plan.correlationId}" }
 
             // Iterative execution: execute steps, plan next steps, check resolution
             while (true) {
@@ -135,8 +156,20 @@ class AgentOrchestratorService(
 
                 val nextSteps = planner.suggestNextSteps(plan)
                 if (nextSteps.isNotEmpty()) {
-                    logger.debug { "AGENT_LOOP_STEPS_ADDED: Adding ${nextSteps.size} new steps to plan ${plan.id}" }
+                    logger.info { "AGENT_LOOP_STEPS_ADDED: planId=${plan.id} newSteps=${nextSteps.size} totalSteps=${plan.steps.size + nextSteps.size}" }
                     plan.steps += nextSteps
+
+                    // Publish debug event for each step added
+                    nextSteps.forEach { step ->
+                        debugService.planStepAdded(
+                            correlationId = plan.correlationId,
+                            planId = plan.id.toHexString(),
+                            stepId = step.id.toHexString(),
+                            toolName = step.stepToolName.name,
+                            instruction = step.stepInstruction,
+                            order = step.order
+                        )
+                    }
                 } else {
                     logger.info { "AGENT_LOOP_RESOLVED: Task fully resolved, marking plan as COMPLETED" }
                     val hasSteps = plan.steps.isNotEmpty()
@@ -146,6 +179,13 @@ class AgentOrchestratorService(
                     if (hasSteps && noPendingSteps) {
                         plan.status = com.jervis.domain.plan.PlanStatusEnum.COMPLETED
                         logger.info { "AGENT_LOOP_PLAN_COMPLETED: Plan ${plan.id} marked as COMPLETED" }
+
+                        // Publish debug event for plan status change
+                        debugService.planStatusChanged(
+                            correlationId = plan.correlationId,
+                            planId = plan.id.toHexString(),
+                            status = plan.status.name
+                        )
                     } else {
                         val reason =
                             when {
@@ -173,6 +213,13 @@ class AgentOrchestratorService(
                     // Notify UI about finalization if the plan is marked as FINALIZED
                     if (plan.status == com.jervis.domain.plan.PlanStatusEnum.FINALIZED) {
                         stepNotificationService.notifyPlanStatusChanged(plan.id, plan.id, plan.status)
+
+                        // Publish debug event for plan status change
+                        debugService.planStatusChanged(
+                            correlationId = plan.correlationId,
+                            planId = plan.id.toHexString(),
+                            status = plan.status.name
+                        )
                     }
 
                     finalResponse
@@ -191,7 +238,7 @@ class AgentOrchestratorService(
     }
 
     suspend fun handleBackgroundTask(task: PendingTask): ChatResponse {
-        logger.info { "AGENT_BACKGROUND_START: Processing pending task ${task.id} type=${task.taskType}" }
+        logger.info { "AGENT_BACKGROUND_START: taskId=${task.id} type=${task.taskType} clientId=${task.clientId.toHexString()} projectId=${task.projectId?.toHexString() ?: "none"} correlationId=${task.correlationId}" }
 
         val clientId = requireNotNull(task.clientId) { "Background task must have clientId" }
         val projectId = task.projectId
@@ -202,7 +249,7 @@ class AgentOrchestratorService(
         // Load task-specific goal from YAML and apply content placeholder if present
         val goalTemplate = backgroundTaskGoalsService.getGoals(task.taskType)
         val goalPrompt = goalTemplate.replace("{content}", taskText)
-        logger.info { "AGENT_BACKGROUND_GOAL: Loaded goal template for task ${task.id} (length=${goalPrompt.length})" }
+        logger.info { "AGENT_BACKGROUND_GOAL: taskId=${task.id} goalLength=${goalPrompt.length} contentLength=${taskText.length}" }
 
         return try {
             val response =
@@ -213,6 +260,7 @@ class AgentOrchestratorService(
                     quick = false,
                     background = true,
                     goalPrompt = goalPrompt,
+                    taskCorrelationId = task.correlationId, // Propagate correlationId from task to plan
                 )
 
             response

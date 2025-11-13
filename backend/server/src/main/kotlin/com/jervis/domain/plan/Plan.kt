@@ -20,6 +20,7 @@ data class Plan(
     val projectDocument: ProjectDocument? = null,
     val quick: Boolean,
     val backgroundMode: Boolean = false,
+    val correlationId: String, // For distributed tracing across all services
 ) {
     val clientId: ObjectId
         get() = clientDocument.id

@@ -17,6 +17,7 @@ import java.time.Instant
  * - Source: project://<projectId>/description-update
  *
  * @property content Complete task description with all data (text format)
+ * @property correlationId Unique ID that tracks entire execution flow across all services
  */
 data class PendingTask(
     val id: ObjectId = ObjectId(),
@@ -26,4 +27,5 @@ data class PendingTask(
     val clientId: ObjectId,
     val createdAt: Instant = Instant.now(),
     val state: PendingTaskState = PendingTaskState.NEW,
+    val correlationId: String = ObjectId.get().toHexString(), // For distributed tracing
 )

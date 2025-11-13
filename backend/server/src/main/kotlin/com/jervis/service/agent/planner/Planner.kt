@@ -40,7 +40,9 @@ class Planner(
      * Uses iterative approach instead of complex goal-based planning.
      */
     suspend fun suggestNextSteps(plan: Plan): List<PlanStep> {
-        logger.info { "Suggesting next steps for plan ${plan.id}" }
+        val totalSteps = plan.steps.size
+        val completedSteps = plan.steps.count { it.status == StepStatusEnum.DONE }
+        logger.info { "PLANNER_START: planId=${plan.id} currentSteps=$totalSteps completed=$completedSteps" }
 
         val parsedResponse =
             llmGateway.callLlm(
@@ -82,7 +84,7 @@ class Planner(
                 createPlanStep(chosenTool, dto, plan.id, plan.steps.size + index + 1)
             }
 
-        logger.info { "Suggested ${newSteps.size} next steps for plan ${plan.id}" }
+        logger.info { "PLANNER_RESULT: planId=${plan.id} suggestedSteps=${newSteps.size} tools=${newSteps.map { it.stepToolName.name }}" }
         return newSteps
     }
 
