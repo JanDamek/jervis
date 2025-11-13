@@ -174,7 +174,7 @@ fun SchedulerScreen(
                             pendingOnly = it
                             loadTasks()
                         })
-                        TextButton(onClick = { loadTasks() }) { Text("🔄 Refresh") }
+                        com.jervis.ui.util.RefreshIconButton(onClick = { loadTasks() })
                     }
                 }
             )
