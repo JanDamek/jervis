@@ -6,6 +6,7 @@ import com.jervis.dto.GitBranchListDto
 import com.jervis.dto.GitSetupRequestDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ProjectGitOverrideRequestDto
+import com.jervis.dto.GitTestConnectionResponseDto
 import com.jervis.service.IGitConfigurationService
 
 /**
@@ -18,7 +19,7 @@ class GitConfigurationRepository(
     suspend fun setupGitConfiguration(clientId: String, request: GitSetupRequestDto): ClientDto =
         service.setupGitConfiguration(clientId, request)
 
-    suspend fun testConnection(clientId: String, request: GitSetupRequestDto): Map<String, Any> =
+    suspend fun testConnection(clientId: String, request: GitSetupRequestDto): GitTestConnectionResponseDto =
         service.testConnection(clientId, request)
 
     suspend fun cloneRepository(clientId: String) =

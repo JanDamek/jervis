@@ -10,6 +10,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.user.TaskRoutingMode
 import com.jervis.dto.user.UserTaskDto
@@ -22,6 +25,7 @@ fun UserTasksScreen(
     repository: JervisRepository,
     onBack: () -> Unit
 ) {
+    val clipboard = LocalClipboardManager.current
     var tasks by remember { mutableStateOf<List<UserTaskDto>>(emptyList()) }
     var allTasks by remember { mutableStateOf<List<UserTaskDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
@@ -274,20 +278,54 @@ fun UserTasksScreen(
                                     TaskDetailField("Source Type", selectedTask!!.sourceType)
 
                                     if (!selectedTask!!.sourceUri.isNullOrBlank()) {
-                                        TaskDetailField("Source Link", selectedTask!!.sourceUri!!)
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "Source Link:",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            TextButton(onClick = {
+                                                clipboard.setText(AnnotatedString(selectedTask!!.sourceUri!!))
+                                            }) {
+                                                Text("Copy")
+                                            }
+                                        }
+                                        SelectionContainer {
+                                            Text(
+                                                text = selectedTask!!.sourceUri!!,
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                        }
                                     }
 
                                     if (!selectedTask!!.description.isNullOrBlank()) {
                                         Spacer(modifier = Modifier.height(8.dp))
-                                        Text(
-                                            text = "Description:",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Text(
-                                            text = selectedTask!!.description!!,
-                                            style = MaterialTheme.typography.bodyMedium
-                                        )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "Description:",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            TextButton(onClick = {
+                                                clipboard.setText(AnnotatedString(selectedTask!!.description!!))
+                                            }) {
+                                                Text("Copy")
+                                            }
+                                        }
+                                        SelectionContainer {
+                                            Text(
+                                                text = selectedTask!!.description!!,
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                        }
                                     }
                                 }
 

@@ -42,6 +42,7 @@ fun SchedulerScreen(
 
     var clientDropdownExpanded by remember { mutableStateOf(false) }
     var projectDropdownExpanded by remember { mutableStateOf(false) }
+    var pendingOnly by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
 
@@ -51,7 +52,11 @@ fun SchedulerScreen(
             isLoadingTasks = true
             errorMessage = null
             try {
-                val allTasks = repository.scheduledTasks.listAllTasks()
+                val allTasks = if (pendingOnly) {
+                    repository.scheduledTasks.listPendingTasks()
+                } else {
+                    repository.scheduledTasks.listAllTasks()
+                }
 
                 // Enhance tasks with project and client names
                 tasks = allTasks.map { task ->
@@ -163,8 +168,13 @@ fun SchedulerScreen(
                     }
                 },
                 actions = {
-                    TextButton(onClick = { loadTasks() }) {
-                        Text("🔄 Refresh")
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Pending Only")
+                        Switch(checked = pendingOnly, onCheckedChange = {
+                            pendingOnly = it
+                            loadTasks()
+                        })
+                        TextButton(onClick = { loadTasks() }) { Text("🔄 Refresh") }
                     }
                 }
             )

@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -39,6 +41,7 @@ import com.jervis.domain.git.GitAuthTypeEnum
 import com.jervis.domain.git.GitProviderEnum
 import com.jervis.repository.JervisRepository
 import kotlinx.coroutines.launch
+import com.jervis.ui.util.pickTextFileContent
 
 /**
  * Settings screen for commonMain without Material3 dependencies.
@@ -49,8 +52,6 @@ fun SettingsScreen(
     repository: JervisRepository,
     onBack: () -> Unit
 ) {
-    var selectedTab by remember { mutableStateOf(SettingsTab.Clients) }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -67,41 +68,8 @@ fun SettingsScreen(
         }
         Spacer(Modifier.size(12.dp))
 
-        // Tabs
-        TabRow(
-            tabs = SettingsTab.values().toList(),
-            selected = selectedTab,
-            onSelect = { selectedTab = it },
-        )
-
-        Spacer(Modifier.size(12.dp))
-
-        when (selectedTab) {
-            SettingsTab.Clients -> ClientsTab(repository)
-            SettingsTab.Git -> GitTab(repository)
-            SettingsTab.Integrations -> IntegrationsTab(repository)
-            SettingsTab.Email -> EmailTab(repository)
-        }
-    }
-}
-
-private enum class SettingsTab { Clients, Git, Integrations, Email }
-
-@Composable
-private fun TabRow(
-    tabs: List<SettingsTab>,
-    selected: SettingsTab,
-    onSelect: (SettingsTab) -> Unit,
-) {
-    val selectedIndex = tabs.indexOf(selected).coerceAtLeast(0)
-    androidx.compose.material3.TabRow(selectedTabIndex = selectedIndex) {
-        tabs.forEachIndexed { index, tab ->
-            Tab(
-                selected = index == selectedIndex,
-                onClick = { onSelect(tab) },
-                text = { Text(tab.name) }
-            )
-        }
+        // Navigation simplified: everything starts from Clients list → Client detail
+        ClientsTab(repository)
     }
 }
 
@@ -113,6 +81,7 @@ private fun TextButtonLike(text: String, onClick: () -> Unit) {
 // ————— Clients Tab —————
 private sealed interface ClientsMode {
     data object List : ClientsMode
+    data object Create : ClientsMode
     data class Edit(val clientId: String, val tab: ClientEditTab = ClientEditTab.Basic) : ClientsMode
 }
 
@@ -157,21 +126,7 @@ private fun ClientsTab(repository: JervisRepository) {
         when (val m = mode) {
             is ClientsMode.List -> ClientsList(
                 clients = clients,
-                onAdd = { name ->
-                    scope.launch {
-                        try {
-                            loading = true
-                            val created = repository.clients.createClient(
-                                ClientDto(
-                                    name = name.ifBlank { "Unnamed" }
-                                )
-                            )
-                            clients += created
-                            error = null
-                            mode = ClientsMode.Edit(created.id)
-                        } catch (t: Throwable) { error = t.message } finally { loading = false }
-                    }
-                },
+                onNew = { mode = ClientsMode.Create },
                 onEdit = { clientId -> mode = ClientsMode.Edit(clientId) },
                 onDelete = { clientId ->
                     scope.launch {
@@ -183,6 +138,15 @@ private fun ClientsTab(repository: JervisRepository) {
                     }
                 },
                 onRefresh = { refreshClients() }
+            )
+
+            ClientsMode.Create -> ClientCreateScreen(
+                repository = repository,
+                onBack = { mode = ClientsMode.List },
+                onCreated = { created ->
+                    clients += created
+                    mode = ClientsMode.Edit(created.id)
+                }
             )
 
             is ClientsMode.Edit -> ClientEditScreen(
@@ -198,27 +162,18 @@ private fun ClientsTab(repository: JervisRepository) {
 @Composable
 private fun ClientsList(
     clients: List<ClientDto>,
-    onAdd: (name: String) -> Unit,
+    onNew: () -> Unit,
     onEdit: (String) -> Unit,
     onDelete: (String) -> Unit,
     onRefresh: () -> Unit,
 ) {
-    var newClientName by remember { mutableStateOf("") }
-
-    Section("Add Client") {
-        LabeledField("Name", newClientName) { newClientName = it }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButtonLike("Create") { onAdd(newClientName) }
-            TextButtonLike("Refresh") { onRefresh() }
-        }
-    }
-
     Section("Clients") {
         LazyColumn(modifier = Modifier.fillMaxWidth()) {
             items(clients, key = { it.id }) { c ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .clickable { onEdit(c.id) }
                         .padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -232,11 +187,61 @@ private fun ClientsList(
                         Text(desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButtonLike("Edit") { onEdit(c.id) }
                         TextButtonLike("Delete") { onDelete(c.id) }
                     }
                 }
                 Divider()
+            }
+        }
+        Spacer(Modifier.size(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButtonLike("New Client") { onNew() }
+            TextButtonLike("Refresh") { onRefresh() }
+        }
+    }
+}
+
+@Composable
+private fun ClientCreateScreen(
+    repository: JervisRepository,
+    onBack: () -> Unit,
+    onCreated: (ClientDto) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var error by remember { mutableStateOf<String?>(null) }
+    var name by remember { mutableStateOf("") }
+    var monoRepoUrl by remember { mutableStateOf("") }
+    var defaultBranch by remember { mutableStateOf("main") }
+
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            TextButton(onClick = onBack) { Text("Back to Clients") }
+            Spacer(Modifier.size(8.dp))
+            Text("Create Client", style = MaterialTheme.typography.titleLarge)
+        }
+        error?.let { Text("Error: $it", color = MaterialTheme.colorScheme.error) }
+
+        Section("Basic") {
+            LabeledField("Name", name) { name = it }
+            LabeledField("Mono Repo URL", monoRepoUrl) { monoRepoUrl = it }
+            LabeledField("Default Branch", defaultBranch) { defaultBranch = it }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButtonLike("Create") {
+                    scope.launch {
+                        runCatching {
+                            repository.clients.createClient(
+                                ClientDto(
+                                    name = name.ifBlank { "Unnamed" },
+                                    monoRepoUrl = monoRepoUrl.ifBlank { null },
+                                    defaultBranch = defaultBranch.ifBlank { "main" },
+                                )
+                            )
+                        }.onSuccess { created ->
+                            onCreated(created)
+                        }.onFailure { e -> error = e.message }
+                    }
+                }
+                TextButtonLike("Cancel") { onBack() }
             }
         }
     }
@@ -278,7 +283,15 @@ private fun ClientEditScreen(
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             TextButton(onClick = onBack) { Text("Back to Clients") }
             Spacer(Modifier.size(8.dp))
-            Text("Client Settings", style = MaterialTheme.typography.titleLarge)
+            Column {
+                val titleName = when {
+                    name.isNotBlank() -> name
+                    client?.name?.isNotBlank() == true -> client?.name ?: ""
+                    else -> "(loading…)"
+                }
+                Text("Client: $titleName", style = MaterialTheme.typography.titleLarge)
+                Text("ID: $clientId", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         error?.let { Text("Error: $it", color = MaterialTheme.colorScheme.error) }
 
@@ -295,27 +308,29 @@ private fun ClientEditScreen(
 
         when (selectedTab) {
             ClientEditTab.Basic -> {
-                Section("Basic") {
-                    LabeledField("Name", name) { name = it }
-                    LabeledField("Mono Repo URL", monoRepoUrl) { monoRepoUrl = it }
-                    LabeledField("Default Branch", defaultBranch) { defaultBranch = it }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButtonLike("Save") {
-                            val current = client ?: return@TextButtonLike
-                            scope.launch {
-                                try {
-                                    loading = true
-                                    val updated = repository.clients.updateClient(
-                                        current.id,
-                                        current.copy(
-                                            name = name,
-                                            monoRepoUrl = monoRepoUrl.ifBlank { null },
-                                            defaultBranch = defaultBranch.ifBlank { "main" },
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                    Section("Basic") {
+                        LabeledField("Name", name) { name = it }
+                        LabeledField("Mono Repo URL", monoRepoUrl) { monoRepoUrl = it }
+                        LabeledField("Default Branch", defaultBranch) { defaultBranch = it }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButtonLike("Save") {
+                                val current = client ?: return@TextButtonLike
+                                scope.launch {
+                                    try {
+                                        loading = true
+                                        val updated = repository.clients.updateClient(
+                                            current.id,
+                                            current.copy(
+                                                name = name,
+                                                monoRepoUrl = monoRepoUrl.ifBlank { null },
+                                                defaultBranch = defaultBranch.ifBlank { "main" },
+                                            )
                                         )
-                                    )
-                                    client = updated
-                                    error = null
-                                } catch (t: Throwable) { error = t.message } finally { loading = false }
+                                        client = updated
+                                        error = null
+                                    } catch (t: Throwable) { error = t.message } finally { loading = false }
+                                }
                             }
                         }
                     }
@@ -333,8 +348,9 @@ private fun ClientEditScreen(
                 var sshPassphrase by remember(clientId) { mutableStateOf("") }
                 var branches by remember(clientId) { mutableStateOf<List<String>>(emptyList()) }
                 var detectedDefault by remember(clientId) { mutableStateOf<String?>(null) }
+                var savingGit by remember(clientId) { mutableStateOf(false) }
 
-                Column(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                     Section("Git Configuration") {
                         EnumSelector("Provider", provider, com.jervis.domain.git.GitProviderEnum.entries) { it?.let { provider = it } }
                         EnumSelector("Auth", auth, com.jervis.domain.git.GitAuthTypeEnum.entries) { it?.let { auth = it } }
@@ -348,15 +364,24 @@ private fun ClientEditScreen(
                             }
                             com.jervis.domain.git.GitAuthTypeEnum.SSH_KEY -> {
                                 LabeledField("SSH Private Key", sshPrivateKey) { sshPrivateKey = it }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    TextButtonLike("Load from File…") {
+                                        // Desktop: opens file chooser; Mobile: TODO returns null
+                                        val picked = pickTextFileContent("Select SSH Private Key")
+                                        if (picked != null) {
+                                            sshPrivateKey = picked
+                                        }
+                                    }
+                                }
                                 LabeledField("SSH Passphrase (optional)", sshPassphrase) { sshPassphrase = it }
                             }
                             com.jervis.domain.git.GitAuthTypeEnum.NONE -> {}
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButtonLike("Save") {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            TextButtonLike(if (savingGit) "Saving…" else "Save") {
                                 scope.launch {
                                     try {
-                                        loading = true
+                                        loading = true; savingGit = true
                                         repository.gitConfiguration.setupGitConfiguration(
                                             clientId,
                                             com.jervis.dto.GitSetupRequestDto(
@@ -372,10 +397,10 @@ private fun ClientEditScreen(
                                             )
                                         )
                                         error = null
-                                    } catch (t: Throwable) { error = t.message } finally { loading = false }
+                                    } catch (t: Throwable) { error = t.message } finally { loading = false; savingGit = false }
                                 }
                             }
-                            TextButtonLike("Test Connection") {
+                            TextButtonLike(if (loading) "Testing…" else "Test Connection") {
                                 scope.launch {
                                     try {
                                         loading = true
@@ -457,7 +482,7 @@ private fun ClientEditScreen(
                     } finally { loading = false }
                 }
 
-                Column(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                     jiraStatus?.let { st ->
                         Section("Jira Status") {
                             Text("Tenant: ${st.tenant ?: "-"}")
@@ -529,96 +554,99 @@ private fun ClientEditScreen(
                 }
             }
             ClientEditTab.Email -> {
+                // List-first UX with click-through edit screen
                 val accounts = remember { mutableStateListOf<com.jervis.dto.email.EmailAccountDto>() }
-                var displayName by remember(clientId) { mutableStateOf("") }
-                var email by remember(clientId) { mutableStateOf("") }
-                var provider by remember(clientId) { mutableStateOf(com.jervis.domain.email.EmailProviderEnum.IMAP) }
-                var serverHost by remember(clientId) { mutableStateOf("") }
-                var serverPort by remember(clientId) { mutableStateOf("993") }
-                var username by remember(clientId) { mutableStateOf("") }
-                var password by remember(clientId) { mutableStateOf("") }
-                var useSsl by remember(clientId) { mutableStateOf(true) }
+                var emailMode by remember(clientId) { mutableStateOf<EmailMode>(EmailMode.List) }
 
                 LaunchedEffect(clientId) {
                     loading = true
-                    error = try { accounts.clear(); accounts += repository.emailAccounts.listEmailAccounts(clientId = clientId); null } catch (t: Throwable) { t.message } finally { loading = false }
+                    error = try {
+                        accounts.clear(); accounts += repository.emailAccounts.listEmailAccounts(clientId = clientId); null
+                    } catch (t: Throwable) { t.message } finally { loading = false }
                 }
 
-                Column(Modifier.fillMaxWidth()) {
-                    Section("Add Email Account") {
-                        LabeledField("Display Name", displayName) { displayName = it }
-                        LabeledField("Email", email) { email = it }
-                        EnumSelector("Provider", provider, com.jervis.domain.email.EmailProviderEnum.entries) { it?.let { provider = it } }
-                        LabeledField("Server Host", serverHost) { serverHost = it }
-                        LabeledField("Server Port", serverPort) { serverPort = it }
-                        LabeledField("Username", username) { username = it }
-                        LabeledField("Password", password) { password = it }
-                        Toggle("Use SSL", useSsl) { useSsl = it }
-                        TextButtonLike("Create") {
-                            scope.launch {
-                                try {
-                                    loading = true
-                                    val created = repository.emailAccounts.createEmailAccount(
-                                        com.jervis.dto.email.CreateOrUpdateEmailAccountRequestDto(
-                                            clientId = clientId,
-                                            provider = provider,
-                                            displayName = displayName,
-                                            email = email,
-                                            username = username.ifBlank { null },
-                                            password = password.ifBlank { null },
-                                            serverHost = serverHost.ifBlank { null },
-                                            serverPort = serverPort.toIntOrNull(),
-                                            useSsl = useSsl,
-                                        )
-                                    )
-                                    accounts += created
-                                    displayName = ""; email = ""; serverHost = ""; serverPort = "993"; username = ""; password = ""; useSsl = true
-                                    error = null
-                                } catch (t: Throwable) { error = t.message } finally { loading = false }
+                when (val m = emailMode) {
+                    EmailMode.List -> {
+                        // Avoid nesting LazyColumn inside a vertically scrollable container
+                        // to prevent infinite height constraints. The list itself is scrollable.
+                        Column(Modifier.fillMaxWidth()) {
+                            Section("Accounts") {
+                                LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                                    items(accounts, key = { it.id ?: it.email }) { acc ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(Modifier.weight(1f)) {
+                                                Text("${acc.displayName} <${acc.email}>")
+                                                Text("Provider: ${acc.provider}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                TextButtonLike("Edit") { acc.id?.let { emailMode = EmailMode.Edit(it) } }
+                                                TextButtonLike("Delete") {
+                                                    scope.launch {
+                                                        try {
+                                                            acc.id?.let { repository.emailAccounts.deleteEmailAccount(it) }
+                                                            accounts.removeAll { it.id == acc.id }
+                                                            error = null
+                                                        } catch (t: Throwable) { error = t.message }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Divider()
+                                    }
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    TextButtonLike("Refresh") {
+                                        scope.launch {
+                                            try { accounts.clear(); accounts += repository.emailAccounts.listEmailAccounts(clientId = clientId); error = null } catch (t: Throwable) { error = t.message }
+                                        }
+                                    }
+                                    TextButtonLike("New Account") { emailMode = EmailMode.Create }
+                                }
                             }
                         }
                     }
 
-                    Section("Accounts") {
-                        LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                            items(accounts, key = { it.id ?: it.email }) { acc ->
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(8.dp)
-                                        .border(1.dp, Color.LightGray)
-                                        .padding(8.dp)
-                                ) {
-                                    Text("${acc.displayName} <${acc.email}>")
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        TextButtonLike("Validate") {
-                                            scope.launch {
-                                                try {
-                                                    acc.id?.let { repository.emailAccounts.validateEmailAccount(it) }
-                                                    error = null
-                                                } catch (t: Throwable) { error = t.message }
-                                            }
-                                        }
-                                        TextButtonLike("Delete") {
-                                            scope.launch {
-                                                try {
-                                                    acc.id?.let { repository.emailAccounts.deleteEmailAccount(it) }
-                                                    accounts.removeAll { it.id == acc.id }
-                                                    error = null
-                                                } catch (t: Throwable) { error = t.message }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButtonLike("Refresh") {
+                    is EmailMode.Edit -> {
+                        EmailAccountEditScreen(
+                            repository = repository,
+                            clientId = clientId,
+                            accountId = m.accountId,
+                            onBack = {
+                                emailMode = EmailMode.List
                                 scope.launch {
-                                    try { accounts.clear(); accounts += repository.emailAccounts.listEmailAccounts(clientId = clientId); error = null } catch (t: Throwable) { error = t.message }
+                                    runCatching { accounts.clear(); accounts += repository.emailAccounts.listEmailAccounts(clientId = clientId) }
+                                        .onFailure { e -> error = e.message }
                                 }
+                            },
+                            onSaved = {
+                                emailMode = EmailMode.List
+                                scope.launch { runCatching { accounts.clear(); accounts += repository.emailAccounts.listEmailAccounts(clientId = clientId) } }
+                            },
+                            onDeleted = {
+                                emailMode = EmailMode.List
+                                scope.launch { runCatching { accounts.clear(); accounts += repository.emailAccounts.listEmailAccounts(clientId = clientId) } }
                             }
-                        }
+                        )
+                    }
+
+                    EmailMode.Create -> {
+                        EmailAccountEditScreen(
+                            repository = repository,
+                            clientId = clientId,
+                            accountId = null,
+                            onBack = { emailMode = EmailMode.List },
+                            onSaved = {
+                                emailMode = EmailMode.List
+                                scope.launch { runCatching { accounts.clear(); accounts += repository.emailAccounts.listEmailAccounts(clientId = clientId) } }
+                            },
+                            onDeleted = { emailMode = EmailMode.List }
+                        )
                     }
                 }
             }
@@ -642,8 +670,7 @@ private fun ClientProjectsSection(
     var error by remember { mutableStateOf<String?>(null) }
     val projects = remember(clientId) { mutableStateListOf<ProjectDto>() }
 
-    var projectName by remember(clientId) { mutableStateOf("") }
-    var projectDesc by remember(clientId) { mutableStateOf("") }
+    var creatingNew by remember(clientId) { mutableStateOf(false) }
     var openProjectId by remember(clientId) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(clientId) {
@@ -657,58 +684,13 @@ private fun ClientProjectsSection(
     Column(Modifier.fillMaxWidth()) {
         if (loading) Text("Loading projects…")
         error?.let { Text("Error: $it", color = MaterialTheme.colorScheme.error) }
-
-        if (openProjectId == null) {
-            Section("Add Project") {
-                LabeledField("Name", projectName) { projectName = it }
-                LabeledField("Description", projectDesc) { projectDesc = it }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButtonLike("Create") {
-                        scope.launch {
-                            try {
-                                loading = true
-                                val created = repository.projects.saveProject(
-                                    ProjectDto(
-                                        clientId = clientId,
-                                        name = projectName.ifBlank { "New Project" },
-                                        description = projectDesc.ifBlank { null },
-                                    )
-                                )
-                                projects += created
-                                projectName = ""; projectDesc = ""
-                                error = null
-                            } catch (t: Throwable) { error = t.message } finally { loading = false }
-                        }
-                    }
-                    TextButtonLike("Refresh") {
-                        scope.launch {
-                            try {
-                                loading = true
-                                projects.clear(); projects += repository.projects.listProjectsForClient(clientId)
-                                error = null
-                            } catch (t: Throwable) { error = t.message } finally { loading = false }
-                        }
-                    }
-                }
-            }
-        }
-
-        if (openProjectId == null) {
+        if (!creatingNew && openProjectId == null) {
             Section("Projects") {
                 LazyColumn(modifier = Modifier.fillMaxWidth()) {
                     items(projects, key = { it.id }) { p ->
                         ProjectRow(
                             project = p,
-                            onSave = { updated ->
-                                scope.launch {
-                                    try {
-                                        val saved = repository.projects.saveProject(updated)
-                                        val idx = projects.indexOfFirst { it.id == saved.id }
-                                        if (idx >= 0) projects[idx] = saved
-                                        error = null
-                                    } catch (t: Throwable) { error = t.message }
-                                }
-                            },
+                            onOpen = { openProjectId = p.id },
                             onDelete = {
                                 scope.launch {
                                     try {
@@ -718,12 +700,28 @@ private fun ClientProjectsSection(
                                     } catch (t: Throwable) { error = t.message }
                                 }
                             },
-                            onOpen = { openProjectId = p.id }
+                            onSave = { /* no inline save in list view */ }
                         )
                         Divider()
                     }
                 }
+                Spacer(Modifier.size(8.dp))
+                // Action: create new project (refresh is handled after edits)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButtonLike("New Project") { creatingNew = true }
+                }
             }
+        } else if (creatingNew) {
+            ProjectCreateScreen(
+                repository = repository,
+                clientId = clientId,
+                onBack = { creatingNew = false },
+                onCreated = { created ->
+                    creatingNew = false
+                    projects += created
+                    openProjectId = created.id
+                }
+            )
         } else {
             // Project detail sub-page
             val project = projects.firstOrNull { it.id == openProjectId }
@@ -769,23 +767,18 @@ private fun ProjectRow(
     onDelete: () -> Unit,
     onOpen: () -> Unit,
 ) {
-    var name by remember(project.id) { mutableStateOf(project.name) }
-    var desc by remember(project.id) { mutableStateOf(project.description ?: "") }
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(8.dp)
             .border(1.dp, Color.LightGray)
+            .clickable { onOpen() }
             .padding(8.dp)
     ) {
-        Text("Project: ${project.id}")
-        LabeledField("Name", name) { name = it }
-        LabeledField("Description", desc) { desc = it }
+        Text(project.name, style = MaterialTheme.typography.titleMedium)
+        project.description?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButtonLike("Save") { onSave(project.copy(name = name, description = desc.ifBlank { null })) }
             TextButtonLike("Delete") { onDelete() }
-            TextButtonLike("Open") { onOpen() }
         }
     }
 }
@@ -807,6 +800,9 @@ private fun ProjectEditScreen(
     // Basic fields
     var name by remember(project.id) { mutableStateOf(project.name) }
     var desc by remember(project.id) { mutableStateOf(project.description ?: "") }
+
+    // Context labels
+    var clientName by remember(clientId) { mutableStateOf("") }
 
     // Integration effective values for info
     var integrationInfo by remember(project.id) { mutableStateOf<IntegrationInfo?>(null) }
@@ -832,6 +828,11 @@ private fun ProjectEditScreen(
     }
 
     LaunchedEffect(clientId) {
+        // Load client name for breadcrumb/header context
+        runCatching { repository.clients.getClientById(clientId) }
+            .onSuccess { clientName = it?.name ?: "" }
+            .onFailure { /* fail fast into UI below via error */ error = it.message }
+
         runCatching { repository.jiraSetup.getStatus(clientId) }
             .onSuccess { st ->
                 jiraStatus = st
@@ -848,9 +849,15 @@ private fun ProjectEditScreen(
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             TextButton(onClick = onBack) { Text("Back to Projects") }
             Spacer(Modifier.size(8.dp))
-            Text("Project Settings", style = MaterialTheme.typography.titleLarge)
-            Spacer(Modifier.weight(1f))
-            Text("Client scoped", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Project: ${name.ifBlank { project.name }}", style = MaterialTheme.typography.titleLarge)
+                val clientLabel = if (clientName.isNotBlank()) clientName else "(loading…)"
+                Text(
+                    "Client: $clientLabel • Project ID: ${project.id}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         error?.let { Text("Error: $it", color = MaterialTheme.colorScheme.error) }
@@ -868,74 +875,267 @@ private fun ProjectEditScreen(
 
         when (selectedTab) {
             ProjectEditTab.Basic -> {
-                Section("Basic") {
-                    LabeledField("Name", name) { name = it }
-                    LabeledField("Description", desc) { desc = it }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButtonLike("Save") {
-                            scope.launch {
-                                runCatching {
-                                    repository.projects.saveProject(project.copy(name = name, description = desc.ifBlank { null }))
-                                }.onSuccess { saved ->
-                                    onProjectSaved(saved)
-                                    error = null
-                                }.onFailure { e -> error = e.message }
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                    Section("Basic") {
+                        LabeledField("Name", name) { name = it }
+                        LabeledField("Description", desc) { desc = it }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButtonLike("Save") {
+                                scope.launch {
+                                    runCatching {
+                                        repository.projects.saveProject(project.copy(name = name, description = desc.ifBlank { null }))
+                                    }.onSuccess { saved ->
+                                        onProjectSaved(saved)
+                                        error = null
+                                    }.onFailure { e -> error = e.message }
+                                }
                             }
-                        }
-                        TextButtonLike("Delete") {
-                            scope.launch {
-                                runCatching { repository.projects.deleteProject(project) }
-                                    .onSuccess { onProjectDeleted() }
-                                    .onFailure { e -> error = e.message }
+                            TextButtonLike("Delete") {
+                                scope.launch {
+                                    runCatching { repository.projects.deleteProject(project) }
+                                        .onSuccess { onProjectDeleted() }
+                                        .onFailure { e -> error = e.message }
+                                }
                             }
                         }
                     }
                 }
             }
             ProjectEditTab.Overrides -> {
-                // Show effective info first
-                integrationInfo?.let { info ->
-                    Section("Effective Values (read-only)") {
-                        Text("Jira Project: ${info.effectiveJiraProjectKey ?: "-"}")
-                        Text("Jira Board ID: ${info.effectiveJiraBoardId ?: "-"}")
-                        Text("Confluence Space: ${info.effectiveConfluenceSpaceKey ?: "-"}")
-                        Text("Confluence Root Page: ${info.effectiveConfluenceRootPageId ?: "-"}")
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                    // Local breadcrumb to keep context visible while scrolling
+                    val crumbClient = if (clientName.isNotBlank()) clientName else "(loading…)"
+                    InfoBanner(text = "Client: $crumbClient • Project: ${name.ifBlank { project.name }}")
+
+                    // Show effective info first
+                    integrationInfo?.let { info ->
+                        Section("Effective Values (read-only)") {
+                            Text("Jira Project: ${info.effectiveJiraProjectKey ?: "-"}")
+                            Text("Jira Board ID: ${info.effectiveJiraBoardId ?: "-"}")
+                            Text("Confluence Space: ${info.effectiveConfluenceSpaceKey ?: "-"}")
+                            Text("Confluence Root Page: ${info.effectiveConfluenceRootPageId ?: "-"}")
+                        }
+                    }
+
+                    // Editable overrides
+                    ProjectOverridesSection(
+                        clientId = clientId,
+                        project = project,
+                        repository = repository,
+                        availableJiraProjects = availableJiraProjects,
+                        jiraSuggestionsEnabled = jiraStatus?.connected == true,
+                        onError = { error = it },
+                        initialJiraProjectKey = integrationInfo?.overrideJiraProjectKey,
+                        initialJiraBoardId = integrationInfo?.overrideJiraBoardId,
+                        initialConfluenceSpaceKey = integrationInfo?.overrideConfluenceSpaceKey,
+                        initialConfluenceRootPageId = integrationInfo?.overrideConfluenceRootPageId,
+                        onSaved = {
+                            // Refresh effective values immediately after successful save
+                            scope.launch {
+                                runCatching { repository.integrationSettings.getProjectStatus(project.id) }
+                                    .onSuccess {
+                                        integrationInfo = IntegrationInfo(
+                                            effectiveJiraProjectKey = it.effectiveJiraProjectKey,
+                                            overrideJiraProjectKey = it.overrideJiraProjectKey,
+                                            effectiveJiraBoardId = it.effectiveJiraBoardId?.toString(),
+                                            overrideJiraBoardId = it.overrideJiraBoardId?.toString(),
+                                            effectiveConfluenceSpaceKey = it.effectiveConfluenceSpaceKey,
+                                            overrideConfluenceSpaceKey = it.overrideConfluenceSpaceKey,
+                                            effectiveConfluenceRootPageId = it.effectiveConfluenceRootPageId,
+                                            overrideConfluenceRootPageId = it.overrideConfluenceRootPageId,
+                                        )
+                                        error = null
+                                    }
+                                    .onFailure { e -> error = e.message }
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProjectCreateScreen(
+    repository: JervisRepository,
+    clientId: String,
+    onBack: () -> Unit,
+    onCreated: (ProjectDto) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var error by remember { mutableStateOf<String?>(null) }
+    var name by remember { mutableStateOf("") }
+    var desc by remember { mutableStateOf("") }
+
+    Column(Modifier.fillMaxSize()) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            TextButton(onClick = onBack) { Text("Back to Projects") }
+            Spacer(Modifier.size(8.dp))
+            Text("Create Project", style = MaterialTheme.typography.titleLarge)
+        }
+        error?.let { Text("Error: $it", color = MaterialTheme.colorScheme.error) }
+
+        Section("Basic") {
+            LabeledField("Name", name) { name = it }
+            LabeledField("Description", desc) { desc = it }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButtonLike("Create") {
+                    scope.launch {
+                        runCatching {
+                            repository.projects.saveProject(
+                                ProjectDto(
+                                    clientId = clientId,
+                                    name = name.ifBlank { "New Project" },
+                                    description = desc.ifBlank { null },
+                                )
+                            )
+                        }.onSuccess { created ->
+                            onCreated(created)
+                        }.onFailure { e -> error = e.message }
                     }
                 }
+                TextButtonLike("Cancel") { onBack() }
+            }
+        }
+    }
+}
 
-                // Editable overrides
-                ProjectOverridesSection(
-                    clientId = clientId,
-                    project = project,
-                    repository = repository,
-                    availableJiraProjects = availableJiraProjects,
-                    jiraSuggestionsEnabled = jiraStatus?.connected == true,
-                    onError = { error = it },
-                    initialJiraProjectKey = integrationInfo?.overrideJiraProjectKey,
-                    initialJiraBoardId = integrationInfo?.overrideJiraBoardId,
-                    initialConfluenceSpaceKey = integrationInfo?.overrideConfluenceSpaceKey,
-                    initialConfluenceRootPageId = integrationInfo?.overrideConfluenceRootPageId,
-                    onSaved = {
-                        // Refresh effective values immediately after successful save
-                        scope.launch {
-                            runCatching { repository.integrationSettings.getProjectStatus(project.id) }
-                                .onSuccess {
-                                    integrationInfo = IntegrationInfo(
-                                        effectiveJiraProjectKey = it.effectiveJiraProjectKey,
-                                        overrideJiraProjectKey = it.overrideJiraProjectKey,
-                                        effectiveJiraBoardId = it.effectiveJiraBoardId?.toString(),
-                                        overrideJiraBoardId = it.overrideJiraBoardId?.toString(),
-                                        effectiveConfluenceSpaceKey = it.effectiveConfluenceSpaceKey,
-                                        overrideConfluenceSpaceKey = it.overrideConfluenceSpaceKey,
-                                        effectiveConfluenceRootPageId = it.effectiveConfluenceRootPageId,
-                                        overrideConfluenceRootPageId = it.overrideConfluenceRootPageId,
+// — Email edit flow —
+private sealed interface EmailMode {
+    data object List : EmailMode
+    data object Create : EmailMode
+    data class Edit(val accountId: String) : EmailMode
+}
+
+@Composable
+private fun EmailAccountEditScreen(
+    repository: JervisRepository,
+    clientId: String,
+    accountId: String?,
+    onBack: () -> Unit,
+    onSaved: () -> Unit,
+    onDeleted: () -> Unit,
+    projectId: String? = null,
+) {
+    val scope = rememberCoroutineScope()
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    var displayName by remember(accountId) { mutableStateOf("") }
+    var email by remember(accountId) { mutableStateOf("") }
+    var provider by remember(accountId) { mutableStateOf(EmailProviderEnum.IMAP) }
+    var serverHost by remember(accountId) { mutableStateOf("") }
+    var serverPort by remember(accountId) { mutableStateOf("993") }
+    var username by remember(accountId) { mutableStateOf("") }
+    var password by remember(accountId) { mutableStateOf("") }
+    var useSsl by remember(accountId) { mutableStateOf(true) }
+
+    fun applyPreset(p: EmailProviderEnum) {
+        when (p) {
+            EmailProviderEnum.GMAIL -> { serverHost = "imap.gmail.com"; serverPort = "993"; useSsl = true }
+            EmailProviderEnum.SEZNAM -> { serverHost = "imap.seznam.cz"; serverPort = "993"; useSsl = true }
+            EmailProviderEnum.MICROSOFT -> { serverHost = "outlook.office365.com"; serverPort = "993"; useSsl = true }
+            EmailProviderEnum.IMAP -> { serverHost = serverHost; serverPort = serverPort.ifBlank { "993" }; useSsl = true }
+        }
+    }
+
+    LaunchedEffect(accountId) {
+        if (accountId == null) return@LaunchedEffect
+        loading = true
+        error = try {
+            repository.emailAccounts.getEmailAccount(accountId)?.let { acc ->
+                displayName = acc.displayName
+                email = acc.email
+                provider = acc.provider
+                serverHost = acc.serverHost ?: ""
+                serverPort = acc.serverPort?.toString() ?: "993"
+                username = acc.username ?: ""
+                useSsl = acc.useSsl
+            }
+            null
+        } catch (t: Throwable) { t.message } finally { loading = false }
+    }
+
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            TextButton(onClick = onBack) { Text("Back to Accounts") }
+            Spacer(Modifier.size(8.dp))
+            Text(if (accountId == null) "New Email Account" else "Edit Email Account", style = MaterialTheme.typography.titleLarge)
+        }
+        error?.let { Text("Error: $it", color = MaterialTheme.colorScheme.error) }
+
+        Section("Account") {
+            LabeledField("Display Name", displayName) { displayName = it }
+            LabeledField("Email", email) { email = it }
+            EnumSelector("Provider", provider, EmailProviderEnum.entries) { new ->
+                val p = new ?: provider
+                provider = p
+                applyPreset(p)
+            }
+            LabeledField("Server Host", serverHost) { serverHost = it }
+            LabeledField("Server Port", serverPort) { serverPort = it }
+            LabeledField("Username", username) { username = it }
+            LabeledField("Password", password) { password = it }
+            Toggle("Use SSL", useSsl) { useSsl = it }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButtonLike("Save") {
+                    scope.launch {
+                        try {
+                            loading = true
+                            if (accountId == null) {
+                                repository.emailAccounts.createEmailAccount(
+                                    CreateOrUpdateEmailAccountRequestDto(
+                                        clientId = clientId,
+                                        projectId = projectId,
+                                        provider = provider,
+                                        displayName = displayName,
+                                        email = email,
+                                        username = username.ifBlank { null },
+                                        password = password.ifBlank { null },
+                                        serverHost = serverHost.ifBlank { null },
+                                        serverPort = serverPort.toIntOrNull(),
+                                        useSsl = useSsl,
                                     )
-                                    error = null
-                                }
+                                )
+                            } else {
+                                repository.emailAccounts.updateEmailAccount(
+                                    accountId,
+                                    CreateOrUpdateEmailAccountRequestDto(
+                                        clientId = clientId,
+                                        projectId = projectId,
+                                        provider = provider,
+                                        displayName = displayName,
+                                        email = email,
+                                        username = username.ifBlank { null },
+                                        password = password.ifBlank { null },
+                                        serverHost = serverHost.ifBlank { null },
+                                        serverPort = serverPort.toIntOrNull(),
+                                        useSsl = useSsl,
+                                    )
+                                )
+                            }
+                            error = null
+                            onSaved()
+                        } catch (t: Throwable) { error = t.message } finally { loading = false }
+                    }
+                }
+                if (accountId != null) {
+                    TextButtonLike("Validate") {
+                        scope.launch {
+                            runCatching { repository.emailAccounts.validateEmailAccount(accountId) }
+                                .onSuccess { error = null }
                                 .onFailure { e -> error = e.message }
                         }
                     }
-                )
+                    TextButtonLike("Delete") {
+                        scope.launch {
+                            runCatching { repository.emailAccounts.deleteEmailAccount(accountId) }
+                                .onSuccess { onDeleted() }
+                                .onFailure { e -> error = e.message }
+                        }
+                    }
+                }
             }
         }
     }
@@ -953,271 +1153,6 @@ private data class IntegrationInfo(
     val effectiveConfluenceRootPageId: String?,
     val overrideConfluenceRootPageId: String?,
 )
-
-// ————— Git Tab —————
-@Composable
-private fun GitTab(repository: JervisRepository) {
-    val scope = rememberCoroutineScope()
-    var loading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    val clients = remember { mutableStateListOf<ClientDto>() }
-    var selectedClientId by remember { mutableStateOf<String?>(null) }
-
-    var provider by remember { mutableStateOf(GitProviderEnum.GITHUB) }
-    var auth by remember { mutableStateOf(GitAuthTypeEnum.HTTPS_PAT) }
-    var repoUrl by remember { mutableStateOf("") }
-    var defaultBranch by remember { mutableStateOf("main") }
-    var httpsToken by remember { mutableStateOf("") }
-    var sshPrivateKey by remember { mutableStateOf("") }
-
-    var branches by remember { mutableStateOf<List<String>>(emptyList()) }
-    var detectedDefault by remember { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(Unit) {
-        loading = true
-        error = try {
-            clients.clear(); clients += repository.clients.listClients()
-            null
-        } catch (t: Throwable) { t.message } finally { loading = false }
-    }
-
-    Column(Modifier.fillMaxSize()) {
-        error?.let { Text("Error: $it", color = MaterialTheme.colorScheme.error) }
-        Section("Select Client") {
-            FlowWrap {
-                clients.forEach { c ->
-                    val selected = c.id == selectedClientId
-                    Box(
-                        modifier = Modifier
-                            .padding(4.dp)
-                            .border(1.dp, if (selected) Color(0xFF3366FF) else Color.LightGray)
-                            .background(if (selected) Color(0x113366FF) else Color.Transparent)
-                            .clickable { selectedClientId = c.id }
-                            .padding(6.dp)
-                    ) { Text(c.name) }
-                }
-            }
-        }
-
-        selectedClientId?.let { clientId ->
-            Section("Git Configuration") {
-                EnumSelector("Provider", provider, GitProviderEnum.entries) { provider = it ?: provider }
-                EnumSelector("Auth", auth, GitAuthTypeEnum.entries) { auth = it ?: auth }
-                LabeledField("Repo URL", repoUrl) { repoUrl = it }
-                LabeledField("Default Branch", defaultBranch) { defaultBranch = it }
-                when (auth) {
-                    GitAuthTypeEnum.HTTPS_PAT, GitAuthTypeEnum.HTTPS_BASIC -> LabeledField("HTTPS Token/Password", httpsToken) { httpsToken = it }
-                    GitAuthTypeEnum.SSH_KEY -> LabeledField("SSH Private Key", sshPrivateKey) { sshPrivateKey = it }
-                    GitAuthTypeEnum.NONE -> {}
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButtonLike("Save") {
-                        scope.launch {
-                            try {
-                                loading = true
-                                repository.gitConfiguration.setupGitConfiguration(
-                                    clientId,
-                                    com.jervis.dto.GitSetupRequestDto(
-                                        gitProvider = provider,
-                                        monoRepoUrl = repoUrl,
-                                        defaultBranch = defaultBranch,
-                                        gitAuthType = auth,
-                                        httpsToken = httpsToken.ifBlank { null },
-                                        sshPrivateKey = sshPrivateKey.ifBlank { null },
-                                    )
-                                )
-                                error = null
-                            } catch (t: Throwable) { error = t.message } finally { loading = false }
-                        }
-                    }
-                    TextButtonLike("Test Connection") {
-                        scope.launch {
-                            try {
-                                loading = true
-                                repository.gitConfiguration.testConnection(clientId, com.jervis.dto.GitSetupRequestDto(
-                                    gitProvider = provider,
-                                    monoRepoUrl = repoUrl,
-                                    defaultBranch = defaultBranch,
-                                    gitAuthType = auth,
-                                    httpsToken = httpsToken.ifBlank { null },
-                                    sshPrivateKey = sshPrivateKey.ifBlank { null },
-                                ))
-                                error = null
-                            } catch (t: Throwable) { error = t.message } finally { loading = false }
-                        }
-                    }
-                }
-            }
-
-            Section("Branches") {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButtonLike("Refresh") {
-                        scope.launch {
-                            try {
-                                val resp = repository.gitConfiguration.listRemoteBranches(clientId, if (repoUrl.isBlank()) null else repoUrl)
-                                branches = resp.branches
-                                detectedDefault = resp.defaultBranch
-                                error = null
-                            } catch (t: Throwable) { error = t.message }
-                        }
-                    }
-                    TextButtonLike("Use Detected Default") {
-                        detectedDefault?.let { dd ->
-                            scope.launch { repository.gitConfiguration.setDefaultBranch(clientId, dd); defaultBranch = dd }
-                        }
-                    }
-                }
-                FlowWrap { branches.forEach { b ->
-                    val selected = b == defaultBranch
-                    Box(
-                        modifier = Modifier
-                            .padding(4.dp)
-                            .border(1.dp, if (selected) Color(0xFF3366FF) else Color.LightGray)
-                            .clickable { defaultBranch = b }
-                            .padding(6.dp)
-                    ) { Text(b) }
-                } }
-            }
-        }
-    }
-}
-
-// ————— Integrations Tab —————
-@Composable
-private fun IntegrationsTab(repository: JervisRepository) {
-    val scope = rememberCoroutineScope()
-    var loading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    val clients = remember { mutableStateListOf<ClientDto>() }
-    var selectedClientId by remember { mutableStateOf<String?>(null) }
-    var jiraStatus by remember { mutableStateOf<JiraSetupStatusDto?>(null) }
-    var jiraProjects by remember { mutableStateOf<List<com.jervis.dto.jira.JiraProjectRefDto>>(emptyList()) }
-    var selectedJiraPrimary by remember { mutableStateOf<String?>(null) }
-    var confluenceSpaceKey by remember { mutableStateOf("") }
-    var confluenceRootPageId by remember { mutableStateOf("") }
-
-    LaunchedEffect(Unit) {
-        loading = true
-        error = try { clients.clear(); clients += repository.clients.listClients(); null } catch (t: Throwable) { t.message } finally { loading = false }
-    }
-
-    LaunchedEffect(selectedClientId) {
-        val id = selectedClientId ?: return@LaunchedEffect
-        loading = true
-        try {
-            val st = repository.jiraSetup.getStatus(id)
-            jiraStatus = st
-            // Only allow Atlassian (Jira) autocomplete when account is connected and valid
-            jiraProjects = if (st.connected) repository.jiraSetup.listProjects(id) else emptyList()
-            // Initialize fields from status
-            selectedJiraPrimary = st.primaryProject
-            repository.integrationSettings.getClientStatus(id).let { cs ->
-                confluenceSpaceKey = cs.confluenceSpaceKey ?: ""
-                confluenceRootPageId = cs.confluenceRootPageId ?: ""
-            }
-            error = null
-        } catch (t: Throwable) {
-            error = t.message
-            jiraProjects = emptyList()
-        } finally { loading = false }
-    }
-
-    Column(Modifier.fillMaxSize()) {
-        error?.let { Text("Error: $it", color = MaterialTheme.colorScheme.error) }
-        Section("Select Client") {
-            FlowWrap { clients.forEach { c ->
-                val selected = c.id == selectedClientId
-                Box(
-                    modifier = Modifier
-                        .padding(4.dp)
-                        .border(1.dp, if (selected) Color(0xFF3366FF) else Color.LightGray)
-                        .background(if (selected) Color(0x113366FF) else Color.Transparent)
-                        .clickable { selectedClientId = c.id }
-                        .padding(6.dp)
-                ) { Text(c.name) }
-            } }
-        }
-
-        jiraStatus?.let { st ->
-            Section("Jira Status") {
-                Text("Tenant: ${st.tenant ?: "-"}")
-                Text("Email: ${st.email ?: "-"}")
-                Text("Connected: ${st.connected}")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButtonLike("Refresh") {
-                        scope.launch {
-                            val id = selectedClientId ?: return@launch
-                            jiraStatus = repository.jiraSetup.getStatus(id)
-                        }
-                    }
-                    TextButtonLike("Test Connection") {
-                        scope.launch {
-                            val id = selectedClientId ?: return@launch
-                            try { jiraStatus = repository.jiraSetup.testConnection(id); error = null } catch (t: Throwable) { error = t.message }
-                        }
-                    }
-                }
-            }
-
-            Section("Jira Primary Project") {
-                if (st.connected) {
-                    // Dropdown like: simple selectable chips
-                    FlowWrap {
-                        jiraProjects.forEach { jp ->
-                            val selected = jp.key == selectedJiraPrimary
-                            Box(
-                                modifier = Modifier
-                                    .padding(4.dp)
-                                    .border(1.dp, if (selected) Color(0xFF3366FF) else Color.LightGray)
-                                    .background(if (selected) Color(0x113366FF) else Color.Transparent)
-                                    .clickable {
-                                        selectedJiraPrimary = jp.key
-                                        scope.launch {
-                                            val id = selectedClientId ?: return@launch
-                                            try {
-                                                loading = true
-                                                repository.jiraSetup.setPrimaryProject(id, jp.key)
-                                                jiraStatus = repository.jiraSetup.getStatus(id)
-                                                error = null
-                                            } catch (t: Throwable) { error = t.message } finally { loading = false }
-                                        }
-                                    }
-                                    .padding(6.dp)
-                            ) { Text(text = "${jp.key}") }
-                        }
-                    }
-                } else {
-                    Text("Atlassian account is not connected or invalid. Autocomplete is disabled.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-
-            Section("Confluence Defaults (Client)") {
-                LabeledField("Space Key", confluenceSpaceKey) { confluenceSpaceKey = it }
-                LabeledField("Root Page ID", confluenceRootPageId) { confluenceRootPageId = it }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButtonLike("Save") {
-                        scope.launch {
-                            val id = selectedClientId ?: return@launch
-                            try {
-                                loading = true
-                                repository.integrationSettings.setClientConfluenceDefaults(
-                                    com.jervis.dto.integration.ClientConfluenceDefaultsDto(
-                                        clientId = id,
-                                        confluenceSpaceKey = confluenceSpaceKey.ifBlank { null },
-                                        confluenceRootPageId = confluenceRootPageId.ifBlank { null },
-                                    )
-                                )
-                                error = null
-                            } catch (t: Throwable) { error = t.message } finally { loading = false }
-                        }
-                    }
-                }
-            }
-        }
-
-        // TODO: Confluence client status via repository.integrationSettings.getClientStatus(clientId)
-    }
-}
 
 @Composable
 private fun ProjectOverridesSection(
@@ -1257,10 +1192,13 @@ private fun ProjectOverridesSection(
     var sshPrivateKey by remember(project.id) { mutableStateOf("") }
     var sshPassphrase by remember(project.id) { mutableStateOf("") }
 
-    // Email override (project-scoped account)
-    var displayName by remember(project.id) { mutableStateOf("") }
-    var email by remember(project.id) { mutableStateOf("") }
+    // Project-scoped email accounts management (full accounts, can be multiple)
     var projectEmailAccounts by remember(project.id) { mutableStateOf<List<EmailAccountDto>>(emptyList()) }
+
+    // Git commit identity override (username + email)
+    var useCommitIdentityOverride by remember(project.id) { mutableStateOf(false) }
+    var commitUserName by remember(project.id) { mutableStateOf("") }
+    var commitUserEmail by remember(project.id) { mutableStateOf("") }
 
     Section("Integration Overrides") {
         // Jira project dropdown via chips – enabled only if Atlassian account is connected and valid
@@ -1347,8 +1285,32 @@ private fun ProjectOverridesSection(
         if (useConfluenceRootPageOverride) {
             LabeledField("Confluence Root Page ID", confluenceRootPageId) { confluenceRootPageId = it }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButtonLike("Save Overrides") {
+        // Git commit identity override
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Git Commit Identity (override)")
+            Spacer(Modifier.size(8.dp))
+            Switch(checked = useCommitIdentityOverride, onCheckedChange = { useCommitIdentityOverride = it })
+        }
+        if (useCommitIdentityOverride) {
+            LabeledField("User Name", commitUserName) { commitUserName = it }
+            LabeledField("User Email", commitUserEmail) { commitUserEmail = it }
+        }
+
+        // Commit message template override
+        var useCommitMessageOverride by remember(project.id) { mutableStateOf(false) }
+        var commitMessageTemplate by remember(project.id) { mutableStateOf("") }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Commit Message Template (override)")
+            Spacer(Modifier.size(8.dp))
+            Switch(checked = useCommitMessageOverride, onCheckedChange = { useCommitMessageOverride = it })
+        }
+        if (useCommitMessageOverride) {
+            LabeledField("Template", commitMessageTemplate) { commitMessageTemplate = it }
+        }
+
+        var savingOverrides by remember(project.id) { mutableStateOf(false) }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButtonLike(if (savingOverrides) "Saving…" else "Save Overrides") {
                 scope.launch {
                     runCatching {
                         // Apply semantics: null = unchanged, "" = clear, non-empty = set
@@ -1372,7 +1334,22 @@ private fun ProjectOverridesSection(
                             confluenceRootPageId.isBlank() -> ""
                             else -> confluenceRootPageId
                         }
-
+                        val commitUserNameField = when {
+                            !useCommitIdentityOverride -> null
+                            commitUserName.isBlank() -> ""
+                            else -> commitUserName
+                        }
+                        val commitUserEmailField = when {
+                            !useCommitIdentityOverride -> null
+                            commitUserEmail.isBlank() -> ""
+                            else -> commitUserEmail
+                        }
+                        val commitTemplateField = when {
+                            !useCommitMessageOverride -> null
+                            commitMessageTemplate.isBlank() -> ""
+                            else -> commitMessageTemplate
+                        }
+                        savingOverrides = true
                         repository.integrationSettings.setProjectOverrides(
                             com.jervis.dto.integration.ProjectIntegrationOverridesDto(
                                 projectId = project.id,
@@ -1380,14 +1357,134 @@ private fun ProjectOverridesSection(
                                 jiraBoardId = jiraBoardField,
                                 confluenceSpaceKey = confluenceSpaceField,
                                 confluenceRootPageId = confluenceRootPageField,
+                                gitCommitUserName = commitUserNameField,
+                                gitCommitUserEmail = commitUserEmailField,
+                                commitMessageTemplate = commitTemplateField,
                             )
                         )
                     }.onSuccess { message = "Integration overrides saved"; onError(null); onSaved() }
                         .onFailure { e -> onError(e.message); message = null }
+                        .also { savingOverrides = false }
                 }
+            }
+            if (savingOverrides) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
             }
         }
         message?.let { Text(it) }
+    }
+
+    // Separate section: Project Email Accounts (full accounts CRUD for this project)
+    run {
+        var projEmailMode by remember(project.id) { mutableStateOf<EmailMode>(EmailMode.List) }
+        LaunchedEffect(clientId, project.id) {
+            runCatching { repository.emailAccounts.listEmailAccounts(clientId = clientId, projectId = project.id) }
+                .onSuccess { projectEmailAccounts = it }
+        }
+
+        when (val mode = projEmailMode) {
+            EmailMode.List -> {
+                Section("Project Email Accounts") {
+                    if (projectEmailAccounts.isEmpty()) {
+                        InfoBanner("No project email accounts yet. You can create multiple accounts scoped to this project.", isWarning = true)
+                    } else {
+                        // Do NOT use LazyColumn here because the parent screen already scrolls vertically.
+                        // Using a LazyColumn inside a vertically scrollable parent causes infinite height constraints.
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            projectEmailAccounts.forEach { acc ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("${'$'}{acc.displayName} <${'$'}{acc.email}>")
+                                        Text(
+                                            "Provider: ${'$'}{acc.provider}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        TextButtonLike("Edit") { acc.id?.let { projEmailMode = EmailMode.Edit(it) } }
+                                        TextButtonLike("Delete") {
+                                            val accountId = acc.id
+                                            if (accountId != null) {
+                                                scope.launch {
+                                                    runCatching { repository.emailAccounts.deleteEmailAccount(accountId) }
+                                                        .onSuccess {
+                                                            runCatching { repository.emailAccounts.listEmailAccounts(clientId = clientId, projectId = project.id) }
+                                                                .onSuccess { projectEmailAccounts = it }
+                                                        }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Divider()
+                            }
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButtonLike("Refresh") {
+                            scope.launch {
+                                runCatching { repository.emailAccounts.listEmailAccounts(clientId = clientId, projectId = project.id) }
+                                    .onSuccess { projectEmailAccounts = it }
+                            }
+                        }
+                        TextButtonLike("New Account") { projEmailMode = EmailMode.Create }
+                    }
+                }
+            }
+            is EmailMode.Edit -> {
+                EmailAccountEditScreen(
+                    repository = repository,
+                    clientId = clientId,
+                    accountId = mode.accountId,
+                    onBack = {
+                        projEmailMode = EmailMode.List
+                        scope.launch {
+                            runCatching { repository.emailAccounts.listEmailAccounts(clientId = clientId, projectId = project.id) }
+                                .onSuccess { projectEmailAccounts = it }
+                        }
+                    },
+                    onSaved = {
+                        projEmailMode = EmailMode.List
+                        scope.launch {
+                            runCatching { repository.emailAccounts.listEmailAccounts(clientId = clientId, projectId = project.id) }
+                                .onSuccess { projectEmailAccounts = it }
+                        }
+                    },
+                    onDeleted = {
+                        projEmailMode = EmailMode.List
+                        scope.launch {
+                            runCatching { repository.emailAccounts.listEmailAccounts(clientId = clientId, projectId = project.id) }
+                                .onSuccess { projectEmailAccounts = it }
+                        }
+                    },
+                    projectId = project.id,
+                )
+            }
+            EmailMode.Create -> {
+                EmailAccountEditScreen(
+                    repository = repository,
+                    clientId = clientId,
+                    accountId = null,
+                    onBack = { projEmailMode = EmailMode.List },
+                    onSaved = {
+                        projEmailMode = EmailMode.List
+                        scope.launch {
+                            runCatching { repository.emailAccounts.listEmailAccounts(clientId = clientId, projectId = project.id) }
+                                .onSuccess { projectEmailAccounts = it }
+                        }
+                    },
+                    onDeleted = { projEmailMode = EmailMode.List },
+                    projectId = project.id,
+                )
+            }
+        }
     }
 
     Section("Git Override") {
@@ -1401,13 +1498,24 @@ private fun ProjectOverridesSection(
             }
             com.jervis.domain.git.GitAuthTypeEnum.SSH_KEY -> {
                 LabeledField("SSH Private Key", sshPrivateKey) { sshPrivateKey = it }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButtonLike("Load from File…") {
+                        val picked = pickTextFileContent("Select SSH Private Key")
+                        if (picked != null) {
+                            sshPrivateKey = picked
+                        }
+                    }
+                }
                 LabeledField("SSH Passphrase (optional)", sshPassphrase) { sshPassphrase = it }
             }
             com.jervis.domain.git.GitAuthTypeEnum.NONE, null -> {}
         }
-        TextButtonLike("Save Git Override") {
+        var savingProjectGit by remember(project.id) { mutableStateOf(false) }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButtonLike(if (savingProjectGit) "Saving…" else "Save Git Override") {
             scope.launch {
                 runCatching {
+                    savingProjectGit = true
                     repository.gitConfiguration.setupGitOverrideForProject(
                         project.id,
                         com.jervis.dto.ProjectGitOverrideRequestDto(
@@ -1422,41 +1530,11 @@ private fun ProjectOverridesSection(
                     )
                 }.onSuccess { message = "Git override saved"; onError(null) }
                     .onFailure { e -> onError(e.message); message = null }
+                    .also { savingProjectGit = false }
             }
-        }
-    }
-
-    Section("Email Override (Project)") {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButtonLike("Refresh") {
-                scope.launch {
-                    runCatching { repository.emailAccounts.listEmailAccounts(clientId = clientId, projectId = project.id) }
-                        .onSuccess { projectEmailAccounts = it; onError(null) }
-                        .onFailure { e -> onError(e.message) }
-                }
             }
-        }
-        projectEmailAccounts.forEach { acc ->
-            Text("${acc.displayName} <${acc.email}>")
-        }
-        LabeledField("Display Name", displayName) { displayName = it }
-        LabeledField("Email", email) { email = it }
-        TextButtonLike("Create Project Email") {
-            scope.launch {
-                runCatching {
-                    repository.emailAccounts.createEmailAccount(
-                        CreateOrUpdateEmailAccountRequestDto(
-                            clientId = clientId,
-                            projectId = project.id,
-                            provider = com.jervis.domain.email.EmailProviderEnum.IMAP,
-                            displayName = displayName,
-                            email = email,
-                        )
-                    )
-                }.onSuccess {
-                    displayName = ""; email = ""
-                    onError(null)
-                }.onFailure { e -> onError(e.message) }
+            if (savingProjectGit) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
             }
         }
     }

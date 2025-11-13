@@ -2,13 +2,16 @@ package com.jervis.desktop.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.jervis.desktop.ConnectionManager
 import com.jervis.dto.events.DebugEventDto
@@ -208,6 +211,7 @@ fun DebugWindow(connectionManager: ConnectionManager) {
 @Composable
 fun SessionTabContent(session: DebugSession) {
     val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+    val clipboard = LocalClipboardManager.current
 
     Row(modifier = Modifier.fillMaxSize()) {
         // Left side - Prompts
@@ -253,19 +257,28 @@ fun SessionTabContent(session: DebugSession) {
                 )
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        "System Prompt",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    Text(
-                        session.systemPrompt,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontFamily = FontFamily.Monospace
-                        ),
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            "System Prompt",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                        TextButton(onClick = { clipboard.setText(AnnotatedString(session.systemPrompt)) }) {
+                            Text("Copy")
+                        }
+                    }
+                    SelectionContainer {
+                        Text(
+                            session.systemPrompt,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = FontFamily.Monospace
+                            ),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
                 }
             }
 
@@ -277,19 +290,28 @@ fun SessionTabContent(session: DebugSession) {
                 )
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        "User Prompt",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    Text(
-                        session.userPrompt,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontFamily = FontFamily.Monospace
-                        ),
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            "User Prompt",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                        TextButton(onClick = { clipboard.setText(AnnotatedString(session.userPrompt)) }) {
+                            Text("Copy")
+                        }
+                    }
+                    SelectionContainer {
+                        Text(
+                            session.userPrompt,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = FontFamily.Monospace
+                            ),
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
                 }
             }
         }
@@ -316,6 +338,12 @@ fun SessionTabContent(session: DebugSession) {
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onTertiaryContainer
                     )
+                    TextButton(
+                        onClick = { clipboard.setText(AnnotatedString(session.responseBuffer)) },
+                        enabled = session.responseBuffer.isNotEmpty()
+                    ) {
+                        Text("Copy")
+                    }
                     if (!session.isCompleted()) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(16.dp),
@@ -336,13 +364,15 @@ fun SessionTabContent(session: DebugSession) {
                             color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.6f)
                         )
                     } else {
-                        Text(
-                            session.responseBuffer,
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontFamily = FontFamily.Monospace
-                            ),
-                            color = MaterialTheme.colorScheme.onTertiaryContainer
-                        )
+                        SelectionContainer {
+                            Text(
+                                session.responseBuffer,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = FontFamily.Monospace
+                                ),
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
                     }
                 }
             }

@@ -7,6 +7,7 @@ import com.jervis.dto.GitBranchListDto
 import com.jervis.dto.GitSetupRequestDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ProjectGitOverrideRequestDto
+import com.jervis.dto.GitTestConnectionResponseDto
 import com.jervis.mapper.toDto
 import com.jervis.repository.mongo.ProjectMongoRepository
 import com.jervis.service.IGitConfigurationService
@@ -59,7 +60,7 @@ class GitConfigurationRestController(
     override suspend fun testConnection(
         @PathVariable clientId: String,
         @RequestBody request: GitSetupRequestDto,
-    ): Map<String, Any> {
+    ): GitTestConnectionResponseDto {
         logger.info { "Testing Git connection for client: $clientId" }
 
         val result =
@@ -72,15 +73,15 @@ class GitConfigurationRestController(
 
         return if (result.isSuccess && result.getOrNull() == true) {
             logger.info { "Git connection test successful for client: $clientId" }
-            mapOf(
-                "success" to true,
-                "message" to "Repository access validated successfully",
+            GitTestConnectionResponseDto(
+                success = true,
+                message = "Repository access validated successfully",
             )
         } else {
             logger.warn { "Git connection test failed for client: $clientId" }
-            mapOf(
-                "success" to false,
-                "message" to "Unable to access repository with provided credentials",
+            GitTestConnectionResponseDto(
+                success = false,
+                message = "Unable to access repository with provided credentials",
             )
         }
     }
