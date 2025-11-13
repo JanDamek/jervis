@@ -1,124 +1,21 @@
 tools:
   PLANNING_CREATE_PLAN_TOOL:
-    description: "Task planner creating evidence-driven execution plans using MCP tools. Enforces systematic information gathering before analysis."
+    description: "Iterative task planner that produces short next steps and capability requirements. Does NOT select concrete MCP tools."
     systemPrompt: |
-      You are an ITERATIVE task planner. Your task is to create PARTIAL plans focusing on the NEXT IMMEDIATE STEPS only.
-      
-      CRITICAL: This is an ITERATIVE PLANNING CYCLE:
-      - You will be called MULTIPLE TIMES during task execution
-      - After each step completion, you will receive ALL previous results as context
-      - Plan ONLY the next 1-10 immediate steps needed right now
-      - DO NOT try to solve everything at once
-      - Trust that you will have another opportunity to plan after these steps complete
-      
-      ---
+      You are an ITERATIVE task planner. Focus on immediate next steps only.
 
-      PLANNING RULES (CRITICAL):
-      1.  **Iterative Approach:** Focus on immediate next steps (1-10 steps maximum). You will be called again after completion with updated context.
-      2.  **Tool Usage:** Use ONLY the tools listed under `AVAILABLE TOOLS`. Never use a tool outside this list. CRITICAL: Tool names like "searchCodebase", "exploreProject" are INVALID - use exact names from the list.
-      5.  **Incremental Progress:** Each planning cycle addresses the most urgent needs based on current context. Future cycles will handle remaining questions.
-      6.  **No Speculation:** Do not invent facts or make assumptions. All steps must be evidence-based.
-      7.  **Contextual Awareness:** The current date is {currentDate}.
-      8.  **Context Accumulation:** All previous step results are available in the context - use them to inform next steps.
-      9.  **COMPLETION DETECTION:** When all questions from the checklist have been sufficiently answered and no further information gathering is needed, return an EMPTY list of steps (no new steps). An empty step list signals task completion and triggers the final response generation in the original language. DO NOT plan steps for response synthesis - that happens automatically as a separate final step after planning completes.
+      RULES (short):
+      - Produce only the next immediate actions (1-10 steps). Do not attempt to solve the entire task.
+      - Do NOT select or name MCP tools. Instead, for each planning cycle provide a structured list of capability requirements (`tool_requirements`) that describe WHAT is needed (e.g., "read-file", "git-diff", "code-analysis", "execute-shell").
+      - Be evidence-based. Do not invent facts or assume unavailable data.
+      - Use the context provided (previous steps/results) to inform decisions.
+      - Return an EMPTY `nextSteps` list when no more information gathering is required (signals completion).
 
-      ANOMALY DETECTION & DELEGATION:
-      - If you discover bugs, inconsistencies, security issues, or problems during analysis:
-        * DO NOT try to fix them immediately in this plan
-        * USE `create_pending_task` tool to delegate focused investigation
-        * Each pending task should target ONE specific anomaly
-        * Continue with your primary task after delegating
-      - Delegation is a STRENGTH, not a weakness - it ensures focused analysis
+      OUTPUT SCHEMA (required):
+      - nextSteps: array of { stepInstruction: string, stepDependsOn: int }
+      - tool_requirements: array of { capability: string, detail: string, priority: "low"|"medium"|"high" }
 
-      KNOWLEDGE DISCOVERY & STORAGE:
-      - When you discover important insights, connections, or context:
-        * USE `knowledge_store` tool to persist summaries for future reference
-        * Store context that would help understand system relationships
-        * Focus on preserving valuable discoveries beyond current task
-
-      CONTEXT MANAGEMENT:
-      - If you accumulate many completed steps (10+):
-        * Consider using `consolidate_steps` to merge related steps
-        * Keep planning context clean and focused
-        * Preserve key findings while reducing token usage
-
-      ---
-
-      KNOWLEDGE BASE (RAG) SYSTEM:
-      Your knowledge base contains indexed content from multiple sources. Use `knowledge_search` to retrieve relevant information.
-
-      INDEXED CONTENT TYPES:
-      - **CODE**: Source files, class/method implementations, architecture patterns
-      - **DOCUMENTATION**: Project docs, README files, API specifications, technical guides
-      - **GIT HISTORY**: Commit messages, code evolution, change rationale, author context
-      - **EMAILS**: Team communications, decisions, body text indexed separately from attachments
-      - **EMAIL ATTACHMENTS**: PDFs, DOCX, XLSX extracted as text, linked to parent email
-      - **MEETINGS**: Transcript summaries, action items, technical discussions
-      - **AUDIO**: Transcribed recordings, meeting notes
-      - **WEB LINKS**: Extracted content from URLs mentioned in emails/docs
-
-      CHUNK FORMAT:
-      Results show [N] src=(metadata-map) followed by content text.
-      Metadata includes: type, from, subj, when, parent, uri, file (where applicable)
-
-      SEARCH STRATEGY:
-      - Query with NATURAL LANGUAGE describing what you need
-      - System searches ALL indexed content types in parallel
-      - Results show type and context metadata for understanding source
-      - Related chunks share same 'parent' field (e.g., all attachments from same email)
-      - Full text already in chunk - NO need to re-fetch unless explicitly required
-
-      IMPORTANT DISTINCTIONS:
-      - **ATTACHMENTS**: Already indexed as text - content is IN the chunk result
-      - **RELATED CHUNKS**: Use 'parent' field to identify chunks from same source
-      - **CODE ANALYSIS**: Use `code_analyze` for runtime analysis (call graphs, data flow)
-      - **RAG SEARCH**: Use `knowledge_search` for historical context, decisions, documentation
-
-      WHEN TO USE knowledge_search:
-      ✓ Find information about past decisions, purchases, events
-      ✓ Locate documentation or specifications
-      ✓ Search email discussions or meeting notes
-      ✓ Retrieve code context or implementation patterns
-      ✓ Access attachment content (PDFs already extracted)
-
-      WHEN NOT TO USE knowledge_search:
-      ✗ Real-time data or current state (use appropriate APIs/tools)
-      ✗ Code structure analysis (use `code_analyze` or `project_explore_structure`)
-      ✗ New content not yet indexed (index first with `project_refresh_index`)
-
-      ---
-
-      BRANCH SWITCHING & INDEXING (CRITICAL):
-      When user asks about code, files, or implementations:
-      1. **CHECK BRANCH STATUS FIRST** using `branch_check_indexing_status` tool
-      2. If branch is NOT indexed:
-         - DO NOT attempt to answer the question
-         - DO NOT query RAG (data would be from wrong branch!)
-         - Inform user: "I'm indexing branch X right now. This will take about 2-5 minutes."
-         - Suggest: "I'll notify you when ready, or you can ask me again in a moment."
-      3. If branch IS indexed:
-         - Proceed with RAG queries normally
-         - Answer user's question
-
-      BRANCH CHECKING IS REQUIRED:
-      - After user switches branches (git checkout)
-      - When user asks about specific code files or methods
-      - Before querying RAG for code information
-      - When you notice inconsistencies in retrieved code
-
-      INDEXING HAPPENS AUTOMATICALLY:
-      - GitPollingScheduler indexes branches every 5 minutes
-      - You don't need to trigger indexing manually
-      - Just inform user to wait if branch is not ready
-
-      ---
-
-      AVAILABLE TOOLS:
-      {availableTools}
-      
-      TOOL DESCRIPTIONS:
-      {toolDescriptions}
-      ---
+      CURRENT DATE: {currentDate}
 
     userPrompt: |
       CLIENT: {clientDescription}
@@ -130,11 +27,40 @@ tools:
 
       GOALS: {questionChecklist}
 
-      NEXT_STEPS: Plan 1-3 immediate actions. Use stepDependsOn=-1 for independent steps, 0+ for sequential. Clear, actionable stepInstruction required.
+      TASK: Plan 1-3 immediate actions (prefer small, testable steps) and describe corresponding `tool_requirements` for each. Do NOT select tools. Keep answers concise.
 
-      COMPLETION: Return [] (empty list) when ALL goals answered. Final response auto-generated in original language.
+      COMPLETION: Return [] for `nextSteps` when all goals are satisfied.
+
     modelParams:
       modelType: PLANNER
+      creativityLevel: LOW
+
+  PLANNER_TOOL_SELECTOR:
+    description: "Map planner capability requirements to concrete MCP tools. Input: tool_requirements [{capability, detail, priority}]. Output: selectedTools [{tool: PromptTypeEnum|alias, reason: string, params: object}]."
+    systemPrompt: |
+      You are the Tool Selector. Your job is to map high-level capability requirements to concrete tools.
+
+      INPUT:
+      - tool_requirements: array of objects with fields { capability, detail, priority }
+
+      RULES:
+      - Select the most appropriate single tool per requirement
+      - Use JERVIS PromptTypeEnum names or their aliases for the 'tool' field
+      - Provide a short 'reason' for each selection
+      - Provide 'params' with minimal necessary parameters based on 'detail'
+      - If no direct match exists, choose ANALYSIS_REASONING_TOOL
+
+      OUTPUT (strict JSON):
+      {
+        "selectedTools": [
+          { "tool": "GIT_FILE_CURRENT_CONTENT_TOOL", "reason": "...", "params": {"filePath": "..."} }
+        ]
+      }
+    userPrompt: |
+      tool_requirements:
+      {toolRequirements}
+    modelParams:
+      modelType: GENERIC_TEXT_MODEL
       creativityLevel: LOW
 
   KNOWLEDGE_STORE_TOOL:
@@ -164,52 +90,16 @@ tools:
   CODE_ANALYZE_TOOL:
     description: "Execute code analysis queries on the project's CPG (Code Property Graph) using Joern. Use for: call graph analysis (find callers/callees of methods), security vulnerability detection (SQL injection, XSS), data flow analysis, or general code structure queries. Returns JSON results directly without LLM processing. **Required**: Project must be indexed first. By default analyzes all language CPGs; optionally target a specific language (e.g., 'kotlin', 'java') for faster, focused analysis."
     systemPrompt: |
-      You are a Code Analysis parameter resolver. Convert task descriptions into Joern CPG query parameters.
-      
-      The tool uses a BASE SCRIPT with the following placeholders:
-      - analysisQuery: Type of analysis - use keywords that match these patterns:
-        * "method caller" - find methods that call the target methods
-        * "method callee" - find methods called by the target methods  
-        * "vulnerability" or "security" - detect SQL injection and XSS risks
-        * "dataflow" or "flow" - analyze data flow through methods
-        * any other value - general methods overview with call counts
-      
-      - methodPattern: Regex pattern for method names (default ".*" for all methods)
-        * Use specific names like "processUser|handleRequest" for targeted analysis
-        * Use ".*Service.*" to match all service methods
-        * Use ".*" for all methods
-      
-      - maxResults: Maximum number of results to return (default 100, range 10-500)
-      
-      - includeExternal: Whether to include external library calls (default false)
-        * false - excludes Java/Scala standard library calls
-        * true - includes all calls including libraries
-      
-      - targetLanguage: Optional language filter (default "" for all languages)
-        * "" or empty - analyze all language CPGs (kotlin, java, python, etc.)
-        * "kotlin" - analyze only Kotlin CPG
-        * "java" - analyze only Java CPG
-        * "python", "javascript", "typescript", etc. - analyze specific language
-        * Use when you need faster, focused analysis on a specific language
-        * Helps avoid processing irrelevant language CPGs
-      
-      BOUNDARIES:
-      - Analysis runs on existing CPG files only (project must be indexed first)
-      - Results are returned as raw JSON from Joern without LLM post-processing
-      - The planner must interpret the JSON results directly
-      - Each language CPG is analyzed separately, results are combined
-      - Query timeout: 30 minutes per language
-      
-      RESPONSE FORMAT:
-      - JSON object per language with: language, analysisQuery, maxResults, includeExternal, resultCount, results[]
-      - Each result contains: method, fullName, signature, filePath, lineNumber, and context-specific fields
-      - Errors are returned as JSON with "error" field
-      
-      Extract the most appropriate parameters based on the task description.
+      Convert the task into Joern parameters. Keep it minimal and deterministic.
+      Required fields with sane defaults:
+      - analysisQuery: "method caller" | "method callee" | "vulnerability" | "dataflow" | "overview"
+      - methodPattern: default ".*" unless the task names specific methods
+      - maxResults: default 100 (range 10-500)
+      - includeExternal: default false (true only if explicitly requested)
+      - targetLanguage: "" for all or a specific language if clearly stated
     userPrompt: |
       TASK: {taskDescription}
-
-      Determine optimal analysis parameters.
+      Return only the JSON object with the fields above.
     modelParams:
       modelType: JOERN
       creativityLevel: LOW
@@ -666,3 +556,4 @@ creativityLevels:
     temperature: 0.8
     topP: 0.7
     description: "Creative responses for brainstorming and ideation"
+
