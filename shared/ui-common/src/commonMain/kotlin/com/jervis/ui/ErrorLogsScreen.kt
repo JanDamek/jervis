@@ -54,9 +54,7 @@ fun ErrorLogsScreen(
                     }
                 },
                 actions = {
-                    TextButton(onClick = { loadErrorLogs() }) {
-                        Text("🔄 Refresh")
-                    }
+                    com.jervis.ui.util.RefreshIconButton(onClick = { loadErrorLogs() })
                 }
             )
         }
@@ -104,15 +102,10 @@ fun ErrorLogsScreen(
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Button(
+                            com.jervis.ui.util.DeleteIconButton(
                                 onClick = { showDeleteDialog = true },
-                                enabled = selectedLogId != null,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.error
-                                )
-                            ) {
-                                Text("🗑️ Delete Selected")
-                            }
+                                enabled = selectedLogId != null
+                            )
                         }
 
                         // Error logs table
