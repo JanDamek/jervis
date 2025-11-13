@@ -46,7 +46,7 @@ fun IndexingStatusScreen(
                     TextButton(onClick = onBack) { Text("← Back") }
                 },
                 actions = {
-                    TextButton(onClick = { load() }) { Text("🔄 Refresh") }
+                    com.jervis.ui.util.RefreshIconButton(onClick = { load() })
                 }
             )
         }

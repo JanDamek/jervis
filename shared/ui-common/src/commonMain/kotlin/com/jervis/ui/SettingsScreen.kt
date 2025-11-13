@@ -75,7 +75,12 @@ fun SettingsScreen(
 
 @Composable
 private fun TextButtonLike(text: String, onClick: () -> Unit) {
-    Button(onClick = onClick) { Text(text) }
+    when (text) {
+        "Refresh" -> com.jervis.ui.util.RefreshIconButton(onClick = onClick)
+        "Delete" -> com.jervis.ui.util.DeleteIconButton(onClick = onClick)
+        "Edit" -> com.jervis.ui.util.EditIconButton(onClick = onClick)
+        else -> Button(onClick = onClick) { Text(text) }
+    }
 }
 
 // ————— Clients Tab —————
@@ -123,19 +128,32 @@ private fun ClientsTab(repository: JervisRepository) {
         if (loading) Text("Loading clients…")
         error?.let { Text("Error: $it", color = MaterialTheme.colorScheme.error) }
 
+        var pendingDeleteClientId by remember { mutableStateOf<String?>(null) }
+        com.jervis.ui.util.ConfirmDialog(
+            visible = pendingDeleteClientId != null,
+            title = "Delete Client",
+            message = "Are you sure you want to delete this client?",
+            onConfirm = {
+                val id = pendingDeleteClientId ?: return@ConfirmDialog
+                scope.launch {
+                    try {
+                        repository.clients.deleteClient(id)
+                        clients.removeAll { it.id == id }
+                        error = null
+                    } catch (t: Throwable) { error = t.message }
+                    finally { pendingDeleteClientId = null }
+                }
+            },
+            onDismiss = { pendingDeleteClientId = null },
+        )
+
         when (val m = mode) {
             is ClientsMode.List -> ClientsList(
                 clients = clients,
                 onNew = { mode = ClientsMode.Create },
                 onEdit = { clientId -> mode = ClientsMode.Edit(clientId) },
                 onDelete = { clientId ->
-                    scope.launch {
-                        try {
-                            repository.clients.deleteClient(clientId)
-                            clients.removeAll { it.id == clientId }
-                            error = null
-                        } catch (t: Throwable) { error = t.message }
-                    }
+                    pendingDeleteClientId = clientId
                 },
                 onRefresh = { refreshClients() }
             )
@@ -196,7 +214,7 @@ private fun ClientsList(
         Spacer(Modifier.size(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButtonLike("New Client") { onNew() }
-            TextButtonLike("Refresh") { onRefresh() }
+            com.jervis.ui.util.RefreshIconButton(onClick = onRefresh)
         }
     }
 }
@@ -682,6 +700,29 @@ private fun ClientProjectsSection(
     }
 
     Column(Modifier.fillMaxWidth()) {
+        var pendingDeleteProjectId by remember { mutableStateOf<String?>(null) }
+        com.jervis.ui.util.ConfirmDialog(
+            visible = pendingDeleteProjectId != null,
+            title = "Delete Project",
+            message = "Are you sure you want to delete this project?",
+            onConfirm = {
+                val id = pendingDeleteProjectId ?: return@ConfirmDialog
+                val projectToDelete = projects.firstOrNull { it.id == id }
+                if (projectToDelete != null) {
+                    scope.launch {
+                        try {
+                            repository.projects.deleteProject(projectToDelete)
+                            projects.removeAll { it.id == id }
+                            error = null
+                        } catch (t: Throwable) { error = t.message }
+                        finally { pendingDeleteProjectId = null }
+                    }
+                } else {
+                    pendingDeleteProjectId = null
+                }
+            },
+            onDismiss = { pendingDeleteProjectId = null },
+        )
         if (loading) Text("Loading projects…")
         error?.let { Text("Error: $it", color = MaterialTheme.colorScheme.error) }
         if (!creatingNew && openProjectId == null) {
@@ -692,13 +733,7 @@ private fun ClientProjectsSection(
                             project = p,
                             onOpen = { openProjectId = p.id },
                             onDelete = {
-                                scope.launch {
-                                    try {
-                                        repository.projects.deleteProject(p)
-                                        projects.removeAll { it.id == p.id }
-                                        error = null
-                                    } catch (t: Throwable) { error = t.message }
-                                }
+                                pendingDeleteProjectId = p.id
                             },
                             onSave = { /* no inline save in list view */ }
                         )
@@ -796,6 +831,7 @@ private fun ProjectEditScreen(
     val scope = rememberCoroutineScope()
     var error by remember(project.id) { mutableStateOf<String?>(null) }
     var selectedTab by remember(project.id) { mutableStateOf(ProjectEditTab.Basic) }
+    var showProjectDeleteConfirm by remember(project.id) { mutableStateOf(false) }
 
     // Basic fields
     var name by remember(project.id) { mutableStateOf(project.name) }
@@ -890,13 +926,7 @@ private fun ProjectEditScreen(
                                     }.onFailure { e -> error = e.message }
                                 }
                             }
-                            TextButtonLike("Delete") {
-                                scope.launch {
-                                    runCatching { repository.projects.deleteProject(project) }
-                                        .onSuccess { onProjectDeleted() }
-                                        .onFailure { e -> error = e.message }
-                                }
-                            }
+                            TextButtonLike("Delete") { showProjectDeleteConfirm = true }
                         }
                     }
                 }

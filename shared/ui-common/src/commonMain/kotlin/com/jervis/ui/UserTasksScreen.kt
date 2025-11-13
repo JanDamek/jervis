@@ -124,9 +124,7 @@ fun UserTasksScreen(
                     }
                 },
                 actions = {
-                    TextButton(onClick = { loadTasks() }) {
-                        Text("🔄 Refresh")
-                    }
+                    com.jervis.ui.util.RefreshIconButton(onClick = { loadTasks() })
                 }
             )
         }
@@ -173,15 +171,10 @@ fun UserTasksScreen(
                                 style = MaterialTheme.typography.titleMedium,
                                 modifier = Modifier.padding(8.dp)
                             )
-                            Button(
+                            com.jervis.ui.util.DeleteIconButton(
                                 onClick = { showRevokeConfirm = true },
-                                enabled = selectedTask != null,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.error
-                                )
-                            ) {
-                                Text("🗑️ Revoke")
-                            }
+                                enabled = selectedTask != null
+                            )
                         }
 
                         HorizontalDivider()

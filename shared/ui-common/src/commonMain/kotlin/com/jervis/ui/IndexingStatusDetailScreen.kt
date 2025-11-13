@@ -43,7 +43,7 @@ fun IndexingStatusDetailScreen(
             TopAppBar(
                 title = { Text("Indexing • ${'$'}toolKey") },
                 navigationIcon = { TextButton(onClick = onBack) { Text("← Back") } },
-                actions = { TextButton(onClick = { load() }) { Text("🔄 Refresh") } }
+                actions = { com.jervis.ui.util.RefreshIconButton(onClick = { load() }) }
             )
         }
     ) { padding ->
