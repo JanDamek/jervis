@@ -92,24 +92,74 @@ fun IndexingStatusDetailScreen(
                     val d = detail!!
                     Column(modifier = Modifier.fillMaxSize()) {
                         // Summary card
-                        Card(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-                            Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-                                Text(d.summary.displayName, style = MaterialTheme.typography.titleMedium)
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            ),
+                        ) {
+                            Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                                Text(
+                                    d.summary.displayName,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
                                 d.summary.reason?.let {
+                                    Spacer(Modifier.height(4.dp))
                                     Text(
                                         it,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.primary,
                                     )
                                 }
-                                Spacer(Modifier.height(6.dp))
-                                Text("State: ${d.summary.state}")
-                                Text("Processed: ${d.summary.processed} • Errors: ${d.summary.errors}")
-                                d.summary.lastError?.let { Text("Last error: $it", color = MaterialTheme.colorScheme.error) }
-                                Spacer(Modifier.height(4.dp))
+                                Spacer(Modifier.height(12.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    val badgeColor = if (d.summary.state.name == "RUNNING")
+                                        MaterialTheme.colorScheme.primary
+                                    else
+                                        MaterialTheme.colorScheme.secondary
+                                    AssistChip(
+                                        onClick = {},
+                                        label = { Text(d.summary.state.name) },
+                                        colors = AssistChipDefaults.assistChipColors(
+                                            containerColor = badgeColor,
+                                        ),
+                                    )
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                    Text(
+                                        "✓ Processed: ${d.summary.processed}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                    if (d.summary.errors > 0) {
+                                        Text(
+                                            "⚠ Errors: ${d.summary.errors}",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                    }
+                                }
+                                d.summary.lastError?.let {
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        "Last error: $it",
+                                        color = MaterialTheme.colorScheme.error,
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                                Spacer(Modifier.height(8.dp))
                                 val started = d.summary.lastRunStartedAt ?: "-"
                                 val finished = d.summary.lastRunFinishedAt ?: "-"
-                                Text("Last run: $started → $finished")
+                                Text(
+                                    "Last run: $started → $finished",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
 
@@ -151,23 +201,61 @@ fun IndexingStatusDetailScreen(
 
 @Composable
 private fun ItemRow(item: IndexingItemDto) {
-    val color =
+    val (levelIcon, levelColor, containerColor) =
         when (item.level) {
-            "ERROR" -> MaterialTheme.colorScheme.error
-            "PROGRESS" -> MaterialTheme.colorScheme.primary
-            else -> MaterialTheme.colorScheme.onSurface
+            "ERROR" -> Triple("⚠", MaterialTheme.colorScheme.error, MaterialTheme.colorScheme.errorContainer)
+            "PROGRESS" -> Triple("⟳", MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.primaryContainer)
+            else -> Triple("ℹ", MaterialTheme.colorScheme.onSurface, MaterialTheme.colorScheme.surfaceVariant)
         }
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        Text("${item.timestamp} • ${item.level}", color = color, style = MaterialTheme.typography.labelSmall)
-        Text(item.message, style = MaterialTheme.typography.bodyMedium)
-        val deltas =
-            listOfNotNull(
-                item.processedDelta?.let { "+$it processed" },
-                item.errorsDelta?.let { "+$it errors" },
+
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = containerColor,
+        ),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    levelIcon,
+                    color = levelColor,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        item.level,
+                        color = levelColor,
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                    Text(
+                        item.timestamp,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                item.message,
+                style = MaterialTheme.typography.bodyMedium,
             )
-        if (deltas.isNotEmpty()) {
-            Text(deltas.joinToString(" • "), style = MaterialTheme.typography.labelSmall)
+            val deltas =
+                listOfNotNull(
+                    item.processedDelta?.let { "+$it processed" },
+                    item.errorsDelta?.let { "+$it errors" },
+                )
+            if (deltas.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    deltas.joinToString(" • "),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
         }
-        Divider(modifier = Modifier.padding(top = 8.dp))
     }
 }

@@ -122,6 +122,11 @@ class PendingTaskService(
         runCatching { updateState(taskId, PendingTaskState.READY_FOR_QUALIFICATION, PendingTaskState.QUALIFYING) }
             .getOrNull()
 
+    fun findAllTasks(): Flow<PendingTask> =
+        pendingTaskRepository
+            .findAllByOrderByCreatedAtAsc()
+            .map { it.toDomain() }
+
 
     suspend fun failAndEscalateToUserTask(
         task: PendingTask,

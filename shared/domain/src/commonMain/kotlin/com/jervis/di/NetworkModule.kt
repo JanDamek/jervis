@@ -83,6 +83,7 @@ object NetworkModule {
             emailAccountService = ktorfit.createIEmailAccountService(),
             indexingStatusService = ktorfit.createIIndexingStatusService(),
             confluenceService = ktorfit.createIConfluenceService(),
+            pendingTaskService = ktorfit.createIPendingTaskService(),
         )
     }
 
@@ -104,6 +105,7 @@ object NetworkModule {
         val emailAccountService: IEmailAccountService,
         val indexingStatusService: IIndexingStatusService,
         val confluenceService: IConfluenceService,
+        val pendingTaskService: IPendingTaskService,
     )
 }
 

@@ -73,6 +73,13 @@ fun MainScreen(
                             }
                         )
                         DropdownMenuItem(
+                            text = { Text("Pending Tasks") },
+                            onClick = {
+                                showMenu = false
+                                onNavigate(com.jervis.ui.navigation.Screen.PendingTasks)
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text("Scheduler") },
                             onClick = {
                                 showMenu = false

@@ -19,6 +19,7 @@ class JervisRepository(
     jiraSetupService: IJiraSetupService,
     emailAccountService: IEmailAccountService,
     indexingStatusService: IIndexingStatusService,
+    pendingTaskService: IPendingTaskService,
 ) {
     val clients: ClientRepository = ClientRepository(clientService)
     val projects: ProjectRepository = ProjectRepository(projectService)
@@ -32,4 +33,5 @@ class JervisRepository(
     val jiraSetup: JiraSetupRepository = JiraSetupRepository(jiraSetupService)
     val emailAccounts: EmailAccountRepository = EmailAccountRepository(emailAccountService)
     val indexingStatus: IndexingStatusRepository = IndexingStatusRepository(indexingStatusService)
+    val pendingTasks: PendingTaskRepository = PendingTaskRepository(pendingTaskService)
 }
