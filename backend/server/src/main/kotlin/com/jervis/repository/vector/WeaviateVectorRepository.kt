@@ -196,7 +196,6 @@ class WeaviateVectorRepository(
                 Field.builder().name("parentRef").build(),
                 Field.builder().name("timestamp").build(),
                 Field.builder().name("from").build(),
-                Field.builder().name("to").build(),
                 Field.builder().name("subject").build(),
                 Field
                     .builder()
