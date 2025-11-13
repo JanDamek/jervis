@@ -7,13 +7,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ui.ChatMessage
+import com.jervis.ui.util.rememberClipboardManager
 
 /**
  * Main screen for Jervis Mobile - inspired by Desktop MainWindow
@@ -337,7 +337,7 @@ private fun ChatMessageItem(
     message: ChatMessage,
     modifier: Modifier = Modifier,
 ) {
-    val clipboard = LocalClipboardManager.current
+    val clipboard = rememberClipboardManager()
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement =

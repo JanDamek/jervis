@@ -38,7 +38,7 @@ fun SchedulerScreen(
     var isLoading by remember { mutableStateOf(false) }
     var isLoadingTasks by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    var showCancelConfirm by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     var clientDropdownExpanded by remember { mutableStateOf(false) }
     var projectDropdownExpanded by remember { mutableStateOf(false) }
@@ -143,17 +143,17 @@ fun SchedulerScreen(
         }
     }
 
-    // Cancel task
-    fun cancelTask() {
+    // Delete task
+    fun deleteTask() {
         val task = selectedTask ?: return
         scope.launch {
             try {
                 repository.scheduledTasks.cancelTask(task.task.id)
                 selectedTask = null
-                showCancelConfirm = false
+                showDeleteConfirm = false
                 loadTasks()
             } catch (e: Exception) {
-                errorMessage = "Failed to cancel task: ${e.message}"
+                errorMessage = "Failed to delete task: ${e.message}"
             }
         }
     }
@@ -325,25 +325,11 @@ fun SchedulerScreen(
                 Column(
                     modifier = Modifier.weight(0.6f).fillMaxHeight()
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Scheduled Tasks (${tasks.size})",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Button(
-                            onClick = { showCancelConfirm = true },
-                            enabled = selectedTask != null,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.error
-                            )
-                        ) {
-                            Text("🗑️ Cancel")
-                        }
-                    }
+                    Text(
+                        text = "Scheduled Tasks (${tasks.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(16.dp)
+                    )
                     HorizontalDivider()
 
                     when {
@@ -376,7 +362,11 @@ fun SchedulerScreen(
                                     ScheduledTaskCard(
                                         task = task,
                                         isSelected = selectedTask == task,
-                                        onClick = { selectedTask = task }
+                                        onClick = { selectedTask = task },
+                                        onDelete = {
+                                            selectedTask = task
+                                            showDeleteConfirm = true
+                                        }
                                     )
                                 }
                             }
@@ -477,29 +467,15 @@ fun SchedulerScreen(
         }
     }
 
-    // Cancel confirmation dialog
-    if (showCancelConfirm && selectedTask != null) {
-        AlertDialog(
-            onDismissRequest = { showCancelConfirm = false },
-            title = { Text("Confirm Cancel") },
-            text = { Text("Cancel selected scheduled task?") },
-            confirmButton = {
-                Button(
-                    onClick = { cancelTask() },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("Cancel Task")
-                }
-            },
-            dismissButton = {
-                OutlinedButton(onClick = { showCancelConfirm = false }) {
-                    Text("Dismiss")
-                }
-            }
-        )
-    }
+    // Delete confirmation dialog
+    com.jervis.ui.util.ConfirmDialog(
+        visible = showDeleteConfirm && selectedTask != null,
+        title = "Delete Scheduled Task",
+        message = "Are you sure you want to delete this scheduled task? This action cannot be undone.",
+        confirmText = "Delete",
+        onConfirm = { deleteTask() },
+        onDismiss = { showDeleteConfirm = false }
+    )
 }
 
 data class EnhancedScheduledTask(
@@ -512,7 +488,8 @@ data class EnhancedScheduledTask(
 private fun ScheduledTaskCard(
     task: EnhancedScheduledTask,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onDelete: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -528,33 +505,43 @@ private fun ScheduledTaskCard(
             defaultElevation = if (isSelected) 4.dp else 1.dp
         )
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp)
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
         ) {
-            Text(
-                text = task.task.taskName,
-                style = MaterialTheme.typography.titleSmall
-            )
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(top = 4.dp)
+            Column(
+                modifier = Modifier.weight(1f)
             ) {
-                Badge { Text(task.task.status.name) }
-                Badge { Text("P${task.task.priority}") }
+                Text(
+                    text = task.task.taskName,
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
+                    Badge { Text(task.task.status.name) }
+                    Badge { Text("P${task.task.priority}") }
+                }
+                Text(
+                    text = "${task.projectName}${task.clientName?.let { " • $it" } ?: ""}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+                Text(
+                    text = formatInstant(task.task.scheduledAt),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
             }
-            Text(
-                text = "${task.projectName}${task.clientName?.let { " • $it" } ?: ""}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-            Text(
-                text = formatInstant(task.task.scheduledAt),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 2.dp)
+
+            com.jervis.ui.util.DeleteIconButton(
+                onClick = { onDelete() }
             )
         }
     }

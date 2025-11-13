@@ -58,8 +58,9 @@ fun PendingTasksScreen(
                     TextButton(onClick = onBack) { Text("← Back") }
                 },
                 actions = {
-                    com.jervis.ui.util.RefreshIconButton(onClick = { load() })
-                }
+                    com.jervis.ui.util
+                        .RefreshIconButton(onClick = { load() })
+                },
             )
         },
     ) { padding ->
@@ -95,7 +96,7 @@ fun PendingTasksScreen(
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         Text(task.taskType, style = MaterialTheme.typography.titleMedium)
-                                        com.jervis.ui.util.IconButtons.DeleteIconButton(
+                                        com.jervis.ui.util.DeleteIconButton(
                                             onClick = { pendingDeleteTaskId = task.id }
                                         )
                                     }
