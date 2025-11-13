@@ -18,19 +18,31 @@ import org.springframework.stereotype.Service
 @Service
 class Finalizer(
     private val gateway: LlmGateway,
+    private val debugService: com.jervis.service.debug.DebugService,
 ) {
     private val logger = KotlinLogging.logger {}
 
     suspend fun finalize(plan: Plan): ChatResponse {
-        logger.debug {
-            "FINALIZER_START: Processing planId=${plan.id}, status=${plan.status}, taskInstruction='${plan.taskInstruction}'"
+        val totalSteps = plan.steps.size
+        val completedSteps = plan.steps.count { it.status == StepStatusEnum.DONE }
+        val failedSteps = plan.steps.count { it.status == StepStatusEnum.FAILED }
+        logger.info {
+            "FINALIZER_START: planId=${plan.id} status=${plan.status} totalSteps=$totalSteps completed=$completedSteps failed=$failedSteps correlationId=${plan.correlationId}"
         }
-        logger.debug { "FINALIZER_PLAN_CONTEXT: contextSummary='${plan.contextSummary}', finalAnswer='${plan.finalAnswer}'" }
+
+        // Publish debug event for finalizer start
+        debugService.finalizerStart(
+            correlationId = plan.correlationId,
+            planId = plan.id.toHexString(),
+            totalSteps = totalSteps,
+            completedSteps = completedSteps,
+            failedSteps = failedSteps
+        )
 
         // If plan already has a final answer, use it; otherwise generate one via LLM
         val finalAnswer =
             if (plan.finalAnswer != null) {
-                logger.debug { "FINALIZER_EXISTING_ANSWER: Using existing finalAnswer from plan" }
+                logger.info { "FINALIZER_EXISTING_ANSWER: planId=${plan.id} using existing answer" }
                 plan.finalAnswer!!
             } else {
                 val userLang = plan.originalLanguage.ifBlank { "EN" }
@@ -54,6 +66,14 @@ class Finalizer(
             }
 
         plan.status = PlanStatusEnum.FINALIZED
+        logger.info { "FINALIZER_COMPLETE: planId=${plan.id} status=FINALIZED answerLength=${finalAnswer.length} correlationId=${plan.correlationId}" }
+
+        // Publish debug event for finalizer complete
+        debugService.finalizerComplete(
+            correlationId = plan.correlationId,
+            planId = plan.id.toHexString(),
+            answerLength = finalAnswer.length
+        )
 
         val title = plan.taskInstruction.ifBlank { plan.englishInstruction }
         val responseMessage =

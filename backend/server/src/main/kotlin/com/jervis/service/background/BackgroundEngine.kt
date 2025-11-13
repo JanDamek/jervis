@@ -35,6 +35,7 @@ class BackgroundEngine(
     private val taskQualificationService: TaskQualificationService,
     private val backgroundProperties: com.jervis.configuration.properties.BackgroundProperties,
     private val errorNotificationsPublisher: com.jervis.service.notification.ErrorNotificationsPublisher,
+    private val debugService: com.jervis.service.debug.DebugService,
 ) {
     private val logger = KotlinLogging.logger {}
     private val supervisor = SupervisorJob()
@@ -164,9 +165,18 @@ class BackgroundEngine(
                             .firstOrNull()
 
                     if (task != null) {
-                        logger.info { "Found pending task ${task.id} (${task.taskType}), starting execution..." }
+                        logger.info { "GPU_TASK_PICKUP: id=${task.id} correlationId=${task.correlationId} type=${task.taskType} state=${task.state}" }
+
+                        // Publish debug event
+                        debugService.gpuTaskPickup(
+                            correlationId = task.correlationId,
+                            taskId = task.id.toHexString(),
+                            taskType = task.taskType.name,
+                            state = task.state.name
+                        )
+
                         executeTask(task) // Blocks until task completes - no other task can start
-                        logger.info { "Task execution finished, checking for next task..." }
+                        logger.info { "GPU_TASK_FINISHED: id=${task.id} correlationId=${task.correlationId}" }
                         // Loop immediately to check for next task (no delay)
                     } else {
                         logger.debug { "No qualified tasks found, sleeping 30s..." }
@@ -193,19 +203,19 @@ class BackgroundEngine(
     private suspend fun executeTask(task: PendingTask) {
         val taskJob =
             scope.launch {
-                logger.info { "Starting pending task: ${task.id} (${task.taskType})" }
+                logger.info { "GPU_EXECUTION_START: id=${task.id} correlationId=${task.correlationId} type=${task.taskType}" }
 
                 try {
                     // All tasks go through agent orchestrator with goals from YAML
                     agentOrchestrator.handleBackgroundTask(task)
 
                     pendingTaskService.deleteTask(task.id)
-                    logger.info { "Task completed and deleted: ${task.id}" }
+                    logger.info { "GPU_EXECUTION_SUCCESS: id=${task.id} correlationId=${task.correlationId}" }
 
                     // Reset failure counter on success
                     consecutiveFailures = 0
                 } catch (_: CancellationException) {
-                    logger.info { "Task interrupted: ${task.id}" }
+                    logger.info { "GPU_EXECUTION_INTERRUPTED: id=${task.id} correlationId=${task.correlationId}" }
                 } catch (e: Exception) {
                     // Classify error type for appropriate handling
                     val errorType =
@@ -246,8 +256,8 @@ class BackgroundEngine(
                         }
 
                     logger.error(e) {
-                        "Task failed: ${task.id}, errorType=$errorType, " +
-                            "consecutiveFailures=$consecutiveFailures, isCommunication=$isCommunicationError"
+                        "GPU_EXECUTION_FAILED: id=${task.id} correlationId=${task.correlationId} errorType=$errorType " +
+                            "consecutiveFailures=$consecutiveFailures isCommunication=$isCommunicationError"
                     }
 
                     // Handle error based on type:

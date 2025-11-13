@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service
 class PlanExecutor(
     private val mcpToolRegistry: McpToolRegistry,
     private val stepNotificationService: StepNotificationService,
+    private val debugService: com.jervis.service.debug.DebugService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -59,7 +60,16 @@ class PlanExecutor(
     ): Boolean {
         var planFailed: Boolean
         try {
-            logger.info { "EXECUTOR: Executing step '${step.stepToolName}' (order=${step.order})" }
+            logger.info { "STEP_EXECUTION_START: planId=${plan.id} correlationId=${plan.correlationId} stepId=${step.id} tool=${step.stepToolName.name} order=${step.order} instruction='${step.stepInstruction.take(100)}...'" }
+
+            // Publish debug event for step execution start
+            debugService.stepExecutionStart(
+                correlationId = plan.correlationId,
+                planId = plan.id.toHexString(),
+                stepId = step.id.toHexString(),
+                toolName = step.stepToolName.name,
+                order = step.order
+            )
 
             val tool = mcpToolRegistry.byName(step.stepToolName)
             val stepContext = buildStepContext(plan)
@@ -72,13 +82,23 @@ class PlanExecutor(
                 )
             step.toolResult = result
 
-            logger.info { "EXECUTOR: Step '${step.stepToolName}' completed with result type: ${result.javaClass.simpleName}" }
+            logger.info { "STEP_EXECUTION_COMPLETED: planId=${plan.id} correlationId=${plan.correlationId} stepId=${step.id} tool=${step.stepToolName.name} resultType=${result.javaClass.simpleName}" }
 
             when (result) {
                 is ToolResult.Ok, is ToolResult.Ask -> {
                     step.status = StepStatusEnum.DONE
                     stepNotificationService.notifyStepCompleted(plan.id, plan.id, step)
                     planFailed = false
+
+                    // Publish debug event for step execution completed
+                    debugService.stepExecutionCompleted(
+                        correlationId = plan.correlationId,
+                        planId = plan.id.toHexString(),
+                        stepId = step.id.toHexString(),
+                        toolName = step.stepToolName.name,
+                        status = "DONE",
+                        resultType = result.javaClass.simpleName
+                    )
                 }
 
                 is ToolResult.Stop -> {
@@ -86,16 +106,36 @@ class PlanExecutor(
                     plan.status = PlanStatusEnum.FAILED
                     plan.finalAnswer = result.reason
                     planFailed = true
-                    logger.info { "EXECUTOR: Plan stopped by tool: ${result.reason}" }
+                    logger.info { "STEP_STOPPED: planId=${plan.id} correlationId=${plan.correlationId} stepId=${step.id} reason='${result.reason}'" }
                     stepNotificationService.notifyStepCompleted(plan.id, plan.id, step)
+
+                    // Publish debug event for step execution stopped
+                    debugService.stepExecutionCompleted(
+                        correlationId = plan.correlationId,
+                        planId = plan.id.toHexString(),
+                        stepId = step.id.toHexString(),
+                        toolName = step.stepToolName.name,
+                        status = "STOPPED",
+                        resultType = result.javaClass.simpleName
+                    )
                 }
 
                 is ToolResult.Error -> {
                     step.status = StepStatusEnum.FAILED
                     // Don't mark plan as FAILED - planner may resolve this with alternative steps
                     planFailed = false
-                    logger.error { "EXECUTOR: Step '${step.stepToolName}' failed: ${result.errorMessage}" }
+                    logger.error { "STEP_ERROR: planId=${plan.id} correlationId=${plan.correlationId} stepId=${step.id} tool=${step.stepToolName.name} error='${result.errorMessage}'" }
                     stepNotificationService.notifyStepCompleted(plan.id, plan.id, step)
+
+                    // Publish debug event for step execution error
+                    debugService.stepExecutionCompleted(
+                        correlationId = plan.correlationId,
+                        planId = plan.id.toHexString(),
+                        stepId = step.id.toHexString(),
+                        toolName = step.stepToolName.name,
+                        status = "ERROR",
+                        resultType = result.javaClass.simpleName
+                    )
                 }
 
                 else -> {
@@ -104,16 +144,36 @@ class PlanExecutor(
                     planFailed = false
                     logger.error { "EXECUTOR: Unsupported result type from step '${step.stepToolName}'" }
                     stepNotificationService.notifyStepCompleted(plan.id, plan.id, step)
+
+                    // Publish debug event for step execution failed
+                    debugService.stepExecutionCompleted(
+                        correlationId = plan.correlationId,
+                        planId = plan.id.toHexString(),
+                        stepId = step.id.toHexString(),
+                        toolName = step.stepToolName.name,
+                        status = "FAILED",
+                        resultType = result.javaClass.simpleName
+                    )
                 }
             }
         } catch (e: Exception) {
-            logger.error(e) { "EXECUTOR: Exception executing step '${step.stepToolName}'" }
+            logger.error(e) { "STEP_EXCEPTION: planId=${plan.id} correlationId=${plan.correlationId} stepId=${step.id} tool=${step.stepToolName.name} error=${e.message}" }
             step.toolResult = ToolResult.error("Step execution failed: ${e.message}")
             step.status = StepStatusEnum.FAILED
             plan.status = PlanStatusEnum.FAILED
             plan.finalAnswer = "Step execution failed: ${e.message}"
             planFailed = true
             stepNotificationService.notifyStepCompleted(plan.id, plan.id, step)
+
+            // Publish debug event for step execution exception
+            debugService.stepExecutionCompleted(
+                correlationId = plan.correlationId,
+                planId = plan.id.toHexString(),
+                stepId = step.id.toHexString(),
+                toolName = step.stepToolName.name,
+                status = "EXCEPTION",
+                resultType = "Exception"
+            )
         }
 
         return planFailed
