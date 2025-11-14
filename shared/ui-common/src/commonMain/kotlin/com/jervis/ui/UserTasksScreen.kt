@@ -18,6 +18,7 @@ import com.jervis.dto.user.UserTaskDto
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.util.rememberClipboardManager
 import kotlinx.coroutines.launch
+import com.jervis.ui.design.JTopBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -117,19 +118,12 @@ fun UserTasksScreen(
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
-            TopAppBar(
-                title = { Text("User Tasks") },
-                navigationIcon = {
-                    TextButton(onClick = onBack) {
-                        Text("← Back")
-                    }
-                },
+            JTopBar(
+                title = "User Tasks",
+                onBack = onBack,
                 actions = {
                     com.jervis.ui.util.RefreshIconButton(onClick = { loadTasks() })
-                },
-                windowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(
-                    androidx.compose.foundation.layout.WindowInsetsSides.Top
-                ),
+                }
             )
         }
     ) { padding ->
@@ -173,41 +167,16 @@ fun UserTasksScreen(
 
                         when {
                             isLoading -> {
-                                Box(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    CircularProgressIndicator()
-                                }
+                                com.jervis.ui.design.JCenteredLoading()
                             }
                             errorMessage != null -> {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(16.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center
-                                ) {
-                                    Text(
-                                        text = errorMessage!!,
-                                        color = MaterialTheme.colorScheme.error,
-                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                    )
-                                    Button(
-                                        onClick = { loadTasks() },
-                                        modifier = Modifier.padding(top = 8.dp)
-                                    ) {
-                                        Text("Retry")
-                                    }
-                                }
+                                com.jervis.ui.design.JErrorState(
+                                    message = errorMessage!!,
+                                    onRetry = { loadTasks() }
+                                )
                             }
                             tasks.isEmpty() -> {
-                                Box(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("No tasks found", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
+                                com.jervis.ui.design.JEmptyState(message = "No tasks found")
                             }
                             else -> {
                                 LazyColumn(

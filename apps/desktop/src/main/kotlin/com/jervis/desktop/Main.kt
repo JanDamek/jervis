@@ -144,7 +144,7 @@ fun main() = application {
             title = "Debug Console - LLM Calls",
             state = rememberWindowState(width = 1000.dp, height = 700.dp)
         ) {
-            DebugWindow(connectionManager = connectionManager)
+            com.jervis.ui.DebugWindow(eventsProvider = connectionManager)
         }
     }
 

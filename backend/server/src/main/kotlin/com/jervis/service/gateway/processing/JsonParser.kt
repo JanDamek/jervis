@@ -1,6 +1,7 @@
 package com.jervis.service.gateway.processing
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.service.gateway.processing.domain.ParsedResponse
 import mu.KotlinLogging
@@ -10,8 +11,9 @@ import org.springframework.stereotype.Service
 class JsonParser {
     private val logger = KotlinLogging.logger {}
 
+    // Use Jackson Kotlin module to properly deserialize Kotlin data classes (constructor params, default values)
     private val objectMapper =
-        ObjectMapper().apply {
+        jacksonObjectMapper().apply {
             configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
             configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES, false)
             configure(com.fasterxml.jackson.databind.DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY, true)

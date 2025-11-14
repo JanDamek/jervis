@@ -6,6 +6,7 @@ import com.jervis.domain.jira.JiraConnection
 import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
+import com.jervis.repository.mongo.JiraConnectionMongoRepository
 import com.jervis.service.rag.RagIndexingService
 import com.jervis.service.text.TextChunkingService
 import com.jervis.service.text.TextNormalizationService
@@ -15,6 +16,7 @@ import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
+import org.springframework.web.reactive.function.client.WebClientResponseException
 import org.springframework.web.reactive.function.client.awaitBody
 import java.time.Instant
 import java.util.Base64
@@ -40,6 +42,8 @@ class JiraAttachmentIndexer(
     private val textChunkingService: TextChunkingService,
     private val textNormalizationService: TextNormalizationService,
     private val webClientBuilder: WebClient.Builder,
+    private val connectionRepository: JiraConnectionMongoRepository,
+    private val connectionService: JiraConnectionService,
 ) {
     /**
      * Index all attachments for a given Jira issue.
@@ -70,16 +74,43 @@ class JiraAttachmentIndexer(
                         conn = conn,
                         issueKey = issueKey,
                         attachment = attachment,
-                        attachmentIndex = index,
                         clientId = clientId,
                         tenantHost = tenantHost,
                         projectId = projectId,
                     )
                 } catch (e: Exception) {
+                    // If this looks like an auth error, mark connection INVALID and stop further attachment processing
+                    if (isAuthError(e)) {
+                        try {
+                            val doc = connectionRepository.findByClientId(clientId)
+                            if (doc != null) {
+                                connectionService.markAuthInvalid(doc, e.message)
+                            }
+                        } catch (inner: Exception) {
+                            logger.warn(inner) { "Failed to mark Jira connection INVALID after auth error while indexing attachments" }
+                        }
+                        // stop processing further attachments for this issue/client
+                        return@withContext
+                    }
+
                     logger.warn(e) { "JIRA_ATTACHMENT: Failed to index attachment ${attachment.filename} for issue $issueKey" }
                 }
             }
         }.onFailure { e ->
+            // Top-level failure when fetching attachments metadata or other fatal error
+            // If auth error, mark connection invalid so UI can prompt user to fix it
+            if (isAuthError(e)) {
+                try {
+                    val doc = connectionRepository.findByClientId(clientId)
+                    if (doc != null) {
+                        connectionService.markAuthInvalid(doc, e.message)
+                    }
+                } catch (inner: Exception) {
+                    logger.warn(inner) { "Failed to mark Jira connection INVALID after auth error while fetching attachments" }
+                }
+                return@withContext
+            }
+
             logger.error(e) { "JIRA_ATTACHMENT: Failed to fetch attachments for issue $issueKey" }
         }
     }
@@ -88,7 +119,6 @@ class JiraAttachmentIndexer(
         conn: JiraConnection,
         issueKey: String,
         attachment: AttachmentMetadata,
-        attachmentIndex: Int,
         clientId: ObjectId,
         tenantHost: String,
         projectId: ObjectId?,
@@ -104,15 +134,17 @@ class JiraAttachmentIndexer(
         }
 
         // Extract plain text via Tika
-        val processingResult = tikaClient.process(
-            TikaProcessRequest(
-                source = TikaProcessRequest.Source.FileBytes(
-                    fileName = attachment.filename,
-                    dataBase64 = Base64.getEncoder().encodeToString(content),
+        val processingResult =
+            tikaClient.process(
+                TikaProcessRequest(
+                    source =
+                        TikaProcessRequest.Source.FileBytes(
+                            fileName = attachment.filename,
+                            dataBase64 = Base64.getEncoder().encodeToString(content),
+                        ),
+                    includeMetadata = true,
                 ),
-                includeMetadata = true,
-            ),
-        )
+            )
 
         if (!processingResult.success || processingResult.plainText.isBlank()) {
             logger.debug { "JIRA_ATTACHMENT: No text extracted from ${attachment.filename}" }
@@ -155,16 +187,17 @@ class JiraAttachmentIndexer(
     ): List<AttachmentMetadata> {
         val client = webClientBuilder.baseUrl("https://${conn.tenant.value}").build()
 
-        val response: IssueDto = client
-            .get()
-            .uri { b ->
-                b.path("/rest/api/3/issue/{key}")
-                    .queryParam("fields", "attachment")
-                    .build(issueKey)
-            }
-            .header("Authorization", basicAuth(conn))
-            .retrieve()
-            .awaitBody()
+        val response: IssueDto =
+            client
+                .get()
+                .uri { b ->
+                    b
+                        .path("/rest/api/3/issue/{key}")
+                        .queryParam("fields", "attachment")
+                        .build(issueKey)
+                }.header("Authorization", basicAuth(conn))
+                .retrieve()
+                .awaitBody()
 
         return response.fields?.attachment?.mapNotNull { dto ->
             val id = dto.id ?: return@mapNotNull null
@@ -211,13 +244,36 @@ class JiraAttachmentIndexer(
         runCatching { Instant.parse(value) }
             .getOrElse {
                 runCatching {
-                    val f = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSZ")
-                    java.time.OffsetDateTime.parse(value, f).toInstant()
+                    val f =
+                        java.time.format.DateTimeFormatter
+                            .ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSZ")
+                    java.time.OffsetDateTime
+                        .parse(value, f)
+                        .toInstant()
                 }.getOrElse {
-                    val f2 = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssZ")
-                    java.time.OffsetDateTime.parse(value, f2).toInstant()
+                    val f2 =
+                        java.time.format.DateTimeFormatter
+                            .ofPattern("yyyy-MM-dd'T'HH:mm:ssZ")
+                    java.time.OffsetDateTime
+                        .parse(value, f2)
+                        .toInstant()
                 }
             }
+
+    private fun isAuthError(t: Throwable?): Boolean {
+        if (t == null) return false
+        if (t is WebClientResponseException) {
+            val code = t.statusCode.value()
+            return code == 401 || code == 403
+        }
+        val cause = t.cause
+        if (cause is WebClientResponseException) {
+            val code = cause.statusCode.value()
+            return code == 401 || code == 403
+        }
+        val msg = t.message ?: return false
+        return msg.contains("401") || msg.contains("403") || msg.contains("Unauthorized", true) || msg.contains("Forbidden", true)
+    }
 
     // DTOs
     private data class IssueDto(

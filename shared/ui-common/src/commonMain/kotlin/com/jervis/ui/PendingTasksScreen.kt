@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.dp
 import com.jervis.dto.PendingTaskDto
 import com.jervis.repository.JervisRepository
 import kotlinx.coroutines.launch
+import com.jervis.ui.design.JTopBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,40 +54,29 @@ fun PendingTasksScreen(
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
-            TopAppBar(
-                title = { Text("Pending Tasks") },
-                navigationIcon = {
-                    TextButton(onClick = onBack) { Text("← Back") }
-                },
+            JTopBar(
+                title = "Pending Tasks",
+                onBack = onBack,
                 actions = {
-                    com.jervis.ui.util
-                        .RefreshIconButton(onClick = { load() })
-                },
-                windowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(
-                    androidx.compose.foundation.layout.WindowInsetsSides.Top
-                ),
+                    com.jervis.ui.util.RefreshIconButton(onClick = { load() })
+                }
             )
         },
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when {
-                isLoading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                error != null ->
-                    Column(
-                        modifier = Modifier.align(Alignment.Center).padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text("Failed to load: $error", color = MaterialTheme.colorScheme.error)
-                        Spacer(Modifier.height(8.dp))
-                        Button(onClick = { load() }) { Text("Retry") }
-                    }
-                tasks.isEmpty() ->
-                    Column(
-                        modifier = Modifier.align(Alignment.Center).padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text("No pending tasks", style = MaterialTheme.typography.bodyLarge)
-                    }
+                isLoading -> {
+                    com.jervis.ui.design.JCenteredLoading()
+                }
+                error != null -> {
+                    com.jervis.ui.design.JErrorState(
+                        message = "Failed to load: $error",
+                        onRetry = { load() }
+                    )
+                }
+                tasks.isEmpty() -> {
+                    com.jervis.ui.design.JEmptyState(message = "No pending tasks")
+                }
                 else ->
                     LazyColumn(modifier = Modifier.fillMaxSize().padding(12.dp)) {
                         items(tasks) { task ->

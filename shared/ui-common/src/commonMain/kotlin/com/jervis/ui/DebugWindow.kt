@@ -1,4 +1,4 @@
-package com.jervis.desktop.ui
+package com.jervis.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -6,20 +6,29 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import com.jervis.desktop.ConnectionManager
 import com.jervis.dto.events.DebugEventDto
 import com.jervis.ui.util.rememberClipboardManager
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.flow.Flow
+import kotlinx.datetime.*
+
+/**
+ * Helper function to get current LocalDateTime in a multiplatform way
+ */
+internal expect fun currentLocalDateTime(): LocalDateTime
+
+/**
+ * Interface for providing debug events stream
+ */
+interface DebugEventsProvider {
+    val debugEventsFlow: Flow<DebugEventDto>?
+}
 
 /**
  * Base trace event for any action in the system
@@ -108,7 +117,7 @@ data class CorrelationTrace(
     val correlationId: String,
     val events: MutableList<TraceEvent> = mutableListOf(),
     var clientName: String? = null,
-    val startTime: LocalDateTime = LocalDateTime.now()
+    val startTime: LocalDateTime = currentLocalDateTime()
 ) {
     fun getTabLabel(): String {
         val shortId = correlationId.take(8)
@@ -136,15 +145,15 @@ data class CorrelationTrace(
  * Debug window with correlationId-based tracing
  */
 @Composable
-fun DebugWindow(connectionManager: ConnectionManager) {
+fun DebugWindow(eventsProvider: DebugEventsProvider) {
     val correlationTraces = remember { mutableStateMapOf<String, CorrelationTrace>() }
     var selectedTraceIndex by remember { mutableStateOf(0) }
     var selectedEvent by remember { mutableStateOf<TraceEvent?>(null) }
     var followLatestEvent by remember { mutableStateOf(false) }
 
     // Process debug events from WebSocket flow
-    LaunchedEffect(connectionManager) {
-        connectionManager.debugWebSocketFlow?.collect { event ->
+    LaunchedEffect(eventsProvider) {
+        eventsProvider.debugEventsFlow?.collect { event ->
             when (event) {
                 is DebugEventDto.SessionStarted -> {
                     val correlationId = event.correlationId ?: event.sessionId
@@ -154,7 +163,7 @@ fun DebugWindow(connectionManager: ConnectionManager) {
                         promptType = event.promptType,
                         systemPrompt = event.systemPrompt,
                         userPrompt = event.userPrompt,
-                        startTime = LocalDateTime.now(),
+                        startTime = currentLocalDateTime(),
                         clientId = event.clientId,
                         clientName = event.clientName
                     )
@@ -209,7 +218,7 @@ fun DebugWindow(connectionManager: ConnectionManager) {
                         if (eventIndex >= 0) {
                             val llmEvent = trace.events[eventIndex] as LLMSessionEvent
                             val updatedEvent = llmEvent.copy(
-                                completionTime = LocalDateTime.now(),
+                                completionTime = currentLocalDateTime(),
                                 currentStatus = TraceEvent.EventStatus.COMPLETED
                             )
                             val updatedEvents = trace.events.toMutableList()
@@ -351,9 +360,9 @@ fun DebugWindow(connectionManager: ConnectionManager) {
                                             },
                                             modifier = Modifier.size(20.dp)
                                         ) {
-                                            Icon(
-                                                Icons.Default.Close,
-                                                contentDescription = "Close trace",
+                                            Text(
+                                                "✕",
+                                                style = MaterialTheme.typography.titleMedium,
                                                 modifier = Modifier.size(16.dp)
                                             )
                                         }
@@ -436,9 +445,9 @@ private fun addTaskFlowEvent(
     }
 
     val event = TaskFlowEvent(
-        eventId = "${correlationId}_${eventName}_${LocalDateTime.now()}",
+        eventId = "${correlationId}_${eventName}_${currentLocalDateTime()}",
         eventName = eventName,
-        eventTime = LocalDateTime.now(),
+        eventTime = currentLocalDateTime(),
         details = details
     )
 
@@ -457,6 +466,7 @@ private fun addTaskFlowEvent(
 
 /**
  * Content for a correlation trace showing list of events and selected event detail
+ * Uses responsive layout: side-by-side when wide enough, stacked navigation when narrow
  */
 @Composable
 fun CorrelationTraceContent(
@@ -464,55 +474,113 @@ fun CorrelationTraceContent(
     selectedEvent: TraceEvent?,
     onEventSelected: (TraceEvent?) -> Unit
 ) {
-    // If event is selected, show full-screen detail with back button
-    if (selectedEvent != null) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Back button bar
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(onClick = { onEventSelected(null) }) {
-                    Text("← Back to List")
-                }
-                Text(
-                    selectedEvent.getListItemLabel(),
-                    style = MaterialTheme.typography.titleMedium
-                )
-            }
-            HorizontalDivider()
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val isWideLayout = maxWidth > 1000.dp
 
-            // Full-screen detail
-            selectedEvent.getDetailContent()()
-        }
-    } else {
-        // Show event list
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(8.dp)
-        ) {
-            Text(
-                text = "Events (${trace.events.size})",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(8.dp)
-            )
-            HorizontalDivider()
-
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(4.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                items(trace.events) { event ->
-                    EventListItem(
-                        event = event,
-                        isSelected = false,
-                        onClick = { onEventSelected(event) }
+        if (isWideLayout) {
+            // Wide layout: event list on left (narrow), detail on right
+            Row(modifier = Modifier.fillMaxSize()) {
+                // Event list - narrow column on left
+                Column(
+                    modifier = Modifier
+                        .width(350.dp)
+                        .fillMaxHeight()
+                ) {
+                    Text(
+                        text = "Events (${trace.events.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(8.dp)
                     )
+                    HorizontalDivider()
+
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(trace.events) { event ->
+                            EventListItem(
+                                event = event,
+                                isSelected = selectedEvent?.id == event.id,
+                                onClick = { onEventSelected(event) }
+                            )
+                        }
+                    }
+                }
+
+                VerticalDivider()
+
+                // Detail panel on right
+                Box(modifier = Modifier.fillMaxSize()) {
+                    if (selectedEvent != null) {
+                        selectedEvent.getDetailContent()()
+                    } else {
+                        // Empty state when no event selected
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "Select an event to view details",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            // Narrow layout: show either list or detail with back button
+            if (selectedEvent != null) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Back button bar
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(onClick = { onEventSelected(null) }) {
+                            Text("← Back")
+                        }
+                        Text(
+                            selectedEvent.getListItemLabel(),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    }
+                    HorizontalDivider()
+
+                    // Full-screen detail
+                    selectedEvent.getDetailContent()()
+                }
+            } else {
+                // Show event list
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(8.dp)
+                ) {
+                    Text(
+                        text = "Events (${trace.events.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(8.dp)
+                    )
+                    HorizontalDivider()
+
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(trace.events) { event ->
+                            EventListItem(
+                                event = event,
+                                isSelected = false,
+                                onClick = { onEventSelected(event) }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -553,7 +621,7 @@ fun EventListItem(
                 maxLines = 2
             )
             Text(
-                text = event.timestamp.format(DateTimeFormatter.ofPattern("HH:mm:ss")),
+                text = formatDateTime(event.timestamp, "HH:mm:ss"),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp)
@@ -565,9 +633,9 @@ fun EventListItem(
 /**
  * Detail view for LLM session event
  */
+@OptIn(kotlin.time.ExperimentalTime::class)
 @Composable
 fun LLMSessionDetail(session: LLMSessionEvent) {
-    val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
     val clipboard = rememberClipboardManager()
 
     Row(modifier = Modifier.fillMaxSize()) {
@@ -597,10 +665,12 @@ fun LLMSessionDetail(session: LLMSessionEvent) {
                     SessionInfoRow("Session ID", session.sessionId.take(8))
                     SessionInfoRow("Type", session.promptType)
                     SessionInfoRow("Client", session.clientName ?: "System")
-                    SessionInfoRow("Started", session.startTime.format(formatter))
+                    SessionInfoRow("Started", formatDateTime(session.startTime))
                     if (session.currentStatus == TraceEvent.EventStatus.COMPLETED) {
                         val duration = session.completionTime?.let {
-                            val durationMs = java.time.Duration.between(session.startTime, it).toMillis()
+                            val durationInstant = it.toInstant(TimeZone.currentSystemDefault()) -
+                                session.startTime.toInstant(TimeZone.currentSystemDefault())
+                            val durationMs = durationInstant.inWholeMilliseconds
                             "${durationMs}ms"
                         } ?: "N/A"
                         SessionInfoRow("Duration", duration)
@@ -724,8 +794,6 @@ fun LLMSessionDetail(session: LLMSessionEvent) {
  */
 @Composable
 fun TaskFlowEventDetail(event: TaskFlowEvent) {
-    val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -749,7 +817,7 @@ fun TaskFlowEventDetail(event: TaskFlowEvent) {
                 HorizontalDivider(modifier = Modifier.padding(bottom = 8.dp))
 
                 SessionInfoRow("Event Type", event.eventName)
-                SessionInfoRow("Time", formatter.format(event.eventTime))
+                SessionInfoRow("Time", formatDateTime(event.eventTime))
                 SessionInfoRow("Status", event.currentStatus.name)
             }
         }
@@ -782,5 +850,16 @@ fun SessionInfoRow(label: String, value: String) {
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(start = 8.dp)
         )
+    }
+}
+
+/**
+ * Helper function to format LocalDateTime to string
+ */
+private fun formatDateTime(dateTime: LocalDateTime, pattern: String = "yyyy-MM-dd HH:mm:ss"): String {
+    return when (pattern) {
+        "yyyy-MM-dd HH:mm:ss" -> "${dateTime.year}-${dateTime.monthNumber.toString().padStart(2, '0')}-${dateTime.dayOfMonth.toString().padStart(2, '0')} ${dateTime.hour.toString().padStart(2, '0')}:${dateTime.minute.toString().padStart(2, '0')}:${dateTime.second.toString().padStart(2, '0')}"
+        "HH:mm:ss" -> "${dateTime.hour.toString().padStart(2, '0')}:${dateTime.minute.toString().padStart(2, '0')}:${dateTime.second.toString().padStart(2, '0')}"
+        else -> dateTime.toString()
     }
 }

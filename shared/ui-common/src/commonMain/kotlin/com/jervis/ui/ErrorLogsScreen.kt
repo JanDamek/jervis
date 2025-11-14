@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import com.jervis.dto.error.ErrorLogDto
 import com.jervis.repository.JervisRepository
 import kotlinx.coroutines.launch
+import com.jervis.ui.design.JTopBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,57 +48,31 @@ fun ErrorLogsScreen(
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
-            TopAppBar(
-                title = { Text("Error Logs") },
-                navigationIcon = {
-                    TextButton(onClick = onBack) {
-                        Text("← Back")
-                    }
-                },
+            JTopBar(
+                title = "Error Logs",
+                onBack = onBack,
                 actions = {
-                    com.jervis.ui.util
-                        .RefreshIconButton(onClick = { loadErrorLogs() })
-                },
-                windowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(
-                    androidx.compose.foundation.layout.WindowInsetsSides.Top
-                ),
+                    com.jervis.ui.util.RefreshIconButton(onClick = { loadErrorLogs() })
+                }
             )
         },
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when {
                 isLoading -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    Box(modifier = Modifier.fillMaxSize()) { com.jervis.ui.design.JCenteredLoading() }
                 }
                 errorMessage != null -> {
-                    Column(
-                        modifier = Modifier.align(Alignment.Center).padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text(
-                            text = errorMessage!!,
-                            color = MaterialTheme.colorScheme.error,
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        com.jervis.ui.design.JErrorState(
+                            message = errorMessage!!,
+                            onRetry = { loadErrorLogs() }
                         )
-                        Button(
-                            onClick = { loadErrorLogs() },
-                            modifier = Modifier.padding(top = 8.dp),
-                        ) {
-                            Text("Retry")
-                        }
                     }
                 }
                 errorLogs.isEmpty() -> {
-                    Column(
-                        modifier = Modifier.align(Alignment.Center).padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text(
-                            "✓",
-                            style = MaterialTheme.typography.displayLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text("No errors recorded")
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        com.jervis.ui.design.JEmptyState(message = "No errors recorded")
                     }
                 }
                 else -> {
@@ -153,69 +128,27 @@ private fun ErrorLogsTable(
     ) {
         // Header
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors =
-                    CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    ),
+            com.jervis.ui.design.JTableHeaderRow(
+                modifier = Modifier.padding(horizontal = 0.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        text = "Timestamp",
-                        modifier = Modifier.weight(0.25f),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                    )
-                    Text(
-                        text = "Message",
-                        modifier = Modifier.weight(0.55f),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                    )
-                    Text(
-                        text = "Type",
-                        modifier = Modifier.weight(0.15f),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                    )
-                    Text(
-                        text = "Actions",
-                        modifier = Modifier.weight(0.05f),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                    )
-                }
+                com.jervis.ui.design.JTableHeaderCell("Timestamp", modifier = Modifier.weight(0.25f))
+                com.jervis.ui.design.JTableHeaderCell("Message", modifier = Modifier.weight(0.55f))
+                com.jervis.ui.design.JTableHeaderCell("Type", modifier = Modifier.weight(0.15f))
+                com.jervis.ui.design.JTableHeaderCell("Actions", modifier = Modifier.weight(0.05f))
             }
         }
 
         // Rows
         items(errorLogs) { log ->
             val isSelected = selectedLogId == log.id
-            Card(
-                modifier =
-                    Modifier.fillMaxWidth().clickable {
-                        onRowSelected(if (isSelected) null else log.id)
-                    },
-                colors =
-                    CardDefaults.cardColors(
-                        containerColor =
-                            if (isSelected) {
-                                MaterialTheme.colorScheme.secondaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.surface
-                            },
-                    ),
-                elevation =
-                    CardDefaults.cardElevation(
-                        defaultElevation = if (isSelected) 4.dp else 1.dp,
-                    ),
+            com.jervis.ui.design.JTableRowCard(
+                selected = isSelected,
+                modifier = Modifier.fillMaxWidth().clickable {
+                    onRowSelected(if (isSelected) null else log.id)
+                }
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

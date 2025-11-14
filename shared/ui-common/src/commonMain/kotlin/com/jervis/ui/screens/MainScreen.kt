@@ -7,6 +7,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.ui.viewmodels.MainViewModel
+import com.jervis.ui.design.JTopBar
 
 /**
  * Main Screen - Simplified version for initial setup
@@ -20,16 +21,7 @@ fun MainScreen(viewModel: MainViewModel) {
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
-            TopAppBar(
-                title = { Text("JERVIS Assistant") },
-                windowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(
-                    androidx.compose.foundation.layout.WindowInsetsSides.Top
-                ),
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            )
+            JTopBar(title = "JERVIS Assistant")
         }
     ) { paddingValues ->
         Column(
@@ -42,19 +34,13 @@ fun MainScreen(viewModel: MainViewModel) {
         ) {
             when {
                 state.isLoading -> {
-                    CircularProgressIndicator()
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("Loading...")
+                    com.jervis.ui.design.JCenteredLoading()
                 }
                 state.error != null -> {
-                    Text(
-                        text = "Error: ${state.error}",
-                        color = MaterialTheme.colorScheme.error
+                    com.jervis.ui.design.JErrorState(
+                        message = "Error: ${state.error}",
+                        onRetry = { viewModel.loadData() }
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(onClick = { viewModel.loadData() }) {
-                        Text("Retry")
-                    }
                 }
                 else -> {
                     Text(
