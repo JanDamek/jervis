@@ -36,6 +36,12 @@ class EmailPollingScheduler(
         processAccountWithTimestampUpdate(account)
     }
 
+    /** Manual trigger to pick the next eligible email account automatically. */
+    suspend fun triggerNext() {
+        logger.info { "Manually triggering Email indexing (auto-select next account)" }
+        pollNextAccount()
+    }
+
     private suspend fun findNextAccountToPoll(): EmailAccountDocument? =
         emailAccountRepository.findFirstByIsActiveTrueOrderByLastPolledAtAsc()
 

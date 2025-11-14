@@ -11,7 +11,19 @@ class IndexingStatusRepository(
 
     suspend fun detail(toolKey: String): IndexingToolDetailDto = service.getToolDetail(toolKey)
 
-    suspend fun runJiraNow(clientId: String) {
-        service.runJiraNow(clientId)
+    suspend fun runJiraNow() {
+        service.runJiraNow()
+    }
+
+    suspend fun runEmailNow() {
+        service.runEmailNow()
+    }
+
+    suspend fun runGitNow() {
+        service.runGitNow()
+    }
+
+    suspend fun runConfluenceNow() {
+        service.runConfluenceNow()
     }
 }

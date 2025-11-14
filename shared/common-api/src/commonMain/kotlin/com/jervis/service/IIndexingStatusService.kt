@@ -18,8 +18,15 @@ interface IIndexingStatusService {
         @Path("toolKey") toolKey: String,
     ): IndexingToolDetailDto
 
-    @POST("api/indexing/status/jira/run/{clientId}")
-    suspend fun runJiraNow(
-        @Path("clientId") clientId: String,
-    )
+    @POST("api/indexing/status/jira/run")
+    suspend fun runJiraNow()
+
+    @POST("api/indexing/status/email/run")
+    suspend fun runEmailNow()
+
+    @POST("api/indexing/status/git/run")
+    suspend fun runGitNow()
+
+    @POST("api/indexing/status/confluence/run")
+    suspend fun runConfluenceNow()
 }

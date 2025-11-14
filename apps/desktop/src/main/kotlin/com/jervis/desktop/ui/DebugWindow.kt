@@ -22,10 +22,25 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 /**
- * Debug session data model
+ * Base trace event for any action in the system
  */
-data class DebugSession(
+sealed class TraceEvent(
     val id: String,
+    val timestamp: LocalDateTime,
+    val eventType: String,
+    val status: EventStatus = EventStatus.IN_PROGRESS
+) {
+    enum class EventStatus { IN_PROGRESS, COMPLETED, FAILED }
+
+    abstract fun getListItemLabel(): String
+    abstract fun getDetailContent(): @Composable () -> Unit
+}
+
+/**
+ * LLM Session trace event
+ */
+data class LLMSessionEvent(
+    val sessionId: String,
     val promptType: String,
     val systemPrompt: String,
     val userPrompt: String,
@@ -34,215 +49,283 @@ data class DebugSession(
     val clientName: String? = null,
     var responseBuffer: String = "",
     var completionTime: LocalDateTime? = null,
-    val correlationId: String? = null, // For grouping by correlationId
-) {
-    fun complete() {
-        completionTime = LocalDateTime.now()
+    var currentStatus: EventStatus = EventStatus.IN_PROGRESS
+) : TraceEvent(sessionId, startTime, "LLM Call", currentStatus) {
+
+    override fun getListItemLabel(): String = buildString {
+        append("🤖 LLM: $promptType")
+        when (currentStatus) {
+            EventStatus.COMPLETED -> append(" ✓")
+            EventStatus.FAILED -> append(" ✗")
+            EventStatus.IN_PROGRESS -> append(" ⏳")
+        }
     }
 
-    fun isCompleted(): Boolean = completionTime != null
-
-    fun getTabLabel(): String = buildString {
-        if (clientName != null) {
-            append("[$clientName] ")
-        } else {
-            append("[System] ")
-        }
-        append(promptType)
-        if (isCompleted()) {
-            append(" ✓")
-        }
+    override fun getDetailContent(): @Composable () -> Unit = {
+        LLMSessionDetail(this)
     }
 }
 
 /**
- * Correlation group containing all LLM sessions with the same correlationId
+ * Generic event for task flow steps (qualification, service calls, etc.)
  */
-data class CorrelationGroup(
-    val correlationId: String,
-    val sessions: MutableList<DebugSession> = mutableListOf()
-) {
-    fun getGroupLabel(): String {
-        val firstSession = sessions.firstOrNull()
-        val clientName = firstSession?.clientName ?: "System"
-        val sessionCount = sessions.size
-        return "[$clientName] ${correlationId.take(8)} ($sessionCount LLM calls)"
+data class TaskFlowEvent(
+    val eventId: String,
+    val eventName: String,
+    val eventTime: LocalDateTime,
+    val details: String,
+    var currentStatus: EventStatus = EventStatus.COMPLETED
+) : TraceEvent(eventId, eventTime, eventName, currentStatus) {
+
+    override fun getListItemLabel(): String = buildString {
+        val icon = when (eventName) {
+            "TaskCreated" -> "📝"
+            "TaskStateTransition" -> "🔄"
+            "QualificationStart" -> "🔍"
+            "QualificationDecision" -> "⚖️"
+            "GpuTaskPickup" -> "⚡"
+            "PlanCreated" -> "📋"
+            "PlanStatusChanged" -> "🔄"
+            "PlanStepAdded" -> "➕"
+            "StepExecutionStart" -> "▶️"
+            "StepExecutionCompleted" -> "✅"
+            "FinalizerStart" -> "🏁"
+            "FinalizerComplete" -> "🎉"
+            else -> "📌"
+        }
+        append("$icon $eventName")
     }
 
-    fun getLatestSession(): DebugSession? = sessions.firstOrNull()
+    override fun getDetailContent(): @Composable () -> Unit = {
+        TaskFlowEventDetail(this)
+    }
 }
 
 /**
- * Debug window with correlationId-based grouping
+ * Correlation trace containing all events for a single correlationId
+ */
+data class CorrelationTrace(
+    val correlationId: String,
+    val events: MutableList<TraceEvent> = mutableListOf(),
+    var clientName: String? = null,
+    val startTime: LocalDateTime = LocalDateTime.now()
+) {
+    fun getTabLabel(): String {
+        val client = clientName ?: "System"
+        val shortId = correlationId.take(8)
+        val eventCount = events.size
+        val inProgress = events.count { it.status == TraceEvent.EventStatus.IN_PROGRESS }
+
+        return if (inProgress > 0) {
+            "[$client] $shortId ($eventCount) ⏳"
+        } else {
+            "[$client] $shortId ($eventCount)"
+        }
+    }
+
+    fun isCompleted(): Boolean = events.all { it.status != TraceEvent.EventStatus.IN_PROGRESS }
+}
+
+/**
+ * Debug window with correlationId-based tracing
  */
 @Composable
 fun DebugWindow(connectionManager: ConnectionManager) {
-    val correlationGroups = remember { mutableStateMapOf<String, CorrelationGroup>() }
-    var selectedGroupIndex by remember { mutableStateOf(0) }
-    var selectedSessionInGroup by remember { mutableStateOf<DebugSession?>(null) }
+    val correlationTraces = remember { mutableStateMapOf<String, CorrelationTrace>() }
+    var selectedTraceIndex by remember { mutableStateOf(0) }
+    var selectedEvent by remember { mutableStateOf<TraceEvent?>(null) }
 
     // Process debug events from WebSocket flow
     LaunchedEffect(connectionManager) {
         connectionManager.debugWebSocketFlow?.collect { event ->
             when (event) {
                 is DebugEventDto.SessionStarted -> {
-                    val correlationId = event.correlationId ?: event.sessionId // Fallback to sessionId if no correlationId
+                    val correlationId = event.correlationId ?: event.sessionId
 
-                    val newSession = DebugSession(
-                        id = event.sessionId,
+                    val llmEvent = LLMSessionEvent(
+                        sessionId = event.sessionId,
                         promptType = event.promptType,
                         systemPrompt = event.systemPrompt,
                         userPrompt = event.userPrompt,
                         startTime = LocalDateTime.now(),
                         clientId = event.clientId,
-                        clientName = event.clientName,
-                        correlationId = correlationId
+                        clientName = event.clientName
                     )
 
-                    // Get or create correlation group
-                    val group = correlationGroups.getOrPut(correlationId) {
-                        CorrelationGroup(correlationId)
+                    val trace = correlationTraces.getOrPut(correlationId) {
+                        CorrelationTrace(correlationId, clientName = event.clientName)
                     }
 
-                    // Add session to the beginning of the list (newest first)
-                    group.sessions.add(0, newSession)
+                    if (trace.clientName == null && event.clientName != null) {
+                        trace.clientName = event.clientName
+                    }
 
-                    // Trigger recomposition by replacing the group
-                    correlationGroups[correlationId] = group.copy(sessions = group.sessions.toMutableList())
+                    trace.events.add(0, llmEvent)
+                    correlationTraces[correlationId] = trace.copy(events = trace.events.toMutableList())
                 }
+
                 is DebugEventDto.ResponseChunkDto -> {
-                    // Find the session in any group and update it
-                    correlationGroups.values.forEach { group ->
-                        val sessionIndex = group.sessions.indexOfFirst { it.id == event.sessionId }
-                        if (sessionIndex >= 0) {
-                            val session = group.sessions[sessionIndex]
-                            val updatedSessions = group.sessions.toMutableList()
-                            updatedSessions[sessionIndex] = session.copy(
-                                responseBuffer = session.responseBuffer + event.chunk
+                    correlationTraces.values.forEach { trace ->
+                        val eventIndex = trace.events.indexOfFirst {
+                            it is LLMSessionEvent && it.sessionId == event.sessionId
+                        }
+                        if (eventIndex >= 0) {
+                            val llmEvent = trace.events[eventIndex] as LLMSessionEvent
+                            val updatedEvent = llmEvent.copy(
+                                responseBuffer = llmEvent.responseBuffer + event.chunk
                             )
-                            // Trigger recomposition with new group instance
-                            correlationGroups[group.correlationId] = group.copy(sessions = updatedSessions)
+                            val updatedEvents = trace.events.toMutableList()
+                            updatedEvents[eventIndex] = updatedEvent
+                            correlationTraces[trace.correlationId] = trace.copy(events = updatedEvents)
 
-                            // Update selected session if it's the one being updated
-                            if (selectedSessionInGroup?.id == event.sessionId) {
-                                selectedSessionInGroup = updatedSessions[sessionIndex]
+                            if (selectedEvent?.id == event.sessionId) {
+                                selectedEvent = updatedEvent
                             }
                         }
                     }
                 }
+
                 is DebugEventDto.SessionCompletedDto -> {
-                    // Find the session in any group and mark as complete
-                    correlationGroups.values.forEach { group ->
-                        val sessionIndex = group.sessions.indexOfFirst { it.id == event.sessionId }
-                        if (sessionIndex >= 0) {
-                            group.sessions[sessionIndex].complete()
-                            // Trigger recomposition with new group instance
-                            correlationGroups[group.correlationId] = group.copy(sessions = group.sessions.toMutableList())
+                    correlationTraces.values.forEach { trace ->
+                        val eventIndex = trace.events.indexOfFirst {
+                            it is LLMSessionEvent && it.sessionId == event.sessionId
+                        }
+                        if (eventIndex >= 0) {
+                            val llmEvent = trace.events[eventIndex] as LLMSessionEvent
+                            val updatedEvent = llmEvent.copy(
+                                completionTime = LocalDateTime.now(),
+                                currentStatus = TraceEvent.EventStatus.COMPLETED
+                            )
+                            val updatedEvents = trace.events.toMutableList()
+                            updatedEvents[eventIndex] = updatedEvent
+                            correlationTraces[trace.correlationId] = trace.copy(events = updatedEvents)
 
-                            // Update selected session if it's the one being completed
-                            if (selectedSessionInGroup?.id == event.sessionId) {
-                                selectedSessionInGroup = group.sessions[sessionIndex]
+                            if (selectedEvent?.id == event.sessionId) {
+                                selectedEvent = updatedEvent
                             }
                         }
                     }
                 }
-                // Task stream events - ignored in debug window (these are for task monitoring)
-                is DebugEventDto.TaskCreated,
-                is DebugEventDto.TaskStateTransition,
-                is DebugEventDto.QualificationStart,
-                is DebugEventDto.QualificationDecision,
-                is DebugEventDto.GpuTaskPickup,
-                is DebugEventDto.PlanCreated,
-                is DebugEventDto.PlanStatusChanged,
-                is DebugEventDto.PlanStepAdded,
-                is DebugEventDto.StepExecutionStart,
-                is DebugEventDto.StepExecutionCompleted,
-                is DebugEventDto.FinalizerStart,
+
+                // Task flow events - now handled
+                is DebugEventDto.TaskCreated -> {
+                    addTaskFlowEvent(correlationTraces, event.correlationId, "TaskCreated",
+                        "Task ${event.taskId} created (type: ${event.taskType}, state: ${event.state})")
+                }
+                is DebugEventDto.TaskStateTransition -> {
+                    addTaskFlowEvent(correlationTraces, event.correlationId, "TaskStateTransition",
+                        "Task ${event.taskId}: ${event.fromState} → ${event.toState}")
+                }
+                is DebugEventDto.QualificationStart -> {
+                    addTaskFlowEvent(correlationTraces, event.correlationId, "QualificationStart",
+                        "Started qualification for task ${event.taskId} (type: ${event.taskType})")
+                }
+                is DebugEventDto.QualificationDecision -> {
+                    addTaskFlowEvent(correlationTraces, event.correlationId, "QualificationDecision",
+                        "Decision: ${event.decision} (duration: ${event.duration}ms)\nReason: ${event.reason}")
+                }
+                is DebugEventDto.GpuTaskPickup -> {
+                    addTaskFlowEvent(correlationTraces, event.correlationId, "GpuTaskPickup",
+                        "GPU picked up task ${event.taskId} (type: ${event.taskType}, state: ${event.state})")
+                }
+                is DebugEventDto.PlanCreated -> {
+                    addTaskFlowEvent(correlationTraces, event.correlationId, "PlanCreated",
+                        "Plan ${event.planId} created\nInstruction: ${event.taskInstruction}\nBackground: ${event.backgroundMode}")
+                }
+                is DebugEventDto.PlanStatusChanged -> {
+                    addTaskFlowEvent(correlationTraces, event.correlationId, "PlanStatusChanged",
+                        "Plan ${event.planId} status changed to: ${event.status}")
+                }
+                is DebugEventDto.PlanStepAdded -> {
+                    addTaskFlowEvent(correlationTraces, event.correlationId, "PlanStepAdded",
+                        "Step #${event.order} added to plan ${event.planId}\nTool: ${event.toolName}\nInstruction: ${event.instruction}")
+                }
+                is DebugEventDto.StepExecutionStart -> {
+                    addTaskFlowEvent(correlationTraces, event.correlationId, "StepExecutionStart",
+                        "Started step #${event.order} in plan ${event.planId}\nTool: ${event.toolName}")
+                }
+                is DebugEventDto.StepExecutionCompleted -> {
+                    addTaskFlowEvent(correlationTraces, event.correlationId, "StepExecutionCompleted",
+                        "Completed step in plan ${event.planId}\nTool: ${event.toolName}\nStatus: ${event.status}\nResult type: ${event.resultType}")
+                }
+                is DebugEventDto.FinalizerStart -> {
+                    addTaskFlowEvent(correlationTraces, event.correlationId, "FinalizerStart",
+                        "Finalizer started for plan ${event.planId}\nTotal: ${event.totalSteps}, Completed: ${event.completedSteps}, Failed: ${event.failedSteps}")
+                }
                 is DebugEventDto.FinalizerComplete -> {
-                    // These events are for task flow monitoring, not LLM session debugging
-                    // They will be handled in a separate TaskMonitorWindow in the future
+                    addTaskFlowEvent(correlationTraces, event.correlationId, "FinalizerComplete",
+                        "Finalizer completed for plan ${event.planId}\nAnswer length: ${event.answerLength}")
                 }
             }
         }
     }
 
-    // Convert groups to sorted list (newest first)
-    val currentGroups = correlationGroups.values.sortedByDescending {
-        it.getLatestSession()?.startTime
-    }
+    // Convert traces to sorted list (newest first)
+    val currentTraces = correlationTraces.values.sortedByDescending { it.startTime }
 
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            if (currentGroups.isEmpty()) {
+            if (currentTraces.isEmpty()) {
                 // Empty state
                 Box(
                     modifier = Modifier.fillMaxSize(),
-                    contentAlignment = androidx.compose.ui.Alignment.Center
+                    contentAlignment = Alignment.Center
                 ) {
                     Column(
-                        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                        horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            "No LLM Sessions Yet",
+                            "No Traces Yet",
                             style = MaterialTheme.typography.headlineMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            "LLM calls will appear here as tabs",
+                            "All system events will appear here grouped by correlationId",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
             } else {
-                // Safely clamp group index to valid range
-                val safeGroupIndex = if (selectedGroupIndex >= currentGroups.size) {
-                    currentGroups.size - 1
-                } else if (selectedGroupIndex < 0) {
-                    0
-                } else {
-                    selectedGroupIndex
+                // Safely clamp trace index to valid range
+                val safeTraceIndex = selectedTraceIndex.coerceIn(0, currentTraces.size - 1)
+                if (safeTraceIndex != selectedTraceIndex) {
+                    selectedTraceIndex = safeTraceIndex
                 }
 
-                // Update selectedGroupIndex if it was clamped
-                if (safeGroupIndex != selectedGroupIndex) {
-                    selectedGroupIndex = safeGroupIndex
-                }
-
-                // Group tabs
+                // Trace tabs
                 Row(modifier = Modifier.fillMaxWidth()) {
                     PrimaryScrollableTabRow(
-                        selectedTabIndex = safeGroupIndex,
+                        selectedTabIndex = safeTraceIndex,
                         modifier = Modifier.weight(1f)
                     ) {
-                        currentGroups.forEachIndexed { index, group ->
+                        currentTraces.forEachIndexed { index, trace ->
                             Tab(
-                                selected = safeGroupIndex == index,
+                                selected = safeTraceIndex == index,
                                 onClick = {
-                                    selectedGroupIndex = index
-                                    selectedSessionInGroup = group.getLatestSession()
+                                    selectedTraceIndex = index
+                                    selectedEvent = trace.events.firstOrNull()
                                 },
                                 text = {
                                     Row(
                                         horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(group.getGroupLabel())
+                                        Text(trace.getTabLabel())
                                         IconButton(
                                             onClick = {
-                                                correlationGroups.remove(group.correlationId)
-                                                // Adjust selected index if needed
-                                                if (selectedGroupIndex >= correlationGroups.size && selectedGroupIndex > 0) {
-                                                    selectedGroupIndex = correlationGroups.size - 1
+                                                correlationTraces.remove(trace.correlationId)
+                                                if (selectedTraceIndex >= correlationTraces.size && selectedTraceIndex > 0) {
+                                                    selectedTraceIndex = correlationTraces.size - 1
                                                 }
-                                                selectedSessionInGroup = null
+                                                selectedEvent = null
                                             },
                                             modifier = Modifier.size(20.dp)
                                         ) {
                                             Icon(
                                                 Icons.Default.Close,
-                                                contentDescription = "Close group",
+                                                contentDescription = "Close trace",
                                                 modifier = Modifier.size(16.dp)
                                             )
                                         }
@@ -252,21 +335,20 @@ fun DebugWindow(connectionManager: ConnectionManager) {
                         }
                     }
 
-                    // Close All Completed Groups button
-                    if (correlationGroups.values.any { group -> group.sessions.all { it.isCompleted() } }) {
+                    // Close All Completed button
+                    if (correlationTraces.values.any { it.isCompleted() }) {
                         Button(
                             onClick = {
-                                val completedGroupIds = correlationGroups.values
-                                    .filter { group -> group.sessions.all { it.isCompleted() } }
+                                val completedIds = correlationTraces.values
+                                    .filter { it.isCompleted() }
                                     .map { it.correlationId }
-                                completedGroupIds.forEach { correlationGroups.remove(it) }
-                                // Reset index if current tab was closed
-                                if (selectedGroupIndex >= correlationGroups.size && correlationGroups.isNotEmpty()) {
-                                    selectedGroupIndex = correlationGroups.size - 1
-                                } else if (correlationGroups.isEmpty()) {
-                                    selectedGroupIndex = 0
+                                completedIds.forEach { correlationTraces.remove(it) }
+                                if (selectedTraceIndex >= correlationTraces.size && correlationTraces.isNotEmpty()) {
+                                    selectedTraceIndex = correlationTraces.size - 1
+                                } else if (correlationTraces.isEmpty()) {
+                                    selectedTraceIndex = 0
                                 }
-                                selectedSessionInGroup = null
+                                selectedEvent = null
                             },
                             modifier = Modifier.padding(8.dp)
                         ) {
@@ -277,13 +359,13 @@ fun DebugWindow(connectionManager: ConnectionManager) {
 
                 HorizontalDivider()
 
-                // Group content with session list
-                val selectedGroup = currentGroups.getOrNull(safeGroupIndex)
-                if (selectedGroup != null) {
-                    CorrelationGroupContent(
-                        group = selectedGroup,
-                        selectedSession = selectedSessionInGroup,
-                        onSessionSelected = { selectedSessionInGroup = it }
+                // Trace content with event list
+                val selectedTrace = currentTraces.getOrNull(safeTraceIndex)
+                if (selectedTrace != null) {
+                    CorrelationTraceContent(
+                        trace = selectedTrace,
+                        selectedEvent = selectedEvent,
+                        onEventSelected = { selectedEvent = it }
                     )
                 }
             }
@@ -292,16 +374,40 @@ fun DebugWindow(connectionManager: ConnectionManager) {
 }
 
 /**
- * Content for a correlation group showing list of sessions and selected session detail
+ * Helper function to add task flow events
+ */
+private fun addTaskFlowEvent(
+    traces: MutableMap<String, CorrelationTrace>,
+    correlationId: String,
+    eventName: String,
+    details: String
+) {
+    val trace = traces.getOrPut(correlationId) {
+        CorrelationTrace(correlationId)
+    }
+
+    val event = TaskFlowEvent(
+        eventId = "${correlationId}_${eventName}_${LocalDateTime.now()}",
+        eventName = eventName,
+        eventTime = LocalDateTime.now(),
+        details = details
+    )
+
+    trace.events.add(0, event)
+    traces[correlationId] = trace.copy(events = trace.events.toMutableList())
+}
+
+/**
+ * Content for a correlation trace showing list of events and selected event detail
  */
 @Composable
-fun CorrelationGroupContent(
-    group: CorrelationGroup,
-    selectedSession: DebugSession?,
-    onSessionSelected: (DebugSession) -> Unit
+fun CorrelationTraceContent(
+    trace: CorrelationTrace,
+    selectedEvent: TraceEvent?,
+    onEventSelected: (TraceEvent) -> Unit
 ) {
     Row(modifier = Modifier.fillMaxSize()) {
-        // Left side - Session list (newest first)
+        // Left side - Event list (newest first)
         Column(
             modifier = Modifier
                 .weight(0.3f)
@@ -309,7 +415,7 @@ fun CorrelationGroupContent(
                 .padding(8.dp)
         ) {
             Text(
-                text = "LLM Sessions (${group.sessions.size})",
+                text = "Events (${trace.events.size})",
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(8.dp)
             )
@@ -320,11 +426,11 @@ fun CorrelationGroupContent(
                 contentPadding = PaddingValues(4.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                items(group.sessions) { session ->
-                    SessionListItem(
-                        session = session,
-                        isSelected = selectedSession?.id == session.id,
-                        onClick = { onSessionSelected(session) }
+                items(trace.events) { event ->
+                    EventListItem(
+                        event = event,
+                        isSelected = selectedEvent?.id == event.id,
+                        onClick = { onEventSelected(event) }
                     )
                 }
             }
@@ -332,16 +438,16 @@ fun CorrelationGroupContent(
 
         VerticalDivider()
 
-        // Right side - Session detail
-        if (selectedSession != null) {
-            SessionTabContent(selectedSession)
+        // Right side - Event detail
+        if (selectedEvent != null) {
+            selectedEvent.getDetailContent()()
         } else {
             Box(
                 modifier = Modifier.weight(0.7f).fillMaxHeight(),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    "Select an LLM session from the list",
+                    "Select an event from the list to view details",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -351,11 +457,11 @@ fun CorrelationGroupContent(
 }
 
 /**
- * Single session list item
+ * Single event list item
  */
 @Composable
-fun SessionListItem(
-    session: DebugSession,
+fun EventListItem(
+    event: TraceEvent,
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
@@ -378,50 +484,26 @@ fun SessionListItem(
                 .fillMaxWidth()
                 .padding(8.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = session.promptType,
-                    style = MaterialTheme.typography.titleSmall
-                )
-                if (session.isCompleted()) {
-                    Text(
-                        "✓",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                } else {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp
-                    )
-                }
-            }
             Text(
-                text = session.startTime.format(DateTimeFormatter.ofPattern("HH:mm:ss")),
-                style = MaterialTheme.typography.labelSmall,
+                text = event.getListItemLabel(),
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 2
+            )
+            Text(
+                text = event.timestamp.format(DateTimeFormatter.ofPattern("HH:mm:ss")),
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp)
             )
-            if (session.clientName != null) {
-                Text(
-                    text = session.clientName,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
         }
     }
 }
 
 /**
- * Content for a single session tab
+ * Detail view for LLM session event
  */
 @Composable
-fun SessionTabContent(session: DebugSession) {
+fun LLMSessionDetail(session: LLMSessionEvent) {
     val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
     val clipboard = rememberClipboardManager()
 
@@ -449,12 +531,11 @@ fun SessionTabContent(session: DebugSession) {
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
                     HorizontalDivider(modifier = Modifier.padding(bottom = 8.dp))
-                    SessionInfoRow("Session ID", session.id.take(8))
-                    SessionInfoRow("Correlation ID", session.correlationId?.take(8) ?: "N/A")
+                    SessionInfoRow("Session ID", session.sessionId.take(8))
                     SessionInfoRow("Type", session.promptType)
                     SessionInfoRow("Client", session.clientName ?: "System")
                     SessionInfoRow("Started", session.startTime.format(formatter))
-                    if (session.isCompleted()) {
+                    if (session.currentStatus == TraceEvent.EventStatus.COMPLETED) {
                         val duration = session.completionTime?.let {
                             val durationMs = java.time.Duration.between(session.startTime, it).toMillis()
                             "${durationMs}ms"
@@ -506,7 +587,7 @@ fun SessionTabContent(session: DebugSession) {
                     "Streaming Response",
                     style = MaterialTheme.typography.titleMedium
                 )
-                if (!session.isCompleted()) {
+                if (session.currentStatus == TraceEvent.EventStatus.IN_PROGRESS) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(20.dp),
                         strokeWidth = 2.dp
@@ -572,6 +653,51 @@ fun SessionTabContent(session: DebugSession) {
                 }
             }
         }
+    }
+}
+
+/**
+ * Detail view for task flow event
+ */
+@Composable
+fun TaskFlowEventDetail(event: TaskFlowEvent) {
+    val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Event info card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    "Event Info",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                HorizontalDivider(modifier = Modifier.padding(bottom = 8.dp))
+
+                SessionInfoRow("Event Type", event.eventName)
+                SessionInfoRow("Time", formatter.format(event.eventTime))
+                SessionInfoRow("Status", event.currentStatus.name)
+            }
+        }
+
+        // Event details
+        com.jervis.ui.util.CopyableTextCard(
+            title = "Details",
+            content = event.details,
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+        )
     }
 }
 

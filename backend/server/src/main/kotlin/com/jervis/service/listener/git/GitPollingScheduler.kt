@@ -55,6 +55,12 @@ class GitPollingScheduler(
         }
     }
 
+    /** Manual trigger to run immediate Git synchronization across all configured repositories. */
+    suspend fun triggerNext() {
+        logger.info { "Manually triggering Git synchronization (mono-repos and standalone projects)" }
+        syncAllRepositories()
+    }
+
     private suspend fun syncAllRepositories() {
         runCatching {
             logger.info { "=== GIT_SYNC: Starting unified Git synchronization ===" }

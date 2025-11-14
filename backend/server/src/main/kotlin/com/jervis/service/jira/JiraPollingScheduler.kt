@@ -45,9 +45,9 @@ class JiraPollingScheduler(
         }
     }
 
-    /** Manual trigger for a client (useful from admin flows). */
-    suspend fun triggerManual(clientId: String) {
-        logger.info { "Manually triggering Jira indexing for client=$clientId" }
-        orchestrator.indexClient(ObjectId(clientId))
+    /** Manual trigger to pick the next eligible Jira connection automatically. */
+    suspend fun triggerNext() {
+        logger.info { "Manually triggering Jira indexing (auto-select next connection)" }
+        pollNextClient()
     }
 }
