@@ -115,6 +115,7 @@ fun UserTasksScreen(
     }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
             TopAppBar(
                 title = { Text("User Tasks") },
@@ -125,7 +126,10 @@ fun UserTasksScreen(
                 },
                 actions = {
                     com.jervis.ui.util.RefreshIconButton(onClick = { loadTasks() })
-                }
+                },
+                windowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(
+                    androidx.compose.foundation.layout.WindowInsetsSides.Top
+                ),
             )
         }
     ) { padding ->

@@ -9,10 +9,6 @@ import io.weaviate.client.v1.filters.WhereFilter
  * Type-safe DSL for building Weaviate queries and filters.
  * Provides a clean, Kotlin-idiomatic way to construct complex search queries.
  */
-
-/**
- * Query configuration for vector search
- */
 data class VectorQuery(
     val embedding: List<Float>,
     val filters: WeaviateFilters = WeaviateFilters(),
@@ -102,32 +98,6 @@ object WeaviateCollections {
             ModelTypeEnum.EMBEDDING_CODE -> "SemanticCode"
             else -> throw IllegalArgumentException("Unsupported collection type: $modelType")
         }
-}
-
-/**
- * DSL builder for VectorQuery
- */
-fun vectorQuery(builder: VectorQueryBuilder.() -> Unit): VectorQuery = VectorQueryBuilder().apply(builder).build()
-
-class VectorQueryBuilder {
-    var embedding: List<Float> = emptyList()
-    var limit: Int = 100
-    var minScore: Float = 0.0f
-    var hybridSearch: HybridConfig? = null
-    private val filtersBuilder = WeaviateFiltersBuilder()
-
-    fun filters(builder: WeaviateFiltersBuilder.() -> Unit) {
-        filtersBuilder.apply(builder)
-    }
-
-    fun build(): VectorQuery =
-        VectorQuery(
-            embedding = embedding,
-            filters = filtersBuilder.build(),
-            limit = limit,
-            minScore = minScore,
-            hybridSearch = hybridSearch,
-        )
 }
 
 class WeaviateFiltersBuilder {

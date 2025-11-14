@@ -35,6 +35,7 @@ class CommunicationEmailTool(
             llmGateway.callLlm(
                 type = PromptTypeEnum.COMMUNICATION_EMAIL_TOOL,
                 responseSchema = CommunicationEmailParams(),
+                correlationId = plan.correlationId,
                 quick = plan.quick,
                 mappingValue =
                     mapOf(

@@ -45,6 +45,7 @@ fun ErrorLogsScreen(
     LaunchedEffect(Unit) { loadErrorLogs() }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
             TopAppBar(
                 title = { Text("Error Logs") },
@@ -57,6 +58,9 @@ fun ErrorLogsScreen(
                     com.jervis.ui.util
                         .RefreshIconButton(onClick = { loadErrorLogs() })
                 },
+                windowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(
+                    androidx.compose.foundation.layout.WindowInsetsSides.Top
+                ),
             )
         },
     ) { padding ->

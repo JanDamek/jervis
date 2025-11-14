@@ -290,6 +290,7 @@ class ScheduleTaskTool(
                             "taskDescription" to taskDescription,
                             "stepContext" to stepContext,
                         ),
+                correlationId = plan.correlationId,
                 backgroundMode = plan.backgroundMode,
             ).result
     }

@@ -50,6 +50,7 @@ class ProjectGitSyncTool(
                         "taskDescription" to taskDescription,
                         "stepContext" to stepContext,
                     ),
+                correlationId = plan.correlationId,
                 quick = plan.quick,
                 responseSchema = ProjectGitSyncParams(),
                 backgroundMode = plan.backgroundMode,

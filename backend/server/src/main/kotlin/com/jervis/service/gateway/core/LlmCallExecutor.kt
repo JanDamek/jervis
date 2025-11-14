@@ -35,6 +35,7 @@ class LlmCallExecutor(
         prompt: PromptConfigBase,
         promptType: PromptTypeEnum,
         estimatedTokens: Int,
+        correlationId: String,
         backgroundMode: Boolean = false,
     ): LlmResponse =
         modelConcurrencyManager.withConcurrencyControl(candidate) {
@@ -62,6 +63,7 @@ class LlmCallExecutor(
                     promptType = promptType.name,
                     systemPrompt = systemPrompt,
                     userPrompt = userPrompt,
+                    correlationId = correlationId,
                 )
 
                 val response =

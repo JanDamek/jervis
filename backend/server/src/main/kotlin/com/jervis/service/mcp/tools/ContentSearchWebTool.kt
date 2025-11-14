@@ -62,6 +62,7 @@ class ContentSearchWebTool(
                         "taskDescription" to taskDescription,
                         "stepContext" to stepContext,
                     ),
+                correlationId = plan.correlationId,
                 quick = plan.quick,
                 responseSchema = ContentSearchWebParams(),
                 backgroundMode = plan.backgroundMode,

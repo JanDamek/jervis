@@ -89,6 +89,7 @@ fun IndexingStatusScreen(
     LaunchedEffect(Unit) { load() }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
             TopAppBar(
                 title = { Text("Indexing Status") },
@@ -97,7 +98,10 @@ fun IndexingStatusScreen(
                 },
                 actions = {
                     com.jervis.ui.util.RefreshIconButton(onClick = { load() })
-                }
+                },
+                windowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(
+                    androidx.compose.foundation.layout.WindowInsetsSides.Top
+                ),
             )
         },
     ) { padding ->

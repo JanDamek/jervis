@@ -111,16 +111,22 @@ data class CorrelationTrace(
     val startTime: LocalDateTime = LocalDateTime.now()
 ) {
     fun getTabLabel(): String {
-        val client = clientName ?: "System"
         val shortId = correlationId.take(8)
         val eventCount = events.size
         val inProgress = events.count { it.status == TraceEvent.EventStatus.IN_PROGRESS }
 
-        return if (inProgress > 0) {
-            "[$client] $shortId ($eventCount) ⏳"
-        } else {
-            "[$client] $shortId ($eventCount)"
-        }
+        // Get description from the LAST event (oldest, since we add to beginning)
+        val firstEventDesc = events.lastOrNull()?.let { event ->
+            when (event) {
+                is LLMSessionEvent -> event.promptType
+                is TaskFlowEvent -> event.eventName
+                else -> "Unknown"
+            }
+        } ?: "Empty"
+
+        val statusIcon = if (inProgress > 0) " ⏳" else " ✓"
+
+        return "$firstEventDesc [$shortId] ($eventCount)$statusIcon"
     }
 
     fun isCompleted(): Boolean = events.all { it.status != TraceEvent.EventStatus.IN_PROGRESS }
@@ -134,6 +140,7 @@ fun DebugWindow(connectionManager: ConnectionManager) {
     val correlationTraces = remember { mutableStateMapOf<String, CorrelationTrace>() }
     var selectedTraceIndex by remember { mutableStateOf(0) }
     var selectedEvent by remember { mutableStateOf<TraceEvent?>(null) }
+    var followLatestEvent by remember { mutableStateOf(false) }
 
     // Process debug events from WebSocket flow
     LaunchedEffect(connectionManager) {
@@ -162,6 +169,15 @@ fun DebugWindow(connectionManager: ConnectionManager) {
 
                     trace.events.add(0, llmEvent)
                     correlationTraces[correlationId] = trace.copy(events = trace.events.toMutableList())
+
+                    // Auto-follow: select this event if follow mode is on and this trace is selected
+                    if (followLatestEvent) {
+                        val currentTraces = correlationTraces.values.sortedByDescending { it.startTime }
+                        val selectedTrace = currentTraces.getOrNull(selectedTraceIndex)
+                        if (selectedTrace?.correlationId == correlationId) {
+                            selectedEvent = llmEvent
+                        }
+                    }
                 }
 
                 is DebugEventDto.ResponseChunkDto -> {
@@ -210,51 +226,63 @@ fun DebugWindow(connectionManager: ConnectionManager) {
                 // Task flow events - now handled
                 is DebugEventDto.TaskCreated -> {
                     addTaskFlowEvent(correlationTraces, event.correlationId, "TaskCreated",
-                        "Task ${event.taskId} created (type: ${event.taskType}, state: ${event.state})")
+                        "Task ${event.taskId} created (type: ${event.taskType}, state: ${event.state})",
+                        followLatestEvent, selectedTraceIndex) { selectedEvent = it }
                 }
                 is DebugEventDto.TaskStateTransition -> {
                     addTaskFlowEvent(correlationTraces, event.correlationId, "TaskStateTransition",
-                        "Task ${event.taskId}: ${event.fromState} → ${event.toState}")
+                        "Task ${event.taskId}: ${event.fromState} → ${event.toState}",
+                        followLatestEvent, selectedTraceIndex) { selectedEvent = it }
                 }
                 is DebugEventDto.QualificationStart -> {
                     addTaskFlowEvent(correlationTraces, event.correlationId, "QualificationStart",
-                        "Started qualification for task ${event.taskId} (type: ${event.taskType})")
+                        "Started qualification for task ${event.taskId} (type: ${event.taskType})",
+                        followLatestEvent, selectedTraceIndex) { selectedEvent = it }
                 }
                 is DebugEventDto.QualificationDecision -> {
                     addTaskFlowEvent(correlationTraces, event.correlationId, "QualificationDecision",
-                        "Decision: ${event.decision} (duration: ${event.duration}ms)\nReason: ${event.reason}")
+                        "Decision: ${event.decision} (duration: ${event.duration}ms)\nReason: ${event.reason}",
+                        followLatestEvent, selectedTraceIndex) { selectedEvent = it }
                 }
                 is DebugEventDto.GpuTaskPickup -> {
                     addTaskFlowEvent(correlationTraces, event.correlationId, "GpuTaskPickup",
-                        "GPU picked up task ${event.taskId} (type: ${event.taskType}, state: ${event.state})")
+                        "GPU picked up task ${event.taskId} (type: ${event.taskType}, state: ${event.state})",
+                        followLatestEvent, selectedTraceIndex) { selectedEvent = it }
                 }
                 is DebugEventDto.PlanCreated -> {
                     addTaskFlowEvent(correlationTraces, event.correlationId, "PlanCreated",
-                        "Plan ${event.planId} created\nInstruction: ${event.taskInstruction}\nBackground: ${event.backgroundMode}")
+                        "Plan ${event.planId} created\nInstruction: ${event.taskInstruction}\nBackground: ${event.backgroundMode}",
+                        followLatestEvent, selectedTraceIndex) { selectedEvent = it }
                 }
                 is DebugEventDto.PlanStatusChanged -> {
                     addTaskFlowEvent(correlationTraces, event.correlationId, "PlanStatusChanged",
-                        "Plan ${event.planId} status changed to: ${event.status}")
+                        "Plan ${event.planId} status changed to: ${event.status}",
+                        followLatestEvent, selectedTraceIndex) { selectedEvent = it }
                 }
                 is DebugEventDto.PlanStepAdded -> {
                     addTaskFlowEvent(correlationTraces, event.correlationId, "PlanStepAdded",
-                        "Step #${event.order} added to plan ${event.planId}\nTool: ${event.toolName}\nInstruction: ${event.instruction}")
+                        "Step #${event.order} added to plan ${event.planId}\nTool: ${event.toolName}\nInstruction: ${event.instruction}",
+                        followLatestEvent, selectedTraceIndex) { selectedEvent = it }
                 }
                 is DebugEventDto.StepExecutionStart -> {
                     addTaskFlowEvent(correlationTraces, event.correlationId, "StepExecutionStart",
-                        "Started step #${event.order} in plan ${event.planId}\nTool: ${event.toolName}")
+                        "Started step #${event.order} in plan ${event.planId}\nTool: ${event.toolName}",
+                        followLatestEvent, selectedTraceIndex) { selectedEvent = it }
                 }
                 is DebugEventDto.StepExecutionCompleted -> {
                     addTaskFlowEvent(correlationTraces, event.correlationId, "StepExecutionCompleted",
-                        "Completed step in plan ${event.planId}\nTool: ${event.toolName}\nStatus: ${event.status}\nResult type: ${event.resultType}")
+                        "Completed step in plan ${event.planId}\nTool: ${event.toolName}\nStatus: ${event.status}\nResult type: ${event.resultType}",
+                        followLatestEvent, selectedTraceIndex) { selectedEvent = it }
                 }
                 is DebugEventDto.FinalizerStart -> {
                     addTaskFlowEvent(correlationTraces, event.correlationId, "FinalizerStart",
-                        "Finalizer started for plan ${event.planId}\nTotal: ${event.totalSteps}, Completed: ${event.completedSteps}, Failed: ${event.failedSteps}")
+                        "Finalizer started for plan ${event.planId}\nTotal: ${event.totalSteps}, Completed: ${event.completedSteps}, Failed: ${event.failedSteps}",
+                        followLatestEvent, selectedTraceIndex) { selectedEvent = it }
                 }
                 is DebugEventDto.FinalizerComplete -> {
                     addTaskFlowEvent(correlationTraces, event.correlationId, "FinalizerComplete",
-                        "Finalizer completed for plan ${event.planId}\nAnswer length: ${event.answerLength}")
+                        "Finalizer completed for plan ${event.planId}\nAnswer length: ${event.answerLength}",
+                        followLatestEvent, selectedTraceIndex) { selectedEvent = it }
                 }
             }
         }
@@ -305,7 +333,7 @@ fun DebugWindow(connectionManager: ConnectionManager) {
                                 selected = safeTraceIndex == index,
                                 onClick = {
                                     selectedTraceIndex = index
-                                    selectedEvent = trace.events.firstOrNull()
+                                    selectedEvent = null // Show event list, not detail
                                 },
                                 text = {
                                     Row(
@@ -335,24 +363,42 @@ fun DebugWindow(connectionManager: ConnectionManager) {
                         }
                     }
 
-                    // Close All Completed button
-                    if (correlationTraces.values.any { it.isCompleted() }) {
-                        Button(
-                            onClick = {
-                                val completedIds = correlationTraces.values
-                                    .filter { it.isCompleted() }
-                                    .map { it.correlationId }
-                                completedIds.forEach { correlationTraces.remove(it) }
-                                if (selectedTraceIndex >= correlationTraces.size && correlationTraces.isNotEmpty()) {
-                                    selectedTraceIndex = correlationTraces.size - 1
-                                } else if (correlationTraces.isEmpty()) {
-                                    selectedTraceIndex = 0
-                                }
-                                selectedEvent = null
-                            },
-                            modifier = Modifier.padding(8.dp)
+                    // Controls: Follow mode + Close All Completed
+                    Row(
+                        modifier = Modifier.padding(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Follow latest event checkbox
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Text("Close All Completed")
+                            Checkbox(
+                                checked = followLatestEvent,
+                                onCheckedChange = { followLatestEvent = it }
+                            )
+                            Text("Follow Latest Event", style = MaterialTheme.typography.bodyMedium)
+                        }
+
+                        // Close All Completed button
+                        if (correlationTraces.values.any { it.isCompleted() }) {
+                            Button(
+                                onClick = {
+                                    val completedIds = correlationTraces.values
+                                        .filter { it.isCompleted() }
+                                        .map { it.correlationId }
+                                    completedIds.forEach { correlationTraces.remove(it) }
+                                    if (selectedTraceIndex >= correlationTraces.size && correlationTraces.isNotEmpty()) {
+                                        selectedTraceIndex = correlationTraces.size - 1
+                                    } else if (correlationTraces.isEmpty()) {
+                                        selectedTraceIndex = 0
+                                    }
+                                    selectedEvent = null
+                                }
+                            ) {
+                                Text("Close All Completed")
+                            }
                         }
                     }
                 }
@@ -380,7 +426,10 @@ private fun addTaskFlowEvent(
     traces: MutableMap<String, CorrelationTrace>,
     correlationId: String,
     eventName: String,
-    details: String
+    details: String,
+    followLatestEvent: Boolean,
+    selectedTraceIndex: Int,
+    onEventSelected: (TraceEvent) -> Unit
 ) {
     val trace = traces.getOrPut(correlationId) {
         CorrelationTrace(correlationId)
@@ -395,6 +444,15 @@ private fun addTaskFlowEvent(
 
     trace.events.add(0, event)
     traces[correlationId] = trace.copy(events = trace.events.toMutableList())
+
+    // Auto-follow: select this event if follow mode is on and this trace is selected
+    if (followLatestEvent) {
+        val currentTraces = traces.values.sortedByDescending { it.startTime }
+        val selectedTrace = currentTraces.getOrNull(selectedTraceIndex)
+        if (selectedTrace?.correlationId == correlationId) {
+            onEventSelected(event)
+        }
+    }
 }
 
 /**
@@ -404,14 +462,37 @@ private fun addTaskFlowEvent(
 fun CorrelationTraceContent(
     trace: CorrelationTrace,
     selectedEvent: TraceEvent?,
-    onEventSelected: (TraceEvent) -> Unit
+    onEventSelected: (TraceEvent?) -> Unit
 ) {
-    Row(modifier = Modifier.fillMaxSize()) {
-        // Left side - Event list (newest first)
+    // If event is selected, show full-screen detail with back button
+    if (selectedEvent != null) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Back button bar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(onClick = { onEventSelected(null) }) {
+                    Text("← Back to List")
+                }
+                Text(
+                    selectedEvent.getListItemLabel(),
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
+            HorizontalDivider()
+
+            // Full-screen detail
+            selectedEvent.getDetailContent()()
+        }
+    } else {
+        // Show event list
         Column(
             modifier = Modifier
-                .weight(0.3f)
-                .fillMaxHeight()
+                .fillMaxSize()
                 .padding(8.dp)
         ) {
             Text(
@@ -429,28 +510,10 @@ fun CorrelationTraceContent(
                 items(trace.events) { event ->
                     EventListItem(
                         event = event,
-                        isSelected = selectedEvent?.id == event.id,
+                        isSelected = false,
                         onClick = { onEventSelected(event) }
                     )
                 }
-            }
-        }
-
-        VerticalDivider()
-
-        // Right side - Event detail
-        if (selectedEvent != null) {
-            selectedEvent.getDetailContent()()
-        } else {
-            Box(
-                modifier = Modifier.weight(0.7f).fillMaxHeight(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    "Select an event from the list to view details",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
     }

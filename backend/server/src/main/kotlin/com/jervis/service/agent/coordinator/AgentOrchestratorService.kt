@@ -71,12 +71,16 @@ class AgentOrchestratorService(
         logger.info { "AGENT_START: Handling query for client='${clientId.toHexString()}', project='$projectIdLog'" }
 
         try {
+            // Generate correlationId early to use in analysis
+            val correlationId = taskCorrelationId ?: ObjectId.get().toHexString()
+
             val analysisResult =
                 requestAnalyzer.analyze(
                     text = text,
                     quick = quick,
                     backgroundMode = background,
                     goalPrompt = goalPrompt,
+                    correlationId = correlationId,
                 )
 
             // Load client document (mandatory)
@@ -99,7 +103,7 @@ class AgentOrchestratorService(
                     projectDocument = projectDocument,
                     quick = quick,
                     backgroundMode = background,
-                    correlationId = taskCorrelationId ?: ObjectId.get().toHexString(), // Use task correlationId if available, otherwise generate new
+                    correlationId = correlationId, // Use correlationId generated earlier
                 )
 
             // Publish debug event for plan creation

@@ -34,6 +34,7 @@ class CommunicationSlackTool(
             llmGateway.callLlm(
                 type = PromptTypeEnum.COMMUNICATION_SLACK_TOOL,
                 responseSchema = CommunicationSlackParams(),
+                correlationId = plan.correlationId,
                 quick = plan.quick,
                 mappingValue =
                     mapOf(

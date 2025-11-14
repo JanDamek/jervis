@@ -58,6 +58,7 @@ class Finalizer(
                             quick = plan.quick,
                             mappingValue = mappingValues,
                             outputLanguage = userLang,
+                            correlationId = plan.correlationId,
                             backgroundMode = plan.backgroundMode,
                         )
 

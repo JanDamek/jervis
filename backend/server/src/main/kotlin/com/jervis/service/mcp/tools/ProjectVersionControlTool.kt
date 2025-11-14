@@ -55,6 +55,7 @@ class ProjectVersionControlTool(
                         "taskDescription" to taskDescription,
                         "stepContext" to stepContext,
                     ),
+                correlationId = plan.correlationId,
                 quick = plan.quick,
                 responseSchema = ProjectVersionControlParams(),
                 backgroundMode = plan.backgroundMode,

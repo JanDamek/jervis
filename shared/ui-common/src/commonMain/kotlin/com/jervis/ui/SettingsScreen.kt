@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -40,6 +42,7 @@ fun SettingsScreen(
         modifier =
             Modifier
                 .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.safeDrawing)
                 .padding(16.dp),
     ) {
         // Header
@@ -47,9 +50,10 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            TextButton(onClick = onBack) { Text("← Back") }
+            Spacer(Modifier.width(12.dp))
             Text("Settings", style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = onBack) { Text("Back") }
         }
         Spacer(Modifier.size(12.dp))
 

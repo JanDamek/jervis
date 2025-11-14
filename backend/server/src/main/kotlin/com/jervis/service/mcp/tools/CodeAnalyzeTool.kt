@@ -40,6 +40,7 @@ class CodeAnalyzeTool(
             llmGateway.callLlm(
                 type = PromptTypeEnum.CODE_ANALYZE_TOOL,
                 responseSchema = CodeAnalyzeParams(),
+                correlationId = plan.correlationId,
                 quick = plan.quick,
                 mappingValue = mapOf("taskDescription" to taskDescription),
                 backgroundMode = plan.backgroundMode,

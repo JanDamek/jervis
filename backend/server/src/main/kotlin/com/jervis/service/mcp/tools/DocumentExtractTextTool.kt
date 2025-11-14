@@ -54,6 +54,7 @@ class DocumentExtractTextTool(
                         "taskDescription" to taskDescription,
                         "stepContext" to stepContext,
                     ),
+                correlationId = plan.correlationId,
                 quick = plan.quick,
                 responseSchema = DocumentExtractTextParams(),
                 backgroundMode = plan.backgroundMode,

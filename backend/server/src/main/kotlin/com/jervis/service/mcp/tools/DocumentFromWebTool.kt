@@ -57,6 +57,7 @@ class DocumentFromWebTool(
                         "taskDescription" to taskDescription,
                         "stepContext" to stepContext,
                     ),
+                correlationId = plan.correlationId,
                 quick = plan.quick,
                 responseSchema = DocumentFromWebParams(),
                 backgroundMode = plan.backgroundMode,

@@ -7,7 +7,8 @@ data class PendingTaskDto(
     val id: String,
     val taskType: String,
     val content: String,
-    val projectId: String?,
+    // Optional: some tasks are client-scoped only and do not belong to a specific project
+    val projectId: String? = null,
     val clientId: String,
     val createdAt: String,
     val state: String,
