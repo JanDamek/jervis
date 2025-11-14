@@ -38,6 +38,7 @@ class LlmGateway(
     suspend fun <T : Any> callLlm(
         type: PromptTypeEnum,
         responseSchema: T,
+        correlationId: String,
         quick: Boolean = false,
         mappingValue: Map<String, String> = emptyMap(),
         outputLanguage: String? = null,
@@ -127,6 +128,7 @@ class LlmGateway(
                                 prompt,
                                 type,
                                 estimatedTokens,
+                                correlationId,
                                 backgroundMode,
                             )
 
@@ -188,6 +190,7 @@ class LlmGateway(
                         prompt,
                         type,
                         estimatedTokens,
+                        correlationId,
                         backgroundMode,
                     )
 

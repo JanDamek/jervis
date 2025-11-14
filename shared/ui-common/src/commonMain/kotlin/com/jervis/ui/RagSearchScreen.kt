@@ -111,6 +111,7 @@ fun RagSearchScreen(
     }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
             TopAppBar(
                 title = { Text("RAG Search${if (resultCount > 0) " - $resultCount results" else ""}") },
@@ -118,7 +119,10 @@ fun RagSearchScreen(
                     TextButton(onClick = onBack) {
                         Text("← Back")
                     }
-                }
+                },
+                windowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(
+                    androidx.compose.foundation.layout.WindowInsetsSides.Top
+                ),
             )
         }
     ) { padding ->

@@ -51,6 +51,7 @@ fun PendingTasksScreen(
     LaunchedEffect(Unit) { load() }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
             TopAppBar(
                 title = { Text("Pending Tasks") },
@@ -61,6 +62,9 @@ fun PendingTasksScreen(
                     com.jervis.ui.util
                         .RefreshIconButton(onClick = { load() })
                 },
+                windowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(
+                    androidx.compose.foundation.layout.WindowInsetsSides.Top
+                ),
             )
         },
     ) { padding ->
@@ -97,7 +101,7 @@ fun PendingTasksScreen(
                                     ) {
                                         Text(task.taskType, style = MaterialTheme.typography.titleMedium)
                                         com.jervis.ui.util.DeleteIconButton(
-                                            onClick = { pendingDeleteTaskId = task.id }
+                                            onClick = { pendingDeleteTaskId = task.id },
                                         )
                                     }
                                     Spacer(Modifier.height(4.dp))

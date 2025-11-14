@@ -18,9 +18,13 @@ fun MainScreen(viewModel: MainViewModel) {
     val state by viewModel.uiState.collectAsState()
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
             TopAppBar(
                 title = { Text("JERVIS Assistant") },
+                windowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(
+                    androidx.compose.foundation.layout.WindowInsetsSides.Top
+                ),
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer

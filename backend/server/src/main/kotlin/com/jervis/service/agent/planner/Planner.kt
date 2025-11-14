@@ -47,8 +47,9 @@ class Planner(
         val parsedResponse =
             llmGateway.callLlm(
                 type = PromptTypeEnum.PLANNING_CREATE_PLAN_TOOL,
-                quick = plan.quick,
                 responseSchema = PlannerResponseDto(),
+                correlationId = plan.correlationId,
+                quick = plan.quick,
                 mappingValue = buildStepsContext(plan),
                 backgroundMode = plan.backgroundMode,
             )

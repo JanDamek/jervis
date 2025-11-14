@@ -142,7 +142,10 @@ class TaskQualificationService(
         }
 
         // 5. Qualify: discard/delegate
-        val decision = qualifyBasicEmail(email, clientId)
+        // Note: correlationId will be created when task is created below, but we need it for LLM call
+        // Generate it here so qualification LLM call has same correlationId as the task
+        val correlationId = java.util.UUID.randomUUID().toString()
+        val decision = qualifyBasicEmail(email, clientId, correlationId)
 
         if (decision == EmailDecision.DISCARD) {
             logger.info { "Email ${email.messageId} discarded by qualifier" }
@@ -157,6 +160,7 @@ class TaskQualificationService(
                 content = formatEmailContent(email),
                 clientId = clientId,
                 projectId = projectId,
+                correlationId = correlationId,
             )
 
         // Requirement: writing pending task must atomically flip email state to INDEXED
@@ -169,6 +173,7 @@ class TaskQualificationService(
     private suspend fun qualifyBasicEmail(
         email: ImapMessage,
         clientId: ObjectId,
+        correlationId: String,
     ): EmailDecision {
         val emailContent =
             buildString {
@@ -184,7 +189,7 @@ class TaskQualificationService(
             val systemPrompt = taskConfig.qualifierSystemPrompt ?: ""
             val userPromptTemplate = taskConfig.qualifierUserPrompt ?: ""
 
-            val decision = qualifierGateway.qualify(systemPrompt, userPromptTemplate, mapOf("content" to emailContent))
+            val decision = qualifierGateway.qualify(systemPrompt, userPromptTemplate, mapOf("content" to emailContent), correlationId)
             when (decision) {
                 is QualifierLlmGateway.QualifierDecision.Discard -> EmailDecision.DISCARD
                 is QualifierLlmGateway.QualifierDecision.Delegate -> EmailDecision.DELEGATE
@@ -263,6 +268,7 @@ class TaskQualificationService(
                     systemPromptTemplate = systemPrompt,
                     userPromptTemplate = userPromptTemplate,
                     mappingValues = mappingValues,
+                    correlationId = task.correlationId,
                 )
 
             val duration = System.currentTimeMillis() - startTime

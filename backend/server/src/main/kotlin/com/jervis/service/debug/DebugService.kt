@@ -30,6 +30,7 @@ class DebugService(
         promptType: String,
         systemPrompt: String,
         userPrompt: String,
+        correlationId: String,
         clientId: String? = null,
         clientName: String? = null,
     ) {
@@ -41,9 +42,10 @@ class DebugService(
                 userPrompt = userPrompt,
                 clientId = clientId,
                 clientName = clientName,
+                correlationId = correlationId,
             )
         val jsonString = json.encodeToString<DebugEventDto>(dto)
-        logger.debug { "Broadcasting debug session started: $sessionId" }
+        logger.debug { "Broadcasting debug session started: $sessionId with correlationId: $correlationId" }
         sessionManager.broadcastToChannel(jsonString, WebSocketChannelTypeEnum.DEBUG)
     }
 

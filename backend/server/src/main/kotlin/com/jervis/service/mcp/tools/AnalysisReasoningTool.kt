@@ -25,6 +25,7 @@ class AnalysisReasoningTool(
             llmGateway.callLlm(
                 type = PromptTypeEnum.ANALYSIS_REASONING_TOOL,
                 responseSchema = LlmResponseWrapper(),
+                correlationId = plan.correlationId,
                 quick = plan.quick,
                 mappingValue =
                     mapOf(

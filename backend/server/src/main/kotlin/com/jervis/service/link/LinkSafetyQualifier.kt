@@ -260,7 +260,7 @@ class LinkSafetyQualifier(
      * 4. Pattern/domain matching
      * 5. LLM qualification (cache result if UNSAFE + save regex)
      */
-    suspend fun qualifyLink(url: String): SafetyResult {
+    suspend fun qualifyLink(url: String, correlationId: String? = null): SafetyResult {
         // Level 0: Check if link already indexed (most efficient - skip everything)
         indexedLinkRepository.findByUrl(url)?.let { indexed ->
             logger.debug { "Link already indexed, skipping qualification: $url" }
@@ -349,12 +349,12 @@ class LinkSafetyQualifier(
             query.contains("subscriber") ||
             query.contains("tracking")
         ) {
-            return qualifyWithLlm(url, "Contains tracking parameters")
+            return qualifyWithLlm(url, "Contains tracking parameters", correlationId)
         }
 
         // Level 7: Token/key parameters - use LLM only for authentication-looking patterns
         if (url.contains("?token=") || url.contains("&key=") || url.contains("?key=")) {
-            return qualifyWithLlm(url, "Contains token/key parameter")
+            return qualifyWithLlm(url, "Contains token/key parameter", correlationId)
         }
 
         // Default: treat as safe if no red flags
@@ -373,6 +373,7 @@ class LinkSafetyQualifier(
     private suspend fun qualifyWithLlm(
         url: String,
         context: String,
+        correlationId: String?,
     ): SafetyResult =
         try {
             val systemPrompt =
@@ -397,7 +398,12 @@ class LinkSafetyQualifier(
 
             val userPrompt = "URL: $url\nContext: $context\n\nSafe to download?"
 
-            val result = qualifierGateway.qualifyGeneric(systemPrompt, userPrompt, SafetyResult::class.java)
+            val result = qualifierGateway.qualifyGeneric(
+                systemPrompt,
+                userPrompt,
+                SafetyResult::class.java,
+                correlationId = correlationId ?: org.bson.types.ObjectId.get().toHexString()
+            )
 
             logger.debug { "LLM qualification for $url: ${result.decision} - ${result.reason}" }
 

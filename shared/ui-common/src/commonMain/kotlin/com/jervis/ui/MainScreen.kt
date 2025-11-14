@@ -43,9 +43,14 @@ fun MainScreen(
     var showMenu by remember { mutableStateOf(false) }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
             TopAppBar(
                 title = { Text("JERVIS Assistant") },
+                windowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(
+                    androidx.compose.foundation.layout.WindowInsetsSides.Top +
+                        androidx.compose.foundation.layout.WindowInsetsSides.Horizontal
+                ),
                 actions = {
                     IconButton(onClick = { showMenu = true }) {
                         Text("⋮", style = MaterialTheme.typography.headlineMedium)

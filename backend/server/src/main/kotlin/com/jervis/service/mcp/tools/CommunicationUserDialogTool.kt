@@ -52,6 +52,7 @@ class CommunicationUserDialogTool(
                     quick = plan.quick,
                     mappingValue = mapOf("taskDescription" to taskDescription),
                     outputLanguage = plan.originalLanguage.lowercase().ifBlank { "en" },
+                    correlationId = plan.correlationId,
                     backgroundMode = plan.backgroundMode,
                 )
 
@@ -92,6 +93,7 @@ class CommunicationUserDialogTool(
                     responseSchema = LlmResponseWrapper(),
                     quick = plan.quick,
                     mappingValue = mapOf("userText" to finalAnswerOriginal),
+                    correlationId = plan.correlationId,
                     backgroundMode = plan.backgroundMode,
                 )
 

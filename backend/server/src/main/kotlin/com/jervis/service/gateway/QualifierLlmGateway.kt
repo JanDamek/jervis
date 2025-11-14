@@ -38,6 +38,7 @@ class QualifierLlmGateway(
         systemPromptTemplate: String,
         userPromptTemplate: String,
         mappingValues: Map<String, String>,
+        correlationId: String,
         promptType: PromptTypeEnum = PromptTypeEnum.EMAIL_QUALIFIER,
     ): QualifierDecision {
         return try {
@@ -93,6 +94,7 @@ class QualifierLlmGateway(
                     prompt = promptConfig,
                     promptType = promptType,
                     estimatedTokens = estimatedTokens,
+                    correlationId = correlationId,
                     backgroundMode = true,
                 )
 
@@ -145,6 +147,7 @@ class QualifierLlmGateway(
         systemPrompt: String,
         userPrompt: String,
         resultClass: Class<T>,
+        correlationId: String,
         promptType: PromptTypeEnum = PromptTypeEnum.LINK_QUALIFIER,
     ): T {
         val promptConfig =
@@ -179,6 +182,7 @@ class QualifierLlmGateway(
                 prompt = promptConfig,
                 promptType = promptType,
                 estimatedTokens = estimatedTokens,
+                correlationId = correlationId,
                 backgroundMode = true,
             )
 

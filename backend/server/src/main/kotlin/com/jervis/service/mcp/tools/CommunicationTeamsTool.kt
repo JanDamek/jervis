@@ -38,6 +38,7 @@ class CommunicationTeamsTool(
                         "taskDescription" to taskDescription,
                         "stepContext" to stepContext,
                     ),
+                correlationId = plan.correlationId,
                 quick = plan.quick,
                 responseSchema = CommunicationTeamsParams(),
                 backgroundMode = plan.backgroundMode,

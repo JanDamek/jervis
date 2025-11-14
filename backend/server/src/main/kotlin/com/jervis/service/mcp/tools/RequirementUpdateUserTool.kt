@@ -41,6 +41,7 @@ class RequirementUpdateUserTool(
             llmGateway.callLlm(
                 type = name,
                 mappingValue = mapOf("taskDescription" to taskDescription),
+                correlationId = plan.correlationId,
                 quick = false,
                 responseSchema = RequirementUpdateRequest(),
                 backgroundMode = plan.backgroundMode,

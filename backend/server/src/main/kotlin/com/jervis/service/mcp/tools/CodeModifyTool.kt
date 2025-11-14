@@ -40,6 +40,7 @@ class CodeModifyTool(
             llmGateway.callLlm(
                 type = PromptTypeEnum.CODE_MODIFY_TOOL,
                 responseSchema = CodeModifyParams(),
+                correlationId = plan.correlationId,
                 quick = plan.quick,
                 mappingValue =
                     mapOf(

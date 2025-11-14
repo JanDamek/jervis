@@ -24,6 +24,7 @@ class PendingTaskService(
         content: String,
         projectId: ObjectId? = null,
         clientId: ObjectId,
+        correlationId: String? = null,
     ): PendingTask {
         // Enforce non-empty content to avoid creating dead/empty tasks
         require(content.isNotBlank()) { "PendingTask content must be provided and non-blank" }
@@ -36,6 +37,7 @@ class PendingTaskService(
                 clientId = clientId,
                 // Current pipeline does not have explicit indexing step yet; start at READY_FOR_QUALIFICATION
                 state = PendingTaskState.READY_FOR_QUALIFICATION,
+                correlationId = correlationId ?: java.util.UUID.randomUUID().toString(),
             )
 
         val document = PendingTaskDocument.fromDomain(task)

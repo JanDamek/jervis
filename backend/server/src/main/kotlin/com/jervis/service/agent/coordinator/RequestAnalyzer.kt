@@ -38,6 +38,7 @@ class RequestAnalyzer(
         quick: Boolean,
         backgroundMode: Boolean,
         goalPrompt: String? = null,
+        correlationId: String,
     ): AnalysisResult {
         if (backgroundMode) {
             logger.debug { "REQUEST_ANALYZER: Background mode - pass-through analysis (no LLM)" }
@@ -52,6 +53,7 @@ class RequestAnalyzer(
                     mappingValue = mapOf("userText" to text),
                     quick = quick,
                     responseSchema = AnalysisResult(),
+                    correlationId = correlationId,
                     backgroundMode = false,
                 )
 

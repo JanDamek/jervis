@@ -159,6 +159,7 @@ fun SchedulerScreen(
     }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
             TopAppBar(
                 title = { Text("Task Scheduler") },
@@ -176,7 +177,10 @@ fun SchedulerScreen(
                         })
                         com.jervis.ui.util.RefreshIconButton(onClick = { loadTasks() })
                     }
-                }
+                },
+                windowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(
+                    androidx.compose.foundation.layout.WindowInsetsSides.Top
+                ),
             )
         }
     ) { padding ->
