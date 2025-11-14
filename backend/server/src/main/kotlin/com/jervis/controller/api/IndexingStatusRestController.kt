@@ -24,6 +24,9 @@ class IndexingStatusRestController(
 
     @GetMapping
     override suspend fun getOverview(): IndexingOverviewDto {
+        // Ensure Atlassian (Jira) tool is visible in overview even before first run
+        registry.ensureTool(toolKey = "jira", displayName = "Atlassian (Jira)")
+
         val tools =
             registry.snapshot().map { t ->
                 IndexingToolSummaryDto(

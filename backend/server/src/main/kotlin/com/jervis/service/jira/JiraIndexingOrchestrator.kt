@@ -40,7 +40,7 @@ class JiraIndexingOrchestrator(
     suspend fun indexClient(clientId: ObjectId) =
         withContext(Dispatchers.IO) {
             val runReason = "Indexing JIRA for client=${clientId.toHexString()}"
-            kotlin.runCatching { indexingRegistry.start("jira", displayName = "Jira Indexing", message = runReason) }
+            kotlin.runCatching { indexingRegistry.start("jira", displayName = "Atlassian (Jira)", message = runReason) }
 
             try {
                 logger.info { "JIRA_INDEX: Start for client=${clientId.toHexString()}" }
@@ -49,12 +49,14 @@ class JiraIndexingOrchestrator(
                 val connectionDoc = connectionRepository.findByClientId(clientId)
                 if (connectionDoc == null) {
                     logger.warn { "JIRA_INDEX: No Jira connection configured for client=${clientId.toHexString()}" }
+                    runCatching { indexingRegistry.info("jira", "No Jira connection configured for client=${clientId.toHexString()}") }
                     return@withContext
                 }
                 if (connectionDoc.authStatus != "VALID") {
                     logger.warn {
                         "JIRA_INDEX: Skipping client=${clientId.toHexString()} due to authStatus=${connectionDoc.authStatus}. Use Test Connection to enable."
                     }
+                    runCatching { indexingRegistry.info("jira", "Skipping: authStatus=${connectionDoc.authStatus} for client=${clientId.toHexString()}") }
                     return@withContext
                 }
 
@@ -65,6 +67,7 @@ class JiraIndexingOrchestrator(
                     runCatching { selection.ensureSelectionsOrCreateTasks(clientId) }
                         .onFailure { e ->
                             logger.warn { "JIRA_INDEX: Missing selections for client=${clientId.toHexString()} - ${e.message}" }
+                            runCatching { indexingRegistry.error("jira", "Missing selections for client=${clientId.toHexString()}: ${e.message}") }
                         }.getOrElse { return@withContext }
 
                 // Build mapping: Jira project key → Jervis projectId
@@ -80,14 +83,18 @@ class JiraIndexingOrchestrator(
                             }.toMap()
                     } catch (e: Exception) {
                         logger.warn(e) { "JIRA_INDEX: Failed to load Jira project mapping from cache for client=${clientId.toHexString()}" }
+                        runCatching { indexingRegistry.error("jira", "Failed to load Jira project mapping: ${e.message}") }
                         emptyMap()
                     }
+                runCatching { indexingRegistry.info("jira", "Loaded Jira project mapping size=${jiraProjectMapping.size}") }
 
                 // Fetch ALL Jira projects for this client (not just mapped ones)
                 val connValid = selection.getConnection(clientId).let { auth.ensureValidToken(it) }
                 val allJiraProjects: List<JiraProjectKey> =
                     try {
-                        api.listProjects(connValid).map { (key, _) -> key }
+                        api.listProjects(connValid).map { (key, _) -> key }.also { list ->
+                            runCatching { indexingRegistry.info("jira", "Found ${list.size} Jira projects for client=${clientId.toHexString()}") }
+                        }
                     } catch (e: Exception) {
                         // If this looks like an auth error, mark INVALID to stop further attempts until user fixes it
                         val doc = connectionRepository.findByClientId(clientId)
@@ -99,6 +106,7 @@ class JiraIndexingOrchestrator(
                         ) {
                             "JIRA_INDEX: Failed to list all Jira projects for client=${clientId.toHexString()}, falling back to primary project only"
                         }
+                        runCatching { indexingRegistry.error("jira", "Failed to list Jira projects: ${e.message}. Falling back to primary project ${primaryProject.value}") }
                         listOf(primaryProject)
                     }
 
@@ -112,6 +120,11 @@ class JiraIndexingOrchestrator(
                     val key = projectKey.value
                     val jql = "project = $key $baseJqlSuffix"
                     val jervisProjectId = jiraProjectMapping[key] // null if not mapped
+
+                    runCatching {
+                        val mapped = jervisProjectId?.toHexString() ?: "(not mapped)"
+                        indexingRegistry.info("jira", "Indexing project=$key mappedProject=$mapped")
+                    }
 
                     runCatching {
                         val tenantHost = connValid.tenant.value
@@ -132,6 +145,7 @@ class JiraIndexingOrchestrator(
                                         tenantHost,
                                         jervisProjectId,
                                     )
+                                    runCatching { indexingRegistry.progress("jira", processedInc = 1, message = "Processed issue ${issue.key} (shallow)") }
                                 } else {
                                     // Deep: summary + comments + attachments
                                     indexIssueSummaryShallow(
@@ -160,11 +174,13 @@ class JiraIndexingOrchestrator(
                                         tenantHost = tenantHost,
                                         projectId = jervisProjectId,
                                     )
+                                    runCatching { indexingRegistry.progress("jira", processedInc = 1, message = "Processed issue ${issue.key} (deep)") }
                                 }
                             }
                     }.onFailure { e ->
                         logger.error(e) { "JIRA_INDEX: search failed for client=${clientId.toHexString()} project=$key" }
                         // Fail fast: continue other keys but surface error count via logs
+                        runCatching { indexingRegistry.error("jira", "Search failed for project=$key: ${e.message}") }
                     }
                 }
 
@@ -176,9 +192,11 @@ class JiraIndexingOrchestrator(
                     if (doc != null) {
                         val updated = doc.copy(lastSyncedAt = Instant.now(), updatedAt = Instant.now())
                         connectionRepository.save(updated)
+                        indexingRegistry.info("jira", "Updated lastSyncedAt for client=${clientId.toHexString()}")
                     }
                 }.onFailure { e ->
                     logger.warn(e) { "JIRA_INDEX: Failed to update lastSyncedAt for client=${clientId.toHexString()}" }
+                    runCatching { indexingRegistry.error("jira", "Failed to update lastSyncedAt: ${e.message}") }
                 }
             } finally {
                 kotlin.runCatching {
