@@ -22,7 +22,7 @@ sealed class ConnectionStatus {
 /**
  * Manages connection to Jervis server with automatic retry
  */
-class ConnectionManager(private val serverBaseUrl: String) {
+class ConnectionManager(private val serverBaseUrl: String) : com.jervis.ui.DebugEventsProvider {
     var status by mutableStateOf<ConnectionStatus>(ConnectionStatus.Connecting)
         private set
 
@@ -38,6 +38,10 @@ class ConnectionManager(private val serverBaseUrl: String) {
     // Expose debug events as Flow instead of accumulated list to avoid duplicates
     val debugWebSocketFlow: kotlinx.coroutines.flow.SharedFlow<DebugEventDto>?
         get() = debugWebSocketClient?.debugEvents
+
+    // Implement DebugEventsProvider interface
+    override val debugEventsFlow: kotlinx.coroutines.flow.Flow<com.jervis.dto.events.DebugEventDto>?
+        get() = debugWebSocketFlow
 
     private var services: NetworkModule.Services? = null
     private var webSocketClient: WebSocketClient? = null

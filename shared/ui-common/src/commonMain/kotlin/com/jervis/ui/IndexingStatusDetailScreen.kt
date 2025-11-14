@@ -12,6 +12,7 @@ import com.jervis.dto.indexing.IndexingItemDto
 import com.jervis.dto.indexing.IndexingToolDetailDto
 import com.jervis.repository.JervisRepository
 import kotlinx.coroutines.launch
+import com.jervis.ui.design.JTopBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -91,40 +92,32 @@ fun IndexingStatusDetailScreen(
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
-            TopAppBar(
-                title = { Text("Indexing • $toolKey") },
-                navigationIcon = { TextButton(onClick = onBack) { Text("← Back") } },
+            JTopBar(
+                title = "Indexing • $toolKey",
+                onBack = onBack,
                 actions = {
-                    TextButton(onClick = { load() }) { Text("🔄 Refresh") }
-                    // Show Run only when IDLE
+                    com.jervis.ui.util.RefreshIconButton(onClick = { load() })
                     val isIdle = detail?.summary?.state?.name != "RUNNING"
                     if (isIdle) {
                         when (toolKey) {
-                            "jira" -> TextButton(onClick = { runJira() }) { Text("▶ Run") }
-                            "email" -> TextButton(onClick = { runEmail() }) { Text("▶ Run") }
-                            "git" -> TextButton(onClick = { runGit() }) { Text("▶ Run") }
-                            "confluence" -> TextButton(onClick = { runConfluence() }) { Text("▶ Run") }
+                            "jira" -> com.jervis.ui.design.JRunTextButton(onClick = { runJira() })
+                            "email" -> com.jervis.ui.design.JRunTextButton(onClick = { runEmail() })
+                            "git" -> com.jervis.ui.design.JRunTextButton(onClick = { runGit() })
+                            "confluence" -> com.jervis.ui.design.JRunTextButton(onClick = { runConfluence() })
                         }
                     }
-                },
-                windowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(
-                    androidx.compose.foundation.layout.WindowInsetsSides.Top
-                ),
+                }
             )
         },
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when {
-                isLoading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                isLoading -> com.jervis.ui.design.JCenteredLoading()
                 error != null ->
-                    Column(
-                        modifier = Modifier.align(Alignment.Center).padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text("Failed to load: $error", color = MaterialTheme.colorScheme.error)
-                        Spacer(Modifier.height(8.dp))
-                        Button(onClick = { load() }) { Text("Retry") }
-                    }
+                    com.jervis.ui.design.JErrorState(
+                        message = "Failed to load: $error",
+                        onRetry = { load() }
+                    )
                 detail == null -> {}
                 else -> {
                     val d = detail!!

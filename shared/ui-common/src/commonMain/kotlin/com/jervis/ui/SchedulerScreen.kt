@@ -15,6 +15,7 @@ import com.jervis.dto.ProjectDto
 import com.jervis.dto.ScheduledTaskDto
 import com.jervis.repository.JervisRepository
 import kotlinx.coroutines.launch
+import com.jervis.ui.design.JTopBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -161,13 +162,9 @@ fun SchedulerScreen(
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
-            TopAppBar(
-                title = { Text("Task Scheduler") },
-                navigationIcon = {
-                    TextButton(onClick = onBack) {
-                        Text("← Back")
-                    }
-                },
+            JTopBar(
+                title = "Task Scheduler",
+                onBack = onBack,
                 actions = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Pending Only")
@@ -177,10 +174,7 @@ fun SchedulerScreen(
                         })
                         com.jervis.ui.util.RefreshIconButton(onClick = { loadTasks() })
                     }
-                },
-                windowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(
-                    androidx.compose.foundation.layout.WindowInsetsSides.Top
-                ),
+                }
             )
         }
     ) { padding ->
@@ -338,23 +332,10 @@ fun SchedulerScreen(
 
                     when {
                         isLoadingTasks -> {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator()
-                            }
+                            com.jervis.ui.design.JCenteredLoading()
                         }
                         tasks.isEmpty() -> {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    "No scheduled tasks",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                            com.jervis.ui.design.JEmptyState(message = "No scheduled tasks")
                         }
                         else -> {
                             LazyColumn(

@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import com.jervis.dto.indexing.IndexingToolSummaryDto
 import com.jervis.repository.JervisRepository
 import kotlinx.coroutines.launch
+import com.jervis.ui.design.JTopBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -91,32 +92,23 @@ fun IndexingStatusScreen(
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
-            TopAppBar(
-                title = { Text("Indexing Status") },
-                navigationIcon = {
-                    TextButton(onClick = onBack) { Text("← Back") }
-                },
+            JTopBar(
+                title = "Indexing Status",
+                onBack = onBack,
                 actions = {
                     com.jervis.ui.util.RefreshIconButton(onClick = { load() })
-                },
-                windowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(
-                    androidx.compose.foundation.layout.WindowInsetsSides.Top
-                ),
+                }
             )
         },
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when {
-                isLoading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                isLoading -> com.jervis.ui.design.JCenteredLoading()
                 error != null ->
-                    Column(
-                        modifier = Modifier.align(Alignment.Center).padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text("Failed to load: $error", color = MaterialTheme.colorScheme.error)
-                        Spacer(Modifier.height(8.dp))
-                        Button(onClick = { load() }) { Text("Retry") }
-                    }
+                    com.jervis.ui.design.JErrorState(
+                        message = "Failed to load: $error",
+                        onRetry = { load() }
+                    )
                 else ->
                     LazyColumn(modifier = Modifier.fillMaxSize().padding(12.dp)) {
                         items(summaries) { s ->
@@ -132,10 +124,10 @@ fun IndexingStatusScreen(
                                         if (s.state.name != "RUNNING") {
                                             Spacer(Modifier.width(8.dp))
                                             when (s.toolKey) {
-                                                "jira" -> TextButton(onClick = { runJira() }) { Text("▶ Run") }
-                                                "email" -> TextButton(onClick = { runEmail() }) { Text("▶ Run") }
-                                                "git" -> TextButton(onClick = { runGit() }) { Text("▶ Run") }
-                                                "confluence" -> TextButton(onClick = { runConfluence() }) { Text("▶ Run") }
+                                                "jira" -> com.jervis.ui.design.JRunTextButton(onClick = { runJira() })
+                                                "email" -> com.jervis.ui.design.JRunTextButton(onClick = { runEmail() })
+                                                "git" -> com.jervis.ui.design.JRunTextButton(onClick = { runGit() })
+                                                "confluence" -> com.jervis.ui.design.JRunTextButton(onClick = { runConfluence() })
                                             }
                                         }
                                     }

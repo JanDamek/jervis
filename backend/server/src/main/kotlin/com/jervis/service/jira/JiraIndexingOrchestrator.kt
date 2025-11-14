@@ -5,17 +5,15 @@ import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
 import com.jervis.repository.mongo.JiraConnectionMongoRepository
 import com.jervis.repository.mongo.JiraIssueIndexMongoRepository
-import com.jervis.repository.mongo.ProjectMongoRepository
 import com.jervis.service.link.LinkIndexingService
 import com.jervis.service.rag.RagIndexingService
 import com.jervis.service.text.TextChunkingService
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.bson.types.ObjectId
-import org.jsoup.Jsoup
 import org.springframework.stereotype.Service
+import org.springframework.web.reactive.function.client.WebClientResponseException
 import java.time.Instant
 
 @Service
@@ -24,7 +22,6 @@ class JiraIndexingOrchestrator(
     private val api: JiraApiClient,
     private val auth: JiraAuthService,
     private val ragIndexingService: RagIndexingService,
-    private val projectRepository: ProjectMongoRepository,
     private val connectionRepository: JiraConnectionMongoRepository,
     private val issueIndexRepository: JiraIssueIndexMongoRepository,
     private val textChunkingService: TextChunkingService,
@@ -56,18 +53,45 @@ class JiraIndexingOrchestrator(
                     logger.warn {
                         "JIRA_INDEX: Skipping client=${clientId.toHexString()} due to authStatus=${connectionDoc.authStatus}. Use Test Connection to enable."
                     }
-                    runCatching { indexingRegistry.info("jira", "Skipping: authStatus=${connectionDoc.authStatus} for client=${clientId.toHexString()}") }
+                    runCatching {
+                        indexingRegistry.info(
+                            "jira",
+                            "Skipping: authStatus=${connectionDoc.authStatus} for client=${clientId.toHexString()}",
+                        )
+                    }
                     return@withContext
                 }
 
-                selection.getConnection(clientId).let { auth.ensureValidToken(it) }
+                // Ensure token is valid; if ensureValidToken throws a WebClientResponseException 401/403, mark invalid and stop
+                try {
+                    selection.getConnection(clientId).let { auth.ensureValidToken(it) }
+                } catch (e: Exception) {
+                    if (isAuthError(e)) {
+                        val doc = connectionRepository.findByClientId(clientId)
+                        if (doc != null) {
+                            runCatching { connectionService.markAuthInvalid(doc, e.message) }
+                        }
+                        logger.warn(
+                            e,
+                        ) { "JIRA_INDEX: Auth check failed for client=${clientId.toHexString()}, marking INVALID and skipping" }
+                        runCatching { indexingRegistry.info("jira", "Auth check failed, skipping client=${clientId.toHexString()}") }
+                        return@withContext
+                    } else {
+                        throw e
+                    }
+                }
 
                 // Ensure selections exist (fail fast if missing; no background config tasks)
                 val (primaryProject, me) =
                     runCatching { selection.ensureSelectionsOrCreateTasks(clientId) }
                         .onFailure { e ->
                             logger.warn { "JIRA_INDEX: Missing selections for client=${clientId.toHexString()} - ${e.message}" }
-                            runCatching { indexingRegistry.error("jira", "Missing selections for client=${clientId.toHexString()}: ${e.message}") }
+                            runCatching {
+                                indexingRegistry.error(
+                                    "jira",
+                                    "Missing selections for client=${clientId.toHexString()}: ${e.message}",
+                                )
+                            }
                         }.getOrElse { return@withContext }
 
                 // Build mapping: Jira project key → Jervis projectId
@@ -89,25 +113,73 @@ class JiraIndexingOrchestrator(
                 runCatching { indexingRegistry.info("jira", "Loaded Jira project mapping size=${jiraProjectMapping.size}") }
 
                 // Fetch ALL Jira projects for this client (not just mapped ones)
-                val connValid = selection.getConnection(clientId).let { auth.ensureValidToken(it) }
+                val connValid =
+                    try {
+                        selection.getConnection(clientId).let { auth.ensureValidToken(it) }
+                    } catch (e: Exception) {
+                        if (isAuthError(e)) {
+                            val doc = connectionRepository.findByClientId(clientId)
+                            if (doc != null) {
+                                runCatching { connectionService.markAuthInvalid(doc, e.message) }
+                            }
+                            logger.warn(
+                                e,
+                            ) {
+                                "JIRA_INDEX: Auth check failed while listing projects for client=${clientId.toHexString()}, marking INVALID and skipping"
+                            }
+                            runCatching {
+                                indexingRegistry.info(
+                                    "jira",
+                                    "Auth check failed while listing projects, skipping client=${clientId.toHexString()}",
+                                )
+                            }
+                            return@withContext
+                        } else {
+                            throw e
+                        }
+                    }
+
                 val allJiraProjects: List<JiraProjectKey> =
                     try {
                         api.listProjects(connValid).map { (key, _) -> key }.also { list ->
-                            runCatching { indexingRegistry.info("jira", "Found ${list.size} Jira projects for client=${clientId.toHexString()}") }
+                            runCatching {
+                                indexingRegistry.info(
+                                    "jira",
+                                    "Found ${list.size} Jira projects for client=${clientId.toHexString()}",
+                                )
+                            }
                         }
                     } catch (e: Exception) {
                         // If this looks like an auth error, mark INVALID to stop further attempts until user fixes it
-                        val doc = connectionRepository.findByClientId(clientId)
-                        if (doc != null) {
-                            runCatching { connectionService.markAuthInvalid(doc, e.message) }
+                        if (isAuthError(e)) {
+                            val doc = connectionRepository.findByClientId(clientId)
+                            if (doc != null) {
+                                runCatching { connectionService.markAuthInvalid(doc, e.message) }
+                            }
+                            logger.warn(
+                                e,
+                            ) { "JIRA_INDEX: Failed to list all Jira projects for client=${clientId.toHexString()} due to auth error" }
+                            runCatching {
+                                indexingRegistry.error(
+                                    "jira",
+                                    "Failed to list Jira projects (auth): ${e.message}. Falling back to primary project ${primaryProject.value}",
+                                )
+                            }
+                            listOf(primaryProject)
+                        } else {
+                            logger.warn(
+                                e,
+                            ) {
+                                "JIRA_INDEX: Failed to list all Jira projects for client=${clientId.toHexString()}, falling back to primary project only"
+                            }
+                            runCatching {
+                                indexingRegistry.error(
+                                    "jira",
+                                    "Failed to list Jira projects: ${e.message}. Falling back to primary project ${primaryProject.value}",
+                                )
+                            }
+                            listOf(primaryProject)
                         }
-                        logger.warn(
-                            e,
-                        ) {
-                            "JIRA_INDEX: Failed to list all Jira projects for client=${clientId.toHexString()}, falling back to primary project only"
-                        }
-                        runCatching { indexingRegistry.error("jira", "Failed to list Jira projects: ${e.message}. Falling back to primary project ${primaryProject.value}") }
-                        listOf(primaryProject)
                     }
 
                 // Determine incremental window based on last sync
@@ -145,7 +217,13 @@ class JiraIndexingOrchestrator(
                                         tenantHost,
                                         jervisProjectId,
                                     )
-                                    runCatching { indexingRegistry.progress("jira", processedInc = 1, message = "Processed issue ${issue.key} (shallow)") }
+                                    runCatching {
+                                        indexingRegistry.progress(
+                                            "jira",
+                                            processedInc = 1,
+                                            message = "Processed issue ${issue.key} (shallow)",
+                                        )
+                                    }
                                 } else {
                                     // Deep: summary + comments + attachments
                                     indexIssueSummaryShallow(
@@ -174,11 +252,24 @@ class JiraIndexingOrchestrator(
                                         tenantHost = tenantHost,
                                         projectId = jervisProjectId,
                                     )
-                                    runCatching { indexingRegistry.progress("jira", processedInc = 1, message = "Processed issue ${issue.key} (deep)") }
+                                    runCatching {
+                                        indexingRegistry.progress(
+                                            "jira",
+                                            processedInc = 1,
+                                            message = "Processed issue ${issue.key} (deep)",
+                                        )
+                                    }
                                 }
                             }
                     }.onFailure { e ->
                         logger.error(e) { "JIRA_INDEX: search failed for client=${clientId.toHexString()} project=$key" }
+                        // If this looks like an auth error, mark INVALID to stop further attempts until user fixes it
+                        if (isAuthError(e)) {
+                            val doc = connectionRepository.findByClientId(clientId)
+                            if (doc != null) {
+                                runCatching { connectionService.markAuthInvalid(doc, e.message) }
+                            }
+                        }
                         // Fail fast: continue other keys but surface error count via logs
                         runCatching { indexingRegistry.error("jira", "Search failed for project=$key: ${e.message}") }
                     }
@@ -381,5 +472,20 @@ class JiraIndexingOrchestrator(
             .map { it.value }
             .distinct()
             .toList()
+    }
+
+    private fun isAuthError(t: Throwable?): Boolean {
+        if (t == null) return false
+        if (t is WebClientResponseException) {
+            val code = t.statusCode.value()
+            return code == 401 || code == 403
+        }
+        val cause = t.cause
+        if (cause is WebClientResponseException) {
+            val code = cause.statusCode.value()
+            return code == 401 || code == 403
+        }
+        val msg = t.message ?: return false
+        return msg.contains("401") || msg.contains("403") || msg.contains("Unauthorized", true) || msg.contains("Forbidden", true)
     }
 }

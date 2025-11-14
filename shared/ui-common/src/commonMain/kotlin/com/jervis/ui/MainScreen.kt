@@ -14,6 +14,7 @@ import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ui.ChatMessage
 import com.jervis.ui.util.rememberClipboardManager
+import com.jervis.ui.design.JTopBar
 
 /**
  * Main screen for Jervis Mobile - inspired by Desktop MainWindow
@@ -45,12 +46,8 @@ fun MainScreen(
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
-            TopAppBar(
-                title = { Text("JERVIS Assistant") },
-                windowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(
-                    androidx.compose.foundation.layout.WindowInsetsSides.Top +
-                        androidx.compose.foundation.layout.WindowInsetsSides.Horizontal
-                ),
+            JTopBar(
+                title = "JERVIS Assistant",
                 actions = {
                     IconButton(onClick = { showMenu = true }) {
                         Text("⋮", style = MaterialTheme.typography.headlineMedium)
@@ -119,11 +116,6 @@ fun MainScreen(
                         // TODO: Desktop Debug Console (WebSocket) - not yet implemented for mobile
                     }
                 },
-                colors =
-                    TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    ),
             )
         },
     ) { paddingValues ->

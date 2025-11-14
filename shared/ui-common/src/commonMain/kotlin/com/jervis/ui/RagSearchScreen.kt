@@ -16,6 +16,7 @@ import com.jervis.dto.rag.RagSearchItemDto
 import com.jervis.dto.rag.RagSearchRequestDto
 import com.jervis.repository.JervisRepository
 import kotlinx.coroutines.launch
+import com.jervis.ui.design.JTopBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -113,16 +114,9 @@ fun RagSearchScreen(
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
-            TopAppBar(
-                title = { Text("RAG Search${if (resultCount > 0) " - $resultCount results" else ""}") },
-                navigationIcon = {
-                    TextButton(onClick = onBack) {
-                        Text("← Back")
-                    }
-                },
-                windowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(
-                    androidx.compose.foundation.layout.WindowInsetsSides.Top
-                ),
+            JTopBar(
+                title = "RAG Search${if (resultCount > 0) " - $resultCount results" else ""}",
+                onBack = onBack,
             )
         }
     ) { padding ->
