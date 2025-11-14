@@ -23,7 +23,7 @@ fun IndexingStatusDetailScreen(
     var detail by remember { mutableStateOf<IndexingToolDetailDto?>(null) }
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var runDialogClientId by remember { mutableStateOf<String?>(null) }
+    // No client selection needed for Jira manual run anymore
     var infoMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
@@ -38,14 +38,50 @@ fun IndexingStatusDetailScreen(
         }
     }
 
-    fun runJira(clientId: String) {
+    fun runJira() {
         scope.launch {
             try {
-                repository.indexingStatus.runJiraNow(clientId)
-                infoMessage = "Triggered Jira indexing for client=$clientId"
+                repository.indexingStatus.runJiraNow()
+                infoMessage = "Triggered Jira indexing (auto-select next connection)"
                 load()
             } catch (t: Throwable) {
                 infoMessage = "Failed to trigger Jira indexing: ${t.message}"
+            }
+        }
+    }
+
+    fun runEmail() {
+        scope.launch {
+            try {
+                repository.indexingStatus.runEmailNow()
+                infoMessage = "Triggered Email indexing (auto-select next account)"
+                load()
+            } catch (t: Throwable) {
+                infoMessage = "Failed to trigger Email indexing: ${t.message}"
+            }
+        }
+    }
+
+    fun runGit() {
+        scope.launch {
+            try {
+                repository.indexingStatus.runGitNow()
+                infoMessage = "Triggered Git synchronization"
+                load()
+            } catch (t: Throwable) {
+                infoMessage = "Failed to trigger Git synchronization: ${t.message}"
+            }
+        }
+    }
+
+    fun runConfluence() {
+        scope.launch {
+            try {
+                repository.indexingStatus.runConfluenceNow()
+                infoMessage = "Triggered Confluence sync (auto-select next account)"
+                load()
+            } catch (t: Throwable) {
+                infoMessage = "Failed to trigger Confluence sync: ${t.message}"
             }
         }
     }
@@ -59,17 +95,15 @@ fun IndexingStatusDetailScreen(
                 navigationIcon = { TextButton(onClick = onBack) { Text("← Back") } },
                 actions = {
                     TextButton(onClick = { load() }) { Text("🔄 Refresh") }
-                    if (toolKey == "jira") {
-                        TextButton(onClick = {
-                            // Try to prefill clientId from loaded detail
-                            val found =
-                                detail?.summary?.reason?.let {
-                                    Regex(
-                                        "client=([0-9a-fA-F]{24})",
-                                    ).find(it)?.groupValues?.getOrNull(1)
-                                }
-                            runDialogClientId = found ?: ""
-                        }) { Text("▶ Run") }
+                    // Show Run only when IDLE
+                    val isIdle = detail?.summary?.state?.name != "RUNNING"
+                    if (isIdle) {
+                        when (toolKey) {
+                            "jira" -> TextButton(onClick = { runJira() }) { Text("▶ Run") }
+                            "email" -> TextButton(onClick = { runEmail() }) { Text("▶ Run") }
+                            "git" -> TextButton(onClick = { runGit() }) { Text("▶ Run") }
+                            "confluence" -> TextButton(onClick = { runConfluence() }) { Text("▶ Run") }
+                        }
                     }
                 },
             )
@@ -170,29 +204,6 @@ fun IndexingStatusDetailScreen(
                     }
                 }
             }
-        }
-
-        // Run dialog
-        if (runDialogClientId != null) {
-            var tmp by remember { mutableStateOf(runDialogClientId ?: "") }
-            AlertDialog(
-                onDismissRequest = { runDialogClientId = null },
-                title = { Text("Trigger Jira indexing") },
-                text = {
-                    Column {
-                        Text("Enter clientId to trigger indexing for:")
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedTextField(value = tmp, onValueChange = { tmp = it }, label = { Text("clientId") })
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        runDialogClientId = null
-                        runJira(tmp)
-                    }) { Text("Run") }
-                },
-                dismissButton = { TextButton(onClick = { runDialogClientId = null }) { Text("Cancel") } },
-            )
         }
 
         infoMessage?.let { Text(it) }

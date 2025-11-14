@@ -166,6 +166,19 @@ class ConfluencePollingScheduler(
         processAccountWithTimestampUpdate(account)
     }
 
+    /**
+     * Manual trigger that auto-selects the next eligible Confluence account (oldest lastPolledAt, VALID auth).
+     */
+    suspend fun triggerNext() {
+        logger.info { "Manually triggering Confluence sync (auto-select next account)" }
+        val account = findNextAccountToPoll()
+        if (account != null) {
+            processAccountWithTimestampUpdate(account)
+        } else {
+            logger.debug { "No active VALID Confluence accounts to poll" }
+        }
+    }
+
     private suspend fun findNextAccountToPoll(): ConfluenceAccountDocument? =
         accountRepository.findFirstByIsActiveTrueAndAuthStatusOrderByLastPolledAtAsc("VALID")
 

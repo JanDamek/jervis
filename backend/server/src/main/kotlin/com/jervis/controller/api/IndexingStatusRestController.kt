@@ -19,6 +19,9 @@ import java.time.format.DateTimeFormatter
 class IndexingStatusRestController(
     private val registry: IndexingStatusRegistry,
     private val jiraPollingScheduler: com.jervis.service.jira.JiraPollingScheduler,
+    private val emailPollingScheduler: com.jervis.service.listener.email.EmailPollingScheduler,
+    private val gitPollingScheduler: com.jervis.service.listener.git.GitPollingScheduler,
+    private val confluencePollingScheduler: com.jervis.service.confluence.ConfluencePollingScheduler,
 ) : IIndexingStatusService {
     private val fmt: DateTimeFormatter = DateTimeFormatter.ISO_INSTANT
 
@@ -26,6 +29,10 @@ class IndexingStatusRestController(
     override suspend fun getOverview(): IndexingOverviewDto {
         // Ensure Atlassian (Jira) tool is visible in overview even before first run
         registry.ensureTool(toolKey = "jira", displayName = "Atlassian (Jira)")
+        // Ensure other indexing tools are visible as well
+        registry.ensureTool(toolKey = "email", displayName = "Email Indexing")
+        registry.ensureTool(toolKey = "git", displayName = "Git Indexing")
+        registry.ensureTool(toolKey = "confluence", displayName = "Atlassian (Confluence)")
 
         val tools =
             registry.snapshot().map { t ->
@@ -76,11 +83,24 @@ class IndexingStatusRestController(
         return IndexingToolDetailDto(summary = summary, items = items)
     }
 
-    @PostMapping("/jira/run/{clientId}")
-    override suspend fun runJiraNow(
-        @PathVariable("clientId") clientId: String,
-    ) {
-        // Delegate to scheduler manual trigger
-        jiraPollingScheduler.triggerManual(clientId)
+    @PostMapping("/jira/run")
+    override suspend fun runJiraNow() {
+        // Delegate to scheduler to pick the oldest VALID connection automatically
+        jiraPollingScheduler.triggerNext()
+    }
+
+    @PostMapping("/email/run")
+    override suspend fun runEmailNow() {
+        emailPollingScheduler.triggerNext()
+    }
+
+    @PostMapping("/git/run")
+    override suspend fun runGitNow() {
+        gitPollingScheduler.triggerNext()
+    }
+
+    @PostMapping("/confluence/run")
+    override suspend fun runConfluenceNow() {
+        confluencePollingScheduler.triggerNext()
     }
 }
