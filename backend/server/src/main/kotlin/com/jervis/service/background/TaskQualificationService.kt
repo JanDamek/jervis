@@ -1,5 +1,7 @@
 package com.jervis.service.background
 
+import com.jervis.common.client.ITikaClient
+import com.jervis.common.dto.TikaProcessRequest
 import com.jervis.domain.confluence.ThreadStatusEnum
 import com.jervis.domain.email.AliasTypeEnum
 import com.jervis.domain.sender.ConversationThread
@@ -11,6 +13,7 @@ import com.jervis.service.sender.ConversationThreadService
 import com.jervis.service.sender.MessageLinkService
 import com.jervis.service.sender.SenderProfileService
 import com.jervis.service.task.UserTaskService
+import com.jervis.service.text.TextNormalizationService
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.catch
@@ -20,6 +23,8 @@ import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
+import java.util.Base64
+import org.jsoup.Jsoup
 
 private val logger = KotlinLogging.logger {}
 
@@ -39,6 +44,8 @@ class TaskQualificationService(
     private val userTaskService: UserTaskService,
     private val emailMessageStateManager: com.jervis.service.listener.email.state.EmailMessageStateManager,
     private val debugService: com.jervis.service.debug.DebugService,
+    private val tikaClient: ITikaClient,
+    private val textNormalizationService: TextNormalizationService,
 ) {
     /**
      * Process entire Flow of tasks needing qualification.
@@ -175,13 +182,14 @@ class TaskQualificationService(
         clientId: ObjectId,
         correlationId: String,
     ): EmailDecision {
+        val cleanSnippet = cleanEmailBody(email.content).take(1000)
         val emailContent =
             buildString {
                 appendLine("FROM: ${email.from}")
                 appendLine("SUBJECT: ${email.subject}")
                 appendLine("DATE: ${email.receivedAt}")
                 appendLine()
-                appendLine(email.content.take(1000))
+                appendLine(cleanSnippet)
             }
 
         return try {
@@ -200,7 +208,7 @@ class TaskQualificationService(
         }
     }
 
-    private fun formatEmailContent(email: ImapMessage): String =
+    private suspend fun formatEmailContent(email: ImapMessage): String =
         buildString {
             appendLine("FROM: ${email.from}")
             appendLine("TO: ${email.to}")
@@ -208,7 +216,7 @@ class TaskQualificationService(
             appendLine("DATE: ${email.receivedAt}")
             appendLine()
             appendLine("CONTENT:")
-            appendLine(email.content)
+            appendLine(cleanEmailBody(email.content))
             if (email.attachments.isNotEmpty()) {
                 appendLine()
                 appendLine("ATTACHMENTS:")
@@ -217,6 +225,47 @@ class TaskQualificationService(
                 }
             }
         }
+
+    /**
+     * Clean email body for PendingTask consumption:
+     * - Convert HTML/other formats to plain text using Tika
+     * - Remove/neutralize URLs (links are indexed separately by LinkIndexer)
+     * - Normalize whitespace and control characters
+     */
+    private suspend fun cleanEmailBody(rawContent: String): String {
+        val plainText =
+            try {
+                val bytes = rawContent.toByteArray(Charsets.UTF_8)
+                val res =
+                    tikaClient.process(
+                        TikaProcessRequest(
+                            source =
+                                TikaProcessRequest.Source.FileBytes(
+                                    fileName = "email-body.html",
+                                    dataBase64 = Base64.getEncoder().encodeToString(bytes),
+                                ),
+                            includeMetadata = false,
+                        ),
+                    )
+                if (res.success && res.plainText.isNotBlank()) res.plainText else Jsoup.parse(rawContent).text()
+            } catch (e: Exception) {
+                logger.warn(e) { "Failed to parse email body with Tika, using Jsoup fallback" }
+                try {
+                    Jsoup.parse(rawContent).text()
+                } catch (_: Exception) {
+                    rawContent
+                }
+            }
+
+        // Remove URLs to avoid noisy anchors/signatures; actual link content is indexed elsewhere
+        val withoutUrls = URL_PATTERN.replace(plainText, "[URL]")
+
+        return textNormalizationService.normalize(withoutUrls)
+    }
+
+    companion object {
+        private val URL_PATTERN = Regex("""https?://[^\s<>"{}|\\^`\[\]]+""")
+    }
 
     /**
      * Build mapping values for qualifier prompt placeholders from task data.

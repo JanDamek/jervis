@@ -34,6 +34,7 @@ fun RagDocument.toWeaviateProperties(): Map<String, Any> =
         chunkId?.let { put("chunkId", it) }
         chunkOf?.let { put("chunkOf", it) }
         parentRef?.let { put("parentRef", it) }
+        correlationId?.let { put("correlationId", it) }
     }
 
 /**

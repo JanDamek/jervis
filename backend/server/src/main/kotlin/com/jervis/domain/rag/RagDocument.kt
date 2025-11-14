@@ -42,4 +42,6 @@ data class RagDocument(
     val parentRef: String? = null,
     val createdAt: Instant = Instant.now(),
     val archivedAt: Instant? = null,
+    /** Correlation ID for end-to-end tracing across indexing pipeline */
+    val correlationId: String? = null,
 )
