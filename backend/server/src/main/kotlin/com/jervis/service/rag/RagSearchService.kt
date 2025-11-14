@@ -195,12 +195,12 @@ data class SearchContext(
          */
         fun fromPlan(plan: Plan): SearchContext =
             SearchContext(
-                clientId = plan.clientDocument.id.toString(),
+                clientId = plan.clientDocument.id.toHexString(),
                 projectId =
                     plan.projectDocument
                         ?.id
                         ?.takeIf { it != plan.clientDocument.id }
-                        ?.toString(),
+                        ?.toHexString(),
             )
     }
 }

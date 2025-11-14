@@ -16,12 +16,13 @@ fun RagDocument.toWeaviateProperties(): Map<String, Any> =
     buildMap {
         // Required fields
         put("text", text)
-        put("clientId", clientId.toString())
+        // Store IDs as hex strings to match filters coming from REST/UI
+        put("clientId", clientId.toHexString())
         put("ragSourceType", ragSourceType.name)
         put("branch", branch)
 
         // Optional fields (only add if non-null)
-        projectId?.let { put("projectId", it.toString()) }
+        projectId?.let { put("projectId", it.toHexString()) }
         from?.let { put("from", it) }
         to?.let { put("to", it) }
         subject?.let { put("subject", it) }

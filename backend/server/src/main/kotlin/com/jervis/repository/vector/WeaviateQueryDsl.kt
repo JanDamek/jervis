@@ -53,7 +53,8 @@ data class WeaviateFilters(
                 branch?.let { add(equalFilter("branch", it)) }
                 ragSourceType?.let { add(equalFilter("ragSourceType", it.name)) }
                 fileName?.let { add(equalFilter("fileName", it)) }
-                commitHash?.let { add(equalFilter("commitHash", it)) }
+                // Weaviate schema uses "gitCommitHash" property name
+                commitHash?.let { add(equalFilter("gitCommitHash", it)) }
                 custom.forEach { (key, value) -> add(equalFilter(key, value)) }
             }
 

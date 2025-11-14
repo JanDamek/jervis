@@ -107,8 +107,8 @@ fun DebugWindow(connectionManager: ConnectionManager) {
                     // Add session to the beginning of the list (newest first)
                     group.sessions.add(0, newSession)
 
-                    // Trigger recomposition
-                    correlationGroups[correlationId] = group
+                    // Trigger recomposition by replacing the group
+                    correlationGroups[correlationId] = group.copy(sessions = group.sessions.toMutableList())
                 }
                 is DebugEventDto.ResponseChunkDto -> {
                     // Find the session in any group and update it
@@ -116,18 +116,34 @@ fun DebugWindow(connectionManager: ConnectionManager) {
                         val sessionIndex = group.sessions.indexOfFirst { it.id == event.sessionId }
                         if (sessionIndex >= 0) {
                             val session = group.sessions[sessionIndex]
-                            group.sessions[sessionIndex] = session.copy(
+                            val updatedSessions = group.sessions.toMutableList()
+                            updatedSessions[sessionIndex] = session.copy(
                                 responseBuffer = session.responseBuffer + event.chunk
                             )
-                            // Trigger recomposition
-                            correlationGroups[group.correlationId] = group
+                            // Trigger recomposition with new group instance
+                            correlationGroups[group.correlationId] = group.copy(sessions = updatedSessions)
+
+                            // Update selected session if it's the one being updated
+                            if (selectedSessionInGroup?.id == event.sessionId) {
+                                selectedSessionInGroup = updatedSessions[sessionIndex]
+                            }
                         }
                     }
                 }
                 is DebugEventDto.SessionCompletedDto -> {
                     // Find the session in any group and mark as complete
                     correlationGroups.values.forEach { group ->
-                        group.sessions.find { it.id == event.sessionId }?.complete()
+                        val sessionIndex = group.sessions.indexOfFirst { it.id == event.sessionId }
+                        if (sessionIndex >= 0) {
+                            group.sessions[sessionIndex].complete()
+                            // Trigger recomposition with new group instance
+                            correlationGroups[group.correlationId] = group.copy(sessions = group.sessions.toMutableList())
+
+                            // Update selected session if it's the one being completed
+                            if (selectedSessionInGroup?.id == event.sessionId) {
+                                selectedSessionInGroup = group.sessions[sessionIndex]
+                            }
+                        }
                     }
                 }
                 // Task stream events - ignored in debug window (these are for task monitoring)

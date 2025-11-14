@@ -35,8 +35,8 @@ class RagDirectSearchService(
         // Create custom search context with user-provided parameters
         val searchContext =
             SearchContext(
-                clientId = clientObjectId.toString(),
-                projectId = projectObjectId?.toString(),
+                clientId = clientObjectId.toHexString(),
+                projectId = projectObjectId?.toHexString(),
                 limit = maxChunks,
                 minScore = minSimilarityThreshold.toFloat(),
                 useHybridSearch = true,
