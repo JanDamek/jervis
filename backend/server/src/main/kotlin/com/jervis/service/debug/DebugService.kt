@@ -213,6 +213,156 @@ class DebugService(
         broadcast(dto)
     }
 
+    // Indexing pipeline events
+    fun indexingStart(
+        correlationId: String,
+        sourceType: String,
+        modelType: String,
+        sourceUri: String?,
+        textLength: Int,
+    ) {
+        val dto =
+            DebugEventDto.IndexingStart(
+                correlationId = correlationId,
+                sourceType = sourceType,
+                modelType = modelType,
+                sourceUri = sourceUri,
+                textLength = textLength,
+            )
+        broadcast(dto)
+    }
+
+    fun embeddingGenerated(
+        correlationId: String,
+        modelType: String,
+        vectorDim: Int,
+        textLength: Int,
+    ) {
+        val dto =
+            DebugEventDto.EmbeddingGenerated(
+                correlationId = correlationId,
+                modelType = modelType,
+                vectorDim = vectorDim,
+                textLength = textLength,
+            )
+        broadcast(dto)
+    }
+
+    fun vectorStored(
+        correlationId: String,
+        modelType: String,
+        vectorStoreId: String,
+    ) {
+        val dto =
+            DebugEventDto.VectorStored(
+                correlationId = correlationId,
+                modelType = modelType,
+                vectorStoreId = vectorStoreId,
+            )
+        broadcast(dto)
+    }
+
+    fun indexingCompleted(
+        correlationId: String,
+        success: Boolean,
+        errorMessage: String? = null,
+    ) {
+        val dto =
+            DebugEventDto.IndexingCompleted(
+                correlationId = correlationId,
+                success = success,
+                errorMessage = errorMessage,
+            )
+        broadcast(dto)
+    }
+
+    fun textExtracted(
+        correlationId: String,
+        extractor: String,
+        length: Int,
+    ) {
+        val dto =
+            DebugEventDto.TextExtracted(
+                correlationId = correlationId,
+                extractor = extractor,
+                length = length,
+            )
+        broadcast(dto)
+    }
+
+    fun textNormalized(
+        correlationId: String,
+        length: Int,
+    ) {
+        val dto =
+            DebugEventDto.TextNormalized(
+                correlationId = correlationId,
+                length = length,
+            )
+        broadcast(dto)
+    }
+
+    fun chunked(
+        correlationId: String,
+        chunks: Int,
+    ) {
+        val dto =
+            DebugEventDto.Chunked(
+                correlationId = correlationId,
+                chunks = chunks,
+            )
+        broadcast(dto)
+    }
+
+    fun chunkStored(
+        correlationId: String,
+        index: Int,
+        total: Int,
+        vectorStoreId: String,
+    ) {
+        val dto =
+            DebugEventDto.ChunkStored(
+                correlationId = correlationId,
+                index = index,
+                total = total,
+                vectorStoreId = vectorStoreId,
+            )
+        broadcast(dto)
+    }
+
+    fun externalDownloadStart(
+        correlationId: String,
+        url: String,
+    ) {
+        val dto = DebugEventDto.ExternalDownloadStart(correlationId = correlationId, url = url)
+        broadcast(dto)
+    }
+
+    fun externalDownloadCompleted(
+        correlationId: String,
+        url: String,
+        contentType: String?,
+        bytes: Int,
+    ) {
+        val dto =
+            DebugEventDto.ExternalDownloadCompleted(
+                correlationId = correlationId,
+                url = url,
+                contentType = contentType,
+                bytes = bytes,
+            )
+        broadcast(dto)
+    }
+
+    fun externalDownloadFailed(
+        correlationId: String,
+        url: String,
+        reason: String,
+    ) {
+        val dto = DebugEventDto.ExternalDownloadFailed(correlationId = correlationId, url = url, reason = reason)
+        broadcast(dto)
+    }
+
     fun stepExecutionStart(
         correlationId: String,
         planId: String,

@@ -26,6 +26,7 @@ class RagIndexingService(
     private val vectorRepo: WeaviateVectorRepository,
     private val embeddingGateway: EmbeddingGateway,
     private val indexService: VectorStoreIndexService,
+    private val debugService: com.jervis.service.debug.DebugService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -44,14 +45,44 @@ class RagIndexingService(
                     "branch=${document.branch}, textLength=${document.text.length}"
             }
 
+            // Emit start event if correlationId is present
+            document.correlationId?.let {
+                debugService.indexingStart(
+                    correlationId = it,
+                    sourceType = document.ragSourceType.name,
+                    modelType = modelType.name,
+                    sourceUri = document.sourceUri,
+                    textLength = document.text.length,
+                )
+            }
+
             // Generate embedding
             val embedding = embeddingGateway.callEmbedding(modelType, document.text)
+
+            // Emit embedding generated event
+            document.correlationId?.let {
+                debugService.embeddingGenerated(
+                    correlationId = it,
+                    modelType = modelType.name,
+                    vectorDim = embedding.size,
+                    textLength = document.text.length,
+                )
+            }
 
             // Store in Weaviate
             val vectorStoreId =
                 vectorRepo
                     .store(modelType, document, embedding)
                     .getOrThrow()
+
+            // Emit vector stored event
+            document.correlationId?.let {
+                debugService.vectorStored(
+                    correlationId = it,
+                    modelType = modelType.name,
+                    vectorStoreId = vectorStoreId,
+                )
+            }
 
             // Track in MongoDB (if projectId is present)
             document.projectId?.let { projectId ->
@@ -74,6 +105,9 @@ class RagIndexingService(
                 "Document indexed successfully: vectorStoreId=$vectorStoreId, " +
                     "sourceType=${document.ragSourceType}, collection=$modelType"
             }
+
+            // Emit completed event
+            document.correlationId?.let { debugService.indexingCompleted(it, success = true, errorMessage = null) }
 
             IndexedDocument(
                 vectorStoreId = vectorStoreId,

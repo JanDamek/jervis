@@ -147,4 +147,96 @@ sealed class DebugEventDto {
         val planId: String,
         val answerLength: Int,
     ) : DebugEventDto()
+
+    // Indexing pipeline events
+    @Serializable
+    @SerialName("IndexingStart")
+    data class IndexingStart(
+        val correlationId: String,
+        val sourceType: String,
+        val modelType: String,
+        val sourceUri: String? = null,
+        val textLength: Int,
+    ) : DebugEventDto()
+
+    @Serializable
+    @SerialName("EmbeddingGenerated")
+    data class EmbeddingGenerated(
+        val correlationId: String,
+        val modelType: String,
+        val vectorDim: Int,
+        val textLength: Int,
+    ) : DebugEventDto()
+
+    @Serializable
+    @SerialName("VectorStored")
+    data class VectorStored(
+        val correlationId: String,
+        val modelType: String,
+        val vectorStoreId: String,
+    ) : DebugEventDto()
+
+    @Serializable
+    @SerialName("IndexingCompleted")
+    data class IndexingCompleted(
+        val correlationId: String,
+        val success: Boolean,
+        val errorMessage: String? = null,
+    ) : DebugEventDto()
+
+    @Serializable
+    @SerialName("TextExtracted")
+    data class TextExtracted(
+        val correlationId: String,
+        val extractor: String,
+        val length: Int,
+    ) : DebugEventDto()
+
+    @Serializable
+    @SerialName("TextNormalized")
+    data class TextNormalized(
+        val correlationId: String,
+        val length: Int,
+    ) : DebugEventDto()
+
+    @Serializable
+    @SerialName("Chunked")
+    data class Chunked(
+        val correlationId: String,
+        val chunks: Int,
+    ) : DebugEventDto()
+
+    @Serializable
+    @SerialName("ChunkStored")
+    data class ChunkStored(
+        val correlationId: String,
+        val index: Int,
+        val total: Int,
+        val vectorStoreId: String,
+    ) : DebugEventDto()
+
+    // External download events (links, attachments)
+    @Serializable
+    @SerialName("ExternalDownloadStart")
+    data class ExternalDownloadStart(
+        val correlationId: String,
+        val url: String,
+    ) : DebugEventDto()
+
+    @Serializable
+    @SerialName("ExternalDownloadCompleted")
+    data class ExternalDownloadCompleted(
+        val correlationId: String,
+        val url: String,
+        val contentType: String?,
+        val bytes: Int,
+    ) : DebugEventDto()
+
+    @Serializable
+    @SerialName("ExternalDownloadFailed")
+    data class ExternalDownloadFailed(
+        val correlationId: String,
+        val url: String,
+        val reason: String,
+    ) : DebugEventDto()
 }
