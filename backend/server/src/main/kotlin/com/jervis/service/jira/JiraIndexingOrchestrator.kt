@@ -81,18 +81,20 @@ class JiraIndexingOrchestrator(
                     }
                 }
 
-                // Ensure selections exist (fail fast if missing; no background config tasks)
-                val (primaryProject, me) =
+                // Try to load selections (primary project, preferred user). If missing, continue with client-level indexing.
+                val selections: Pair<JiraProjectKey, com.jervis.domain.jira.JiraAccountId>? =
                     runCatching { selection.ensureSelectionsOrCreateTasks(clientId) }
                         .onFailure { e ->
-                            logger.warn { "JIRA_INDEX: Missing selections for client=${clientId.toHexString()} - ${e.message}" }
+                            logger.warn { "JIRA_INDEX: Missing selections for client=${clientId.toHexString()} - ${e.message}. Falling back to GLOBAL (all projects) indexing." }
                             runCatching {
-                                indexingRegistry.error(
+                                indexingRegistry.info(
                                     "jira",
-                                    "Missing selections for client=${clientId.toHexString()}: ${e.message}",
+                                    "Selections missing → fallback to client-level indexing (all projects) for client=${clientId.toHexString()}",
                                 )
                             }
-                        }.getOrElse { return@withContext }
+                        }.getOrNull()
+                val primaryProject: JiraProjectKey? = selections?.first
+                var me: com.jervis.domain.jira.JiraAccountId? = selections?.second
 
                 // Build mapping: Jira project key → Jervis projectId
                 // Uses in-memory cache for instant access, no DB roundtrip
@@ -139,6 +141,13 @@ class JiraIndexingOrchestrator(
                         }
                     }
 
+                // If preferred user is not configured, try to auto-detect current user; if that fails, proceed without it
+                if (me == null) {
+                    me = runCatching { api.getMyself(connValid) }.onFailure { e ->
+                        logger.info { "JIRA_INDEX: Unable to auto-detect preferred user for client=${clientId.toHexString()}: ${e.message}" }
+                    }.getOrNull()
+                }
+
                 val allJiraProjects: List<JiraProjectKey> =
                     try {
                         api.listProjects(connValid).map { (key, _) -> key }.also { list ->
@@ -162,25 +171,37 @@ class JiraIndexingOrchestrator(
                             runCatching {
                                 indexingRegistry.error(
                                     "jira",
-                                    "Failed to list Jira projects (auth): ${e.message}. Falling back to primary project ${primaryProject.value}",
+                                    "Failed to list Jira projects (auth): ${e.message}.",
                                 )
                             }
-                            listOf(primaryProject)
+                            emptyList()
                         } else {
                             logger.warn(
                                 e,
                             ) {
-                                "JIRA_INDEX: Failed to list all Jira projects for client=${clientId.toHexString()}, falling back to primary project only"
+                                "JIRA_INDEX: Failed to list all Jira projects for client=${clientId.toHexString()}"
                             }
                             runCatching {
-                                indexingRegistry.error(
+                                indexingRegistry.info(
                                     "jira",
-                                    "Failed to list Jira projects: ${e.message}. Falling back to primary project ${primaryProject.value}",
+                                    "Failed to list Jira projects: ${e.message}",
                                 )
                             }
-                            listOf(primaryProject)
+                            emptyList()
                         }
                     }
+
+                val projectsToIndex: List<JiraProjectKey> =
+                    if (allJiraProjects.isNotEmpty()) allJiraProjects
+                    else primaryProject?.let { single ->
+                        logger.info { "JIRA_INDEX: Proceeding with configured primary project=${single.value} only" }
+                        listOf(single)
+                    } ?: emptyList()
+
+                if (projectsToIndex.isEmpty()) {
+                    logger.warn { "JIRA_INDEX: No Jira projects available to index for client=${clientId.toHexString()}" }
+                    return@withContext
+                }
 
                 // Determine incremental window based on last sync
                 val latestConnDoc = connectionRepository.findByClientId(clientId)
@@ -188,7 +209,7 @@ class JiraIndexingOrchestrator(
                 val baseJqlSuffix =
                     if (lastSyncedAt == null) "AND updated >= -30d ORDER BY updated DESC" else "ORDER BY updated DESC"
 
-                allJiraProjects.forEach { projectKey ->
+                projectsToIndex.forEach { projectKey ->
                     val key = projectKey.value
                     val jql = "project = $key $baseJqlSuffix"
                     val jervisProjectId = jiraProjectMapping[key] // null if not mapped
@@ -203,7 +224,7 @@ class JiraIndexingOrchestrator(
                         api
                             .searchIssues(connValid, jql, updatedSinceEpochMs = lastSyncedAt?.toEpochMilli())
                             .collect { issue ->
-                                val assignedToMe = issue.assignee?.value == me.value
+                                val assignedToMe = me?.let { issue.assignee?.value == it.value } ?: false
                                 if (!assignedToMe) {
                                     // Shallow: one compact narrative chunk
                                     indexIssueSummaryShallow(

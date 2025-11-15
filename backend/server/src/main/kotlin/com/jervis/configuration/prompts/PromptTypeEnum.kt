@@ -77,6 +77,8 @@ enum class PromptTypeEnum(
     PLANNING_CREATE_PLAN_TOOL(listOf("planning_create_plan", "create_plan", "plan.create"), listOf("planner")),
     PLANNING_ANALYZE_QUESTION(listOf("planning_analyze_question", "analyze_question", "plan.analyze"), listOf("analyze-question")),
     PLANNER_TOOL_SELECTOR(listOf("planner_tool_selector", "tool_selector", "plan.tools"), listOf("tool-selector", "map-capability")),
+    TOOL_REASONING(listOf("tool_reasoning", "reason_tools", "tool.reason"), listOf("tool-reasoning", "map-requirements-to-tools")),
+    CONTEXT_COMPACTION(listOf("context_compaction", "compact_context", "context.compact"), listOf("context-compaction", "reduce-context")),
     FINALIZER_ANSWER(listOf("finalizer_answer", "final_answer", "answer.final"), listOf("finalize")),
 
     // INTERNAL/ANALYSIS PROMPTS
