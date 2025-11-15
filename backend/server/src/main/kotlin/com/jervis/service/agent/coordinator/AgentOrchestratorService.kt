@@ -8,9 +8,11 @@ import com.jervis.dto.ChatRequestContext
 import com.jervis.dto.ChatResponse
 import com.jervis.repository.mongo.ClientMongoRepository
 import com.jervis.repository.mongo.ProjectMongoRepository
+import com.jervis.service.agent.compaction.ContextCompactionService
 import com.jervis.service.agent.execution.PlanExecutor
 import com.jervis.service.agent.finalizer.Finalizer
 import com.jervis.service.agent.planner.Planner
+import com.jervis.service.agent.toolreasoning.ToolReasoningService
 import com.jervis.service.background.BackgroundTaskGoalsService
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -29,6 +31,8 @@ class AgentOrchestratorService(
     private val finalizer: Finalizer,
     private val requestAnalyzer: RequestAnalyzer,
     private val planner: Planner,
+    private val toolReasoningService: ToolReasoningService,
+    private val contextCompactionService: ContextCompactionService,
     private val stepNotificationService: com.jervis.service.notification.StepNotificationService,
     private val clientMongoRepository: ClientMongoRepository,
     private val projectMongoRepository: ProjectMongoRepository,
@@ -158,7 +162,42 @@ class AgentOrchestratorService(
                     break
                 }
 
-                val nextSteps = planner.suggestNextSteps(plan)
+                // PHASE 1: Planner suggests what information is needed
+                val plannerResponse = planner.suggestNextSteps(plan)
+
+                if (plannerResponse.nextSteps.isEmpty()) {
+                    logger.info { "AGENT_LOOP_RESOLVED: Task fully resolved, marking plan as COMPLETED" }
+                    val hasSteps = plan.steps.isNotEmpty()
+                    val noPendingSteps =
+                        plan.steps.none { it.status == com.jervis.domain.plan.StepStatusEnum.PENDING }
+
+                    if (hasSteps && noPendingSteps) {
+                        plan.status = com.jervis.domain.plan.PlanStatusEnum.COMPLETED
+                        logger.info { "AGENT_LOOP_PLAN_COMPLETED: Plan ${plan.id} marked as COMPLETED" }
+
+                        // Publish debug event for plan status change
+                        debugService.planStatusChanged(
+                            correlationId = plan.correlationId,
+                            planId = plan.id.toHexString(),
+                            status = plan.status.name
+                        )
+                    } else {
+                        val reason =
+                            when {
+                                !hasSteps -> "has no steps"
+                                else -> "has pending steps"
+                            }
+                        logger.warn {
+                            "AGENT_LOOP_PLAN_NOT_COMPLETED: Plan ${plan.id} $reason, cannot mark as COMPLETED"
+                        }
+                    }
+                    break
+                }
+
+                // PHASE 2: Tool Reasoning maps requirements to tools
+                logger.debug { "AGENT_LOOP_TOOL_REASONING: Mapping ${plannerResponse.nextSteps.size} requirements to tools" }
+                val nextSteps = toolReasoningService.mapRequirementsToTools(plannerResponse.nextSteps, plan)
+
                 if (nextSteps.isNotEmpty()) {
                     logger.info { "AGENT_LOOP_STEPS_ADDED: planId=${plan.id} newSteps=${nextSteps.size} totalSteps=${plan.steps.size + nextSteps.size}" }
                     plan.steps += nextSteps
@@ -173,6 +212,36 @@ class AgentOrchestratorService(
                             instruction = step.stepInstruction,
                             order = step.order
                         )
+                    }
+
+                    // PHASE 3: Check context and compact in loop until context is within limits
+                    // Continue compacting until:
+                    // 1. Context is within limits (OK - continue)
+                    // 2. Context still too large BUT only 3 or fewer steps remain (FAIL - cannot compact further)
+                    var compactionRound = 0
+
+                    while (true) {
+                        val compactionResult = contextCompactionService.checkAndCompact(plan)
+
+                        if (!compactionResult.needsCompaction) {
+                            // Context is within limits, no compaction needed
+                            logger.debug { "AGENT_LOOP_CONTEXT_OK: Plan ${plan.id} context is within limits after $compactionRound compaction round(s)" }
+                            break
+                        }
+
+                        if (compactionResult.cannotCompact) {
+                            // Context too large but cannot compact (≤3 steps remaining)
+                            logger.error { "AGENT_LOOP_COMPACTION_IMPOSSIBLE: Plan ${plan.id} context too large but only ${plan.steps.size} steps remain (minimum 3 required for compaction)" }
+                            throw IllegalStateException(
+                                "Context too large for planner model but cannot compact further: " +
+                                "only ${plan.steps.size} steps remain (need >3 for compaction)"
+                            )
+                        }
+
+                        compactionRound++
+                        logger.info { "AGENT_LOOP_CONTEXT_COMPACTED: Plan ${plan.id} context compacted (round $compactionRound), checking again..." }
+
+                        // Loop continues - check context again after compaction
                     }
                 } else {
                     logger.info { "AGENT_LOOP_RESOLVED: Task fully resolved, marking plan as COMPLETED" }
