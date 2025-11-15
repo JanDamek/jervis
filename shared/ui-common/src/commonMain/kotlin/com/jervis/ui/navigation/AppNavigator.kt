@@ -27,7 +27,8 @@ sealed class Screen {
     object IndexingStatus : Screen()
     data class IndexingToolDetail(val toolKey: String) : Screen()
 
-    // TODO: Desktop Debug Console (WebSocket) - not yet implemented for mobile
+    // Debug console (WebSocket)
+    object DebugConsole : Screen()
 }
 
 /**
