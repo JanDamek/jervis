@@ -24,12 +24,12 @@ class PlanningCreatePlanTool(
             return ToolResult.error("Task description cannot be empty")
         }
 
-        val nextSteps = planner.suggestNextSteps(plan)
+        val nextStepsResponse = planner.suggestNextSteps(plan)
 
         return ToolResult.success(
             toolName = "PLANNER",
             summary = "Planning completed successfully",
-            content = "Suggested ${nextSteps.size} next steps for the current plan based on context and progress.",
+            content = "Suggested ${nextStepsResponse.nextSteps.size} next steps for the current plan based on context and progress.",
         )
     }
 }

@@ -108,74 +108,22 @@ class LlmGateway(
 
         check(candidates.isNotEmpty()) { "No LLM candidates configured for $type" }
 
-        // Check if we need selective processing due to token limits
+        // Check if context exceeds maximum available model limit
         val maxTokenLimit = candidates.mapNotNull { it.contextLength }.maxOrNull() ?: 16000
 
         if (estimatedTokens > maxTokenLimit) {
-            logger.info { "Token limit exceeded ($estimatedTokens > $maxTokenLimit), using SelectiveLlmProcessor for type: $type" }
-
-            // Create executor function that uses the normal LLM call logic without recursion
-            val executor: suspend (String, String) -> T = executor@{ sysPrompt, usrPrompt ->
-                // Try candidates sequentially for each chunk
-                var lastException: Exception? = null
-                for (candidate in candidates) {
-                    try {
-                        val response =
-                            llmCallExecutor.executeCall(
-                                candidate,
-                                sysPrompt,
-                                usrPrompt,
-                                prompt,
-                                type,
-                                estimatedTokens,
-                                correlationId,
-                                backgroundMode,
-                            )
-
-                        val provider =
-                            requireNotNull(candidate.provider) {
-                                "Provider is required for model candidate ${candidate.model}"
-                            }
-                        val parsedResponse =
-                            jsonParser.validateAndParseWithThink(
-                                response.answer,
-                                responseSchema,
-                                provider,
-                                candidate.model,
-                            )
-                        return@executor parsedResponse.result
-                    } catch (e: kotlinx.coroutines.CancellationException) {
-                        logger.info { "Chunk processing cancelled (background task interrupted)" }
-                        throw e
-                    } catch (e: Exception) {
-                        logger.error { "LLM call failed for provider=${candidate.provider} model=${candidate.model}: ${e.message}" }
-                        logger.error { "Full error details: ${e.stackTraceToString()}" }
-                        lastException = e
-                    }
-                }
-                throw IllegalStateException("All candidates failed for chunk processing", lastException)
+            val candidateDetails = candidates.joinToString(", ") {
+                "${it.provider}:${it.model} (${it.contextLength ?: "unknown"} tokens)"
             }
-
-            val selectiveResult =
-                selectiveLlmProcessor.processWithTokenLimitHandling(
-                    type = type,
-                    systemPrompt = systemPrompt,
-                    userPrompt = finalUserPrompt,
-                    maxTokensPerChunk = maxTokenLimit,
-                    executor = executor,
-                )
-
-            if (selectiveResult.success && selectiveResult.combinedResult != null) {
-                logger.info {
-                    "SelectiveLlmProcessor completed successfully: processed=${selectiveResult.processedChunks}, failed=${selectiveResult.failedChunks}"
-                }
-                // For SelectiveLlmProcessor, we don't have think content as it processes chunks
-                return ParsedResponse(null, selectiveResult.combinedResult)
-            } else {
-                error {
-                    "SelectiveLlmProcessor failed: processed=${selectiveResult.processedChunks}, failed=${selectiveResult.failedChunks}"
-                }
+            logger.error {
+                "Context size ($estimatedTokens tokens) exceeds maximum available model capacity ($maxTokenLimit tokens) for type: $type. " +
+                "Available candidates: $candidateDetails. " +
+                "Context must be reduced or a larger model must be configured."
             }
+            throw IllegalStateException(
+                "Context size ($estimatedTokens tokens) exceeds all available model capacities (max: $maxTokenLimit tokens). " +
+                "Reduce context size via context compaction or configure larger models for $type."
+            )
         }
 
         // Normal processing for prompts within token limits

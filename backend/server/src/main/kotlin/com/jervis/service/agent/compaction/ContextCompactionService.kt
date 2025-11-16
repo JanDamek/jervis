@@ -116,8 +116,9 @@ class ContextCompactionService(
                 append("Step $index: ${step.stepToolName.name}")
                 append(" - ${step.status.name}")
                 append(" - ${step.stepInstruction.take(200)}")
-                if (step.toolResult != null) {
-                    append("\n  Result: ${step.toolResult.output.take(500)}")
+                val result = step.toolResult
+                if (result != null) {
+                    append("\n  Result: ${result.output.take(500)}")
                 }
             }
         }.joinToString("\n\n")
