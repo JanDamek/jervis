@@ -435,6 +435,9 @@ class DebugService(
 
     private fun broadcast(dto: DebugEventDto) {
         val jsonString = json.encodeToString<DebugEventDto>(dto)
+        // Broadcast to dedicated DEBUG channel
         sessionManager.broadcastToChannel(jsonString, WebSocketChannelTypeEnum.DEBUG)
+        // Also mirror to NOTIFICATIONS channel so Desktop (primary platform) can display
+        sessionManager.broadcastToChannel(jsonString, WebSocketChannelTypeEnum.NOTIFICATIONS)
     }
 }
