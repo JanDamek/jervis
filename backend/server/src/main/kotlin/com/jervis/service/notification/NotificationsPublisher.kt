@@ -14,6 +14,7 @@ import com.jervis.dto.events.PlanStatusChangeEventDto as PlanStatusChangeEventDt
 import com.jervis.dto.events.StepCompletionEventDto as StepCompletionEventDtoD
 import com.jervis.dto.events.UserTaskCreatedEventDto as UserTaskCreatedEventDtoD
 import com.jervis.dto.events.UserTaskCancelledEventDto as UserTaskCancelledEventDtoD
+import com.jervis.dto.events.AgentResponseEventDto as AgentResponseEventDtoD
 
 @Component
 class NotificationsPublisher(
@@ -72,6 +73,22 @@ class NotificationsPublisher(
                 clientId = clientId.toHexString(),
                 taskId = task.id.toHexString(),
                 title = task.title,
+                timestamp = timestamp,
+            )
+        sessionManager.broadcastToChannel(json.encodeToString(dto), WebSocketChannelTypeEnum.NOTIFICATIONS)
+    }
+
+    fun publishAgentResponseCompleted(
+        contextId: ObjectId,
+        message: String,
+        timestamp: String,
+    ) {
+        val dto =
+            AgentResponseEventDtoD(
+                wsSessionId = "BROADCAST",
+                contextId = contextId.toHexString(),
+                message = message,
+                status = "COMPLETED",
                 timestamp = timestamp,
             )
         sessionManager.broadcastToChannel(json.encodeToString(dto), WebSocketChannelTypeEnum.NOTIFICATIONS)
