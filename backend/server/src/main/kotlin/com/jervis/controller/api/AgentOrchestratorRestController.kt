@@ -1,6 +1,7 @@
 package com.jervis.controller.api
 
 import com.jervis.dto.ChatRequestDto
+import com.jervis.dto.ChatResponseDto
 import com.jervis.mapper.toDomain
 import com.jervis.service.IAgentOrchestratorService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
@@ -21,5 +22,18 @@ class AgentOrchestratorRestController(
         CoroutineScope(Dispatchers.Default).launch {
             agentOrchestratorService.handle(request.text, request.context.toDomain(), background = false)
         }
+    }
+
+    /**
+     * Synchronous chat endpoint that returns the final agent answer for Main Window chat UX.
+     */
+    @PostMapping("/chat")
+    override suspend fun chat(@RequestBody request: ChatRequestDto): ChatResponseDto {
+        val response = agentOrchestratorService.handle(
+            text = request.text,
+            ctx = request.context.toDomain(),
+            background = false,
+        )
+        return ChatResponseDto(message = response.message)
     }
 }

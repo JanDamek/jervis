@@ -147,22 +147,22 @@ class MainViewModel(
             _inputText.value = "" // Clear input immediately
 
             try {
-                // Send message to agent orchestrator
-                repository.agentChat.sendMessage(
+                // Send message to agent orchestrator and wait for final answer
+                val response = repository.agentChat.sendAndWaitForAnswer(
                     text = text,
                     clientId = clientId,
                     projectId = projectId,
                 )
 
-                // Add confirmation message
+                // Show assistant's final answer prepared by finalizer
                 _chatMessages.value = _chatMessages.value +
                     ChatMessage(
                         from = ChatMessage.Sender.Assistant,
-                        text = "Message sent to agent orchestrator. Monitor via notifications.",
+                        text = response.message,
                         contextId = projectId,
                     )
             } catch (e: Exception) {
-                _errorMessage.value = "Failed to send message: ${e.message}"
+                _errorMessage.value = "Failed to get answer: ${e.message}"
             } finally {
                 _isLoading.value = false
             }
