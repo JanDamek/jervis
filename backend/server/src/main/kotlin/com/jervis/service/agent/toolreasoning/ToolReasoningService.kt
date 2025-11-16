@@ -6,6 +6,7 @@ import com.jervis.domain.plan.PlanStep
 import com.jervis.domain.plan.StepStatusEnum
 import com.jervis.service.agent.planner.Planner
 import com.jervis.service.gateway.core.LlmGateway
+import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.McpToolRegistry
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
@@ -53,8 +54,8 @@ class ToolReasoningService(
 
         // Get available MCP tools for context
         val availableTools = mcpToolRegistry.getAllTools()
-        val toolDescriptions = availableTools.map { tool ->
-            "${tool.name.name}: ${tool.name.aliases.joinToString(", ")}"
+        val toolDescriptions = availableTools.map { tool: McpTool ->
+            "${tool.name.name}: ${tool.description}"
         }.joinToString("\n")
 
         val mappingValues = mapOf(

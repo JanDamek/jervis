@@ -16,6 +16,8 @@ class McpToolRegistry(
 ) {
     fun byName(name: PromptTypeEnum): McpTool = tools.first { it.name == name }
 
+    fun getAllTools(): List<McpTool> = tools
+
     @PostConstruct
     fun initialize() {
         // Validate that all tools have proper descriptions
