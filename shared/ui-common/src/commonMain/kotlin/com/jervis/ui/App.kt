@@ -101,6 +101,11 @@ fun App(
                 repository = repository,
                 onBack = { appNavigator.navigateTo(Screen.Main) }
             )
+            Screen.DebugConsole -> {
+                val provider = LocalDebugEventsProvider.current
+                requireNotNull(provider) { "DebugEventsProvider is not available. Provide it via LocalDebugEventsProvider at the app root." }
+                DebugWindow(eventsProvider = provider)
+            }
         }
 
         SnackbarHost(hostState = snackbarHostState)
