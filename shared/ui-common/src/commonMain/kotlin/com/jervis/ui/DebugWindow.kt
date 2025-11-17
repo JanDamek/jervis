@@ -738,157 +738,271 @@ fun EventListItem(
 fun LLMSessionDetail(session: LLMSessionEvent) {
     val clipboard = rememberClipboardManager()
 
-    Row(modifier = Modifier.fillMaxSize()) {
-        // Left side - Prompts
-        Column(
-            modifier =
-                Modifier
-                    .weight(0.5f)
-                    .fillMaxHeight()
-                    .padding(16.dp)
-                    .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            // Session info card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors =
-                    CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    ),
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val isNarrowScreen = maxWidth < 800.dp
+
+        if (isNarrowScreen) {
+            // Mobile layout: everything stacked vertically
+            Column(
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .padding(16.dp)
+                        .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        "Session Info",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(bottom = 8.dp),
-                    )
-                    HorizontalDivider(modifier = Modifier.padding(bottom = 8.dp))
-                    SessionInfoRow("Session ID", session.sessionId.take(8))
-                    SessionInfoRow("Type", session.promptType)
-                    SessionInfoRow("Client", session.clientName ?: "System")
-                    SessionInfoRow("Started", formatDateTime(session.startTime))
-                    if (session.currentStatus == TraceEvent.EventStatus.COMPLETED) {
-                        val duration =
-                            session.completionTime?.let {
-                                val durationInstant =
-                                    it.toInstant(TimeZone.currentSystemDefault()) -
-                                        session.startTime.toInstant(TimeZone.currentSystemDefault())
-                                val durationMs = durationInstant.inWholeMilliseconds
-                                "${durationMs}ms"
-                            } ?: "N/A"
-                        SessionInfoRow("Duration", duration)
-                        SessionInfoRow("Status", "COMPLETED ✓")
-                    } else {
-                        SessionInfoRow("Status", "STREAMING...")
+                // Session info card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors =
+                        CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        ),
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            "Session Info",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(bottom = 8.dp),
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(bottom = 8.dp))
+                        SessionInfoRow("Session ID", session.sessionId.take(8))
+                        SessionInfoRow("Type", session.promptType)
+                        SessionInfoRow("Client", session.clientName ?: "System")
+                        SessionInfoRow("Started", formatDateTime(session.startTime))
+                        if (session.currentStatus == TraceEvent.EventStatus.COMPLETED) {
+                            val duration =
+                                session.completionTime?.let {
+                                    val durationInstant =
+                                        it.toInstant(TimeZone.currentSystemDefault()) -
+                                            session.startTime.toInstant(TimeZone.currentSystemDefault())
+                                    val durationMs = durationInstant.inWholeMilliseconds
+                                    "${durationMs}ms"
+                                } ?: "N/A"
+                            SessionInfoRow("Duration", duration)
+                            SessionInfoRow("Status", "COMPLETED ✓")
+                        } else {
+                            SessionInfoRow("Status", "STREAMING...")
+                        }
                     }
                 }
-            }
 
-            // System Prompt
-            com.jervis.ui.util.CopyableTextCard(
-                title = "System Prompt",
-                content = session.systemPrompt,
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                useMonospace = true,
-            )
-
-            // User Prompt
-            com.jervis.ui.util.CopyableTextCard(
-                title = "User Prompt",
-                content = session.userPrompt,
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                useMonospace = true,
-            )
-        }
-
-        VerticalDivider()
-
-        // Right side - Response
-        Column(
-            modifier =
-                Modifier
-                    .weight(0.5f)
-                    .fillMaxHeight()
-                    .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            // Response status indicator
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "Streaming Response",
-                    style = MaterialTheme.typography.titleMedium,
+                // System Prompt
+                com.jervis.ui.util.CopyableTextCard(
+                    title = "System Prompt",
+                    content = session.systemPrompt,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    useMonospace = true,
                 )
-                if (session.currentStatus == TraceEvent.EventStatus.IN_PROGRESS) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                    )
-                }
+
+                // User Prompt
+                com.jervis.ui.util.CopyableTextCard(
+                    title = "User Prompt",
+                    content = session.userPrompt,
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    useMonospace = true,
+                )
+
+                // Response
+                ResponseCard(session, clipboard)
             }
-
-            HorizontalDivider()
-
-            // Response content
-            Card(
-                modifier = Modifier.fillMaxSize(),
-                colors =
-                    CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                    ),
-            ) {
-                Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
+        } else {
+            // Desktop layout: side by side
+            Row(modifier = Modifier.fillMaxSize()) {
+                // Left side - Prompts
+                Column(
+                    modifier =
+                        Modifier
+                            .weight(0.5f)
+                            .fillMaxHeight()
+                            .padding(16.dp)
+                            .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    // Session info card
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors =
+                            CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            ),
                     ) {
-                        Text(
-                            "Response",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer,
-                        )
-                        IconButton(
-                            onClick = { clipboard.setText(AnnotatedString(session.responseBuffer)) },
-                            enabled = session.responseBuffer.isNotEmpty(),
-                            modifier = Modifier.size(24.dp),
-                        ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
                             Text(
-                                "📋",
+                                "Session Info",
                                 style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.padding(bottom = 8.dp),
                             )
+                            HorizontalDivider(modifier = Modifier.padding(bottom = 8.dp))
+                            SessionInfoRow("Session ID", session.sessionId.take(8))
+                            SessionInfoRow("Type", session.promptType)
+                            SessionInfoRow("Client", session.clientName ?: "System")
+                            SessionInfoRow("Started", formatDateTime(session.startTime))
+                            if (session.currentStatus == TraceEvent.EventStatus.COMPLETED) {
+                                val duration =
+                                    session.completionTime?.let {
+                                        val durationInstant =
+                                            it.toInstant(TimeZone.currentSystemDefault()) -
+                                                session.startTime.toInstant(TimeZone.currentSystemDefault())
+                                        val durationMs = durationInstant.inWholeMilliseconds
+                                        "${durationMs}ms"
+                                    } ?: "N/A"
+                                SessionInfoRow("Duration", duration)
+                                SessionInfoRow("Status", "COMPLETED ✓")
+                            } else {
+                                SessionInfoRow("Status", "STREAMING...")
+                            }
                         }
                     }
 
-                    Box(
-                        modifier =
-                            Modifier
-                                .fillMaxSize()
-                                .verticalScroll(rememberScrollState()),
+                    // System Prompt
+                    com.jervis.ui.util.CopyableTextCard(
+                        title = "System Prompt",
+                        content = session.systemPrompt,
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        useMonospace = true,
+                    )
+
+                    // User Prompt
+                    com.jervis.ui.util.CopyableTextCard(
+                        title = "User Prompt",
+                        content = session.userPrompt,
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        useMonospace = true,
+                    )
+                }
+
+                VerticalDivider()
+
+                // Right side - Response
+                Column(
+                    modifier =
+                        Modifier
+                            .weight(0.5f)
+                            .fillMaxHeight()
+                            .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    ResponseCard(session, clipboard)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResponseCard(
+    session: LLMSessionEvent,
+    clipboard: com.jervis.ui.util.ClipboardHandler,
+) {
+    // Smart autoscroll: track if user is at bottom
+    val scrollState = rememberScrollState()
+    var userHasScrolledUp by remember { mutableStateOf(false) }
+    val previousBufferLength = remember { mutableStateOf(0) }
+
+    // Detect if user manually scrolled up
+    LaunchedEffect(scrollState.value, scrollState.maxValue) {
+        if (scrollState.maxValue > 0) {
+            val isAtBottom = scrollState.value >= scrollState.maxValue - 50 // 50px threshold
+            if (!isAtBottom && scrollState.value < previousBufferLength.value) {
+                userHasScrolledUp = true
+            } else if (isAtBottom) {
+                userHasScrolledUp = false
+            }
+        }
+    }
+
+    // Auto-scroll when new content arrives (only if user is at bottom)
+    LaunchedEffect(session.responseBuffer) {
+        if (session.responseBuffer.length > previousBufferLength.value) {
+            if (!userHasScrolledUp) {
+                scrollState.animateScrollTo(scrollState.maxValue)
+            }
+            previousBufferLength.value = session.responseBuffer.length
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxHeight(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // Response status indicator
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Streaming Response",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            if (session.currentStatus == TraceEvent.EventStatus.IN_PROGRESS) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                )
+            }
+        }
+
+        HorizontalDivider()
+
+        // Response content
+        Card(
+            modifier = Modifier.fillMaxSize(),
+            colors =
+                CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                ),
+        ) {
+            Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Response",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    )
+                    IconButton(
+                        onClick = { clipboard.setText(AnnotatedString(session.responseBuffer)) },
+                        enabled = session.responseBuffer.isNotEmpty(),
+                        modifier = Modifier.size(24.dp),
                     ) {
-                        if (session.responseBuffer.isEmpty()) {
+                        Text(
+                            "📋",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
+                }
+
+                Box(
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .verticalScroll(scrollState),
+                ) {
+                    if (session.responseBuffer.isEmpty()) {
+                        Text(
+                            "Waiting for response...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.6f),
+                        )
+                    } else {
+                        SelectionContainer {
                             Text(
-                                "Waiting for response...",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.6f),
+                                session.responseBuffer,
+                                style =
+                                    MaterialTheme.typography.bodySmall.copy(
+                                        fontFamily = FontFamily.Monospace,
+                                    ),
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
                             )
-                        } else {
-                            SelectionContainer {
-                                Text(
-                                    session.responseBuffer,
-                                    style =
-                                        MaterialTheme.typography.bodySmall.copy(
-                                            fontFamily = FontFamily.Monospace,
-                                        ),
-                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                )
-                            }
                         }
                     }
                 }

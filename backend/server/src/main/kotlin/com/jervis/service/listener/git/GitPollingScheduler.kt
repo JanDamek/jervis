@@ -232,7 +232,7 @@ class GitPollingScheduler(
             logger.info { "GIT_SYNC: Successfully synced repository for project: ${project.name}" }
 
             // Step 2: Get current branch for vector store tracking
-            val currentBranch = gitRepositoryService.getCurrentBranch(gitDir)
+            val currentBranch = gitRepositoryService.getCurrentBranch(gitDir, project.clientId)
             logger.info { "GIT_SYNC: Current branch for project ${project.name}: $currentBranch" }
 
             // Step 3: Orchestrate complete Git indexing workflow

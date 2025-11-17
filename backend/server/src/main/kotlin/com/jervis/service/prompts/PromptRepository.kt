@@ -31,8 +31,8 @@ class PromptRepository(
 
         // Log validation success
         println("[DEBUG] Prompt configuration validation successful:")
-        println("[DEBUG] - Tools configured: ${toolKeys.size}")
-        println("[DEBUG] - Generic prompts configured: ${promptKeys.size}")
+        println("[DEBUG] - Tools configured: ${toolKeys.size} -> ${toolKeys.joinToString()}")
+        println("[DEBUG] - Generic prompts configured: ${promptKeys.size} -> ${promptKeys.joinToString()}")
         println("[DEBUG] - No duplicate keys found")
         println("[DEBUG] - All tools have valid descriptions")
 
@@ -48,6 +48,14 @@ class PromptRepository(
             throw IllegalStateException(
                 "Missing required tool prompt configurations: $missing. " +
                     "Check prompts-tools.yaml is on classpath and correctly bound."
+            )
+        }
+
+        // Explicit confirmation for TOOL_REASONING presence
+        if (!toolKeys.contains(PromptTypeEnum.TOOL_REASONING)) {
+            throw IllegalStateException(
+                "TOOL_REASONING prompt not loaded. Current tool keys: ${toolKeys.joinToString()}. " +
+                    "Verify prompts-tools.yaml: TOOL_REASONING block exists and properties bind correctly."
             )
         }
     }

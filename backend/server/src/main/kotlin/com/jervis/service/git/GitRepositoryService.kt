@@ -396,19 +396,20 @@ class GitRepositoryService(
 
     /**
      * Get the current branch name for a repository path.
-     * Returns "main" as default if:
+     * Returns client's defaultBranch as fallback if:
      * - Directory is not a Git repository (no .git directory)
      * - Git command fails
      * - Branch is in detached HEAD state
      */
-    suspend fun getCurrentBranch(repositoryPath: Path): String =
+    suspend fun getCurrentBranch(repositoryPath: Path, clientId: org.bson.types.ObjectId? = null): String =
         withContext(Dispatchers.IO) {
             try {
                 // Check if .git directory exists before attempting git command
                 val gitDir = repositoryPath.resolve(".git")
                 if (!gitDir.toFile().exists()) {
-                    logger.debug { "No .git directory at $repositoryPath, using default branch 'main'" }
-                    return@withContext "main"
+                    val fallback = getClientDefaultBranch(clientId)
+                    logger.debug { "No .git directory at $repositoryPath, using fallback branch '$fallback'" }
+                    return@withContext fallback
                 }
 
                 val processBuilder =
@@ -423,18 +424,34 @@ class GitRepositoryService(
                     val branch = process.inputStream.bufferedReader().use { it.readText().trim() }
                     // Handle detached HEAD state
                     if (branch == "HEAD") {
-                        logger.debug { "Repository at $repositoryPath is in detached HEAD state, using default 'main'" }
-                        return@withContext "main"
+                        val fallback = getClientDefaultBranch(clientId)
+                        logger.debug { "Repository at $repositoryPath is in detached HEAD state, using fallback '$fallback'" }
+                        return@withContext fallback
                     }
                     logger.debug { "Retrieved Git branch for $repositoryPath: $branch" }
                     branch
                 } else {
-                    logger.debug { "Git command failed for repository: $repositoryPath (exit code: $exitCode), using default 'main'" }
-                    "main"
+                    val fallback = getClientDefaultBranch(clientId)
+                    logger.debug { "Git command failed for repository: $repositoryPath (exit code: $exitCode), using fallback '$fallback'" }
+                    fallback
                 }
             } catch (e: Exception) {
-                logger.debug(e) { "Could not get Git branch for repository: $repositoryPath, using default 'main'" }
-                "main"
+                val fallback = getClientDefaultBranch(clientId)
+                logger.debug(e) { "Could not get Git branch for repository: $repositoryPath, using fallback '$fallback'" }
+                fallback
             }
         }
+
+    /**
+     * Get client's default branch from database, or fallback to "master" if not found
+     */
+    private suspend fun getClientDefaultBranch(clientId: org.bson.types.ObjectId?): String {
+        if (clientId == null) return "master"
+        return try {
+            clientMongoRepository.findById(clientId)?.defaultBranch ?: "master"
+        } catch (e: Exception) {
+            logger.debug(e) { "Failed to fetch client defaultBranch for $clientId, using 'master'" }
+            "master"
+        }
+    }
 }

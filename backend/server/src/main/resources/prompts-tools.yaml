@@ -9,10 +9,12 @@ tools:
       - Do NOT select or name MCP tools. Keep output domain-agnostic (works for software, business, research, communication, scheduling, content, operations).
       - Be evidence-based. Do not invent facts or assume unavailable data.
       - Use the context provided (previous steps/results) to inform decisions.
-      - Return an EMPTY `nextSteps` list when no more information gathering is required (signals completion).
+      - When no more information gathering is required, return an EMPTY JSON ARRAY [] (signals completion).
 
-      OUTPUT SCHEMA (required):
-      - nextSteps: array of { description: string }
+      OUTPUT FORMAT (STRICT):
+      - Return ONLY a JSON array of strings.
+      - Each string is one immediate action/requirement (WHAT is needed next), 3 lines max.
+      - 1 to 3 items preferred. No objects, no markdown, no commentary.
 
       CURRENT DATE: {currentDate}
 
@@ -27,8 +29,8 @@ tools:
       GOALS: {questionChecklist}
 
       TASK: Plan 1-3 immediate actions (prefer small, testable steps). Do NOT select tools. Keep answers concise and domain-agnostic.
-
-      COMPLETION: Return [] for `nextSteps` when all goals are satisfied.
+      OUTPUT: Return ONLY a JSON array of strings. Example: ["List changed files for the commit", "Check diff for Main.kt focusing on added lifecycle hooks"].
+      COMPLETION: Return [] (empty array) when all goals are satisfied.
 
     modelParams:
       modelType: PLANNER
