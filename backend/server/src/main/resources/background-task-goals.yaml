@@ -198,44 +198,35 @@ tasks:
     goal: |
       Analyze a Git commit and identify bugs, gaps, requirement links.
 
-      AVAILABLE DATA SOURCES (use these tools to get information):
+      WHY THIS REACHED YOU:
+      - The qualifier classified this commit as requiring analysis (DELEGATE). Use the reason in plan context when available
+        to focus only on relevant evidence (e.g., "logic change", "API surface change").
 
-      1. COMMIT OVERVIEW:
-         - Use `git_commit_files_list` to see what files changed
-         - Context already has: commitHash, author, message, stats
+      PRINCIPLES:
+      - Minimal evidence first: start from commit metadata (hash, author, message, stats) already in context.
+      - Only fetch additional details when the message/stats are insufficient to decide risk or impact.
+      - Do NOT scan the whole repository. Limit analysis strictly to files touched by the commit unless strong evidence requires more.
+      - Stop early when you have enough to conclude there is no risk or that a concrete, small follow-up is needed.
 
-      2. CODE CHANGES:
-         - Use `git_commit_diff` to see full diff (what actually changed)
-         - Use `knowledge_search` to find indexed code chunks:
-           Example: knowledge_search(query="code changes", commitHash=<hash>, sourceType=CODE_CHANGE)
-         - Search returns chunks with file paths and code content
+      AVAILABLE CAPABILITIES (use only as needed):
+      1) Commit file list → capability: `changed-files` (lists files changed in the commit)
+      2) Diff for selected files → capability: `git-diff`
+      3) Current file content (fallback) → capability: `read-file`
+      4) Knowledge search (indexed code/notes) → capability: `knowledge-search`
+      5) Query user requirements (link changes to wishes) → capability: `query-requirements`
+      6) Store findings for future retrieval → capability: `knowledge-store`
 
-      3. FILE DESCRIPTIONS (AI-generated class descriptions):
-         - Use `knowledge_search` to find file descriptions:
-           Example: knowledge_search(query="class structure <fileName>", sourceType=FILE_DESCRIPTION, fileName=<path>)
-         - Descriptions contain: purpose, methods, architecture role
-         - Better than reading source code - gives architectural context
+      RECOMMENDED WORKFLOW (conditional; skip steps that are unnecessary):
+      1. If commit message/stats are unclear: list changed files (changed-files).
+      2. For specific suspect files only:
+         a. Try knowledge-search for existing file descriptions/context.
+         b. If unavailable or insufficient: inspect a focused diff (git-diff) for those files.
+      3. If the change has user-facing or requirement implications: query-requirements.
+      4. If you find important insights: summarize and store via knowledge-store.
 
-      4. SOURCE CODE (if needed):
-         - Use `git_file_current_content` to read actual code from filesystem
-         - Only use if description is not enough or file not analyzed yet
-         - WARNING: Large files may be truncated
-
-      5. RELATED DATA:
-         - Use `knowledge_search` with normal queries for related commits, docs, emails
-         - Use `requirement_query_user` to find related user requirements
-
-      YOUR ANALYSIS WORKFLOW:
-      1. Get file list: git_commit_files_list(commitHash)
-      2. For each important file:
-         a. Search for description: knowledge_search(query="class <fileName>", sourceType=FILE_DESCRIPTION, fileName=<path>)
-         b. If description not found: git_file_current_content(filePath)
-      3. Search code changes: knowledge_search(query="changes", commitHash=<hash>, sourceType=CODE_CHANGE)
-      4. Search for related requirements: requirement_query_user
-      5. Create tasks if bugs/gaps found: task_create_user
-      6. Store findings: knowledge_store
-
-      Return empty plan [] if commit is routine with no concerns.
+      COMPLETION:
+      - Return empty plan [] when the commit is routine and presents no concerns.
+      - Prefer a small number of precise next steps over broad repository exploration.
 
     qualifierSystemPrompt: |
       You are a Git commit classifier. Quickly determine if a commit needs detailed analysis.

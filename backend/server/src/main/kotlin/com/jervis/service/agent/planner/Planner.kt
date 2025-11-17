@@ -39,10 +39,12 @@ class Planner(
         val completedSteps = plan.steps.count { it.status == StepStatusEnum.DONE }
         logger.info { "PLANNER_START: planId=${plan.id} currentSteps=$totalSteps completed=$completedSteps" }
 
+        // Planner now returns a plain JSON array of strings (1-3 immediate next actions)
         val parsedResponse =
             llmGateway.callLlm(
                 type = PromptTypeEnum.PLANNING_CREATE_PLAN_TOOL,
-                responseSchema = PlannerResponseDto(),
+                // Provide sample element to guide JSON parser element type inference
+                responseSchema = listOf(""),
                 correlationId = plan.correlationId,
                 quick = plan.quick,
                 mappingValue = buildStepsContext(plan),
@@ -55,7 +57,8 @@ class Planner(
             plan.thinkingSequence += thinkContent
         }
 
-        val plannerOut = parsedResponse.result
+        val nextDescriptions: List<String> = parsedResponse.result
+        val plannerOut = PlannerResponseDto(nextDescriptions.map { NextStepRequest(description = it) })
         logger.info { "[PLANNER_RESULT] planId=${plan.id} suggestedSteps=${plannerOut.nextSteps.size} descriptions=${plannerOut.nextSteps.map { it.description }}" }
 
         return plannerOut
