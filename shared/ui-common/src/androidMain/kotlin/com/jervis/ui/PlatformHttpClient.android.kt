@@ -2,6 +2,7 @@ package com.jervis.ui
 
 import io.ktor.client.*
 import io.ktor.client.engine.okhttp.*
+import io.ktor.client.plugins.*
 import io.ktor.client.plugins.websocket.*
 import okhttp3.OkHttpClient
 import java.security.SecureRandom
@@ -35,6 +36,10 @@ actual fun createPlatformHttpClient(): HttpClient {
         install(WebSockets) {
             pingIntervalMillis = 20_000
             maxFrameSize = Long.MAX_VALUE
+        }
+        // Add security header for all requests
+        defaultRequest {
+            headers.append("X-Jervis-Client", "a7f3c9e2-4b8d-11ef-9a1c-0242ac120002")
         }
     }
 }

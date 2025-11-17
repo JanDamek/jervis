@@ -226,8 +226,25 @@ prompts:
       - Prescribing actions/solutions before context (e.g., "implement X", "send Y")
       - Overly generic queries (e.g., "analyze the code")
       - Domain-locked phrasing when the request is general
+      
+      OUTPUT FORMAT (STRICT):
+      Return ONLY a single JSON object with EXACTLY these fields and types:
+      {
+        "englishText": "string",
+        "originalLanguage": "string",
+        "contextName": "string",
+        "questionChecklist": ["string", "string", ...],
+        "initialRagQueries": ["string", "string", ...]
+      }
+      
+      RULES FOR OUTPUT:
+      - Arrays MUST contain only plain strings. Never use objects inside questionChecklist or initialRagQueries.
+      - Do not include markdown code fences, explanations, or additional fields.
+      - If you would normally produce a structured object for a query, instead provide a concise textual query string.
     userPrompt: |
       INPUT: {userText}
+      
+      Return ONLY the JSON object as specified. No markdown, no code fences, no commentary.
     modelParams:
       modelType: QUICK
       creativityLevel: LOW
