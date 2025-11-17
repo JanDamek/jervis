@@ -57,7 +57,22 @@ class DebugWebSocketClient(private val serverBaseUrl: String) {
             .plus("ws/debug")
 
         createPlatformHttpClient().use { client ->
-            client.webSocket(wsUrl) {
+            client.webSocket(
+                urlString = wsUrl,
+                request = {
+                    // WebSocket requires explicit headers - defaultRequest doesn't work
+                    headers.append(com.jervis.api.SecurityConstants.CLIENT_HEADER, com.jervis.api.SecurityConstants.CLIENT_TOKEN)
+                    headers.append(com.jervis.api.SecurityConstants.PLATFORM_HEADER, getPlatformName())
+                    try {
+                        val localIp = getLocalIpAddress()
+                        if (localIp != null) {
+                            headers.append(com.jervis.api.SecurityConstants.CLIENT_IP_HEADER, localIp)
+                        }
+                    } catch (e: Exception) {
+                        // Ignore - IP is optional
+                    }
+                }
+            ) {
                 println("Debug WebSocket connected to $wsUrl")
                 try {
                     for (frame in incoming) {
@@ -95,3 +110,13 @@ class DebugWebSocketClient(private val serverBaseUrl: String) {
  * Expect declaration for platform-specific implementation
  */
 expect fun createPlatformHttpClient(): HttpClient
+
+/**
+ * Get platform name (iOS, Android, Desktop)
+ */
+expect fun getPlatformName(): String
+
+/**
+ * Get local IP address (best effort)
+ */
+expect fun getLocalIpAddress(): String?
