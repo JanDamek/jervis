@@ -94,7 +94,22 @@ class WebSocketClient(private val serverBaseUrl: String) {
             .replaceFirst("https://", "wss://")
             .plus("ws/notifications")
 
-        client.webSocket(wsUrl) {
+        client.webSocket(
+            urlString = wsUrl,
+            request = {
+                // WebSocket requires explicit headers - defaultRequest doesn't work
+                headers.append(com.jervis.api.SecurityConstants.CLIENT_HEADER, com.jervis.api.SecurityConstants.CLIENT_TOKEN)
+                headers.append(com.jervis.api.SecurityConstants.PLATFORM_HEADER, com.jervis.api.SecurityConstants.PLATFORM_DESKTOP)
+                try {
+                    val localIp = getLocalIpAddress()
+                    if (localIp != null) {
+                        headers.append(com.jervis.api.SecurityConstants.CLIENT_IP_HEADER, localIp)
+                    }
+                } catch (e: Exception) {
+                    // Ignore - IP is optional
+                }
+            }
+        ) {
             println("WebSocket connected to $wsUrl")
             try {
                 for (frame in incoming) {
@@ -105,6 +120,25 @@ class WebSocketClient(private val serverBaseUrl: String) {
                 println("WebSocket disconnected")
             }
         }
+    }
+
+    private fun getLocalIpAddress(): String? {
+        try {
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
+            while (interfaces.hasMoreElements()) {
+                val networkInterface = interfaces.nextElement()
+                val addresses = networkInterface.inetAddresses
+                while (addresses.hasMoreElements()) {
+                    val address = addresses.nextElement()
+                    if (!address.isLoopbackAddress && address.address.size == 4) {
+                        return address.hostAddress
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Ignore
+        }
+        return null
     }
 
     private suspend fun handleMessage(text: String) {

@@ -124,20 +124,26 @@ class StubJiraApiClient(
             val max = pageSize.coerceIn(1, 100)
             do {
                 val response: SearchResponseDto =
-                    client
-                        .get()
-                        .uri { b ->
-                            b
-                                .path("/rest/api/3/search")
-                                .queryParam("jql", jql)
-                                .queryParam("startAt", startAt)
-                                .queryParam("maxResults", max)
-                                .queryParam("fields", fields.joinToString(","))
-                                .apply { if (expand.isNotEmpty()) queryParam("expand", expand.joinToString(",")) }
-                                .build()
-                        }.header("Authorization", basic(conn))
-                        .retrieve()
-                        .awaitBody()
+                    try {
+                        client
+                            .get()
+                            .uri { b ->
+                                b
+                                    .path("/rest/api/3/search")
+                                    .queryParam("jql", jql)
+                                    .queryParam("startAt", startAt)
+                                    .queryParam("maxResults", max)
+                                    .queryParam("fields", fields.joinToString(","))
+                                    .apply { if (expand.isNotEmpty()) queryParam("expand", expand.joinToString(",")) }
+                                    .build()
+                            }.header("Authorization", basic(conn))
+                            .retrieve()
+                            .awaitBody()
+                    } catch (e: org.springframework.web.reactive.function.client.WebClientResponseException.Gone) {
+                        throw IllegalStateException("JIRA API endpoint no longer available (410 Gone) for ${conn.tenant.value}. " +
+                            "This usually means: 1) API token expired, 2) Workspace access removed, 3) GDPR/compliance issue. " +
+                            "Please check API credentials and workspace access in JIRA settings.", e)
+                    }
 
                 val issues = response.issues.orEmpty()
                 for (i in issues) {

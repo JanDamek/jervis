@@ -55,7 +55,11 @@ actual fun createPlatformHttpClient(): HttpClient {
     }
 }
 
-private fun getLocalIpAddress(): String? {
+actual fun getPlatformName(): String {
+    return SecurityConstants.PLATFORM_ANDROID
+}
+
+actual fun getLocalIpAddress(): String? {
     try {
         val interfaces = NetworkInterface.getNetworkInterfaces()
         while (interfaces.hasMoreElements()) {

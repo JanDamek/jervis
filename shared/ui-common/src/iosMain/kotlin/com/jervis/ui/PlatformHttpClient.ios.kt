@@ -57,8 +57,12 @@ actual fun createPlatformHttpClient(): HttpClient {
     }
 }
 
+actual fun getPlatformName(): String {
+    return SecurityConstants.PLATFORM_IOS
+}
+
 @OptIn(ExperimentalForeignApi::class)
-private fun getLocalIpAddress(): String? {
+actual fun getLocalIpAddress(): String? {
     // For iOS, getting local IP is complex and requires proper C interop
     // Return null for now - platform header is sufficient for identification
     return null
