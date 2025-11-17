@@ -85,18 +85,34 @@ class SecurityHeaderFilter(
         request: ServerHttpRequest,
         providedToken: String?,
     ) {
+        // Extract platform and client IP from headers
+        val platform = request.headers.getFirst("X-Jervis-Platform") ?: "Unknown"
+        val clientIp = request.headers.getFirst("X-Jervis-Client-IP") ?: "Unknown"
+        val userAgent = request.headers.getFirst("User-Agent") ?: "Unknown"
+
         val details =
             buildString {
                 append("ATTACK ATTEMPT - Invalid or missing client token\n")
-                append("Timestamp: ${Instant.now()}\n")
-                append("Remote Address: ${request.remoteAddress}\n")
-                append("Method: ${request.method}\n")
-                append("URI: ${request.uri}\n")
-                append("Headers:\n")
+                append("=".repeat(60) + "\n")
+                append("CLIENT IDENTIFICATION:\n")
+                append("  Platform: $platform\n")
+                append("  Client Local IP: $clientIp\n")
+                append("  User-Agent: $userAgent\n")
+                append("  Remote Address: ${request.remoteAddress}\n")
+                append("\n")
+                append("REQUEST DETAILS:\n")
+                append("  Timestamp: ${Instant.now()}\n")
+                append("  Method: ${request.method}\n")
+                append("  URI: ${request.uri}\n")
+                append("\n")
+                append("ALL HEADERS:\n")
                 request.headers.forEach { (name, values) ->
                     append("  $name: ${values.joinToString(", ")}\n")
                 }
-                append("Provided Token: ${providedToken ?: "<missing>"}\n")
+                append("\n")
+                append("SECURITY:\n")
+                append("  Provided Token: ${providedToken ?: "<missing>"}\n")
+                append("=".repeat(60) + "\n")
             }
 
         logger.warn { details }
@@ -104,7 +120,7 @@ class SecurityHeaderFilter(
         errorLogService.recordError(
             throwable =
                 SecurityException(
-                    "Unauthorized access attempt - missing or invalid $CLIENT_HEADER header",
+                    "Unauthorized access from Platform=$platform, ClientIP=$clientIp, RemoteAddr=${request.remoteAddress}",
                 ),
             correlationId = "attack-${System.currentTimeMillis()}",
         )
