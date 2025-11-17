@@ -1,6 +1,9 @@
 package com.jervis.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -151,9 +154,14 @@ data class CorrelationTrace(
 
 /**
  * Debug window with correlationId-based tracing
+ * @param eventsProvider Provider of debug events from WebSocket
+ * @param onBack Optional callback for mobile back button (null for desktop standalone window)
  */
 @Composable
-fun DebugWindow(eventsProvider: DebugEventsProvider) {
+fun DebugWindow(
+    eventsProvider: DebugEventsProvider,
+    onBack: (() -> Unit)? = null,
+) {
     val correlationTraces = remember { mutableStateMapOf<String, CorrelationTrace>() }
     var selectedTraceIndex by remember { mutableStateOf(0) }
     var selectedEvent by remember { mutableStateOf<TraceEvent?>(null) }
@@ -271,7 +279,26 @@ fun DebugWindow(eventsProvider: DebugEventsProvider) {
     val currentTraces = correlationTraces.values.sortedByDescending { it.startTime }
 
     Surface(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .then(if (onBack != null) Modifier.padding(16.dp) else Modifier)
+        ) {
+            // Header with back button (only for mobile)
+            if (onBack != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = onBack) { Text("← Back") }
+                    Spacer(Modifier.width(12.dp))
+                    Text("Debug Console", style = MaterialTheme.typography.headlineSmall)
+                    Spacer(Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(12.dp))
+            }
+
             if (currentTraces.isEmpty()) {
                 // Empty state
                 Box(
@@ -301,83 +328,174 @@ fun DebugWindow(eventsProvider: DebugEventsProvider) {
                     selectedTraceIndex = safeTraceIndex
                 }
 
-                // Trace tabs
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    PrimaryScrollableTabRow(
-                        selectedTabIndex = safeTraceIndex,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        currentTraces.forEachIndexed { index, trace ->
-                            Tab(
-                                selected = safeTraceIndex == index,
-                                onClick = {
-                                    selectedTraceIndex = index
-                                    selectedEvent = null // Show event list, not detail
-                                },
-                                text = {
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Text(trace.getTabLabel())
-                                        IconButton(
-                                            onClick = {
-                                                correlationTraces.remove(trace.correlationId)
-                                                if (selectedTraceIndex >= correlationTraces.size && selectedTraceIndex > 0) {
-                                                    selectedTraceIndex = correlationTraces.size - 1
-                                                }
-                                                selectedEvent = null
-                                            },
-                                            modifier = Modifier.size(20.dp),
-                                        ) {
-                                            Text(
-                                                "✕",
-                                                style = MaterialTheme.typography.titleMedium,
-                                                modifier = Modifier.size(16.dp),
-                                            )
-                                        }
-                                    }
-                                },
-                            )
-                        }
-                    }
+                // Trace tabs and controls
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val isNarrowScreen = maxWidth < 800.dp
 
-                    // Controls: Follow mode + Close All Completed
-                    Row(
-                        modifier = Modifier.padding(8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // Follow latest event checkbox
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Checkbox(
-                                checked = followLatestEvent,
-                                onCheckedChange = { followLatestEvent = it },
-                            )
-                            Text("Follow Latest Event", style = MaterialTheme.typography.bodyMedium)
-                        }
-
-                        // Close All Completed button
-                        if (correlationTraces.values.any { it.isCompleted() }) {
-                            Button(
-                                onClick = {
-                                    val completedIds =
-                                        correlationTraces.values
-                                            .filter { it.isCompleted() }
-                                            .map { it.correlationId }
-                                    completedIds.forEach { correlationTraces.remove(it) }
-                                    if (selectedTraceIndex >= correlationTraces.size && correlationTraces.isNotEmpty()) {
-                                        selectedTraceIndex = correlationTraces.size - 1
-                                    } else if (correlationTraces.isEmpty()) {
-                                        selectedTraceIndex = 0
-                                    }
-                                    selectedEvent = null
-                                },
+                    if (isNarrowScreen) {
+                        // Mobile layout: tabs full width, controls below
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            PrimaryScrollableTabRow(
+                                selectedTabIndex = safeTraceIndex,
+                                modifier = Modifier.fillMaxWidth(),
                             ) {
-                                Text("Close All Completed")
+                                currentTraces.forEachIndexed { index, trace ->
+                                    Tab(
+                                        selected = safeTraceIndex == index,
+                                        onClick = {
+                                            selectedTraceIndex = index
+                                            selectedEvent = null
+                                        },
+                                        text = {
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                Text(trace.getTabLabel())
+                                                IconButton(
+                                                    onClick = {
+                                                        correlationTraces.remove(trace.correlationId)
+                                                        if (selectedTraceIndex >= correlationTraces.size && selectedTraceIndex > 0) {
+                                                            selectedTraceIndex = correlationTraces.size - 1
+                                                        }
+                                                        selectedEvent = null
+                                                    },
+                                                    modifier = Modifier.size(32.dp),
+                                                ) {
+                                                    Text(
+                                                        "✕",
+                                                        style = MaterialTheme.typography.titleMedium,
+                                                    )
+                                                }
+                                            }
+                                        },
+                                    )
+                                }
+                            }
+
+                            // Controls below tabs on mobile
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                // Follow checkbox - mobile friendly
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier.clickable { followLatestEvent = !followLatestEvent }
+                                        .padding(4.dp)
+                                ) {
+                                    Checkbox(
+                                        checked = followLatestEvent,
+                                        onCheckedChange = { followLatestEvent = it },
+                                    )
+                                    Text("Follow", style = MaterialTheme.typography.bodyMedium)
+                                }
+
+                                // Close completed button - mobile friendly
+                                if (correlationTraces.values.any { it.isCompleted() }) {
+                                    Button(
+                                        onClick = {
+                                            val completedIds =
+                                                correlationTraces.values
+                                                    .filter { it.isCompleted() }
+                                                    .map { it.correlationId }
+                                            completedIds.forEach { correlationTraces.remove(it) }
+                                            if (selectedTraceIndex >= correlationTraces.size && correlationTraces.isNotEmpty()) {
+                                                selectedTraceIndex = correlationTraces.size - 1
+                                            } else if (correlationTraces.isEmpty()) {
+                                                selectedTraceIndex = 0
+                                            }
+                                            selectedEvent = null
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                                    ) {
+                                        Text("Close Completed", style = MaterialTheme.typography.bodyMedium)
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Desktop layout: tabs and controls side by side
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            PrimaryScrollableTabRow(
+                                selectedTabIndex = safeTraceIndex,
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                currentTraces.forEachIndexed { index, trace ->
+                                    Tab(
+                                        selected = safeTraceIndex == index,
+                                        onClick = {
+                                            selectedTraceIndex = index
+                                            selectedEvent = null
+                                        },
+                                        text = {
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                Text(trace.getTabLabel())
+                                                IconButton(
+                                                    onClick = {
+                                                        correlationTraces.remove(trace.correlationId)
+                                                        if (selectedTraceIndex >= correlationTraces.size && selectedTraceIndex > 0) {
+                                                            selectedTraceIndex = correlationTraces.size - 1
+                                                        }
+                                                        selectedEvent = null
+                                                    },
+                                                    modifier = Modifier.size(20.dp),
+                                                ) {
+                                                    Text(
+                                                        "✕",
+                                                        style = MaterialTheme.typography.titleMedium,
+                                                        modifier = Modifier.size(16.dp),
+                                                    )
+                                                }
+                                            }
+                                        },
+                                    )
+                                }
+                            }
+
+                            // Controls on right on desktop
+                            Row(
+                                modifier = Modifier.padding(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    Checkbox(
+                                        checked = followLatestEvent,
+                                        onCheckedChange = { followLatestEvent = it },
+                                    )
+                                    Text("Follow Latest Event", style = MaterialTheme.typography.bodyMedium)
+                                }
+
+                                if (correlationTraces.values.any { it.isCompleted() }) {
+                                    Button(
+                                        onClick = {
+                                            val completedIds =
+                                                correlationTraces.values
+                                                    .filter { it.isCompleted() }
+                                                    .map { it.correlationId }
+                                            completedIds.forEach { correlationTraces.remove(it) }
+                                            if (selectedTraceIndex >= correlationTraces.size && correlationTraces.isNotEmpty()) {
+                                                selectedTraceIndex = correlationTraces.size - 1
+                                            } else if (correlationTraces.isEmpty()) {
+                                                selectedTraceIndex = 0
+                                            }
+                                            selectedEvent = null
+                                        },
+                                    ) {
+                                        Text("Close All Completed")
+                                    }
+                                }
                             }
                         }
                     }
@@ -573,7 +691,9 @@ fun EventListItem(
     onClick: () -> Unit,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp), // Minimum touch target height
         onClick = onClick,
         colors =
             CardDefaults.cardColors(
@@ -593,7 +713,8 @@ fun EventListItem(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(8.dp),
+                    .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
                 text = event.getListItemLabel(),
@@ -604,7 +725,6 @@ fun EventListItem(
                 text = formatDateTime(event.timestamp, "HH:mm:ss"),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp),
             )
         }
     }

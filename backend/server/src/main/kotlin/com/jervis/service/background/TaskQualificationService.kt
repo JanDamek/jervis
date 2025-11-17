@@ -148,18 +148,8 @@ class TaskQualificationService(
             return QualificationResult.Discard(reason = "Resolved by inbound update; closed tasks: ${closedTaskIds.joinToString()}")
         }
 
-        // 5. Qualify: discard/delegate
-        // Note: correlationId will be created when task is created below, but we need it for LLM call
-        // Generate it here so qualification LLM call has same correlationId as the task
-        val correlationId = java.util.UUID.randomUUID().toString()
-        val decision = qualifyBasicEmail(email, clientId, correlationId)
-
-        if (decision == EmailDecision.DISCARD) {
-            logger.info { "Email ${email.messageId} discarded by qualifier" }
-            return QualificationResult.Discard(reason = "Routine message")
-        }
-
-        // 6. Create task – all details must be in content, no enrichment/context maps
+        // 5. Create pending task without any LLM calls – fast path during indexing.
+        //    The actual qualification (DISCARD/DELEGATE) will be performed later by background engine.
 
         val task =
             pendingTaskService.createTask(
@@ -167,13 +157,12 @@ class TaskQualificationService(
                 content = formatEmailContent(email),
                 clientId = clientId,
                 projectId = projectId,
-                correlationId = correlationId,
             )
 
         // Requirement: writing pending task must atomically flip email state to INDEXED
         emailMessageStateManager.markMessageIdAsIndexed(accountId, email.messageId)
 
-        logger.info { "Email ${email.messageId} delegated to planner and marked as INDEXED" }
+        logger.info { "Email ${email.messageId} enqueued for qualification and marked as INDEXED" }
         return QualificationResult.Delegate(task = task)
     }
 

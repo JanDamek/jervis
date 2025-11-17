@@ -15,7 +15,8 @@ import com.jervis.ui.navigation.Screen
 fun MainContent(
     repository: JervisRepository,
     navigator: AppNavigator,
-    requestedScreen: Screen? = null
+    requestedScreen: Screen? = null,
+    onOpenDebugWindow: () -> Unit = {}
 ) {
     // Navigate to requested screen when it changes
     LaunchedEffect(requestedScreen) {
@@ -29,6 +30,7 @@ fun MainContent(
         repository = repository,
         defaultClientId = null,
         defaultProjectId = null,
-        navigator = navigator
+        navigator = navigator,
+        onOpenDebugWindow = onOpenDebugWindow
     )
 }

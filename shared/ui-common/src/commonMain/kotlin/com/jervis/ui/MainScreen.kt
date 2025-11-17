@@ -112,8 +112,16 @@ fun MainScreen(
                                 onNavigate(com.jervis.ui.navigation.Screen.IndexingStatus)
                             }
                         )
+                        HorizontalDivider()
 
-                        // TODO: Desktop Debug Console (WebSocket) - not yet implemented for mobile
+                        // Debug Console (WebSocket)
+                        DropdownMenuItem(
+                            text = { Text("Debug Console") },
+                            onClick = {
+                                showMenu = false
+                                onNavigate(com.jervis.ui.navigation.Screen.DebugConsole)
+                            }
+                        )
                     }
                 },
             )

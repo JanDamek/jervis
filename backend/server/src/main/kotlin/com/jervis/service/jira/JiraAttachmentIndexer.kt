@@ -7,6 +7,7 @@ import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
 import com.jervis.repository.mongo.JiraConnectionMongoRepository
+import com.jervis.service.error.ErrorLogService
 import com.jervis.service.rag.RagIndexingService
 import com.jervis.service.text.TextChunkingService
 import com.jervis.service.text.TextNormalizationService
@@ -44,6 +45,7 @@ class JiraAttachmentIndexer(
     private val webClientBuilder: WebClient.Builder,
     private val connectionRepository: JiraConnectionMongoRepository,
     private val connectionService: JiraConnectionService,
+    private val errorLogService: ErrorLogService,
 ) {
     /**
      * Index all attachments for a given Jira issue.
@@ -89,11 +91,15 @@ class JiraAttachmentIndexer(
                         } catch (inner: Exception) {
                             logger.warn(inner) { "Failed to mark Jira connection INVALID after auth error while indexing attachments" }
                         }
+                        // Persist the exception to Error Logs for visibility in UI
+                        runCatching { errorLogService.recordError(e, clientId = clientId, projectId = projectId) }
                         // stop processing further attachments for this issue/client
                         return@withContext
                     }
 
                     logger.warn(e) { "JIRA_ATTACHMENT: Failed to index attachment ${attachment.filename} for issue $issueKey" }
+                    // Persist non-auth errors as well
+                    runCatching { errorLogService.recordError(e, clientId = clientId, projectId = projectId) }
                 }
             }
         }.onFailure { e ->
@@ -108,10 +114,14 @@ class JiraAttachmentIndexer(
                 } catch (inner: Exception) {
                     logger.warn(inner) { "Failed to mark Jira connection INVALID after auth error while fetching attachments" }
                 }
+                // Persist auth error for visibility
+                runCatching { errorLogService.recordError(e, clientId = clientId, projectId = projectId) }
                 return@withContext
             }
 
             logger.error(e) { "JIRA_ATTACHMENT: Failed to fetch attachments for issue $issueKey" }
+            // Persist other errors too
+            runCatching { errorLogService.recordError(e, clientId = clientId, projectId = projectId) }
         }
     }
 

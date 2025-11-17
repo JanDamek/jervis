@@ -30,6 +30,7 @@ class JiraIndexingOrchestrator(
     private val configCache: com.jervis.service.cache.ClientProjectConfigCache,
     private val connectionService: JiraConnectionService,
     private val indexingRegistry: com.jervis.service.indexing.status.IndexingStatusRegistry,
+    private val errorLogService: com.jervis.service.error.ErrorLogService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -75,24 +76,31 @@ class JiraIndexingOrchestrator(
                             e,
                         ) { "JIRA_INDEX: Auth check failed for client=${clientId.toHexString()}, marking INVALID and skipping" }
                         runCatching { indexingRegistry.info("jira", "Auth check failed, skipping client=${clientId.toHexString()}") }
+                        // Persist auth-related error
+                        runCatching { errorLogService.recordError(e, clientId = clientId) }
                         return@withContext
                     } else {
+                        // Persist non-auth error then rethrow to be handled above
+                        runCatching { errorLogService.recordError(e, clientId = clientId) }
                         throw e
                     }
                 }
 
                 // Try to load selections (primary project, preferred user). If missing, continue with client-level indexing.
                 val selections: Pair<JiraProjectKey, com.jervis.domain.jira.JiraAccountId>? =
-                    runCatching { selection.ensureSelectionsOrCreateTasks(clientId) }
-                        .onFailure { e ->
-                            logger.warn { "JIRA_INDEX: Missing selections for client=${clientId.toHexString()} - ${e.message}. Falling back to GLOBAL (all projects) indexing." }
-                            runCatching {
-                                indexingRegistry.info(
-                                    "jira",
-                                    "Selections missing → fallback to client-level indexing (all projects) for client=${clientId.toHexString()}",
-                                )
-                            }
-                        }.getOrNull()
+                    try {
+                        selection.ensureSelectionsOrCreateTasks(clientId)
+                    } catch (e: Exception) {
+                        logger.warn { "JIRA_INDEX: Missing selections for client=${clientId.toHexString()} - ${e.message}. Falling back to GLOBAL (all projects) indexing." }
+                        runCatching {
+                            indexingRegistry.info(
+                                "jira",
+                                "Selections missing → fallback to client-level indexing (all projects) for client=${clientId.toHexString()}",
+                            )
+                        }
+                        runCatching { errorLogService.recordError(e, clientId = clientId) }
+                        null
+                    }
                 val primaryProject: JiraProjectKey? = selections?.first
                 var me: com.jervis.domain.jira.JiraAccountId? = selections?.second
 
@@ -110,6 +118,7 @@ class JiraIndexingOrchestrator(
                     } catch (e: Exception) {
                         logger.warn(e) { "JIRA_INDEX: Failed to load Jira project mapping from cache for client=${clientId.toHexString()}" }
                         runCatching { indexingRegistry.error("jira", "Failed to load Jira project mapping: ${e.message}") }
+                        runCatching { errorLogService.recordError(e, clientId = clientId) }
                         emptyMap()
                     }
                 runCatching { indexingRegistry.info("jira", "Loaded Jira project mapping size=${jiraProjectMapping.size}") }
@@ -135,8 +144,10 @@ class JiraIndexingOrchestrator(
                                     "Auth check failed while listing projects, skipping client=${clientId.toHexString()}",
                                 )
                             }
+                            runCatching { errorLogService.recordError(e, clientId = clientId) }
                             return@withContext
                         } else {
+                            runCatching { errorLogService.recordError(e, clientId = clientId) }
                             throw e
                         }
                     }
@@ -174,6 +185,7 @@ class JiraIndexingOrchestrator(
                                     "Failed to list Jira projects (auth): ${e.message}.",
                                 )
                             }
+                            runCatching { errorLogService.recordError(e, clientId = clientId) }
                             emptyList()
                         } else {
                             logger.warn(
@@ -187,6 +199,7 @@ class JiraIndexingOrchestrator(
                                     "Failed to list Jira projects: ${e.message}",
                                 )
                             }
+                            runCatching { errorLogService.recordError(e, clientId = clientId) }
                             emptyList()
                         }
                     }
@@ -219,7 +232,7 @@ class JiraIndexingOrchestrator(
                         indexingRegistry.info("jira", "Indexing project=$key mappedProject=$mapped")
                     }
 
-                    runCatching {
+                    try {
                         val tenantHost = connValid.tenant.value
                         api
                             .searchIssues(connValid, jql, updatedSinceEpochMs = lastSyncedAt?.toEpochMilli())
@@ -282,7 +295,7 @@ class JiraIndexingOrchestrator(
                                     }
                                 }
                             }
-                    }.onFailure { e ->
+                    } catch (e: Exception) {
                         logger.error(e) { "JIRA_INDEX: search failed for client=${clientId.toHexString()} project=$key" }
                         // If this looks like an auth error, mark INVALID to stop further attempts until user fixes it
                         if (isAuthError(e)) {
@@ -291,6 +304,8 @@ class JiraIndexingOrchestrator(
                                 runCatching { connectionService.markAuthInvalid(doc, e.message) }
                             }
                         }
+                        // Persist error for visibility regardless of type (e.g., HTTP 410)
+                        runCatching { errorLogService.recordError(e, clientId = clientId, projectId = jervisProjectId) }
                         // Fail fast: continue other keys but surface error count via logs
                         runCatching { indexingRegistry.error("jira", "Search failed for project=$key: ${e.message}") }
                     }
@@ -299,16 +314,17 @@ class JiraIndexingOrchestrator(
                 logger.info { "JIRA_INDEX: Done for client=${clientId.toHexString()} (projects=${allJiraProjects.size})" }
 
                 // Update last synced timestamp on successful completion
-                runCatching {
+                try {
                     val doc = connectionRepository.findByClientId(clientId)
                     if (doc != null) {
                         val updated = doc.copy(lastSyncedAt = Instant.now(), updatedAt = Instant.now())
                         connectionRepository.save(updated)
                         indexingRegistry.info("jira", "Updated lastSyncedAt for client=${clientId.toHexString()}")
                     }
-                }.onFailure { e ->
+                } catch (e: Exception) {
                     logger.warn(e) { "JIRA_INDEX: Failed to update lastSyncedAt for client=${clientId.toHexString()}" }
                     runCatching { indexingRegistry.error("jira", "Failed to update lastSyncedAt: ${e.message}") }
+                    runCatching { errorLogService.recordError(e, clientId = clientId) }
                 }
             } finally {
                 kotlin.runCatching {

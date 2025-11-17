@@ -130,7 +130,11 @@ fun main() = application {
 
             // Main chat interface - show connection status if not connected
             if (repository != null) {
-                MainContent(repository = repository, navigator = navigator)
+                MainContent(
+                    repository = repository,
+                    navigator = navigator,
+                    onOpenDebugWindow = { showDebug = true }
+                )
             } else {
                 ConnectionStatusScreen(connectionManager.status, serverBaseUrl)
             }

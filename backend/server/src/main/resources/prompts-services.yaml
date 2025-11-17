@@ -188,64 +188,44 @@ prompts:
 
   PLANNING_ANALYZE_QUESTION:
     systemPrompt: |
-      Analyze the user request and provide structured response:
+      Analyze the user request and provide a structured response.
 
-      LANGUAGE DETECTION: Detect the original language of the text carefully:
-      - "cs" for Czech (česky)
-      - "de" for German (deutsch)
-      - "en" for English
-      - etc
+      LANGUAGE DETECTION:
+      - Detect the original language (ISO code like "cs", "de", "en", ...).
 
-      TRANSLATION: Translate the complete text to clear English
+      TRANSLATION:
+      - Translate the complete text to clear English (keep proper nouns as-is).
 
-      CONTEXT NAMING: Create a brief descriptive context name (2-4 words)
-      CRITICAL: contextName is REQUIRED and MUST NOT be empty. Extract key concepts from the user's question to create a meaningful name.
+      CONTEXT NAMING:
+      - Create a brief, descriptive contextName (2-4 words) based on the key intent.
+      - STRICT: contextName MUST NOT be empty.
 
-      QUESTION SPLITTING: Split into atomic, independent sub-questions:
-      - Split by "and"/"or" conjunctions
-      - Separate different aspects (what/where/how/why)
-      - Each question must be answerable independently
-      - Avoid compound questions with multiple verbs or subjects
-      - Make each question focused on single topic
+      QUESTION SPLITTING:
+      - Split into atomic, independent sub-questions (what / why / how / where / when / who) as needed.
+      - Each sub-question must be answerable independently; avoid compound phrasing.
 
-      SYSTEM UNDERSTANDING QUERIES: Generate queries to understand the project's CURRENT STATE before planning any actions.
-      CRITICAL: These are EXPLORATORY queries executed FIRST to establish CONTEXT, not to find code to modify.
+      CONTEXT UNDERSTANDING QUERIES (initialRagQueries):
+      - Generate short, exploratory queries to gather context BEFORE any action.
+      - Domain-agnostic: must work for software, business, research, communication, documents, scheduling, operations.
+      - Prefer 3-8 concise queries that build understanding progressively.
 
-      PHILOSOPHY: "UNDERSTAND BEFORE ACT"
-      - First understand WHAT EXISTS in the system
-      - Then understand HOW it's currently implemented
-      - Only then determine WHAT TO DO
+      UNDERSTAND BEFORE ACT (principle):
+      1) What exists/what is available now?
+      2) How is it currently organized/implemented?
+      3) What constraints, stakeholders, timelines, and resources are involved?
 
-      Generate queries in this order:
-
-      STAGE 1 - CURRENT STATE (What already exists?)
-      - EXISTENCE: "List all [feature-area] implementations currently in the project"
-      - CAPABILITIES: "What [functionality] is already available in the codebase?"
-      - ARCHITECTURE: "How is [domain-area] currently structured in this project?"
-
-      STAGE 2 - IMPLEMENTATION PATTERNS (How does this project work?)
-      - CONVENTIONS: "Show examples of [pattern-type] in this project"
-      - STYLE: "What patterns does this project use for [technical-concern]?"
-      - INTEGRATION: "How are [component-type] integrated with the rest of the system?"
-
-      STAGE 3 - CONTEXT GATHERING (What's relevant to this request?)
-      - RELATED_CODE: "Find code related to [feature-area] that might be affected"
-      - DEPENDENCIES: "What services/components depend on [target-area]?"
-      - CONSTRAINTS: "What technical constraints exist around [domain-area]?"
-
-      EXAMPLES OF GOOD QUERIES:
-      - "List all authentication mechanisms currently implemented in the project"
-      - "How does this project handle database connections and transactions?"
-      - "Show examples of REST controller patterns used in this codebase"
-      - "What error handling strategies are currently used in service classes?"
-      - "Find all components that interact with the user management system"
+      EXAMPLES (non-exhaustive):
+      - Business/Project: "What goals and success criteria are stated for [topic]?", "Who are the stakeholders and decision makers for [topic]?"
+      - Communication: "List prior communications related to [topic] and their outcomes", "What tone and format does the recipient prefer?"
+      - Documents: "Find documents that define policies/procedures about [topic]", "What existing reports summarize [area]?"
+      - Research: "What are the key concepts and terms in [field/topic]?", "What prior findings exist about [question]?"
+      - Scheduling: "What deadlines and availability constraints apply to [topic]?"
+      - Software (when applicable): "How is [domain-area] currently structured in this project?", "What components depend on [target-area]?"
 
       AVOID:
-      - "Find the class to modify for authentication" (assumes action before understanding)
-      - "Implement JWT validation" (this is a task, not a query)
-      - "Analyze the code" (too generic, not exploratory)
-
-      Generate queries that progressively build understanding of the system's current state and patterns.
+      - Prescribing actions/solutions before context (e.g., "implement X", "send Y")
+      - Overly generic queries (e.g., "analyze the code")
+      - Domain-locked phrasing when the request is general
     userPrompt: |
       INPUT: {userText}
     modelParams:

@@ -6,14 +6,13 @@ tools:
 
       RULES (short):
       - Produce only the next immediate actions (1-10 steps). Do not attempt to solve the entire task.
-      - Do NOT select or name MCP tools. Instead, for each planning cycle provide a structured list of capability requirements (`tool_requirements`) that describe WHAT is needed (e.g., "read-file", "git-diff", "code-analysis", "execute-shell").
+      - Do NOT select or name MCP tools. Keep output domain-agnostic (works for software, business, research, communication, scheduling, content, operations).
       - Be evidence-based. Do not invent facts or assume unavailable data.
       - Use the context provided (previous steps/results) to inform decisions.
       - Return an EMPTY `nextSteps` list when no more information gathering is required (signals completion).
 
       OUTPUT SCHEMA (required):
-      - nextSteps: array of { stepInstruction: string, stepDependsOn: int }
-      - tool_requirements: array of { capability: string, detail: string, priority: "low"|"medium"|"high" }
+      - nextSteps: array of { description: string }
 
       CURRENT DATE: {currentDate}
 
@@ -27,12 +26,47 @@ tools:
 
       GOALS: {questionChecklist}
 
-      TASK: Plan 1-3 immediate actions (prefer small, testable steps) and describe corresponding `tool_requirements` for each. Do NOT select tools. Keep answers concise.
+      TASK: Plan 1-3 immediate actions (prefer small, testable steps). Do NOT select tools. Keep answers concise and domain-agnostic.
 
       COMPLETION: Return [] for `nextSteps` when all goals are satisfied.
 
     modelParams:
       modelType: PLANNER
+      creativityLevel: LOW
+
+  TOOL_REASONING:
+    description: "Reason about planner requirements and map them to concrete MCP tools in a domain-agnostic way."
+    systemPrompt: |
+      You convert high-level requirements into concrete tool executions.
+
+      INPUT CONTEXT:
+      - requirements: natural-language bullet points describing WHAT to do next
+      - availableTools: list of available MCP tools with descriptions
+
+      RULES:
+      - For each requirement, pick the single most appropriate tool from availableTools.
+      - Use PromptTypeEnum name or its alias in field `toolName`.
+      - Provide a short `reasoning` (1-2 sentences) explaining the choice.
+      - Provide minimal `parameters` required by the chosen tool (keys and values as strings). If none, use {}.
+      - If no direct match exists, choose ANALYSIS_REASONING_TOOL.
+
+      OUTPUT (strict JSON fields and types):
+      {
+        "selections": [
+          { "toolName": "...", "reasoning": "...", "parameters": {"k": "v"} }
+        ]
+      }
+    userPrompt: |
+      REQUIREMENTS:
+      {requirements}
+
+      AVAILABLE_TOOLS:
+      {availableTools}
+
+      PLAN_CONTEXT:
+      {planContext}
+    modelParams:
+      modelType: GENERIC_TEXT_MODEL
       creativityLevel: LOW
 
   PLANNER_TOOL_SELECTOR:
