@@ -1,7 +1,9 @@
 package com.jervis.di
 
+import com.jervis.api.SecurityConstants
 import io.ktor.client.*
 import io.ktor.client.engine.darwin.*
+import io.ktor.client.plugins.*
 import kotlinx.cinterop.*
 import platform.Foundation.*
 import platform.darwin.*
@@ -39,6 +41,12 @@ actual fun createPlatformHttpClient(block: HttpClientConfig<*>.() -> Unit): Http
                 completionHandler(1, null) // 1 = NSURLSessionAuthChallengePerformDefaultHandling
             }
         }
+        
+        // Add security header for all requests
+        defaultRequest {
+            headers.append(SecurityConstants.CLIENT_HEADER, SecurityConstants.CLIENT_TOKEN)
+        }
+        
         block()
     }
 }

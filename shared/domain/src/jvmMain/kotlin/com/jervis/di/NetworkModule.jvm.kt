@@ -1,7 +1,9 @@
 package com.jervis.di
 
+import com.jervis.api.SecurityConstants
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.*
 import java.io.ByteArrayInputStream
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -35,6 +37,12 @@ actual fun createPlatformHttpClient(block: HttpClientConfig<*>.() -> Unit): Http
                 trustManager = trustAllCerts
             }
         }
+        
+        // Add security header for all requests
+        defaultRequest {
+            headers.append(SecurityConstants.CLIENT_HEADER, SecurityConstants.CLIENT_TOKEN)
+        }
+        
         block()
     }
 }

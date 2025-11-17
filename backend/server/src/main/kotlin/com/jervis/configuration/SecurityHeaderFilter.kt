@@ -21,6 +21,9 @@ import java.time.Instant
  * - Requests without valid token: logged as attack attempts, connection dropped (no response)
  * - Requests with valid token: processed normally
  * - 404 errors with valid token: logged as client bugs for debugging
+ *
+ * Whitelisted paths (no token required):
+ * - /actuator/health, /actuator/info, /actuator/metrics - Health checks and monitoring
  */
 @Component
 @Order(-100) // Run before other filters
@@ -32,6 +35,16 @@ class SecurityHeaderFilter(
 
     companion object {
         const val CLIENT_HEADER = "X-Jervis-Client"
+        
+        /**
+         * Paths that don't require security token.
+         * Used for health checks, monitoring, and other public endpoints.
+         */
+        private val WHITELISTED_PATHS = setOf(
+            "/actuator/health",
+            "/actuator/info",
+            "/actuator/metrics",
+        )
     }
 
     override fun filter(
@@ -39,6 +52,13 @@ class SecurityHeaderFilter(
         chain: WebFilterChain,
     ): Mono<Void> {
         val request = exchange.request
+        val path = request.uri.path
+        
+        // Skip security check for whitelisted paths
+        if (WHITELISTED_PATHS.any { path.startsWith(it) }) {
+            return chain.filter(exchange)
+        }
+        
         val clientToken = request.headers.getFirst(CLIENT_HEADER)
 
         // Missing or invalid token - potential attack

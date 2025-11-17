@@ -1,5 +1,6 @@
 package com.jervis.ui
 
+import com.jervis.api.SecurityConstants
 import io.ktor.client.*
 import io.ktor.client.engine.darwin.*
 import io.ktor.client.plugins.*
@@ -41,7 +42,7 @@ actual fun createPlatformHttpClient(): HttpClient {
         }
         // Add security header for all requests
         defaultRequest {
-            headers.append("X-Jervis-Client", "a7f3c9e2-4b8d-11ef-9a1c-0242ac120002")
+            headers.append(SecurityConstants.CLIENT_HEADER, SecurityConstants.CLIENT_TOKEN)
         }
     }
 }
