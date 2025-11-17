@@ -7,6 +7,7 @@ import io.ktor.client.plugins.*
 import io.ktor.client.plugins.websocket.*
 import kotlinx.cinterop.*
 import platform.Foundation.*
+import platform.posix.*
 
 /**
  * iOS implementation of HTTP client with WebSocket support
@@ -40,9 +41,25 @@ actual fun createPlatformHttpClient(): HttpClient {
             pingIntervalMillis = 20_000
             maxFrameSize = Long.MAX_VALUE
         }
-        // Add security header for all requests
+        // Add security headers for all requests
         defaultRequest {
             headers.append(SecurityConstants.CLIENT_HEADER, SecurityConstants.CLIENT_TOKEN)
+            headers.append(SecurityConstants.PLATFORM_HEADER, SecurityConstants.PLATFORM_IOS)
+            try {
+                val localIp = getLocalIpAddress()
+                if (localIp != null) {
+                    headers.append(SecurityConstants.CLIENT_IP_HEADER, localIp)
+                }
+            } catch (e: Exception) {
+                // Ignore - IP is optional
+            }
         }
     }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private fun getLocalIpAddress(): String? {
+    // For iOS, getting local IP is complex and requires proper C interop
+    // Return null for now - platform header is sufficient for identification
+    return null
 }
