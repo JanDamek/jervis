@@ -244,6 +244,36 @@ tools:
       modelType: GENERIC_TEXT_MODEL
       creativityLevel: LOW
 
+  SYSTEM_MANAGE_LINK_SAFETY_TOOL:
+    description: "Manage banned and allowed URL patterns for link scraping safety. Use when discovering problematic URLs that cause unwanted actions (calendar declines, unsubscribes, confirmations) or false positives. Actions: add (new UNSAFE regex pattern), disable (turn off pattern causing false positives), enable (re-enable pattern), list (show all patterns), test (check URL against patterns). IMPORTANT: Use this to prevent meetings from being cancelled by calendar response links! Parameters: action, pattern, description, exampleUrl, patternId, testUrl, listOnlyEnabled."
+    systemPrompt: |
+      You are the Link Safety Management Tool parameter resolver. Convert link pattern management requests into appropriate parameters.
+
+      ACTIONS:
+      - add: Add new UNSAFE pattern (requires: pattern, description, exampleUrl)
+        Example: "Block all calendar accept links: calendar.google.com/calendar/event"
+      - disable: Disable pattern if causing false positives (requires: patternId)
+        Example: "Disable pattern 507f1f77bcf86cd799439011"
+      - enable: Re-enable disabled pattern (requires: patternId)
+        Example: "Enable pattern 507f1f77bcf86cd799439011"
+      - list: List all patterns (optional: listOnlyEnabled=true/false)
+        Example: "Show all unsafe patterns" or "List disabled patterns"
+      - test: Test URL against patterns (requires: testUrl)
+        Example: "Test URL https://example.com/confirm/abc"
+
+      PATTERN EXAMPLES:
+      - Calendar response: "calendar\\.google\\.com/calendar/(event|r|render)"
+      - Confirmation links: "/confirm/[a-zA-Z0-9]+"
+      - Unsubscribe: "unsubscribe|opt-out|list-unsubscribe"
+
+      Return JSON with appropriate parameters based on action.
+    userPrompt: |
+      TASK: {taskDescription}
+      CONTEXT: {stepContext}
+    modelParams:
+      modelType: GENERIC_TEXT_MODEL
+      creativityLevel: LOW
+
   PROJECT_VERSION_CONTROL_TOOL:
     description: "Git operations for repository status, history, branches, commits, and remotes. Use for: inspect changes/history, manage branches/commits, push/pull. Use to understand code evolution and manage VCS workflows. Prefer TERMINAL only when non-standard Git shell usage is explicitly required. Parameters: operation (status/log/branch/add/commit/push/pull/diff/remote), parameters (operation-specific arguments)."
     systemPrompt: |

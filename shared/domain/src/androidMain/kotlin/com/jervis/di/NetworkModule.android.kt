@@ -1,13 +1,15 @@
 package com.jervis.di
 
+import android.util.Base64
+import com.jervis.api.SecurityConstants
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.*
 import java.io.ByteArrayInputStream
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
-import java.util.Base64
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
@@ -51,7 +53,7 @@ actual fun createPlatformHttpClient(block: HttpClientConfig<*>.() -> Unit): Http
                         // Compute SHA-256 hash of the public key
                         val publicKeyBytes = serverCert.publicKey.encoded
                         val digest = MessageDigest.getInstance("SHA-256")
-                        val publicKeyHash = Base64.getEncoder().encodeToString(digest.digest(publicKeyBytes))
+                        val publicKeyHash = Base64.encodeToString(digest.digest(publicKeyBytes), Base64.NO_WRAP)
 
                         // Verify it matches our pinned certificate
                         if (publicKeyHash != EXPECTED_PUBLIC_KEY_HASH) {
@@ -70,6 +72,12 @@ actual fun createPlatformHttpClient(block: HttpClientConfig<*>.() -> Unit): Http
                 trustManager = pinnedTrustManager
             }
         }
+        
+        // Add security header for all requests
+        defaultRequest {
+            headers.append(SecurityConstants.CLIENT_HEADER, SecurityConstants.CLIENT_TOKEN)
+        }
+        
         block()
     }
 }

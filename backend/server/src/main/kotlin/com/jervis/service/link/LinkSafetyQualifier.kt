@@ -19,18 +19,26 @@ private val logger = KotlinLogging.logger {}
 
 /**
  * Link safety qualifier that determines whether a link should be indexed.
- * Uses multi-level approach:
+ *
+ * PHILOSOPHY: Better to skip a link than to trigger ANY action.
+ * Web scraping must be 100% PASSIVE - no confirmations, no tracking, no state changes.
+ *
+ * Uses multi-level pessimistic approach:
  * 1. Check if link already indexed (skip qualification)
  * 2. Check UNSAFE cache in MongoDB (skip LLM call)
  * 3. Pattern-based blacklist/whitelist (fast, no LLM)
  * 4. Domain-based classification
- * 5. LLM qualification for uncertain cases (with UNSAFE caching)
+ * 5. LLM qualification for uncertain cases (pessimistic, with UNSAFE caching)
  *
- * Purpose: Prevent indexing of:
- * - Unsubscribe links (critical!)
- * - Tracking links
+ * Blocked categories (UNSAFE):
+ * - Unsubscribe/subscribe links (critical!)
+ * - Confirmation links (email, calendar, account)
+ * - Tracking/monitoring/analytics links
  * - Authentication/session links
- * - Privacy/settings management links
+ * - Settings/preferences management
+ * - Payment/checkout links
+ * - Form submissions
+ * - Any personalized or per-user URLs
  */
 @Service
 class LinkSafetyQualifier(
@@ -82,6 +90,7 @@ class LinkSafetyQualifier(
         )
 
     // Critical patterns that must NEVER be indexed
+    // Philosophy: Better to skip a link than to trigger ANY action
     private val blacklistPatterns =
         listOf(
             // Unsubscribe patterns (most critical!)
@@ -101,6 +110,14 @@ class LinkSafetyQualifier(
             "list-unsubscribe",
             "mailinglist",
             "mailing-list",
+            // Subscribe/registration actions
+            "subscribe",
+            "sign-up",
+            "signup",
+            "register",
+            "registration",
+            "join-list",
+            "newsletter-signup",
             // Authentication/session links
             "logout",
             "signout",
@@ -113,22 +130,105 @@ class LinkSafetyQualifier(
             "reset-password",
             "verify-email",
             "confirm-email",
+            "confirm-account",
             "activate-account",
-            // Calendar/Invite action links (must not trigger RSVP or auto-actions)
+            "validate-email",
+            "verification",
+            // Confirmation links (any confirmation is an action!)
+            "confirm",
+            "confirmation",
+            "potvrzeni",
+            "potvrzení",
+            "potvrd",
+            "/confirm/",
+            "/confirmation/",
+            "?confirm=",
+            "&confirm=",
+            // Calendar/Invite action links (CRITICAL - caused meetings to be cancelled!)
+            // Accept variations
             "action=accept",
+            "action=yes",
+            "action=approve",
+            "accept=yes",
+            "accept=true",
+            "accept-invite",
+            "accept_invite",
+            "acceptinvite",
+            "accept-event",
+            "accept-meeting",
+            // Decline variations
             "action=decline",
+            "action=no",
+            "action=reject",
+            "decline=yes",
+            "decline=true",
+            "decline-invite",
+            "decline_invite",
+            "declineinvite",
+            "decline-event",
+            "decline-meeting",
+            // Tentative variations
             "action=tentative",
-            "event?action=accept",
-            "event?action=decline",
-            "event?action=tentative",
-            "rsvp",
-            "meetingresponse",
-            "meeting-response",
+            "action=maybe",
+            "tentative=yes",
+            "tentative=true",
+            "maybe=yes",
+            // Response variations
             "respond=accept",
             "respond=decline",
             "respond=tentative",
+            "respond=yes",
+            "respond=no",
+            "respond=maybe",
+            "response=accept",
+            "response=decline",
+            "response=tentative",
+            // Status variations
+            "status=accepted",
+            "status=declined",
+            "status=tentative",
+            "status=yes",
+            "status=no",
+            // RSVP variations
+            "rsvp",
+            "rsvp=yes",
+            "rsvp=no",
+            "rsvp=maybe",
+            "rsvp=accept",
+            "rsvp=decline",
+            "rsvp=tentative",
+            // Meeting/event response paths
+            "meetingresponse",
+            "meeting-response",
+            "meeting_response",
+            "eventresponse",
+            "event-response",
+            "event_response",
             "/calendar/response",
             "/calendar/action",
+            "/calendar/rsvp",
+            "/calendar/event",
+            "/calendar/accept",
+            "/calendar/decline",
+            "calendar/rsvp",
+            "calendar/render",
+            "calendar/action",
+            // Outlook/Office365 specific
+            "event?action=",
+            "meeting?action=",
+            "event.ics",
+            "calendar.ics",
+            "/owa/calendar",
+            "/calendar.html",
+            // Google Calendar specific
+            "calendar.google.com/calendar/event",
+            "calendar.google.com/calendar/r",
+            "calendar.google.com/calendar/render",
+            "eventaction=",
+            // iCal/ICS specific
+            ".ics?",
+            "/ical/",
+            "/icalendar/",
             // Action/tracking codes (Czech: kód, kod)
             "/kod/",
             "/code/",
@@ -146,54 +246,104 @@ class LinkSafetyQualifier(
             "subscriber_id",
             "tracking_id",
             "click_id",
-            // Privacy/settings
+            // Privacy/settings (any settings change is an action)
             "privacy-settings",
             "account-settings",
             "delete-account",
             "deactivate",
+            "preferences",
+            "settings",
+            // Payment/order actions
+            "checkout",
+            "payment",
+            "pay-now",
+            "complete-order",
+            "finalize-purchase",
+            // Form submissions
+            "submit",
+            "?action=",
+            "&action=",
+            // One-time tokens (any URL with one-time token is likely an action)
+            "one-time",
+            "onetime",
+            "ott=",
+            "otp=",
             // Additional invite/action variants
             "invite-response",
             "meetingrequest",
             "meeting-request",
-            "accept-invite",
-            "accept_invite",
-            "acceptinvite",
-            "decline-invite",
-            "decline_invite",
-            "declineinvite",
-            "calendar/rsvp",
-            "/calendar/event",
-            "calendar/render",
-            "accept=yes",
-            "decline=yes",
-            "status=accepted",
-            "status=declined",
         )
 
     // Domains that are blacklisted
+    // Philosophy: Block any domain that performs actions or tracks users
     private val blacklistDomains =
         listOf(
+            // Email marketing platforms (unsubscribe, tracking)
             "list-manage.com", // Mailchimp
             "list-manage1.com",
             "list-manage2.com",
             "campaignmonitor.com",
             "unsubscribe.sendgrid.net",
             "preferences.sendgrid.net",
+            "sendgrid.net",
             "mandrillapp.com",
             "mailgun.info",
             "click.pstmrk.it", // Postmark tracking
             "links.newsletter", // Generic newsletter links
+            "mailchimp.com",
+            "constantcontact.com",
+            "getresponse.com",
+            "aweber.com",
+            "activecampaign.com",
             // Calendar/Invite and provider action domains (block to avoid RSVP or account actions)
             "mail.google.com",
             "calendar.google.com",
             "accounts.google.com",
             "outlook.office.com",
             "outlook.com",
+            "outlook.office365.com",
+            "login.microsoftonline.com",
             // Security/tracking wrappers (block; typically tracking/redirector)
             "safelinks.protection.outlook.com",
             "urldefense.proofpoint.com",
             "protect.mimecast.com",
             "lnks.gd",
+            "bit.ly",
+            "tinyurl.com",
+            "ow.ly",
+            "t.co", // Twitter redirect
+            // Monitoring and analytics services (tracking with tokens)
+            "clevermonitor.com",
+            "clinks.clevermonitor.com",
+            "analytics.google.com",
+            "googletagmanager.com",
+            "mixpanel.com",
+            "segment.com",
+            "amplitude.com",
+            "hotjar.com",
+            "mouseflow.com",
+            "fullstory.com",
+            "logrocket.com",
+            "newrelic.com",
+            "datadog.com",
+            "sentry.io",
+            // Click tracking services
+            "click.email",
+            "link.email",
+            "track.email",
+            "redirect.email",
+            "go.email",
+            // Form/survey platforms (submissions are actions)
+            "forms.gle", // Google Forms
+            "typeform.com",
+            "surveymonkey.com",
+            "qualtrics.com",
+            "jotform.com",
+            "wufoo.com",
+            // Payment/checkout platforms
+            "checkout.stripe.com",
+            "paypal.com/checkout",
+            "pay.google.com",
         )
 
     // Known safe domains (documentation, knowledge bases, e-commerce)
@@ -238,6 +388,33 @@ class LinkSafetyQualifier(
     /**
      * Get learned regex patterns from MongoDB as Flow.
      * Non-blocking, stateless pattern retrieval.
+     *
+     * TODO: RAG INTEGRATION FOR LINK SAFETY PATTERNS
+     * ================================================
+     * Current: Patterns loaded directly from MongoDB on every check
+     * Goal: Use RAG for dynamic pattern discovery and contextual rules
+     *
+     * Phase 1: Pattern caching with RAG sync
+     * - Cache patterns in memory at startup (currently loaded per-check)
+     * - Listen to MongoDB changes (ChangeStream) and invalidate cache
+     * - Trigger: When agent adds pattern via MCP tool → update cache + store in RAG
+     *
+     * Phase 2: RAG-based contextual rules
+     * - Store pattern metadata in RAG with semantic search
+     * - Query: "calendar response links", "unsubscribe patterns", etc.
+     * - Agent can discover existing patterns before creating duplicates
+     * - Store pattern effectiveness metrics (match rate, false positives)
+     *
+     * Phase 3: Dynamic rule generation
+     * - When scraping finds new UNSAFE link → query RAG for similar patterns
+     * - If similar pattern exists → reuse, else → ask LLM + store in RAG
+     * - RAG stores: pattern, description, category, examples, metadata
+     *
+     * Implementation notes:
+     * - Use WeaviateLinkSafetyCollection (new collection for link safety rules)
+     * - Index patterns by: category, description, example URLs, effectiveness
+     * - Agent MCP tool writes to both MongoDB + RAG atomically
+     * - Cache invalidation on pattern add/disable/enable
      */
     private fun getLearnedPatterns(): Flow<Regex> =
         unsafeLinkPatternRepository
@@ -352,16 +529,40 @@ class LinkSafetyQualifier(
             return qualifyWithLlm(url, "Contains tracking parameters", correlationId)
         }
 
-        // Level 7: Token/key parameters - use LLM only for authentication-looking patterns
-        if (url.contains("?token=") || url.contains("&key=") || url.contains("?key=")) {
-            return qualifyWithLlm(url, "Contains token/key parameter", correlationId)
+        // Level 7: Monitoring/analytics domains detection (before LLM)
+        val monitoringKeywords = listOf("monitor", "analytics", "track", "click", "beacon", "metric")
+        if (monitoringKeywords.any { keyword -> domain.contains(keyword, ignoreCase = true) }) {
+            // If monitoring domain has token/key → definitely unsafe
+            if (query.contains("token=", ignoreCase = true) || query.contains("key=", ignoreCase = true)) {
+                return SafetyResult(
+                    SafetyResult.Decision.UNSAFE,
+                    "Monitoring/analytics service with authentication token",
+                )
+            }
         }
 
-        // Default: treat as safe if no red flags
-        return SafetyResult(
-            SafetyResult.Decision.SAFE,
-            "No action patterns detected - safe to download",
-        )
+        // Level 8: Token/key parameters - likely one-time action links
+        if (query.contains("token=", ignoreCase = true) ||
+            query.contains("key=", ignoreCase = true) ||
+            query.contains("code=", ignoreCase = true)) {
+            return qualifyWithLlm(url, "Contains token/key/code parameter - likely action link", correlationId)
+        }
+
+        // Level 9: Any query parameter that looks like identifier/session
+        if (query.matches(Regex(".*([a-f0-9]{32,}|[A-Za-z0-9_-]{20,}).*"))) {
+            return qualifyWithLlm(url, "Contains long hash/identifier - potentially personalized", correlationId)
+        }
+
+        // Default: For whitelisted domains without red flags → safe
+        // For unknown domains → ask LLM (pessimistic)
+        return if (whitelistDomains.any { domain.contains(it, ignoreCase = true) }) {
+            SafetyResult(
+                SafetyResult.Decision.SAFE,
+                "Whitelisted domain with no action patterns detected",
+            )
+        } else {
+            qualifyWithLlm(url, "Unknown domain - needs verification", correlationId)
+        }
     }
 
     /**
@@ -378,17 +579,46 @@ class LinkSafetyQualifier(
         try {
             val systemPrompt =
                 """
-                You are last resort classifier for edge cases. Common patterns already filtered.
+                CRITICAL: Web scraping must be 100% PASSIVE. Philosophy: Better to skip than to trigger ANY action.
+                IMPORTANT: Many meetings were CANCELLED by scraping accept/decline calendar links!
 
-                UNSAFE = performs ACTION (state change):
-                - Changes user settings/preferences
-                - Confirms/activates something
-                - Authentication/session related
+                You are PESSIMISTIC classifier. Default to UNSAFE unless CERTAIN it's safe.
 
-                SAFE = static content (default):
-                - Any informational page
-                - Product/article/blog page
-                - Documentation
+                UNSAFE = ANY action or tracking (mark UNSAFE if uncertain):
+                - ANY calendar/meeting response link (RSVP, accept, decline, tentative) - CRITICAL!
+                - Any confirmation link (email, calendar, registration, subscription)
+                - Any unsubscribe/subscribe/opt-in/opt-out link
+                - Authentication (login, logout, password reset, email verification)
+                - Settings/preferences changes
+                - Form submissions or data collection
+                - Payment/checkout pages
+                - Monitoring/analytics/tracking services
+                - Click tracking or redirect services
+                - URLs with tokens/keys (likely one-time actions)
+                - URL shorteners (unknown destination)
+                - Any personalized/per-user URL
+                - Marketing campaign links with tracking params
+                - Account activation or verification
+                - Newsletter signup/management
+
+                SAFE = ONLY pure static content (must be certain):
+                - Public documentation (no login required)
+                - Blog articles (not personalized)
+                - News articles
+                - Product catalog pages (not checkout)
+                - Public GitHub/GitLab repositories
+                - Wikipedia articles
+                - Stack Overflow questions
+                - If page title describes safe content (documentation, article, tutorial)
+
+                CRITICAL RULES:
+                - If URL contains calendar/event/meeting/rsvp/accept/decline → UNSAFE (meetings were cancelled!)
+                - If URL contains "confirm", "verify", "token", "activate", "click", "track" → UNSAFE
+                - If domain suggests tracking/monitoring/analytics → UNSAFE
+                - If page title suggests action (confirm, accept, decline, unsubscribe) → UNSAFE
+                - If page title describes safe content (docs, article, tutorial) → consider SAFE
+                - If uncertain or ambiguous → UNSAFE (pessimistic approach)
+                - When in doubt → UNSAFE
 
                 When UNSAFE, suggest regex: "reason. Suggested regex: /pattern/"
 
