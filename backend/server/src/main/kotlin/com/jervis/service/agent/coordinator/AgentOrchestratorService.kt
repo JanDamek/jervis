@@ -38,6 +38,7 @@ class AgentOrchestratorService(
     private val projectMongoRepository: ProjectMongoRepository,
     private val backgroundTaskGoalsService: BackgroundTaskGoalsService,
     private val debugService: com.jervis.service.debug.DebugService,
+    private val notificationsPublisher: com.jervis.service.notification.NotificationsPublisher,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -300,6 +301,16 @@ class AgentOrchestratorService(
 
             logger.info { "AGENT_END: Final response generated." }
             logger.debug { "AGENT_FINAL_RESPONSE: \"${response.message}\"" }
+
+            // Broadcast final response to all connected clients via WebSocket notifications (single-user design)
+            if (!background) {
+                notificationsPublisher.publishAgentResponseCompleted(
+                    contextId = plan.id,
+                    message = response.message,
+                    timestamp = java.time.LocalDateTime.now().toString(),
+                )
+            }
+
             return response
         } catch (e: Exception) {
             val projectIdLog = projectId?.toHexString() ?: "none"

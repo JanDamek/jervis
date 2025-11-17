@@ -4,6 +4,7 @@ import com.jervis.dto.events.DebugEventDto
 import com.jervis.dto.events.ErrorNotificationEventDto
 import com.jervis.dto.events.UserTaskCreatedEventDto
 import com.jervis.dto.events.UserTaskCancelledEventDto
+import com.jervis.dto.events.AgentResponseEventDto
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.websocket.*
