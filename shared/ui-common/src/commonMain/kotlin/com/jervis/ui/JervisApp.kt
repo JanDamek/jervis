@@ -11,12 +11,14 @@ import com.jervis.repository.JervisRepository
  * @param serverBaseUrl Base URL of the Jervis server (e.g., "http://localhost:5500")
  * @param defaultClientId Optional default client ID
  * @param defaultProjectId Optional default project ID
+ * @param debugEventsProvider Optional DebugEventsProvider for Debug Console (mobile provides lifecycle-aware version)
  */
 @Composable
 fun JervisApp(
     serverBaseUrl: String,
     defaultClientId: String? = null,
     defaultProjectId: String? = null,
+    debugEventsProvider: DebugEventsProvider? = null,
 ) {
     // Initialize services
     val services = remember { createJervisServices(serverBaseUrl) }
@@ -40,10 +42,13 @@ fun JervisApp(
         )
     }
 
-    // Launch main app
-    App(
-        repository = repository,
-        defaultClientId = defaultClientId,
-        defaultProjectId = defaultProjectId,
-    )
+    // Provide debug events provider via CompositionLocal (if provided by platform)
+    CompositionLocalProvider(LocalDebugEventsProvider provides debugEventsProvider) {
+        // Launch main app
+        App(
+            repository = repository,
+            defaultClientId = defaultClientId,
+            defaultProjectId = defaultProjectId,
+        )
+    }
 }

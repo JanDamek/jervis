@@ -20,6 +20,7 @@ fun App(
     defaultProjectId: String? = null,
     modifier: Modifier = Modifier,
     navigator: AppNavigator? = null,
+    onOpenDebugWindow: (() -> Unit)? = null,
 ) {
     val viewModel = remember { MainViewModel(repository, defaultClientId, defaultProjectId) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -64,7 +65,14 @@ fun App(
                 onProjectSelected = viewModel::selectProject,
                 onInputChanged = viewModel::updateInputText,
                 onSendClick = viewModel::sendMessage,
-                onNavigate = appNavigator::navigateTo,
+                onNavigate = { screen ->
+                    // Desktop has separate debug window, mobile uses navigation
+                    if (screen == Screen.DebugConsole && onOpenDebugWindow != null) {
+                        onOpenDebugWindow()
+                    } else {
+                        appNavigator.navigateTo(screen)
+                    }
+                },
                 modifier = modifier,
             )
             Screen.Settings -> SettingsScreen(
@@ -104,7 +112,10 @@ fun App(
             Screen.DebugConsole -> {
                 val provider = LocalDebugEventsProvider.current
                 requireNotNull(provider) { "DebugEventsProvider is not available. Provide it via LocalDebugEventsProvider at the app root." }
-                DebugWindow(eventsProvider = provider)
+                DebugWindow(
+                    eventsProvider = provider,
+                    onBack = { appNavigator.navigateTo(Screen.Main) }
+                )
             }
         }
 

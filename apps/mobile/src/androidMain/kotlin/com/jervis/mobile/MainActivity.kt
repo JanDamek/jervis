@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import com.jervis.ui.JervisApp
+import com.jervis.ui.rememberLifecycleAwareDebugProvider
 
 /**
  * Android Application Entry Point
@@ -17,8 +18,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             val serverBaseUrl = "https://home.damek-soft.eu:5500/"
 
+            // Create lifecycle-aware debug provider that starts/stops WebSocket based on app state
+            val debugProvider = rememberLifecycleAwareDebugProvider(serverBaseUrl)
+
             JervisApp(
                 serverBaseUrl = serverBaseUrl,
+                debugEventsProvider = debugProvider,
             )
         }
     }

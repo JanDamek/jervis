@@ -41,6 +41,13 @@ kotlin {
             // Kotlinx serialization
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.datetime)
+
+            // Ktor client for WebSocket
+            implementation(libs.ktor.client.core)
+            implementation(libs.ktor.client.websocket)
+
+            // AtomicFU for multiplatform atomic operations
+            implementation("org.jetbrains.kotlinx:atomicfu:0.26.1")
         }
 
         commonTest.dependencies {
@@ -69,15 +76,18 @@ if (System.getenv("DOCKER_BUILD") != "true") {
 
             jvmMain.dependencies {
                 implementation(compose.desktop.common)
+                implementation(libs.ktor.client.cio)
             }
 
             androidMain.dependencies {
                 implementation("androidx.activity:activity-compose:1.9.3")
                 implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
+                implementation("io.ktor:ktor-client-okhttp:3.3.2")
             }
 
             iosMain.dependencies {
                 // iOS specific dependencies
+                implementation(libs.ktor.client.darwin)
             }
         }
     }

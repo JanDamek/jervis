@@ -77,11 +77,11 @@ fun CopyableTextCard(
                 )
                 IconButton(
                     onClick = { clipboard.setText(AnnotatedString(content)) },
-                    modifier = Modifier.size(24.dp),
+                    modifier = Modifier.size(48.dp),
                 ) {
                     Text(
                         "📋",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleLarge,
                     )
                 }
             }
