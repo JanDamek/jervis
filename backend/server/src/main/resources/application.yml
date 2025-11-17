@@ -72,6 +72,10 @@ jervis:
   background:
     enabled: true
     wait-on-error: 30s
+  security:
+    # Unique client token for mobile apps - acts as port scanning protection
+    # Any request without this header is considered an attack attempt and gets no response
+    client-token: "a7f3c9e2-4b8d-11ef-9a1c-0242ac120002"
 
 models: # embedding dimensions configured per model
   EMBEDDING_TEXT:

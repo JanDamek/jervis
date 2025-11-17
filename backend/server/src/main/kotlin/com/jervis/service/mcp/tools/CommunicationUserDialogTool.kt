@@ -1,6 +1,7 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.service.agent.coordinator.RequestAnalyzer
 import com.jervis.domain.plan.Plan
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.ProjectDocument
@@ -86,11 +87,11 @@ class CommunicationUserDialogTool(
                 }
             }
 
-        val finalAnswerEn =
+        val finalAnswerAnalysis =
             gateway
                 .callLlm(
                     type = PromptTypeEnum.PLANNING_ANALYZE_QUESTION,
-                    responseSchema = LlmResponseWrapper(),
+                    responseSchema = RequestAnalyzer.AnalysisResult(),
                     quick = plan.quick,
                     mappingValue = mapOf("userText" to finalAnswerOriginal),
                     correlationId = plan.correlationId,
@@ -107,7 +108,7 @@ class CommunicationUserDialogTool(
         return ToolResult.success(
             "USER_INTERACTION",
             summary,
-            finalAnswerEn.result.response,
+            finalAnswerAnalysis.result.englishText,
         )
     }
 

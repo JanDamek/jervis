@@ -35,6 +35,21 @@ class PromptRepository(
         println("[DEBUG] - Generic prompts configured: ${promptKeys.size}")
         println("[DEBUG] - No duplicate keys found")
         println("[DEBUG] - All tools have valid descriptions")
+
+        // Fail fast if critical tool prompts are missing
+        val requiredTools = setOf(
+            PromptTypeEnum.PLANNING_CREATE_PLAN_TOOL,
+            PromptTypeEnum.TOOL_REASONING,
+            PromptTypeEnum.PLANNER_TOOL_SELECTOR,
+        )
+
+        val missing = requiredTools - toolKeys
+        if (missing.isNotEmpty()) {
+            throw IllegalStateException(
+                "Missing required tool prompt configurations: $missing. " +
+                    "Check prompts-tools.yaml is on classpath and correctly bound."
+            )
+        }
     }
 
     /**
@@ -55,7 +70,10 @@ class PromptRepository(
     fun getPrompt(promptTypeEnum: PromptTypeEnum): PromptConfigBase =
         promptsConfig.tools[promptTypeEnum] as? PromptConfigBase
             ?: promptsConfig.prompts[promptTypeEnum] as? PromptConfigBase
-            ?: throw IllegalArgumentException("No prompt configuration found for type: $promptTypeEnum")
+            ?: throw IllegalArgumentException(
+                "No prompt configuration found for type: $promptTypeEnum. " +
+                    "Available tool keys=${promptsConfig.tools.keys}. Available prompt keys=${promptsConfig.prompts.keys}"
+            )
 
     /**
      * Retrieves the tool configuration for MCP tools specifically.
