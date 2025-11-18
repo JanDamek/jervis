@@ -13,6 +13,7 @@ import org.springframework.web.reactive.function.client.awaitBody
 @Service
 class StubAtlassianApiClient(
     private val webClientBuilder: org.springframework.web.reactive.function.client.WebClient.Builder,
+    private val rateLimiter: com.jervis.service.ratelimit.DomainRateLimiterService,
 ) : AtlassianApiClient {
     override suspend fun getMyself(conn: AtlassianConnection): JiraAccountId {
         val client = clientFor(conn)
@@ -75,6 +76,10 @@ class StubAtlassianApiClient(
                             .path("/rest/api/3/project/search")
                             .queryParam("startAt", startAt)
                             .queryParam("maxResults", max)
+                            // CRITICAL FIX: Filter out archived/deleted projects
+                            // Without this, searchIssues gets HTTP 410 Gone for archived projects
+                            // Valid values: live (default without param), archived, deleted
+                            .queryParam("status", "live")
                             .build()
                     }.header("Authorization", basic(conn))
                     .retrieve()
@@ -123,6 +128,10 @@ class StubAtlassianApiClient(
             var startAt = 0
             val max = pageSize.coerceIn(1, 100)
             do {
+                // Rate limit before each API page request
+                val url = "https://${conn.tenant.value}/rest/api/3/search"
+                rateLimiter.acquirePermit(url)
+
                 val response: SearchResponseDto =
                     try {
                         client

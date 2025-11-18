@@ -24,6 +24,7 @@ private val logger = KotlinLogging.logger {}
  * - Buffer default is 128 to decouple fast producers from slower consumers without delaying first items.
  *   Subclasses should override bufferSize from a single global property
  *   (jervis.indexing.flow.buffer-size via IndexingFlowProperties) to keep behavior uniform.
+ * - Rate limiting is handled at API client level (DomainRateLimiterService)
  */
 abstract class AbstractContinuousIndexer<A, I> {
     /** Unified buffer between producer flow and processing. Does NOT delay first items. */

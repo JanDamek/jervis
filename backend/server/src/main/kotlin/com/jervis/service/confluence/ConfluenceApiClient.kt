@@ -40,13 +40,16 @@ private val logger = KotlinLogging.logger {}
  * - Returns domain models (not DTOs)
  * - Internal DTOs map to domain at API boundary
  * - All operations are suspend functions with Flow for collections
+ * - Rate limiting applied per domain to prevent API bans
  *
  * Change Detection:
  * - Each page has 'version.number' that increments on edit
  * - Query: ?body-format=storage (gets XHTML content)
  */
 @Component
-class ConfluenceApiClient {
+class ConfluenceApiClient(
+    private val rateLimiter: com.jervis.service.ratelimit.DomainRateLimiterService,
+) {
     private val json =
         Json {
             ignoreUnknownKeys = true
@@ -61,8 +64,11 @@ class ConfluenceApiClient {
             do {
                 val client = createHttpClient(connection)
                 try {
+                    val url = "$siteUrl/wiki/api/v2/spaces"
+                    rateLimiter.acquirePermit(url)
+
                     val httpResponse: HttpResponse =
-                        client.get("$siteUrl/wiki/api/v2/spaces") {
+                        client.get(url) {
                             parameter("limit", 250)
                             cursor?.let { parameter("cursor", it) }
                         }
@@ -96,8 +102,11 @@ class ConfluenceApiClient {
             do {
                 val client = createHttpClient(connection)
                 try {
+                    val url = "$siteUrl/wiki/api/v2/pages"
+                    rateLimiter.acquirePermit(url)
+
                     val httpResponse: HttpResponse =
-                        client.get("$siteUrl/wiki/api/v2/pages") {
+                        client.get(url) {
                             parameter("space-key", spaceKey)
                             parameter("limit", 250)
                             parameter("sort", "-modified-date")
@@ -137,8 +146,11 @@ class ConfluenceApiClient {
         val siteUrl = "https://${connection.tenant}"
         val client = createHttpClient(connection)
         return try {
+            val url = "$siteUrl/wiki/api/v2/pages/$pageId"
+            rateLimiter.acquirePermit(url)
+
             val httpResponse: HttpResponse =
-                client.get("$siteUrl/wiki/api/v2/pages/$pageId") {
+                client.get(url) {
                     parameter("body-format", "storage")
                 }
 

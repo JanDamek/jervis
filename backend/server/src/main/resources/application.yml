@@ -77,6 +77,15 @@ jervis:
     # Any request without this header is considered an attack attempt and gets no response
     client-token: "a7f3c9e2-4b8d-11ef-9a1c-0242ac120002"
 
+  # Adaptive API rate limiting to prevent bans (applied per domain)
+  # Phase 1: Fast initial sync, Phase 2: Moderate speed, Phase 3: Conservative sustained rate
+  rate-limit:
+    phase1-item-count: 100      # First 100 items processed quickly
+    phase1-delay-ms: 0           # No delay during fast burst
+    phase2-item-count: 400       # Next 400 items (101-500) at moderate speed
+    phase2-delay-ms: 100         # 100ms = 10 req/sec
+    phase3-delay-ms: 1000        # After 500 items: 1000ms = 1 req/sec (prevents API bans)
+
 models: # embedding dimensions configured per model
   EMBEDDING_TEXT:
     - provider: LM_STUDIO

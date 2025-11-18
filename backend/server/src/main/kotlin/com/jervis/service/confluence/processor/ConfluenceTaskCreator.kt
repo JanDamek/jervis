@@ -130,4 +130,54 @@ class ConfluenceTaskCreator(
         // Analyze all other pages
         return true
     }
+
+    /**
+     * Create manual review task for a link that could not be indexed by any indexer.
+     * Called when LinkIndexingQueue.markFailed() returns true (max retries exceeded).
+     */
+    suspend fun createLinkReviewTask(
+        url: String,
+        clientId: org.bson.types.ObjectId,
+        projectId: org.bson.types.ObjectId?,
+        sourceIndexer: String,
+        sourceRef: String,
+    ) {
+        logger.info { "Creating link review task for URL: $url (from $sourceIndexer)" }
+
+        val taskContent =
+            buildString {
+                appendLine("Link Indexing Failed - Manual Review Required")
+                appendLine()
+                appendLine("URL: $url")
+                appendLine("Source: $sourceIndexer")
+                appendLine("Source Reference: $sourceRef")
+                appendLine()
+                appendLine("This link was discovered by the $sourceIndexer indexer but could not be")
+                appendLine("processed automatically after multiple retry attempts.")
+                appendLine()
+                appendLine("Possible reasons:")
+                appendLine("- Link requires authentication")
+                appendLine("- Link is temporarily unavailable")
+                appendLine("- Link points to unsupported content type")
+                appendLine("- Link is malformed or broken")
+                appendLine()
+                appendLine("Please review manually and determine if this link should be:")
+                appendLine("1. Added to safe link patterns for future indexing")
+                appendLine("2. Ignored as irrelevant")
+                appendLine("3. Indexed manually with additional context")
+            }
+
+        try {
+            pendingTaskService.createTask(
+                taskType = PendingTaskTypeEnum.LINK_REVIEW,
+                content = taskContent,
+                clientId = clientId,
+                projectId = projectId,
+            )
+
+            logger.info { "Created LINK_REVIEW task for URL $url from $sourceIndexer" }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to create link review task for URL $url: ${e.message}" }
+        }
+    }
 }

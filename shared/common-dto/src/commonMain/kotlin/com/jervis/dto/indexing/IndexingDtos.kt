@@ -23,8 +23,10 @@ data class IndexingToolSummaryDto(
     val processed: Int = 0,
     /** Cumulative errors in current run (or last run if IDLE) */
     val errors: Int = 0,
-    /** Human readable last error if any */
+    /** Human readable last error preview (truncated) */
     val lastError: String? = null,
+    /** Full error details with stacktrace for copy/paste */
+    val lastErrorFull: String? = null,
     /** ISO-8601 timestamps of last run boundaries (if available) */
     val lastRunStartedAt: String? = null,
     val lastRunFinishedAt: String? = null,
@@ -45,4 +47,6 @@ data class IndexingItemDto(
     val message: String,
     val processedDelta: Int? = null,
     val errorsDelta: Int? = null,
+    /** Full error stacktrace if level=ERROR */
+    val fullDetails: String? = null,
 )

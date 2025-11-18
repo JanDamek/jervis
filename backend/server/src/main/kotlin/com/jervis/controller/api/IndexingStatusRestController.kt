@@ -45,6 +45,7 @@ class IndexingStatusRestController(
                     processed = t.processed,
                     errors = t.errors,
                     lastError = t.lastError,
+                    lastErrorFull = t.lastErrorFull,
                     lastRunStartedAt = t.lastRunStartedAt?.let(fmt::format),
                     lastRunFinishedAt = t.lastRunFinishedAt?.let(fmt::format),
                 )
@@ -67,6 +68,7 @@ class IndexingStatusRestController(
                 processed = t.processed,
                 errors = t.errors,
                 lastError = t.lastError,
+                lastErrorFull = t.lastErrorFull,
                 lastRunStartedAt = t.lastRunStartedAt?.let(fmt::format),
                 lastRunFinishedAt = t.lastRunFinishedAt?.let(fmt::format),
             )
@@ -78,6 +80,7 @@ class IndexingStatusRestController(
                     message = i.message,
                     processedDelta = i.processedDelta,
                     errorsDelta = i.errorsDelta,
+                    fullDetails = i.fullDetails,
                 )
             }
         return IndexingToolDetailDto(summary = summary, items = items)

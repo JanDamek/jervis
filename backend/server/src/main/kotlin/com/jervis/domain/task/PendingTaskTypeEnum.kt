@@ -42,4 +42,11 @@ enum class PendingTaskTypeEnum {
      * links to related code/commits/emails, identifies action items.
      */
     CONFLUENCE_PAGE_ANALYSIS,
+
+    /**
+     * Manual review of a link that could not be indexed automatically.
+     * Created when cross-indexer URL handoff fails after max retry attempts.
+     * User should review and decide: add to safe patterns, ignore, or index manually.
+     */
+    LINK_REVIEW,
 }
