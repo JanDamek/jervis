@@ -2,7 +2,13 @@
 # Each task type has:
 # - goal: Instructions for the planner when processing the task (used by AgentOrchestrator)
 # - qualifierSystemPrompt: System instructions for quick pre-qualification (used by TaskQualificationService)
-# - qualifierUserPrompt: User prompt template for qualifier (uses {content} placeholder from PendingTask.content)
+# - qualifierUserPrompt: User prompt template for qualifier
+#
+# Available placeholders (automatically filled by TaskQualificationService):
+# - {content}: Task content (from PendingTask.content)
+# - {currentDateTime}: Current UTC datetime in ISO format (e.g., "2025-11-18T17:45:00+00:00")
+# - {currentDate}: Current date in ISO format (e.g., "2025-11-18")
+# Use {currentDateTime} and {currentDate} to determine if events are in past or future
 
 tasks:
   EMAIL_PROCESSING:
@@ -14,11 +20,12 @@ tasks:
 
       Review the email and determine appropriate actions based on its content:
 
-      STEP 0: Check email age and relevance
-      - Emails older than 5 years → Usually outdated, skip unless exceptionally important
-      - Old sales/promotions (>1 year) → Definitely outdated, return empty plan
+      STEP 0: Check email age and relevance (CRITICAL)
+      - Emails older than 5 years → Usually outdated, return empty plan []
+      - Old sales/promotions (>1 year) → Definitely outdated, return empty plan []
+      - Old events (past dates) → NEVER create tasks or schedulers, return empty plan []
       - Only process old emails if they contain timeless information (decisions, specifications, documentation)
-      - Current date is available in context - calculate email age
+      - Current date is available in context - calculate email age and event dates
 
       STEP 1: Use headers and subject for quick decisions
       - SYSTEM-like senders with "successful" subjects rarely need action unless there is a failure/error
@@ -29,10 +36,14 @@ tasks:
       - Example: User wants "vacation in Spain" → email offers Spain vacation → CREATE TASK
       - Example: User tracks "GPU prices" → email has GPU sale → CREATE TASK
 
-      STEP 3: Extract scheduled events and deadlines
-      - Meeting dates/times → Use `system_schedule_task` to create calendar entry
-      - Sale deadlines (e.g., "sale until Friday") → Use `system_schedule_task` with deadline
-      - Important dates → Schedule reminder
+      STEP 3: Extract scheduled events and deadlines (PROACTIVE SCHEDULING)
+      - Meeting dates/times IN FUTURE → MUST use `system_schedule_task` immediately
+      - Sale deadlines (e.g., "sale until Friday") IN FUTURE → MUST use `system_schedule_task`
+      - Payment due dates, subscription renewals IN FUTURE → MUST use `system_schedule_task`
+      - Scheduled maintenance, deliveries IN FUTURE → MUST use `system_schedule_task`
+      - OLD events (past dates) → SKIP completely, do not create tasks or schedulers
+      - CRITICAL: Verify date is in future before scheduling (current date available in context)
+      - Tool: Use reasoning_tool → planner → system_schedule_task for autonomous scheduling
 
       STEP 4: Identify actionable items
       - Direct questions → Create user task: `task_create_user` with action "respond to email"
@@ -44,8 +55,9 @@ tasks:
       - Important decisions/insights → Use `knowledge_store`
       - Useful context for future reference → Use `knowledge_store`
 
-      STEP 6: Handle newsletters intelligently
-      - Generic spam → No action (return empty plan)
+      STEP 6: Handle newsletters and routine emails intelligently
+      - Generic spam → No action (return empty plan [])
+      - Bank statements, transaction confirmations → No action (already indexed in RAG)
       - Relevant sales/offers matching user interests → Create task or schedule reminder
       - Important announcements → Store knowledge or create task if actionable
 
@@ -59,44 +71,67 @@ tasks:
       COMPLETION: Return empty plan [] if email requires no action (spam/irrelevant newsletter).
 
     qualifierSystemPrompt: |
-      Quick email filter: DISCARD noise, DELEGATE actionable work.
+      Quick email filter with AUTONOMOUS scheduling for future events.
+      You have authority to create schedulers directly for clear future events.
 
-      CRITICAL OUTPUT RULE: decision MUST be EXACTLY "discard" OR "delegate" - NO other values!
-      Do NOT use: "failed", "error", "success", "pending", or any other value.
-      ONLY valid values: "discard" or "delegate"
+      CRITICAL OUTPUT RULE: decision MUST be EXACTLY "discard", "delegate", OR "schedule"
+      ONLY valid values: "discard", "delegate", "schedule"
 
-      IMPORTANT: Check SUBJECT and FROM first - they indicate email type.
-      Long emails may be truncated - use SUBJECT/FROM to decide.
+      CURRENT DATE/TIME: {currentDateTime} (UTC)
+      CURRENT DATE: {currentDate}
+      Use this to determine if events are in past or future.
+      Compare email DATE header and event dates against current date.
 
-      DISCARD (no action):
-      - System logs: "backup successful", "task completed", monitoring alerts (status OK)
+      AUTONOMOUS SCHEDULING (decision: "schedule"):
+      If email contains CLEAR FUTURE event/deadline, create scheduler directly:
+      - Meetings with specific date/time in FUTURE
+      - Deadlines (e.g., "sale until Friday", "expires on 2025-12-01")
+      - Payment due dates, subscription renewals
+      - Scheduled maintenance, deliveries
+
+      When scheduling, provide:
+      - scheduledFor: ISO datetime (e.g., "2025-12-15T10:00:00Z")
+      - action: What to do (e.g., "Remind: Team meeting", "Alert: Payment due")
+      - context: Brief details (max 200 chars)
+
+      DISCARD (no GPU analysis):
+      - System logs: "backup successful", "task completed" (status OK)
+      - Bank transactions, account statements (already in RAG)
+      - Old events (past dates) → DISCARD, not schedule
+      - Marketing/newsletters (no specific action)
       - JIRA updates (unless assigned to you or @mentioned)
-      - Marketing/newsletters
       - Social notifications
-      - Personal chat (no work request)
       - Simple acks ("ok", "thanks")
+      - Emails older than 5 years (usually outdated)
 
-      DELEGATE (needs action):
-      - Failed/error notifications ("backup FAILED", "error occurred") → DELEGATE not "failed"!
-      - Work assigned to YOU
-      - Direct questions/requests to YOU
-      - Meetings, deadlines
-      - Client communication
+      DELEGATE (needs GPU analysis):
+      - Failed/error notifications requiring investigation
+      - Complex work requests, questions requiring research
+      - Client communication needing detailed response
+      - Ambiguous requests needing clarification
+      - Decision-making emails
 
-      Decision priority:
-      1. Check SUBJECT: "backup successful" → DISCARD, "backup FAILED" → DELEGATE (not "failed"!)
-      2. Check FROM: "vzdump backup tool" → if error/failure → DELEGATE, if success → DISCARD
-      3. If truncated but SUBJECT clear → decide from SUBJECT
+      EXAMPLES:
+      1. SUBJECT: "Team meeting tomorrow 10am"
+         → {"decision": "schedule", "scheduledFor": "2025-11-19T10:00:00Z", "action": "Remind: Team meeting", "reason": "..."}
 
-      Examples:
-      - SUBJECT: "backup successful", FROM: "vzdump" → {"decision": "discard", "reason": "..."}
-      - SUBJECT: "backup FAILED", FROM: "vzdump" → {"decision": "delegate", "reason": "..."}
-      - SUBJECT: "Can you review?", FROM: colleague → {"decision": "delegate", "reason": "..."}
-      - SUBJECT: "X updated MP-79", no @mention → {"decision": "discard", "reason": "..."}
+      2. SUBJECT: "Payment due Dec 15"
+         → {"decision": "schedule", "scheduledFor": "2025-12-15T09:00:00Z", "action": "Alert: Payment due", "reason": "..."}
+
+      3. SUBJECT: "Your bank statement for October 2025"
+         → {"decision": "discard", "reason": "Account statement - already indexed in RAG"}
+
+      4. SUBJECT: "Meeting invitation - Jan 5, 2024" (old date)
+         → {"decision": "discard", "reason": "Past event from 2024"}
+
+      5. SUBJECT: "Can you review this urgent proposal?"
+         → {"decision": "delegate", "reason": "Complex request needs analysis"}
+
+      6. SUBJECT: "backup FAILED"
+         → {"decision": "delegate", "reason": "Error requires investigation"}
 
       STRICT OUTPUT FORMAT:
-      {"decision": "discard", "reason": "..."} OR {"decision": "delegate", "reason": "..."}
-      NO other decision values allowed!
+      {"decision": "discard"|"delegate"|"schedule", "reason": "...", "scheduledFor"?: "ISO datetime", "action"?: "...", "context"?: "..."}
 
     qualifierUserPrompt: |
       EMAIL:
@@ -113,11 +148,14 @@ tasks:
     qualifierSystemPrompt: |
       You are a Jira sync pre-qualifier. Decide if this sync task is actionable (delegate) or noise (discard).
 
+      CURRENT DATE: {currentDate}
+      Use this to determine if updates are recent (within 30 days).
+
       VALID DECISIONS: ONLY "discard" or "delegate".
 
       DISCARD when:
       - Missing or invalid Jira configuration in context
-      - No recent updates (e.g., older than 30 days) and no forced sync requested
+      - No recent updates (older than 30 days from {currentDate}) and no forced sync requested
       - Duplicate sync for the same project/time window in the last 6 hours
 
       DELEGATE when:

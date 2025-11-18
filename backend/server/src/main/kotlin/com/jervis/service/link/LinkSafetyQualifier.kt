@@ -59,13 +59,42 @@ class LinkSafetyQualifier(
      */
     private suspend fun cleanupBadPatterns() {
         val badPatterns = listOf(
-            "ms|kn|r|b", // Too broad - matches almost any URL
-            "app", // Too broad - blocks legitimate /app/ paths
-            "analytics|tracking|monitoring", // Too broad - blocks legitimate domains
-            "analytics", // Too broad
-            "tracking", // Too broad
-            "monitoring", // Too broad
-            "email", // Too broad - use "email=" instead
+            // Original bad patterns
+            "ms|kn|r|b",
+            "app",
+            "analytics|tracking|monitoring",
+            "analytics",
+            "tracking",
+            "monitoring",
+            "email",
+            // New bad patterns from LLM false positives
+            "bublinkov|f%C3%B3lie|r%C3%A1na|balen%C3%AD", // Czech words in Pixabay URLs
+            "appserve/mkt/p", // Google app serve (legitimate)
+            "confirm|verify|token|click|track", // Too broad
+            "confirm|verify|token|activate|click|track", // Too broad
+            "tracking|monitoring|analytics", // Duplicate, too broad
+            "platci", // Czech word for "payers" - legitimate VZP.cz
+            "tracking|monitoring|analytics/i", // Too broad with regex flag
+            "http:///", // Invalid pattern
+            "k=[a-f0-9]{32}", // Generic hash parameter - too broad
+            "kf", // Too short - matches alicdn.com paths
+            "chudy", // Czech name/word
+            "tracking|monitoring", // Too broad
+            "mapy", // Czech word for "maps" - blocks mapy.cz
+            "/mc/", // Marketing campaign - too broad
+            "/tracking|monitoring/", // Duplicate
+            "photo", // Too broad - blocks Google Photos
+            "det=", // Query parameter - too broad
+            "unsubscribe|opt-out/, /action=(accept|decline)/, /rsvp=(yes|no)", // Malformed
+            "/action=(yes|no)/", // Too broad
+            "/action=(accept|decline)|/unsubscribe|/opt-out|/verify|/activate|/click|/track|/rsvp=(yes|no)/",
+            "edit", // Too broad - blocks Google Docs edit URLs
+            "/action=(accept|decline)|/unsubscribe|/opt-out|/verify|/confirm|/track|/ms|/kn|/r|/b|/[a-z]/",
+            "action=(accept|decline)|/unsubscribe|/opt-out", // Missing leading /
+            "unsubscribe|action=(accept|decline)", // Too broad without context
+            "unsubscribe|action=(accept|decline)|rsvp=(yes|no)", // Too broad
+            "/cdn|app|unsubscribe|action=(accept|decline)/", // Too broad
+            "/action=(accept|decline)|/rsvp=(yes|no)/", // Too broad
         )
 
         badPatterns.forEach { pattern ->
@@ -442,8 +471,33 @@ class LinkSafetyQualifier(
             // Internal/Company domains
             "tepsivo.com",
             "tepsivo-sdb-internal.com",
+            "tepsivo.atlassian.net",
+            "tepsivo.slack.com",
             // Google services (docs are safe to read even with /edit URLs)
             "docs.google.com",
+            "photos.google.com",
+            "drive.google.com",
+            // Czech services
+            "mapy.cz",
+            "seznam.cz",
+            "stream.cz",
+            "vzp.cz",
+            "csob.cz",
+            "kb.cz",
+            "mbank.cz",
+            "zasilkovna.cz",
+            "studentagency.cz",
+            "regiojet.cz",
+            "slevomat.cz",
+            "mfdnes.cz",
+            "laacr.cz",
+            // Community sites
+            "community.acer.com",
+            "zonglovani.info",
+            // Image CDNs
+            "pixabay.com",
+            "alicdn.com",
+            "emlcdn.net",
         )
 
     /**
@@ -642,7 +696,7 @@ class LinkSafetyQualifier(
                 CRITICAL: Web scraping must be 100% PASSIVE. Philosophy: Better to skip than to trigger ANY action.
                 IMPORTANT: Many meetings were CANCELLED by scraping accept/decline calendar links!
 
-                You are PESSIMISTIC classifier. Default to UNSAFE unless CERTAIN it's safe.
+                You are a BALANCED classifier. Mark SAFE when URL is clearly static content. Mark UNSAFE only for actual action links.
 
                 UNSAFE = ANY action or tracking (mark UNSAFE if uncertain):
                 - ANY calendar/meeting response link (RSVP, accept, decline, tentative) - CRITICAL!
@@ -663,33 +717,39 @@ class LinkSafetyQualifier(
                 NOTE: Analytics parameters (utm_source, utm_medium, etc.) do NOT make content unsafe - they're just tracking.
                 Static assets from /email/ paths (images, CSS) are SAFE - they're not actions.
 
-                SAFE = ONLY pure static content (must be certain):
+                SAFE = Static content without actions (default for most URLs):
                 - Public documentation (no login required)
-                - Blog articles (not personalized)
-                - News articles
-                - Product catalog pages (not checkout)
-                - Public GitHub/GitLab repositories
-                - Wikipedia articles
-                - Stack Overflow questions
-                - Business/internal applications (e.g., example.com/app/dashboard, internal tools)
+                - Blog articles, news articles, forum discussions
+                - Product catalog pages, e-commerce product pages (not checkout)
+                - Public GitHub/GitLab repositories, code examples
+                - Wikipedia articles, educational content
+                - Stack Overflow questions, community forums
+                - Business/internal applications (Jira, Slack, internal dashboards)
                 - Company websites and internal domains
-                - Google Docs /edit URLs (read-only by default, not an action)
-                - News articles with utm_* parameters (tracking doesn't affect content)
-                - If page title describes safe content (documentation, article, tutorial)
+                - Google Docs /edit URLs (read-only by default)
+                - Google Photos, image galleries
+                - Maps, search results, tracking packages
+                - PDF documents, image files (even in /email/ paths)
+                - News with utm_* parameters (tracking doesn't affect content)
+                - Czech websites (.cz domains are generally safe)
+                - Banking information pages (not login/transactions)
 
-                CRITICAL RULES:
-                - If URL contains calendar/event/meeting/rsvp/accept/decline → UNSAFE (meetings were cancelled!)
-                - If URL contains "confirm", "verify", "activate" → UNSAFE
-                - If URL has personalized parameters (email=user@domain, subscriber_id=) → UNSAFE
-                - If domain is KNOWN tracking service (see blacklist domains: analytics.google.com, mixpanel.com, etc.) → UNSAFE
-                - If page title suggests action (confirm, accept, decline, unsubscribe) → UNSAFE
-                - If page title describes safe content (docs, article, tutorial) → consider SAFE
-                - If uncertain or ambiguous → UNSAFE (pessimistic approach)
-                - When in doubt → UNSAFE
+                ASSUME SAFE unless URL explicitly contains action keywords in the PATH or QUERY.
 
-                IMPORTANT: Do NOT block domains just because they contain words like "monitor", "analytics", "track" in their name.
-                Only block if domain is explicitly in blacklist (analytics.google.com, mixpanel.com, etc.).
-                Regular company websites (e.g., haier.cz, electrolux.com) are SAFE even if they might contain tracking.
+                CRITICAL RULES FOR UNSAFE:
+                - URL PATH contains: /unsubscribe, /opt-out, /confirm, /verify, /activate → UNSAFE
+                - URL QUERY contains: action=accept, action=decline, rsvp=yes, email=specific@email.com → UNSAFE
+                - URL contains: /calendar/event?action=, /meeting/accept, /invite/rsvp → UNSAFE
+                - Domain is KNOWN tracking service (analytics.google.com, mixpanel.com) → UNSAFE
+
+                IMPORTANT: Do NOT mark UNSAFE based on:
+                - Domain name containing common words (monitor, analytics, track, mapy, photo, edit, cdn, app)
+                - File paths (/email/image.jpg, /cdn/file.js, /app/dashboard)
+                - Query parameters without action (det=, k=, utm_source=)
+                - Czech words or names (platci, chudy, mapy)
+                - Generic URL patterns that don't indicate actions
+
+                When in doubt about unknown domains → mark SAFE (most websites are informational).
 
                 FALSE POSITIVES TO AVOID:
                 - "edit" in docs.google.com/document/.../edit is SAFE (read-only view)
@@ -698,11 +758,27 @@ class LinkSafetyQualifier(
                 - /email/*.png or /email/*.jpg asset URLs are SAFE - static images, not actions
                 - Only "action=accept", "email=specific@email.com" are UNSAFE
 
-                When UNSAFE, suggest SPECIFIC regex (not overly broad patterns):
-                - Good: /unsubscribe|opt-out/, /action=(accept|decline)/, /email=[^&]+@/
-                - Bad: /analytics/, /tracking/, /monitor/, /edit/, /email/, /utm/, /[a-z]/ (too broad, false positives)
+                When UNSAFE, suggest VERY SPECIFIC regex that matches ONLY the action part:
+                - Good examples:
+                  * /\/unsubscribe/ (path contains /unsubscribe)
+                  * /action=(accept|decline)/ (query param action with specific values)
+                  * /\/calendar\/event\?action=/ (specific calendar action URL)
+                  * /email=[^&]+@[^&]+/ (email parameter with actual email address)
 
-                NEVER suggest domain-based patterns - domains change too frequently and create false positives.
+                - BAD examples (DO NOT USE):
+                  * /confirm/ (too broad - matches "confirmation" in any context)
+                  * /edit/ (too broad - matches Google Docs edit)
+                  * /email/ (too broad - matches /email/image.jpg)
+                  * /tracking/ (too broad - matches domain names)
+                  * /[a-z]/ (absurdly broad - matches everything)
+                  * Czech words like /mapy/, /platci/, /chudy/
+                  * Single words without context: /photo/, /cdn/, /app/
+
+                NEVER suggest patterns based on:
+                - Domain names or subdomains
+                - Common words that appear in paths
+                - Language-specific words (Czech, English)
+                - File types or CDN paths
 
                 JSON only:
                 {"decision": "SAFE" or "UNSAFE", "reason": "brief. Suggested regex: /pattern/ (if UNSAFE)"}
