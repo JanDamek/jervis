@@ -253,7 +253,7 @@ private fun ProjectDialog(
     var jiraProjectKey by remember { mutableStateOf("") }
     var confluenceSpaceKey by remember { mutableStateOf("") }
     var confluenceRootPageId by remember { mutableStateOf("") }
-    var availableJiraProjects by remember { mutableStateOf<List<com.jervis.dto.jira.JiraProjectRefDto>>(emptyList()) }
+    var availableJiraProjects by remember { mutableStateOf<List<com.jervis.dto.atlassian.AtlassianProjectRefDto>>(emptyList()) }
     var isLoadingIntegrations by remember { mutableStateOf(false) }
     var integrationMessage by remember { mutableStateOf<String?>(null) }
 
@@ -278,7 +278,7 @@ private fun ProjectDialog(
             // Load available Jira projects
             if (clientId.isNotEmpty()) {
                 runCatching {
-                    availableJiraProjects = repository.jiraSetup.listProjects(clientId)
+                    availableJiraProjects = repository.atlassianSetup.listProjects(clientId)
                 }.onFailure { e ->
                     integrationMessage = "Failed to load Jira projects: ${e.message}"
                 }

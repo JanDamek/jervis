@@ -16,7 +16,7 @@ class JervisRepository(
     errorLogService: IErrorLogService,
     integrationSettingsService: IIntegrationSettingsService,
     gitConfigurationService: IGitConfigurationService,
-    jiraSetupService: IJiraSetupService,
+    atlassianSetupService: IAtlassianSetupService,
     emailAccountService: IEmailAccountService,
     indexingStatusService: IIndexingStatusService,
     pendingTaskService: IPendingTaskService,
@@ -30,7 +30,7 @@ class JervisRepository(
     val agentChat: AgentChatRepository = AgentChatRepository(agentOrchestratorService)
     val integrationSettings: IntegrationSettingsRepository = IntegrationSettingsRepository(integrationSettingsService)
     val gitConfiguration: GitConfigurationRepository = GitConfigurationRepository(gitConfigurationService)
-    val jiraSetup: JiraSetupRepository = JiraSetupRepository(jiraSetupService)
+    val atlassianSetup: AtlassianSetupRepository = AtlassianSetupRepository(atlassianSetupService)
     val emailAccounts: EmailAccountRepository = EmailAccountRepository(emailAccountService)
     val indexingStatus: IndexingStatusRepository = IndexingStatusRepository(indexingStatusService)
     val pendingTasks: PendingTaskRepository = PendingTaskRepository(pendingTaskService)

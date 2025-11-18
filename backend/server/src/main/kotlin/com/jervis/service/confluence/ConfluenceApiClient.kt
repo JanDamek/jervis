@@ -4,13 +4,14 @@ import com.jervis.domain.confluence.ConfluencePage
 import com.jervis.domain.confluence.ConfluencePageContent
 import com.jervis.domain.confluence.ConfluenceSpace
 import com.jervis.domain.confluence.PageVersion
-import com.jervis.entity.ConfluenceAccountDocument
+import com.jervis.entity.atlassian.AtlassianConnectionDocument
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
@@ -52,21 +53,22 @@ class ConfluenceApiClient {
             coerceInputValues = true
         }
 
-    suspend fun listSpaces(account: ConfluenceAccountDocument): Flow<ConfluenceSpace> =
+    suspend fun listSpaces(connection: AtlassianConnectionDocument): Flow<ConfluenceSpace> =
         flow {
             var cursor: String? = null
+            val siteUrl = "https://${connection.tenant}"
 
             do {
-                val client = createHttpClient(account)
+                val client = createHttpClient(connection)
                 try {
                     val httpResponse: HttpResponse =
-                        client.get("${account.siteUrl}/wiki/api/v2/spaces") {
+                        client.get("$siteUrl/wiki/api/v2/spaces") {
                             parameter("limit", 250)
                             cursor?.let { parameter("cursor", it) }
                         }
 
                     if (!httpResponse.status.isSuccess()) {
-                        handleHttpError(account, httpResponse)
+                        handleHttpError(connection, httpResponse)
                     }
 
                     val response = httpResponse.body<SpacesResponseDto>()
@@ -74,7 +76,7 @@ class ConfluenceApiClient {
                     response.results.forEach { emit(it.toDomain()) }
                     cursor = response.links?.next?.let { extractCursor(it) }
                 } catch (e: Exception) {
-                    logger.error(e) { "Failed to fetch spaces for account ${account.id}" }
+                    logger.error(e) { "Failed to fetch spaces for connection ${connection.id}" }
                     client.close()
                     throw e
                 }
@@ -83,18 +85,19 @@ class ConfluenceApiClient {
         }
 
     suspend fun listPagesInSpace(
-        account: ConfluenceAccountDocument,
+        connection: AtlassianConnectionDocument,
         spaceKey: String,
         modifiedSince: Instant? = null,
     ): Flow<ConfluencePage> =
         flow {
             var cursor: String? = null
+            val siteUrl = "https://${connection.tenant}"
 
             do {
-                val client = createHttpClient(account)
+                val client = createHttpClient(connection)
                 try {
                     val httpResponse: HttpResponse =
-                        client.get("${account.siteUrl}/wiki/api/v2/pages") {
+                        client.get("$siteUrl/wiki/api/v2/pages") {
                             parameter("space-key", spaceKey)
                             parameter("limit", 250)
                             parameter("sort", "-modified-date")
@@ -102,7 +105,7 @@ class ConfluenceApiClient {
                         }
 
                     if (!httpResponse.status.isSuccess()) {
-                        handleHttpError(account, httpResponse)
+                        handleHttpError(connection, httpResponse)
                     }
 
                     val response = httpResponse.body<PagesResponseDto>()
@@ -128,18 +131,19 @@ class ConfluenceApiClient {
         }
 
     suspend fun getPageContent(
-        account: ConfluenceAccountDocument,
+        connection: AtlassianConnectionDocument,
         pageId: String,
     ): ConfluencePageContent? {
-        val client = createHttpClient(account)
+        val siteUrl = "https://${connection.tenant}"
+        val client = createHttpClient(connection)
         return try {
             val httpResponse: HttpResponse =
-                client.get("${account.siteUrl}/wiki/api/v2/pages/$pageId") {
+                client.get("$siteUrl/wiki/api/v2/pages/$pageId") {
                     parameter("body-format", "storage")
                 }
 
             if (!httpResponse.status.isSuccess()) {
-                handleHttpError(account, httpResponse)
+                handleHttpError(connection, httpResponse)
             }
 
             val response = httpResponse.body<ConfluencePageContentDto>()
@@ -154,23 +158,24 @@ class ConfluenceApiClient {
     }
 
     suspend fun getChildPages(
-        account: ConfluenceAccountDocument,
+        connection: AtlassianConnectionDocument,
         pageId: String,
     ): Flow<ConfluencePage> =
         flow {
             var cursor: String? = null
+            val siteUrl = "https://${connection.tenant}"
 
             do {
-                val client = createHttpClient(account)
+                val client = createHttpClient(connection)
                 try {
                     val httpResponse: HttpResponse =
-                        client.get("${account.siteUrl}/wiki/api/v2/pages/$pageId/children") {
+                        client.get("$siteUrl/wiki/api/v2/pages/$pageId/children") {
                             parameter("limit", 250)
                             cursor?.let { parameter("cursor", it) }
                         }
 
                     if (!httpResponse.status.isSuccess()) {
-                        handleHttpError(account, httpResponse)
+                        handleHttpError(connection, httpResponse)
                     }
 
                     val response = httpResponse.body<PagesResponseDto>()
@@ -186,13 +191,16 @@ class ConfluenceApiClient {
             } while (cursor != null)
         }
 
-    private fun createHttpClient(account: ConfluenceAccountDocument): HttpClient =
+    private fun createHttpClient(connection: AtlassianConnectionDocument): HttpClient =
         HttpClient {
             install(ContentNegotiation) {
                 json(json)
             }
             defaultRequest {
-                bearerAuth(account.accessToken)
+                // Atlassian API uses Basic auth with email:token
+                val credentials = "${connection.email ?: ""}:${connection.accessToken}"
+                val encoded = java.util.Base64.getEncoder().encodeToString(credentials.toByteArray())
+                header("Authorization", "Basic $encoded")
                 contentType(ContentType.Application.Json)
             }
         }
@@ -203,11 +211,11 @@ class ConfluenceApiClient {
             .substringBefore("&")
             .takeIf { it.isNotBlank() }
 
-    private suspend fun handleHttpError(account: ConfluenceAccountDocument, httpResponse: HttpResponse) {
+    private suspend fun handleHttpError(connection: AtlassianConnectionDocument, httpResponse: HttpResponse) {
         val status = httpResponse.status.value
         val body = runCatching { httpResponse.bodyAsText() }.getOrElse { "" }
         if (status == 401 || status == 403) {
-            throw ConfluenceAuthException("Authentication failed for account ${account.id}: HTTP $status ${body.take(200)}")
+            throw ConfluenceAuthException("Authentication failed for connection ${connection.id}: HTTP $status ${body.take(200)}")
         } else {
             throw IllegalStateException("Confluence API error: HTTP $status ${body.take(200)}")
         }

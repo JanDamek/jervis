@@ -1,6 +1,6 @@
 package com.jervis.service.jira
 
-import com.jervis.repository.mongo.JiraConnectionMongoRepository
+import com.jervis.repository.mongo.AtlassianConnectionMongoRepository
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -10,7 +10,7 @@ import java.time.Instant
 
 @Service
 class JiraPollingScheduler(
-    private val connectionRepository: JiraConnectionMongoRepository,
+    private val connectionRepository: AtlassianConnectionMongoRepository,
     private val orchestrator: JiraIndexingOrchestrator,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -31,8 +31,8 @@ class JiraPollingScheduler(
                 return
             }
 
-            // Only process connections considered active (expiresAt in future) AND with VALID authentication
-            val active = all.filter { it.expiresAt.isAfter(Instant.now()) && it.authStatus == "VALID" }
+            // Only process connections with VALID authentication (API tokens don't expire)
+            val active = all.filter { it.authStatus == "VALID" }
             if (active.isEmpty()) {
                 logger.debug { "No active VALID Jira connections to poll" }
                 return

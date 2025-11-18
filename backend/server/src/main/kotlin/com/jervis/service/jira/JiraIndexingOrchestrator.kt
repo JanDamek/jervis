@@ -1,10 +1,15 @@
 package com.jervis.service.jira
 
+import com.jervis.domain.jira.JiraIssue
 import com.jervis.domain.jira.JiraProjectKey
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
-import com.jervis.repository.mongo.JiraConnectionMongoRepository
+import com.jervis.repository.mongo.AtlassianConnectionMongoRepository
 import com.jervis.repository.mongo.JiraIssueIndexMongoRepository
+import com.jervis.service.atlassian.AtlassianApiClient
+import com.jervis.service.atlassian.AtlassianAuthService
+import com.jervis.service.atlassian.AtlassianConnectionService
+import com.jervis.service.atlassian.AtlassianSelectionService
 import com.jervis.service.link.LinkIndexingService
 import com.jervis.service.rag.RagIndexingService
 import com.jervis.service.text.TextChunkingService
@@ -14,21 +19,22 @@ import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClientResponseException
+import java.security.MessageDigest
 import java.time.Instant
 
 @Service
 class JiraIndexingOrchestrator(
-    private val selection: JiraSelectionService,
-    private val api: JiraApiClient,
-    private val auth: JiraAuthService,
+    private val selection: AtlassianSelectionService,
+    private val api: AtlassianApiClient,
+    private val auth: AtlassianAuthService,
     private val ragIndexingService: RagIndexingService,
-    private val connectionRepository: JiraConnectionMongoRepository,
+    private val connectionRepository: AtlassianConnectionMongoRepository,
     private val issueIndexRepository: JiraIssueIndexMongoRepository,
     private val textChunkingService: TextChunkingService,
     private val linkIndexingService: LinkIndexingService,
     private val jiraAttachmentIndexer: JiraAttachmentIndexer,
     private val configCache: com.jervis.service.cache.ClientProjectConfigCache,
-    private val connectionService: JiraConnectionService,
+    private val connectionService: AtlassianConnectionService,
     private val indexingRegistry: com.jervis.service.indexing.status.IndexingStatusRegistry,
     private val errorLogService: com.jervis.service.error.ErrorLogService,
 ) {
@@ -219,8 +225,9 @@ class JiraIndexingOrchestrator(
                 // Determine incremental window based on last sync
                 val latestConnDoc = connectionRepository.findByClientId(clientId)
                 val lastSyncedAt = latestConnDoc?.lastSyncedAt
-                val baseJqlSuffix =
-                    if (lastSyncedAt == null) "AND updated >= -30d ORDER BY updated DESC" else "ORDER BY updated DESC"
+                // First sync: index ALL issues (no time filter)
+                // Subsequent syncs: fetch all but our hash-based change detection will skip unchanged ones
+                val baseJqlSuffix = "ORDER BY updated DESC"
 
                 projectsToIndex.forEach { projectKey ->
                     val key = projectKey.value
@@ -237,40 +244,60 @@ class JiraIndexingOrchestrator(
                         api
                             .searchIssues(connValid, jql, updatedSinceEpochMs = lastSyncedAt?.toEpochMilli())
                             .collect { issue ->
+                                // Load existing index document to check what's already indexed
+                                val existingIndexDoc = issueIndexRepository.findByClientIdAndIssueKey(clientId, issue.key)
+
+                                // Calculate hashes for change detection
+                                val currentContentHash = computeHash("${issue.summary}|${issue.description ?: ""}")
+                                val currentStatusHash = computeHash(issue.status)
+
+                                // Determine if we need to re-index based on content changes
+                                val contentChanged = existingIndexDoc?.contentHash != currentContentHash
+                                val statusChanged = existingIndexDoc?.statusHash != currentStatusHash
+
                                 val assignedToMe = me?.let { issue.assignee?.value == it.value } ?: false
+
                                 if (!assignedToMe) {
-                                    // Shallow: one compact narrative chunk
-                                    indexIssueSummaryShallow(
-                                        clientId,
-                                        issue.key,
-                                        projectKey,
-                                        assignedToMe,
-                                        issue.summary,
-                                        issue.status,
-                                        issue.updated,
-                                        tenantHost,
-                                        jervisProjectId,
-                                    )
-                                    runCatching {
-                                        indexingRegistry.progress(
-                                            "jira",
-                                            processedInc = 1,
-                                            message = "Processed issue ${issue.key} (shallow)",
+                                    // Shallow: one compact narrative chunk (only if content or status changed)
+                                    if (contentChanged || statusChanged || existingIndexDoc == null) {
+                                        indexIssueSummaryShallow(
+                                            clientId,
+                                            issue,
+                                            projectKey,
+                                            assignedToMe,
+                                            tenantHost,
+                                            jervisProjectId,
+                                            currentContentHash,
+                                            currentStatusHash,
+                                            existingIndexDoc,
                                         )
+                                        runCatching {
+                                            indexingRegistry.progress(
+                                                "jira",
+                                                processedInc = 1,
+                                                message = "Processed issue ${issue.key} (shallow, updated)",
+                                            )
+                                        }
+                                    } else {
+                                        logger.debug { "JIRA_INDEX: Skipping ${issue.key} - no changes detected" }
                                     }
                                 } else {
                                     // Deep: summary + comments + attachments
-                                    indexIssueSummaryShallow(
-                                        clientId,
-                                        issue.key,
-                                        projectKey,
-                                        assignedToMe,
-                                        issue.summary,
-                                        issue.status,
-                                        issue.updated,
-                                        tenantHost,
-                                        jervisProjectId,
-                                    )
+                                    if (contentChanged || statusChanged || existingIndexDoc == null) {
+                                        indexIssueSummaryShallow(
+                                            clientId,
+                                            issue,
+                                            projectKey,
+                                            assignedToMe,
+                                            tenantHost,
+                                            jervisProjectId,
+                                            currentContentHash,
+                                            currentStatusHash,
+                                            existingIndexDoc,
+                                        )
+                                    }
+
+                                    // Always check for new comments (uses lastEmbeddedCommentId)
                                     indexIssueCommentsDeep(
                                         clientId = clientId,
                                         issueKey = issue.key,
@@ -278,7 +305,8 @@ class JiraIndexingOrchestrator(
                                         tenantHost = tenantHost,
                                         jervisProjectId = jervisProjectId,
                                     )
-                                    // Index attachments (screenshots, docs, logs, etc.)
+
+                                    // Index new attachments only (uses indexedAttachmentIds)
                                     jiraAttachmentIndexer.indexIssueAttachments(
                                         conn = connValid,
                                         issueKey = issue.key,
@@ -286,6 +314,7 @@ class JiraIndexingOrchestrator(
                                         tenantHost = tenantHost,
                                         projectId = jervisProjectId,
                                     )
+
                                     runCatching {
                                         indexingRegistry.progress(
                                             "jira",
@@ -338,25 +367,28 @@ class JiraIndexingOrchestrator(
 
     private suspend fun indexIssueSummaryShallow(
         clientId: ObjectId,
-        issueKey: String,
+        issue: JiraIssue,
         project: JiraProjectKey,
         assignedToMe: Boolean,
-        summary: String,
-        status: String,
-        updated: Instant,
         tenantHost: String,
         jervisProjectId: ObjectId?,
+        contentHash: String,
+        statusHash: String,
+        existingIndexDoc: com.jervis.entity.jira.JiraIssueIndexDocument?,
     ) {
         val text =
             buildString {
-                appendLine("Issue: $issueKey  Project: ${project.value}")
-                appendLine("Status: $status  AssignedToMe: $assignedToMe")
-                appendLine("Goal: $summary")
+                appendLine("Issue: ${issue.key}  Project: ${project.value}")
+                appendLine("Status: ${issue.status}  AssignedToMe: $assignedToMe")
+                appendLine("Goal: ${issue.summary}")
+                if (!issue.description.isNullOrBlank()) {
+                    appendLine("Description: ${issue.description}")
+                }
             }.trim()
 
         val chunks = textChunkingService.splitText(text)
         if (chunks.isEmpty()) {
-            logger.debug { "JIRA_INDEX: No content to index for issue $issueKey" }
+            logger.debug { "JIRA_INDEX: No content to index for issue ${issue.key}" }
             return
         }
 
@@ -368,11 +400,11 @@ class JiraIndexingOrchestrator(
                     clientId = clientId,
                     text = chunk.text(),
                     ragSourceType = RagSourceType.JIRA,
-                    subject = "Jira issue $issueKey",
-                    timestamp = updated.toString(),
-                    parentRef = issueKey,
+                    subject = "Jira issue ${issue.key}",
+                    timestamp = issue.updated.toString(),
+                    parentRef = issue.key,
                     branch = "main",
-                    sourceUri = "https://$tenantHost/browse/$issueKey",
+                    sourceUri = "https://$tenantHost/browse/${issue.key}",
                     chunkId = index,
                     chunkOf = chunks.size,
                 )
@@ -380,8 +412,33 @@ class JiraIndexingOrchestrator(
             stored++
         }
 
+        // Update index document with new hashes and timestamp
+        val newDoc =
+            if (existingIndexDoc == null) {
+                com.jervis.entity.jira.JiraIssueIndexDocument(
+                    clientId = clientId,
+                    issueKey = issue.key,
+                    projectKey = project.value,
+                    lastSeenUpdated = issue.updated,
+                    contentHash = contentHash,
+                    statusHash = statusHash,
+                    lastIndexedAt = Instant.now(),
+                    archived = false,
+                    updatedAt = Instant.now(),
+                )
+            } else {
+                existingIndexDoc.copy(
+                    lastSeenUpdated = issue.updated,
+                    contentHash = contentHash,
+                    statusHash = statusHash,
+                    lastIndexedAt = Instant.now(),
+                    updatedAt = Instant.now(),
+                )
+            }
+        issueIndexRepository.save(newDoc)
+
         val projectInfo = if (jervisProjectId != null) " projectId=${jervisProjectId.toHexString()}" else ""
-        logger.info { "JIRA_INDEX: Stored shallow summary for $issueKey chunks=$stored$projectInfo" }
+        logger.info { "JIRA_INDEX: Stored shallow summary for ${issue.key} chunks=$stored$projectInfo" }
     }
 
     private suspend fun indexIssueCommentsDeep(
@@ -445,7 +502,7 @@ class JiraIndexingOrchestrator(
                         timestamp = Instant.now().toString(),
                         parentRef = issueKey,
                         branch = "main",
-                        sourceUri = "https://$tenantHost/browse/$issueKey?focusedCommentId=$commentId&page=com.atlassian.jira.plugin.system.issuetabpanels:comment-tabpanel#comment-$commentId",
+                        sourceUri = "https://$tenantHost/browse/$issueKey?focusedCommentId=$commentId&page=com.atlassian.atlassian.plugin.system.issuetabpanels:comment-tabpanel#comment-$commentId",
                         chunkId = index,
                         chunkOf = chunks.size,
                     )
@@ -524,5 +581,14 @@ class JiraIndexingOrchestrator(
         }
         val msg = t.message ?: return false
         return msg.contains("401") || msg.contains("403") || msg.contains("Unauthorized", true) || msg.contains("Forbidden", true)
+    }
+
+    /**
+     * Compute SHA-256 hash of input string for change detection.
+     */
+    private fun computeHash(input: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val hashBytes = digest.digest(input.toByteArray())
+        return hashBytes.joinToString("") { "%02x".format(it) }
     }
 }
