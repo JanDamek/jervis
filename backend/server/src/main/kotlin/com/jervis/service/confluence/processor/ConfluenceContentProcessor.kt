@@ -42,6 +42,7 @@ class ConfluenceContentProcessor(
     private val textChunkingService: TextChunkingService,
     private val textNormalizationService: TextNormalizationService,
     private val linkSafetyQualifier: com.jervis.service.link.LinkSafetyQualifier,
+    private val linkIndexingQueue: com.jervis.service.indexing.LinkIndexingQueue,
 ) {
     /**
      * Process page content and index into RAG.
@@ -56,7 +57,7 @@ class ConfluenceContentProcessor(
 
         try {
             // Parse HTML and extract data
-            val parsed = parseHtmlContent(htmlContent, baseUrl)
+            val parsed = parseHtmlContent(page, htmlContent, baseUrl)
 
             // Check if content is empty
             if (parsed.plainText.isBlank()) {
@@ -108,6 +109,7 @@ class ConfluenceContentProcessor(
      * Parse HTML content and extract plain text + links.
      */
     private suspend fun parseHtmlContent(
+        page: ConfluencePageDocument,
         htmlContent: String,
         baseUrl: String,
     ): ParsedContent {
@@ -127,10 +129,28 @@ class ConfluenceContentProcessor(
         // Classify links
         val (internalLinks, externalLinks) = classifyLinks(allLinks, baseUrl)
 
+        // Extract Jira issue links and submit to queue for Jira indexer
+        val jiraLinks = internalLinks.filter { isJiraIssueLink(it) }
+        if (jiraLinks.isNotEmpty()) {
+            logger.info { "Found ${jiraLinks.size} Jira issue links in Confluence page ${page.pageId}, submitting to Jira indexer queue" }
+            jiraLinks.forEach { jiraUrl ->
+                linkIndexingQueue.submitUrl(
+                    url = jiraUrl,
+                    clientId = page.clientId,
+                    projectId = page.projectId,
+                    sourceIndexer = "Confluence",
+                    sourceRef = page.pageId,
+                )
+            }
+        }
+
+        // Remove Jira links from internal links (they'll be indexed by Jira indexer)
+        val confluenceOnlyLinks = internalLinks.filterNot { isJiraIssueLink(it) }
+
         // SECURITY: Filter internal links through safety qualifier
         // Prevents following malicious internal Confluence links (rare but possible)
-        val safeInternalLinks = filterSafeLinks(internalLinks)
-        val blockedInternalCount = internalLinks.size - safeInternalLinks.size
+        val safeInternalLinks = filterSafeLinks(confluenceOnlyLinks)
+        val blockedInternalCount = confluenceOnlyLinks.size - safeInternalLinks.size
         if (blockedInternalCount > 0) {
             logger.warn {
                 "Blocked $blockedInternalCount internal Confluence links " +
@@ -322,6 +342,14 @@ class ConfluenceContentProcessor(
             }
         }
     }
+
+    /**
+     * Check if URL is a Jira issue link.
+     * Jira issue URLs contain /browse/ or /rest/api/.../issue/
+     */
+    private fun isJiraIssueLink(url: String): Boolean =
+        url.contains("/browse/") ||
+            (url.contains("/rest/api/") && url.contains("/issue/"))
 
     private data class ParsedContent(
         val plainText: String,

@@ -37,6 +37,8 @@ class JiraIndexingOrchestrator(
     private val connectionService: AtlassianConnectionService,
     private val indexingRegistry: com.jervis.service.indexing.status.IndexingStatusRegistry,
     private val errorLogService: com.jervis.service.error.ErrorLogService,
+    private val linkIndexingQueue: com.jervis.service.indexing.LinkIndexingQueue,
+    private val taskCreator: com.jervis.service.confluence.processor.ConfluenceTaskCreator,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -326,6 +328,21 @@ class JiraIndexingOrchestrator(
                             }
                     } catch (e: Exception) {
                         logger.error(e) { "JIRA_INDEX: search failed for client=${clientId.toHexString()} project=$key" }
+
+                        // Check for HTTP 410 Gone - project was deleted
+                        if (e is WebClientResponseException && e.statusCode.value() == 410) {
+                            logger.warn { "JIRA_INDEX: Project $key returned HTTP 410 Gone - project was likely deleted from Jira" }
+                            runCatching {
+                                indexingRegistry.error(
+                                    "jira",
+                                    "Project $key was deleted from Jira (HTTP 410 Gone)",
+                                    getFullStackTrace(e)
+                                )
+                            }
+                            // Skip to next project - no point retrying deleted project
+                            return@forEach
+                        }
+
                         // If this looks like an auth error, mark INVALID to stop further attempts until user fixes it
                         if (isAuthError(e)) {
                             val doc = connectionRepository.findByClientId(clientId)
@@ -333,10 +350,16 @@ class JiraIndexingOrchestrator(
                                 runCatching { connectionService.markAuthInvalid(doc, e.message) }
                             }
                         }
-                        // Persist error for visibility regardless of type (e.g., HTTP 410)
+                        // Persist error for visibility regardless of type
                         runCatching { errorLogService.recordError(e, clientId = clientId, projectId = jervisProjectId) }
-                        // Fail fast: continue other keys but surface error count via logs
-                        runCatching { indexingRegistry.error("jira", "Search failed for project=$key: ${e.message}") }
+                        // Fail fast: continue other keys but surface error count via logs with full stacktrace
+                        runCatching {
+                            indexingRegistry.error(
+                                "jira",
+                                "Search failed for project=$key: ${e.message}",
+                                getFullStackTrace(e)
+                            )
+                        }
                     }
                 }
 
@@ -376,6 +399,23 @@ class JiraIndexingOrchestrator(
         statusHash: String,
         existingIndexDoc: com.jervis.entity.jira.JiraIssueIndexDocument?,
     ) {
+        // Extract and hand off Confluence wiki links from issue description
+        if (!issue.description.isNullOrBlank()) {
+            val confluenceLinks = extractLinksFromText(issue.description).filter { isConfluenceWikiLink(it) }
+            if (confluenceLinks.isNotEmpty()) {
+                logger.info { "Found ${confluenceLinks.size} Confluence wiki links in Jira issue ${issue.key}, submitting to Confluence indexer queue" }
+                confluenceLinks.forEach { wikiUrl ->
+                    linkIndexingQueue.submitUrl(
+                        url = wikiUrl,
+                        clientId = clientId,
+                        projectId = jervisProjectId,
+                        sourceIndexer = "Jira",
+                        sourceRef = issue.key,
+                    )
+                }
+            }
+        }
+
         val text =
             buildString {
                 appendLine("Issue: ${issue.key}  Project: ${project.value}")
@@ -471,6 +511,21 @@ class JiraIndexingOrchestrator(
             // The links are already stripped by stripHtml in StubJiraApiClient
             // We'll extract URLs from the plain text as a workaround
             val links = extractLinksFromText(body)
+
+            // Extract and hand off Confluence wiki links to Confluence indexer
+            val confluenceLinks = links.filter { isConfluenceWikiLink(it) }
+            if (confluenceLinks.isNotEmpty()) {
+                logger.info { "Found ${confluenceLinks.size} Confluence wiki links in Jira comment $commentId on issue $issueKey, submitting to Confluence indexer queue" }
+                confluenceLinks.forEach { wikiUrl ->
+                    linkIndexingQueue.submitUrl(
+                        url = wikiUrl,
+                        clientId = clientId,
+                        projectId = jervisProjectId,
+                        sourceIndexer = "Jira",
+                        sourceRef = "$issueKey#comment-$commentId",
+                    )
+                }
+            }
 
             val text =
                 buildString {
@@ -584,11 +639,103 @@ class JiraIndexingOrchestrator(
     }
 
     /**
+     * Check if URL is a Confluence wiki link.
+     * Confluence wiki URLs contain /wiki/spaces/, /wiki/x/, or /pages/
+     */
+    private fun isConfluenceWikiLink(url: String): Boolean =
+        url.contains("/wiki/spaces/") ||
+            url.contains("/wiki/x/") ||
+            url.contains("/pages/")
+
+    /**
      * Compute SHA-256 hash of input string for change detection.
      */
     private fun computeHash(input: String): String {
         val digest = MessageDigest.getInstance("SHA-256")
         val hashBytes = digest.digest(input.toByteArray())
         return hashBytes.joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * Get full stacktrace from exception as string for UI copy/paste.
+     */
+    private fun getFullStackTrace(e: Throwable): String =
+        buildString {
+            appendLine(e.toString())
+            e.stackTrace.forEach { appendLine("\tat $it") }
+            e.cause?.let { cause ->
+                appendLine("Caused by: ${cause}")
+                cause.stackTrace.forEach { appendLine("\tat $it") }
+            }
+        }
+
+    /**
+     * Process Jira issue URLs that were discovered by other indexers (e.g., Confluence).
+     * Polls LinkIndexingQueue periodically and attempts to index queued URLs.
+     * Should be launched in a coroutine scope by JiraPollingScheduler.
+     */
+    suspend fun processQueuedUrls(clientId: ObjectId) {
+        logger.info { "Starting queued URL processor for Jira client ${clientId.toHexString()}" }
+
+        while (true) {
+            try {
+                val pendingLink = linkIndexingQueue.pollForIndexer("Jira")
+
+                if (pendingLink == null) {
+                    // No URLs in queue, wait before checking again
+                    kotlinx.coroutines.delay(30_000)
+                    continue
+                }
+
+                // Verify this URL belongs to this client (security check)
+                if (pendingLink.clientId != clientId) {
+                    logger.warn { "Skipping Jira URL ${pendingLink.url} - belongs to different client" }
+                    continue
+                }
+
+                logger.info { "Processing queued Jira URL from ${pendingLink.sourceIndexer}: ${pendingLink.url}" }
+
+                // Try to index the URL via LinkIndexingService
+                val success = runCatching {
+                    linkIndexingService.indexUrl(
+                        url = pendingLink.url,
+                        projectId = pendingLink.projectId,
+                        clientId = pendingLink.clientId,
+                        sourceType = RagSourceType.JIRA_LINK_CONTENT,
+                        parentRef = pendingLink.sourceRef,
+                    )
+                    true
+                }.onFailure { e ->
+                    logger.warn { "Failed to index queued Jira URL ${pendingLink.url}: ${e.message}" }
+                }.getOrDefault(false)
+
+                if (!success) {
+                    // Mark as failed, which will track retry count
+                    val shouldCreateTask = linkIndexingQueue.markFailed(
+                        url = pendingLink.url,
+                        reason = "Jira indexer could not process URL",
+                    )
+
+                    if (shouldCreateTask) {
+                        // Max retries exceeded, create user task for manual review
+                        logger.info { "Creating user task for failed Jira URL: ${pendingLink.url}" }
+                        runCatching {
+                            taskCreator.createLinkReviewTask(
+                                url = pendingLink.url,
+                                clientId = pendingLink.clientId,
+                                projectId = pendingLink.projectId,
+                                sourceIndexer = pendingLink.sourceIndexer,
+                                sourceRef = pendingLink.sourceRef,
+                            )
+                        }.onFailure { e ->
+                            logger.error(e) { "Failed to create user task for URL ${pendingLink.url}" }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                logger.error(e) { "Error in Jira queued URL processor for client ${clientId.toHexString()}" }
+                kotlinx.coroutines.delay(30_000)
+            }
+        }
     }
 }

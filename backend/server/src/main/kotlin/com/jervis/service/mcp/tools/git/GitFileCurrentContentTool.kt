@@ -62,19 +62,36 @@ class GitFileCurrentContentTool(
             val filePath = extractFilePath(taskDescription)
             val maxLines = extractMaxLinesOptional(taskDescription) ?: 1000
 
-            // Optional branch
+            // Optional git ref parameters
             val branch = extractBranch(taskDescription)
-            // Read file content
-            val fileContent = readFileContent(projectId, filePath, maxLines, branch)
+            val commit = extractCommit(taskDescription)
+
+            // Read file content either from filesystem (worktree) or immutable git object (branch/commit)
+            val fileContent =
+                if (!commit.isNullOrBlank() || !branch.isNullOrBlank()) {
+                    readFileContentFromGitRef(projectId, filePath, maxLines, branch, commit)
+                } else {
+                    readFileContentFromWorktree(projectId, filePath, maxLines)
+                }
 
             ToolResult.success(
                 toolName = name.name,
                 summary =
-                    "File content: $filePath (${fileContent.lineCount} lines${if (fileContent.truncated) ", truncated" else ""})",
+                    buildString {
+                        append("File content: $filePath ")
+                        if (!commit.isNullOrBlank()) append("[commit=$commit] ")
+                        if (!branch.isNullOrBlank() && commit.isNullOrBlank()) append("[branch=$branch] ")
+                        append("(${fileContent.lineCount} lines")
+                        if (fileContent.truncated) append(", truncated")
+                        append(")")
+                    },
                 content =
                     buildString {
                         appendLine("File: $filePath")
                         appendLine("Total lines: ${fileContent.lineCount}")
+                        if (!commit.isNullOrBlank()) appendLine("Source: git commit $commit")
+                        else if (!branch.isNullOrBlank()) appendLine("Source: git branch $branch (snapshot)")
+                        else appendLine("Source: filesystem (worktree)")
                         if (fileContent.truncated) {
                             appendLine("Truncated: Yes (showing first $maxLines lines)")
                         }
@@ -133,6 +150,11 @@ class GitFileCurrentContentTool(
         return pattern.find(taskDescription)?.groupValues?.get(1)
     }
 
+    private fun extractCommit(taskDescription: String): String? {
+        val pattern = Regex("""commit:\s*([0-9a-fA-F]{7,40})""", RegexOption.IGNORE_CASE)
+        return pattern.find(taskDescription)?.groupValues?.get(1)
+    }
+
     private fun ensureBranchCheckedOut(
         gitDir: java.nio.file.Path,
         branch: String,
@@ -165,11 +187,10 @@ class GitFileCurrentContentTool(
             ?.toIntOrNull()
     }
 
-    private suspend fun readFileContent(
+    private suspend fun readFileContentFromWorktree(
         projectId: ObjectId,
         filePath: String,
         maxLines: Int,
-        branch: String?,
     ): FileContent =
         withContext(Dispatchers.IO) {
             val project =
@@ -186,11 +207,6 @@ class GitFileCurrentContentTool(
                             "Git repository not available for project: ${project.name}: ${it.message}",
                         )
                     }
-            }
-
-            // Optional branch: checkout if provided
-            if (!branch.isNullOrBlank()) {
-                ensureBranchCheckedOut(gitDir, branch)
             }
 
             val resolvedPath =
@@ -221,9 +237,98 @@ class GitFileCurrentContentTool(
             )
         }
 
+    private suspend fun readFileContentFromGitRef(
+        projectId: ObjectId,
+        filePath: String,
+        maxLines: Int,
+        branch: String?,
+        commit: String?,
+    ): FileContent =
+        withContext(Dispatchers.IO) {
+            val project =
+                projectMongoRepository.findById(projectId)
+                    ?: throw IllegalStateException("Project not found: $projectId")
+
+            var gitDir = directoryStructureService.projectGitDir(project)
+            // Ensure repository exists and is a valid Git repo
+            if (!gitDir.toFile().exists() || !gitDir.resolve(".git").toFile().exists()) {
+                val cloneResult = gitRepositoryService.cloneOrUpdateRepository(project)
+                gitDir =
+                    cloneResult.getOrElse {
+                        throw IllegalStateException(
+                            "Git repository not available for project: ${project.name}: ${it.message}",
+                        )
+                    }
+            }
+
+            // Compute repo-relative path without requiring the file to exist in worktree.
+            // If project belongs to a mono-repo (projectPath set and no project-specific remote), prefix it.
+            val repoRelativePath =
+                buildString {
+                    val base = project.projectPath?.takeIf { project.overrides?.gitRemoteUrl == null }?.trim('/')
+                    if (!base.isNullOrBlank()) {
+                        append(base)
+                        append('/')
+                    }
+                    append(filePath.trimStart('/', '\\'))
+                }.replace('\\', '/')
+
+            val refSpec = when {
+                !commit.isNullOrBlank() -> commit
+                !branch.isNullOrBlank() -> {
+                    ensureBranchFetched(gitDir, branch)
+                    "origin/$branch"
+                }
+                else -> throw IllegalStateException("Neither branch nor commit specified for git ref read")
+            }
+
+            val process =
+                ProcessBuilder("git", "show", "$refSpec:$repoRelativePath")
+                    .directory(gitDir.toFile())
+                    .redirectErrorStream(true)
+                    .start()
+
+            val output = process.inputStream.bufferedReader().use { it.readText() }
+            val exit = process.waitFor()
+            if (exit != 0) {
+                throw IllegalStateException("git show failed for $refSpec:$repoRelativePath in $gitDir: $output")
+            }
+
+            val allLines = output.lines()
+            val lineCount = allLines.size
+            val content =
+                if (lineCount <= maxLines) {
+                    allLines.joinToString("\n")
+                } else {
+                    allLines.take(maxLines).joinToString("\n") + "\n\n... (${lineCount - maxLines} more lines omitted)"
+                }
+
+            FileContent(
+                content = content,
+                lineCount = lineCount,
+                truncated = lineCount > maxLines,
+            )
+        }
+
     private data class FileContent(
         val content: String,
         val lineCount: Int,
         val truncated: Boolean,
     )
+
+    private fun ensureBranchFetched(
+        gitDir: java.nio.file.Path,
+        branch: String,
+    ) {
+        val fetch =
+            ProcessBuilder("git", "fetch", "origin", branch)
+                .directory(gitDir.toFile())
+                .redirectErrorStream(true)
+                .start()
+        val fetchOut = fetch.inputStream.bufferedReader().use { it.readText() }
+        val fetchExit = fetch.waitFor()
+        if (fetchExit != 0) {
+            throw IllegalStateException("git fetch failed for branch '$branch' in $gitDir: $fetchOut")
+        }
+    }
 }

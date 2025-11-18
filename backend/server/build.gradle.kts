@@ -99,6 +99,9 @@ dependencies {
 
     // LangChain4j for text chunking
     implementation(libs.langchain4j)
+
+    // Bucket4j for rate limiting
+    implementation("com.bucket4j:bucket4j-core:8.10.1")
 }
 
 kotlin {

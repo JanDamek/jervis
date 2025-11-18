@@ -35,14 +35,29 @@ class EmailMessageStateManager(
         logger.info { "Starting batch message ID sync for account $accountId" }
         var totalProcessed = 0
         var totalSaved = 0
+        var totalDuplicatesInFlow = 0
 
         messageIds
             .buffer(200)
             .chunked(100)
             .collect { batch ->
-                totalProcessed += batch.size
+                // CRITICAL FIX: Deduplicate within batch FIRST
+                // IMAP can return same Message-ID with different UIDs (moved between folders)
+                val uniqueBatch = batch
+                    .groupBy { it.messageId }
+                    .mapValues { it.value.first() } // Keep first occurrence of each messageId
+                    .values
+                    .toList()
 
-                val batchMessageIds = batch.map { it.messageId }
+                val duplicatesInBatch = batch.size - uniqueBatch.size
+                if (duplicatesInBatch > 0) {
+                    logger.debug { "Found $duplicatesInBatch duplicate Message-IDs within IMAP batch (same email in multiple folders)" }
+                    totalDuplicatesInFlow += duplicatesInBatch
+                }
+
+                totalProcessed += uniqueBatch.size
+
+                val batchMessageIds = uniqueBatch.map { it.messageId }
 
                 // Find existing in single query (batch lookup, avoiding N+1)
                 val existingSet = mutableSetOf<String>()
@@ -52,7 +67,7 @@ class EmailMessageStateManager(
 
                 // Filter only new messages
                 val newDocs =
-                    batch
+                    uniqueBatch
                         .filter { it.messageId !in existingSet }
                         .map {
                             EmailMessageDocument(
@@ -67,13 +82,27 @@ class EmailMessageStateManager(
                         }
 
                 if (newDocs.isNotEmpty()) {
-                    newDocs.forEach { emailMessageRepository.save(it) }
-                    totalSaved += newDocs.size
-                    logger.info { "Saved ${newDocs.size} new messages (total: $totalProcessed processed, $totalSaved saved)" }
+                    var savedInBatch = 0
+                    newDocs.forEach { doc ->
+                        runCatching {
+                            emailMessageRepository.save(doc)
+                            savedInBatch++
+                        }.onFailure { e ->
+                            // Check for MongoDB duplicate key error (E11000)
+                            if (e is com.mongodb.MongoWriteException && e.error.code == 11000) {
+                                logger.debug { "Skipping duplicate email messageId=${doc.messageId} for account=${doc.accountId.toHexString()}" }
+                            } else {
+                                logger.error(e) { "Failed to save email messageId=${doc.messageId}: ${e.message}" }
+                                throw e
+                            }
+                        }
+                    }
+                    totalSaved += savedInBatch
+                    logger.info { "Saved $savedInBatch new messages (total: $totalProcessed processed, $totalSaved saved)" }
                 }
             }
 
-        logger.info { "Batch sync completed for account $accountId: saved $totalSaved new messages (processed $totalProcessed total)" }
+        logger.info { "Batch sync completed for account $accountId: saved $totalSaved new messages (processed $totalProcessed unique, skipped $totalDuplicatesInFlow IMAP duplicates)" }
     }
 
     fun findNewMessages(accountId: ObjectId): Flow<EmailMessageDocument> =
