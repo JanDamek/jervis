@@ -83,11 +83,12 @@ class ConfluenceContinuousIndexer(
             childPageIds = emptyList(),
         )
 
-        // Index links separately for better discoverability
-        val allLinks = res.internalLinks + res.externalLinks
-        if (allLinks.isNotEmpty()) {
-            logger.info { "CONFLUENCE_LINKS: Indexing ${allLinks.size} links from page ${item.pageId}" }
-            allLinks.forEach { url ->
+        // Internal Confluence links are already tracked in stateManager.updatePageLinks
+        // They will be picked up by ConfluencePollingScheduler for recursive indexing
+        // Only index EXTERNAL links via link indexer
+        if (res.externalLinks.isNotEmpty()) {
+            logger.info { "CONFLUENCE_EXTERNAL_LINKS: Indexing ${res.externalLinks.size} external links from page ${item.pageId}" }
+            res.externalLinks.forEach { url ->
                 runCatching {
                     linkIndexingService.indexUrl(
                         url = url,
@@ -97,8 +98,15 @@ class ConfluenceContinuousIndexer(
                         parentRef = item.pageId,
                     )
                 }.onFailure { e ->
-                    logger.warn { "Failed to index link $url from Confluence page ${item.pageId}: ${e.message}" }
+                    logger.warn { "Failed to index external link $url from Confluence page ${item.pageId}: ${e.message}" }
                 }
+            }
+        }
+
+        if (res.internalLinks.isNotEmpty()) {
+            logger.debug {
+                "CONFLUENCE_INTERNAL_LINKS: Found ${res.internalLinks.size} internal Confluence links - " +
+                    "they will be indexed by ConfluencePollingScheduler"
             }
         }
 

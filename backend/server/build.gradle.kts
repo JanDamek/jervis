@@ -87,7 +87,6 @@ dependencies {
 
     // Text processing and parsers
     implementation(libs.commons.text)
-    implementation(libs.springdoc.openapi.webflux.ui)
     implementation(libs.javaparser.core)
     implementation(libs.jsoup)
 

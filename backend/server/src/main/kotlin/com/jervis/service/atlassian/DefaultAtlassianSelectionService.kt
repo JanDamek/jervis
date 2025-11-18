@@ -69,22 +69,23 @@ class DefaultAtlassianSelectionService(
     override suspend fun ensureSelectionsOrCreateTasks(
         clientId: ObjectId,
         allowAutoDetectUser: Boolean,
-    ): Pair<JiraProjectKey, JiraAccountId> {
+    ): Pair<JiraProjectKey, JiraAccountId>? {
         val conn = getConnection(clientId).let { auth.ensureValidToken(it) }
 
-        val projectKey =
-            conn.primaryProject
-                ?: throw IllegalStateException(
-                    "Jira primary project not configured for client ${clientId.toHexString()}. Configure it during desktop/server setup.",
-                )
+        val projectKey = conn.primaryProject
+        val preferredUser = conn.preferredUser
 
-        val preferred =
-            conn.preferredUser
-                ?: throw IllegalStateException(
-                    "Jira preferred user not configured for client ${clientId.toHexString()}. Configure it during desktop/server setup.",
-                )
+        // If either is missing, return null (not an error - just means client-level indexing)
+        if (projectKey == null || preferredUser == null) {
+            logger.info {
+                "JIRA_SELECTION: Selections not configured for client=${clientId.toHexString()} " +
+                "(primaryProject=${projectKey?.value}, preferredUser=${preferredUser?.value}). " +
+                "Will use client-level indexing (all projects)."
+            }
+            return null
+        }
 
-        return Pair(projectKey, preferred)
+        return Pair(projectKey, preferredUser)
     }
 
     private fun missingConnection(clientId: ObjectId): Nothing =

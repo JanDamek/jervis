@@ -21,6 +21,10 @@ import java.time.Instant
 @Service
 class IndexingStatusRegistry(
     private val webSocketSessionManager: WebSocketSessionManager,
+    private val emailMessageRepository: com.jervis.service.listener.email.state.EmailMessageRepository,
+    private val gitCommitRepository: com.jervis.service.git.state.GitCommitRepository,
+    private val confluencePageRepository: com.jervis.repository.mongo.ConfluencePageMongoRepository,
+    private val jiraIssueIndexRepository: com.jervis.repository.mongo.JiraIssueIndexMongoRepository,
 ) {
     private val json = Json { encodeDefaults = true }
 
@@ -99,6 +103,36 @@ class IndexingStatusRegistry(
             notifyClients(t)
         }
     }
+
+    /**
+     * Compute global indexed/new counts for a given tool.
+     * Indexed = successfully processed (indexed) items so far.
+     * New = items discovered and waiting (NEW state or equivalent).
+     */
+    suspend fun getIndexedAndNewCounts(toolKey: String): Pair<Long, Long> =
+        when (toolKey) {
+            "email" -> {
+                val indexed = emailMessageRepository.countByState(com.jervis.service.listener.email.state.EmailMessageState.INDEXED)
+                val new = emailMessageRepository.countByState(com.jervis.service.listener.email.state.EmailMessageState.NEW)
+                indexed to new
+            }
+            "git" -> {
+                val indexed = gitCommitRepository.countByState(com.jervis.service.git.state.GitCommitState.INDEXED)
+                val new = gitCommitRepository.countByState(com.jervis.service.git.state.GitCommitState.NEW)
+                indexed to new
+            }
+            "confluence" -> {
+                val indexed = confluencePageRepository.countByState(com.jervis.domain.confluence.ConfluencePageStateEnum.INDEXED)
+                val new = confluencePageRepository.countByState(com.jervis.domain.confluence.ConfluencePageStateEnum.NEW)
+                indexed to new
+            }
+            "jira" -> {
+                val indexed = jiraIssueIndexRepository.countIndexedActive()
+                val new = jiraIssueIndexRepository.countNewActive()
+                indexed to new
+            }
+            else -> 0L to 0L
+        }
 
     suspend fun progress(
         toolKey: String,

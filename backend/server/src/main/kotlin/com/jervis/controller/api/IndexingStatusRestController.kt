@@ -36,6 +36,8 @@ class IndexingStatusRestController(
 
         val tools =
             registry.snapshot().map { t ->
+                val (indexedCount, newCount) = kotlin.runCatching { registry.getIndexedAndNewCounts(t.toolKey) }
+                    .getOrDefault(0L to 0L)
                 IndexingToolSummaryDto(
                     toolKey = t.toolKey,
                     displayName = t.displayName,
@@ -44,6 +46,8 @@ class IndexingStatusRestController(
                     runningSince = t.runningSince?.let(fmt::format),
                     processed = t.processed,
                     errors = t.errors,
+                    indexedCount = indexedCount,
+                    newCount = newCount,
                     lastError = t.lastError,
                     lastErrorFull = t.lastErrorFull,
                     lastRunStartedAt = t.lastRunStartedAt?.let(fmt::format),
@@ -58,6 +62,8 @@ class IndexingStatusRestController(
         @PathVariable("toolKey") toolKey: String,
     ): IndexingToolDetailDto {
         val t = registry.toolDetail(toolKey) ?: IndexingStatusRegistry.ToolState(toolKey, toolKey)
+        val (indexedCount, newCount) = kotlin.runCatching { registry.getIndexedAndNewCounts(t.toolKey) }
+            .getOrDefault(0L to 0L)
         val summary =
             IndexingToolSummaryDto(
                 toolKey = t.toolKey,
@@ -67,6 +73,8 @@ class IndexingStatusRestController(
                 runningSince = t.runningSince?.let(fmt::format),
                 processed = t.processed,
                 errors = t.errors,
+                indexedCount = indexedCount,
+                newCount = newCount,
                 lastError = t.lastError,
                 lastErrorFull = t.lastErrorFull,
                 lastRunStartedAt = t.lastRunStartedAt?.let(fmt::format),

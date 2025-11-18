@@ -17,4 +17,9 @@ interface UnsafeLinkPatternMongoRepository : CoroutineCrudRepository<UnsafeLinkP
      * Get all enabled patterns for matching.
      */
     fun findByEnabledTrue(): Flow<UnsafeLinkPatternDocument>
+
+    /**
+     * Delete pattern by exact regex string.
+     */
+    suspend fun deleteByPattern(pattern: String): Long
 }

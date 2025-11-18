@@ -23,6 +23,10 @@ data class IndexingToolSummaryDto(
     val processed: Int = 0,
     /** Cumulative errors in current run (or last run if IDLE) */
     val errors: Int = 0,
+    /** Total items already indexed (from indexing collections) */
+    val indexedCount: Long = 0,
+    /** Total items discovered and waiting to process (NEW state in indexing collections) */
+    val newCount: Long = 0,
     /** Human readable last error preview (truncated) */
     val lastError: String? = null,
     /** Full error details with stacktrace for copy/paste */
