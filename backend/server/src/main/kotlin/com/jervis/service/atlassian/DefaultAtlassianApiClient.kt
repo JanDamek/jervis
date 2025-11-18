@@ -211,26 +211,25 @@ class DefaultAtlassianApiClient(
             do {
                 val client = createHttpClient(conn)
                 try {
-                    val url = "$siteUrl/rest/api/3/search"
+                    // Use new /search/jql endpoint (old /search endpoint was removed)
+                    // See: https://developer.atlassian.com/changelog/#CHANGE-2046
+                    // New endpoint uses GET with query parameters instead of POST
+                    val url = "$siteUrl/rest/api/3/search/jql"
                     rateLimiter.acquirePermit(url)
 
-                    logger.debug { "JIRA search (POST): JQL='$jql' startAt=$startAt maxResults=$max" }
-
-                    // Use POST instead of GET (Atlassian best practice)
-                    // This avoids URL encoding issues with JQL containing quotes, spaces, etc.
-                    val searchRequest =
-                        SearchRequestDto(
-                            jql = jql,
-                            startAt = startAt,
-                            maxResults = max,
-                            fields = fields,
-                            expand = expand.takeIf { it.isNotEmpty() },
-                        )
+                    logger.info { "JIRA search (GET): JQL='$jql' startAt=$startAt maxResults=$max" }
 
                     val httpResponse: HttpResponse =
-                        client.post(url) {
-                            setBody(searchRequest)
-                            contentType(ContentType.Application.Json)
+                        client.get(url) {
+                            parameter("jql", jql)
+                            parameter("startAt", startAt)
+                            parameter("maxResults", max)
+                            if (fields.isNotEmpty()) {
+                                parameter("fields", fields.joinToString(","))
+                            }
+                            if (expand.isNotEmpty()) {
+                                parameter("expand", expand.joinToString(","))
+                            }
                         }
 
                     if (!httpResponse.status.isSuccess()) {
@@ -254,39 +253,62 @@ class DefaultAtlassianApiClient(
                     val response = httpResponse.body<SearchResponseDto>()
                     val issues = response.issues.orEmpty()
 
-                    logger.debug { "JIRA search returned ${issues.size} issues (total=${response.total})" }
+                    logger.info { "JIRA search returned ${issues.size} issues (total=${response.total})" }
+
+                    var emittedCount = 0
+                    var skippedNullFields = 0
+                    var skippedNullKey = 0
+                    var skippedTooOld = 0
 
                     for (i in issues) {
                         val f = i.fields
-                        if (f != null) {
-                            val updated = f.updated?.let { parseJiraDate(it) }
-                            if (updatedSinceEpochMs != null && updated != null && updated.toEpochMilli() < updatedSinceEpochMs) continue
-
-                            val created = f.created?.let { parseJiraDate(it) } ?: updated ?: java.time.Instant.now()
-                            val issue =
-                                JiraIssue(
-                                    key = i.key ?: continue,
-                                    project = JiraProjectKey(f.project?.key ?: i.key.substringBefore("-")),
-                                    summary = f.summary ?: "",
-                                    description = f.description?.let { extractTextFromAdf(it) },
-                                    type = f.issuetype?.name ?: "Task",
-                                    status = f.status?.name ?: "Unknown",
-                                    assignee = f.assignee?.accountId?.let { JiraAccountId(it) },
-                                    reporter = f.reporter?.accountId?.let { JiraAccountId(it) },
-                                    created = created,
-                                    updated = updated ?: created,
-                                )
-                            emit(issue)
+                        if (f == null) {
+                            skippedNullFields++
+                            continue
                         }
+
+                        if (i.key == null) {
+                            skippedNullKey++
+                            continue
+                        }
+
+                        val updated = f.updated?.let { parseJiraDate(it) }
+                        if (updatedSinceEpochMs != null && updated != null && updated.toEpochMilli() < updatedSinceEpochMs) {
+                            skippedTooOld++
+                            continue
+                        }
+
+                        val created = f.created?.let { parseJiraDate(it) } ?: updated ?: java.time.Instant.now()
+                        val issue =
+                            JiraIssue(
+                                key = i.key!!,
+                                project = JiraProjectKey(f.project?.key ?: i.key!!.substringBefore("-")),
+                                summary = f.summary ?: "",
+                                description = f.description?.let { extractTextFromAdf(it) },
+                                type = f.issuetype?.name ?: "Task",
+                                status = f.status?.name ?: "Unknown",
+                                assignee = f.assignee?.accountId?.let { JiraAccountId(it) },
+                                reporter = f.reporter?.accountId?.let { JiraAccountId(it) },
+                                created = created,
+                                updated = updated ?: created,
+                            )
+                        emittedCount++
+                        emit(issue)
+                    }
+
+                    logger.info {
+                        "JIRA search page complete: emitted=$emittedCount, skipped: nullFields=$skippedNullFields, " +
+                            "nullKey=$skippedNullKey, tooOld=$skippedTooOld"
                     }
 
                     val pageCount = issues.size
                     startAt += pageCount
-                    val total = response.total ?: 0
+                    val total = response.total ?: Int.MAX_VALUE // If total is null, continue until empty page
 
                     client.close()
 
-                    if (pageCount == 0 || startAt >= total) break
+                    // Stop when we get an empty page or less than max results (last page)
+                    if (pageCount == 0 || pageCount < max) break
                 } catch (e: Exception) {
                     logger.error(e) { "JIRA search failed for ${conn.tenant.value}: JQL='$jql'" }
                     client.close()
@@ -433,15 +455,6 @@ class DefaultAtlassianApiClient(
     private data class ProjectDto(
         val key: String? = null,
         val name: String? = null,
-    )
-
-    @Serializable
-    private data class SearchRequestDto(
-        val jql: String,
-        val startAt: Int,
-        val maxResults: Int,
-        val fields: List<String>,
-        val expand: List<String>? = null,
     )
 
     @Serializable

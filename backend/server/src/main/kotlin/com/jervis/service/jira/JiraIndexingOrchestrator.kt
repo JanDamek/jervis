@@ -39,6 +39,7 @@ class JiraIndexingOrchestrator(
     private val errorLogService: com.jervis.service.error.ErrorLogService,
     private val linkIndexingQueue: com.jervis.service.indexing.LinkIndexingQueue,
     private val taskCreator: com.jervis.service.confluence.processor.ConfluenceTaskCreator,
+    private val pendingTaskService: com.jervis.service.background.PendingTaskService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -226,6 +227,7 @@ class JiraIndexingOrchestrator(
                 // Determine incremental window based on last sync
                 val latestConnDoc = connectionRepository.findByClientId(clientId)
                 val lastSyncedAt = latestConnDoc?.lastSyncedAt
+                logger.info { "JIRA_INDEX: lastSyncedAt=$lastSyncedAt for client=${clientId.toHexString()}" }
                 // First sync: index ALL issues (no time filter)
                 // Subsequent syncs: fetch all but our hash-based change detection will skip unchanged ones
                 // NOTE: Use 'lastViewed' instead of 'updated' for sorting - 'updated' was deprecated in some Jira Cloud versions
@@ -237,8 +239,9 @@ class JiraIndexingOrchestrator(
                     val jql = "project = $key $baseJqlSuffix"
                     val jervisProjectId = jiraProjectMapping[key] // null if not mapped
 
+                    val mapped = jervisProjectId?.toHexString() ?: "(not mapped)"
+                    logger.info { "JIRA_INDEX: Starting search for project=$key mappedProject=$mapped jql='$jql'" }
                     runCatching {
-                        val mapped = jervisProjectId?.toHexString() ?: "(not mapped)"
                         indexingRegistry.info("jira", "Indexing project=$key mappedProject=$mapped")
                     }
 
@@ -247,6 +250,7 @@ class JiraIndexingOrchestrator(
                         api
                             .searchIssues(connValid, jql, updatedSinceEpochMs = lastSyncedAt?.toEpochMilli())
                             .collect { issue ->
+                                logger.debug { "JIRA_INDEX: Processing issue ${issue.key} from project $key" }
                                 // Load existing index document to check what's already indexed
                                 val existingIndexDoc = issueIndexRepository.findByClientIdAndIssueKey(clientId, issue.key)
 
@@ -260,73 +264,61 @@ class JiraIndexingOrchestrator(
 
                                 val assignedToMe = me?.let { issue.assignee?.value == it.value } ?: false
 
-                                if (!assignedToMe) {
-                                    // Shallow: one compact narrative chunk (only if content or status changed)
-                                    if (contentChanged || statusChanged || existingIndexDoc == null) {
-                                        indexIssueSummaryShallow(
-                                            clientId,
-                                            issue,
-                                            projectKey,
-                                            assignedToMe,
-                                            tenantHost,
-                                            jervisProjectId,
-                                            currentContentHash,
-                                            currentStatusHash,
-                                            existingIndexDoc,
-                                        )
-                                        runCatching {
-                                            indexingRegistry.progress(
-                                                "jira",
-                                                processedInc = 1,
-                                                message = "Processed issue ${issue.key} (shallow, updated)",
-                                            )
-                                        }
-                                    } else {
-                                        logger.debug { "JIRA_INDEX: Skipping ${issue.key} - no changes detected" }
-                                    }
-                                } else {
-                                    // Deep: summary + comments + attachments
-                                    if (contentChanged || statusChanged || existingIndexDoc == null) {
-                                        indexIssueSummaryShallow(
-                                            clientId,
-                                            issue,
-                                            projectKey,
-                                            assignedToMe,
-                                            tenantHost,
-                                            jervisProjectId,
-                                            currentContentHash,
-                                            currentStatusHash,
-                                            existingIndexDoc,
-                                        )
-                                    }
+                                // INDEX ALL ISSUES TO RAG (deep indexing with comments and attachments)
+                                // This ensures comprehensive search across all project knowledge
+                                if (contentChanged || statusChanged || existingIndexDoc == null) {
+                                    indexIssueSummaryShallow(
+                                        clientId,
+                                        issue,
+                                        projectKey,
+                                        assignedToMe,
+                                        tenantHost,
+                                        jervisProjectId,
+                                        currentContentHash,
+                                        currentStatusHash,
+                                        existingIndexDoc,
+                                    )
+                                }
 
-                                    // Always check for new comments (uses lastEmbeddedCommentId)
-                                    indexIssueCommentsDeep(
+                                // Always index comments for ALL issues (not just assigned to me)
+                                indexIssueCommentsDeep(
+                                    clientId = clientId,
+                                    issueKey = issue.key,
+                                    project = projectKey,
+                                    tenantHost = tenantHost,
+                                    jervisProjectId = jervisProjectId,
+                                )
+
+                                // Always index attachments for ALL issues
+                                jiraAttachmentIndexer.indexIssueAttachments(
+                                    conn = connValid,
+                                    issueKey = issue.key,
+                                    clientId = clientId,
+                                    tenantHost = tenantHost,
+                                    projectId = jervisProjectId,
+                                )
+
+                                runCatching {
+                                    indexingRegistry.progress(
+                                        "jira",
+                                        processedInc = 1,
+                                        message = "Processed issue ${issue.key} (deep, all)",
+                                    )
+                                }
+
+                                // CREATE PENDING TASKS only for issues assigned to me
+                                if (assignedToMe) {
+                                    createPendingTaskForIssue(
                                         clientId = clientId,
-                                        issueKey = issue.key,
-                                        project = projectKey,
+                                        issue = issue,
+                                        projectKey = projectKey,
                                         tenantHost = tenantHost,
                                         jervisProjectId = jervisProjectId,
                                     )
-
-                                    // Index new attachments only (uses indexedAttachmentIds)
-                                    jiraAttachmentIndexer.indexIssueAttachments(
-                                        conn = connValid,
-                                        issueKey = issue.key,
-                                        clientId = clientId,
-                                        tenantHost = tenantHost,
-                                        projectId = jervisProjectId,
-                                    )
-
-                                    runCatching {
-                                        indexingRegistry.progress(
-                                            "jira",
-                                            processedInc = 1,
-                                            message = "Processed issue ${issue.key} (deep)",
-                                        )
-                                    }
                                 }
                             }
+
+                        logger.info { "JIRA_INDEX: Completed search for project=$key" }
                     } catch (e: Exception) {
                         logger.error(e) { "JIRA_INDEX: search failed for client=${clientId.toHexString()} project=$key" }
 
@@ -612,14 +604,108 @@ class JiraIndexingOrchestrator(
     }
 
     /**
+     * Create pending task for JIRA issue assigned to me.
+     * Content includes: issue key, summary, description, all comments.
+     * Confluence links are marked with retrieval instructions.
+     */
+    private suspend fun createPendingTaskForIssue(
+        clientId: ObjectId,
+        issue: JiraIssue,
+        projectKey: JiraProjectKey,
+        tenantHost: String,
+        jervisProjectId: ObjectId?,
+    ) {
+        logger.info { "Creating pending task for JIRA issue ${issue.key} assigned to me" }
+
+        val conn = selection.getConnection(clientId).let { auth.ensureValidToken(it) }
+
+        // Collect all comments
+        val comments = mutableListOf<Pair<String, String>>() // Pair<commentId, body>
+        api.fetchIssueComments(conn, issue.key).collect { pair ->
+            comments.add(pair)
+        }
+
+        // Build task content with all information
+        val taskContent = buildString {
+            appendLine("=== JIRA ISSUE ANALYSIS ===")
+            appendLine()
+            appendLine("Issue: ${issue.key}")
+            appendLine("Project: ${projectKey.value}")
+            appendLine("Status: ${issue.status}")
+            appendLine("Summary: ${issue.summary}")
+            appendLine("Assignee: ${issue.assignee?.value ?: "Unassigned"}")
+            appendLine("Reporter: ${issue.reporter?.value ?: "Unknown"}")
+            appendLine("Created: ${issue.created}")
+            appendLine("Updated: ${issue.updated}")
+            appendLine("URL: https://$tenantHost/browse/${issue.key}")
+            appendLine()
+
+            // Description
+            appendLine("=== DESCRIPTION ===")
+            if (!issue.description.isNullOrBlank()) {
+                val descriptionWithMarkedLinks = markConfluenceLinks(issue.description)
+                appendLine(descriptionWithMarkedLinks)
+            } else {
+                appendLine("(No description)")
+            }
+            appendLine()
+
+            // Comments
+            if (comments.isNotEmpty()) {
+                appendLine("=== COMMENTS (${comments.size}) ===")
+                comments.forEach { (commentId, body) ->
+                    appendLine()
+                    appendLine("--- Comment ID: $commentId ---")
+                    val commentWithMarkedLinks = markConfluenceLinks(body)
+                    appendLine(commentWithMarkedLinks)
+                }
+                appendLine()
+            }
+
+            appendLine("=== END ISSUE CONTENT ===")
+        }
+
+        try {
+            pendingTaskService.createTask(
+                taskType = com.jervis.domain.task.PendingTaskTypeEnum.AGENT_ANALYSIS,
+                content = taskContent,
+                clientId = clientId,
+                projectId = jervisProjectId,
+            )
+
+            logger.info { "Created AGENT_ANALYSIS task for JIRA issue ${issue.key}" }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to create pending task for JIRA issue ${issue.key}: ${e.message}" }
+            // Don't fail indexing if task creation fails
+        }
+    }
+
+    /**
+     * Mark Confluence links in text with retrieval instructions.
+     * Replaces Confluence URLs with annotated version explaining how to retrieve content.
+     */
+    private fun markConfluenceLinks(text: String): String {
+        val confluencePattern = Regex("""https?://[^\s<>"{}|\\^`\[\]]+/wiki/(?:spaces|x|pages)/[^\s<>"{}|\\^`\[\]]+""")
+        return confluencePattern.replace(text) { matchResult ->
+            val url = matchResult.value
+            "[Confluence Link: $url - Use confluence_page_fetch MCP tool or RAG search to retrieve full content]"
+        }
+    }
+
+    /**
      * Extract URLs from plain text.
      * Used for Jira comments where HTML has already been stripped.
+     * Filters out mailto:, tel:, and other non-http(s) schemes.
      */
     private fun extractLinksFromText(text: String): List<String> {
         val urlPattern = Regex("""https?://[^\s<>"{}|\\^`\[\]]+""")
         return urlPattern
             .findAll(text)
             .map { it.value }
+            .filter { url ->
+                // Extra safety: filter out non-http(s) schemes (shouldn't match due to regex, but be explicit)
+                url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true)
+            }
             .distinct()
             .toList()
     }

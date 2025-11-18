@@ -118,12 +118,20 @@ class ConfluenceContentProcessor(
         val doc = Jsoup.parse(sanitizedHtml, baseUrl)
 
         // Extract all links before cleaning
+        // Filter out mailto: and other non-http(s) schemes
         val allLinks =
             doc
                 .select("a[href]")
                 .mapNotNull { element ->
                     val href = element.attr("abs:href") // Resolves relative URLs
-                    if (href.isNotBlank()) href else null
+                    when {
+                        href.isBlank() -> null
+                        href.startsWith("mailto:", ignoreCase = true) -> null
+                        href.startsWith("tel:", ignoreCase = true) -> null
+                        href.startsWith("javascript:", ignoreCase = true) -> null
+                        href.startsWith("data:", ignoreCase = true) -> null
+                        else -> href
+                    }
                 }.distinct()
 
         // Classify links

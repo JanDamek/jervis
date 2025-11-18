@@ -259,6 +259,7 @@ class TaskQualificationService(
     /**
      * Build mapping values for qualifier prompt placeholders from task data.
      * All information is now in content field - just pass it through.
+     * Also provides current datetime for past/future event detection.
      */
     private fun buildMappingValues(
         task: PendingTask,
@@ -267,6 +268,11 @@ class TaskQualificationService(
         buildMap {
             // Only provide values we truly have. Do not invent.
             put("content", truncatedContent)
+
+            // Provide current datetime so qualifier can determine if events are in past or future
+            val now = java.time.ZonedDateTime.now(java.time.ZoneId.of("UTC"))
+            put("currentDateTime", now.format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME))
+            put("currentDate", now.format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE))
         }
 
     private suspend fun qualifyTask(task: PendingTask) {
