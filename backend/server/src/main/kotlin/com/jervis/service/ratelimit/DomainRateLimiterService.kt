@@ -14,23 +14,28 @@ import java.util.concurrent.ConcurrentHashMap
 private val logger = KotlinLogging.logger {}
 
 /**
- * Domain-based API rate limiter using Bucket4j.
+ * Domain-based API rate limiter using Bucket4j token bucket algorithm.
  *
  * Architecture:
- * - One bucket per domain (e.g., "tepsivo.atlassian.net")
- * - Adaptive rate limiting: fast burst → normal → sustained
- * - Tracks item count per domain to determine current phase
- * - Thread-safe for concurrent API calls
+ * - One token bucket per domain (e.g., "tepsivo.atlassian.net", "api.openai.com")
+ * - Token bucket: max capacity with refill rate (e.g., 100 tokens, refill 10/sec)
+ * - Adaptive rate limiting: fast burst → normal → sustained based on processed item count
+ * - Thread-safe for concurrent API calls (uses ConcurrentHashMap)
+ * - Non-blocking suspend functions (uses delay, not Thread.sleep)
+ *
+ * Token Bucket vs Fixed Window:
+ * - Token bucket allows bursts up to capacity, then throttles to refill rate
+ * - Better for APIs with burst tolerance (e.g., Atlassian allows initial burst)
  *
  * Phases (configurable via application.yml):
- * 1. Fast burst: First 100 items, no delay (quick initial sync)
- * 2. Normal: Items 101-500, 10 req/sec (moderate speed)
- * 3. Sustained: Items 500+, 1 req/sec (prevents API bans)
+ * 1. Fast burst: First 100 items → 100 req/sec capacity
+ * 2. Normal: Items 101-500 → 10 req/sec
+ * 3. Sustained: Items 500+ → 1 req/sec (prevents API bans)
  *
  * Usage:
  * ```kotlin
  * rateLimiter.acquirePermit("https://tepsivo.atlassian.net/wiki/api/v2/pages")
- * // Make API call
+ * // Make API call (rate limited automatically)
  * ```
  */
 @Service
@@ -44,12 +49,20 @@ class DomainRateLimiterService(
      * Acquire permit before making API call to the given URL.
      * Blocks until permit is available according to current rate limit phase.
      *
+     * Internal servers (192.168.x.x, 10.x.x.x, 172.16-31.x.x, localhost) are exempt from rate limiting.
+     *
      * @param url Full URL of the API endpoint
      */
     suspend fun acquirePermit(url: String) {
         val domain = extractDomain(url)
         if (domain == null) {
             logger.warn { "Could not extract domain from URL: $url" }
+            return
+        }
+
+        // Exempt internal/private IP addresses and localhost from rate limiting
+        if (isInternalAddress(domain)) {
+            logger.debug { "Skipping rate limit for internal address: $domain" }
             return
         }
 
@@ -166,6 +179,42 @@ class DomainRateLimiterService(
         runCatching {
             URI(url).host
         }.getOrNull()
+
+    /**
+     * Check if domain/host is an internal/private address that should be exempt from rate limiting.
+     *
+     * Exempts:
+     * - Private IPv4: 192.168.x.x, 10.x.x.x, 172.16-31.x.x
+     * - Localhost: localhost, 127.x.x.x, ::1
+     * - Internal server: 192.168.100.117 (explicitly mentioned)
+     *
+     * @param domain Host/domain extracted from URL
+     * @return true if internal address, false otherwise
+     */
+    private fun isInternalAddress(domain: String): Boolean {
+        // Localhost patterns
+        if (domain == "localhost" || domain == "::1" || domain.startsWith("127.")) {
+            return true
+        }
+
+        // Private IPv4 ranges (RFC 1918)
+        if (domain.startsWith("192.168.") || domain.startsWith("10.")) {
+            return true
+        }
+
+        // 172.16.0.0 - 172.31.255.255
+        if (domain.startsWith("172.")) {
+            val parts = domain.split(".")
+            if (parts.size >= 2) {
+                val secondOctet = parts[1].toIntOrNull()
+                if (secondOctet != null && secondOctet in 16..31) {
+                    return true
+                }
+            }
+        }
+
+        return false
+    }
 
     /**
      * Reset rate limit state for a domain (useful for testing or admin tools).

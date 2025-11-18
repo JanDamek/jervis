@@ -32,14 +32,14 @@ private val logger = KotlinLogging.logger {}
 
 /**
  * Default implementation of Atlassian API client for Jira Cloud.
- * Uses Ktor HttpClient (coroutines-first) for consistency with ConfluenceApiClient.
- * Handles REST API v3 requests with rate limiting and error handling.
+ * Uses centralized RateLimitedHttpClientFactory for consistent rate limiting across all domains.
+ * Handles REST API v3 requests with automatic rate limiting and error handling.
  *
  * Documentation: https://developer.atlassian.com/cloud/jira/platform/rest/v3/
  */
 @Service
 class DefaultAtlassianApiClient(
-    private val rateLimiter: com.jervis.service.ratelimit.DomainRateLimiterService,
+    private val httpClientFactory: com.jervis.service.http.RateLimitedHttpClientFactory,
 ) : AtlassianApiClient {
 
     private val json =
@@ -53,7 +53,7 @@ class DefaultAtlassianApiClient(
         val client = createHttpClient(conn)
         return try {
             val url = "$siteUrl/rest/api/3/myself"
-            rateLimiter.acquirePermit(url)
+            httpClientFactory.acquirePermit(url)
 
             val httpResponse: HttpResponse = client.get(url)
 
@@ -85,7 +85,7 @@ class DefaultAtlassianApiClient(
             val client = createHttpClient(conn)
             try {
                 val url = "$siteUrl/rest/agile/1.0/board"
-                rateLimiter.acquirePermit(url)
+                httpClientFactory.acquirePermit(url)
 
                 val httpResponse: HttpResponse =
                     client.get(url) {
@@ -134,7 +134,7 @@ class DefaultAtlassianApiClient(
             val client = createHttpClient(conn)
             try {
                 val url = "$siteUrl/rest/api/3/project/search"
-                rateLimiter.acquirePermit(url)
+                httpClientFactory.acquirePermit(url)
 
                 val httpResponse: HttpResponse =
                     client.get(url) {
@@ -182,7 +182,7 @@ class DefaultAtlassianApiClient(
             val client = createHttpClient(conn)
             try {
                 val url = "$siteUrl/rest/api/3/project/${key.value}"
-                rateLimiter.acquirePermit(url)
+                httpClientFactory.acquirePermit(url)
 
                 val httpResponse: HttpResponse = client.get(url)
                 client.close()
@@ -215,7 +215,7 @@ class DefaultAtlassianApiClient(
                     // See: https://developer.atlassian.com/changelog/#CHANGE-2046
                     // New endpoint uses GET with query parameters instead of POST
                     val url = "$siteUrl/rest/api/3/search/jql"
-                    rateLimiter.acquirePermit(url)
+                    httpClientFactory.acquirePermit(url)
 
                     logger.info { "JIRA search (GET): JQL='$jql' startAt=$startAt maxResults=$max" }
 
@@ -330,7 +330,7 @@ class DefaultAtlassianApiClient(
                 val client = createHttpClient(conn)
                 try {
                     val url = "$siteUrl/rest/api/3/issue/$issueKey/comment"
-                    rateLimiter.acquirePermit(url)
+                    httpClientFactory.acquirePermit(url)
 
                     val httpResponse: HttpResponse =
                         client.get(url) {
@@ -370,11 +370,11 @@ class DefaultAtlassianApiClient(
             } while (true)
         }
 
-    private fun createHttpClient(conn: AtlassianConnection): HttpClient =
-        HttpClient {
-            install(ContentNegotiation) {
-                json(json)
-            }
+    private fun createHttpClient(conn: AtlassianConnection): HttpClient {
+        val client = httpClientFactory.createClient()
+
+        // Configure Atlassian-specific auth
+        return client.config {
             defaultRequest {
                 // Atlassian API uses Basic auth with email:token
                 val credentials = "${conn.email ?: ""}:${conn.accessToken}"
@@ -383,6 +383,7 @@ class DefaultAtlassianApiClient(
                 contentType(ContentType.Application.Json)
             }
         }
+    }
 
     private suspend fun handleHttpError(conn: AtlassianConnection, httpResponse: HttpResponse) {
         val status = httpResponse.status.value
