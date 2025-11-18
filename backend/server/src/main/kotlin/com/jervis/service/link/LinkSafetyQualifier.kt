@@ -47,6 +47,38 @@ class LinkSafetyQualifier(
     private val indexedLinkRepository: IndexedLinkMongoRepository,
     private val unsafeLinkPatternRepository: UnsafeLinkPatternMongoRepository,
 ) {
+    init {
+        // Cleanup bad patterns on startup
+        kotlinx.coroutines.runBlocking {
+            cleanupBadPatterns()
+        }
+    }
+
+    /**
+     * Remove overly broad or incorrect patterns that cause false positives.
+     */
+    private suspend fun cleanupBadPatterns() {
+        val badPatterns = listOf(
+            "ms|kn|r|b", // Too broad - matches almost any URL
+            "app", // Too broad - blocks legitimate /app/ paths
+            "analytics|tracking|monitoring", // Too broad - blocks legitimate domains
+            "analytics", // Too broad
+            "tracking", // Too broad
+            "monitoring", // Too broad
+            "email", // Too broad - use "email=" instead
+        )
+
+        badPatterns.forEach { pattern ->
+            try {
+                val deleted = unsafeLinkPatternRepository.deleteByPattern(pattern)
+                if (deleted > 0) {
+                    logger.warn { "Removed bad pattern '$pattern' (deleted $deleted document(s))" }
+                }
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to remove bad pattern '$pattern'" }
+            }
+        }
+    }
     @kotlinx.serialization.Serializable
     @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
     data class SafetyResult(
@@ -238,14 +270,15 @@ class LinkSafetyQualifier(
             "/action/",
             "/click/",
             "/track/",
-            // Tracking parameters
-            "utm_source",
-            "utm_medium",
-            "utm_campaign",
-            "email_id",
-            "subscriber_id",
-            "tracking_id",
-            "click_id",
+            // Personalized tracking parameters (user-specific IDs that make URL unique per user)
+            // NOTE: utm_* parameters are NOT included - they're analytics only, content is still accessible
+            "email=", // Personalized email parameter (e.g., newsletter unsubscribe links)
+            "email_id=",
+            "subscriber_id=",
+            "tracking_id=",
+            "click_id=",
+            "user_id=",
+            "recipient=",
             // Privacy/settings (any settings change is an action)
             "privacy-settings",
             "account-settings",
@@ -368,9 +401,32 @@ class LinkSafetyQualifier(
             "alza.cz",
             "mall.cz",
             "czc.cz",
+            "mountfield.cz",
+            "hornbach.cz",
+            "obi.cz",
+            "baumax.cz",
+            "datart.cz",
+            "electroworld.cz",
+            "okay.cz",
+            "tsbohemia.cz",
+            "heureka.cz",
+            "zbozi.cz",
             "amazon.com",
             "ebay.com",
             "aliexpress.com",
+            // Appliance manufacturers
+            "haier.cz",
+            "haier.com",
+            "electrolux.cz",
+            "electrolux.com",
+            "whirlpool.cz",
+            "whirlpool.com",
+            "bosch-home.com",
+            "siemens-home.bsh-group.com",
+            "lg.com",
+            "samsung.com",
+            "miele.cz",
+            "miele.com",
             // News & Media
             "nytimes.com",
             "bbc.com",
@@ -383,6 +439,11 @@ class LinkSafetyQualifier(
             "linkedin.com",
             "facebook.com",
             "instagram.com",
+            // Internal/Company domains
+            "tepsivo.com",
+            "tepsivo-sdb-internal.com",
+            // Google services (docs are safe to read even with /edit URLs)
+            "docs.google.com",
         )
 
     /**
@@ -438,6 +499,13 @@ class LinkSafetyQualifier(
      * 5. LLM qualification (cache result if UNSAFE + save regex)
      */
     suspend fun qualifyLink(url: String, correlationId: String? = null): SafetyResult {
+        // Level -1: Reject mailto: links immediately (should never reach here)
+        if (url.startsWith("mailto:", ignoreCase = true)) {
+            return SafetyResult(
+                SafetyResult.Decision.UNSAFE,
+                "mailto: links are not indexable (email addresses, not web content)",
+            )
+        }
         // Level 0: Check if link already indexed (most efficient - skip everything)
         indexedLinkRepository.findByUrl(url)?.let { indexed ->
             logger.debug { "Link already indexed, skipping qualification: $url" }
@@ -529,17 +597,9 @@ class LinkSafetyQualifier(
             return qualifyWithLlm(url, "Contains tracking parameters", correlationId)
         }
 
-        // Level 7: Monitoring/analytics domains detection (before LLM)
-        val monitoringKeywords = listOf("monitor", "analytics", "track", "click", "beacon", "metric")
-        if (monitoringKeywords.any { keyword -> domain.contains(keyword, ignoreCase = true) }) {
-            // If monitoring domain has token/key → definitely unsafe
-            if (query.contains("token=", ignoreCase = true) || query.contains("key=", ignoreCase = true)) {
-                return SafetyResult(
-                    SafetyResult.Decision.UNSAFE,
-                    "Monitoring/analytics service with authentication token",
-                )
-            }
-        }
+        // Level 7: Domain-based monitoring/analytics detection REMOVED
+        // Reason: Too broad - blocks legitimate domains (e.g., haier.cz blocked because "ai" in name)
+        // Instead: rely on explicit blacklist domains and query parameter checks
 
         // Level 8: Token/key parameters - likely one-time action links
         if (query.contains("token=", ignoreCase = true) ||
@@ -596,10 +656,12 @@ class LinkSafetyQualifier(
                 - Click tracking or redirect services
                 - URLs with tokens/keys (likely one-time actions)
                 - URL shorteners (unknown destination)
-                - Any personalized/per-user URL
-                - Marketing campaign links with tracking params
+                - Any personalized/per-user URL (e.g., email= parameter with specific email address)
                 - Account activation or verification
                 - Newsletter signup/management
+
+                NOTE: Analytics parameters (utm_source, utm_medium, etc.) do NOT make content unsafe - they're just tracking.
+                Static assets from /email/ paths (images, CSS) are SAFE - they're not actions.
 
                 SAFE = ONLY pure static content (must be certain):
                 - Public documentation (no login required)
@@ -609,18 +671,38 @@ class LinkSafetyQualifier(
                 - Public GitHub/GitLab repositories
                 - Wikipedia articles
                 - Stack Overflow questions
+                - Business/internal applications (e.g., example.com/app/dashboard, internal tools)
+                - Company websites and internal domains
+                - Google Docs /edit URLs (read-only by default, not an action)
+                - News articles with utm_* parameters (tracking doesn't affect content)
                 - If page title describes safe content (documentation, article, tutorial)
 
                 CRITICAL RULES:
                 - If URL contains calendar/event/meeting/rsvp/accept/decline → UNSAFE (meetings were cancelled!)
-                - If URL contains "confirm", "verify", "token", "activate", "click", "track" → UNSAFE
-                - If domain suggests tracking/monitoring/analytics → UNSAFE
+                - If URL contains "confirm", "verify", "activate" → UNSAFE
+                - If URL has personalized parameters (email=user@domain, subscriber_id=) → UNSAFE
+                - If domain is KNOWN tracking service (see blacklist domains: analytics.google.com, mixpanel.com, etc.) → UNSAFE
                 - If page title suggests action (confirm, accept, decline, unsubscribe) → UNSAFE
                 - If page title describes safe content (docs, article, tutorial) → consider SAFE
                 - If uncertain or ambiguous → UNSAFE (pessimistic approach)
                 - When in doubt → UNSAFE
 
-                When UNSAFE, suggest regex: "reason. Suggested regex: /pattern/"
+                IMPORTANT: Do NOT block domains just because they contain words like "monitor", "analytics", "track" in their name.
+                Only block if domain is explicitly in blacklist (analytics.google.com, mixpanel.com, etc.).
+                Regular company websites (e.g., haier.cz, electrolux.com) are SAFE even if they might contain tracking.
+
+                FALSE POSITIVES TO AVOID:
+                - "edit" in docs.google.com/document/.../edit is SAFE (read-only view)
+                - "app" in URL path (e.g., example.com/app/dashboard) is SAFE - it's application path
+                - utm_source, utm_medium, utm_campaign parameters are SAFE - just analytics tracking
+                - /email/*.png or /email/*.jpg asset URLs are SAFE - static images, not actions
+                - Only "action=accept", "email=specific@email.com" are UNSAFE
+
+                When UNSAFE, suggest SPECIFIC regex (not overly broad patterns):
+                - Good: /unsubscribe|opt-out/, /action=(accept|decline)/, /email=[^&]+@/
+                - Bad: /analytics/, /tracking/, /monitor/, /edit/, /email/, /utm/, /[a-z]/ (too broad, false positives)
+
+                NEVER suggest domain-based patterns - domains change too frequently and create false positives.
 
                 JSON only:
                 {"decision": "SAFE" or "UNSAFE", "reason": "brief. Suggested regex: /pattern/ (if UNSAFE)"}

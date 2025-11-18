@@ -120,6 +120,82 @@ class LinkIndexingService(
 
     private fun extractLinks(content: String): List<String> {
         val urlPattern = Regex("""https?://[^\s<>"{}|\\^`\[\]]+""")
-        return urlPattern.findAll(content).map { it.value }.toList()
+        return urlPattern.findAll(content)
+            .map { it.value }
+            .filter { url ->
+                // Filter out mailto: links - they should never reach link indexing
+                !url.startsWith("mailto:", ignoreCase = true)
+            }
+            .map { url -> removeTrackingParameters(url) }
+            .toList()
+    }
+
+    /**
+     * Remove tracking/analytics parameters from URL.
+     * These parameters don't affect content but make URLs unique per user/campaign.
+     *
+     * Removes:
+     * - UTM parameters (utm_source, utm_medium, utm_campaign, utm_term, utm_content)
+     * - Common tracking IDs (fbclid, gclid, msclkid, etc.)
+     * - Analytics parameters (mc_cid, mc_eid, _ga, etc.)
+     *
+     * Keeps the base URL and any functional parameters intact.
+     */
+    private fun removeTrackingParameters(url: String): String {
+        return try {
+            val uri = java.net.URI(url)
+            val query = uri.query ?: return url
+
+            // List of tracking parameters to remove
+            val trackingParams = setOf(
+                // UTM parameters (Google Analytics, marketing campaigns)
+                "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+                // Social media tracking
+                "fbclid", // Facebook click ID
+                "gclid", // Google click ID
+                "msclkid", // Microsoft click ID
+                "twclid", // Twitter click ID
+                "li_fat_id", // LinkedIn
+                // Email marketing
+                "mc_cid", "mc_eid", // Mailchimp
+                // General analytics
+                "_ga", "_gl", // Google Analytics
+                "ref", "source", // Generic referrer tracking
+            )
+
+            // Parse query string and filter out tracking params
+            val cleanedParams = query.split("&")
+                .filter { param ->
+                    val key = param.substringBefore("=").lowercase()
+                    key !in trackingParams
+                }
+
+            // Rebuild URL
+            val cleanedQuery = if (cleanedParams.isEmpty()) null else cleanedParams.joinToString("&")
+
+            val rebuiltUrl = buildString {
+                append(uri.scheme)
+                append("://")
+                append(uri.authority)
+                append(uri.path ?: "")
+                if (cleanedQuery != null) {
+                    append("?")
+                    append(cleanedQuery)
+                }
+                uri.fragment?.let {
+                    append("#")
+                    append(it)
+                }
+            }
+
+            if (rebuiltUrl != url) {
+                logger.debug { "Cleaned tracking params from URL: $url -> $rebuiltUrl" }
+            }
+
+            rebuiltUrl
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to parse URL for tracking param removal: $url" }
+            url // Return original on parse failure
+        }
     }
 }

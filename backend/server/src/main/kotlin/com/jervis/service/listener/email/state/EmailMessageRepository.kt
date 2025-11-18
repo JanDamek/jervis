@@ -23,4 +23,8 @@ interface EmailMessageRepository : CoroutineCrudRepository<EmailMessageDocument,
         accountId: ObjectId,
         messageIds: Collection<String>,
     ): Flow<EmailMessageDocument>
+
+    // Global counts for UI overview
+    @org.springframework.data.mongodb.repository.Query(value = "{ 'state': ?0 }", count = true)
+    suspend fun countByState(state: EmailMessageState): Long
 }

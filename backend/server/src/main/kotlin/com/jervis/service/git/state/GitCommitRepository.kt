@@ -24,4 +24,8 @@ interface GitCommitRepository : CoroutineCrudRepository<GitCommitDocument, Objec
         monoRepoId: String,
         state: GitCommitState,
     ): Flow<GitCommitDocument>
+
+    // Global counts for UI overview
+    @org.springframework.data.mongodb.repository.Query(value = "{ 'state': ?0 }", count = true)
+    suspend fun countByState(state: GitCommitState): Long
 }

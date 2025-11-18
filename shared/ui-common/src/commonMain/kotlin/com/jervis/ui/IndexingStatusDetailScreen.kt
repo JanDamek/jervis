@@ -167,6 +167,16 @@ fun IndexingStatusDetailScreen(
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.primary,
                                     )
+                                    Text(
+                                        "Indexed: ${d.summary.indexedCount}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    )
+                                    Text(
+                                        "New: ${d.summary.newCount}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    )
                                     if (d.summary.errors > 0) {
                                         Text(
                                             "⚠ Errors: ${d.summary.errors}",
@@ -262,6 +272,16 @@ private fun ItemRow(item: IndexingItemDto) {
                     deltas.joinToString(" • "),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            // Show copyable full error details if present
+            val details: String? = item.fullDetails
+            if (item.level == "ERROR" && details != null) {
+                Spacer(Modifier.height(8.dp))
+                com.jervis.ui.util.CopyableTextCard(
+                    title = "Error details",
+                    content = details,
+                    useMonospace = true,
                 )
             }
         }

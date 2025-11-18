@@ -76,16 +76,35 @@ fun ErrorLogsScreen(
                     }
                 }
                 else -> {
-                    // Error logs table
-                    ErrorLogsTable(
-                        errorLogs = errorLogs,
-                        selectedLogId = selectedLogId,
-                        onRowSelected = { selectedLogId = it },
-                        onDeleteClick = { logId ->
-                            selectedLogId = logId
-                            showDeleteDialog = true
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // Error logs table
+                        ErrorLogsTable(
+                            errorLogs = errorLogs,
+                            selectedLogId = selectedLogId,
+                            onRowSelected = { selectedLogId = it },
+                            onDeleteClick = { logId ->
+                                selectedLogId = logId
+                                showDeleteDialog = true
+                            }
+                        )
+
+                        // Details with copy (unified component)
+                        val selected = errorLogs.firstOrNull { it.id == selectedLogId }
+                        if (selected != null) {
+                            Spacer(Modifier.height(8.dp))
+                            com.jervis.ui.util.CopyableTextCard(
+                                title = "Error details (copy)",
+                                content = buildString {
+                                    appendLine(selected.message)
+                                    selected.stackTrace?.let {
+                                        appendLine()
+                                        appendLine(it)
+                                    }
+                                }.trimEnd(),
+                                useMonospace = true,
+                            )
                         }
-                    )
+                    }
                 }
             }
         }

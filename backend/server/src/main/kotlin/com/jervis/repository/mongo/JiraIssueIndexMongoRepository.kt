@@ -19,4 +19,11 @@ interface JiraIssueIndexMongoRepository : CoroutineCrudRepository<JiraIssueIndex
         clientId: ObjectId,
         archived: Boolean,
     ): Flow<JiraIssueIndexDocument>
+
+    // Global counts for UI overview
+    @Query(value = "{ 'archived': false, 'lastIndexedAt': { \$ne: null } }", count = true)
+    suspend fun countIndexedActive(): Long
+
+    @Query(value = "{ 'archived': false, 'lastIndexedAt': null }", count = true)
+    suspend fun countNewActive(): Long
 }

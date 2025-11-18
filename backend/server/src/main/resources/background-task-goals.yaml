@@ -586,16 +586,98 @@ tasks:
       NO other decision values allowed!
 
     qualifierUserPrompt: |
-      CONFLUENCE PAGE:
-      Title: {title}
-      Space: {spaceKey}
-      Version: {version}
-
-      Content preview:
       {content}
 
-      Internal links: {internalLinksCount}
-      External links: {externalLinksCount}
-
       Should this page be analyzed in detail?
+
+  LINK_REVIEW:
+    goal: |
+      Review a link that failed automatic indexing and determine the appropriate action.
+
+      CONTEXT PROVIDED:
+      - url: The link that failed to be indexed
+      - sourceIndexer: Which indexer discovered the link (e.g., EMAIL_INDEXER, CONFLUENCE_INDEXER)
+      - sourceRef: Reference to the source document (email ID, Confluence page, etc.)
+      - Failure reasons: Authentication, unavailability, unsupported type, or malformed URL
+
+      YOUR TASK:
+
+      1. INVESTIGATE THE LINK:
+         - Try to access the URL and determine its nature
+         - Check if it requires authentication
+         - Identify content type (webpage, PDF, API endpoint, etc.)
+         - Check if domain is known/trusted
+
+      2. DETERMINE LINK SAFETY:
+         - Query existing safe patterns: Use available tools to check if similar domains/patterns exist
+         - Assess if this is a legitimate business link or potential security risk
+         - Check domain reputation if needed
+
+      3. DECIDE ACTION:
+         Based on investigation, choose ONE of these actions:
+
+         A) ADD TO SAFE PATTERNS:
+            - If link is from trusted domain and should be indexed automatically in future
+            - Use ManageLinkSafetyTool or equivalent to add pattern
+            - Example: *.company.com/docs/* for company documentation
+
+         B) INDEX MANUALLY:
+            - If link is safe but needs special handling (auth, specific parser)
+            - Create appropriate indexing task with additional context
+            - Document why special handling is needed
+
+         C) IGNORE/SKIP:
+            - If link is irrelevant (ads, tracking, external noise)
+            - If link is temporary/expired
+            - Document reason for skipping
+
+      4. CREATE USER TASK IF NEEDED:
+         - If decision requires user input (unclear safety, business context needed)
+         - Use task_create_user with clear description and options
+         - Include link details and your analysis
+
+      5. DOCUMENT DECISION:
+         - Store decision in knowledge base using knowledge_store
+         - Include: URL, decision, rationale, patterns added (if any)
+         - This helps future reviews of similar links
+
+      TOOLS TO USE:
+      - knowledge_search: Check if similar links were reviewed before
+      - task_create_user: Create user task if manual decision needed
+      - knowledge_store: Document the decision for future reference
+
+      OUTPUT:
+      Return empty plan [] only if link is clearly spam/irrelevant.
+      Otherwise, investigate and take appropriate action (add pattern, index, or create user task).
+
+    qualifierSystemPrompt: |
+      Classify link review tasks for processing priority.
+
+      CRITICAL OUTPUT RULE: decision MUST be EXACTLY "discard" OR "delegate" - NO other values!
+
+      DISCARD (no review needed):
+      - Obviously spam or malicious domains (known ad networks, tracking)
+      - Already reviewed links (check if URL pattern exists in safe/block lists)
+      - Clearly temporary links (one-time tokens, expired shares)
+      - Non-business external links (social media, news sites, unless relevant)
+
+      DELEGATE (needs review):
+      - Company internal links (intranet, documentation, tools)
+      - Customer/partner links (client portals, shared docs)
+      - Development tools (GitHub, GitLab, CI/CD, monitoring)
+      - Business services (CRM, project management, cloud services)
+      - Unknown domains that might be legitimate
+      - Links requiring authentication
+
+      Be conservative - prefer DELEGATE for business-related domains.
+
+      STRICT OUTPUT FORMAT:
+      {"decision": "discard", "reason": "..."} OR {"decision": "delegate", "reason": "..."}
+      NO other decision values allowed!
+
+    qualifierUserPrompt: |
+      LINK REVIEW REQUEST:
+      {content}
+
+      Should this link be reviewed or can it be discarded?
 

@@ -94,21 +94,20 @@ class JiraIndexingOrchestrator(
                     }
                 }
 
-                // Try to load selections (primary project, preferred user). If missing, continue with client-level indexing.
+                // Try to load selections (primary project, preferred user). If missing (null), continue with client-level indexing.
                 val selections: Pair<JiraProjectKey, com.jervis.domain.jira.JiraAccountId>? =
-                    try {
-                        selection.ensureSelectionsOrCreateTasks(clientId)
-                    } catch (e: Exception) {
-                        logger.warn { "JIRA_INDEX: Missing selections for client=${clientId.toHexString()} - ${e.message}. Falling back to GLOBAL (all projects) indexing." }
-                        runCatching {
-                            indexingRegistry.info(
-                                "jira",
-                                "Selections missing → fallback to client-level indexing (all projects) for client=${clientId.toHexString()}",
-                            )
-                        }
-                        runCatching { errorLogService.recordError(e, clientId = clientId) }
-                        null
+                    selection.ensureSelectionsOrCreateTasks(clientId)
+
+                if (selections == null) {
+                    logger.info { "JIRA_INDEX: No selections configured for client=${clientId.toHexString()} - using client-level indexing (all projects)" }
+                    runCatching {
+                        indexingRegistry.info(
+                            "jira",
+                            "Using client-level indexing (all projects) for client=${clientId.toHexString()}",
+                        )
                     }
+                }
+
                 val primaryProject: JiraProjectKey? = selections?.first
                 var me: com.jervis.domain.jira.JiraAccountId? = selections?.second
 
@@ -229,10 +228,12 @@ class JiraIndexingOrchestrator(
                 val lastSyncedAt = latestConnDoc?.lastSyncedAt
                 // First sync: index ALL issues (no time filter)
                 // Subsequent syncs: fetch all but our hash-based change detection will skip unchanged ones
-                val baseJqlSuffix = "ORDER BY updated DESC"
+                // NOTE: Use 'lastViewed' instead of 'updated' for sorting - 'updated' was deprecated in some Jira Cloud versions
+                val baseJqlSuffix = "ORDER BY created DESC"
 
                 projectsToIndex.forEach { projectKey ->
                     val key = projectKey.value
+                    // Note: Project keys in JQL should NOT be quoted unless they contain spaces
                     val jql = "project = $key $baseJqlSuffix"
                     val jervisProjectId = jiraProjectMapping[key] // null if not mapped
 
@@ -627,6 +628,8 @@ class JiraIndexingOrchestrator(
         if (t == null) return false
         if (t is WebClientResponseException) {
             val code = t.statusCode.value()
+            // 401/403 = auth failed
+            // NOTE: 410 Gone is NOT an auth error - it's usually invalid JQL or deprecated field
             return code == 401 || code == 403
         }
         val cause = t.cause
@@ -635,7 +638,8 @@ class JiraIndexingOrchestrator(
             return code == 401 || code == 403
         }
         val msg = t.message ?: return false
-        return msg.contains("401") || msg.contains("403") || msg.contains("Unauthorized", true) || msg.contains("Forbidden", true)
+        return msg.contains("401") || msg.contains("403") ||
+            msg.contains("Unauthorized", true) || msg.contains("Forbidden", true)
     }
 
     /**

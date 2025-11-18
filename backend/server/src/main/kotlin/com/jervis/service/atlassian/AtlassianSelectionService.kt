@@ -25,9 +25,13 @@ interface AtlassianSelectionService {
     /** Get stored connection; fail fast if not configured. */
     suspend fun getConnection(clientId: ObjectId): AtlassianConnection
 
-    /** Ensure project and preferred user are set; fail fast if missing (no background task creation). */
+    /**
+     * Get project and preferred user selections if configured.
+     * Returns null if not configured (normal state for client-level indexing).
+     * Does NOT throw exception - missing selections is not an error.
+     */
     suspend fun ensureSelectionsOrCreateTasks(
         clientId: ObjectId,
         allowAutoDetectUser: Boolean = true,
-    ): Pair<JiraProjectKey, JiraAccountId>
+    ): Pair<JiraProjectKey, JiraAccountId>?
 }

@@ -42,4 +42,8 @@ interface ConfluencePageMongoRepository : CoroutineCrudRepository<ConfluencePage
         accountId: ObjectId,
         state: ConfluencePageStateEnum,
     ): Long
+
+    /** Global counts (across accounts) for UI overview */
+    @Query(value = "{ 'state': ?0 }", count = true)
+    suspend fun countByState(state: ConfluencePageStateEnum): Long
 }

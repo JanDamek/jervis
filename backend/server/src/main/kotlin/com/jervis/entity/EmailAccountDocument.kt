@@ -35,4 +35,7 @@ data class EmailAccountDocument(
     val isActive: Boolean = true,
     val lastPolledAt: Instant? = null,
     val highestSeenUid: Long? = null, // Last seen IMAP UID for delta sync
+    val authStatus: String = "VALID", // VALID, INVALID, UNTESTED - like Atlassian connections
+    val lastAuthCheckedAt: Instant? = null,
+    val lastErrorMessage: String? = null,
 )
