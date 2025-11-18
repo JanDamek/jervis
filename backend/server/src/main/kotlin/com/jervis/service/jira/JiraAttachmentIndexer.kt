@@ -48,6 +48,7 @@ class JiraAttachmentIndexer(
     private val connectionService: AtlassianConnectionService,
     private val errorLogService: ErrorLogService,
     private val issueIndexRepository: com.jervis.repository.mongo.JiraIssueIndexMongoRepository,
+    private val rateLimiter: com.jervis.service.ratelimit.DomainRateLimiterService,
 ) {
     /**
      * Index all attachments for a given Jira issue.
@@ -231,6 +232,9 @@ class JiraAttachmentIndexer(
         conn: AtlassianConnection,
         issueKey: String,
     ): List<AttachmentMetadata> {
+        val url = "https://${conn.tenant.value}/rest/api/3/issue/$issueKey?fields=attachment"
+        rateLimiter.acquirePermit(url)
+
         val client = webClientBuilder.baseUrl("https://${conn.tenant.value}").build()
 
         val response: IssueDto =
@@ -270,7 +274,19 @@ class JiraAttachmentIndexer(
         conn: AtlassianConnection,
         contentUrl: String,
     ): ByteArray {
-        val client = webClientBuilder.build()
+        // Apply rate limiting before download
+        rateLimiter.acquirePermit(contentUrl)
+
+        // Configure WebClient with larger buffer for attachments (up to 64MB)
+        // This prevents DataBufferLimitException when downloading large files
+        val client =
+            webClientBuilder
+                .exchangeStrategies(
+                    org.springframework.web.reactive.function.client.ExchangeStrategies
+                        .builder()
+                        .codecs { it.defaultCodecs().maxInMemorySize(MAX_ATTACHMENT_SIZE_BYTES) }
+                        .build(),
+                ).build()
 
         return client
             .get()
@@ -354,4 +370,10 @@ class JiraAttachmentIndexer(
         val created: Instant,
         val author: String,
     )
+
+    companion object {
+        // Maximum attachment size to download and process (64 MB)
+        // Prevents DataBufferLimitException for large Jira attachments
+        private const val MAX_ATTACHMENT_SIZE_BYTES = 64 * 1024 * 1024
+    }
 }

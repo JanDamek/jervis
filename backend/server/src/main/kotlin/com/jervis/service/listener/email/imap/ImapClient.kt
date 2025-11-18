@@ -6,6 +6,9 @@ import jakarta.mail.FetchProfile
 import jakarta.mail.Folder
 import jakarta.mail.Message
 import jakarta.mail.Multipart
+import jakarta.mail.MessagingException
+import jakarta.mail.FolderClosedException
+import jakarta.mail.StoreClosedException
 import jakarta.mail.Session
 import jakarta.mail.Store
 import kotlinx.coroutines.flow.Flow
@@ -63,6 +66,7 @@ class ImapClient {
                         e is jakarta.mail.AuthenticationFailedException -> "AUTHENTICATION_FAILED"
                         e is java.net.SocketTimeoutException -> "CONNECTION_TIMEOUT"
                         e is java.net.SocketException -> "NETWORK_ERROR"
+                        e is FolderClosedException || e is StoreClosedException -> "CONNECTION_CLOSED"
                         e.message?.contains("Connection", ignoreCase = true) == true -> "CONNECTION_ERROR"
                         else -> "UNKNOWN_ERROR"
                     }
@@ -70,7 +74,8 @@ class ImapClient {
                 logger.error(e) {
                     "Failed to fetch message IDs for account ${account.id}: errorType=$errorType, message=${e.message}"
                 }
-                // Flow terminates gracefully - scheduler will retry on next poll cycle
+                // Fail fast: rethrow so orchestrator/scheduler can avoid updating lastPolledAt and retry next cycle
+                throw e
             }
         }.buffer(50) // Buffer maxes 50 message IDs to prevent overwhelming downstream processing
 
@@ -97,7 +102,7 @@ class ImapClient {
                 }
             }
         }.getOrElse { e ->
-            // Classify error type for better debugging
+            // Classify and decide if we should fail fast (to trigger 30s comms backoff in pipeline)
             val errorType =
                 when {
                     e is jakarta.mail.AuthenticationFailedException -> "AUTHENTICATION_FAILED"
@@ -105,6 +110,7 @@ class ImapClient {
                     e is java.net.SocketException -> "NETWORK_ERROR"
                     e is jakarta.mail.FolderNotFoundException -> "FOLDER_NOT_FOUND"
                     e is jakarta.mail.MessageRemovedException -> "MESSAGE_DELETED"
+                    e is FolderClosedException || e is StoreClosedException -> "CONNECTION_CLOSED"
                     e.message?.contains("Connection", ignoreCase = true) == true -> "CONNECTION_ERROR"
                     else -> "UNKNOWN_ERROR"
                 }
@@ -112,6 +118,19 @@ class ImapClient {
             logger.error(e) {
                 "Failed to fetch message by UID $uid for account ${account.id}: errorType=$errorType, message=${e.message}"
             }
+
+            // Fail fast only on communication-related problems to let the continuous indexer pause 30s
+            val isCommunication =
+                errorType in setOf(
+                    "CONNECTION_TIMEOUT",
+                    "NETWORK_ERROR",
+                    "CONNECTION_CLOSED",
+                    "CONNECTION_ERROR",
+                )
+
+            if (isCommunication) throw e
+
+            // For non-communication issues (e.g., message deleted or folder not found), skip this message
             null
         }
 
@@ -128,8 +147,16 @@ class ImapClient {
                 )
             }
         } catch (e: Exception) {
-            logger.warn { "Failed to extract messageId. Error:${e.message}" }
-            // ignore a message that is not box or is disconnected
+            // Fail fast on connection-related problems to avoid log spam per message
+            if (e is FolderClosedException || e is StoreClosedException ||
+                (e is MessagingException && (e.message?.contains("connection", ignoreCase = true) == true))
+            ) {
+                throw e
+            }
+
+            // For non-fatal extraction issues, log once per message and continue
+            val msgNum = runCatching { message.messageNumber }.getOrNull()
+            logger.warn { "Failed to extract messageId for message#$msgNum: ${e.message}" }
             null
         }
 

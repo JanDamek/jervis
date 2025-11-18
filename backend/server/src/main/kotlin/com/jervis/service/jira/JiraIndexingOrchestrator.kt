@@ -281,7 +281,8 @@ class JiraIndexingOrchestrator(
                                 }
 
                                 // Always index comments for ALL issues (not just assigned to me)
-                                indexIssueCommentsDeep(
+                                // Returns comments for potential pending task creation
+                                val allComments = indexIssueCommentsDeep(
                                     clientId = clientId,
                                     issueKey = issue.key,
                                     project = projectKey,
@@ -290,13 +291,18 @@ class JiraIndexingOrchestrator(
                                 )
 
                                 // Always index attachments for ALL issues
-                                jiraAttachmentIndexer.indexIssueAttachments(
-                                    conn = connValid,
-                                    issueKey = issue.key,
-                                    clientId = clientId,
-                                    tenantHost = tenantHost,
-                                    projectId = jervisProjectId,
-                                )
+                                // Don't fail entire indexing if attachments fail
+                                runCatching {
+                                    jiraAttachmentIndexer.indexIssueAttachments(
+                                        conn = connValid,
+                                        issueKey = issue.key,
+                                        clientId = clientId,
+                                        tenantHost = tenantHost,
+                                        projectId = jervisProjectId,
+                                    )
+                                }.onFailure { e ->
+                                    logger.warn(e) { "JIRA_INDEX: Failed to index attachments for ${issue.key}: ${e.message}" }
+                                }
 
                                 runCatching {
                                     indexingRegistry.progress(
@@ -314,6 +320,7 @@ class JiraIndexingOrchestrator(
                                         projectKey = projectKey,
                                         tenantHost = tenantHost,
                                         jervisProjectId = jervisProjectId,
+                                        comments = allComments,
                                     )
                                 }
                             }
@@ -480,16 +487,20 @@ class JiraIndexingOrchestrator(
         project: JiraProjectKey,
         tenantHost: String,
         jervisProjectId: ObjectId?,
-    ) {
+    ): List<Pair<String, String>> {
         val conn = selection.getConnection(clientId).let { auth.ensureValidToken(it) }
         val indexDoc = issueIndexRepository.findByClientIdAndIssueKey(clientId, issueKey)
         var lastProcessedId = indexDoc?.lastEmbeddedCommentId
         var process = lastProcessedId == null
         var processedCount = 0
+        val allComments = mutableListOf<Pair<String, String>>() // Collect all comments for return
 
         api.fetchIssueComments(conn, issueKey).collect { pair ->
             val commentId = pair.first
             val body = pair.second // Already plain text (HTML was stripped in API client)
+
+            // Always collect all comments for return (needed for pending task creation)
+            allComments.add(pair)
 
             if (!process) {
                 if (commentId == lastProcessedId) {
@@ -601,12 +612,15 @@ class JiraIndexingOrchestrator(
             issueIndexRepository.save(newDoc)
             logger.info { "JIRA_INDEX: Stored $processedCount new comments for $issueKey" }
         }
+
+        return allComments
     }
 
     /**
      * Create pending task for JIRA issue assigned to me.
      * Content includes: issue key, summary, description, all comments.
      * Confluence links are marked with retrieval instructions.
+     * Uses pre-fetched comments to avoid duplicate API calls.
      */
     private suspend fun createPendingTaskForIssue(
         clientId: ObjectId,
@@ -614,16 +628,9 @@ class JiraIndexingOrchestrator(
         projectKey: JiraProjectKey,
         tenantHost: String,
         jervisProjectId: ObjectId?,
+        comments: List<Pair<String, String>>,
     ) {
         logger.info { "Creating pending task for JIRA issue ${issue.key} assigned to me" }
-
-        val conn = selection.getConnection(clientId).let { auth.ensureValidToken(it) }
-
-        // Collect all comments
-        val comments = mutableListOf<Pair<String, String>>() // Pair<commentId, body>
-        api.fetchIssueComments(conn, issue.key).collect { pair ->
-            comments.add(pair)
-        }
 
         // Build task content with all information
         val taskContent = buildString {

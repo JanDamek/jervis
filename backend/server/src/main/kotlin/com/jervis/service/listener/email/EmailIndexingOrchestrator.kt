@@ -24,12 +24,9 @@ class EmailIndexingOrchestrator(
     suspend fun syncMessageHeaders(account: EmailAccountDocument) {
         logger.info { "Syncing message headers for account ${account.id} (${account.email})" }
 
-        runCatching {
-            val messageIdsFlow = imapClient.fetchMessageIds(account)
-            stateManager.saveNewMessageIds(account.id, messageIdsFlow)
-            logger.info { "Successfully synced headers for account ${account.id}" }
-        }.onFailure { e ->
-            logger.error(e) { "Failed to sync headers for account ${account.id}" }
-        }
+        // Fail fast: let exceptions propagate to scheduler so timestamp isn't updated on failure.
+        val messageIdsFlow = imapClient.fetchMessageIds(account)
+        stateManager.saveNewMessageIds(account.id, messageIdsFlow)
+        logger.info { "Successfully synced headers for account ${account.id}" }
     }
 }

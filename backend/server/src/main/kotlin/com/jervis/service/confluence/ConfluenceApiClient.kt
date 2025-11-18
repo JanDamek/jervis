@@ -31,16 +31,17 @@ import java.time.Instant
 private val logger = KotlinLogging.logger {}
 
 /**
- * Confluence Cloud REST API v2 client using Ktor (coroutines-first).
+ * Confluence Cloud REST API v2 client using centralized HTTP client factory.
  *
  * Documentation: https://developer.atlassian.com/cloud/confluence/rest/v2/
  *
  * Architecture:
- * - Uses Ktor HttpClient (coroutines-based, NOT Reactor WebClient)
+ * - Uses centralized RateLimitedHttpClientFactory for consistent rate limiting
  * - Returns domain models (not DTOs)
  * - Internal DTOs map to domain at API boundary
  * - All operations are suspend functions with Flow for collections
  * - Rate limiting applied per domain to prevent API bans
+ * - Shares rate limit bucket with Jira (same *.atlassian.net domain)
  *
  * Change Detection:
  * - Each page has 'version.number' that increments on edit
@@ -48,7 +49,7 @@ private val logger = KotlinLogging.logger {}
  */
 @Component
 class ConfluenceApiClient(
-    private val rateLimiter: com.jervis.service.ratelimit.DomainRateLimiterService,
+    private val httpClientFactory: com.jervis.service.http.RateLimitedHttpClientFactory,
 ) {
     private val json =
         Json {
@@ -65,7 +66,7 @@ class ConfluenceApiClient(
                 val client = createHttpClient(connection)
                 try {
                     val url = "$siteUrl/wiki/api/v2/spaces"
-                    rateLimiter.acquirePermit(url)
+                    httpClientFactory.acquirePermit(url)
 
                     val httpResponse: HttpResponse =
                         client.get(url) {
@@ -103,7 +104,7 @@ class ConfluenceApiClient(
                 val client = createHttpClient(connection)
                 try {
                     val url = "$siteUrl/wiki/api/v2/pages"
-                    rateLimiter.acquirePermit(url)
+                    httpClientFactory.acquirePermit(url)
 
                     val httpResponse: HttpResponse =
                         client.get(url) {
@@ -147,7 +148,7 @@ class ConfluenceApiClient(
         val client = createHttpClient(connection)
         return try {
             val url = "$siteUrl/wiki/api/v2/pages/$pageId"
-            rateLimiter.acquirePermit(url)
+            httpClientFactory.acquirePermit(url)
 
             val httpResponse: HttpResponse =
                 client.get(url) {
@@ -203,11 +204,11 @@ class ConfluenceApiClient(
             } while (cursor != null)
         }
 
-    private fun createHttpClient(connection: AtlassianConnectionDocument): HttpClient =
-        HttpClient {
-            install(ContentNegotiation) {
-                json(json)
-            }
+    private fun createHttpClient(connection: AtlassianConnectionDocument): HttpClient {
+        val client = httpClientFactory.createClient()
+
+        // Configure Atlassian-specific auth
+        return client.config {
             defaultRequest {
                 // Atlassian API uses Basic auth with email:token
                 val credentials = "${connection.email ?: ""}:${connection.accessToken}"
@@ -216,6 +217,7 @@ class ConfluenceApiClient(
                 contentType(ContentType.Application.Json)
             }
         }
+    }
 
     private fun extractCursor(nextLink: String): String? =
         nextLink
