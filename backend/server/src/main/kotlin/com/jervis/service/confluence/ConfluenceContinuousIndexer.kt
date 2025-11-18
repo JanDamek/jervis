@@ -2,7 +2,7 @@ package com.jervis.service.confluence
 
 import com.jervis.domain.confluence.ConfluencePageContent
 import com.jervis.domain.rag.RagSourceType
-import com.jervis.entity.ConfluenceAccountDocument
+import com.jervis.entity.atlassian.AtlassianConnectionDocument
 import com.jervis.service.confluence.processor.ConfluenceContentProcessor
 import com.jervis.service.confluence.processor.ConfluenceTaskCreator
 import com.jervis.service.confluence.state.ConfluencePageStateManager
@@ -38,29 +38,29 @@ class ConfluenceContinuousIndexer(
     private val taskCreator: ConfluenceTaskCreator,
     private val flowProps: com.jervis.configuration.properties.IndexingFlowProperties,
     private val linkIndexingService: LinkIndexingService,
-    private val accountService: ConfluenceAccountService,
-) : com.jervis.service.indexing.AbstractContinuousIndexer<ConfluenceAccountDocument, com.jervis.entity.ConfluencePageDocument>() {
+    private val connectionService: com.jervis.service.atlassian.AtlassianConnectionService,
+) : com.jervis.service.indexing.AbstractContinuousIndexer<AtlassianConnectionDocument, com.jervis.entity.ConfluencePageDocument>() {
     override val indexerName: String = "ConfluenceContinuousIndexer"
     override val bufferSize: Int get() = flowProps.bufferSize
 
-    override fun newItemsFlow(account: ConfluenceAccountDocument) = stateManager.continuousNewPages(account.id)
+    override fun newItemsFlow(connection: AtlassianConnectionDocument) = stateManager.continuousNewPages(connection.id)
 
     override fun itemLogLabel(item: com.jervis.entity.ConfluencePageDocument) = "${item.title} (${item.pageId}) v${item.lastKnownVersion}"
 
     override suspend fun fetchContentIO(
-        account: ConfluenceAccountDocument,
+        connection: AtlassianConnectionDocument,
         item: com.jervis.entity.ConfluencePageDocument,
     ): Any? =
         try {
-            confluenceApiClient.getPageContent(account, item.pageId)
+            confluenceApiClient.getPageContent(connection, item.pageId)
         } catch (e: ConfluenceAuthException) {
-            // Mark account as invalid to avoid further attempts
-            runCatching { accountService.markAuthInvalid(account, e.message) }
+            // Mark connection as invalid to avoid further attempts
+            runCatching { connectionService.markAuthInvalid(connection, e.message) }
             null
         }
 
     override suspend fun processAndIndex(
-        account: ConfluenceAccountDocument,
+        connection: AtlassianConnectionDocument,
         item: com.jervis.entity.ConfluencePageDocument,
         content: Any,
     ): IndexingResult {
@@ -70,7 +70,8 @@ class ConfluenceContinuousIndexer(
                 success = false,
             )
 
-        val res = contentProcessor.processAndIndexPage(item, html, account.siteUrl)
+        val siteUrl = "https://${connection.tenant}"
+        val res = contentProcessor.processAndIndexPage(item, html, siteUrl)
         val success = res.indexedChunks > 0
 
         // Update page links regardless of success
@@ -107,14 +108,14 @@ class ConfluenceContinuousIndexer(
     }
 
     override fun shouldCreateTask(
-        account: ConfluenceAccountDocument,
+        connection: AtlassianConnectionDocument,
         item: com.jervis.entity.ConfluencePageDocument,
         content: Any,
         result: IndexingResult,
     ): Boolean = taskCreator.shouldAnalyzePage(item, result.plainText ?: "")
 
     override suspend fun createTask(
-        account: ConfluenceAccountDocument,
+        connection: AtlassianConnectionDocument,
         item: com.jervis.entity.ConfluencePageDocument,
         content: Any,
         result: IndexingResult,
@@ -123,7 +124,7 @@ class ConfluenceContinuousIndexer(
     }
 
     override suspend fun markAsIndexed(
-        account: ConfluenceAccountDocument,
+        connection: AtlassianConnectionDocument,
         item: com.jervis.entity.ConfluencePageDocument,
     ) {
         stateManager.markAsIndexed(item)
@@ -131,7 +132,7 @@ class ConfluenceContinuousIndexer(
     }
 
     override suspend fun markAsFailed(
-        account: ConfluenceAccountDocument,
+        connection: AtlassianConnectionDocument,
         item: com.jervis.entity.ConfluencePageDocument,
         reason: String,
     ) {
@@ -139,12 +140,12 @@ class ConfluenceContinuousIndexer(
     }
 
     fun launchContinuousIndexing(
-        account: ConfluenceAccountDocument,
+        connection: AtlassianConnectionDocument,
         scope: CoroutineScope,
     ) {
         scope.launch {
-            runCatching { startContinuousIndexing(account) }
-                .onFailure { e -> logger.error(e) { "Continuous indexer crashed for Confluence account ${account.id}" } }
+            runCatching { startContinuousIndexing(connection) }
+                .onFailure { e -> logger.error(e) { "Continuous indexer crashed for Confluence connection ${connection.id}" } }
         }
     }
 }

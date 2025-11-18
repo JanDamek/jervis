@@ -7,7 +7,7 @@ import com.jervis.dto.integration.ProjectIntegrationOverridesDto
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.ProjectDocument
 import com.jervis.repository.mongo.ClientMongoRepository
-import com.jervis.repository.mongo.JiraConnectionMongoRepository
+import com.jervis.repository.mongo.AtlassianConnectionMongoRepository
 import com.jervis.repository.mongo.ProjectMongoRepository
 import com.jervis.service.IIntegrationSettingsService
 import mu.KotlinLogging
@@ -20,7 +20,7 @@ import java.time.Instant
 class IntegrationSettingsRestController(
     private val clientRepository: ClientMongoRepository,
     private val projectRepository: ProjectMongoRepository,
-    private val jiraConnectionRepository: JiraConnectionMongoRepository,
+    private val jiraConnectionRepository: AtlassianConnectionMongoRepository,
     private val errorPublisher: com.jervis.service.notification.ErrorNotificationsPublisher,
     private val configCache: com.jervis.service.cache.ClientProjectConfigCache,
 ) : IIntegrationSettingsService {
@@ -33,7 +33,7 @@ class IntegrationSettingsRestController(
                 clientRepository.findById(ObjectId(clientId))
                     ?: return IntegrationClientStatusDto(clientId = clientId, jiraConnected = false)
             val jiraConn = jiraConnectionRepository.findByClientId(client.id)
-            val jiraConnected = jiraConn != null && jiraConn.expiresAt.isAfter(Instant.now())
+            val jiraConnected = jiraConn != null && jiraConn.authStatus == "VALID"
             IntegrationClientStatusDto(
                 clientId = client.id.toHexString(),
                 jiraConnected = jiraConnected,

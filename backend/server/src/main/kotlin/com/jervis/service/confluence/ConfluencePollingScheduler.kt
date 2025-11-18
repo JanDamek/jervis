@@ -1,7 +1,7 @@
 package com.jervis.service.confluence
 
-import com.jervis.entity.ConfluenceAccountDocument
-import com.jervis.repository.mongo.ConfluenceAccountMongoRepository
+import com.jervis.entity.atlassian.AtlassianConnectionDocument
+import com.jervis.repository.mongo.AtlassianConnectionMongoRepository
 import com.jervis.service.confluence.state.ConfluencePageStateManager
 import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
@@ -51,11 +51,11 @@ private val logger = KotlinLogging.logger {}
  */
 @Service
 class ConfluencePollingScheduler(
-    private val accountRepository: ConfluenceAccountMongoRepository,
+    private val connectionRepository: AtlassianConnectionMongoRepository,
     private val confluenceApiClient: ConfluenceApiClient,
     private val stateManager: ConfluencePageStateManager,
     private val configCache: com.jervis.service.cache.ClientProjectConfigCache,
-    private val accountService: ConfluenceAccountService,
+    private val connectionService: com.jervis.service.atlassian.AtlassianConnectionService,
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.Default + supervisor)
@@ -106,12 +106,12 @@ class ConfluencePollingScheduler(
             val startTime = System.currentTimeMillis()
 
             try {
-                val account = findNextAccountToPoll()
+                val connection = findNextConnectionToPoll()
 
-                if (account != null) {
-                    processAccountWithTimestampUpdate(account)
+                if (connection != null) {
+                    processConnectionWithTimestampUpdate(connection)
                 } else {
-                    logger.debug { "No active Confluence accounts to poll" }
+                    logger.debug { "No active VALID Atlassian connections to poll for Confluence" }
                 }
             } catch (e: CancellationException) {
                 logger.info { "Confluence polling loop cancelled" }
@@ -159,60 +159,65 @@ class ConfluencePollingScheduler(
     /**
      * Manual trigger for testing/admin UI.
      */
-    suspend fun triggerManualPoll(accountId: String) {
-        logger.info { "Manually triggering poll for Confluence account $accountId" }
+    suspend fun triggerManualPoll(clientId: String) {
+        logger.info { "Manually triggering Confluence poll for client $clientId" }
 
-        val account = findAccountById(accountId)
-        processAccountWithTimestampUpdate(account)
+        val connection = findConnectionById(clientId)
+        processConnectionWithTimestampUpdate(connection)
     }
 
     /**
-     * Manual trigger that auto-selects the next eligible Confluence account (oldest lastPolledAt, VALID auth).
+     * Manual trigger that auto-selects the next eligible connection (oldest lastConfluencePolledAt, VALID auth).
      */
     suspend fun triggerNext() {
-        logger.info { "Manually triggering Confluence sync (auto-select next account)" }
-        val account = findNextAccountToPoll()
-        if (account != null) {
-            processAccountWithTimestampUpdate(account)
+        logger.info { "Manually triggering Confluence sync (auto-select next connection)" }
+        val connection = findNextConnectionToPoll()
+        if (connection != null) {
+            processConnectionWithTimestampUpdate(connection)
         } else {
-            logger.debug { "No active VALID Confluence accounts to poll" }
+            logger.debug { "No active VALID Atlassian connections to poll for Confluence" }
         }
     }
 
-    private suspend fun findNextAccountToPoll(): ConfluenceAccountDocument? =
-        accountRepository.findFirstByIsActiveTrueAndAuthStatusOrderByLastPolledAtAsc("VALID")
+    private suspend fun findNextConnectionToPoll(): AtlassianConnectionDocument? {
+        // Find connections with VALID auth, sorted by lastConfluencePolledAt (oldest first)
+        val all = connectionRepository.findAll().toList()
+        return all
+            .filter { it.authStatus == "VALID" }
+            .minByOrNull { it.lastConfluencePolledAt ?: Instant.EPOCH }
+    }
 
-    private suspend fun findAccountById(accountId: String): ConfluenceAccountDocument =
-        accountRepository.findById(ObjectId(accountId))
-            ?: throw IllegalArgumentException("Confluence account not found: $accountId")
+    private suspend fun findConnectionById(clientId: String): AtlassianConnectionDocument =
+        connectionRepository.findByClientId(ObjectId(clientId))
+            ?: throw IllegalArgumentException("Atlassian connection not found for client: $clientId")
 
-    private suspend fun processAccountWithTimestampUpdate(account: ConfluenceAccountDocument) {
-        if (account.authStatus != "VALID") {
-            logger.warn { "Skipping Confluence account ${account.id} (authStatus=${account.authStatus}). Use Test Connection to enable." }
+    private suspend fun processConnectionWithTimestampUpdate(connection: AtlassianConnectionDocument) {
+        if (connection.authStatus != "VALID") {
+            logger.warn { "Skipping Confluence sync for client ${connection.clientId} (authStatus=${connection.authStatus}). Use Test Connection to enable." }
             return
         }
 
-        logger.info { "Syncing Confluence pages for account: ${account.siteName} (${account.id})" }
+        logger.info { "Syncing Confluence pages for client ${connection.clientId.toHexString()} (tenant: ${connection.tenant})" }
 
         try {
-            syncPagesForAccount(account)
-            updateAccountTimestamp(account.id, success = true)
+            syncPagesForConnection(connection)
+            updateConnectionTimestamp(connection.id, success = true)
         } catch (e: Exception) {
             if (e is ConfluenceAuthException) {
-                logger.warn(e) { "Auth error while syncing Confluence account ${account.id}, marking as INVALID" }
-                runCatching { accountService.markAuthInvalid(account, e.message) }
+                logger.warn(e) { "Auth error while syncing Confluence for client ${connection.clientId}, marking as INVALID" }
+                runCatching { connectionService.markAuthInvalid(connection, e.message) }
             } else {
-                logger.error(e) { "Failed to sync Confluence account ${account.id}, will retry on next poll cycle" }
+                logger.error(e) { "Failed to sync Confluence for client ${connection.clientId}, will retry on next poll cycle" }
             }
-            // Don't update timestamp on failure - account stays as "needs sync"
-            updateAccountTimestamp(account.id, success = false, errorMessage = e.message)
+            // Don't update timestamp on failure - connection stays as "needs sync"
+            updateConnectionTimestamp(connection.id, success = false, errorMessage = e.message)
         }
     }
 
     /**
      * Sync all pages from all configured spaces.
      */
-    private suspend fun syncPagesForAccount(account: ConfluenceAccountDocument) {
+    private suspend fun syncPagesForConnection(connection: AtlassianConnectionDocument) {
         val startTime = System.currentTimeMillis()
         var totalPagesDiscovered = 0
         var totalPagesChanged = 0
@@ -220,24 +225,24 @@ class ConfluencePollingScheduler(
 
         // Determine which spaces to sync
         val spacesToSync =
-            if (account.spaceKeys.isEmpty()) {
+            if (connection.confluenceSpaceKeys.isEmpty()) {
                 // No specific spaces configured → sync all accessible spaces
                 logger.info { "No spaceKeys configured, discovering all spaces..." }
-                val spaces = confluenceApiClient.listSpaces(account).toList()
+                val spaces = confluenceApiClient.listSpaces(connection).toList()
                 logger.info { "Discovered ${spaces.size} accessible spaces" }
                 totalSpaces = spaces.size
                 spaces.map { it.key }
             } else {
                 // Use configured spaces
-                logger.info { "Syncing configured spaces: ${account.spaceKeys.joinToString(", ")}" }
-                totalSpaces = account.spaceKeys.size
-                account.spaceKeys
+                logger.info { "Syncing configured spaces: ${connection.confluenceSpaceKeys.joinToString(", ")}" }
+                totalSpaces = connection.confluenceSpaceKeys.size
+                connection.confluenceSpaceKeys
             }
 
         // Sync each space
         for (spaceKey in spacesToSync) {
             try {
-                val (discovered, changed) = syncSpacePages(account, spaceKey)
+                val (discovered, changed) = syncSpacePages(connection, spaceKey)
                 totalPagesDiscovered += discovered
                 totalPagesChanged += changed
 
@@ -245,14 +250,14 @@ class ConfluencePollingScheduler(
                     "Synced space $spaceKey: $discovered pages discovered, $changed changed/new"
                 }
             } catch (e: Exception) {
-                logger.error(e) { "Failed to sync space $spaceKey for account ${account.id}" }
+                logger.error(e) { "Failed to sync space $spaceKey for client ${connection.clientId}" }
                 // Continue with other spaces even if one fails
             }
         }
 
         val elapsed = System.currentTimeMillis() - startTime
         logger.info {
-            "Confluence sync completed for ${account.siteName}: " +
+            "Confluence sync completed for tenant ${connection.tenant}: " +
                 "$totalSpaces spaces, $totalPagesDiscovered pages, $totalPagesChanged new/changed in ${elapsed}ms"
         }
     }
@@ -262,38 +267,38 @@ class ConfluencePollingScheduler(
      * Returns (discovered count, changed/new count).
      */
     private suspend fun syncSpacePages(
-        account: ConfluenceAccountDocument,
+        connection: AtlassianConnectionDocument,
         spaceKey: String,
     ): Pair<Int, Int> {
         var discoveredCount = 0
         var changedCount = 0
 
         // Fetch pages modified since last successful sync (or all if first sync)
-        val modifiedSince = account.lastSuccessfulSyncAt
+        val modifiedSince = connection.lastConfluenceSyncedAt
 
         confluenceApiClient
-            .listPagesInSpace(account, spaceKey, modifiedSince)
+            .listPagesInSpace(connection, spaceKey, modifiedSince)
             .collect { page ->
                 discoveredCount++
 
                 try {
                     // Construct page URL
-                    val pageUrl = "${account.siteUrl}/wiki/spaces/$spaceKey/pages/${page.id}"
+                    val pageUrl = "https://${connection.tenant}/wiki/spaces/$spaceKey/pages/${page.id}"
 
-                    // Determine projectId: check space mapping first, fallback to account.projectId
+                    // Determine projectId: check space mapping first, fallback to null (client-level)
                     val projectId =
                         try {
-                            configCache.getProjectForConfluenceSpace(account.clientId, spaceKey) ?: account.projectId
+                            configCache.getProjectForConfluenceSpace(connection.clientId, spaceKey)
                         } catch (e: Exception) {
-                            logger.warn(e) { "Failed to load Confluence space mapping from cache, using account projectId" }
-                            account.projectId
+                            logger.warn(e) { "Failed to load Confluence space mapping from cache" }
+                            null
                         }
 
                     // Save or update page, returns true if NEW/changed
                     val isNewOrChanged =
                         stateManager.saveOrUpdatePage(
-                            accountId = account.id,
-                            clientId = account.clientId,
+                            accountId = connection.id, // Using connection ID as account ID
+                            clientId = connection.clientId,
                             projectId = projectId,
                             spaceKey = spaceKey,
                             page = page,
@@ -317,21 +322,21 @@ class ConfluencePollingScheduler(
         return discoveredCount to changedCount
     }
 
-    private suspend fun updateAccountTimestamp(
-        accountId: ObjectId,
+    private suspend fun updateConnectionTimestamp(
+        connectionId: ObjectId,
         success: Boolean,
         errorMessage: String? = null,
     ) {
-        val account = accountRepository.findById(accountId) ?: return
+        val connection = connectionRepository.findById(connectionId) ?: return
 
         val updated =
-            account.copy(
-                lastPolledAt = Instant.now(),
-                lastSuccessfulSyncAt = if (success) Instant.now() else account.lastSuccessfulSyncAt,
-                lastErrorMessage = if (success) null else errorMessage,
+            connection.copy(
+                lastConfluencePolledAt = Instant.now(),
+                lastConfluenceSyncedAt = if (success) Instant.now() else connection.lastConfluenceSyncedAt,
+                lastErrorMessage = if (success) null else errorMessage, // Shared error field for both Jira and Confluence
                 updatedAt = Instant.now(),
             )
 
-        accountRepository.save(updated)
+        connectionRepository.save(updated)
     }
 }

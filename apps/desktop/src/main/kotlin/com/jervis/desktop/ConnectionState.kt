@@ -70,7 +70,7 @@ class ConnectionManager(private val serverBaseUrl: String) : com.jervis.ui.Debug
                     errorLogService = services!!.errorLogService,
                     integrationSettingsService = services!!.integrationSettingsService,
                     gitConfigurationService = services!!.gitConfigurationService,
-                    jiraSetupService = services!!.jiraSetupService,
+                    atlassianSetupService = services!!.atlassianSetupService,
                     emailAccountService = services!!.emailAccountService,
                     indexingStatusService = services!!.indexingStatusService,
                     pendingTaskService = services!!.pendingTaskService,

@@ -24,7 +24,7 @@ import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.email.CreateOrUpdateEmailAccountRequestDto
 import com.jervis.dto.email.EmailAccountDto
-import com.jervis.dto.jira.JiraSetupStatusDto
+import com.jervis.dto.atlassian.AtlassianSetupStatusDto
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.util.pickTextFileContent
 import kotlinx.coroutines.launch
@@ -541,8 +541,8 @@ private fun ClientEditScreen(
                 }
             }
             ClientEditTab.Integrations -> {
-                var jiraStatus by remember(clientId) { mutableStateOf<com.jervis.dto.jira.JiraSetupStatusDto?>(null) }
-                var jiraProjects by remember(clientId) { mutableStateOf<List<com.jervis.dto.jira.JiraProjectRefDto>>(emptyList()) }
+                var jiraStatus by remember(clientId) { mutableStateOf<com.jervis.dto.atlassian.AtlassianSetupStatusDto?>(null) }
+                var jiraProjects by remember(clientId) { mutableStateOf<List<com.jervis.dto.atlassian.AtlassianProjectRefDto>>(emptyList()) }
                 var selectedJiraPrimary by remember(clientId) { mutableStateOf<String?>(null) }
                 var confluenceSpaceKey by remember(clientId) { mutableStateOf("") }
                 var confluenceRootPageId by remember(clientId) { mutableStateOf("") }
@@ -550,9 +550,9 @@ private fun ClientEditScreen(
                 LaunchedEffect(clientId) {
                     loading = true
                     try {
-                        val st = repository.jiraSetup.getStatus(clientId)
+                        val st = repository.atlassianSetup.getStatus(clientId)
                         jiraStatus = st
-                        jiraProjects = if (st.connected) repository.jiraSetup.listProjects(clientId) else emptyList()
+                        jiraProjects = if (st.connected) repository.atlassianSetup.listProjects(clientId) else emptyList()
                         selectedJiraPrimary = st.primaryProject
                         repository.integrationSettings.getClientStatus(clientId).let { cs ->
                             confluenceSpaceKey = cs.confluenceSpaceKey ?: ""
@@ -577,7 +577,7 @@ private fun ClientEditScreen(
                                 TextButtonLike("Refresh") {
                                     scope.launch {
                                         try {
-                                            jiraStatus = repository.jiraSetup.getStatus(clientId)
+                                            jiraStatus = repository.atlassianSetup.getStatus(clientId)
                                         } catch (t: Throwable) {
                                             error =
                                                 t.message
@@ -587,7 +587,7 @@ private fun ClientEditScreen(
                                 TextButtonLike("Test Connection") {
                                     scope.launch {
                                         try {
-                                            jiraStatus = repository.jiraSetup.testConnection(clientId)
+                                            jiraStatus = repository.atlassianSetup.testConnection(clientId)
                                             error = null
                                         } catch (
                                             t: Throwable,
@@ -613,8 +613,8 @@ private fun ClientEditScreen(
                                                 scope.launch {
                                                     try {
                                                         loading = true
-                                                        repository.jiraSetup.setPrimaryProject(clientId, jp.key)
-                                                        jiraStatus = repository.jiraSetup.getStatus(clientId)
+                                                        repository.atlassianSetup.setPrimaryProject(clientId, jp.key)
+                                                        jiraStatus = repository.atlassianSetup.getStatus(clientId)
                                                         error = null
                                                     } catch (t: Throwable) {
                                                         error = t.message
@@ -1052,8 +1052,8 @@ private fun ProjectEditScreen(
 
     // Integration effective values for info
     var integrationInfo by remember(project.id) { mutableStateOf<IntegrationInfo?>(null) }
-    var jiraStatus by remember(clientId) { mutableStateOf<JiraSetupStatusDto?>(null) }
-    var availableJiraProjects by remember(clientId) { mutableStateOf<List<com.jervis.dto.jira.JiraProjectRefDto>>(emptyList()) }
+    var jiraStatus by remember(clientId) { mutableStateOf<AtlassianSetupStatusDto?>(null) }
+    var availableJiraProjects by remember(clientId) { mutableStateOf<List<com.jervis.dto.atlassian.AtlassianProjectRefDto>>(emptyList()) }
 
     LaunchedEffect(project.id) {
         runCatching { repository.integrationSettings.getProjectStatus(project.id) }
@@ -1082,11 +1082,11 @@ private fun ProjectEditScreen(
                 error = it.message
             }
 
-        runCatching { repository.jiraSetup.getStatus(clientId) }
+        runCatching { repository.atlassianSetup.getStatus(clientId) }
             .onSuccess { st ->
                 jiraStatus = st
                 availableJiraProjects =
-                    if (st.connected) runCatching { repository.jiraSetup.listProjects(clientId) }.getOrDefault(emptyList()) else emptyList()
+                    if (st.connected) runCatching { repository.atlassianSetup.listProjects(clientId) }.getOrDefault(emptyList()) else emptyList()
             }.onFailure { e ->
                 jiraStatus = null
                 availableJiraProjects = emptyList()
@@ -1447,7 +1447,7 @@ private fun ProjectOverridesSection(
     clientId: String,
     project: ProjectDto,
     repository: JervisRepository,
-    availableJiraProjects: List<com.jervis.dto.jira.JiraProjectRefDto>,
+    availableJiraProjects: List<com.jervis.dto.atlassian.AtlassianProjectRefDto>,
     jiraSuggestionsEnabled: Boolean,
     onError: (String?) -> Unit,
     // Initial override values (null = currently not overridden)
@@ -1523,11 +1523,11 @@ private fun ProjectOverridesSection(
         if (useJiraBoardOverride) {
             // If Atlassian connected and project selected, offer board suggestions
             var jiraBoards by remember(project.id, jiraProjectKey, jiraSuggestionsEnabled) {
-                mutableStateOf<List<com.jervis.dto.jira.JiraBoardRefDto>>(emptyList())
+                mutableStateOf<List<com.jervis.dto.atlassian.AtlassianBoardRefDto>>(emptyList())
             }
             LaunchedEffect(jiraSuggestionsEnabled, useJiraBoardOverride, jiraProjectKey) {
                 if (jiraSuggestionsEnabled && useJiraBoardOverride && jiraProjectKey.isNotBlank()) {
-                    runCatching { repository.jiraSetup.listBoards(clientId = clientId, projectKey = jiraProjectKey) }
+                    runCatching { repository.atlassianSetup.listBoards(clientId = clientId, projectKey = jiraProjectKey) }
                         .onSuccess { jiraBoards = it }
                         .onFailure { /* fail fast into UI below by keeping empty */ }
                 } else {

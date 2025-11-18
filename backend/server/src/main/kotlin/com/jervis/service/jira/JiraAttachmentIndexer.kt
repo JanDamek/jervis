@@ -2,11 +2,12 @@ package com.jervis.service.jira
 
 import com.jervis.common.client.ITikaClient
 import com.jervis.common.dto.TikaProcessRequest
-import com.jervis.domain.jira.JiraConnection
+import com.jervis.domain.atlassian.AtlassianConnection
 import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
-import com.jervis.repository.mongo.JiraConnectionMongoRepository
+import com.jervis.repository.mongo.AtlassianConnectionMongoRepository
+import com.jervis.service.atlassian.AtlassianConnectionService
 import com.jervis.service.error.ErrorLogService
 import com.jervis.service.rag.RagIndexingService
 import com.jervis.service.text.TextChunkingService
@@ -43,16 +44,18 @@ class JiraAttachmentIndexer(
     private val textChunkingService: TextChunkingService,
     private val textNormalizationService: TextNormalizationService,
     private val webClientBuilder: WebClient.Builder,
-    private val connectionRepository: JiraConnectionMongoRepository,
-    private val connectionService: JiraConnectionService,
+    private val connectionRepository: AtlassianConnectionMongoRepository,
+    private val connectionService: AtlassianConnectionService,
     private val errorLogService: ErrorLogService,
+    private val issueIndexRepository: com.jervis.repository.mongo.JiraIssueIndexMongoRepository,
 ) {
     /**
      * Index all attachments for a given Jira issue.
      * Fetches attachment metadata, downloads content, extracts text, and indexes.
+     * Only indexes NEW attachments that haven't been indexed before.
      */
     suspend fun indexIssueAttachments(
-        conn: JiraConnection,
+        conn: AtlassianConnection,
         issueKey: String,
         clientId: ObjectId,
         tenantHost: String,
@@ -70,7 +73,19 @@ class JiraAttachmentIndexer(
 
             logger.info { "JIRA_ATTACHMENT: Found ${attachments.size} attachments for issue $issueKey" }
 
+            // Load existing index document to check which attachments are already indexed
+            val indexDoc = issueIndexRepository.findByClientIdAndIssueKey(clientId, issueKey)
+            val alreadyIndexed = indexDoc?.indexedAttachmentIds?.toSet() ?: emptySet()
+
+            val newlyIndexedIds = mutableListOf<String>()
+
             attachments.forEachIndexed { index, attachment ->
+                // Skip if already indexed
+                if (alreadyIndexed.contains(attachment.id)) {
+                    logger.debug { "JIRA_ATTACHMENT: Skipping already indexed attachment ${attachment.id}" }
+                    return@forEachIndexed
+                }
+
                 try {
                     indexAttachment(
                         conn = conn,
@@ -80,6 +95,7 @@ class JiraAttachmentIndexer(
                         tenantHost = tenantHost,
                         projectId = projectId,
                     )
+                    newlyIndexedIds.add(attachment.id)
                 } catch (e: Exception) {
                     // If this looks like an auth error, mark connection INVALID and stop further attachment processing
                     if (isAuthError(e)) {
@@ -101,6 +117,26 @@ class JiraAttachmentIndexer(
                     // Persist non-auth errors as well
                     runCatching { errorLogService.recordError(e, clientId = clientId, projectId = projectId) }
                 }
+            }
+
+            // Update index document with newly indexed attachment IDs
+            if (newlyIndexedIds.isNotEmpty()) {
+                val updatedDoc = if (indexDoc == null) {
+                    com.jervis.entity.jira.JiraIssueIndexDocument(
+                        clientId = clientId,
+                        issueKey = issueKey,
+                        projectKey = "", // Will be filled by orchestrator
+                        indexedAttachmentIds = newlyIndexedIds,
+                        updatedAt = Instant.now(),
+                    )
+                } else {
+                    indexDoc.copy(
+                        indexedAttachmentIds = (indexDoc.indexedAttachmentIds + newlyIndexedIds).distinct(),
+                        updatedAt = Instant.now(),
+                    )
+                }
+                issueIndexRepository.save(updatedDoc)
+                logger.info { "JIRA_ATTACHMENT: Updated index document with ${newlyIndexedIds.size} new attachment IDs for issue $issueKey" }
             }
         }.onFailure { e ->
             // Top-level failure when fetching attachments metadata or other fatal error
@@ -126,7 +162,7 @@ class JiraAttachmentIndexer(
     }
 
     private suspend fun indexAttachment(
-        conn: JiraConnection,
+        conn: AtlassianConnection,
         issueKey: String,
         attachment: AttachmentMetadata,
         clientId: ObjectId,
@@ -192,7 +228,7 @@ class JiraAttachmentIndexer(
     }
 
     private suspend fun fetchAttachmentMetadata(
-        conn: JiraConnection,
+        conn: AtlassianConnection,
         issueKey: String,
     ): List<AttachmentMetadata> {
         val client = webClientBuilder.baseUrl("https://${conn.tenant.value}").build()
@@ -231,7 +267,7 @@ class JiraAttachmentIndexer(
     }
 
     private suspend fun downloadAttachment(
-        conn: JiraConnection,
+        conn: AtlassianConnection,
         contentUrl: String,
     ): ByteArray {
         val client = webClientBuilder.build()
@@ -244,7 +280,7 @@ class JiraAttachmentIndexer(
             .awaitBody()
     }
 
-    private fun basicAuth(conn: JiraConnection): String {
+    private fun basicAuth(conn: AtlassianConnection): String {
         val tokenPair = (conn.email ?: "") + ":" + conn.accessToken
         val encoded = Base64.getEncoder().encodeToString(tokenPair.toByteArray())
         return "Basic $encoded"

@@ -7,6 +7,7 @@ data class JiraIssue(
     val key: String,
     val project: JiraProjectKey,
     val summary: String,
+    val description: String? = null,
     val type: String,
     val status: String,
     val assignee: JiraAccountId?,

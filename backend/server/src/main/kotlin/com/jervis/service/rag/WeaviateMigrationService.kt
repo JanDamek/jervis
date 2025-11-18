@@ -35,10 +35,9 @@ class WeaviateMigrationService(
     private val vectorStoreIndexRepo: VectorStoreIndexMongoRepository,
     // Confluence
     private val confluencePageRepo: ConfluencePageMongoRepository,
-    private val confluenceAccountRepo: ConfluenceAccountMongoRepository,
-    // Jira
+    // Jira + Confluence (shared Atlassian connection)
     private val jiraIssueIndexRepo: JiraIssueIndexMongoRepository,
-    private val jiraConnectionRepo: JiraConnectionMongoRepository,
+    private val jiraConnectionRepo: AtlassianConnectionMongoRepository,
     // Links
     private val indexedLinkRepo: IndexedLinkMongoRepository,
     private val unsafeLinkRepo: UnsafeLinkMongoRepository,
@@ -239,18 +238,18 @@ class WeaviateMigrationService(
         confluencePageRepo.deleteAll()
         logger.warn { "  ✗ Deleted confluence_pages ($confluenceCount records)" }
 
-        // Reset Confluence accounts sync status (lastPolledAt, lastSuccessfulSyncAt)
-        confluenceAccountRepo.findAll().collect { account ->
-            confluenceAccountRepo.save(account.copy(lastPolledAt = null, lastSuccessfulSyncAt = null))
+        // Reset Confluence sync status in Atlassian connections (lastConfluencePolledAt, lastConfluenceSyncedAt)
+        jiraConnectionRepo.findAll().collect { connection ->
+            jiraConnectionRepo.save(connection.copy(lastConfluencePolledAt = null, lastConfluenceSyncedAt = null))
         }
-        logger.warn { "  ✓ Reset confluence_accounts sync status" }
+        logger.warn { "  ✓ Reset Atlassian connections Confluence sync status" }
 
         // 3. Jira
         val jiraCount = jiraIssueIndexRepo.count()
         jiraIssueIndexRepo.deleteAll()
         logger.warn { "  ✗ Deleted jira_issue_index ($jiraCount records)" }
 
-        // Note: JiraConnectionDocument doesn't have sync tracking fields to reset
+        // Note: AtlassianConnectionDocument doesn't have sync tracking fields to reset
         logger.warn { "  ✓ Jira connections preserved (will re-index on next sync)" }
 
         // 4. Links
