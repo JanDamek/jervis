@@ -38,11 +38,25 @@ class IndexingStatusRestController(
             registry.snapshot().map { t ->
                 val (indexedCount, newCount) = kotlin.runCatching { registry.getIndexedAndNewCounts(t.toolKey) }
                     .getOrDefault(0L to 0L)
+
+                // Compute idleReason if IDLE and has NEW items
+                val idleReason = if (t.state == IndexingStatusRegistry.State.IDLE && newCount > 0) {
+                    when (t.toolKey) {
+                        "email" -> emailPollingScheduler.getIdleReason(newCount)
+                        "jira" -> jiraPollingScheduler.getIdleReason(newCount)
+                        // Git and Confluence don't have getIdleReason yet
+                        else -> null
+                    }
+                } else {
+                    null
+                }
+
                 IndexingToolSummaryDto(
                     toolKey = t.toolKey,
                     displayName = t.displayName,
                     state = if (t.state == IndexingStatusRegistry.State.RUNNING) IndexingStateDto.RUNNING else IndexingStateDto.IDLE,
                     reason = t.reason,
+                    idleReason = idleReason,
                     runningSince = t.runningSince?.let(fmt::format),
                     processed = t.processed,
                     errors = t.errors,
@@ -64,12 +78,25 @@ class IndexingStatusRestController(
         val t = registry.toolDetail(toolKey) ?: IndexingStatusRegistry.ToolState(toolKey, toolKey)
         val (indexedCount, newCount) = kotlin.runCatching { registry.getIndexedAndNewCounts(t.toolKey) }
             .getOrDefault(0L to 0L)
+
+        // Compute idleReason if IDLE and has NEW items
+        val idleReason = if (t.state == IndexingStatusRegistry.State.IDLE && newCount > 0) {
+            when (t.toolKey) {
+                "email" -> emailPollingScheduler.getIdleReason(newCount)
+                "jira" -> jiraPollingScheduler.getIdleReason(newCount)
+                else -> null
+            }
+        } else {
+            null
+        }
+
         val summary =
             IndexingToolSummaryDto(
                 toolKey = t.toolKey,
                 displayName = t.displayName,
                 state = if (t.state == IndexingStatusRegistry.State.RUNNING) IndexingStateDto.RUNNING else IndexingStateDto.IDLE,
                 reason = t.reason,
+                idleReason = idleReason,
                 runningSince = t.runningSince?.let(fmt::format),
                 processed = t.processed,
                 errors = t.errors,

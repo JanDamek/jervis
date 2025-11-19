@@ -60,22 +60,45 @@ class TaskQualificationService(
 
         try {
             pendingTaskService
-                .findTasksReadyForQualification()
+                // Include both READY and already QUALIFYING tasks (e.g., reclaimed after restart)
+                .findTasksForQualification()
                 .flatMapMerge(concurrency = 32) { task ->
                     flow {
-                        val claimed = pendingTaskService.tryClaimForQualification(task.id)
-                        if (claimed != null) {
-                            processedCount++
-                            if (processedCount == 1) {
-                                logger.info { "First task received - qualification pipeline started" }
+                        // Branch by current state
+                        when (task.state) {
+                            com.jervis.domain.task.PendingTaskState.READY_FOR_QUALIFICATION -> {
+                                val claimed = pendingTaskService.tryClaimForQualification(task.id)
+                                if (claimed != null) {
+                                    processedCount++
+                                    if (processedCount == 1) {
+                                        logger.info { "First task received - qualification pipeline started" }
+                                    }
+                                    if (processedCount % 100 == 0) {
+                                        logger.info { "Qualification progress: $processedCount tasks processed..." }
+                                    }
+                                    qualifyTask(claimed)
+                                    emit(claimed)
+                                } else {
+                                    logger.debug { "Task ${task.id} could not be claimed (race), skipping" }
+                                }
                             }
-                            if (processedCount % 100 == 0) {
-                                logger.info { "Qualification progress: $processedCount tasks processed..." }
+                            com.jervis.domain.task.PendingTaskState.QUALIFYING -> {
+                                // Reclaim stuck/in-progress task - continue processing without re-claim
+                                processedCount++
+                                if (processedCount == 1) {
+                                    logger.info { "First task received (reclaimed QUALIFYING) - qualification pipeline started" }
+                                }
+                                if (processedCount % 100 == 0) {
+                                    logger.info { "Qualification progress: $processedCount tasks processed..." }
+                                }
+                                logger.debug { "Reprocessing QUALIFYING task ${task.id} (likely from previous run)" }
+                                qualifyTask(task)
+                                emit(task)
                             }
-                            qualifyTask(claimed)
-                            emit(claimed)
-                        } else {
-                            logger.debug { "Task ${task.id} could not be claimed (race), skipping" }
+                            else -> {
+                                // Not eligible in this phase
+                                logger.debug { "Skipping task ${task.id} in state ${task.state}" }
+                            }
                         }
                     }.catch { e ->
                         logger.error(e) { "Failed to qualify task: ${task.id}" }

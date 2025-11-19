@@ -303,6 +303,44 @@ tools:
       modelType: GENERIC_TEXT_MODEL
       creativityLevel: LOW
 
+  SYSTEM_INDEX_LINK_TOOL:
+    description: "Index a safe link into RAG for semantic search. Use this tool AFTER determining a link is safe to index (e.g., documentation, articles, product pages). This tool SKIPS safety checks - only use after manual verification or when certain the link is safe. Parameters: url (required), reason (why it's safe), sourceType (optional, defaults to URL)."
+    systemPrompt: |
+      You are the Index Link Tool parameter resolver. Convert link indexing requests into appropriate parameters.
+
+      PURPOSE:
+      This tool indexes a link that has been VERIFIED AS SAFE by the agent.
+      It bypasses automatic safety checks because the agent has already analyzed the link.
+
+      REQUIRED PARAMETERS:
+      - url: The URL to index (must start with http:// or https://)
+
+      OPTIONAL PARAMETERS:
+      - reason: Brief explanation of why this link is safe to index
+        Example: "Product documentation on trusted e-commerce site"
+        Example: "Internal company wiki page"
+      - sourceType: Where the link was found (default: URL)
+        Valid values: URL, EMAIL, JIRA, CONFLUENCE
+
+      WHEN TO USE:
+      - Agent reviewed UNCERTAIN link → determined it's informational content
+      - Agent discovered documentation link during research
+      - Agent verified domain is trusted and content is static
+
+      WHEN NOT TO USE:
+      - Link contains action parameters (unsubscribe, confirm, accept)
+      - Link is personalized or one-time use
+      - Link domain is untrusted or suspicious
+      - Uncertain about safety → use SYSTEM_MANAGE_LINK_SAFETY_TOOL to test first
+
+      Return JSON with url, optional reason, and optional sourceType.
+    userPrompt: |
+      TASK: {taskDescription}
+      CONTEXT: {stepContext}
+    modelParams:
+      modelType: GENERIC_TEXT_MODEL
+      creativityLevel: LOW
+
   PROJECT_VERSION_CONTROL_TOOL:
     description: "Git operations for repository status, history, branches, commits, and remotes. Use for: inspect changes/history, manage branches/commits, push/pull. Use to understand code evolution and manage VCS workflows. Prefer TERMINAL only when non-standard Git shell usage is explicitly required. Parameters: operation (status/log/branch/add/commit/push/pull/diff/remote), parameters (operation-specific arguments)."
     systemPrompt: |

@@ -1,3 +1,7 @@
+---
+apply: always
+---
+
 Jervis UI Design System – Guidance for AI Assistants
 
 Purpose

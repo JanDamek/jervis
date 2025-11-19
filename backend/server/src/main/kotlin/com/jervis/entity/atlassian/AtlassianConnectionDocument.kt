@@ -58,4 +58,19 @@ data class AtlassianConnectionDocument(
 
     @Indexed
     val updatedAt: Instant = Instant.now(),
-)
+) {
+    /**
+     * Convert MongoDB document to domain object.
+     */
+    fun toDomain(): com.jervis.domain.atlassian.AtlassianConnection =
+        com.jervis.domain.atlassian.AtlassianConnection(
+            clientId = clientId.toHexString(),
+            tenant = com.jervis.domain.jira.JiraTenant(tenant),
+            email = email,
+            accessToken = accessToken,
+            preferredUser = preferredUser?.let { com.jervis.domain.jira.JiraAccountId(it) },
+            mainBoard = mainBoard?.let { com.jervis.domain.jira.JiraBoardId(it) },
+            primaryProject = primaryProject?.let { com.jervis.domain.jira.JiraProjectKey(it) },
+            updatedAt = updatedAt,
+        )
+}

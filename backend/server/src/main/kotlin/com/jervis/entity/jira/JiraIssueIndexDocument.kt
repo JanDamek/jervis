@@ -30,6 +30,11 @@ data class JiraIssueIndexDocument(
     val archived: Boolean = false,
     @Indexed
     val updatedAt: Instant = Instant.now(),
+    /** Indexing state: NEW, INDEXING, INDEXED, FAILED (similar to EmailMessageDocument) */
+    @Indexed
+    val state: String = "NEW",
+    /** Error message if state=FAILED */
+    val errorMessage: String? = null,
 
     // Incremental indexing: track what has been indexed
     /** Hash of summary + description to detect changes */
@@ -40,4 +45,24 @@ data class JiraIssueIndexDocument(
     val indexedAttachmentIds: List<String> = emptyList(),
     /** Timestamp when issue was last fully indexed (shallow or deep) */
     val lastIndexedAt: Instant? = null,
+
+    // UI status tracking - updated after each indexing run
+    /** Number of RAG chunks for issue summary */
+    val summaryChunkCount: Int = 0,
+    /** Number of RAG chunks for comments */
+    val commentChunkCount: Int = 0,
+    /** Number of comments indexed */
+    val commentCount: Int = 0,
+    /** Number of attachments successfully indexed */
+    val attachmentCount: Int = 0,
+    /** Total RAG chunks (summary + comments + attachments) */
+    val totalRagChunks: Int = 0,
+    /** Current Jira status (e.g., "In Progress", "Done") */
+    val currentStatus: String? = null,
+    /** Current assignee account ID */
+    val currentAssignee: String? = null,
+    /** Issue summary/title for quick display */
+    val issueSummary: String? = null,
+    /** Last indexing error message (null if successful) */
+    val lastIndexingError: String? = null,
 )

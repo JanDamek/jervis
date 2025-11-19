@@ -719,3 +719,127 @@ tasks:
 
       Should this link be reviewed or can it be discarded?
 
+  LINK_SAFETY_REVIEW:
+    goal: |
+      Review a link that could not be automatically classified as SAFE or UNSAFE and determine the appropriate action.
+
+      CONTEXT PROVIDED:
+      - url: The link that needs review
+      - contextBefore: Text appearing before the link (up to 150 chars)
+      - contextAfter: Text appearing after the link (up to 150 chars)
+      - source: Where the link was found (email, Jira, Confluence, etc.)
+      - initialAssessment: Why the link was marked UNCERTAIN (e.g., "Contains tracking parameters", "Unknown domain")
+
+      YOUR TASK - LINK SAFETY DECISION:
+
+      1. ANALYZE CONTEXT:
+         - Read contextBefore and contextAfter to understand intent
+         - Look for action keywords:
+           * "unsubscribe", "opt-out" → UNSAFE
+           * "confirm", "verify", "activate" → UNSAFE
+           * "accept invitation", "decline meeting", "RSVP" → UNSAFE
+           * "documentation", "read more", "product details" → SAFE
+         - Consider source type (internal email vs marketing)
+
+      2. ANALYZE URL STRUCTURE:
+         - Check domain reputation (known company? internal? external?)
+         - Check path for action patterns (/unsubscribe, /confirm, /action=, etc.)
+         - Check query parameters (token=, code=, email=, rsvp=, etc.)
+         - Check if URL is personalized (user-specific tokens/IDs)
+
+      3. MAKE SAFETY DECISION:
+         Based on analysis, choose ONE of these actions:
+
+         A) INDEX AS SAFE:
+            - If link is clearly informational content (docs, articles, products)
+            - Index the link into RAG for semantic search
+            - Link will be available for future queries
+
+         B) ADD UNSAFE PATTERN:
+            - If link is an action link (unsubscribe, confirm, calendar response)
+            - Add regex pattern to blacklist to prevent similar links
+            - Suggest specific regex pattern (see rules below)
+            - Pattern will protect against similar unsafe links in future
+
+         C) SKIP (NO ACTION):
+            - If link is irrelevant (ads, social media, expired)
+            - If domain is untrusted but not worth blocking
+            - Document reason in completion message
+
+      4. PATTERN GENERATION RULES (for UNSAFE links):
+         When suggesting regex patterns, be VERY SPECIFIC:
+         - Good: /\/unsubscribe/ (matches /unsubscribe in path)
+         - Good: /action=(accept|decline)/ (matches specific query param values)
+         - Good: /\/calendar\/event\?action=/ (specific calendar action URL)
+         - BAD: /confirm/ (too broad - matches "confirmation" everywhere)
+         - BAD: /email/ (too broad - matches /email/image.jpg)
+         - BAD: /tracking/ (too broad - matches domain names)
+
+         Never suggest patterns based on:
+         - Domain names (use blacklistDomains in code instead)
+         - Common words (app, cdn, photo, edit)
+         - Language-specific words (Czech, English)
+
+      5. DOCUMENT DECISION:
+         - Your decision is automatically recorded in task completion
+         - Include brief reasoning (1-2 sentences)
+         - Example: "Link is product page on trusted e-commerce site, safe to index"
+         - Example: "Link contains action=accept parameter for meeting response, added pattern /action=(accept|decline)/"
+
+      TOOLS TO USE:
+      - system_index_link: Index a safe link into RAG
+      - system_manage_link_safety: Manage unsafe link patterns (add/disable/enable/list/test)
+      - knowledge_search: Check if similar links were reviewed before
+
+      PHILOSOPHY:
+      - Better to skip a link than to trigger ANY action
+      - When uncertain about safety → mark as UNSAFE
+      - Context (text around link) is crucial for understanding intent
+      - One-time tokens, personalized URLs, action parameters → UNSAFE
+
+      OUTPUT:
+      Return empty plan [] only if link is clearly spam/irrelevant.
+      Otherwise, make a decision and execute using MCP tools.
+
+    qualifierSystemPrompt: |
+      Fast pre-qualification for link safety review using CPU-only small model.
+      Decide if link needs full agent analysis (delegate) or can be handled quickly (discard).
+
+      CURRENT DATE: {currentDate}
+      Use context to determine if time-sensitive links are still relevant.
+
+      CRITICAL OUTPUT RULE: decision MUST be EXACTLY "discard" OR "delegate" - NO other values!
+
+      DISCARD (handle without agent):
+      - Link matches obvious UNSAFE patterns:
+        * unsubscribe, opt-out, subscription management
+        * action=accept, action=decline, rsvp=yes
+        * confirm, verify, activate in path
+        * token=, code=, key= in query (one-time actions)
+        * click tracking, redirect services
+      - Context clearly indicates action ("click here to unsubscribe", "accept invitation")
+      - Domain is known tracking service (analytics, email marketing)
+
+      DELEGATE (needs agent analysis):
+      - Unknown domain that might be legitimate business content
+      - Mixed signals (utm_ parameters but otherwise safe-looking)
+      - Internal company domains (*.company.com)
+      - Context suggests informational content ("documentation at...", "read more")
+      - Domain is whitelisted but URL has suspicious patterns
+      - Unclear intent from context alone
+
+      IMPORTANT:
+      - Be conservative with DISCARD - only for OBVIOUS unsafe links
+      - Most UNCERTAIN links should be DELEGATED to agent for careful analysis
+      - Agent has access to MCP tools to index or blacklist after analysis
+
+      STRICT OUTPUT FORMAT:
+      {"decision": "discard", "reason": "..."} OR {"decision": "delegate", "reason": "..."}
+      NO other decision values allowed!
+
+    qualifierUserPrompt: |
+      LINK SAFETY REVIEW REQUEST:
+      URL: {content}
+
+      Analyze the URL and context. Should this be handled by the agent or discarded?
+

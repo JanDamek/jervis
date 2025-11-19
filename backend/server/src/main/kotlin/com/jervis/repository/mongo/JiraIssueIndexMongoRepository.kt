@@ -20,10 +20,23 @@ interface JiraIssueIndexMongoRepository : CoroutineCrudRepository<JiraIssueIndex
         archived: Boolean,
     ): Flow<JiraIssueIndexDocument>
 
+    // Continuous indexing support
+    @Query("{ 'clientId': ?0, 'state': ?1, 'archived': false }")
+    fun findByClientIdAndStateAndArchivedFalseOrderByUpdatedAtAsc(
+        clientId: ObjectId,
+        state: String,
+    ): Flow<JiraIssueIndexDocument>
+
+    @Query(value = "{ 'clientId': ?0, 'state': ?1, 'archived': false }", count = true)
+    suspend fun countByClientIdAndStateAndArchivedFalse(
+        clientId: ObjectId,
+        state: String,
+    ): Long
+
     // Global counts for UI overview
-    @Query(value = "{ 'archived': false, 'lastIndexedAt': { \$ne: null } }", count = true)
+    @Query(value = "{ 'archived': false, 'state': 'INDEXED' }", count = true)
     suspend fun countIndexedActive(): Long
 
-    @Query(value = "{ 'archived': false, 'lastIndexedAt': null }", count = true)
+    @Query(value = "{ 'archived': false, 'state': 'NEW' }", count = true)
     suspend fun countNewActive(): Long
 }

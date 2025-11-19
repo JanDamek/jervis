@@ -15,8 +15,10 @@ data class IndexingToolSummaryDto(
     val toolKey: String,
     val displayName: String,
     val state: IndexingStateDto,
-    /** Short human readable reason / context what is being indexed (optional) */
+    /** Short human readable reason / context what is being indexed (when RUNNING) */
     val reason: String? = null,
+    /** Why indexer is IDLE even though there are NEW items waiting (when IDLE and newCount > 0) */
+    val idleReason: String? = null,
     /** ISO-8601 timestamp when current RUNNING started */
     val runningSince: String? = null,
     /** Cumulative processed items in current run (or last run if IDLE) */

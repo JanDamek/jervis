@@ -5,7 +5,6 @@ import com.jervis.entity.UnsafeLinkPatternDocument
 import com.jervis.repository.mongo.IndexedLinkMongoRepository
 import com.jervis.repository.mongo.UnsafeLinkMongoRepository
 import com.jervis.repository.mongo.UnsafeLinkPatternMongoRepository
-import com.jervis.service.gateway.QualifierLlmGateway
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.firstOrNull
@@ -42,15 +41,19 @@ private val logger = KotlinLogging.logger {}
  */
 @Service
 class LinkSafetyQualifier(
-    private val qualifierGateway: QualifierLlmGateway,
     private val unsafeLinkRepository: UnsafeLinkMongoRepository,
     private val indexedLinkRepository: IndexedLinkMongoRepository,
     private val unsafeLinkPatternRepository: UnsafeLinkPatternMongoRepository,
 ) {
+    // In-memory cache for learned regex patterns (lazy loaded, performance optimization)
+    private val learnedPatternsCache = java.util.concurrent.atomic.AtomicReference<List<Regex>?>(null)
+
     init {
         // Cleanup bad patterns on startup
         kotlinx.coroutines.runBlocking {
             cleanupBadPatterns()
+            // Pre-load patterns cache
+            refreshPatternsCache()
         }
     }
 
@@ -501,16 +504,37 @@ class LinkSafetyQualifier(
         )
 
     /**
-     * Get learned regex patterns from MongoDB as Flow.
-     * Non-blocking, stateless pattern retrieval.
+     * Refresh in-memory cache of learned patterns from MongoDB.
+     * Called on startup and when new patterns are added.
+     */
+    private suspend fun refreshPatternsCache() {
+        val patternsList = mutableListOf<Regex>()
+
+        unsafeLinkPatternRepository
+            .findByEnabledTrue()
+            .collect { doc ->
+                try {
+                    patternsList.add(Regex(doc.pattern))
+                } catch (e: Exception) {
+                    logger.warn { "Invalid regex pattern in DB: ${doc.pattern}" }
+                }
+            }
+
+        learnedPatternsCache.set(patternsList)
+        logger.info { "Loaded ${patternsList.size} learned patterns into cache" }
+    }
+
+    /**
+     * Get learned regex patterns from in-memory cache (fast).
+     * Falls back to MongoDB if cache is not initialized.
      *
      * TODO: RAG INTEGRATION FOR LINK SAFETY PATTERNS
      * ================================================
-     * Current: Patterns loaded directly from MongoDB on every check
+     * Current: Patterns cached in memory, loaded from MongoDB on startup
      * Goal: Use RAG for dynamic pattern discovery and contextual rules
      *
-     * Phase 1: Pattern caching with RAG sync
-     * - Cache patterns in memory at startup (currently loaded per-check)
+     * Phase 1: Pattern caching with RAG sync ✅ DONE (in-memory cache)
+     * - Cache patterns in memory at startup
      * - Listen to MongoDB changes (ChangeStream) and invalidate cache
      * - Trigger: When agent adds pattern via MCP tool → update cache + store in RAG
      *
@@ -531,28 +555,44 @@ class LinkSafetyQualifier(
      * - Agent MCP tool writes to both MongoDB + RAG atomically
      * - Cache invalidation on pattern add/disable/enable
      */
-    private fun getLearnedPatterns(): Flow<Regex> =
-        unsafeLinkPatternRepository
-            .findByEnabledTrue()
-            .mapNotNull { doc ->
-                try {
-                    Regex(doc.pattern)
-                } catch (e: Exception) {
-                    logger.warn { "Invalid regex pattern in DB: ${doc.pattern}" }
-                    null
-                }
-            }
+    private suspend fun getLearnedPatterns(): List<Regex> {
+        // Return cached patterns if available (fast path)
+        learnedPatternsCache.get()?.let { return it }
+
+        // Fallback: load from MongoDB and cache (slow path, should rarely happen)
+        logger.warn { "Patterns cache not initialized, loading from MongoDB" }
+        refreshPatternsCache()
+        return learnedPatternsCache.get() ?: emptyList()
+    }
 
     /**
-     * Determine if a link is safe to index.
+     * Determine if a link is safe to index using FAST HEURISTICS ONLY.
+     *
+     * NEW ARCHITECTURE (aligned with rules.md):
+     * - NO synchronous LLM calls (non-blocking)
+     * - Uses only: cache, patterns, blacklists, whitelists
+     * - Returns UNCERTAIN for ambiguous cases → creates pending task
+     * - Pending task uses centralized TaskQualificationService (CPU-only)
+     *
      * Optimized workflow:
-     * 1. Check if already indexed → SAFE (skip all checks)
-     * 2. Check UNSAFE cache → UNSAFE (skip LLM)
-     * 3. Check learned regex patterns → UNSAFE (skip LLM)
-     * 4. Pattern/domain matching
-     * 5. LLM qualification (cache result if UNSAFE + save regex)
+     * 1. Check if already indexed → SAFE
+     * 2. Check UNSAFE cache → UNSAFE
+     * 3. Check learned regex patterns → UNSAFE
+     * 4. Pattern/domain matching (blacklist/whitelist)
+     * 5. Heuristic checks (query params, tokens)
+     * 6. If unclear → UNCERTAIN (no LLM call!)
+     *
+     * @param url The URL to qualify
+     * @param contextBefore Text before the link (kept for future use, not used in heuristics)
+     * @param contextAfter Text after the link (kept for future use, not used in heuristics)
+     * @param correlationId Optional correlation ID for tracking
      */
-    suspend fun qualifyLink(url: String, correlationId: String? = null): SafetyResult {
+    suspend fun qualifyLink(
+        url: String,
+        contextBefore: String? = null,
+        contextAfter: String? = null,
+        correlationId: String? = null,
+    ): SafetyResult {
         // Level -1: Reject mailto: links immediately (should never reach here)
         if (url.startsWith("mailto:", ignoreCase = true)) {
             return SafetyResult(
@@ -579,15 +619,15 @@ class LinkSafetyQualifier(
         }
 
         // Level 1.5: Check learned regex patterns (from previous LLM classifications)
-        getLearnedPatterns()
-            .firstOrNull { regex -> regex.containsMatchIn(url) }
-            ?.let { matchedRegex ->
-                logger.debug { "Link matches learned pattern: $url" }
-                return SafetyResult(
-                    SafetyResult.Decision.UNSAFE,
-                    "Matches learned pattern: ${matchedRegex.pattern}",
-                )
-            }
+        // Uses in-memory cache for performance (no MongoDB query per link)
+        val learnedPatterns = getLearnedPatterns()
+        learnedPatterns.firstOrNull { regex -> regex.containsMatchIn(url) }?.let { matchedRegex ->
+            logger.debug { "Link matches learned pattern: $url" }
+            return SafetyResult(
+                SafetyResult.Decision.UNSAFE,
+                "Matches learned pattern: ${matchedRegex.pattern}",
+            )
+        }
 
         val uri = URI.create(url)
         val normalizedUrl = url.lowercase()
@@ -648,7 +688,10 @@ class LinkSafetyQualifier(
             query.contains("subscriber") ||
             query.contains("tracking")
         ) {
-            return qualifyWithLlm(url, "Contains tracking parameters", correlationId)
+            return SafetyResult(
+                SafetyResult.Decision.UNCERTAIN,
+                "Contains tracking parameters - needs agent review",
+            )
         }
 
         // Level 7: Domain-based monitoring/analytics detection REMOVED
@@ -658,247 +701,37 @@ class LinkSafetyQualifier(
         // Level 8: Token/key parameters - likely one-time action links
         if (query.contains("token=", ignoreCase = true) ||
             query.contains("key=", ignoreCase = true) ||
-            query.contains("code=", ignoreCase = true)) {
-            return qualifyWithLlm(url, "Contains token/key/code parameter - likely action link", correlationId)
+            query.contains("code=", ignoreCase = true)
+        ) {
+            return SafetyResult(
+                SafetyResult.Decision.UNCERTAIN,
+                "Contains token/key/code parameter - likely action link, needs review",
+            )
         }
 
         // Level 9: Any query parameter that looks like identifier/session
         if (query.matches(Regex(".*([a-f0-9]{32,}|[A-Za-z0-9_-]{20,}).*"))) {
-            return qualifyWithLlm(url, "Contains long hash/identifier - potentially personalized", correlationId)
+            return SafetyResult(
+                SafetyResult.Decision.UNCERTAIN,
+                "Contains long hash/identifier - potentially personalized, needs review",
+            )
         }
 
         // Default: For whitelisted domains without red flags → safe
-        // For unknown domains → ask LLM (pessimistic)
+        // For unknown domains → UNCERTAIN (no LLM call, create pending task)
         return if (whitelistDomains.any { domain.contains(it, ignoreCase = true) }) {
             SafetyResult(
                 SafetyResult.Decision.SAFE,
                 "Whitelisted domain with no action patterns detected",
             )
         } else {
-            qualifyWithLlm(url, "Unknown domain - needs verification", correlationId)
-        }
-    }
-
-    /**
-     * Use small LLM to determine if link is safe to index.
-     * Only called for uncertain cases.
-     * When marking UNSAFE, model suggests regex pattern for automatic classification.
-     * UNSAFE results are cached in MongoDB to avoid future LLM calls.
-     */
-    private suspend fun qualifyWithLlm(
-        url: String,
-        context: String,
-        correlationId: String?,
-    ): SafetyResult =
-        try {
-            val systemPrompt =
-                """
-                CRITICAL: Web scraping must be 100% PASSIVE. Philosophy: Better to skip than to trigger ANY action.
-                IMPORTANT: Many meetings were CANCELLED by scraping accept/decline calendar links!
-
-                You are a BALANCED classifier. Mark SAFE when URL is clearly static content. Mark UNSAFE only for actual action links.
-
-                UNSAFE = ANY action or tracking (mark UNSAFE if uncertain):
-                - ANY calendar/meeting response link (RSVP, accept, decline, tentative) - CRITICAL!
-                - Any confirmation link (email, calendar, registration, subscription)
-                - Any unsubscribe/subscribe/opt-in/opt-out link
-                - Authentication (login, logout, password reset, email verification)
-                - Settings/preferences changes
-                - Form submissions or data collection
-                - Payment/checkout pages
-                - Monitoring/analytics/tracking services
-                - Click tracking or redirect services
-                - URLs with tokens/keys (likely one-time actions)
-                - URL shorteners (unknown destination)
-                - Any personalized/per-user URL (e.g., email= parameter with specific email address)
-                - Account activation or verification
-                - Newsletter signup/management
-
-                NOTE: Analytics parameters (utm_source, utm_medium, etc.) do NOT make content unsafe - they're just tracking.
-                Static assets from /email/ paths (images, CSS) are SAFE - they're not actions.
-
-                SAFE = Static content without actions (default for most URLs):
-                - Public documentation (no login required)
-                - Blog articles, news articles, forum discussions
-                - Product catalog pages, e-commerce product pages (not checkout)
-                - Public GitHub/GitLab repositories, code examples
-                - Wikipedia articles, educational content
-                - Stack Overflow questions, community forums
-                - Business/internal applications (Jira, Slack, internal dashboards)
-                - Company websites and internal domains
-                - Google Docs /edit URLs (read-only by default)
-                - Google Photos, image galleries
-                - Maps, search results, tracking packages
-                - PDF documents, image files (even in /email/ paths)
-                - News with utm_* parameters (tracking doesn't affect content)
-                - Czech websites (.cz domains are generally safe)
-                - Banking information pages (not login/transactions)
-
-                ASSUME SAFE unless URL explicitly contains action keywords in the PATH or QUERY.
-
-                CRITICAL RULES FOR UNSAFE:
-                - URL PATH contains: /unsubscribe, /opt-out, /confirm, /verify, /activate → UNSAFE
-                - URL QUERY contains: action=accept, action=decline, rsvp=yes, email=specific@email.com → UNSAFE
-                - URL contains: /calendar/event?action=, /meeting/accept, /invite/rsvp → UNSAFE
-                - Domain is KNOWN tracking service (analytics.google.com, mixpanel.com) → UNSAFE
-
-                IMPORTANT: Do NOT mark UNSAFE based on:
-                - Domain name containing common words (monitor, analytics, track, mapy, photo, edit, cdn, app)
-                - File paths (/email/image.jpg, /cdn/file.js, /app/dashboard)
-                - Query parameters without action (det=, k=, utm_source=)
-                - Czech words or names (platci, chudy, mapy)
-                - Generic URL patterns that don't indicate actions
-
-                When in doubt about unknown domains → mark SAFE (most websites are informational).
-
-                FALSE POSITIVES TO AVOID:
-                - "edit" in docs.google.com/document/.../edit is SAFE (read-only view)
-                - "app" in URL path (e.g., example.com/app/dashboard) is SAFE - it's application path
-                - utm_source, utm_medium, utm_campaign parameters are SAFE - just analytics tracking
-                - /email/*.png or /email/*.jpg asset URLs are SAFE - static images, not actions
-                - Only "action=accept", "email=specific@email.com" are UNSAFE
-
-                When UNSAFE, suggest VERY SPECIFIC regex that matches ONLY the action part:
-                - Good examples:
-                  * /\/unsubscribe/ (path contains /unsubscribe)
-                  * /action=(accept|decline)/ (query param action with specific values)
-                  * /\/calendar\/event\?action=/ (specific calendar action URL)
-                  * /email=[^&]+@[^&]+/ (email parameter with actual email address)
-
-                - BAD examples (DO NOT USE):
-                  * /confirm/ (too broad - matches "confirmation" in any context)
-                  * /edit/ (too broad - matches Google Docs edit)
-                  * /email/ (too broad - matches /email/image.jpg)
-                  * /tracking/ (too broad - matches domain names)
-                  * /[a-z]/ (absurdly broad - matches everything)
-                  * Czech words like /mapy/, /platci/, /chudy/
-                  * Single words without context: /photo/, /cdn/, /app/
-
-                NEVER suggest patterns based on:
-                - Domain names or subdomains
-                - Common words that appear in paths
-                - Language-specific words (Czech, English)
-                - File types or CDN paths
-
-                JSON only:
-                {"decision": "SAFE" or "UNSAFE", "reason": "brief. Suggested regex: /pattern/ (if UNSAFE)"}
-                """.trimIndent()
-
-            val userPrompt = "URL: $url\nContext: $context\n\nSafe to download?"
-
-            val result = qualifierGateway.qualifyGeneric(
-                systemPrompt,
-                userPrompt,
-                SafetyResult::class.java,
-                correlationId = correlationId ?: org.bson.types.ObjectId.get().toHexString()
-            )
-
-            logger.debug { "LLM qualification for $url: ${result.decision} - ${result.reason}" }
-
-            // Cache UNSAFE results to avoid future LLM calls
-            if (result.decision == SafetyResult.Decision.UNSAFE) {
-                val reasonWithRegex =
-                    if (!result.suggestedRegex.isNullOrBlank() && !result.reason.contains("Suggested regex:")) {
-                        result.reason + " Suggested regex: /" + result.suggestedRegex + "/"
-                    } else {
-                        result.reason
-                    }
-                cacheUnsafeLink(url, reasonWithRegex)
-            }
-
-            result
-        } catch (e: Exception) {
-            logger.warn { "LLM qualification failed for $url: ${e.message}" }
-            // If LLM fails and no blacklist match, assume SAFE (conservative for fetching)
             SafetyResult(
-                SafetyResult.Decision.SAFE,
-                "LLM failed but no blacklist match - safe to fetch: ${e.message}",
+                SafetyResult.Decision.UNCERTAIN,
+                "Unknown domain - needs agent verification",
             )
         }
-
-    /**
-     * Cache UNSAFE link classification to MongoDB.
-     * Extracts suggested regex pattern from reason and stores it as a reusable rule.
-     */
-    private suspend fun cacheUnsafeLink(
-        url: String,
-        reason: String,
-    ) {
-        val regexPattern = extractRegexPattern(reason)
-
-        val unsafeLinkDoc =
-            UnsafeLinkDocument(
-                url = url,
-                reason = reason,
-                suggestedRegex = regexPattern,
-                createdAt = Instant.now(),
-            )
-
-        unsafeLinkRepository.save(unsafeLinkDoc)
-
-        regexPattern?.let { pattern ->
-            saveLearnedPattern(pattern, reason, url)
-        }
-
-        logger.info { "Cached UNSAFE link: $url${regexPattern?.let { " (learned: $it)" } ?: ""}" }
     }
 
-    /**
-     * Extract regex pattern from LLM reason string.
-     */
-    private fun extractRegexPattern(reason: String): String? =
-        if (reason.contains("Suggested regex:", ignoreCase = true)) {
-            val regexStart = reason.indexOf("Suggested regex:", ignoreCase = true)
-            reason
-                .substring(regexStart + "Suggested regex:".length)
-                .trim()
-                .split("\n", ".", ";")
-                .firstOrNull()
-                ?.trim()
-                ?.removePrefix("/")
-                ?.removeSuffix("/")
-                ?.trim()
-        } else {
-            null
-        }
-
-    /**
-     * Save learned regex pattern to MongoDB if it doesn't exist yet.
-     * This allows the pattern to be reused for future link classifications.
-     */
-    private suspend fun saveLearnedPattern(
-        pattern: String,
-        description: String,
-        exampleUrl: String,
-    ) {
-        // Validate regex
-        runCatching { Regex(pattern) }.getOrElse { e ->
-            logger.warn(e) { "Invalid regex pattern: $pattern" }
-            return
-        }
-
-        // Check if exists
-        unsafeLinkPatternRepository.findByPattern(pattern)?.let {
-            logger.debug { "Pattern already exists: $pattern" }
-            return
-        }
-
-        // Save new pattern
-        val patternDoc =
-            UnsafeLinkPatternDocument(
-                pattern = pattern,
-                description = description,
-                exampleUrl = exampleUrl,
-                matchCount = 1,
-                createdAt = Instant.now(),
-                lastMatchedAt = Instant.now(),
-                enabled = true,
-            )
-
-        unsafeLinkPatternRepository.save(patternDoc)
-
-        logger.info { "Saved learned pattern: $pattern (example: $exampleUrl)" }
-    }
 
     /**
      * Batch qualify multiple links.

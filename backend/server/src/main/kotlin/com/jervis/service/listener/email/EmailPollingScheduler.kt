@@ -69,4 +69,25 @@ class EmailPollingScheduler(
 
         emailAccountRepository.save(updated)
     }
+
+    /**
+     * Returns human-readable reason why email indexing is IDLE despite having NEW messages.
+     * Used by UI to explain why indexer is not processing.
+     */
+    suspend fun getIdleReason(newCount: Long): String? {
+        if (newCount == 0L) return null // No NEW messages, no reason needed
+
+        val activeAccountsCount = emailAccountRepository.countByIsActiveTrue()
+        if (activeAccountsCount == 0L) {
+            return "No active email accounts configured"
+        }
+
+        val nextAccount = findNextAccountToPoll()
+        if (nextAccount == null) {
+            return "No email accounts ready to poll (all recently polled)"
+        }
+
+        // Has active accounts and they're ready, so scheduler will pick it up soon
+        return "Waiting for next scheduled poll (runs every 60s)"
+    }
 }
