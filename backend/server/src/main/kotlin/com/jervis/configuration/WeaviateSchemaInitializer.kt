@@ -240,6 +240,27 @@ class WeaviateSchemaInitializer(
                     .name("parentRef")
                     .dataType(listOf(DataType.TEXT))
                     .build(),
+                // Knowledge Engine fields
+                Property
+                    .builder()
+                    .name("knowledgeType")
+                    .dataType(listOf(DataType.TEXT))
+                    .build(),
+                Property
+                    .builder()
+                    .name("knowledgeSeverity")
+                    .dataType(listOf(DataType.TEXT))
+                    .build(),
+                Property
+                    .builder()
+                    .name("knowledgeTags")
+                    .dataType(listOf(DataType.TEXT_ARRAY))
+                    .build(),
+                Property
+                    .builder()
+                    .name("knowledgeId")
+                    .dataType(listOf(DataType.TEXT))
+                    .build(),
             )
 
         // Configure HNSW vector index for optimal similarity search

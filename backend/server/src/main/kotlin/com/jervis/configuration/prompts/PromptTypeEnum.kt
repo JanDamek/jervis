@@ -10,6 +10,8 @@ enum class PromptTypeEnum(
         listOf("rag-search", "knowledge-search", "index-search"),
     ),
     KNOWLEDGE_STORE_TOOL(listOf("knowledge_store", "rag.store", "store_knowledge"), listOf("knowledge-store", "store")),
+    KNOWLEDGE_MANAGE_TOOL(listOf("knowledge_manage", "rag.manage", "manage_knowledge"), listOf("knowledge-manage", "delete-knowledge")),
+    KNOWLEDGE_CLASSIFIER(listOf("knowledge_classifier", "classify_knowledge")),
     SOURCE_FETCH_ORIGINAL_TOOL(
         listOf("source_fetch_original", "fetch_original", "fetch_source"),
         listOf("fetch-original", "fetch-source", "read-email"),

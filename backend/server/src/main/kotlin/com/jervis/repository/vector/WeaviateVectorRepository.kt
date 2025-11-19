@@ -6,6 +6,8 @@ import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.domain.rag.RagDocument
 import io.weaviate.client.Config
 import io.weaviate.client.WeaviateClient
+import io.weaviate.client.v1.filters.Operator
+import io.weaviate.client.v1.filters.WhereFilter
 import io.weaviate.client.v1.graphql.query.argument.HybridArgument
 import io.weaviate.client.v1.graphql.query.argument.NearVectorArgument
 import io.weaviate.client.v1.graphql.query.argument.WhereArgument
@@ -139,7 +141,147 @@ class WeaviateVectorRepository(
             executeSearch(className, query)
         }
 
+    // ========== Delete Operations ==========
+
+    /**
+     * Delete knowledge fragment by its unique knowledge ID.
+     * Returns Result<Boolean> - true if deleted, false if not found.
+     */
+    suspend fun deleteByKnowledgeId(
+        collectionType: ModelTypeEnum,
+        knowledgeId: String,
+        clientId: String,
+    ): Result<Boolean> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val className = WeaviateCollections.forModelType(collectionType)
+
+                logger.info {
+                    "Deleting knowledge fragment: collection=$className, " +
+                        "knowledgeId=$knowledgeId, clientId=$clientId"
+                }
+
+                // Build filter: knowledgeId AND clientId (security)
+                val whereFilter =
+                    WhereFilter
+                        .builder()
+                        .operator(Operator.And)
+                        .operands(
+                            WhereFilter
+                                .builder()
+                                .path("knowledgeId")
+                                .operator(Operator.Equal)
+                                .valueText(knowledgeId)
+                                .build(),
+                            WhereFilter
+                                .builder()
+                                .path("clientId")
+                                .operator(Operator.Equal)
+                                .valueText(clientId)
+                                .build(),
+                        ).build()
+
+                // First, search for objects matching the filter to get their IDs
+                // Use empty embedding for filter-only search
+                val query =
+                    VectorQuery(
+                        embedding = emptyList(),
+                        filters =
+                            WeaviateFilters(
+                                knowledgeId = knowledgeId,
+                                clientId = clientId,
+                            ),
+                        limit = 1000, // Should be enough for knowledge fragments with same ID
+                    )
+
+                val results = executeSearchByFilter(className, query)
+
+                if (results.isEmpty()) {
+                    logger.info { "No objects found with knowledgeId=$knowledgeId" }
+                    false
+                } else {
+                    // Delete each found object by ID
+                    var deletedCount = 0
+                    results.forEach { result ->
+                        try {
+                            val deleteResult =
+                                client
+                                    .data()
+                                    .deleter()
+                                    .withClassName(className)
+                                    .withID(result.id)
+                                    .run()
+
+                            if (deleteResult.hasErrors()) {
+                                logger.warn {
+                                    "Failed to delete object ${result.id}: ${deleteResult.error.messages}"
+                                }
+                            } else {
+                                deletedCount++
+                            }
+                        } catch (e: Exception) {
+                            logger.warn(e) { "Exception deleting object ${result.id}" }
+                        }
+                    }
+
+                    logger.info {
+                        "Knowledge deletion completed: knowledgeId=$knowledgeId, deleted=$deletedCount/${results.size} objects"
+                    }
+                    deletedCount > 0
+                }
+            }
+        }
+
     // ========== Private Implementation ==========
+
+    /**
+     * Execute filter-only search (no vector embedding required).
+     * Used for operations like deletion by knowledgeId.
+     */
+    private fun executeSearchByFilter(
+        className: String,
+        query: VectorQuery,
+    ): List<SearchResult> {
+        logger.debug { "Executing filter-only search: className=$className, filters=${query.filters}" }
+
+        // Build GraphQL query fields - minimal for deletion
+        val fields =
+            listOf(
+                Field
+                    .builder()
+                    .name("_additional")
+                    .fields(
+                        Field.builder().name("id").build(),
+                    ).build(),
+            )
+
+        val queryBuilder =
+            client
+                .graphQL()
+                .get()
+                .withClassName(className)
+                .withFields(*fields.toTypedArray())
+                .withLimit(query.limit)
+
+        // Apply filters
+        query.filters.toWhereFilter()?.let { whereFilter ->
+            queryBuilder.withWhere(WhereArgument.builder().filter(whereFilter).build())
+        } ?: run {
+            logger.warn { "No filters provided for filter-only search" }
+            return emptyList()
+        }
+
+        // Execute query
+        val result = queryBuilder.run()
+
+        if (result.hasErrors()) {
+            logger.error { "Filter-only search failed: ${result.errorMessages()}" }
+            return emptyList()
+        }
+
+        // Parse results - minimal parsing for IDs only
+        return result.parseSearchResults()
+    }
 
     private fun createClient(): WeaviateClient {
         logger.info {

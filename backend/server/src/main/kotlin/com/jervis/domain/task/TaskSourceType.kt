@@ -34,4 +34,9 @@ enum class TaskSourceType {
      * Task created from external system (Jira, Slack, etc.)
      */
     EXTERNAL_SYSTEM,
+
+    /**
+     * Task created for knowledge rule approval (Knowledge Engine)
+     */
+    KNOWLEDGE_APPROVAL,
 }

@@ -15,11 +15,25 @@ tools:
       - Focus on IMMEDIATE next needs only (1-3 items), not the entire task
       - Be evidence-based - don't assume data you don't have
 
+      🛡️ RULES COMPLIANCE:
+      - You have access to ACTIVE RULES in the context below
+      - These rules are MANDATORY and MUST be followed
+      - When planning, ensure all steps comply with active rules
+      - If a rule is violated, adjust the plan accordingly
+
+      🧠 KNOWLEDGE AWARENESS:
+      - You have access to RELEVANT MEMORIES (contextual facts)
+      - Use these memories to inform your planning
+      - If you discover NEW important information during execution, plan a step to store it
+      - Example: "Store architecture decision about microservices pattern as memory"
+
       EXAMPLES OF GOOD REQUIREMENTS:
       - "Get list of files changed in commit abc123"
       - "Check current authentication configuration in the codebase"
       - "Find all usages of DatabaseConnection class"
       - "Verify if tests exist for the UserService module"
+      - "Store discovered API versioning convention as rule"
+      - "Capture database connection details as memory"
 
       COMPLETION SIGNAL:
       When you have all information needed to answer the user's question, return an empty list.
@@ -30,14 +44,47 @@ tools:
       CLIENT CONTEXT: {clientDescription}
       PROJECT: {projectDescription}
 
+      🛡️ ACTIVE RULES & GOVERNANCE:
+      {activeRules}
+
+      🧠 RELEVANT CONTEXT & MEMORIES:
+      {relevantMemories}
+
       {planContext}
 
       USER REQUEST: {userRequest}
       GOALS TO SATISFY: {questionChecklist}
 
-      Based on the context above, what information do you need NEXT to progress?
-      List 1-3 specific information requirements. Be concise and clear about WHAT is needed.
-      If all goals are satisfied, return empty list.
+      Based on the context above (including active rules and memories), what information do you need NEXT to progress?
+      IMPORTANT: You MUST comply with all active RULES. Plan accordingly.
+
+      YOUR RESPONSE MUST INCLUDE TWO PARTS:
+
+      1. nextSteps: List 1-3 specific information requirements. Be concise and clear about WHAT is needed.
+         If all goals are satisfied, return empty list.
+
+      2. knowledgeRequests: List of rules/memories you want loaded in NEXT iteration.
+         - Use this to control what knowledge you need for subsequent planning
+         - Each request has: query (search term), type ("RULE"/"MEMORY"/"ANY"), reason (why needed)
+         - First iteration: Empty list (automatic fallback based on user request)
+         - Subsequent iterations: Explicitly request knowledge you need
+
+      KNOWLEDGE REQUEST EXAMPLES:
+      - {"query": "API versioning conventions", "type": "RULE", "reason": "Need versioning rules for endpoint design"}
+      - {"query": "database connection config", "type": "MEMORY", "reason": "Need DB settings for migration script"}
+      - {"query": "authentication patterns", "type": "ANY", "reason": "Need both rules and context about auth"}
+
+      RESPONSE FORMAT:
+      {
+        "nextSteps": [
+          {"description": "Get list of files in src/auth directory"},
+          {"description": "Check current JWT token expiration configuration"}
+        ],
+        "knowledgeRequests": [
+          {"query": "security best practices", "type": "RULE", "reason": "Ensure auth changes comply with security rules"},
+          {"query": "auth service architecture", "type": "MEMORY", "reason": "Need context about current auth implementation"}
+        ]
+      }
 
     modelParams:
       modelType: PLANNER
@@ -129,19 +176,63 @@ tools:
       creativityLevel: LOW
 
   KNOWLEDGE_STORE_TOOL:
-    description: "Store insights/summaries into knowledge base for future retrieval. Use when you discover important connections, context, or findings worth preserving. PARAMETRIC tool (NO LLM) - provide PLAIN TEXT directly in stepInstruction. The text will be automatically chunked and embedded. Example stepInstruction: 'Email chain summary: Kateřina forwarded newsletter about X on 2016-06-02. Original from pepasikora. Subject refers to content being outside understanding scope.'"
+    description: "Intelligent knowledge storage with automatic classification. Stores insights, rules, or context for future retrieval. Automatically detects if content is a RULE (normative constraint) or MEMORY (contextual fact). RULES require user approval via UserTask. MEMORIES are stored directly. Provide PLAIN TEXT describing the knowledge to store."
     systemPrompt:
     userPrompt:
     modelParams:
       modelType: PLANNER
       creativityLevel: LOW
 
+  KNOWLEDGE_MANAGE_TOOL:
+    description: "Manage knowledge fragments (CRUD operations). Operations: 'search: query' - find knowledge by text; 'delete: knowledgeId' - remove knowledge; 'list_rules' - show all active rules; 'list_memories' - show recent memories. Example: 'search: kotlin architecture' or 'delete: rule-uuid-123'"
+    systemPrompt:
+    userPrompt:
+    modelParams:
+      modelType: GENERIC_TEXT_MODEL
+      creativityLevel: LOW
+
   KNOWLEDGE_SEARCH_TOOL:
-    description: "Intelligent knowledge retrieval that automatically searches embeddings in parallel."
+    description: "Intelligent knowledge retrieval that automatically searches embeddings in parallel across all indexed content."
     systemPrompt: not used
     userPrompt: not used
     modelParams:
       modelType: GENERIC_CODE_MODEL
+      creativityLevel: LOW
+
+  KNOWLEDGE_CLASSIFIER:
+    description: "Internal LLM-based classifier for knowledge fragments. Determines type (RULE/MEMORY), severity (MUST/SHOULD/INFO), and extracts relevant tags."
+    systemPrompt: |
+      You are a knowledge classifier for Jervis Knowledge Engine.
+
+      Analyze the provided text and classify it into structured metadata:
+
+      TYPE DETECTION:
+      - RULE: Normative statements containing obligations/prohibitions
+        * Indicators: "musí", "nesmí", "vždy", "nikdy", "povinné", "zakázáno", "must", "should", "always", "never"
+        * Examples: "Všechny endpointy musí být verzované", "Never use Lombok"
+      - MEMORY: Contextual facts, preferences, decisions, historical info
+        * Indicators: Factual statements, preferences, "používáme", "preferujeme", "rozhodli jsme", "we use", "we prefer"
+        * Examples: "Pro auth používáme Keycloak", "DB hesla jsou v Vaultu"
+
+      SEVERITY (for RULES only):
+      - MUST: Critical requirement, violation unacceptable
+      - SHOULD: Strong recommendation, should be followed unless justified
+      - INFO: Informational guideline, optional
+
+      TAGS:
+      - Extract 2-5 key concepts/topics as lowercase tags
+      - Examples: ["kotlin", "architecture", "dto"], ["security", "authentication", "keycloak"]
+
+      REASONING:
+      - Provide 1-2 sentences explaining your classification decision
+    userPrompt: |
+      Classify the following knowledge text:
+
+      {text}
+
+      Return JSON with: type (RULE/MEMORY), severity (MUST/SHOULD/INFO), tags (array of strings), reasoning (string).
+    modelParams:
+      modelType: GENERIC_TEXT_MODEL
       creativityLevel: LOW
 
   SOURCE_FETCH_ORIGINAL_TOOL:
@@ -181,9 +272,30 @@ tools:
     description: "General reasoning and synthesis. Performs analysis, summarization, decision-making from context."
     systemPrompt: |
       You are the LLM execution tool. Perform reasoning and synthesis tasks.
-      
+
       Use only provided context. Be concise and technically accurate.
       State limitations clearly. Structure answers for next steps.
+
+      🧠 KNOWLEDGE CAPTURE RESPONSIBILITY:
+      As you analyze information, actively identify and capture important knowledge:
+
+      1. RULES (Normative Requirements):
+         - When you discover mandatory practices, constraints, or requirements
+         - Examples: "All endpoints must be versioned", "Never use deprecated libraries"
+         - ACTION: Use KNOWLEDGE_STORE_TOOL to save as RULE
+
+      2. MEMORIES (Important Context):
+         - When you learn about project architecture, decisions, preferences
+         - Examples: "Uses Keycloak for auth", "Database credentials in Vault at /secret/app"
+         - ACTION: Use KNOWLEDGE_STORE_TOOL to save as MEMORY
+
+      3. When to capture:
+         - After analyzing documentation/code/emails that reveal architecture decisions
+         - When user provides important context about their workflow
+         - When discovering patterns or conventions in the codebase
+         - When synthesizing findings from multiple sources
+
+      IMPORTANT: Don't just analyze - ACTIVELY STORE what you learn for future reference!
     userPrompt: |
       PARAMS: {taskParams}
     modelParams:
