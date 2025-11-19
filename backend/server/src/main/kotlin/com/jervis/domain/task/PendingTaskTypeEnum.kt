@@ -49,4 +49,20 @@ enum class PendingTaskTypeEnum {
      * User should review and decide: add to safe patterns, ignore, or index manually.
      */
     LINK_REVIEW,
+
+    /**
+     * Link safety qualification is UNCERTAIN - needs agent review.
+     * Created when LLM cannot determine if link is safe (no clear patterns).
+     * Agent analyzes link + context and decides:
+     * - SAFE → indexes the link via MCP tool
+     * - UNSAFE → adds pattern to blacklist
+     * - SKIP → marks as reviewed but don't index
+     *
+     * Task content includes:
+     * - URL
+     * - Text context before/after link
+     * - Source (email, Jira, Confluence)
+     * - LLM reasoning for UNCERTAIN decision
+     */
+    LINK_SAFETY_REVIEW,
 }

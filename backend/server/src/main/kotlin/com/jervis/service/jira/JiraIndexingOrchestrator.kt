@@ -388,6 +388,94 @@ class JiraIndexingOrchestrator(
             }
         }
 
+    /**
+     * Index single Jira issue - used by JiraContinuousIndexer.
+     * Indexes summary, comments, attachments and returns result.
+     */
+    suspend fun indexSingleIssue(
+        clientId: ObjectId,
+        issue: JiraIssue,
+        tenantHost: String,
+        jervisProjectId: ObjectId?,
+    ): IndexSingleIssueResult {
+        val conn = selection.getConnection(clientId).let { auth.ensureValidToken(it) }
+        val projectKey = issue.project
+
+        // Calculate hashes
+        val contentHash = computeHash("${issue.summary}|${issue.description ?: ""}")
+        val statusHash = computeHash(issue.status)
+
+        var summaryChunks = 0
+        var commentChunks = 0
+        var commentCount = 0
+        var attachmentCount = 0
+
+        try {
+            // Index summary
+            val existingIndexDoc = issueIndexRepository.findByClientIdAndIssueKey(clientId, issue.key)
+            indexIssueSummaryShallow(
+                clientId = clientId,
+                issue = issue,
+                project = projectKey,
+                assignedToMe = false, // Not relevant for continuous indexer
+                tenantHost = tenantHost,
+                jervisProjectId = jervisProjectId,
+                contentHash = contentHash,
+                statusHash = statusHash,
+                existingIndexDoc = existingIndexDoc,
+            )
+            summaryChunks = textChunkingService.splitText("${issue.summary} ${issue.description ?: ""}").size
+
+            // Index comments
+            val comments = indexIssueCommentsDeep(
+                clientId = clientId,
+                issueKey = issue.key,
+                project = projectKey,
+                tenantHost = tenantHost,
+                jervisProjectId = jervisProjectId,
+            )
+            commentCount = comments.size
+            commentChunks = comments.sumOf {
+                textChunkingService.splitText(it.second).size
+            }
+
+            // Index attachments
+            runCatching {
+                jiraAttachmentIndexer.indexIssueAttachments(
+                    conn = conn,
+                    issueKey = issue.key,
+                    clientId = clientId,
+                    tenantHost = tenantHost,
+                    projectId = jervisProjectId,
+                )
+                // Count attachments from existing doc
+                val doc = issueIndexRepository.findByClientIdAndIssueKey(clientId, issue.key)
+                attachmentCount = doc?.indexedAttachmentIds?.size ?: 0
+            }.onFailure { e ->
+                logger.warn(e) { "Failed to index attachments for ${issue.key}" }
+            }
+
+            return IndexSingleIssueResult(
+                success = true,
+                summaryChunks = summaryChunks,
+                commentChunks = commentChunks,
+                commentCount = commentCount,
+                attachmentCount = attachmentCount,
+            )
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to index issue ${issue.key}" }
+            return IndexSingleIssueResult(success = false)
+        }
+    }
+
+    data class IndexSingleIssueResult(
+        val success: Boolean,
+        val summaryChunks: Int = 0,
+        val commentChunks: Int = 0,
+        val commentCount: Int = 0,
+        val attachmentCount: Int = 0,
+    )
+
     private suspend fun indexIssueSummaryShallow(
         clientId: ObjectId,
         issue: JiraIssue,

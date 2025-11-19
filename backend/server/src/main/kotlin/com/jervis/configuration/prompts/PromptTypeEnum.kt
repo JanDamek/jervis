@@ -47,6 +47,7 @@ enum class PromptTypeEnum(
     SYSTEM_EXECUTE_COMMAND_TOOL(listOf("system_execute_command", "exec_command", "system.exec"), listOf("execute-shell", "run-command")),
     SYSTEM_SCHEDULE_TASK_TOOL(listOf("system_schedule_task", "schedule_task", "task.schedule"), listOf("schedule-task", "calendar")),
     SYSTEM_MANAGE_LINK_SAFETY_TOOL(listOf("system_manage_link_safety", "manage_link_safety", "link.safety"), listOf("link-safety", "banned-links", "allowed-links")),
+    SYSTEM_INDEX_LINK_TOOL(listOf("system_index_link", "index_link", "link.index"), listOf("index-link", "index-url")),
     CREATE_PENDING_TASK_TOOL(listOf("create_pending_task", "pending_task", "delegate_task"), listOf("create-pending-task", "delegate")),
     CONSOLIDATE_STEPS_TOOL(listOf("consolidate_steps", "merge_steps", "steps.consolidate"), listOf("consolidate-steps")),
 

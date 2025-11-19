@@ -7,6 +7,7 @@ import com.jervis.entity.PendingTaskDocument
 import com.jervis.repository.mongo.PendingTaskMongoRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -147,6 +148,17 @@ class PendingTaskService(
     }
 
     fun findTasksReadyForQualification(): Flow<PendingTask> = findTasksByState(PendingTaskState.READY_FOR_QUALIFICATION)
+
+    /**
+     * Return all tasks that should be considered for qualification now:
+     * - READY_FOR_QUALIFICATION: need to be claimed
+     * - QUALIFYING: tasks that might have been claimed previously (e.g., before restart) and should continue
+     */
+    fun findTasksForQualification(): Flow<PendingTask> =
+        merge(
+            findTasksByState(PendingTaskState.READY_FOR_QUALIFICATION),
+            findTasksByState(PendingTaskState.QUALIFYING),
+        )
 
     suspend fun tryClaimForQualification(taskId: ObjectId): PendingTask? {
         val result = runCatching { updateState(taskId, PendingTaskState.READY_FOR_QUALIFICATION, PendingTaskState.QUALIFYING) }

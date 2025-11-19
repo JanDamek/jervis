@@ -15,4 +15,6 @@ interface EmailAccountMongoRepository : CoroutineCrudRepository<EmailAccountDocu
     suspend fun findFirstByIsActiveTrueOrderByLastPolledAtAsc(): EmailAccountDocument?
 
     fun findAllByIsActiveTrue(): Flow<EmailAccountDocument>
+
+    suspend fun countByIsActiveTrue(): Long
 }

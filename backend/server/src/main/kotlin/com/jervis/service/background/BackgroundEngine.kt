@@ -110,8 +110,8 @@ class BackgroundEngine(
                 // Process all tasks in Flow with concurrency limit (e.g., 8 parallel)
                 taskQualificationService.processAllQualifications()
 
-                // If we get here, Flow is exhausted - no more tasks
-                logger.info { "Qualification cycle complete - no more tasks, sleeping 30s..." }
+                // Flow exhausted for this scan
+                logger.info { "Qualification cycle complete - sleeping 30s..." }
                 delay(30_000)
             } catch (e: CancellationException) {
                 logger.info { "Qualification loop cancelled" }
