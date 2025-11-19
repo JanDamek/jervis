@@ -35,6 +35,14 @@ fun RagDocument.toWeaviateProperties(): Map<String, Any> =
         chunkOf?.let { put("chunkOf", it) }
         parentRef?.let { put("parentRef", it) }
         correlationId?.let { put("correlationId", it) }
+
+        // Knowledge Engine fields
+        knowledgeType?.let { put("knowledgeType", it.name) }
+        knowledgeSeverity?.let { put("knowledgeSeverity", it.name) }
+        if (knowledgeTags.isNotEmpty()) {
+            put("knowledgeTags", knowledgeTags.toTypedArray())
+        }
+        knowledgeId?.let { put("knowledgeId", it) }
     }
 
 /**

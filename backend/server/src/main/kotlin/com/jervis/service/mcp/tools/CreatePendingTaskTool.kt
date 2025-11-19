@@ -45,6 +45,7 @@ class CreatePendingTaskTool(
                 content = taskDescription,
                 projectId = plan.projectDocument?.id,
                 clientId = plan.clientDocument.id,
+                correlationId = plan.correlationId, // Preserve correlationId from plan - same work chain
             )
 
         logger.info { "CREATE_PENDING_TASK_SUCCESS: Created task ${task.id}" }

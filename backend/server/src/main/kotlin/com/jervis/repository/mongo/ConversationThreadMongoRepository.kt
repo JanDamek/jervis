@@ -10,7 +10,11 @@ import java.time.Instant
 
 @Repository
 interface ConversationThreadMongoRepository : CoroutineCrudRepository<ConversationThreadDocument, ObjectId> {
-    suspend fun findByThreadId(threadId: String): ConversationThreadDocument?
+    suspend fun findByThreadIdAndClientIdAndProjectId(
+        threadId: String,
+        clientId: ObjectId,
+        projectId: ObjectId?,
+    ): ConversationThreadDocument?
 
     fun findBySenderProfileIdsContaining(senderProfileId: ObjectId): Flow<ConversationThreadDocument>
 

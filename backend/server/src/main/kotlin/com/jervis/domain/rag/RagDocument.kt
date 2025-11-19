@@ -44,4 +44,13 @@ data class RagDocument(
     val archivedAt: Instant? = null,
     /** Correlation ID for end-to-end tracing across indexing pipeline */
     val correlationId: String? = null,
+    // Knowledge Engine fields
+    /** Knowledge classification (RULE or MEMORY), null for regular documents */
+    val knowledgeType: KnowledgeType? = null,
+    /** Severity level for rules (MUST, SHOULD, INFO) */
+    val knowledgeSeverity: KnowledgeSeverity? = null,
+    /** Tags for knowledge categorization (e.g., ["kotlin", "architecture", "security"]) */
+    val knowledgeTags: List<String> = emptyList(),
+    /** Unique identifier for knowledge fragments (UUID), enables easy deletion/update */
+    val knowledgeId: String? = null,
 )

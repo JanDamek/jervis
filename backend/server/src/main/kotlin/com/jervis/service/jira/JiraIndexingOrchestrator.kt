@@ -247,6 +247,38 @@ class JiraIndexingOrchestrator(
 
                     try {
                         val tenantHost = connValid.tenant.value
+                        
+                        // Validate tenant hostname before attempting connection
+                        if (tenantHost.isBlank()) {
+                            logger.error { "JIRA_INDEX: Invalid tenant hostname (blank) for client=${clientId.toHexString()}" }
+                            runCatching {
+                                indexingRegistry.error("jira", "Invalid tenant hostname (blank) for client=${clientId.toHexString()}")
+                            }
+                            runCatching {
+                                errorLogService.recordError(
+                                    IllegalStateException("Invalid tenant hostname: value is blank"),
+                                    clientId = clientId,
+                                    projectId = jervisProjectId
+                                )
+                            }
+                            return@forEach
+                        }
+                        
+                        // Basic hostname validation (should contain at least one dot and valid characters)
+                        if (!tenantHost.matches(Regex("^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"))) {
+                            logger.error { "JIRA_INDEX: Invalid tenant hostname format for client=${clientId.toHexString()}: '$tenantHost'" }
+                            runCatching {
+                                indexingRegistry.error("jira", "Invalid tenant hostname format: '$tenantHost'")
+                            }
+                            runCatching {
+                                errorLogService.recordError(
+                                    IllegalStateException("Invalid tenant hostname format: '$tenantHost'"),
+                                    clientId = clientId,
+                                    projectId = jervisProjectId
+                                )
+                            }
+                            return@forEach
+                        }
                         api
                             .searchIssues(connValid, jql, updatedSinceEpochMs = lastSyncedAt?.toEpochMilli())
                             .collect { issue ->
@@ -328,6 +360,31 @@ class JiraIndexingOrchestrator(
                         logger.info { "JIRA_INDEX: Completed search for project=$key" }
                     } catch (e: Exception) {
                         logger.error(e) { "JIRA_INDEX: search failed for client=${clientId.toHexString()} project=$key" }
+
+                        // Check for UnresolvedAddressException - invalid tenant hostname
+                        if (e is java.nio.channels.UnresolvedAddressException || 
+                            e.cause is java.nio.channels.UnresolvedAddressException) {
+                            logger.error { "JIRA_INDEX: UnresolvedAddressException for client=${clientId.toHexString()} - tenant hostname '${connValid.tenant.value}' cannot be resolved. Please check Atlassian connection configuration." }
+                            runCatching {
+                                indexingRegistry.error(
+                                    "jira",
+                                    "Cannot resolve tenant hostname '${connValid.tenant.value}' - check Atlassian connection configuration",
+                                    getFullStackTrace(e)
+                                )
+                            }
+                            // Mark connection as invalid since hostname is unresolvable
+                            val doc = connectionRepository.findByClientId(clientId)
+                            if (doc != null) {
+                                runCatching { 
+                                    connectionService.markAuthInvalid(
+                                        doc, 
+                                        "Cannot resolve tenant hostname '${connValid.tenant.value}'. Please verify the tenant URL in Atlassian connection settings."
+                                    ) 
+                                }
+                            }
+                            runCatching { errorLogService.recordError(e, clientId = clientId, projectId = jervisProjectId) }
+                            return@withContext // Stop indexing this client entirely
+                        }
 
                         // Check for HTTP 410 Gone - project was deleted
                         if (e is WebClientResponseException && e.statusCode.value() == 410) {

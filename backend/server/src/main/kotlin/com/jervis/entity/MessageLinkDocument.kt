@@ -13,10 +13,11 @@ import java.time.Instant
 @CompoundIndexes(
     CompoundIndex(name = "thread_timestamp", def = "{'threadId': 1, 'timestamp': -1}"),
     CompoundIndex(name = "sender_timestamp", def = "{'senderProfileId': 1, 'timestamp': -1}"),
+    // Ensure uniqueness per thread to avoid cross-client/global collisions on messageId
+    CompoundIndex(name = "message_thread_unique", def = "{'messageId': 1, 'threadId': 1}", unique = true),
 )
 data class MessageLinkDocument(
     @Id val id: ObjectId = ObjectId(),
-    @Indexed(unique = true)
     val messageId: String,
     val channel: MessageChannelEnum,
     @Indexed

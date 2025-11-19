@@ -3,7 +3,11 @@ package com.jervis.service.agent.planner
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.plan.StepStatusEnum
+import com.jervis.domain.rag.KnowledgeSeverity
+import com.jervis.domain.rag.KnowledgeType
 import com.jervis.service.gateway.core.LlmGateway
+import com.jervis.service.knowledge.KnowledgeFragment
+import com.jervis.service.knowledge.KnowledgeManagementService
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -16,6 +20,7 @@ import org.springframework.stereotype.Service
 @Service
 class Planner(
     private val llmGateway: LlmGateway,
+    private val knowledgeManagementService: KnowledgeManagementService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -25,8 +30,16 @@ class Planner(
     )
 
     @Serializable
+    data class KnowledgeRequest(
+        val query: String = "", // Search query for finding relevant knowledge
+        val type: String = "ANY", // "RULE", "MEMORY", "ANY"
+        val reason: String = "", // Why this knowledge is needed
+    )
+
+    @Serializable
     data class PlannerResponseDto(
         val nextSteps: List<NextStepRequest> = emptyList(),
+        val knowledgeRequests: List<KnowledgeRequest> = emptyList(), // What knowledge to load for next iteration
     )
 
     /**
@@ -39,15 +52,19 @@ class Planner(
         val completedSteps = plan.steps.count { it.status == StepStatusEnum.DONE }
         logger.info { "PLANNER_START: planId=${plan.id} currentSteps=$totalSteps completed=$completedSteps" }
 
-        // Planner now returns a plain JSON array of strings (1-3 immediate next actions)
+        // Load relevant knowledge based on previous iteration's requests
+        // First iteration: load based on user request
+        // Subsequent iterations: load based on explicit knowledge requests
+        val knowledge = loadRelevantKnowledge(plan)
+
+        // Planner returns structured response with nextSteps and knowledgeRequests
         val parsedResponse =
             llmGateway.callLlm(
                 type = PromptTypeEnum.PLANNING_CREATE_PLAN_TOOL,
-                // Provide sample element to guide JSON parser element type inference
-                responseSchema = listOf(""),
+                responseSchema = PlannerResponseDto(),
                 correlationId = plan.correlationId,
                 quick = plan.quick,
-                mappingValue = buildStepsContext(plan),
+                mappingValue = buildStepsContext(plan, knowledge),
                 backgroundMode = plan.backgroundMode,
             )
 
@@ -57,9 +74,27 @@ class Planner(
             plan.thinkingSequence += thinkContent
         }
 
-        val nextDescriptions: List<String> = parsedResponse.result
-        val plannerOut = PlannerResponseDto(nextDescriptions.map { NextStepRequest(description = it) })
-        logger.info { "[PLANNER_RESULT] planId=${plan.id} suggestedSteps=${plannerOut.nextSteps.size} descriptions=${plannerOut.nextSteps.map { it.description }}" }
+        val plannerOut: PlannerResponseDto = parsedResponse.result
+        logger.info {
+            "[PLANNER_RESULT] planId=${plan.id} " +
+                "suggestedSteps=${plannerOut.nextSteps.size} " +
+                "knowledgeRequests=${plannerOut.knowledgeRequests.size}"
+        }
+
+        // Store knowledge requests in plan for next iteration
+        if (plannerOut.knowledgeRequests.isNotEmpty()) {
+            plan.requestedKnowledge = plannerOut.knowledgeRequests.map {
+                Plan.KnowledgeRequest(
+                    query = it.query,
+                    type = it.type,
+                    reason = it.reason,
+                )
+            }
+            logger.info {
+                "[PLANNER_KNOWLEDGE] Plan ${plan.id} requested knowledge: " +
+                    plannerOut.knowledgeRequests.joinToString(", ") { "${it.type}:${it.query}" }
+            }
+        }
 
         return plannerOut
     }
@@ -115,7 +150,169 @@ class Planner(
         return contextSummary
     }
 
-    private fun buildStepsContext(plan: Plan): Map<String, String> =
+    /**
+     * Load relevant knowledge for the current plan.
+     *
+     * First iteration: Load based on user request (automatic fallback)
+     * Subsequent iterations: Load based on explicit knowledge requests from previous planning
+     */
+    private suspend fun loadRelevantKnowledge(plan: Plan): PlanKnowledge {
+        logger.info { "Loading knowledge for plan ${plan.id}" }
+
+        // Check if we have explicit knowledge requests from previous iteration
+        val explicitRequests = plan.requestedKnowledge
+
+        if (explicitRequests.isNotEmpty()) {
+            logger.info { "Using ${explicitRequests.size} explicit knowledge requests from previous planning" }
+
+            val allRules = mutableListOf<KnowledgeFragment>()
+            val allMemories = mutableListOf<KnowledgeFragment>()
+
+            explicitRequests.forEach { request ->
+                val requestedType =
+                    when (request.type.uppercase()) {
+                        "RULE" -> KnowledgeType.RULE
+                        "MEMORY" -> KnowledgeType.MEMORY
+                        else -> null // ANY - search both
+                    }
+
+                if (requestedType == null) {
+                    // Search both types
+                    val results =
+                        knowledgeManagementService
+                            .searchKnowledge(
+                                query = request.query,
+                                type = null,
+                                clientId = plan.clientDocument.id,
+                                projectId = plan.projectDocument?.id,
+                                limit = 5,
+                            ).getOrNull() ?: emptyList()
+
+                    allRules.addAll(results.filter { it.type == KnowledgeType.RULE })
+                    allMemories.addAll(results.filter { it.type == KnowledgeType.MEMORY })
+                } else {
+                    // Search specific type
+                    val results =
+                        knowledgeManagementService
+                            .searchKnowledge(
+                                query = request.query,
+                                type = requestedType,
+                                clientId = plan.clientDocument.id,
+                                projectId = plan.projectDocument?.id,
+                                limit = 5,
+                            ).getOrNull() ?: emptyList()
+
+                    if (requestedType == KnowledgeType.RULE) {
+                        allRules.addAll(results)
+                    } else {
+                        allMemories.addAll(results)
+                    }
+                }
+            }
+
+            // Deduplicate by knowledgeId
+            val uniqueRules = allRules.distinctBy { it.knowledgeId }
+            val uniqueMemories = allMemories.distinctBy { it.knowledgeId }
+
+            logger.info {
+                "Loaded knowledge from explicit requests: " +
+                    "${uniqueRules.size} rules, ${uniqueMemories.size} memories"
+            }
+
+            return PlanKnowledge(rules = uniqueRules, memories = uniqueMemories)
+        } else {
+            // First iteration: automatic fallback search based on user request
+            logger.info { "No explicit knowledge requests - using automatic fallback search" }
+
+            val rules =
+                knowledgeManagementService
+                    .searchKnowledge(
+                        query = plan.englishInstruction,
+                        type = KnowledgeType.RULE,
+                        clientId = plan.clientDocument.id,
+                        projectId = plan.projectDocument?.id,
+                        limit = 10,
+                    ).getOrNull() ?: emptyList()
+
+            val memories =
+                knowledgeManagementService
+                    .searchKnowledge(
+                        query = plan.englishInstruction,
+                        type = KnowledgeType.MEMORY,
+                        clientId = plan.clientDocument.id,
+                        projectId = plan.projectDocument?.id,
+                        limit = 5,
+                    ).getOrNull() ?: emptyList()
+
+            logger.info { "Loaded knowledge (fallback): ${rules.size} rules, ${memories.size} memories" }
+
+            return PlanKnowledge(rules = rules, memories = memories)
+        }
+    }
+
+    /**
+     * Format rules for prompt injection.
+     */
+    private fun formatRulesForPrompt(rules: List<KnowledgeFragment>): String {
+        if (rules.isEmpty()) return "No active rules."
+
+        return buildString {
+            val bySeverity = rules.groupBy { it.severity }
+
+            bySeverity[KnowledgeSeverity.MUST]?.let { mustRules ->
+                appendLine("🔴 CRITICAL REQUIREMENTS (MUST):")
+                mustRules.forEach { rule ->
+                    appendLine("  - ${rule.text}")
+                    if (rule.tags.isNotEmpty()) {
+                        appendLine("    Tags: ${rule.tags.joinToString(", ")}")
+                    }
+                }
+                appendLine()
+            }
+
+            bySeverity[KnowledgeSeverity.SHOULD]?.let { shouldRules ->
+                appendLine("🟡 STRONG RECOMMENDATIONS (SHOULD):")
+                shouldRules.forEach { rule ->
+                    appendLine("  - ${rule.text}")
+                    if (rule.tags.isNotEmpty()) {
+                        appendLine("    Tags: ${rule.tags.joinToString(", ")}")
+                    }
+                }
+                appendLine()
+            }
+
+            bySeverity[KnowledgeSeverity.INFO]?.let { infoRules ->
+                appendLine("🔵 GUIDELINES (INFO):")
+                infoRules.forEach { rule ->
+                    appendLine("  - ${rule.text}")
+                    if (rule.tags.isNotEmpty()) {
+                        appendLine("    Tags: ${rule.tags.joinToString(", ")}")
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Format memories for prompt injection.
+     */
+    private fun formatMemoriesForPrompt(memories: List<KnowledgeFragment>): String {
+        if (memories.isEmpty()) return "No relevant context."
+
+        return buildString {
+            memories.forEach { memory ->
+                appendLine("• ${memory.text}")
+                if (memory.tags.isNotEmpty()) {
+                    appendLine("  Tags: ${memory.tags.joinToString(", ")}")
+                }
+            }
+        }
+    }
+
+    private fun buildStepsContext(
+        plan: Plan,
+        knowledge: PlanKnowledge,
+    ): Map<String, String> =
         mapOf(
             "userRequest" to plan.englishInstruction,
             "projectDescription" to (plan.projectDocument?.description ?: "Project: ${plan.projectDocument?.name}"),
@@ -136,5 +333,16 @@ class Planner(
             "initialRagQueries" to plan.initialRagQueries.joinToString(", "),
             "knowledgeSearchToolName" to PromptTypeEnum.KNOWLEDGE_SEARCH_TOOL.aliases.first(),
             "analysisReasoningToolName" to PromptTypeEnum.ANALYSIS_REASONING_TOOL.aliases.first(),
+            // Knowledge Engine integration
+            "activeRules" to formatRulesForPrompt(knowledge.rules),
+            "relevantMemories" to formatMemoriesForPrompt(knowledge.memories),
         )
+
+    /**
+     * Knowledge data for a plan (rules + memories).
+     */
+    private data class PlanKnowledge(
+        val rules: List<KnowledgeFragment>,
+        val memories: List<KnowledgeFragment>,
+    )
 }

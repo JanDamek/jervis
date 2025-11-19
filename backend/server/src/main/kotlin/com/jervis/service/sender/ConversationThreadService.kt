@@ -28,7 +28,12 @@ class ConversationThreadService(
 ) {
     suspend fun findById(id: ObjectId): ConversationThread? = repository.findById(id)?.toDomain()
 
-    suspend fun findByThreadId(threadId: String): ConversationThread? = repository.findByThreadId(threadId)?.toDomain()
+    suspend fun findByThreadKey(
+        threadId: String,
+        clientId: ObjectId,
+        projectId: ObjectId?,
+    ): ConversationThread? =
+        repository.findByThreadIdAndClientIdAndProjectId(threadId = threadId, clientId = clientId, projectId = projectId)?.toDomain()
 
     fun findBySenderProfileId(
         senderProfileId: ObjectId,
@@ -55,8 +60,8 @@ class ConversationThreadService(
     ): ConversationThread {
         val threadId = extractThreadId(emailHeaders)
 
-        // 1) Exact lookup by stored threadId
-        findByThreadId(threadId)?.let { existing ->
+        // 1) Exact lookup by stored threadId scoped to client/project
+        findByThreadKey(threadId, clientId, projectId)?.let { existing ->
             return addMessageToThread(existing, emailHeaders, senderProfileId)
         }
 
@@ -113,8 +118,19 @@ class ConversationThreadService(
             )
 
         val entity = newThread.toEntity()
-        val saved = repository.save(entity)
-        return saved.toDomain()
+        try {
+            val saved = repository.save(entity)
+            return saved.toDomain()
+        } catch (e: Exception) {
+            val msg = e.message ?: ""
+            // Handle race condition on unique (threadId, clientId, projectId)
+            if (msg.contains("E11000") || msg.contains("duplicate key", ignoreCase = true)) {
+                logger.warn { "Duplicate thread key detected during create (threadId=$threadId). Retrying fetch." }
+                val existing = repository.findByThreadIdAndClientIdAndProjectId(threadId, clientId, projectId)
+                if (existing != null) return existing.toDomain()
+            }
+            throw e
+        }
     }
 
     suspend fun addMessageToThread(

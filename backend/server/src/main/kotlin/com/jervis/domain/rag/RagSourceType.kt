@@ -49,6 +49,9 @@ enum class RagSourceType {
     /** Memory/context content */
     MEMORY,
 
+    /** Rule/mandate content for governance */
+    RULE,
+
     /** Email messages */
     EMAIL,
 

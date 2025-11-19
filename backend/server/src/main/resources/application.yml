@@ -140,11 +140,11 @@ models: # embedding dimensions configured per model
       context-length: 32768
       num-predict: 8192
       concurrency: 1
-#    - provider: GOOGLE
-#      model: gemini-2.5-pro-latest
-#      context-length: 1048576
-#      num-predict: 65536
-#      concurrency: 1
+    - provider: GOOGLE
+      model: gemini-2.5-pro-latest
+      context-length: 1048576
+      num-predict: 65536
+      concurrency: 1
 
   JOERN:
     - provider: OLLAMA
@@ -159,11 +159,11 @@ models: # embedding dimensions configured per model
       context-length: 32768
       num-predict: 4096
       concurrency: 1
-#    - provider: GOOGLE
-#      model: gemini-2.5-pro-latest
-#      context-length: 1048576
-#      num-predict: 65536
-#      concurrency: 1
+    - provider: GOOGLE
+      model: gemini-2.5-pro-latest
+      context-length: 1048576
+      num-predict: 65536
+      concurrency: 1
 
   GENERIC_CODE_MODEL:
     - provider: OLLAMA
@@ -171,11 +171,11 @@ models: # embedding dimensions configured per model
       context-length: 32768
       num-predict: 8192
       concurrency: 1
-#    - provider: GOOGLE
-#      model: gemini-2.5-pro-latest
-#      context-length: 1048576
-#      concurrency: 1
-#      num-predict: 65536
+    - provider: GOOGLE
+      model: gemini-2.5-pro-latest
+      context-length: 1048576
+      concurrency: 1
+      num-predict: 65536
 
   # Heavy models - BATCH PROCESSING ONLY due to P40 VRAM limitations
   HEAVY_TEXT_MODEL:
@@ -185,11 +185,11 @@ models: # embedding dimensions configured per model
       num-predict: 8192
       quick: false
       concurrency: 1
-#    - provider: GOOGLE
-#      model: gemini-2.5-pro-latest
-#      context-length: 1048576
-#      num-predict: 65536
-#      concurrency: 1
+    - provider: GOOGLE
+      model: gemini-2.5-pro-latest
+      context-length: 1048576
+      num-predict: 65536
+      concurrency: 1
 #    - provider: OPENAI
 #      model: gpt-4o
 #      context-length: 16384
@@ -203,11 +203,11 @@ models: # embedding dimensions configured per model
       num-predict: 8192
       quick: false
       concurrency: 1
-#    - provider: GOOGLE
-#      model: gemini-2.5-pro-latest
-#      context-length: 1048576
-#      num-predict: 65536
-#      concurrency: 1
+    - provider: GOOGLE
+      model: gemini-2.5-pro-latest
+      context-length: 1048576
+      num-predict: 65536
+      concurrency: 1
 
   QUICK:
     - provider: OLLAMA_QUALIFIER

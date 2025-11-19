@@ -12,6 +12,11 @@ import java.time.Instant
 interface MessageLinkMongoRepository : CoroutineCrudRepository<MessageLinkDocument, ObjectId> {
     suspend fun findByMessageId(messageId: String): MessageLinkDocument?
 
+    suspend fun findByMessageIdAndThreadId(
+        messageId: String,
+        threadId: ObjectId,
+    ): MessageLinkDocument?
+
     fun findByThreadIdOrderByTimestampDesc(threadId: ObjectId): Flow<MessageLinkDocument>
 
     fun findBySenderProfileIdOrderByTimestampDesc(senderProfileId: ObjectId): Flow<MessageLinkDocument>

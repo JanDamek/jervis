@@ -16,12 +16,18 @@ data class Plan(
     var contextSummary: String? = null,
     var finalAnswer: String? = null,
     var thinkingSequence: List<String> = emptyList(),
+    var requestedKnowledge: List<KnowledgeRequest> = emptyList(),
     val clientDocument: ClientDocument,
     val projectDocument: ProjectDocument? = null,
     val quick: Boolean,
     val backgroundMode: Boolean = false,
     val correlationId: String, // For distributed tracing across all services
 ) {
+    data class KnowledgeRequest(
+        val query: String,
+        val type: String,
+        val reason: String,
+    )
     val clientId: ObjectId
         get() = clientDocument.id
 

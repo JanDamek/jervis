@@ -1,6 +1,8 @@
 package com.jervis.repository.vector
 
 import com.jervis.domain.model.ModelTypeEnum
+import com.jervis.domain.rag.KnowledgeSeverity
+import com.jervis.domain.rag.KnowledgeType
 import com.jervis.domain.rag.RagSourceType
 import io.weaviate.client.v1.filters.Operator
 import io.weaviate.client.v1.filters.WhereFilter
@@ -35,6 +37,11 @@ data class WeaviateFilters(
     val ragSourceType: RagSourceType? = null,
     val fileName: String? = null,
     val commitHash: String? = null,
+    // Knowledge Engine filters
+    val knowledgeType: KnowledgeType? = null,
+    val knowledgeSeverity: KnowledgeSeverity? = null,
+    val knowledgeTags: List<String>? = null,
+    val knowledgeId: String? = null,
     val custom: Map<String, String> = emptyMap(),
 ) {
     /**
@@ -51,6 +58,25 @@ data class WeaviateFilters(
                 fileName?.let { add(equalFilter("fileName", it)) }
                 // Weaviate schema uses "gitCommitHash" property name
                 commitHash?.let { add(equalFilter("gitCommitHash", it)) }
+                // Knowledge Engine filters
+                knowledgeType?.let { add(equalFilter("knowledgeType", it.name)) }
+                knowledgeSeverity?.let { add(equalFilter("knowledgeSeverity", it.name)) }
+                knowledgeId?.let { add(equalFilter("knowledgeId", it)) }
+                // Tags: if multiple tags, create OR conditions (document must have at least one tag)
+                knowledgeTags?.takeIf { it.isNotEmpty() }?.let { tags ->
+                    if (tags.size == 1) {
+                        add(containsAnyFilter("knowledgeTags", tags.first()))
+                    } else {
+                        val tagFilters = tags.map { containsAnyFilter("knowledgeTags", it) }
+                        add(
+                            WhereFilter
+                                .builder()
+                                .operator(Operator.Or)
+                                .operands(*tagFilters.toTypedArray())
+                                .build(),
+                        )
+                    }
+                }
                 custom.forEach { (key, value) -> add(equalFilter(key, value)) }
             }
 
@@ -74,6 +100,17 @@ data class WeaviateFilters(
             .builder()
             .path(path)
             .operator(Operator.Equal)
+            .valueText(value)
+            .build()
+
+    private fun containsAnyFilter(
+        path: String,
+        value: String,
+    ): WhereFilter =
+        WhereFilter
+            .builder()
+            .path(path)
+            .operator(Operator.ContainsAny)
             .valueText(value)
             .build()
 }
@@ -107,6 +144,10 @@ class WeaviateFiltersBuilder {
     var ragSourceType: RagSourceType? = null
     var fileName: String? = null
     var commitHash: String? = null
+    var knowledgeType: KnowledgeType? = null
+    var knowledgeSeverity: KnowledgeSeverity? = null
+    var knowledgeTags: List<String>? = null
+    var knowledgeId: String? = null
     var custom: MutableMap<String, String> = mutableMapOf()
 
     fun build(): WeaviateFilters =
@@ -117,6 +158,10 @@ class WeaviateFiltersBuilder {
             ragSourceType = ragSourceType,
             fileName = fileName,
             commitHash = commitHash,
+            knowledgeType = knowledgeType,
+            knowledgeSeverity = knowledgeSeverity,
+            knowledgeTags = knowledgeTags,
+            knowledgeId = knowledgeId,
             custom = custom,
         )
 }

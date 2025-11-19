@@ -15,12 +15,17 @@ import java.time.Instant
 
 @Document(collection = "conversation_threads")
 @CompoundIndexes(
-    CompoundIndex(name = "thread_client_project", def = "{'threadId': 1, 'clientId': 1, 'projectId': 1}"),
+    // Uniqueness must be scoped per client/project to avoid cross-client collisions on external thread identifiers
+    CompoundIndex(
+        name = "thread_client_project_unique",
+        def = "{'threadId': 1, 'clientId': 1, 'projectId': 1}",
+        unique = true,
+    ),
     CompoundIndex(name = "sender_profiles_last_message", def = "{'senderProfileIds': 1, 'lastMessageAt': -1}"),
 )
 data class ConversationThreadDocument(
     @Id val id: ObjectId = ObjectId(),
-    @Indexed(unique = true)
+    // threadId is an external identifier (e.g., email Message-ID); cannot be globally unique across clients
     val threadId: String,
     val subject: String,
     val channelMappings: List<ChannelMappingEmbedded> = emptyList(),

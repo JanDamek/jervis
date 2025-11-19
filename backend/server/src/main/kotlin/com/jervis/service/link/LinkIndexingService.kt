@@ -41,6 +41,7 @@ class LinkIndexingService(
         sourceType: RagSourceType = RagSourceType.EMAIL_LINK_CONTENT,
         createdAt: Instant = Instant.now(),
         parentRef: String? = null,
+        correlationId: String? = null,
     ) = withContext(Dispatchers.IO) {
         val allLinksWithContext = extractLinksWithContext(text)
         if (allLinksWithContext.isEmpty()) return@withContext
@@ -56,6 +57,11 @@ class LinkIndexingService(
         var uncertainCount = 0
 
         for (linkWithContext in distinctLinksWithContext) {
+            // Ignore unsupported media (we don't download images; avoid false blocks/tasks)
+            if (isUnsupportedMedia(linkWithContext.url)) {
+                logger.info { "Ignoring unsupported media link (image): ${linkWithContext.url}" }
+                continue
+            }
             val safetyResult = linkSafetyQualifier.qualifyLink(
                 url = linkWithContext.url,
                 contextBefore = linkWithContext.contextBefore,
@@ -79,6 +85,7 @@ class LinkIndexingService(
                         clientId = clientId,
                         projectId = projectId,
                         parentRef = parentRef,
+                        correlationId = correlationId,
                     )
                     uncertainCount++
                 }
@@ -136,6 +143,11 @@ class LinkIndexingService(
         parentRef: String? = null,
         skipSafetyCheck: Boolean = false,
     ): LinkIndexer.IndexResult {
+        // Early ignore for unsupported media (images)
+        if (isUnsupportedMedia(url)) {
+            logger.info { "Ignoring unsupported media URL (image): $url" }
+            return LinkIndexer.IndexResult(processedChunks = 0, skipped = true)
+        }
         // Safety check (unless explicitly skipped by caller who already validated)
         if (!skipSafetyCheck) {
             val safetyResult = linkSafetyQualifier.qualifyLink(url)
@@ -176,6 +188,7 @@ class LinkIndexingService(
         clientId: ObjectId,
         projectId: ObjectId?,
         parentRef: String?,
+        correlationId: String? = null,
     ) {
         val taskContent = buildString {
             appendLine("=== UNCERTAIN LINK - AGENT REVIEW NEEDED ===")
@@ -218,6 +231,7 @@ class LinkIndexingService(
                 content = taskContent,
                 clientId = clientId,
                 projectId = projectId,
+                correlationId = correlationId, // Preserve correlationId if available, otherwise create new
             )
 
             logger.debug { "Created LINK_SAFETY_REVIEW task for: ${linkWithContext.url}" }
@@ -330,6 +344,22 @@ class LinkIndexingService(
             // URL is malformed and couldn't be cleaned
             logger.debug { "Failed to parse URL even after cleaning: $cleaned (original: $url)" }
             null
+        }
+    }
+
+    /**
+     * Returns true if the URL points to an unsupported media type (currently common image formats)
+     * which we do not download/index. This prevents unnecessary safety checks and tasks.
+     */
+    private fun isUnsupportedMedia(url: String): Boolean {
+        return try {
+            val uri = java.net.URI(url)
+            val path = (uri.path ?: "").lowercase()
+            path.endsWith(".jpg") || path.endsWith(".jpeg") || path.endsWith(".png")
+        } catch (_: Exception) {
+            // If URI parsing fails, fall back to naive check on the string
+            val lower = url.lowercase()
+            lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png")
         }
     }
 

@@ -93,6 +93,9 @@ class LinkSafetyQualifier(
             "/action=(accept|decline)|/unsubscribe|/opt-out|/verify|/activate|/click|/track|/rsvp=(yes|no)/",
             "edit", // Too broad - blocks Google Docs edit URLs
             "/action=(accept|decline)|/unsubscribe|/opt-out|/verify|/confirm|/track|/ms|/kn|/r|/b|/[a-z]/",
+            // Extremely broad pattern observed in logs causing false positives for static assets
+            // Example: matched legitimate image URLs under wp-content/uploads
+            "/action=(accept|decline)|/unsubscribe|/opt-out|/verify|/activate|/click|/track|/ms|/kn|/r|/b|/[a-z]/",
             "action=(accept|decline)|/unsubscribe|/opt-out", // Missing leading /
             "unsubscribe|action=(accept|decline)", // Too broad without context
             "unsubscribe|action=(accept|decline)|rsvp=(yes|no)", // Too broad
