@@ -59,6 +59,7 @@ fun PendingTasksScreen(
                 infoMessage = "Failed to delete task: ${t.message}"
             }
         }
+
     }
 
     LaunchedEffect(selectedTaskType, selectedState) { load() }
@@ -153,6 +154,7 @@ fun PendingTasksScreen(
                                 }
                                 }
                             }
+                        }
                         }
                     }
             }
