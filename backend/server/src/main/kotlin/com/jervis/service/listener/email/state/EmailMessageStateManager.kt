@@ -157,6 +157,19 @@ class EmailMessageStateManager(
         return true
     }
 
+    /**
+     * Check if given Message-ID has already been successfully indexed for the account.
+     * Used as a runtime guard to avoid duplicate indexing when the same email
+     * appears in multiple folders or is re-synced.
+     */
+    suspend fun isAlreadyIndexed(
+        accountId: ObjectId,
+        messageId: String,
+    ): Boolean {
+        val existing = emailMessageRepository.findByAccountIdAndMessageId(accountId, messageId)
+        return existing?.state == EmailMessageState.INDEXED
+    }
+
     suspend fun markAsFailed(messageDocument: EmailMessageDocument) {
         val updated = messageDocument.copy(state = EmailMessageState.FAILED)
         emailMessageRepository.save(updated)

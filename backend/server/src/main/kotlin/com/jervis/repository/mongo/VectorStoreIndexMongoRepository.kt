@@ -58,12 +58,23 @@ interface VectorStoreIndexMongoRepository : CoroutineCrudRepository<VectorStoreI
      * Find indexed document by source type and source ID for standalone project.
      * Generic lookup for any source type (GIT_HISTORY, CODE_CHANGE, EMAIL, etc.)
      */
-    suspend fun findBySourceTypeAndSourceIdAndProjectIdAndIsActive(
-        sourceType: RagSourceType,
-        sourceId: String,
-        projectId: ObjectId,
-        isActive: Boolean,
-    ): VectorStoreIndexDocument?
+  suspend fun findBySourceTypeAndSourceIdAndProjectIdAndIsActive(
+      sourceType: RagSourceType,
+      sourceId: String,
+      projectId: ObjectId,
+      isActive: Boolean,
+  ): VectorStoreIndexDocument?
+
+  /**
+   * Find ALL active records for a given source (there should typically be at most one).
+   * Flow variant is useful for cleanup when duplicates exist.
+   */
+  fun findAllBySourceTypeAndSourceIdAndProjectIdAndIsActive(
+      sourceType: RagSourceType,
+      sourceId: String,
+      projectId: ObjectId,
+      isActive: Boolean,
+  ): Flow<VectorStoreIndexDocument>
 
     /**
      * Find indexed document by source type and source ID for mono-repo.

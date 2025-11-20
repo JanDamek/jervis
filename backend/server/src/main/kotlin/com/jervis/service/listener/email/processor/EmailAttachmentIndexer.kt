@@ -23,6 +23,7 @@ class EmailAttachmentIndexer(
     private val ragIndexingService: RagIndexingService,
     private val tikaClient: ITikaClient,
     private val textChunkingService: TextChunkingService,
+    private val vectorIndexService: com.jervis.service.rag.VectorStoreIndexService,
 ) {
     suspend fun indexAttachments(
         message: ImapMessage,
@@ -56,6 +57,26 @@ class EmailAttachmentIndexer(
         clientId: ObjectId,
         projectId: ObjectId?,
     ) {
+        // Build canonical source ID from attachment content hash to deduplicate across forwards/replies
+        val contentHash = sha256(attachment.data)
+        val canonicalSourceId = "email-attachment://${accountId.toHexString()}/$contentHash"
+
+        // If already indexed for this project, skip re-indexing identical attachment content
+        if (projectId != null) {
+            val already =
+                kotlin.runCatching {
+                    vectorIndexService.existsActive(
+                        RagSourceType.EMAIL_ATTACHMENT,
+                        canonicalSourceId,
+                        projectId,
+                    )
+                }.getOrDefault(false)
+            if (already) {
+                logger.info { "Skipped duplicate attachment by hash ${attachment.fileName} ($contentHash)" }
+                return
+            }
+        }
+
         val processingResult =
             tikaClient.process(
                 TikaProcessRequest(
@@ -84,7 +105,8 @@ class EmailAttachmentIndexer(
                     text = chunk.text(),
                     ragSourceType = RagSourceType.EMAIL_ATTACHMENT,
                     createdAt = message.receivedAt,
-                    sourceUri = "email://${accountId.toHexString()}/${message.messageId}/attachment/$attachmentIndex",
+                    // Use canonical source ID by attachment content hash
+                    sourceUri = canonicalSourceId,
                     // Universal metadata fields
                     from = message.from,
                     subject = message.subject,
@@ -99,5 +121,11 @@ class EmailAttachmentIndexer(
         }
 
         logger.info { "Indexed attachment ${attachment.fileName} with ${chunks.size} chunks" }
+    }
+
+    private fun sha256(bytes: ByteArray): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        val digest = md.digest(bytes)
+        return digest.joinToString("") { "%02x".format(it) }
     }
 }

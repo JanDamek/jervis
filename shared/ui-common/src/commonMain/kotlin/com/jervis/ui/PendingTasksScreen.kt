@@ -5,13 +5,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.PendingTaskDto
+import com.jervis.dto.PendingTaskState
+import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.repository.JervisRepository
-import kotlinx.coroutines.launch
 import com.jervis.ui.design.JTopBar
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -20,18 +23,27 @@ fun PendingTasksScreen(
     onBack: () -> Unit,
 ) {
     var tasks by remember { mutableStateOf<List<PendingTaskDto>>(emptyList()) }
+    var totalTasks by remember { mutableStateOf(0L) }
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var pendingDeleteTaskId by remember { mutableStateOf<String?>(null) }
     var infoMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
+    var selectedTaskType by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedState by rememberSaveable { mutableStateOf<String?>(null) }
+
+    val taskTypes = remember { PendingTaskTypeEnum.values().map { it.name } }
+    val taskStates = remember { PendingTaskState.values().map { it.name } }
+
     fun load() {
         scope.launch {
             isLoading = true
             error = null
-            runCatching { repository.pendingTasks.listPendingTasks() }
-                .onSuccess { tasks = it }
+            runCatching {
+                tasks = repository.pendingTasks.listPendingTasks(selectedTaskType, selectedState)
+                totalTasks = repository.pendingTasks.countPendingTasks(selectedTaskType, selectedState)
+            }
                 .onFailure { error = it.message }
             isLoading = false
         }
@@ -49,13 +61,13 @@ fun PendingTasksScreen(
         }
     }
 
-    LaunchedEffect(Unit) { load() }
+    LaunchedEffect(selectedTaskType, selectedState) { load() }
 
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
             JTopBar(
-                title = "Pending Tasks",
+                title = "Pending Tasks ($totalTasks)",
                 onBack = onBack,
                 actions = {
                     com.jervis.ui.util.RefreshIconButton(onClick = { load() })
@@ -63,26 +75,44 @@ fun PendingTasksScreen(
             )
         },
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            when {
-                isLoading -> {
-                    com.jervis.ui.design.JCenteredLoading()
-                }
-                error != null -> {
-                    com.jervis.ui.design.JErrorState(
-                        message = "Failed to load: $error",
-                        onRetry = { load() }
-                    )
-                }
-                tasks.isEmpty() -> {
-                    com.jervis.ui.design.JEmptyState(message = "No pending tasks")
-                }
-                else ->
-                    LazyColumn(modifier = Modifier.fillMaxSize().padding(12.dp)) {
-                        items(tasks) { task ->
-                            Card(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                            ) {
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterDropdown(
+                    label = "Task Type",
+                    items = taskTypes,
+                    selectedItem = selectedTaskType,
+                    onItemSelected = { selectedTaskType = it }
+                )
+                FilterDropdown(
+                    label = "State",
+                    items = taskStates,
+                    selectedItem = selectedState,
+                    onItemSelected = { selectedState = it }
+                )
+            }
+            Box(modifier = Modifier.fillMaxSize()) {
+                when {
+                    isLoading -> {
+                        com.jervis.ui.design.JCenteredLoading()
+                    }
+                    error != null -> {
+                        com.jervis.ui.design.JErrorState(
+                            message = "Failed to load: $error",
+                            onRetry = { load() }
+                        )
+                    }
+                    tasks.isEmpty() -> {
+                        com.jervis.ui.design.JEmptyState(message = "No pending tasks")
+                    }
+                    else -> {
+                        LazyColumn(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+                            items(tasks) { task ->
+                                Card(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                ) {
                                 Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -121,6 +151,7 @@ fun PendingTasksScreen(
                                         style = MaterialTheme.typography.bodySmall,
                                     )
                                 }
+                                }
                             }
                         }
                     }
@@ -151,6 +182,52 @@ fun PendingTasksScreen(
                 modifier = Modifier.padding(16.dp),
             ) {
                 Text(it)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FilterDropdown(
+    label: String,
+    items: List<String>,
+    selectedItem: String?,
+    onItemSelected: (String?) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded }
+    ) {
+        TextField(
+            value = selectedItem ?: "All",
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.menuAnchor()
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text("All") },
+                onClick = {
+                    onItemSelected(null)
+                    expanded = false
+                }
+            )
+            items.forEach { item ->
+                DropdownMenuItem(
+                    text = { Text(item) },
+                    onClick = {
+                        onItemSelected(item)
+                        expanded = false
+                    }
+                )
             }
         }
     }

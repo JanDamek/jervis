@@ -1,8 +1,10 @@
 package com.jervis.service.rag
 
+import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.VectorStoreIndexDocument
 import com.jervis.repository.mongo.VectorStoreIndexMongoRepository
+import com.jervis.repository.vector.WeaviateVectorRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
@@ -18,6 +20,7 @@ import java.time.Instant
 @Service
 class VectorStoreIndexService(
     private val repository: VectorStoreIndexMongoRepository,
+    private val vectorRepository: WeaviateVectorRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -90,6 +93,24 @@ class VectorStoreIndexService(
 
         val newHash = calculateContentHash(content)
         return existing.contentHash != newHash
+    }
+
+    /**
+     * Check if there is already an active index entry for given source.
+     */
+    suspend fun existsActive(
+        sourceType: RagSourceType,
+        sourceId: String,
+        projectId: ObjectId,
+    ): Boolean {
+        val existing =
+            repository.findBySourceTypeAndSourceIdAndProjectIdAndIsActive(
+                sourceType,
+                sourceId,
+                projectId,
+                true,
+            )
+        return existing != null
     }
 
     // ========== Mono-Repo Methods ==========
@@ -194,6 +215,53 @@ class VectorStoreIndexService(
                 "vectorStoreId=${existing.vectorStoreId}"
         }
     }
+
+    /**
+     * Soft-deactivate all active index records for given source (safety cleanup if duplicates exist).
+     */
+    suspend fun markAllInactiveForSource(
+        sourceType: RagSourceType,
+        sourceId: String,
+        projectId: ObjectId,
+    ): Int {
+        var count = 0
+        val records = repository
+            .findAllBySourceTypeAndSourceIdAndProjectIdAndIsActive(
+                sourceType,
+                sourceId,
+                projectId,
+                true,
+            ).toList()
+
+        // Delete from Weaviate if possible to keep RAG clean
+        val modelType = modelTypeForSource(sourceType)
+        records.forEach { existing ->
+            if (modelType != null) {
+                kotlin.runCatching { vectorRepository.deleteById(modelType, existing.vectorStoreId) }
+                    .onFailure { logger.warn(it) { "Failed to delete vector ${existing.vectorStoreId} from Weaviate" } }
+            }
+            val updated = existing.copy(isActive = false, lastUpdatedAt = Instant.now())
+            repository.save(updated)
+            count++
+        }
+        if (count > 0) {
+            logger.info {
+                "Soft-deactivated $count old vector index records for sourceType=$sourceType sourceId=$sourceId project=$projectId"
+            }
+        }
+        return count
+    }
+
+    private fun modelTypeForSource(sourceType: RagSourceType): ModelTypeEnum =
+        when (sourceType) {
+            // Code-like sources use code embedding
+            RagSourceType.JOERN,
+            RagSourceType.CODE_FALLBACK,
+            RagSourceType.CODE_CHANGE -> ModelTypeEnum.EMBEDDING_CODE
+
+            // Everything else defaults to text embedding
+            else -> ModelTypeEnum.EMBEDDING_TEXT
+        }
 
     /**
      * Check if branch is fully indexed.

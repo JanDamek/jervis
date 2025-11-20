@@ -29,6 +29,15 @@ import kotlinx.datetime.*
  */
 internal expect fun currentLocalDateTime(): LocalDateTime
 
+// Autoscroll configuration shared via CompositionLocal so details can react without prop drilling
+private data class AutoScrollConfig(
+    val enabled: Boolean,
+    val version: Int,
+    val disable: () -> Unit,
+)
+
+private val LocalAutoScrollConfig = staticCompositionLocalOf<AutoScrollConfig?> { null }
+
 /**
  * Interface for providing debug events stream
  */
@@ -163,9 +172,13 @@ fun DebugWindow(
     onBack: (() -> Unit)? = null,
 ) {
     val correlationTraces = remember { mutableStateMapOf<String, CorrelationTrace>() }
-    var selectedTraceIndex by remember { mutableStateOf(0) }
+    // Keep selection stable by correlationId so it doesn't jump when list order changes
+    var selectedTraceId by remember { mutableStateOf<String?>(null) }
     var selectedEvent by remember { mutableStateOf<TraceEvent?>(null) }
     var followLatestEvent by remember { mutableStateOf(false) }
+    // Auto-scroll control for streaming response
+    var autoScrollEnabled by remember { mutableStateOf(true) }
+    var autoScrollVersion by remember { mutableStateOf(0) }
 
     // Process debug events from WebSocket flow
     LaunchedEffect(eventsProvider) {
@@ -198,12 +211,8 @@ fun DebugWindow(
                     correlationTraces[correlationId] = trace.copy(events = trace.events.toMutableList())
 
                     // Auto-follow: select this event if follow mode is on and this trace is selected
-                    if (followLatestEvent) {
-                        val currentTraces = correlationTraces.values.sortedByDescending { it.startTime }
-                        val selectedTrace = currentTraces.getOrNull(selectedTraceIndex)
-                        if (selectedTrace?.correlationId == correlationId) {
-                            selectedEvent = llmEvent
-                        }
+                    if (followLatestEvent && selectedTraceId == correlationId) {
+                        selectedEvent = llmEvent
                     }
                 }
 
@@ -267,7 +276,7 @@ fun DebugWindow(
                             eventName,
                             eventDetails,
                             followLatestEvent,
-                            selectedTraceIndex,
+                            selectedTraceId,
                         ) { selectedEvent = it }
                     }
                 }
@@ -277,6 +286,15 @@ fun DebugWindow(
 
     // Convert traces to sorted list (newest first)
     val currentTraces = correlationTraces.values.sortedByDescending { it.startTime }
+
+    // Ensure selectedTraceId is initialized and kept valid
+    if (selectedTraceId == null && currentTraces.isNotEmpty()) {
+        selectedTraceId = currentTraces.first().correlationId
+    }
+    if (selectedTraceId != null && currentTraces.none { it.correlationId == selectedTraceId }) {
+        selectedTraceId = currentTraces.firstOrNull()?.correlationId
+        selectedEvent = null
+    }
 
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -322,11 +340,10 @@ fun DebugWindow(
                     }
                 }
             } else {
-                // Safely clamp trace index to valid range
-                val safeTraceIndex = selectedTraceIndex.coerceIn(0, currentTraces.size - 1)
-                if (safeTraceIndex != selectedTraceIndex) {
-                    selectedTraceIndex = safeTraceIndex
-                }
+                // Compute current selected tab index from selectedTraceId
+                val safeTraceIndex =
+                    selectedTraceId?.let { id -> currentTraces.indexOfFirst { it.correlationId == id } }
+                        ?.takeIf { it >= 0 } ?: 0
 
                 // Trace tabs and controls
                 BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
@@ -343,7 +360,7 @@ fun DebugWindow(
                                     Tab(
                                         selected = safeTraceIndex == index,
                                         onClick = {
-                                            selectedTraceIndex = index
+                                            selectedTraceId = trace.correlationId
                                             selectedEvent = null
                                         },
                                         text = {
@@ -354,11 +371,12 @@ fun DebugWindow(
                                                 Text(trace.getTabLabel())
                                                 IconButton(
                                                     onClick = {
+                                                        val removedSelected = (selectedTraceId == trace.correlationId)
                                                         correlationTraces.remove(trace.correlationId)
-                                                        if (selectedTraceIndex >= correlationTraces.size && selectedTraceIndex > 0) {
-                                                            selectedTraceIndex = correlationTraces.size - 1
+                                                        if (removedSelected) {
+                                                            selectedTraceId = correlationTraces.values.maxByOrNull { it.startTime }?.correlationId
+                                                            selectedEvent = null
                                                         }
-                                                        selectedEvent = null
                                                     },
                                                     modifier = Modifier.size(32.dp),
                                                 ) {
@@ -381,7 +399,7 @@ fun DebugWindow(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                // Follow checkbox - mobile friendly
+                                // Follow latest checkbox - mobile friendly
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -395,6 +413,26 @@ fun DebugWindow(
                                     Text("Follow", style = MaterialTheme.typography.bodyMedium)
                                 }
 
+                                // Auto-scroll checkbox
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier.clickable {
+                                        val newValue = !autoScrollEnabled
+                                        autoScrollEnabled = newValue
+                                        if (newValue) autoScrollVersion++
+                                    }.padding(4.dp)
+                                ) {
+                                    Checkbox(
+                                        checked = autoScrollEnabled,
+                                        onCheckedChange = { checked ->
+                                            autoScrollEnabled = checked
+                                            if (checked) autoScrollVersion++
+                                        },
+                                    )
+                                    Text("Auto-scroll", style = MaterialTheme.typography.bodyMedium)
+                                }
+
                                 // Close completed button - mobile friendly
                                 if (correlationTraces.values.any { it.isCompleted() }) {
                                     Button(
@@ -404,12 +442,10 @@ fun DebugWindow(
                                                     .filter { it.isCompleted() }
                                                     .map { it.correlationId }
                                             completedIds.forEach { correlationTraces.remove(it) }
-                                            if (selectedTraceIndex >= correlationTraces.size && correlationTraces.isNotEmpty()) {
-                                                selectedTraceIndex = correlationTraces.size - 1
-                                            } else if (correlationTraces.isEmpty()) {
-                                                selectedTraceIndex = 0
+                                            if (selectedTraceId != null && correlationTraces.values.none { it.correlationId == selectedTraceId }) {
+                                                selectedTraceId = correlationTraces.values.maxByOrNull { it.startTime }?.correlationId
+                                                selectedEvent = null
                                             }
-                                            selectedEvent = null
                                         },
                                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                                     ) {
@@ -429,7 +465,7 @@ fun DebugWindow(
                                     Tab(
                                         selected = safeTraceIndex == index,
                                         onClick = {
-                                            selectedTraceIndex = index
+                                            selectedTraceId = trace.correlationId
                                             selectedEvent = null
                                         },
                                         text = {
@@ -440,11 +476,12 @@ fun DebugWindow(
                                                 Text(trace.getTabLabel())
                                                 IconButton(
                                                     onClick = {
+                                                        val removedSelected = (selectedTraceId == trace.correlationId)
                                                         correlationTraces.remove(trace.correlationId)
-                                                        if (selectedTraceIndex >= correlationTraces.size && selectedTraceIndex > 0) {
-                                                            selectedTraceIndex = correlationTraces.size - 1
+                                                        if (removedSelected) {
+                                                            selectedTraceId = correlationTraces.values.maxByOrNull { it.startTime }?.correlationId
+                                                            selectedEvent = null
                                                         }
-                                                        selectedEvent = null
                                                     },
                                                     modifier = Modifier.size(20.dp),
                                                 ) {
@@ -477,6 +514,20 @@ fun DebugWindow(
                                     Text("Follow Latest Event", style = MaterialTheme.typography.bodyMedium)
                                 }
 
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    Checkbox(
+                                        checked = autoScrollEnabled,
+                                        onCheckedChange = { checked ->
+                                            autoScrollEnabled = checked
+                                            if (checked) autoScrollVersion++ // force jump to bottom
+                                        },
+                                    )
+                                    Text("Auto-scroll", style = MaterialTheme.typography.bodyMedium)
+                                }
+
                                 if (correlationTraces.values.any { it.isCompleted() }) {
                                     Button(
                                         onClick = {
@@ -485,12 +536,10 @@ fun DebugWindow(
                                                     .filter { it.isCompleted() }
                                                     .map { it.correlationId }
                                             completedIds.forEach { correlationTraces.remove(it) }
-                                            if (selectedTraceIndex >= correlationTraces.size && correlationTraces.isNotEmpty()) {
-                                                selectedTraceIndex = correlationTraces.size - 1
-                                            } else if (correlationTraces.isEmpty()) {
-                                                selectedTraceIndex = 0
+                                            if (selectedTraceId != null && correlationTraces.values.none { it.correlationId == selectedTraceId }) {
+                                                selectedTraceId = correlationTraces.values.maxByOrNull { it.startTime }?.correlationId
+                                                selectedEvent = null
                                             }
-                                            selectedEvent = null
                                         },
                                     ) {
                                         Text("Close All Completed")
@@ -506,11 +555,19 @@ fun DebugWindow(
                 // Trace content with event list
                 val selectedTrace = currentTraces.getOrNull(safeTraceIndex)
                 if (selectedTrace != null) {
-                    CorrelationTraceContent(
-                        trace = selectedTrace,
-                        selectedEvent = selectedEvent,
-                        onEventSelected = { selectedEvent = it },
-                    )
+                    CompositionLocalProvider(
+                        LocalAutoScrollConfig provides AutoScrollConfig(
+                            enabled = autoScrollEnabled,
+                            version = autoScrollVersion,
+                            disable = { autoScrollEnabled = false },
+                        ),
+                    ) {
+                        CorrelationTraceContent(
+                            trace = selectedTrace,
+                            selectedEvent = selectedEvent,
+                            onEventSelected = { selectedEvent = it },
+                        )
+                    }
                 }
             }
         }
@@ -526,7 +583,7 @@ private fun addTaskFlowEvent(
     eventName: String,
     details: String,
     followLatestEvent: Boolean,
-    selectedTraceIndex: Int,
+    selectedTraceId: String?,
     onEventSelected: (TraceEvent) -> Unit,
 ) {
     val trace =
@@ -546,12 +603,8 @@ private fun addTaskFlowEvent(
     traces[correlationId] = trace.copy(events = trace.events.toMutableList())
 
     // Auto-follow: select this event if follow mode is on and this trace is selected
-    if (followLatestEvent) {
-        val currentTraces = traces.values.sortedByDescending { it.startTime }
-        val selectedTrace = currentTraces.getOrNull(selectedTraceIndex)
-        if (selectedTrace?.correlationId == correlationId) {
-            onEventSelected(event)
-        }
+    if (followLatestEvent && selectedTraceId == correlationId) {
+        onEventSelected(event)
     }
 }
 
@@ -899,27 +952,34 @@ private fun ResponseCard(
     session: LLMSessionEvent,
     clipboard: com.jervis.ui.util.ClipboardHandler,
 ) {
-    // Smart autoscroll: track if user is at bottom
+    // Smart autoscroll driven by global config (CompositionLocal)
+    val autoConfig = LocalAutoScrollConfig.current
     val scrollState = rememberScrollState()
-    var userHasScrolledUp by remember { mutableStateOf(false) }
     val previousBufferLength = remember { mutableStateOf(0) }
 
-    // Detect if user manually scrolled up
-    LaunchedEffect(scrollState.value, scrollState.maxValue) {
+    // Detect if user manually scrolled away from bottom -> disable autoscroll globally
+    LaunchedEffect(scrollState.value, scrollState.maxValue, autoConfig?.enabled) {
         if (scrollState.maxValue > 0) {
             val isAtBottom = scrollState.value >= scrollState.maxValue - 50 // 50px threshold
-            if (!isAtBottom && scrollState.value < previousBufferLength.value) {
-                userHasScrolledUp = true
-            } else if (isAtBottom) {
-                userHasScrolledUp = false
+            if (!isAtBottom && (autoConfig?.enabled == true)) {
+                // user moved away from bottom; stop autoscroll
+                autoConfig.disable.invoke()
             }
         }
     }
 
-    // Auto-scroll when new content arrives (only if user is at bottom)
+    // When auto-scroll toggled on (version bump), jump to bottom immediately
+    LaunchedEffect(autoConfig?.version) {
+        if (autoConfig?.enabled == true) {
+            // Delay is not strictly needed; scroll to current max
+            scrollState.scrollTo(scrollState.maxValue)
+        }
+    }
+
+    // Auto-scroll when new content arrives
     LaunchedEffect(session.responseBuffer) {
         if (session.responseBuffer.length > previousBufferLength.value) {
-            if (!userHasScrolledUp) {
+            if (autoConfig?.enabled == true) {
                 scrollState.animateScrollTo(scrollState.maxValue)
             }
             previousBufferLength.value = session.responseBuffer.length

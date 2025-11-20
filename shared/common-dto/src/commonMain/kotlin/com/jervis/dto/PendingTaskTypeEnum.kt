@@ -1,4 +1,4 @@
-package com.jervis.domain.task
+package com.jervis.dto
 
 enum class PendingTaskTypeEnum {
     EMAIL_PROCESSING,

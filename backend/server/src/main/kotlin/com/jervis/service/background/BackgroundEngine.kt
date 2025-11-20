@@ -1,7 +1,7 @@
 package com.jervis.service.background
 
 import com.jervis.domain.task.PendingTask
-import com.jervis.domain.task.PendingTaskState
+import com.jervis.dto.PendingTaskState
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy

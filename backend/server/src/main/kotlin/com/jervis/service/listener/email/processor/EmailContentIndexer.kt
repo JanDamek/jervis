@@ -24,11 +24,20 @@ class EmailContentIndexer(
     private val tikaClient: ITikaClient,
     private val textNormalizationService: TextNormalizationService,
 ) {
+    /**
+     * Public helper to get normalized plain text for an email body (HTML → text + normalization).
+     */
+    suspend fun extractAndNormalizeText(rawHtml: String): String {
+        val plainText = extractPlainText(rawHtml)
+        return textNormalizationService.normalize(plainText)
+    }
+
     suspend fun indexEmailContent(
         message: ImapMessage,
         accountId: ObjectId,
         clientId: ObjectId,
         projectId: ObjectId?,
+        canonicalSourceId: String,
     ): String? {
         logger.info { "Indexing email content ${message.messageId}" }
 
@@ -49,6 +58,7 @@ class EmailContentIndexer(
                         projectId = projectId,
                         chunkIndex = index,
                         totalChunks = chunks.size,
+                        canonicalSourceId = canonicalSourceId,
                     )
                 if (index == 0) {
                     firstDocumentId = docId
@@ -127,6 +137,7 @@ class EmailContentIndexer(
         projectId: ObjectId?,
         chunkIndex: Int,
         totalChunks: Int,
+        canonicalSourceId: String,
     ): String {
         val document =
             RagDocument(
@@ -135,7 +146,8 @@ class EmailContentIndexer(
                 text = chunk.text(),
                 ragSourceType = RagSourceType.EMAIL,
                 createdAt = message.receivedAt,
-                sourceUri = "email://${accountId.toHexString()}/${message.messageId}",
+                // Use canonical source ID (thread key) to deduplicate across forwards/replies
+                sourceUri = canonicalSourceId,
                 from = message.from,
                 subject = message.subject,
                 timestamp = message.receivedAt.toString(),

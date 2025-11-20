@@ -1,8 +1,8 @@
 package com.jervis.entity
 
 import com.jervis.domain.task.PendingTask
-import com.jervis.domain.task.PendingTaskState
-import com.jervis.domain.task.PendingTaskTypeEnum
+import com.jervis.dto.PendingTaskState
+import com.jervis.dto.PendingTaskTypeEnum
 import org.bson.types.ObjectId
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import org.springframework.data.annotation.Id
