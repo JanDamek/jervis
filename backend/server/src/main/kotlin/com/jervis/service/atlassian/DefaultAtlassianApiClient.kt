@@ -207,6 +207,9 @@ class DefaultAtlassianApiClient(
             val siteUrl = "https://${conn.tenant.value}"
             var startAt = 0
             val max = pageSize.coerceIn(1, 100)
+            // Loop-safety: remember last page signature to detect servers that ignore startAt
+            var lastPageSig: String? = null
+            var stagnationBreaks = 0
 
             do {
                 val client = createHttpClient(conn)
@@ -253,7 +256,7 @@ class DefaultAtlassianApiClient(
                     val response = httpResponse.body<SearchResponseDto>()
                     val issues = response.issues.orEmpty()
 
-                    logger.info { "JIRA search returned ${issues.size} issues (total=${response.total})" }
+                    logger.info { "JIRA search returned ${issues.size} issues (total=${response.total ?: "unknown"})" }
 
                     var emittedCount = 0
                     var skippedNullFields = 0
@@ -302,6 +305,49 @@ class DefaultAtlassianApiClient(
                     }
 
                     val pageCount = issues.size
+
+                    // If no results were returned, stop immediately without advancing startAt
+                    if (pageCount == 0) {
+                        logger.info { "JIRA search page empty – no more results, stopping (JQL='${jql}')" }
+                        client.close()
+                        break
+                    }
+
+                    // Progress reporting – show how many are left when server provides total
+                    run {
+                        val total = response.total
+                        val loaded = startAt + pageCount
+                        if (total != null) {
+                            val remaining = (total - loaded).coerceAtLeast(0)
+                            logger.info {
+                                "JIRA search progress: loaded=$loaded/$total, remaining=$remaining (JQL='${jql}')"
+                            }
+                        } else {
+                            // Avoid confusion: startAt is just paging cursor, not the total count
+                            logger.info {
+                                "JIRA search progress: loaded=$loaded, total=unknown (server did not provide total). " +
+                                    "Continuing until empty/short page. Note: startAt is a paging cursor, not total."
+                            }
+                        }
+                    }
+
+                    // Build simple signature from first+last keys and count – cheap and reliable
+                    val firstKey = issues.firstOrNull()?.key ?: "<EMPTY>"
+                    val lastKey = issues.lastOrNull()?.key ?: "<EMPTY>"
+                    val pageSig = "$firstKey|$lastKey|$pageCount"
+
+                    // If signature repeats with total=null and pageCount==max, likely server ignores startAt → break
+                    if (lastPageSig != null && lastPageSig == pageSig && pageCount == max && response.total == null) {
+                        stagnationBreaks++
+                        logger.warn {
+                            "JIRA search detected paging stagnation (repeating page) for ${conn.tenant.value}: " +
+                                "JQL='$jql', startAt=$startAt, max=$max. Breaking to avoid infinite loop."
+                        }
+                        client.close()
+                        break
+                    }
+                    lastPageSig = pageSig
+
                     startAt += pageCount
                     val total = response.total ?: Int.MAX_VALUE // If total is null, continue until empty page
 
