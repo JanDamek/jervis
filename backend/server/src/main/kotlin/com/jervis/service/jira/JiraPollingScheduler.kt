@@ -18,6 +18,7 @@ class JiraPollingScheduler(
     private val api: AtlassianApiClient,
     private val auth: AtlassianAuthService,
     private val stateManager: JiraStateManager,
+    private val indexingRegistry: com.jervis.service.indexing.status.IndexingStatusRegistry,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -58,15 +59,22 @@ class JiraPollingScheduler(
      * Only saves issue metadata to DB as NEW - no deep indexing.
      */
     private suspend fun discoverIssues(clientId: ObjectId) {
+        val toolKey = "jira"
+        indexingRegistry.ensureTool(toolKey, displayName = "Atlassian (Jira)")
+        indexingRegistry.start(toolKey, displayName = "Atlassian (Jira)", message = "Discovering projects and issues for client ${clientId.toHexString()}")
         logger.info { "JIRA_DISCOVERY: Starting for client=${clientId.toHexString()}" }
 
         val connectionDoc = connectionRepository.findByClientId(clientId) ?: run {
             logger.warn { "JIRA_DISCOVERY: No connection found for client=${clientId.toHexString()}" }
+            indexingRegistry.info(toolKey, "No connection found for client ${clientId.toHexString()}")
+            indexingRegistry.finish(toolKey, message = "Jira discovery finished: no connection")
             return
         }
 
         if (connectionDoc.authStatus != "VALID") {
             logger.warn { "JIRA_DISCOVERY: Skipping client=${clientId.toHexString()}, authStatus=${connectionDoc.authStatus}" }
+            indexingRegistry.info(toolKey, "Skipping client ${clientId.toHexString()}, authStatus=${connectionDoc.authStatus}")
+            indexingRegistry.finish(toolKey, message = "Jira discovery finished: auth not valid")
             return
         }
 
@@ -76,10 +84,13 @@ class JiraPollingScheduler(
         // Get all projects
         val projects = api.listProjects(validConn).map { (key, _) -> key }
         logger.info { "JIRA_DISCOVERY: Found ${projects.size} projects for client=${clientId.toHexString()}" }
+        indexingRegistry.info(toolKey, "Found ${projects.size} projects for client ${clientId.toHexString()}")
 
         var totalDiscovered = 0
-        projects.forEach { projectKey ->
+        projects.forEachIndexed { idx, projectKey ->
             val jql = "project = ${projectKey.value} ORDER BY created DESC"
+            val projectProgressMsg = "Project ${idx + 1}/${projects.size}: ${projectKey.value}"
+            indexingRegistry.info(toolKey, "$projectProgressMsg – starting search")
             logger.debug { "JIRA_DISCOVERY: Searching with JQL: $jql" }
 
             api.searchIssues(validConn, jql).collect { issue ->
@@ -98,7 +109,11 @@ class JiraPollingScheduler(
                     statusHash = statusHash,
                 )
                 totalDiscovered++
+                // Report progress every item (registry throttles notifications internally)
+                indexingRegistry.progress(toolKey, processedInc = 1, message = "$projectProgressMsg – discovered ${issue.key}")
             }
+
+            indexingRegistry.info(toolKey, "$projectProgressMsg – completed")
         }
 
         // Update lastSyncedAt
@@ -109,6 +124,7 @@ class JiraPollingScheduler(
         connectionRepository.save(updatedDoc)
 
         logger.info { "JIRA_DISCOVERY: Completed for client=${clientId.toHexString()}, discovered $totalDiscovered issues" }
+        indexingRegistry.finish(toolKey, message = "Discovery completed – discovered $totalDiscovered issues")
     }
 
     private fun computeHash(text: String): String =
