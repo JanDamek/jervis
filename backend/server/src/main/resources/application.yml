@@ -141,7 +141,7 @@ models: # embedding dimensions configured per model
       num-predict: 8192
       concurrency: 1
     - provider: GOOGLE
-      model: gemini-2.5-pro-latest
+      model: gemini-2.5-pro
       context-length: 1048576
       num-predict: 65536
       concurrency: 1
@@ -160,7 +160,7 @@ models: # embedding dimensions configured per model
       num-predict: 4096
       concurrency: 1
     - provider: GOOGLE
-      model: gemini-2.5-pro-latest
+      model: gemini-2.5-pro
       context-length: 1048576
       num-predict: 65536
       concurrency: 1
@@ -172,7 +172,7 @@ models: # embedding dimensions configured per model
       num-predict: 8192
       concurrency: 1
     - provider: GOOGLE
-      model: gemini-2.5-pro-latest
+      model: gemini-2.5-pro
       context-length: 1048576
       concurrency: 1
       num-predict: 65536
@@ -186,7 +186,7 @@ models: # embedding dimensions configured per model
       quick: false
       concurrency: 1
     - provider: GOOGLE
-      model: gemini-2.5-pro-latest
+      model: gemini-2.5-pro
       context-length: 1048576
       num-predict: 65536
       concurrency: 1
@@ -204,7 +204,7 @@ models: # embedding dimensions configured per model
       quick: false
       concurrency: 1
     - provider: GOOGLE
-      model: gemini-2.5-pro-latest
+      model: gemini-2.5-pro
       context-length: 1048576
       num-predict: 65536
       concurrency: 1

@@ -89,7 +89,8 @@ class GoogleLlmClient(
             val responseFlow =
                 webClient
                     .post()
-                    .uri("/v1/models/$model:streamGenerateContent")
+                    // Google Generative Language streaming endpoint (v1beta) with SSE
+                    .uri("/v1beta/models/$model:streamGenerateContent?alt=sse")
                     .bodyValue(requestBody)
                     .accept(MediaType.TEXT_EVENT_STREAM)
                     .retrieve()
