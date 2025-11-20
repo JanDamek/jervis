@@ -819,7 +819,7 @@ class JiraIndexingOrchestrator(
 
         try {
             pendingTaskService.createTask(
-                taskType = com.jervis.domain.task.PendingTaskTypeEnum.AGENT_ANALYSIS,
+                taskType = com.jervis.dto.PendingTaskTypeEnum.AGENT_ANALYSIS,
                 content = taskContent,
                 clientId = clientId,
                 projectId = jervisProjectId,

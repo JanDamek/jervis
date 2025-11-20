@@ -1,7 +1,7 @@
 package com.jervis.service.listener.email.processor
 
 import com.jervis.common.client.ITikaClient
-import com.jervis.domain.task.PendingTaskTypeEnum
+import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.service.background.PendingTaskService
 import com.jervis.service.listener.email.imap.ImapMessage
 import com.jervis.service.text.TextNormalizationService

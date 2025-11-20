@@ -1,6 +1,6 @@
 package com.jervis.service.confluence.processor
 
-import com.jervis.domain.task.PendingTaskTypeEnum
+import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.entity.ConfluencePageDocument
 import com.jervis.service.background.PendingTaskService
 import mu.KotlinLogging
