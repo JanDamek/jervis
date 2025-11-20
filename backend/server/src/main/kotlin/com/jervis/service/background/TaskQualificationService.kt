@@ -6,7 +6,7 @@ import com.jervis.domain.confluence.ThreadStatusEnum
 import com.jervis.domain.email.AliasTypeEnum
 import com.jervis.domain.sender.ConversationThread
 import com.jervis.domain.task.PendingTask
-import com.jervis.domain.task.PendingTaskTypeEnum
+import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.service.gateway.QualifierLlmGateway
 import com.jervis.service.listener.email.imap.ImapMessage
 import com.jervis.service.sender.ConversationThreadService
@@ -66,7 +66,7 @@ class TaskQualificationService(
                     flow {
                         // Branch by current state
                         when (task.state) {
-                            com.jervis.domain.task.PendingTaskState.READY_FOR_QUALIFICATION -> {
+                            com.jervis.dto.PendingTaskState.READY_FOR_QUALIFICATION -> {
                                 val claimed = pendingTaskService.tryClaimForQualification(task.id)
                                 if (claimed != null) {
                                     processedCount++
@@ -82,7 +82,7 @@ class TaskQualificationService(
                                     logger.debug { "Task ${task.id} could not be claimed (race), skipping" }
                                 }
                             }
-                            com.jervis.domain.task.PendingTaskState.QUALIFYING -> {
+                            com.jervis.dto.PendingTaskState.QUALIFYING -> {
                                 // Reclaim stuck/in-progress task - continue processing without re-claim
                                 processedCount++
                                 if (processedCount == 1) {
@@ -370,8 +370,8 @@ class TaskQualificationService(
 
                     pendingTaskService.updateState(
                         task.id,
-                        com.jervis.domain.task.PendingTaskState.QUALIFYING,
-                        com.jervis.domain.task.PendingTaskState.DISPATCHED_GPU,
+                        com.jervis.dto.PendingTaskState.QUALIFYING,
+                        com.jervis.dto.PendingTaskState.DISPATCHED_GPU,
                     )
                 }
             }
@@ -382,8 +382,8 @@ class TaskQualificationService(
             try {
                 pendingTaskService.updateState(
                     task.id,
-                    com.jervis.domain.task.PendingTaskState.QUALIFYING,
-                    com.jervis.domain.task.PendingTaskState.DISPATCHED_GPU,
+                    com.jervis.dto.PendingTaskState.QUALIFYING,
+                    com.jervis.dto.PendingTaskState.DISPATCHED_GPU,
                 )
             } catch (ie: Exception) {
                 logger.warn(ie) { "QUALIFICATION_FALLBACK_FAILED: id=${task.id} error=${ie.message}" }

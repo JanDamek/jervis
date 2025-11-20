@@ -1,7 +1,7 @@
 package com.jervis.service.listener.git.processor
 
 import com.jervis.domain.task.PendingTask
-import com.jervis.domain.task.PendingTaskTypeEnum
+import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.entity.ProjectDocument
 import com.jervis.service.background.PendingTaskService
 import com.jervis.service.text.TextNormalizationService

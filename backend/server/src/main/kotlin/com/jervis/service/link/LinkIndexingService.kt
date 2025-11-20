@@ -227,7 +227,7 @@ class LinkIndexingService(
 
         try {
             pendingTaskService.createTask(
-                taskType = com.jervis.domain.task.PendingTaskTypeEnum.LINK_SAFETY_REVIEW,
+                taskType = com.jervis.dto.PendingTaskTypeEnum.LINK_SAFETY_REVIEW,
                 content = taskContent,
                 clientId = clientId,
                 projectId = projectId,
