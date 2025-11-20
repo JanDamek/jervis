@@ -232,6 +232,30 @@ class WeaviateVectorRepository(
             }
         }
 
+    /**
+     * Delete a single object by its ID in the specified collection.
+     */
+    suspend fun deleteById(
+        collectionType: ModelTypeEnum,
+        id: String,
+    ): Result<Boolean> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val className = WeaviateCollections.forModelType(collectionType)
+                val result =
+                    client
+                        .data()
+                        .deleter()
+                        .withClassName(className)
+                        .withID(id)
+                        .run()
+                if (result.hasErrors()) {
+                    throw WeaviateException("Failed to delete object $id: ${result.errorMessages()}")
+                }
+                true
+            }
+        }
+
     // ========== Private Implementation ==========
 
     /**

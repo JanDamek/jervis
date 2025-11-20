@@ -31,8 +31,12 @@ class PendingTaskRestController(
     private val fmt: DateTimeFormatter = DateTimeFormatter.ISO_INSTANT
 
     @GetMapping
-    override suspend fun listPendingTasks(): List<PendingTaskDto> {
-        return pendingTaskService.findAllTasks()
+    override suspend fun listPendingTasks(
+        @RequestParam("taskType") taskType: String?,
+        @RequestParam("state") state: String?,
+    ): List<PendingTaskDto> =
+        pendingTaskService
+            .findAllTasks(taskType, state)
             .map { task ->
                 PendingTaskDto(
                     id = task.id.toHexString(),
@@ -43,9 +47,13 @@ class PendingTaskRestController(
                     createdAt = fmt.format(task.createdAt),
                     state = task.state.name,
                 )
-            }
-            .toList()
-    }
+            }.toList()
+
+    @GetMapping("/count")
+    override suspend fun countPendingTasks(
+        @RequestParam("taskType") taskType: String?,
+        @RequestParam("state") state: String?,
+    ): Long = pendingTaskService.countTasks(taskType, state)
 
     @DeleteMapping("/{id}")
     override suspend fun deletePendingTask(

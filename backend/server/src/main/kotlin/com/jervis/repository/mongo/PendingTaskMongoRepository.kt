@@ -11,4 +11,20 @@ interface PendingTaskMongoRepository : CoroutineCrudRepository<PendingTaskDocume
     fun findAllByOrderByCreatedAtAsc(): Flow<PendingTaskDocument>
 
     fun findByStateOrderByCreatedAtAsc(state: String): Flow<PendingTaskDocument>
+
+    fun findByTypeAndStateOrderByCreatedAtAsc(
+        type: String,
+        state: String,
+    ): Flow<PendingTaskDocument>
+
+    fun findByTypeOrderByCreatedAtAsc(type: String): Flow<PendingTaskDocument>
+
+    suspend fun countByTypeAndState(
+        type: String,
+        state: String,
+    ): Long
+
+    suspend fun countByType(type: String): Long
+
+    suspend fun countByState(state: String): Long
 }

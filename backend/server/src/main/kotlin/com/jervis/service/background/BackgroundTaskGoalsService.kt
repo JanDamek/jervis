@@ -1,6 +1,6 @@
 package com.jervis.service.background
 
-import com.jervis.domain.task.PendingTaskTypeEnum
+import com.jervis.dto.PendingTaskTypeEnum
 import mu.KotlinLogging
 import org.springframework.core.io.ClassPathResource
 import org.springframework.stereotype.Service

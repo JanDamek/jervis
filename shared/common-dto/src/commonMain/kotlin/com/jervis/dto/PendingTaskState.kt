@@ -1,4 +1,4 @@
-package com.jervis.domain.task
+package com.jervis.dto
 
 /**
  * Lifecycle state of a PendingTask.

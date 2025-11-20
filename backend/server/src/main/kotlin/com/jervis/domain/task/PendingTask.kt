@@ -1,5 +1,7 @@
 package com.jervis.domain.task
 
+import com.jervis.dto.PendingTaskState
+import com.jervis.dto.PendingTaskTypeEnum
 import org.bson.types.ObjectId
 import java.time.Instant
 
