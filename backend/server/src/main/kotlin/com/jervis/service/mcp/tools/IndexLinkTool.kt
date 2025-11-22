@@ -1,16 +1,14 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.rag.RagSourceType
-import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.link.LinkIndexingService
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
-import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 
 /**
@@ -27,58 +25,38 @@ import org.springframework.stereotype.Service
 @Service
 class IndexLinkTool(
     private val linkIndexingService: LinkIndexingService,
-    private val llmGateway: LlmGateway,
     override val promptRepository: PromptRepository,
-) : McpTool {
+) : McpTool<IndexLinkTool.IndexLinkParams> {
     companion object {
         private val logger = KotlinLogging.logger {}
     }
 
-    override val name: PromptTypeEnum = PromptTypeEnum.SYSTEM_INDEX_LINK_TOOL
+    override val name = ToolTypeEnum.SYSTEM_INDEX_LINK_TOOL
+    override val descriptionObject =
+        IndexLinkParams(
+            url = "URL to index (required, will be validated)\nhttps://example.com/docs/page",
+            reason = "Why this link is safe to index. Agent validated link safety",
+            sourceType = "RagSourceType enum name ${RagSourceType.URL.name}",
+        )
 
     @Serializable
     data class IndexLinkParams(
-        val url: String = "", // URL to index (required, will be validated)
-        val reason: String? = null, // Why this link is safe to index
-        val sourceType: String = "URL", // RagSourceType enum name
+        val url: String,
+        val reason: String?,
+        val sourceType: String,
     )
 
     override suspend fun execute(
         plan: Plan,
-        taskDescription: String,
-        stepContext: String,
+        request: IndexLinkParams,
     ): ToolResult =
         try {
-            logger.info { "Executing link indexing: $taskDescription" }
-
-            val params = parseTaskDescription(taskDescription, plan, stepContext)
-            logger.debug { "Parsed index link params: $params" }
-
-            handleIndexLink(params, plan)
+            logger.info { "Executing link indexing: $request" }
+            handleIndexLink(request, plan)
         } catch (e: Exception) {
             logger.error(e) { "Error indexing link" }
             ToolResult.error("Failed to index link: ${e.message}")
         }
-
-    private suspend fun parseTaskDescription(
-        taskDescription: String,
-        plan: Plan,
-        stepContext: String,
-    ): IndexLinkParams {
-        return llmGateway
-            .callLlm(
-                type = PromptTypeEnum.SYSTEM_INDEX_LINK_TOOL,
-                responseSchema = IndexLinkParams(),
-                quick = plan.quick,
-                mappingValue =
-                    mapOf(
-                        "taskDescription" to taskDescription,
-                        "stepContext" to stepContext,
-                    ),
-                correlationId = plan.correlationId,
-                backgroundMode = plan.backgroundMode,
-            ).result
-    }
 
     private suspend fun handleIndexLink(
         params: IndexLinkParams,
@@ -99,7 +77,7 @@ class IndexLinkTool(
         val sourceType =
             try {
                 RagSourceType.valueOf(params.sourceType.uppercase())
-            } catch (e: IllegalArgumentException) {
+            } catch (_: IllegalArgumentException) {
                 logger.warn { "Invalid sourceType '${params.sourceType}', using URL" }
                 RagSourceType.URL
             }
@@ -110,7 +88,6 @@ class IndexLinkTool(
                 url = url,
                 projectId = plan.projectDocument?.id,
                 clientId = plan.clientDocument.id,
-                sourceType = sourceType,
                 skipSafetyCheck = true, // Agent already validated safety
             )
 

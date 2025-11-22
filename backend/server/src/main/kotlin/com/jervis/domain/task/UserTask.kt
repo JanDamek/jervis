@@ -1,5 +1,8 @@
 package com.jervis.domain.task
 
+import com.jervis.service.task.TaskPriorityEnum
+import com.jervis.service.task.TaskSourceType
+import com.jervis.service.task.TaskStatusEnum
 import org.bson.types.ObjectId
 import java.time.Instant
 
@@ -16,9 +19,10 @@ data class UserTask(
     val dueDate: Instant? = null,
     val projectId: ObjectId? = null,
     val clientId: ObjectId,
-    val sourceType: TaskSourceType,
+    val sourceType: TaskSourceType = TaskSourceType.AGENT_SUGGESTION,
     val sourceUri: String? = null,
     val metadata: Map<String, String> = emptyMap(),
+    val correlationId: String? = null,
     val createdAt: Instant = Instant.now(),
     val completedAt: Instant? = null,
 )

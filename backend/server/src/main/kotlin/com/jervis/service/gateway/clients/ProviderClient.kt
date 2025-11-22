@@ -1,6 +1,6 @@
 package com.jervis.service.gateway.clients
 
-import com.jervis.configuration.prompts.PromptConfigBase
+import com.jervis.configuration.prompts.PromptConfig
 import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.domain.gateway.StreamChunk
 import com.jervis.domain.llm.LlmResponse
@@ -15,12 +15,12 @@ interface ProviderClient {
         systemPrompt: String?,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
-        prompt: PromptConfigBase,
+        prompt: PromptConfig,
         estimatedTokens: Int,
     ): LlmResponse
 
     /**
-     * Streaming version of the call method. Default implementation falls back to regular call.
+     * Streaming version of the call method. The default implementation falls back to regular call.
      * Providers that support streaming should override this method.
      */
     fun callWithStreaming(
@@ -28,7 +28,7 @@ interface ProviderClient {
         systemPrompt: String?,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
-        prompt: PromptConfigBase,
+        prompt: PromptConfig,
         estimatedTokens: Int,
         debugSessionId: String? = null,
     ): Flow<StreamChunk>

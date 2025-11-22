@@ -1,12 +1,14 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.service.background.PendingTaskService
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
+import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
@@ -21,28 +23,34 @@ import org.springframework.stereotype.Service
 class CreatePendingTaskTool(
     private val pendingTaskService: PendingTaskService,
     override val promptRepository: PromptRepository,
-) : McpTool {
+) : McpTool<CreatePendingTaskTool.PendingTaskParams> {
     companion object {
         private val logger = KotlinLogging.logger {}
     }
 
-    override val name: PromptTypeEnum = PromptTypeEnum.CREATE_PENDING_TASK_TOOL
+    override val name = ToolTypeEnum.CREATE_PENDING_TASK_TOOL
+
+    @Serializable
+    data class PendingTaskParams(
+        val description: String,
+    )
+
+    override val descriptionObject = PendingTaskParams(description = "Analyze newly found docs for client onboarding")
 
     override suspend fun execute(
         plan: Plan,
-        taskDescription: String,
-        stepContext: String,
+        request: PendingTaskParams,
     ): ToolResult {
-        logger.info { "CREATE_PENDING_TASK: Creating task with description length=${taskDescription.length}" }
+        logger.info { "CREATE_PENDING_TASK: Creating task with description length=${request.description.length}" }
 
-        if (taskDescription.isBlank()) {
+        if (request.description.isBlank()) {
             return ToolResult.error("Task description cannot be blank")
         }
 
         val task =
             pendingTaskService.createTask(
                 taskType = PendingTaskTypeEnum.AGENT_ANALYSIS,
-                content = taskDescription,
+                content = request.description,
                 projectId = plan.projectDocument?.id,
                 clientId = plan.clientDocument.id,
                 correlationId = plan.correlationId, // Preserve correlationId from plan - same work chain

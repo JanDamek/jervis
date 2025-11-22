@@ -11,7 +11,7 @@ class EmbeddingGateway(
     private val modelsProperties: ModelsProperties,
     private val clients: List<EmbeddingProviderClient>,
     private val rateLimiter: EmbeddingRateLimiter,
-    private val modelConcurrencyManager: com.jervis.service.gateway.core.ModelConcurrencyManager,
+    private val providerConcurrencyManager: com.jervis.service.gateway.core.ProviderConcurrencyManager,
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -47,12 +47,13 @@ class EmbeddingGateway(
     private suspend fun executeWithControls(
         candidate: ModelsProperties.ModelDetail,
         text: String,
-    ): List<Float> =
-        modelConcurrencyManager.withConcurrencyControl(candidate) {
+    ): List<Float> {
+        val provider =
+            candidate.provider
+                ?: throw IllegalStateException("Provider not specified for candidate ${candidate.model}")
+
+        return providerConcurrencyManager.withConcurrencyControl(provider) {
             rateLimiter.execute {
-                val provider =
-                    candidate.provider
-                        ?: throw IllegalStateException("Provider not specified for candidate ${candidate.model}")
                 val client = clients.first { it.provider == provider }
                 val rawEmbedding = client.call(candidate.model, text)
 
@@ -75,6 +76,7 @@ class EmbeddingGateway(
                 rawEmbedding
             }
         }
+    }
 
     /**
      * Minimal text sanitization for embedding providers

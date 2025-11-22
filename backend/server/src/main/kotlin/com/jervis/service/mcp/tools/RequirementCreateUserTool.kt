@@ -1,11 +1,10 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.requirement.RequirementPriorityEnum
 import com.jervis.entity.UserRequirementDocument
-import com.jervis.repository.mongo.UserRequirementMongoRepository
-import com.jervis.service.gateway.core.LlmGateway
+import com.jervis.repository.UserRequirementMongoRepository
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -19,34 +18,36 @@ import org.springframework.stereotype.Service
  */
 @Service
 class RequirementCreateUserTool(
-    private val llmGateway: LlmGateway,
     private val requirementRepository: UserRequirementMongoRepository,
     override val promptRepository: PromptRepository,
-) : McpTool {
+) : McpTool<RequirementCreateUserTool.RequirementCreateRequest> {
     companion object {
         private val logger = KotlinLogging.logger {}
     }
 
-    override val name: PromptTypeEnum = PromptTypeEnum.REQUIREMENT_CREATE_USER_TOOL
+    override val name = ToolTypeEnum.REQUIREMENT_CREATE_USER_TOOL
+
+    @Serializable
+    data class RequirementCreateRequest(
+        val title: String = "",
+        val description: String = "",
+        val keywords: List<String> = emptyList(),
+        val priority: RequirementPriorityEnum = RequirementPriorityEnum.MEDIUM,
+    )
+
+    override val descriptionObject =
+        RequirementCreateRequest(
+            title = "Track NVIDIA GPU prices",
+            description = "Notify me when RTX 5090 drops below $1500",
+            keywords = listOf("GPU", "NVIDIA", "price"),
+            priority = RequirementPriorityEnum.HIGH,
+        )
 
     override suspend fun execute(
         plan: Plan,
-        taskDescription: String,
-        stepContext: String,
+        request: RequirementCreateRequest,
     ): ToolResult {
         logger.info { "REQUIREMENT_CREATE_TOOL: Creating user requirement" }
-
-        val result =
-            llmGateway.callLlm(
-                type = name,
-                mappingValue = mapOf("taskDescription" to taskDescription),
-                correlationId = plan.correlationId,
-                quick = false,
-                responseSchema = RequirementCreateRequest(),
-                backgroundMode = plan.backgroundMode,
-            )
-
-        val request = result.result
 
         // Validate request
         if (request.title.isBlank()) {
@@ -84,12 +85,4 @@ class RequirementCreateUserTool(
             content = content,
         )
     }
-
-    @Serializable
-    data class RequirementCreateRequest(
-        val title: String = "",
-        val description: String = "",
-        val keywords: List<String> = emptyList(),
-        val priority: RequirementPriorityEnum = RequirementPriorityEnum.MEDIUM,
-    )
 }

@@ -1,11 +1,12 @@
 package com.jervis.service.atlassian
 
+import com.jervis.domain.atlassian.AtlassianConnection
 import com.jervis.domain.jira.JiraAccountId
 import com.jervis.domain.jira.JiraBoardId
-import com.jervis.domain.atlassian.AtlassianConnection
 import com.jervis.domain.jira.JiraProjectKey
 import com.jervis.domain.jira.JiraTenant
-import com.jervis.repository.mongo.AtlassianConnectionMongoRepository
+import com.jervis.repository.AtlassianConnectionMongoRepository
+import com.jervis.service.task.TaskSourceType
 import com.jervis.service.task.UserTaskService
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -66,7 +67,7 @@ class AtlassianConnectionService(
                 description = description,
                 projectId = null,
                 clientId = conn.clientId,
-                sourceType = com.jervis.domain.task.TaskSourceType.EXTERNAL_SYSTEM,
+                sourceType = TaskSourceType.AUTHORIZATION,
                 sourceUri = "jira-connection-auth://${conn.id}",
                 metadata = mapOf("clientId" to conn.clientId.toHexString(), "tenant" to conn.tenant),
             )

@@ -6,10 +6,8 @@ import com.jervis.domain.sender.SenderAlias
 import com.jervis.domain.sender.SenderProfile
 import com.jervis.mapper.toDomain
 import com.jervis.mapper.toEntity
-import com.jervis.repository.mongo.SenderProfileMongoRepository
-import kotlinx.coroutines.flow.Flow
+import com.jervis.repository.SenderProfileMongoRepository
 import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.flow.map
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -21,20 +19,18 @@ private val logger = KotlinLogging.logger {}
 class SenderProfileService(
     private val repository: SenderProfileMongoRepository,
 ) {
-    suspend fun findById(id: ObjectId): SenderProfile? = repository.findById(id)?.let { it.toDomain() }
+    suspend fun findById(id: ObjectId): SenderProfile? = repository.findById(id)?.toDomain()
 
-    suspend fun findByIdentifier(identifier: String): SenderProfile? = repository.findByPrimaryIdentifier(identifier)?.let { it.toDomain() }
+    suspend fun findByIdentifier(identifier: String): SenderProfile? =
+        repository
+            .findByPrimaryIdentifier(identifier)
+            ?.toDomain()
 
     suspend fun findByAnyAlias(identifier: String): SenderProfile? =
         repository
             .findByAliasesValueIn(listOf(identifier))
             .firstOrNull()
-            ?.let { it.toDomain() }
-
-    fun findByTopic(topic: String): Flow<SenderProfile> =
-        repository
-            .findByTopicsContaining(topic)
-            .map { it.toDomain() }
+            ?.toDomain()
 
     suspend fun findOrCreateProfile(
         identifier: String,
@@ -123,14 +119,6 @@ class SenderProfileService(
         return saved.toDomain()
     }
 
-    suspend fun updateLastSeen(profileId: ObjectId): SenderProfile? {
-        val profile = findById(profileId) ?: return null
-        val updated = profile.copy(lastSeenAt = Instant.now())
-        val entity = updated.toEntity()
-        val saved = repository.save(entity)
-        return saved.toDomain()
-    }
-
     suspend fun incrementMessagesReceived(profileId: ObjectId): SenderProfile? {
         val profile = findById(profileId) ?: return null
         val updated =
@@ -138,41 +126,6 @@ class SenderProfileService(
                 totalMessagesReceived = profile.totalMessagesReceived + 1,
                 lastInteractionAt = Instant.now(),
                 lastSeenAt = Instant.now(),
-            )
-        val entity = updated.toEntity()
-        val saved = repository.save(entity)
-        return saved.toDomain()
-    }
-
-    suspend fun updateSummary(
-        profileId: ObjectId,
-        summary: String,
-        topics: List<String>,
-    ): SenderProfile? {
-        val profile = findById(profileId) ?: return null
-        val updated =
-            profile.copy(
-                conversationSummary = summary,
-                topics = (profile.topics + topics).distinct().take(20),
-                lastSummaryUpdate = Instant.now(),
-            )
-        val entity = updated.toEntity()
-        val saved = repository.save(entity)
-        return saved.toDomain()
-    }
-
-    suspend fun updateRelationship(
-        profileId: ObjectId,
-        relationship: RelationshipTypeEnum,
-        organization: String?,
-        role: String?,
-    ): SenderProfile? {
-        val profile = findById(profileId) ?: return null
-        val updated =
-            profile.copy(
-                relationship = relationship,
-                organization = organization,
-                role = role,
             )
         val entity = updated.toEntity()
         val saved = repository.save(entity)

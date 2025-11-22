@@ -1,87 +1,21 @@
 package com.jervis.domain.rag
 
 /**
- * Types of sources for documents in the unified RAG architecture.
+ * Source type for documents/links indexed into RAG.
+ * Minimal set covers current usages across the server.
  */
 enum class RagSourceType {
-    /** Joern-based code analysis (primary for supported languages) */
-    JOERN,
-
-    /** Fallback for code files not supported by Joern */
-    CODE_FALLBACK,
-
-    /** General text content (configs, documentation chunks) */
-    TEXT_CONTENT,
-
-    /** Documentation files and API docs */
-    DOCUMENTATION,
-
-    /** Git history and commit information */
-    GIT_HISTORY,
-
-    /** Git code changes (diffs) */
-    CODE_CHANGE,
-
-    /** AI-generated file/class structure descriptions */
-    FILE_DESCRIPTION,
-
-    /** Meeting transcripts and recorded sessions */
-    MEETING_TRANSCRIPT,
-
-    /** Audio transcripts converted from speech-to-text */
-    AUDIO_TRANSCRIPT,
-
-    /** LLM-generated content */
-    LLM,
-
-    /** File-based content (legacy) */
-    FILE,
-
-    /** Analysis results */
-    ANALYSIS,
-
-    /** Agent-generated content */
-    AGENT,
-
-    /** External URL content */
+    // Generic
     URL,
 
-    /** Memory/context content */
-    MEMORY,
-
-    /** Rule/mandate content for governance */
-    RULE,
-
-    /** Email messages */
+    // Email-related
     EMAIL,
-
-    /** Email attachment content extracted via Tika */
-    EMAIL_ATTACHMENT,
-
-    /** Link content from emails */
     EMAIL_LINK_CONTENT,
 
-    /** Slack messages */
-    SLACK,
-
-    /** Microsoft Teams messages */
-    TEAMS,
-
-    /** Discord messages */
-    DISCORD,
-
-    /** Jira issues and comments */
-    JIRA,
-
-    /** Link content from Jira comments */
-    JIRA_LINK_CONTENT,
-
-    /** Jira issue attachments extracted via Tika */
-    JIRA_ATTACHMENT,
-
-    /** Confluence documentation pages */
-    CONFLUENCE_PAGE,
-
-    /** Link content from Confluence pages */
+    // Confluence integration
     CONFLUENCE_LINK_CONTENT,
+
+    // Web documentation
+    DOCUMENTATION,
+    JIRA_LINK_CONTENT,
 }

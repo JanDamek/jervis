@@ -8,7 +8,7 @@ import com.jervis.ui.rememberLifecycleAwareDebugProvider
  * iOS Application Entry Point
  * Called from Swift to create the Compose UI
  */
-fun MainViewController(serverBaseUrl: String = "http://home.damek-soft.eu:5500") =
+fun MainViewController(serverBaseUrl: String) =
     ComposeUIViewController {
         // Create lifecycle-aware debug provider that starts/stops WebSocket based on app state
         val debugProvider = rememberLifecycleAwareDebugProvider(serverBaseUrl)

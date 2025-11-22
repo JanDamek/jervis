@@ -2,7 +2,7 @@ package com.jervis.service.gateway.processing
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
-import com.jervis.configuration.prompts.PromptConfigBase
+import com.jervis.configuration.prompts.PromptConfig
 import org.springframework.stereotype.Service
 
 /**
@@ -23,7 +23,7 @@ class PromptBuilderService {
      * Uses only placeholders explicitly defined in the YAML prompt configuration.
      */
     fun buildUserPrompt(
-        prompt: PromptConfigBase,
+        prompt: PromptConfig,
         mappingValues: Map<String, String>,
         outputLanguage: String?,
         responseSchema: Any?,
@@ -39,7 +39,7 @@ class PromptBuilderService {
      * JSON mode instructions are now handled in userPrompt.
      */
     fun buildSystemPrompt(
-        prompt: PromptConfigBase,
+        prompt: PromptConfig,
         mappingValues: Map<String, String>,
     ): String = applyMappingValues(prompt.systemPrompt, mappingValues)
 
@@ -59,7 +59,6 @@ class PromptBuilderService {
             }
         return result
     }
-
 
     /**
      * Validates that all placeholders in the template have corresponding values.
@@ -108,7 +107,7 @@ class PromptBuilderService {
      * Appends JSON mode instructions and example format if JSON mode is enabled.
      * Uses ObjectMapper with pretty printing for better LLM readability.
      */
-    private fun appendJsonModeInstructions(
+    fun appendJsonModeInstructions(
         systemPrompt: String,
         responseSchema: Any?,
     ): String =

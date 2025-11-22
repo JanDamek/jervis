@@ -2,14 +2,11 @@ package com.jervis.service.listener.email.processor
 
 import com.jervis.common.client.ITikaClient
 import com.jervis.common.dto.TikaProcessRequest
-import com.jervis.domain.model.ModelTypeEnum
-import com.jervis.domain.rag.RagDocument
-import com.jervis.domain.rag.RagSourceType
+import com.jervis.rag.DocumentToStore
+import com.jervis.rag.EmbeddingType
+import com.jervis.rag.KnowledgeService
+import com.jervis.rag.KnowledgeType
 import com.jervis.service.listener.email.imap.ImapMessage
-import com.jervis.service.rag.RagIndexingService
-import com.jervis.service.text.TextChunkingService
-import com.jervis.service.text.TextNormalizationService
-import dev.langchain4j.data.segment.TextSegment
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -19,18 +16,13 @@ private val logger = KotlinLogging.logger {}
 
 @Service
 class EmailContentIndexer(
-    private val ragIndexingService: RagIndexingService,
-    private val textChunkingService: TextChunkingService,
+    private val knowledgeService: KnowledgeService,
     private val tikaClient: ITikaClient,
-    private val textNormalizationService: TextNormalizationService,
 ) {
     /**
-     * Public helper to get normalized plain text for an email body (HTML → text + normalization).
+     * Public helper to get normalized plain text for an email body (HTML → text).
      */
-    suspend fun extractAndNormalizeText(rawHtml: String): String {
-        val plainText = extractPlainText(rawHtml)
-        return textNormalizationService.normalize(plainText)
-    }
+    suspend fun extractAndNormalizeText(rawHtml: String): String = extractPlainText(rawHtml)
 
     suspend fun indexEmailContent(
         message: ImapMessage,
@@ -38,38 +30,33 @@ class EmailContentIndexer(
         clientId: ObjectId,
         projectId: ObjectId?,
         canonicalSourceId: String,
-    ): String? {
-        logger.info { "Indexing email content ${message.messageId}" }
+    ): String {
+        logger.info { "Indexing email content from=${message.from} subject=${message.subject}" }
 
         return runCatching {
             val plainText = extractPlainText(message.content)
-            val normalizedText = textNormalizationService.normalize(plainText)
-            val chunks = splitEmailContent(normalizedText)
-            logger.debug { "Split email ${message.messageId} into ${chunks.size} chunks" }
 
-            var firstDocumentId: String? = null
-            chunks.forEachIndexed { index, chunk ->
-                val docId =
-                    storeChunkWithEmbedding(
-                        chunk = chunk,
-                        message = message,
-                        accountId = accountId,
-                        clientId = clientId,
-                        projectId = projectId,
-                        chunkIndex = index,
-                        totalChunks = chunks.size,
-                        canonicalSourceId = canonicalSourceId,
-                    )
-                if (index == 0) {
-                    firstDocumentId = docId
-                }
-            }
+            val documentToStore =
+                DocumentToStore(
+                    documentId = canonicalSourceId,
+                    content = plainText,
+                    clientId = clientId,
+                    projectId = projectId,
+                    type = KnowledgeType.DOCUMENT,
+                    embeddingType = EmbeddingType.TEXT,
+                    title = message.subject,
+                    location = "email:${message.from}",
+                )
 
-            logger.info { "Indexed email body ${message.messageId} with ${chunks.size} chunks" }
-            firstDocumentId
+            knowledgeService
+                .store(com.jervis.rag.StoreRequest(listOf(documentToStore)))
+
+            logger.info { "Indexed email body from=${message.from} subject=${message.subject}" }
+            canonicalSourceId
         }.onFailure { e ->
-            logger.error(e) { "Failed to index email content ${message.messageId}" }
-        }.getOrNull()
+            logger.error(e) { "Failed to index email content from=${message.from} subject=${message.subject}" }
+            throw e
+        }.getOrThrow()
     }
 
     private suspend fun extractPlainText(content: String): String =
@@ -95,9 +82,10 @@ class EmailContentIndexer(
             // Append link information to plain text for better searchability
             // Format: "Link: [anchor text] - URL"
             if (linksInfo.isNotEmpty()) {
-                val linksSection = linksInfo.joinToString("\n") { (url, text) ->
-                    "Link: $text - $url"
-                }
+                val linksSection =
+                    linksInfo.joinToString("\n") { (url, text) ->
+                        "Link: $text - $url"
+                    }
                 "$plainText\n\n--- Links in this email ---\n$linksSection"
             } else {
                 plainText
@@ -111,54 +99,20 @@ class EmailContentIndexer(
      * Extract links with their anchor text from HTML.
      * Returns list of (URL, anchor text) pairs.
      */
-    private fun extractLinksWithText(htmlContent: String): List<Pair<String, String>> {
-        return try {
+    private fun extractLinksWithText(htmlContent: String): List<Pair<String, String>> =
+        try {
             val doc = org.jsoup.Jsoup.parse(htmlContent)
             doc.select("a[href]").mapNotNull { element ->
                 val href = element.attr("abs:href").takeIf { it.isNotBlank() } ?: element.attr("href")
                 val text = element.text().trim()
                 if (href.isNotBlank() && href.startsWith("http")) {
                     href to (text.ifBlank { href })
-                } else null
+                } else {
+                    null
+                }
             }
         } catch (e: Exception) {
             logger.warn(e) { "Failed to extract links from HTML" }
             emptyList()
         }
-    }
-
-    private fun splitEmailContent(content: String): List<TextSegment> = textChunkingService.splitText(content)
-
-    private suspend fun storeChunkWithEmbedding(
-        chunk: TextSegment,
-        message: ImapMessage,
-        accountId: ObjectId,
-        clientId: ObjectId,
-        projectId: ObjectId?,
-        chunkIndex: Int,
-        totalChunks: Int,
-        canonicalSourceId: String,
-    ): String {
-        val document =
-            RagDocument(
-                projectId = projectId,
-                clientId = clientId,
-                text = chunk.text(),
-                ragSourceType = RagSourceType.EMAIL,
-                createdAt = message.receivedAt,
-                // Use canonical source ID (thread key) to deduplicate across forwards/replies
-                sourceUri = canonicalSourceId,
-                from = message.from,
-                subject = message.subject,
-                timestamp = message.receivedAt.toString(),
-                parentRef = message.messageId,
-                chunkId = chunkIndex,
-                chunkOf = totalChunks,
-            )
-
-        return ragIndexingService
-            .indexDocument(document, ModelTypeEnum.EMBEDDING_TEXT)
-            .getOrThrow()
-            .vectorStoreId
-    }
 }

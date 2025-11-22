@@ -4,16 +4,14 @@ import com.jervis.domain.MessageChannelEnum
 import com.jervis.domain.confluence.ConversationCategoryEnum
 import com.jervis.domain.confluence.PriorityEnum
 import com.jervis.domain.confluence.ThreadStatusEnum
-import com.jervis.domain.sender.ActionItem
 import com.jervis.domain.sender.ChannelMapping
 import com.jervis.domain.sender.ConversationThread
 import com.jervis.mapper.toDomain
 import com.jervis.mapper.toEntity
-import com.jervis.repository.mongo.ConversationThreadMongoRepository
+import com.jervis.repository.ConversationThreadMongoRepository
 import com.jervis.service.listener.email.imap.ImapMessage
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -34,15 +32,6 @@ class ConversationThreadService(
         projectId: ObjectId?,
     ): ConversationThread? =
         repository.findByThreadIdAndClientIdAndProjectId(threadId = threadId, clientId = clientId, projectId = projectId)?.toDomain()
-
-    fun findBySenderProfileId(
-        senderProfileId: ObjectId,
-        limit: Int = 10,
-    ): Flow<ConversationThread> =
-        repository
-            .findBySenderProfileIdsContaining(senderProfileId)
-            .take(limit)
-            .map { it.toDomain() }
 
     fun findByClientAndProject(
         clientId: ObjectId,
@@ -133,81 +122,12 @@ class ConversationThreadService(
         }
     }
 
-    suspend fun addMessageToThread(
-        thread: ConversationThread,
-        messageId: String,
-        senderProfileId: ObjectId,
-    ): ConversationThread {
-        if (thread.messageIds.contains(messageId)) {
-            return thread
-        }
-
-        val updatedSenderIds =
-            if (thread.senderProfileIds.contains(senderProfileId)) {
-                thread.senderProfileIds
-            } else {
-                thread.senderProfileIds + senderProfileId
-            }
-
-        val updated =
-            thread.copy(
-                messageIds = thread.messageIds + messageId,
-                messageCount = thread.messageCount + 1,
-                lastMessageAt = Instant.now(),
-                senderProfileIds = updatedSenderIds,
-            )
-
-        val entity = updated.toEntity()
-        val saved = repository.save(entity)
-        return saved.toDomain()
-    }
-
-    suspend fun updateSummary(
-        threadId: ObjectId,
-        summary: String,
-        keyPoints: List<String>,
-        requiresResponse: Boolean,
-    ): ConversationThread? {
-        val thread = findById(threadId) ?: return null
-        val updated =
-            thread.copy(
-                summary = summary,
-                keyPoints = keyPoints,
-                requiresResponse = requiresResponse,
-                lastSummaryUpdate = Instant.now(),
-            )
-        val entity = updated.toEntity()
-        val saved = repository.save(entity)
-        return saved.toDomain()
-    }
-
     suspend fun updateStatus(
         threadId: ObjectId,
         status: ThreadStatusEnum,
     ): ConversationThread? {
         val thread = findById(threadId) ?: return null
         val updated = thread.copy(status = status)
-        val entity = updated.toEntity()
-        val saved = repository.save(entity)
-        return saved.toDomain()
-    }
-
-    suspend fun addActionItem(
-        threadId: ObjectId,
-        description: String,
-        assignedTo: String?,
-        deadline: Instant?,
-    ): ConversationThread? {
-        val thread = findById(threadId) ?: return null
-        val newAction =
-            ActionItem(
-                description = description,
-                assignedTo = assignedTo,
-                deadline = deadline,
-                completed = false,
-                createdAt = Instant.now(),
-            )
-        val updated = thread.copy(actionItems = thread.actionItems + newAction)
         val entity = updated.toEntity()
         val saved = repository.save(entity)
         return saved.toDomain()
@@ -225,14 +145,6 @@ class ConversationThreadService(
         val entity = updated.toEntity()
         val saved = repository.save(entity)
         return saved.toDomain()
-    }
-
-    suspend fun getActiveThreadsRequiringResponse(): List<ConversationThread> {
-        val now = Instant.now()
-        return repository
-            .findByRequiresResponseTrueAndResponseDeadlineBefore(now)
-            .map { it.toDomain() }
-            .toList()
     }
 
     private fun extractThreadId(email: ImapMessage): String {

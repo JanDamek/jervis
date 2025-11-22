@@ -1,8 +1,7 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
-import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -24,44 +23,49 @@ import java.time.format.DateTimeParseException
 @Service
 class ScheduleTaskTool(
     private val taskManagementService: TaskManagementService,
-    private val llmGateway: LlmGateway,
     override val promptRepository: PromptRepository,
-) : McpTool {
+) : McpTool<ScheduleTaskTool.ScheduleParams> {
     companion object {
         private val logger = KotlinLogging.logger {}
         private val dateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
     }
 
-    override val name: PromptTypeEnum = PromptTypeEnum.SYSTEM_SCHEDULE_TASK_TOOL
+    override val name = ToolTypeEnum.SYSTEM_SCHEDULE_TASK_TOOL
+    override val descriptionObject =
+        ScheduleParams(
+            content = "Perform data backup",
+            projectId = null,
+            scheduledDateTime = "tomorrow",
+            taskName = "Daily Data Backup",
+            cronExpression = null,
+            action = "schedule",
+            taskId = null,
+            correlationId = null,
+        )
 
     @Serializable
     data class ScheduleParams(
-        val taskInstruction: String = "",
+        val content: String = "",
         val projectId: String? = null,
         val scheduledDateTime: String? = null,
         val taskName: String? = null,
-        val priority: Int = 0,
-        val maxRetries: Int = 3,
-        val taskParameters: Map<String, String> = emptyMap(),
+        val cronExpression: String? = null,
         val action: String = "schedule", // schedule, cancel
         val taskId: String? = null,
+        val correlationId: String? = null,
     )
 
     override suspend fun execute(
         plan: Plan,
-        taskDescription: String,
-        stepContext: String,
+        request: ScheduleParams,
     ): ToolResult =
         try {
-            logger.info { "Executing scheduler management with description: $taskDescription" }
+            logger.info { "Executing scheduler management with description: $request" }
 
-            val params = parseTaskDescription(taskDescription, plan, stepContext)
-            logger.debug { "Parsed schedule parameters: $params" }
-
-            when (params.action) {
-                "cancel" -> handleCancelTask(params)
-                "schedule" -> handleScheduleTask(params, plan)
-                else -> ToolResult.error("Unknown action: ${params.action}")
+            when (request.action) {
+                "cancel" -> handleCancelTask(request)
+                "schedule" -> handleScheduleTask(request, plan)
+                else -> ToolResult.error("Unknown action: ${request.action}")
             }
         } catch (e: Exception) {
             logger.error(e) { "Error managing scheduled tasks" }
@@ -80,7 +84,7 @@ class ScheduleTaskTool(
             } else {
                 ToolResult.error("Failed to cancel task with ID: $taskId (task not found or not cancellable)")
             }
-        } catch (e: IllegalArgumentException) {
+        } catch (_: IllegalArgumentException) {
             ToolResult.error("Invalid task ID format: $taskId")
         }
     }
@@ -94,29 +98,25 @@ class ScheduleTaskTool(
                 if (params.projectId != null) {
                     try {
                         ObjectId(params.projectId)
-                    } catch (e: IllegalArgumentException) {
+                    } catch (_: IllegalArgumentException) {
                         return ToolResult.error("Invalid project ID format: ${params.projectId}")
                     }
                 } else {
-                    plan.projectDocument!!.id
+                    plan.projectDocument?.id
                 }
 
-            val scheduledTime =
-                parseScheduledTime(params.scheduledDateTime)
-                    ?: return ToolResult.error("Invalid or missing scheduled time: ${params.scheduledDateTime}")
-
-            val taskName = params.taskName ?: generateTaskName(params.taskInstruction, plan.projectDocument?.name)
+            val scheduledTime = parseScheduledTime(params.scheduledDateTime)
+            val taskName = params.taskName ?: generateTaskName(params.content, plan.projectDocument?.name)
 
             val scheduledTask =
                 taskManagementService.scheduleTask(
+                    clientId = plan.clientDocument.id,
                     projectId = projectId,
-                    taskInstruction = params.taskInstruction,
+                    content = params.content,
                     taskName = taskName,
                     scheduledAt = scheduledTime,
-                    taskParameters = params.taskParameters,
-                    priority = params.priority,
-                    maxRetries = params.maxRetries,
-                    createdBy = "mcp-tool",
+                    cronExpression = params.cronExpression,
+                    correlationId = params.correlationId,
                 )
 
             val output =
@@ -125,31 +125,18 @@ class ScheduleTaskTool(
                     appendLine()
                     appendLine("Task ID: ${scheduledTask.id}")
                     appendLine("Task Name: ${scheduledTask.taskName}")
-                    appendLine("Task Instruction: ${scheduledTask.taskInstruction}")
-                    appendLine("Project ID: ${scheduledTask.projectId}")
+                    appendLine("Content: ${scheduledTask.content}")
+                    appendLine("Client ID: ${scheduledTask.clientId}")
+                    appendLine("Project ID: ${scheduledTask.projectId ?: "N/A"}")
                     appendLine(
                         "Scheduled Time: ${
                             scheduledTask.scheduledAt.atZone(ZoneId.systemDefault())
                                 .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
                         }",
                     )
-                    appendLine("Priority: ${scheduledTask.priority}")
-                    appendLine("Max Retries: ${scheduledTask.maxRetries}")
-
-                    if (scheduledTask.taskParameters.isNotEmpty()) {
-                        appendLine("Parameters:")
-                        scheduledTask.taskParameters.forEach { (key: String, value: String) ->
-                            appendLine("  $key: $value")
-                        }
+                    if (scheduledTask.cronExpression != null) {
+                        appendLine("Cron Expression: ${scheduledTask.cronExpression}")
                     }
-
-                    appendLine("Status: ${scheduledTask.status}")
-                    appendLine(
-                        "Created: ${
-                            scheduledTask.createdAt.atZone(ZoneId.systemDefault())
-                                .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
-                        }",
-                    )
                 }
 
             return ToolResult.ok(output)
@@ -223,7 +210,7 @@ class ScheduleTaskTool(
                         )
                     }
                 } else {
-                    // Try full datetime format
+                    // Try a full datetime format
                     try {
                         LocalDateTime.parse(timeStr, dateTimeFormatter).atZone(ZoneId.systemDefault()).toInstant()
                     } catch (e: DateTimeParseException) {
@@ -236,7 +223,7 @@ class ScheduleTaskTool(
             }
 
             timeStr.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) -> {
-                // Date only format - default to 9 AM
+                // Date-only format - default to 9 AM
                 try {
                     LocalDateTime
                         .parse("$timeStr 09:00", DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
@@ -257,41 +244,15 @@ class ScheduleTaskTool(
     }
 
     private fun generateTaskName(
-        taskInstruction: String,
+        content: String,
         projectName: String?,
     ): String {
-        // Generate a concise task name from the instruction, limited to 100 characters
-        val baseInstruction = taskInstruction.take(60).trim()
-        return "$baseInstruction for $projectName".take(100)
-    }
-
-    private suspend fun parseTaskDescription(
-        taskDescription: String,
-        plan: Plan,
-        stepContext: String = "",
-    ): ScheduleParams {
-        val mappingValues =
-            mapOf(
-                "projectName" to (plan.projectDocument?.name ?: ""),
-                "clientDescription" to (
-                    plan.projectDocument?.description
-                        ?: "Development team working on ${plan.projectDocument?.name}"
-                ),
-            )
-
-        return llmGateway
-            .callLlm(
-                type = PromptTypeEnum.SYSTEM_SCHEDULE_TASK_TOOL,
-                responseSchema = ScheduleParams(),
-                quick = plan.quick,
-                mappingValue =
-                    mappingValues +
-                        mapOf(
-                            "taskDescription" to taskDescription,
-                            "stepContext" to stepContext,
-                        ),
-                correlationId = plan.correlationId,
-                backgroundMode = plan.backgroundMode,
-            ).result
+        // Generate a concise task name from the content, limited to 100 characters
+        val baseContent = content.take(60).trim()
+        return if (projectName != null) {
+            "$baseContent for $projectName".take(100)
+        } else {
+            baseContent.take(100)
+        }
     }
 }

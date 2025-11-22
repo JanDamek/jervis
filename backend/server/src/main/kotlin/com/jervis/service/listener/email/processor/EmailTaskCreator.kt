@@ -38,9 +38,9 @@ class EmailTaskCreator(
                 clientId = clientId,
             )
 
-            logger.info { "Created pending task for email ${message.messageId} with ${combinedContent.length} chars" }
+            logger.info { "Created pending task for email from=${message.from} subject=${message.subject} with ${combinedContent.length} chars" }
         }.onFailure { e ->
-            logger.error(e) { "Failed to create pending task for email ${message.messageId}" }
+            logger.error(e) { "Failed to create pending task for email from=${message.from} subject=${message.subject}" }
         }
     }
 

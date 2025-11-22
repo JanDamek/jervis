@@ -1,0 +1,243 @@
+# ═══════════════════════════════════════════════════════════════════════
+# PENDING TASK GOALS - Task-specific instructions for agent
+# ═══════════════════════════════════════════════════════════════════════
+#
+# RULES NAMING CONVENTION:
+# Agent has freedom to name rules consistently and logically for future searchability.
+# Examples: "kotlin_naming_convention", "repository_base_class", "api_versioning_v1"
+# Agent should use snake_case, be descriptive, and maintain consistency across similar rules.
+#
+# ═══════════════════════════════════════════════════════════════════════
+
+pendingTaskGoals:
+  EMAIL_PROCESSING: |
+    Analyze email that passed pre-qualification. Determine actions.
+
+    LINKING STRATEGY (use knowledge_search to discover context):
+    - Search for mentioned Jira issues (by issue keys like PROJ-123, or topics)
+    - Search for related commits (by features/bugs discussed in email)
+    - Search for related Confluence docs (by topics, technical terms)
+    - Search for related user requirements (use requirement_query_user with keywords)
+    - Connect email to broader CLIENT/PROJECT context
+
+    TASKS:
+    1. Apply LINKING STRATEGY - search RAG for all connections
+    2. Check user requirements match → requirement_query_user
+    3. Extract FUTURE events/deadlines → system_schedule_task
+    4. Identify action items → task_create_user
+    5. Store valuable info with discovered links → knowledge_store
+
+    RULES:
+    - Email already in RAG (don't search again)
+    - ONLY schedule FUTURE events (current date: {currentDate})
+    - Old events → ignore
+    - When storing knowledge, include discovered relationships to code/Jira/docs
+
+    COMPLETION: Return empty plan [] if routine/spam.
+
+  JIRA_PROCESSING: |
+    Analyze Jira issue assigned to you that passed pre-qualification.
+
+    LINKING STRATEGY (use knowledge_search to discover context):
+    - Search for mentioned classes/files/modules in code (by names in issue description)
+    - Search for related commits (by issue key in commit messages, or by changed files)
+    - Search for related emails (by issue key, stakeholders, or topics)
+    - Search for related Confluence docs (by feature name, component, or technical area)
+    - Search for related user requirements (topics matching issue)
+    - Connect issue to broader CLIENT/PROJECT context
+
+    TASKS:
+    1. Apply LINKING STRATEGY - search RAG for all connections
+    2. Determine if response/action needed
+    3. Create user task if action required → task_create_user
+    4. Store important decisions with discovered links → knowledge_store
+
+    COMPLETION: Return empty plan [] if informational only.
+
+  AGENT_ANALYSIS: |
+    Agent-created task for deeper investigation. Agent discovered something requiring focused analysis.
+    Task bypassed pre-qualification - goes directly to GPU.
+
+    DEPENDENCY DISCOVERY (comprehensive linking):
+    When analyzing, search RAG to discover ALL connections:
+    - Related code: classes, files, modules using similar patterns
+    - Related Jira: issues mentioning same components/features
+    - Related commits: changes to same areas
+    - Related emails: discussions about same topics
+    - Related docs: Confluence pages covering same areas
+    - Related requirements: user wishes matching discovered functionality
+    - Related scheduled tasks: planned work on same components
+
+    TASKS:
+    1. Execute requested analysis (instructions in task content)
+    2. Apply DEPENDENCY DISCOVERY - exhaustively search RAG for all connections
+    3. Identify rules/guidelines if discovered → store as RULEs with consistent naming
+    4. Create user tasks if user action needed → task_create_user
+    5. Store findings as memories → knowledge_store
+    6. If more investigation needed, create another AGENT_ANALYSIS pending task
+
+    COMPLETION: Return empty plan [] when investigation complete.
+
+  SCHEDULED_TASK: |
+    Task scheduled for specific time/date. Dispatched 10 minutes before scheduled time.
+    Task bypassed pre-qualification - goes directly to GPU.
+
+    TIME CONTEXT: This task has a deadline! Consider time constraints when planning.
+    - Task scheduled for specific time (in task content or metadata)
+    - You have ~10 minutes lead time to complete before deadline
+    - Prioritize time-sensitive actions (emails, calls, reminders, preparations)
+
+    TASKS:
+    1. Execute scheduled action (instructions in task content)
+    2. If communication task (email, call, meeting prep) → execute immediately
+    3. If reminder → create user task with original deadline
+    4. If maintenance/system task → execute and verify
+    5. Store execution results → knowledge_store
+    6. Create user task if user confirmation needed → task_create_user
+
+    EXAMPLES:
+    - "Send status report email to client" → execute now
+    - "Remind about meeting at 14:00" → create user task with 14:00 due time
+    - "Call John about contract" → create urgent user task
+    - "Run weekly database backup" → execute system command
+
+    COMPLETION: Return empty plan [] when scheduled action complete.
+
+  COMMIT_ANALYSIS: |
+    Analyze Git commit that passed pre-qualification.
+
+    LINKING STRATEGY:
+    - Search RAG for related Jira issues (by commit message keywords, issue keys)
+    - Search for related requirements or user tasks
+    - Connect commit to broader project context
+
+    RULES DISCOVERY (from commit message and changes):
+    - Look for: new patterns introduced, refactoring decisions, architecture changes
+    - Examples: "Migrated to new pattern", "Introduced sealed classes", "Changed naming convention"
+    - Patterns found → store as RULE via knowledge_store (agent decides consistent naming)
+
+    TASKS:
+    1. Identify bugs, gaps, requirement links
+    2. Use knowledge_search for file descriptions (don't read source directly)
+    3. Search RAG to link commit to: Jira issues, requirements, related commits
+    4. Identify new coding patterns/guidelines → store as RULEs
+    5. Store insights → knowledge_store as MEMORY
+    6. Create user tasks for issues → task_create_user
+
+    LIMIT: Only analyze files in THIS commit.
+    COMPLETION: Return empty plan [] if routine (formatting/docs).
+
+  FILE_STRUCTURE_ANALYSIS: |
+    Analyze source file and create Czech description for RAG.
+
+    RULES DISCOVERY (from code comments and patterns):
+    - Look for: coding guidelines in comments, naming patterns, architecture decisions
+    - Examples: "// Convention: all repos extend BaseRepository", "// Use sealed class for states"
+    - Guidelines found → store as RULE via knowledge_store (agent decides consistent naming)
+    - Agent picks searchable rule names (e.g., "repository_base_class", "state_sealed_class_pattern")
+
+    OUTPUT FORMAT:
+    ---
+    CLASS: <className>
+    PACKAGE: <packageName>
+    LANGUAGE: <language>
+
+    DESCRIPTION (in Czech):
+    - Purpose: What problem does this solve?
+    - Key methods: Important methods and roles
+    - Dependencies: Used classes
+    - Architecture role: Service/Entity/Controller/etc
+    - Guidelines discovered: <if any coding guidelines found in comments>
+    ---
+
+    Analysis auto-stored in RAG by FileDescriptionProcessor.
+    Guidelines stored separately as RULEs via knowledge_store.
+
+    SKIP: Return empty plan [] for test files, generated code, configs.
+
+  PROJECT_DESCRIPTION_UPDATE: |
+    Update project descriptions based on recent commits.
+
+    STRATEGY (<100 files):
+    1. Get file descriptions from RAG → knowledge_search(sourceType=FILE_DESCRIPTION)
+    2. Identify new modules/packages/technologies
+    3. Merge with existing descriptions
+
+    STRATEGY (1000+ files):
+    1. Get ALL class descriptions from RAG by package
+    2. Infer structure from aggregated descriptions
+    3. Generate complete descriptions
+
+    WARNING: Don't read source code! Use RAG descriptions only.
+
+  CONFLUENCE_PAGE_ANALYSIS: |
+    Analyze Confluence page that passed pre-qualification.
+
+    LINKING STRATEGY (use knowledge_search to connect everything):
+    1. Search for mentioned classes/files/modules in RAG
+    2. Search for related Jira issues by key or topic
+    3. Search for related commits by mentioned features/bugs
+    4. Search for related emails by stakeholders or topics
+
+    RULES DISCOVERY (identify coding guidelines and conventions):
+    - Look for: naming conventions, architecture patterns, code standards, deployment procedures
+    - Guidelines found → store as RULE via knowledge_store (agent decides consistent naming)
+    - Agent picks rule names that will be searchable later (e.g., "kotlin_naming_convention", "api_versioning_strategy")
+    - Examples: "Use sealed classes for state", "Repository naming: *MongoRepository", "API prefix /api/v1"
+
+    TASKS:
+    1. Classify page type (API docs, architecture, coding guidelines, meeting notes, requirements, troubleshooting, etc)
+    2. Extract key info (concepts, decisions, action items, dates, guidelines)
+    3. Search RAG to link page to: code (classes/files), Jira issues, commits, emails, other docs
+    4. Identify coding guidelines/conventions → store as RULEs with consistent naming
+    5. Extract action items → task_create_user
+    6. Store structured summary → knowledge_store as MEMORY
+
+    OUTPUT FORMAT for knowledge_store:
+    ---
+    PAGE_TYPE: <type>
+    MAIN_TOPIC: <topic>
+    KEY_CONCEPTS: [<list>]
+    RELATED_CODE: [<files/classes with relationship>]
+    RELATED_JIRA: [<issues with relevance>]
+    RELATED_COMMITS: [<commits with relevance>]
+    RELATED_EMAILS: [<emails with relevance>]
+    RELATED_DOCS: [<other Confluence pages>]
+    CODING_GUIDELINES: [<guidelines discovered, stored as separate RULEs>]
+    DECISIONS: [<technical decisions>]
+    ACTION_ITEMS: [<items, created as user tasks>]
+    PROJECT_CONTEXT: <Czech summary>
+    ---
+
+    COMPLETION: Return empty plan [] if trivial/empty.
+
+  LINK_REVIEW: |
+    Review link that failed automatic indexing.
+
+    TASKS:
+    1. Investigate link (access URL, check type, domain reputation)
+    2. Decide:
+       A) Add to safe patterns → ManageLinkSafetyTool
+       B) Index manually with special handling
+       C) Ignore/skip with documented reason
+    3. Create user task if manual decision needed → task_create_user
+    4. Document decision → knowledge_store
+
+    COMPLETION: Return empty plan [] if spam/irrelevant.
+
+  LINK_SAFETY_REVIEW: |
+    Review UNCERTAIN link and classify safety.
+
+    DECISION (choose ONE):
+    A) INDEX AS SAFE: Docs, articles, product pages → system_index_link
+    B) ADD UNSAFE PATTERN: Action links (unsubscribe, confirm, tokens) → system_manage_link_safety with SPECIFIC regex
+    C) SKIP: Irrelevant, untrusted, expired → document reason
+
+    PATTERN RULES (option B):
+    - Be SPECIFIC: /\/unsubscribe/ or /action=(accept|decline)/
+    - NEVER broad: /confirm/ or /email/
+    - Focus on path/query patterns
+
+    PHILOSOPHY: When uncertain → UNSAFE (better skip than trigger action).
+
+    COMPLETION: Return empty plan [] if spam/irrelevant.

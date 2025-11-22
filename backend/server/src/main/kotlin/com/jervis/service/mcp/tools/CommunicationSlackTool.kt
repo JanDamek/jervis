@@ -1,8 +1,7 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
-import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -12,50 +11,28 @@ import org.springframework.stereotype.Service
 
 @Service
 class CommunicationSlackTool(
-    private val llmGateway: LlmGateway,
     override val promptRepository: PromptRepository,
-) : McpTool {
+) : McpTool<CommunicationSlackTool.CommunicationSlackParams> {
     private val logger = KotlinLogging.logger {}
 
-    override val name: PromptTypeEnum = PromptTypeEnum.COMMUNICATION_SLACK_TOOL
+    override val name = ToolTypeEnum.COMMUNICATION_SLACK_TOOL
+
+    override val descriptionObject =
+        CommunicationSlackParams(
+            target = "#dev-team",
+            message = "Deployment finished successfully at 15:42 UTC.",
+        )
 
     @Serializable
     data class CommunicationSlackParams(
-        val target: String = "",
-        val message: String = "",
+        val target: String,
+        val message: String,
     )
-
-    private suspend fun parseTaskDescription(
-        taskDescription: String,
-        plan: Plan,
-        stepContext: String,
-    ): CommunicationSlackParams {
-        val llmResponse =
-            llmGateway.callLlm(
-                type = PromptTypeEnum.COMMUNICATION_SLACK_TOOL,
-                responseSchema = CommunicationSlackParams(),
-                correlationId = plan.correlationId,
-                quick = plan.quick,
-                mappingValue =
-                    mapOf(
-                        "taskDescription" to taskDescription,
-                        "stepContext" to stepContext,
-                    ),
-                backgroundMode = plan.backgroundMode,
-            )
-
-        return llmResponse.result
-    }
 
     override suspend fun execute(
         plan: Plan,
-        taskDescription: String,
-        stepContext: String,
-    ): ToolResult {
-        val parsed = parseTaskDescription(taskDescription, plan, stepContext)
-
-        return executeSlackOperation(parsed, plan)
-    }
+        request: CommunicationSlackParams,
+    ): ToolResult = executeSlackOperation(request, plan)
 
     private suspend fun executeSlackOperation(
         params: CommunicationSlackParams,

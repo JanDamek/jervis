@@ -5,7 +5,7 @@ import com.jervis.domain.plan.Plan
 import com.jervis.domain.plan.PlanStatusEnum
 import com.jervis.domain.plan.StepStatusEnum
 import com.jervis.dto.ChatResponse
-import com.jervis.service.gateway.core.LlmGateway
+import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.gateway.processing.dto.LlmResponseWrapper
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -36,7 +36,7 @@ class Finalizer(
             planId = plan.id.toHexString(),
             totalSteps = totalSteps,
             completedSteps = completedSteps,
-            failedSteps = failedSteps
+            failedSteps = failedSteps,
         )
 
         // If plan already has a final answer, use it; otherwise generate one via LLM
@@ -55,7 +55,6 @@ class Finalizer(
                         .callLlm(
                             type = PromptTypeEnum.FINALIZER_ANSWER,
                             responseSchema = LlmResponseWrapper(),
-                            quick = plan.quick,
                             mappingValue = mappingValues,
                             outputLanguage = userLang,
                             correlationId = plan.correlationId,
@@ -67,13 +66,15 @@ class Finalizer(
             }
 
         plan.status = PlanStatusEnum.FINALIZED
-        logger.info { "FINALIZER_COMPLETE: planId=${plan.id} status=FINALIZED answerLength=${finalAnswer.length} correlationId=${plan.correlationId}" }
+        logger.info {
+            "FINALIZER_COMPLETE: planId=${plan.id} status=FINALIZED answerLength=${finalAnswer.length} correlationId=${plan.correlationId}"
+        }
 
         // Publish debug event for finalizer complete
         debugService.finalizerComplete(
             correlationId = plan.correlationId,
             planId = plan.id.toHexString(),
-            answerLength = finalAnswer.length
+            answerLength = finalAnswer.length,
         )
 
         val title = plan.taskInstruction.ifBlank { plan.englishInstruction }
@@ -81,7 +82,7 @@ class Finalizer(
             buildList {
                 title.takeIf { it.isNotBlank() }?.let { add("Question: $it") }
                 add("Answer: $finalAnswer")
-        }.joinToString("\n")
+            }.joinToString("\n")
 
         return ChatResponse(
             message = responseMessage,

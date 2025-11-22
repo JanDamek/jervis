@@ -1,6 +1,5 @@
 package com.jervis.repository
 
-import com.jervis.domain.task.ScheduledTaskStatusEnum
 import com.jervis.dto.ChatRequestContextDto
 import com.jervis.dto.ChatRequestDto
 import com.jervis.dto.ScheduledTaskDto
@@ -19,18 +18,20 @@ class ScheduledTaskRepository(
      * Schedule a new task
      */
     suspend fun scheduleTask(
-        projectId: String,
+        clientId: String,
+        projectId: String?,
         taskName: String,
-        taskInstruction: String,
+        content: String,
         cronExpression: String?,
-        priority: Int,
+        correlationId: String?,
     ): ScheduledTaskDto =
         taskSchedulingService.scheduleTask(
+            clientId = clientId,
             projectId = projectId,
             taskName = taskName,
-            taskInstruction = taskInstruction,
+            content = content,
             cronExpression = cronExpression,
-            priority = priority,
+            correlationId = correlationId,
         )
 
     /**
@@ -49,9 +50,9 @@ class ScheduledTaskRepository(
     suspend fun listTasksForProject(projectId: String): List<ScheduledTaskDto> = taskSchedulingService.listTasksForProject(projectId)
 
     /**
-     * List pending tasks
+     * List tasks for a specific client
      */
-    suspend fun listPendingTasks(): List<ScheduledTaskDto> = taskSchedulingService.listPendingTasks()
+    suspend fun listTasksForClient(clientId: String): List<ScheduledTaskDto> = taskSchedulingService.listTasksForClient(clientId)
 
     /**
      * Cancel a task
@@ -61,29 +62,10 @@ class ScheduledTaskRepository(
     }
 
     /**
-     * Retry a failed task
-     */
-    suspend fun retryTask(taskId: String): ScheduledTaskDto = taskSchedulingService.retryTask(taskId)
-
-    /**
-     * Update task status
-     */
-    suspend fun updateTaskStatus(
-        taskId: String,
-        status: String,
-        errorMessage: String?,
-    ): ScheduledTaskDto = taskSchedulingService.updateTaskStatus(taskId, status, errorMessage)
-
-    /**
-     * Get tasks by status
-     */
-    fun getTasksByStatus(taskStatus: ScheduledTaskStatusEnum): List<ScheduledTaskDto> = taskSchedulingService.getTasksByStatus(taskStatus)
-
-    /**
      * Execute a task immediately through the agent orchestrator
      */
     suspend fun executeTaskNow(
-        taskInstruction: String,
+        content: String,
         clientId: String,
         projectId: String,
         wsSessionId: String? = null,
@@ -97,7 +79,7 @@ class ScheduledTaskRepository(
 
         agentOrchestratorService.handle(
             ChatRequestDto(
-                text = taskInstruction,
+                text = content,
                 context = chatRequestContextDto,
             ),
         )

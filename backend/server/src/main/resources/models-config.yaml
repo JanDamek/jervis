@@ -1,0 +1,129 @@
+providers:
+  OLLAMA:
+    endpoint: ollama.primary
+    executionMode: INTERRUPTIBLE
+    maxConcurrentRequests: 1
+
+  OLLAMA_QUALIFIER:
+    endpoint: ollama.qualifier
+    executionMode: NONBLOCKING
+    maxConcurrentRequests: 4
+
+  ANTHROPIC:
+    endpoint: anthropic
+    executionMode: NONBLOCKING
+    maxConcurrentRequests: 3
+
+  GOOGLE:
+    endpoint: google
+    executionMode: NONBLOCKING
+    maxConcurrentRequests: 3
+
+  OPENAI:
+    endpoint: openai
+    executionMode: NONBLOCKING
+    maxConcurrentRequests: 3
+
+  LM_STUDIO:
+    endpoint: lmStudio
+    executionMode: NONBLOCKING
+    maxConcurrentRequests: 25
+
+models:
+  EMBEDDING_TEXT:
+    - provider: LM_STUDIO
+      model: text-embedding-bge-m3
+      context-length: 4096
+      dimension: 1024
+      concurrency: 8
+
+  EMBEDDING_CODE:
+    - provider: LM_STUDIO
+      model: text-embedding-nomic-embed-code
+      context-length: 4096
+      dimension: 3584
+      concurrency: 4
+
+  PLANNER:
+    - provider: OLLAMA
+      model: qwen3:30b
+      contextLength: 32768
+    - provider: GOOGLE
+      model: gemini-2.5-pro
+      contextLength: 1048576
+
+  GENERIC_TEXT_MODEL:
+    - provider: OLLAMA
+      model: qwen3:30b
+      contextLength: 32768
+    - provider: GOOGLE
+      model: gemini-2.5-pro
+      contextLength: 1048576
+
+  HEAVY_TEXT_MODEL:
+    - provider: OLLAMA
+      model: qwen3:30b
+      contextLength: 32768
+    - provider: GOOGLE
+      model: gemini-2.5-pro
+      contextLength: 1048576
+
+  GENERIC_CODE_MODEL:
+    - provider: OLLAMA
+      model: qwen3-coder:30b
+      contextLength: 32768
+    - provider: GOOGLE
+      model: gemini-2.5-pro
+      contextLength: 1048576
+
+  HEAVY_CODE_MODEL:
+    - provider: OLLAMA
+      model: qwen3-coder:30b
+      contextLength: 32768
+    - provider: GOOGLE
+      model: gemini-2.5-pro
+      contextLength: 1048576
+
+  QUALIFIER:
+    - provider: OLLAMA_QUALIFIER
+      model: qwen2.5:1.5b-instruct-q4_K_M
+      contextLength: 32768
+      numPredict: 128
+
+  QUALIFIER_PENDING_TASKS:
+    - provider: OLLAMA_QUALIFIER
+      model: qwen2.5:3b-instruct-q4_K_M
+      contextLength: 32768
+      numPredict: 128
+
+  QUALIFIER_EMAIL_EVENTS:
+    - provider: OLLAMA_QUALIFIER
+      model: qwen2.5:3b-instruct-q4_K_M
+      contextLength: 32768
+      numPredict: 128
+
+endpoints:
+  openai:
+    apiKey: ${OPENAI_API_KEY:}
+    baseUrl: https://api.openai.com/v1/
+  anthropic:
+    apiKey: ${ANTHROPIC_API_KEY:}
+    baseUrl: https://api.anthropic.com/v1/
+  google:
+    apiKey: ${GOOGLE_API_KEY:}
+    baseUrl: https://generativelanguage.googleapis.com/v1beta/
+  ollama:
+    primary:
+      baseUrl: ${OLLAMA_BASE_URL:http://192.168.100.117:11434/}
+    qualifier:
+      baseUrl: ${OLLAMA_QUALIFIER_BASE_URL:http://192.168.100.117:11435/}
+  lmStudio:
+    baseUrl: ${LMSTUDIO_BASE_URL:http://192.168.101.249:1234/}
+  searxng:
+    baseUrl: ${SEARXNG_BASE_URL:http://192.168.100.117:30053/}
+  joern:
+    baseUrl: ${JOERN_BASE_URL:http://192.168.100.117:8082/}
+  tika:
+    baseUrl: ${TIKA_BASE_URL:http://192.168.100.117:8081/}
+  whisper:
+    baseUrl: ${WHISPER_BASE_URL:http://192.168.100.117:8083/}

@@ -1,9 +1,11 @@
 package com.jervis.configuration
 
+import com.jervis.configuration.properties.SecurityProperties
 import com.jervis.service.error.ErrorLogService
-import kotlinx.coroutines.reactor.mono
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import mu.KotlinLogging
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.annotation.Order
 import org.springframework.http.HttpStatus
 import org.springframework.http.server.reactive.ServerHttpRequest
@@ -26,25 +28,23 @@ import java.time.Instant
  * - /actuator/health, /actuator/info, /actuator/metrics - Health checks and monitoring
  */
 @Component
-@Order(-100) // Run before other filters
+@Order(-100)
 class SecurityHeaderFilter(
-    @Value("\${jervis.security.client-token}") private val expectedToken: String,
+    private val securityProperties: SecurityProperties,
     private val errorLogService: ErrorLogService,
 ) : WebFilter {
     private val logger = KotlinLogging.logger {}
+    private val scope = CoroutineScope(Dispatchers.Default)
 
     companion object {
         const val CLIENT_HEADER = "X-Jervis-Client"
-        
-        /**
-         * Paths that don't require security token.
-         * Used for health checks, monitoring, and other public endpoints.
-         */
-        private val WHITELISTED_PATHS = setOf(
-            "/actuator/health",
-            "/actuator/info",
-            "/actuator/metrics",
-        )
+
+        private val WHITELISTED_PATHS =
+            setOf(
+                "/actuator/health",
+                "/actuator/info",
+                "/actuator/metrics",
+            )
     }
 
     override fun filter(
@@ -53,31 +53,26 @@ class SecurityHeaderFilter(
     ): Mono<Void> {
         val request = exchange.request
         val path = request.uri.path
-        
-        // Skip security check for whitelisted paths
+
         if (WHITELISTED_PATHS.any { path.startsWith(it) }) {
             return chain.filter(exchange)
         }
-        
+
         val clientToken = request.headers.getFirst(CLIENT_HEADER)
 
-        // Missing or invalid token - potential attack
-        if (clientToken != expectedToken) {
-            return mono {
+        if (clientToken != securityProperties.clientToken) {
+            scope.launch {
                 logAttackAttempt(request, clientToken)
-                // Drop connection without response (act like port is closed)
-                null
-            }.then()
+            }
+            return Mono.empty()
         }
 
-        // Valid token - proceed with request processing
-        // Add response handling to catch 404 errors from our client
         return chain.filter(exchange).doOnError { error ->
-            mono {
-                if (exchange.response.statusCode == HttpStatus.NOT_FOUND) {
+            if (exchange.response.statusCode == HttpStatus.NOT_FOUND) {
+                scope.launch {
                     logClientError(request, error)
                 }
-            }.subscribe()
+            }
         }
     }
 
@@ -85,7 +80,6 @@ class SecurityHeaderFilter(
         request: ServerHttpRequest,
         providedToken: String?,
     ) {
-        // Extract platform and client IP from headers for debugging
         val platform = request.headers.getFirst("X-Jervis-Platform") ?: "Unknown"
         val clientIp = request.headers.getFirst("X-Jervis-Client-IP") ?: "Unknown"
 

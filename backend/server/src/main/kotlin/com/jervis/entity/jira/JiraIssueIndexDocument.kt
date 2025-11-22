@@ -33,8 +33,6 @@ data class JiraIssueIndexDocument(
     /** Indexing state: NEW, INDEXING, INDEXED, FAILED (similar to EmailMessageDocument) */
     @Indexed
     val state: String = "NEW",
-    /** Error message if state=FAILED */
-    val errorMessage: String? = null,
 
     // Incremental indexing: track what has been indexed
     /** Hash of summary + description to detect changes */
@@ -63,6 +61,4 @@ data class JiraIssueIndexDocument(
     val currentAssignee: String? = null,
     /** Issue summary/title for quick display */
     val issueSummary: String? = null,
-    /** Last indexing error message (null if successful) */
-    val lastIndexingError: String? = null,
 )

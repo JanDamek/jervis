@@ -1,18 +1,14 @@
 package com.jervis.service.link
 
-import com.jervis.entity.UnsafeLinkDocument
-import com.jervis.entity.UnsafeLinkPatternDocument
-import com.jervis.repository.mongo.IndexedLinkMongoRepository
-import com.jervis.repository.mongo.UnsafeLinkMongoRepository
-import com.jervis.repository.mongo.UnsafeLinkPatternMongoRepository
+import com.jervis.repository.IndexedLinkMongoRepository
+import com.jervis.repository.UnsafeLinkMongoRepository
+import com.jervis.repository.UnsafeLinkPatternMongoRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.mapNotNull
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.net.URI
-import java.time.Instant
 
 private val logger = KotlinLogging.logger {}
 
@@ -46,7 +42,9 @@ class LinkSafetyQualifier(
     private val unsafeLinkPatternRepository: UnsafeLinkPatternMongoRepository,
 ) {
     // In-memory cache for learned regex patterns (lazy loaded, performance optimization)
-    private val learnedPatternsCache = java.util.concurrent.atomic.AtomicReference<List<Regex>?>(null)
+    private val learnedPatternsCache =
+        java.util.concurrent.atomic
+            .AtomicReference<List<Regex>?>(null)
 
     init {
         // Cleanup bad patterns on startup
@@ -61,47 +59,48 @@ class LinkSafetyQualifier(
      * Remove overly broad or incorrect patterns that cause false positives.
      */
     private suspend fun cleanupBadPatterns() {
-        val badPatterns = listOf(
-            // Original bad patterns
-            "ms|kn|r|b",
-            "app",
-            "analytics|tracking|monitoring",
-            "analytics",
-            "tracking",
-            "monitoring",
-            "email",
-            // New bad patterns from LLM false positives
-            "bublinkov|f%C3%B3lie|r%C3%A1na|balen%C3%AD", // Czech words in Pixabay URLs
-            "appserve/mkt/p", // Google app serve (legitimate)
-            "confirm|verify|token|click|track", // Too broad
-            "confirm|verify|token|activate|click|track", // Too broad
-            "tracking|monitoring|analytics", // Duplicate, too broad
-            "platci", // Czech word for "payers" - legitimate VZP.cz
-            "tracking|monitoring|analytics/i", // Too broad with regex flag
-            "http:///", // Invalid pattern
-            "k=[a-f0-9]{32}", // Generic hash parameter - too broad
-            "kf", // Too short - matches alicdn.com paths
-            "chudy", // Czech name/word
-            "tracking|monitoring", // Too broad
-            "mapy", // Czech word for "maps" - blocks mapy.cz
-            "/mc/", // Marketing campaign - too broad
-            "/tracking|monitoring/", // Duplicate
-            "photo", // Too broad - blocks Google Photos
-            "det=", // Query parameter - too broad
-            "unsubscribe|opt-out/, /action=(accept|decline)/, /rsvp=(yes|no)", // Malformed
-            "/action=(yes|no)/", // Too broad
-            "/action=(accept|decline)|/unsubscribe|/opt-out|/verify|/activate|/click|/track|/rsvp=(yes|no)/",
-            "edit", // Too broad - blocks Google Docs edit URLs
-            "/action=(accept|decline)|/unsubscribe|/opt-out|/verify|/confirm|/track|/ms|/kn|/r|/b|/[a-z]/",
-            // Extremely broad pattern observed in logs causing false positives for static assets
-            // Example: matched legitimate image URLs under wp-content/uploads
-            "/action=(accept|decline)|/unsubscribe|/opt-out|/verify|/activate|/click|/track|/ms|/kn|/r|/b|/[a-z]/",
-            "action=(accept|decline)|/unsubscribe|/opt-out", // Missing leading /
-            "unsubscribe|action=(accept|decline)", // Too broad without context
-            "unsubscribe|action=(accept|decline)|rsvp=(yes|no)", // Too broad
-            "/cdn|app|unsubscribe|action=(accept|decline)/", // Too broad
-            "/action=(accept|decline)|/rsvp=(yes|no)/", // Too broad
-        )
+        val badPatterns =
+            listOf(
+                // Original bad patterns
+                "ms|kn|r|b",
+                "app",
+                "analytics|tracking|monitoring",
+                "analytics",
+                "tracking",
+                "monitoring",
+                "email",
+                // New bad patterns from LLM false positives
+                "bublinkov|f%C3%B3lie|r%C3%A1na|balen%C3%AD", // Czech words in Pixabay URLs
+                "appserve/mkt/p", // Google app serve (legitimate)
+                "confirm|verify|token|click|track", // Too broad
+                "confirm|verify|token|activate|click|track", // Too broad
+                "tracking|monitoring|analytics", // Duplicate, too broad
+                "platci", // Czech word for "payers" - legitimate VZP.cz
+                "tracking|monitoring|analytics/i", // Too broad with regex flag
+                "http:///", // Invalid pattern
+                "k=[a-f0-9]{32}", // Generic hash parameter - too broad
+                "kf", // Too short - matches alicdn.com paths
+                "chudy", // Czech name/word
+                "tracking|monitoring", // Too broad
+                "mapy", // Czech word for "maps" - blocks mapy.cz
+                "/mc/", // Marketing campaign - too broad
+                "/tracking|monitoring/", // Duplicate
+                "photo", // Too broad - blocks Google Photos
+                "det=", // Query parameter - too broad
+                "unsubscribe|opt-out/, /action=(accept|decline)/, /rsvp=(yes|no)", // Malformed
+                "/action=(yes|no)/", // Too broad
+                "/action=(accept|decline)|/unsubscribe|/opt-out|/verify|/activate|/click|/track|/rsvp=(yes|no)/",
+                "edit", // Too broad - blocks Google Docs edit URLs
+                "/action=(accept|decline)|/unsubscribe|/opt-out|/verify|/confirm|/track|/ms|/kn|/r|/b|/[a-z]/",
+                // Extremely broad pattern observed in logs causing false positives for static assets
+                // Example: matched legitimate image URLs under wp-content/uploads
+                "/action=(accept|decline)|/unsubscribe|/opt-out|/verify|/activate|/click|/track|/ms|/kn|/r|/b|/[a-z]/",
+                "action=(accept|decline)|/unsubscribe|/opt-out", // Missing leading /
+                "unsubscribe|action=(accept|decline)", // Too broad without context
+                "unsubscribe|action=(accept|decline)|rsvp=(yes|no)", // Too broad
+                "/cdn|app|unsubscribe|action=(accept|decline)/", // Too broad
+                "/action=(accept|decline)|/rsvp=(yes|no)/", // Too broad
+            )
 
         badPatterns.forEach { pattern ->
             try {
@@ -114,6 +113,7 @@ class LinkSafetyQualifier(
             }
         }
     }
+
     @kotlinx.serialization.Serializable
     @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
     data class SafetyResult(
@@ -632,7 +632,15 @@ class LinkSafetyQualifier(
             )
         }
 
-        val uri = URI.create(url)
+        val uri = try {
+            URI.create(url)
+        } catch (e: IllegalArgumentException) {
+            logger.debug { "Invalid URL syntax: $url - ${e.message}" }
+            return SafetyResult(
+                SafetyResult.Decision.UNSAFE,
+                "Invalid URL syntax (contains illegal characters): ${e.message}",
+            )
+        }
         val normalizedUrl = url.lowercase()
         val domain = uri.host?.lowercase() ?: ""
         val path = uri.path?.lowercase() ?: ""
@@ -734,7 +742,6 @@ class LinkSafetyQualifier(
             )
         }
     }
-
 
     /**
      * Batch qualify multiple links.

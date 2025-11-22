@@ -1,11 +1,8 @@
 package com.jervis.service.task
 
-import com.jervis.domain.task.TaskPriorityEnum
-import com.jervis.domain.task.TaskSourceType
-import com.jervis.domain.task.TaskStatusEnum
 import com.jervis.domain.task.UserTask
 import com.jervis.entity.UserTaskDocument
-import com.jervis.repository.mongo.UserTaskMongoRepository
+import com.jervis.repository.UserTaskMongoRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import mu.KotlinLogging
@@ -32,6 +29,7 @@ class UserTaskService(
         sourceType: TaskSourceType,
         sourceUri: String? = null,
         metadata: Map<String, String> = emptyMap(),
+        correlationId: String? = null,
     ): UserTask {
         if (sourceUri != null) {
             val existing =
@@ -58,6 +56,7 @@ class UserTaskService(
                 sourceType = sourceType,
                 sourceUri = sourceUri,
                 metadata = metadata,
+                correlationId = correlationId,
             )
 
         val document = UserTaskDocument.fromDomain(task)
@@ -74,8 +73,7 @@ class UserTaskService(
         return domain
     }
 
-    suspend fun getTaskById(taskId: ObjectId): UserTask? =
-        userTaskRepository.findById(taskId)?.toDomain()
+    suspend fun getTaskById(taskId: ObjectId): UserTask? = userTaskRepository.findById(taskId)?.toDomain()
 
     fun findActiveTasksByClient(clientId: ObjectId): Flow<UserTask> =
         userTaskRepository

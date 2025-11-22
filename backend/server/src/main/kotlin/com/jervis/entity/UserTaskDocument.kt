@@ -1,9 +1,9 @@
 package com.jervis.entity
 
-import com.jervis.domain.task.TaskPriorityEnum
-import com.jervis.domain.task.TaskSourceType
-import com.jervis.domain.task.TaskStatusEnum
 import com.jervis.domain.task.UserTask
+import com.jervis.service.task.TaskPriorityEnum
+import com.jervis.service.task.TaskSourceType
+import com.jervis.service.task.TaskStatusEnum
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.Indexed

@@ -1,6 +1,7 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.plan.PlanStep
 import com.jervis.domain.plan.StepStatusEnum
@@ -21,35 +22,32 @@ import org.springframework.stereotype.Service
 @Service
 class ConsolidateStepsTool(
     override val promptRepository: PromptRepository,
-) : McpTool {
+) : McpTool<ConsolidateStepsTool.ConsolidateStepsParams> {
     companion object {
         private val logger = KotlinLogging.logger {}
-        private val json = Json { ignoreUnknownKeys = true }
     }
 
-    override val name: PromptTypeEnum = PromptTypeEnum.CONSOLIDATE_STEPS_TOOL
+    override val name = ToolTypeEnum.CONSOLIDATE_STEPS_TOOL
+
+    override val descriptionObject =
+        ConsolidateStepsParams(
+            stepRangeFrom = 0,
+            stepRangeTo = 2,
+            summaryText = "Summarize initial discovery and environment setup",
+        )
 
     @Serializable
     data class ConsolidateStepsParams(
-        val stepRangeFrom: Int = 0,
-        val stepRangeTo: Int = 0,
-        val summaryText: String = "",
+        val stepRangeFrom: Int,
+        val stepRangeTo: Int,
+        val summaryText: String,
     )
 
     override suspend fun execute(
         plan: Plan,
-        taskDescription: String,
-        stepContext: String,
+        request: ConsolidateStepsParams,
     ): ToolResult {
-        logger.info { "CONSOLIDATE_STEPS: Parsing consolidation request for plan ${plan.id}" }
-
-        val params =
-            try {
-                json.decodeFromString<ConsolidateStepsParams>(taskDescription)
-            } catch (e: Exception) {
-                logger.error(e) { "Failed to parse consolidation params" }
-                return ToolResult.error("Invalid parameters: ${e.message}")
-            }
+        val params = request
 
         // Validate parameters
         if (params.stepRangeFrom < 0 || params.stepRangeTo < params.stepRangeFrom) {
@@ -85,7 +83,7 @@ class ConsolidateStepsTool(
             PlanStep(
                 id = ObjectId.get(),
                 order = params.stepRangeFrom,
-                stepToolName = PromptTypeEnum.CONSOLIDATE_STEPS_TOOL,
+                stepToolName = ToolTypeEnum.CONSOLIDATE_STEPS_TOOL,
                 stepInstruction = "CONSOLIDATED: ${params.summaryText}",
                 toolResult = result,
                 status = StepStatusEnum.DONE,

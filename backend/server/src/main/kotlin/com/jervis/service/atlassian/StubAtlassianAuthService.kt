@@ -1,10 +1,11 @@
 package com.jervis.service.atlassian
 
+import com.jervis.domain.atlassian.AtlassianConnection
 import com.jervis.domain.jira.JiraAccountId
 import com.jervis.domain.jira.JiraBoardId
-import com.jervis.domain.atlassian.AtlassianConnection
 import com.jervis.domain.jira.JiraProjectKey
 import com.jervis.domain.jira.JiraTenant
+import com.jervis.repository.AtlassianConnectionMongoRepository
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
@@ -14,7 +15,7 @@ import java.util.Base64
 
 @Service
 class StubAtlassianAuthService(
-    private val connectionRepo: com.jervis.repository.mongo.AtlassianConnectionMongoRepository,
+    private val connectionRepo: AtlassianConnectionMongoRepository,
     private val webClientBuilder: WebClient.Builder,
 ) : AtlassianAuthService {
     private val logger = KotlinLogging.logger {}

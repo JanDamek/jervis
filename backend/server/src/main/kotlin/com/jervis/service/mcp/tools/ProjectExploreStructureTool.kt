@@ -1,6 +1,6 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
@@ -25,83 +25,36 @@ import kotlin.io.path.name
 class ProjectExploreStructureTool(
     override val promptRepository: PromptRepository,
     private val directoryStructureService: DirectoryStructureService,
-) : McpTool {
+) : McpTool<ProjectExploreStructureTool.ProjectExploreStructureParams> {
     companion object {
         private val logger = KotlinLogging.logger {}
     }
 
-    override val name: PromptTypeEnum = PromptTypeEnum.PROJECT_EXPLORE_STRUCTURE_TOOL
+    override val name = ToolTypeEnum.PROJECT_EXPLORE_STRUCTURE_TOOL
 
     @Serializable
     data class ProjectExploreStructureParams(
-        val maxDepth: Int = 10,
-        val includeHidden: Boolean = false,
-        val path: String? = null,
+        val maxDepth: Int,
+        val includeHidden: Boolean,
+        val path: String?,
     )
+
+    override val descriptionObject =
+        ProjectExploreStructureParams(
+            maxDepth = 4,
+            includeHidden = false,
+            path = "/ or concrete package path",
+        )
 
     private data class FileTreeResult(
         val content: String,
         val itemCount: Int,
     )
 
-    private suspend fun parseTaskDescription(taskDescription: String): ProjectExploreStructureParams {
-        val text = taskDescription.trim()
-
-        val pathRegexes =
-            listOf(
-                Regex("""(?i)\b(path|dir(ectory)?|folder)\s*[:=]\s*["']?([^"'\n\r]+)["']?"""),
-                Regex("""(?i)\b(vypi[sš]|list|show)\b[^.\n\r]*\s+["']?([./\\][^"'\n\r]+|/[^\s"']+|[A-Za-z]:(\\|/)[^"'\n\r]+)["']?"""),
-            )
-        val pathFromKeyword =
-            pathRegexes
-                .asSequence()
-                .mapNotNull { re ->
-                    re.find(text)?.groups?.let { g ->
-                        // Skupina s cestou je poslední zachycená skupina v obou regexech
-                        (g[g.size - 1]?.value)?.trim()
-                    }
-                }.firstOrNull()
-
-        // 2) Hloubka
-        val depthRegex = Regex("""(?i)\b(max?depth|depth|hloubka|urove[nň]|úroveň)\s*[:=]\s*(\d{1,3})\b""")
-        val depth =
-            depthRegex
-                .find(text)
-                ?.groupValues
-                ?.getOrNull(2)
-                ?.toIntOrNull()
-                ?.coerceIn(1, 50) ?: 10
-
-        // 3) Skryté soubory
-        val includeHidden =
-            when {
-                Regex("(?i)(includeHidden|hidden\\s*[:=]\\s*true|včetně\\s+skrytých|vcetne\\s+skrytych|show\\s+hidden)").containsMatchIn(
-                    text,
-                ) -> true
-
-                Regex("(?i)(hidden\\s*[:=]\\s*false|bez\\s+skrytých|bez\\s+skrytych|hide\\s+hidden)").containsMatchIn(
-                    text,
-                ) -> false
-
-                else -> false
-            }
-
-        return ProjectExploreStructureParams(
-            maxDepth = depth,
-            includeHidden = includeHidden,
-            path = pathFromKeyword,
-        )
-    }
-
     override suspend fun execute(
         plan: Plan,
-        taskDescription: String,
-        stepContext: String,
-    ): ToolResult {
-        val parsed = parseTaskDescription(taskDescription)
-
-        return executeProjectExploreStructureOperation(parsed, plan)
-    }
+        request: ProjectExploreStructureParams,
+    ): ToolResult = executeProjectExploreStructureOperation(request, plan)
 
     private suspend fun executeProjectExploreStructureOperation(
         params: ProjectExploreStructureParams,

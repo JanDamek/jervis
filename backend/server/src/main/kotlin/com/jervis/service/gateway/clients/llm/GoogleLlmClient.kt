@@ -1,7 +1,7 @@
 package com.jervis.service.gateway.clients.llm
 
 import com.jervis.configuration.prompts.CreativityConfig
-import com.jervis.configuration.prompts.PromptConfigBase
+import com.jervis.configuration.prompts.PromptConfig
 import com.jervis.configuration.prompts.PromptsConfiguration
 import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.domain.gateway.StreamChunk
@@ -34,7 +34,7 @@ class GoogleLlmClient(
         systemPrompt: String?,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
-        prompt: PromptConfigBase,
+        prompt: PromptConfig,
         estimatedTokens: Int,
     ): LlmResponse {
         val responseBuilder = StringBuilder()
@@ -63,7 +63,7 @@ class GoogleLlmClient(
         systemPrompt: String?,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
-        prompt: PromptConfigBase,
+        prompt: PromptConfig,
         estimatedTokens: Int,
         debugSessionId: String?,
     ): Flow<StreamChunk> =
@@ -71,19 +71,22 @@ class GoogleLlmClient(
             logger.debug { "GOOGLE_LLM: Streaming call model=$model, tokens=$estimatedTokens" }
 
             val creativityConfig = getCreativityConfig(prompt)
-            val contents = buildList {
-                // Gemini v1 does not support systemInstruction; include system prompt as the first user message
-                systemPrompt?.takeUnless { it.isBlank() }?.let {
-                    add(GoogleContent(role = "user", parts = listOf(GooglePart(text = it))))
+            val contents =
+                buildList {
+                    // Gemini v1 does not support systemInstruction; include system prompt as the first user message
+                    systemPrompt?.takeUnless { it.isBlank() }?.let {
+                        add(GoogleContent(role = "user", parts = listOf(GooglePart(text = it))))
+                    }
+                    add(GoogleContent(role = "user", parts = listOf(GooglePart(text = userPrompt))))
                 }
-                add(GoogleContent(role = "user", parts = listOf(GooglePart(text = userPrompt))))
-            }
             val requestBody = buildRequestBody(contents, creativityConfig, config)
 
             // Safe debug: log shape only, not actual content
             runCatching {
                 val partsLengths = contents.map { c -> c.parts.sumOf { it.text?.length ?: 0 } }
-                logger.debug { "GOOGLE_LLM: payload shape contents=${contents.size}, partsLengths=$partsLengths, maxOut=${config.numPredict}" }
+                logger.debug {
+                    "GOOGLE_LLM: payload shape contents=${contents.size}, partsLengths=$partsLengths, maxOut=${config.numPredict}"
+                }
             }
 
             val responseFlow =
@@ -180,7 +183,7 @@ class GoogleLlmClient(
         )
     }
 
-    private fun getCreativityConfig(prompt: PromptConfigBase): CreativityConfig =
+    private fun getCreativityConfig(prompt: PromptConfig): CreativityConfig =
         promptsConfiguration.creativityLevels[prompt.modelParams.creativityLevel]
             ?: throw IllegalStateException("No creativity level configuration found for ${prompt.modelParams.creativityLevel}")
 
@@ -207,7 +210,6 @@ class GoogleLlmClient(
         val topP: Double,
         val maxOutputTokens: Int? = null,
     )
-
 
     @Serializable
     data class GoogleStreamResponse(

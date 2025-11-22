@@ -1,11 +1,11 @@
 package com.jervis.service.atlassian
 
+import com.jervis.domain.atlassian.AtlassianConnection
 import com.jervis.domain.jira.JiraAccountId
 import com.jervis.domain.jira.JiraBoardId
-import com.jervis.domain.atlassian.AtlassianConnection
 import com.jervis.domain.jira.JiraProjectKey
 import com.jervis.domain.jira.JiraTenant
-import com.jervis.repository.mongo.AtlassianConnectionMongoRepository
+import com.jervis.repository.AtlassianConnectionMongoRepository
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -79,8 +79,8 @@ class DefaultAtlassianSelectionService(
         if (projectKey == null || preferredUser == null) {
             logger.info {
                 "JIRA_SELECTION: Selections not configured for client=${clientId.toHexString()} " +
-                "(primaryProject=${projectKey?.value}, preferredUser=${preferredUser?.value}). " +
-                "Will use client-level indexing (all projects)."
+                    "(primaryProject=${projectKey?.value}, preferredUser=${preferredUser?.value}). " +
+                    "Will use client-level indexing (all projects)."
             }
             return null
         }

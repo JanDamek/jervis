@@ -18,10 +18,6 @@ import java.time.format.DateTimeFormatter
 @RequestMapping("/api/indexing/status")
 class IndexingStatusRestController(
     private val registry: IndexingStatusRegistry,
-    private val jiraPollingScheduler: com.jervis.service.jira.JiraPollingScheduler,
-    private val emailPollingScheduler: com.jervis.service.listener.email.EmailPollingScheduler,
-    private val gitPollingScheduler: com.jervis.service.listener.git.GitPollingScheduler,
-    private val confluencePollingScheduler: com.jervis.service.confluence.ConfluencePollingScheduler,
 ) : IIndexingStatusService {
     private val fmt: DateTimeFormatter = DateTimeFormatter.ISO_INSTANT
 
@@ -39,17 +35,8 @@ class IndexingStatusRestController(
                 val (indexedCount, newCount) = kotlin.runCatching { registry.getIndexedAndNewCounts(t.toolKey) }
                     .getOrDefault(0L to 0L)
 
-                // Compute idleReason if IDLE and has NEW items
-                val idleReason = if (t.state == IndexingStatusRegistry.State.IDLE && newCount > 0) {
-                    when (t.toolKey) {
-                        "email" -> emailPollingScheduler.getIdleReason(newCount)
-                        "jira" -> jiraPollingScheduler.getIdleReason(newCount)
-                        // Git and Confluence don't have getIdleReason yet
-                        else -> null
-                    }
-                } else {
-                    null
-                }
+                // idleReason removed - pollers run continuously via AbstractPeriodicPoller
+                val idleReason: String? = null
 
                 IndexingToolSummaryDto(
                     toolKey = t.toolKey,
@@ -79,16 +66,8 @@ class IndexingStatusRestController(
         val (indexedCount, newCount) = kotlin.runCatching { registry.getIndexedAndNewCounts(t.toolKey) }
             .getOrDefault(0L to 0L)
 
-        // Compute idleReason if IDLE and has NEW items
-        val idleReason = if (t.state == IndexingStatusRegistry.State.IDLE && newCount > 0) {
-            when (t.toolKey) {
-                "email" -> emailPollingScheduler.getIdleReason(newCount)
-                "jira" -> jiraPollingScheduler.getIdleReason(newCount)
-                else -> null
-            }
-        } else {
-            null
-        }
+        // idleReason removed - pollers run continuously via AbstractPeriodicPoller
+        val idleReason: String? = null
 
         val summary =
             IndexingToolSummaryDto(
@@ -123,22 +102,22 @@ class IndexingStatusRestController(
 
     @PostMapping("/jira/run")
     override suspend fun runJiraNow() {
-        // Delegate to scheduler to pick the oldest VALID connection automatically
-        jiraPollingScheduler.triggerNext()
+        // Pollers now run continuously - no manual trigger needed
+        // Users can monitor progress via indexing status
     }
 
     @PostMapping("/email/run")
     override suspend fun runEmailNow() {
-        emailPollingScheduler.triggerNext()
+        // Pollers now run continuously - no manual trigger needed
     }
 
     @PostMapping("/git/run")
     override suspend fun runGitNow() {
-        gitPollingScheduler.triggerNext()
+        // Pollers now run continuously - no manual trigger needed
     }
 
     @PostMapping("/confluence/run")
     override suspend fun runConfluenceNow() {
-        confluencePollingScheduler.triggerNext()
+        // Pollers now run continuously - no manual trigger needed
     }
 }

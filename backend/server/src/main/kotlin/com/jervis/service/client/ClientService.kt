@@ -1,7 +1,7 @@
 package com.jervis.service.client
 
 import com.jervis.entity.ClientDocument
-import com.jervis.repository.mongo.ClientMongoRepository
+import com.jervis.repository.ClientMongoRepository
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging

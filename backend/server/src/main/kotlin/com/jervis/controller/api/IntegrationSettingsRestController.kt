@@ -6,9 +6,9 @@ import com.jervis.dto.integration.IntegrationProjectStatusDto
 import com.jervis.dto.integration.ProjectIntegrationOverridesDto
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.ProjectDocument
-import com.jervis.repository.mongo.ClientMongoRepository
-import com.jervis.repository.mongo.AtlassianConnectionMongoRepository
-import com.jervis.repository.mongo.ProjectMongoRepository
+import com.jervis.repository.AtlassianConnectionMongoRepository
+import com.jervis.repository.ClientMongoRepository
+import com.jervis.repository.ProjectMongoRepository
 import com.jervis.service.IIntegrationSettingsService
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -27,7 +27,9 @@ class IntegrationSettingsRestController(
     private val logger = KotlinLogging.logger {}
 
     @GetMapping("/client-status")
-    override suspend fun getClientStatus(@RequestParam clientId: String): IntegrationClientStatusDto =
+    override suspend fun getClientStatus(
+        @RequestParam clientId: String,
+    ): IntegrationClientStatusDto =
         try {
             val client =
                 clientRepository.findById(ObjectId(clientId))
@@ -54,7 +56,9 @@ class IntegrationSettingsRestController(
         }
 
     @PutMapping("/client/confluence")
-    override suspend fun setClientConfluenceDefaults(@RequestBody request: ClientConfluenceDefaultsDto): IntegrationClientStatusDto {
+    override suspend fun setClientConfluenceDefaults(
+        @RequestBody request: ClientConfluenceDefaultsDto,
+    ): IntegrationClientStatusDto {
         val client =
             requireNotNull(clientRepository.findById(ObjectId(request.clientId))) { "Client not found: ${request.clientId}" }
         val updated: ClientDocument =
@@ -69,7 +73,9 @@ class IntegrationSettingsRestController(
     }
 
     @GetMapping("/project-status")
-    override suspend fun getProjectStatus(@RequestParam projectId: String): IntegrationProjectStatusDto {
+    override suspend fun getProjectStatus(
+        @RequestParam projectId: String,
+    ): IntegrationProjectStatusDto {
         val project =
             requireNotNull(projectRepository.findById(ObjectId(projectId))) { "Project not found: $projectId" }
         val client =
@@ -97,7 +103,9 @@ class IntegrationSettingsRestController(
     }
 
     @PutMapping("/project-overrides")
-    override suspend fun setProjectOverrides(@RequestBody request: ProjectIntegrationOverridesDto): IntegrationProjectStatusDto {
+    override suspend fun setProjectOverrides(
+        @RequestBody request: ProjectIntegrationOverridesDto,
+    ): IntegrationProjectStatusDto {
         val project =
             requireNotNull(projectRepository.findById(ObjectId(request.projectId))) { "Project not found: ${request.projectId}" }
         val currentOverrides = project.overrides

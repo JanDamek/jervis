@@ -1,15 +1,20 @@
 package com.jervis.service.confluence
 
 import com.jervis.domain.confluence.ConfluencePageContent
-import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.atlassian.AtlassianConnectionDocument
+import com.jervis.repository.AtlassianConnectionMongoRepository
 import com.jervis.service.confluence.processor.ConfluenceContentProcessor
 import com.jervis.service.confluence.processor.ConfluenceTaskCreator
 import com.jervis.service.confluence.state.ConfluencePageStateManager
 import com.jervis.service.link.LinkIndexingService
+import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import mu.KotlinLogging
+import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Service
 
 private val logger = KotlinLogging.logger {}
@@ -31,7 +36,9 @@ private val logger = KotlinLogging.logger {}
  * - Failed pages marked as FAILED, not retried infinitely
  */
 @Service
+@Order(10) // Start after WeaviateSchemaInitializer
 class ConfluenceContinuousIndexer(
+    private val connectionRepository: AtlassianConnectionMongoRepository,
     private val confluenceApiClient: ConfluenceApiClient,
     private val stateManager: ConfluencePageStateManager,
     private val contentProcessor: ConfluenceContentProcessor,
@@ -43,6 +50,28 @@ class ConfluenceContinuousIndexer(
 ) : com.jervis.service.indexing.AbstractContinuousIndexer<AtlassianConnectionDocument, com.jervis.entity.ConfluencePageDocument>() {
     override val indexerName: String = "ConfluenceContinuousIndexer"
     override val bufferSize: Int get() = flowProps.bufferSize
+
+    private val supervisor = SupervisorJob()
+    private val scope = CoroutineScope(Dispatchers.IO + supervisor)
+
+    @PostConstruct
+    fun start() {
+        logger.info { "Starting $indexerName for all Atlassian connections..." }
+        scope.launch {
+            // Start indexer for each Atlassian connection
+            val connections = connectionRepository.findAll().toList()
+            connections.forEach { connection ->
+                launch {
+                    logger.info { "Starting continuous indexing for connection: ${connection.id}" }
+                    startContinuousIndexing(connection)
+                }
+                // Also launch queue processor for cross-indexer URLs
+                launch {
+                    processQueuedUrls(connection)
+                }
+            }
+        }
+    }
 
     override fun newItemsFlow(connection: AtlassianConnectionDocument) = stateManager.continuousNewPages(connection.id)
 
@@ -94,8 +123,6 @@ class ConfluenceContinuousIndexer(
                         url = url,
                         projectId = item.projectId,
                         clientId = item.clientId,
-                        sourceType = RagSourceType.CONFLUENCE_LINK_CONTENT,
-                        parentRef = item.pageId,
                     )
                 }.onFailure { e ->
                     logger.warn { "Failed to index external link $url from Confluence page ${item.pageId}: ${e.message}" }
@@ -183,25 +210,25 @@ class ConfluenceContinuousIndexer(
                 logger.info { "Processing queued Confluence URL from ${pendingLink.sourceIndexer}: ${pendingLink.url}" }
 
                 // Try to index the URL via LinkIndexingService
-                val success = runCatching {
-                    linkIndexingService.indexUrl(
-                        url = pendingLink.url,
-                        projectId = pendingLink.projectId,
-                        clientId = pendingLink.clientId,
-                        sourceType = RagSourceType.CONFLUENCE_LINK_CONTENT,
-                        parentRef = pendingLink.sourceRef,
-                    )
-                    true
-                }.onFailure { e ->
-                    logger.warn { "Failed to index queued Confluence URL ${pendingLink.url}: ${e.message}" }
-                }.getOrDefault(false)
+                val success =
+                    runCatching {
+                        linkIndexingService.indexUrl(
+                            url = pendingLink.url,
+                            projectId = pendingLink.projectId,
+                            clientId = pendingLink.clientId,
+                        )
+                        true
+                    }.onFailure { e ->
+                        logger.warn { "Failed to index queued Confluence URL ${pendingLink.url}: ${e.message}" }
+                    }.getOrDefault(false)
 
                 if (!success) {
                     // Mark as failed, which will track retry count
-                    val shouldCreateTask = linkIndexingQueue.markFailed(
-                        url = pendingLink.url,
-                        reason = "Confluence indexer could not process URL",
-                    )
+                    val shouldCreateTask =
+                        linkIndexingQueue.markFailed(
+                            url = pendingLink.url,
+                            reason = "Confluence indexer could not process URL",
+                        )
 
                     if (shouldCreateTask) {
                         // Max retries exceeded, create user task for manual review

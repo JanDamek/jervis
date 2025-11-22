@@ -2,9 +2,8 @@ package com.jervis.service.mcp.tools
 
 import com.jervis.common.client.IJoernClient
 import com.jervis.common.dto.JoernQueryDto
-import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
-import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -16,45 +15,39 @@ import org.springframework.stereotype.Service
 
 @Service
 class CodeAnalyzeTool(
-    private val llmGateway: LlmGateway,
     private val joernClient: IJoernClient,
     private val directoryStructureService: DirectoryStructureService,
     override val promptRepository: PromptRepository,
-) : McpTool {
-    override val name: PromptTypeEnum = PromptTypeEnum.CODE_ANALYZE_TOOL
+) : McpTool<CodeAnalyzeTool.CodeAnalyzeParams> {
+    override val name = ToolTypeEnum.CODE_ANALYZE_TOOL
+    override val descriptionObject =
+        CodeAnalyzeParams(
+            analysisQuery = "Find all instances of SQL injection vulnerabilities.",
+            methodPattern = ".*Database.*",
+            maxResults = 50,
+            includeExternal = false,
+            targetLanguage = "auto",
+        )
+
+    @Serializable
+    data class Description(
+        val instruction: String,
+    )
 
     @Serializable
     data class CodeAnalyzeParams(
-        val analysisQuery: String = "",
-        val methodPattern: String = ".*",
-        val maxResults: Int = 100,
-        val includeExternal: Boolean = false,
-        val targetLanguage: String = "",
+        val analysisQuery: String,
+        val methodPattern: String,
+        val maxResults: Int,
+        val includeExternal: Boolean,
+        val targetLanguage: String,
     )
-
-    private suspend fun parseTaskDescription(
-        taskDescription: String,
-        plan: Plan,
-    ): CodeAnalyzeParams {
-        val llmResponse =
-            llmGateway.callLlm(
-                type = PromptTypeEnum.CODE_ANALYZE_TOOL,
-                responseSchema = CodeAnalyzeParams(),
-                correlationId = plan.correlationId,
-                quick = plan.quick,
-                mappingValue = mapOf("taskDescription" to taskDescription),
-                backgroundMode = plan.backgroundMode,
-            )
-        return llmResponse.result
-    }
 
     override suspend fun execute(
         plan: Plan,
-        taskDescription: String,
-        stepContext: String,
+        request: CodeAnalyzeParams,
     ): ToolResult =
         withContext(Dispatchers.IO) {
-            val params = parseTaskDescription(taskDescription, plan)
             val projectPath =
                 directoryStructureService.projectGitDir(
                     plan.clientDocument.id,
@@ -67,7 +60,7 @@ class CodeAnalyzeTool(
             }
 
             try {
-                val script = buildJoernQuery(params)
+                val script = buildJoernQuery(request)
                 val zipB64 = zipDirectoryBase64(projectPath)
                 val request = JoernQueryDto(query = script, projectZipBase64 = zipB64)
                 val resp = joernClient.run(request)
@@ -77,7 +70,6 @@ class CodeAnalyzeTool(
 
                 ToolResult.analysisResult(
                     toolName = "CODE_ANALYZE",
-                    analysisType = "Code Analysis: ${params.analysisQuery}",
                     count = 1,
                     unit = "project",
                     results = formatJoernOutput(resp.stdout),

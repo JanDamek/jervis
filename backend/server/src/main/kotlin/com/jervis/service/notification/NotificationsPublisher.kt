@@ -5,16 +5,17 @@ import com.jervis.domain.websocket.WebSocketChannelTypeEnum
 import com.jervis.service.notification.domain.PlanStatusChangeEvent
 import com.jervis.service.notification.domain.StepCompletionEvent
 import com.jervis.service.websocket.WebSocketSessionManager
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.bson.types.ObjectId
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
+import com.jervis.dto.events.AgentResponseEventDto as AgentResponseEventDtoD
 import com.jervis.dto.events.PlanStatusChangeEventDto as PlanStatusChangeEventDtoD
 import com.jervis.dto.events.StepCompletionEventDto as StepCompletionEventDtoD
-import com.jervis.dto.events.UserTaskCreatedEventDto as UserTaskCreatedEventDtoD
+import com.jervis.dto.events.UserDialogCloseEventDto as UserDialogCloseEventDtoD
+import com.jervis.dto.events.UserDialogRequestEventDto as UserDialogRequestEventDtoD
 import com.jervis.dto.events.UserTaskCancelledEventDto as UserTaskCancelledEventDtoD
-import com.jervis.dto.events.AgentResponseEventDto as AgentResponseEventDtoD
+import com.jervis.dto.events.UserTaskCreatedEventDto as UserTaskCreatedEventDtoD
 
 @Component
 class NotificationsPublisher(
@@ -89,6 +90,44 @@ class NotificationsPublisher(
                 contextId = contextId.toHexString(),
                 message = message,
                 status = "COMPLETED",
+                timestamp = timestamp,
+            )
+        sessionManager.broadcastToChannel(json.encodeToString(dto), WebSocketChannelTypeEnum.NOTIFICATIONS)
+    }
+
+    fun publishUserDialogRequest(
+        dialogId: String,
+        correlationId: String,
+        clientId: ObjectId,
+        projectId: ObjectId?,
+        question: String,
+        proposedAnswer: String?,
+        timestamp: String,
+    ) {
+        val dto =
+            UserDialogRequestEventDtoD(
+                dialogId = dialogId,
+                correlationId = correlationId,
+                clientId = clientId.toHexString(),
+                projectId = projectId?.toHexString(),
+                question = question,
+                proposedAnswer = proposedAnswer,
+                timestamp = timestamp,
+            )
+        sessionManager.broadcastToChannel(json.encodeToString(dto), WebSocketChannelTypeEnum.NOTIFICATIONS)
+    }
+
+    fun publishUserDialogClose(
+        dialogId: String,
+        correlationId: String,
+        reason: String,
+        timestamp: String,
+    ) {
+        val dto =
+            UserDialogCloseEventDtoD(
+                dialogId = dialogId,
+                correlationId = correlationId,
+                reason = reason,
                 timestamp = timestamp,
             )
         sessionManager.broadcastToChannel(json.encodeToString(dto), WebSocketChannelTypeEnum.NOTIFICATIONS)

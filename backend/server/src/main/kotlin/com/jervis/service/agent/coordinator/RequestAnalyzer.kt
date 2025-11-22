@@ -1,7 +1,7 @@
 package com.jervis.service.agent.coordinator
 
 import com.jervis.configuration.prompts.PromptTypeEnum
-import com.jervis.service.gateway.core.LlmGateway
+import com.jervis.service.gateway.LlmGateway
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -28,14 +28,12 @@ class RequestAnalyzer(
      * where the agent must deterministically resolve the task using a content-only policy.
      *
      * @param text User request or background task content
-     * @param quick Hint for LLM to prefer a faster path if available
      * @param backgroundMode If true, returns pass-through analysis without contacting LLM
      * @param goalPrompt Optional single prompt used for background tasks; mapped into a checklist when provided
      * @return Analysis result used by planner
      */
     suspend fun analyze(
         text: String,
-        quick: Boolean,
         backgroundMode: Boolean,
         goalPrompt: String? = null,
         correlationId: String,
@@ -51,7 +49,6 @@ class RequestAnalyzer(
                 .callLlm(
                     type = PromptTypeEnum.PLANNING_ANALYZE_QUESTION,
                     mappingValue = mapOf("userText" to text),
-                    quick = quick,
                     responseSchema = AnalysisResult(),
                     correlationId = correlationId,
                     backgroundMode = false,

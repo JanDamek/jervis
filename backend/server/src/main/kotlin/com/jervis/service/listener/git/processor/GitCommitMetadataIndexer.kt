@@ -1,13 +1,12 @@
 package com.jervis.service.listener.git.processor
 
-import com.jervis.domain.model.ModelTypeEnum
-import com.jervis.domain.rag.RagDocument
-import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.ProjectDocument
+import com.jervis.rag.DocumentToStore
+import com.jervis.rag.EmbeddingType
+import com.jervis.rag.KnowledgeService
+import com.jervis.rag.KnowledgeType
 import com.jervis.service.git.state.GitCommitInfo
 import com.jervis.service.git.state.GitCommitStateManager
-import com.jervis.service.rag.RagIndexingService
-import com.jervis.service.rag.VectorStoreIndexService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.withContext
@@ -39,9 +38,8 @@ import java.time.format.DateTimeFormatter
  */
 @Service
 class GitCommitMetadataIndexer(
-    private val ragIndexingService: RagIndexingService,
+    private val knowledgeService: KnowledgeService,
     private val stateManager: GitCommitStateManager,
-    private val vectorStoreIndexService: VectorStoreIndexService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -226,60 +224,22 @@ class GitCommitMetadataIndexer(
         commit: GitCommit,
     ): Boolean {
         try {
-            // Create plain text summary WITHOUT LLM
             val summary = createPlainTextSummary(commit)
 
-            val sourceId = "${commit.hash}-metadata"
-
-            // Check if content changed (skip if already indexed with the same content)
-            if (!vectorStoreIndexService.hasContentChangedForMonoRepo(
-                    RagSourceType.GIT_HISTORY,
-                    sourceId,
-                    clientId,
-                    monoRepoId,
-                    summary,
-                )
-            ) {
-                logger.debug { "Skipping mono-repo commit ${commit.hash} - content unchanged" }
-                return true
-            }
-
-            val ragDocument =
-                RagDocument(
-                    projectId = null, // No projectId for mono-repo commits
-                    ragSourceType = RagSourceType.GIT_HISTORY,
-                    text = summary,
+            val documentToStore =
+                DocumentToStore(
+                    documentId = "git:monorepo:$monoRepoId:commit:${commit.hash}",
+                    content = summary,
                     clientId = clientId,
-                    // Universal metadata
-                    from = commit.author,
-                    subject = commit.message.lines().firstOrNull() ?: "",
-                    timestamp = commit.date,
-                    parentRef = commit.hash,
-                    chunkId = 0,
-                    chunkOf = 1,
-                    branch = commit.branch,
+                    projectId = null,
+                    type = KnowledgeType.DOCUMENT,
+                    embeddingType = EmbeddingType.TEXT,
+                    title = commit.message.lines().firstOrNull() ?: "",
+                    location = "git:commit:${commit.hash}",
                 )
 
-            // Use RagIndexingService for embedding + storage
-            val result =
-                ragIndexingService
-                    .indexDocument(ragDocument, ModelTypeEnum.EMBEDDING_TEXT)
-                    .getOrThrow()
-
-            // Track in MongoDB with monoRepoId (projectId = null)
-            vectorStoreIndexService.trackIndexedForMonoRepo(
-                clientId = clientId,
-                monoRepoId = monoRepoId,
-                branch = commit.branch,
-                sourceType = RagSourceType.GIT_HISTORY,
-                sourceId = sourceId,
-                vectorStoreId = result.vectorStoreId,
-                vectorStoreName = "git-commit-${commit.hash.take(8)}",
-                content = summary,
-                filePath = null,
-                symbolName = "git-commit-${commit.hash.take(8)}",
-                commitHash = commit.hash,
-            )
+            knowledgeService
+                .store(com.jervis.rag.StoreRequest(listOf(documentToStore)))
 
             logger.debug { "Successfully indexed mono-repo git commit metadata: ${commit.hash}" }
             return true
@@ -345,59 +305,22 @@ class GitCommitMetadataIndexer(
         commit: GitCommit,
     ): Boolean {
         try {
-            // Create plain text summary WITHOUT LLM
             val summary = createPlainTextSummary(commit)
 
-            val sourceId = "${commit.hash}-metadata"
-
-            // Check if content changed (skip if already indexed with the same content)
-            if (!vectorStoreIndexService.hasContentChanged(
-                    RagSourceType.GIT_HISTORY,
-                    sourceId,
-                    project.id,
-                    summary,
-                )
-            ) {
-                logger.debug { "Skipping commit ${commit.hash} - content unchanged" }
-                return true
-            }
-
-            val ragDocument =
-                RagDocument(
-                    projectId = project.id,
-                    ragSourceType = RagSourceType.GIT_HISTORY,
-                    text = summary,
+            val documentToStore =
+                DocumentToStore(
+                    documentId = "git:${project.id.toHexString()}:commit:${commit.hash}",
+                    content = summary,
                     clientId = project.clientId,
-                    // Universal metadata
-                    from = commit.author,
-                    subject = commit.message.lines().firstOrNull() ?: "",
-                    timestamp = commit.date,
-                    parentRef = commit.hash,
-                    chunkId = 0,
-                    chunkOf = 1,
-                    branch = commit.branch,
+                    projectId = project.id,
+                    type = KnowledgeType.DOCUMENT,
+                    embeddingType = EmbeddingType.TEXT,
+                    title = commit.message.lines().firstOrNull() ?: "",
+                    location = "git:commit:${commit.hash}",
                 )
 
-            // Use RagIndexingService for embedding + storage
-            val result =
-                ragIndexingService
-                    .indexDocument(ragDocument, ModelTypeEnum.EMBEDDING_TEXT)
-                    .getOrThrow()
-
-            // Track in MongoDB what was indexed to Weaviate
-            vectorStoreIndexService.trackIndexed(
-                projectId = project.id,
-                clientId = project.clientId,
-                branch = commit.branch,
-                sourceType = RagSourceType.GIT_HISTORY,
-                sourceId = sourceId,
-                vectorStoreId = result.vectorStoreId,
-                vectorStoreName = "git-commit-${commit.hash.take(8)}",
-                content = summary,
-                filePath = null,
-                symbolName = "git-commit-${commit.hash.take(8)}",
-                commitHash = commit.hash,
-            )
+            knowledgeService
+                .store(com.jervis.rag.StoreRequest(listOf(documentToStore)))
 
             logger.debug { "Successfully indexed git commit metadata: ${commit.hash}" }
             return true
@@ -448,10 +371,11 @@ class GitCommitMetadataIndexer(
     /**
      * Fetch basic commit info from the Git log (hash, author, message, date).
      * Returns lightweight GitCommitInfo for state manager.
+     * PUBLIC for use by GitContinuousPoller.
      */
-    private suspend fun fetchCommitInfoFromGit(
+    suspend fun fetchCommitInfoFromGit(
         projectPath: Path,
-        maxCommits: Int,
+        maxCommits: Int = 1000,
     ): List<GitCommitInfo> =
         withContext(Dispatchers.IO) {
             try {

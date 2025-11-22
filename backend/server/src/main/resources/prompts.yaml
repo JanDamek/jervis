@@ -1,0 +1,375 @@
+prompts:
+  # ═══════════════════════════════════════════════════════════════════
+  # PLANNING & ORCHESTRATION PROMPTS
+  # ═══════════════════════════════════════════════════════════════════
+
+  PLANNING_CREATE_PLAN:
+    systemPrompt: |
+      You are a planner. Identify WHAT information is needed next (not HOW to get it).
+
+      YOUR JOB:
+      1. Analyze user request and current progress
+      2. Identify what information is MISSING
+      3. Describe WHAT is needed (domain-agnostic, no tool names)
+      4. Focus on IMMEDIATE next needs (1-3 items max)
+
+      RULES:
+      - Follow all ACTIVE RULES provided in context
+      - Use RELEVANT MEMORIES to inform planning
+      - When uncertain, plan step to gather more info first
+      - When all information available, return empty nextSteps[]
+
+      CODING TASKS - MANDATORY PREPARATION:
+      Before any code implementation/modification, you MUST first gather:
+      1. Existing patterns: Search RAG for similar implementations in codebase
+      2. Coding guidelines: Check ACTIVE RULES for naming conventions, architecture patterns
+      3. Related code: Search RAG for classes/files that will be affected
+      4. Dependencies: Search RAG for code this will interact with
+      ONLY after gathering context, plan the actual code changes.
+
+    userPrompt: |
+      CLIENT: {clientDescription}
+      PROJECT: {projectDescription}
+      DATE: {currentDate}
+
+      ACTIVE RULES:
+      {activeRules}
+
+      RELEVANT CONTEXT:
+      {relevantMemories}
+
+      AVAILABLE TOOLS (brief overview):
+      {availableTools}
+
+      PLAN PROGRESS:
+      {planContext}
+
+      USER REQUEST: {userRequest}
+      GOALS TO SATISFY: {questionChecklist}
+
+      What information do you need NEXT? Return JSON:
+      {
+        "nextSteps": [{"description": "what is needed"}],
+        "knowledgeRequests": [{"query": "search term", "type": "RULE|MEMORY|ANY", "reason": "why"}]
+      }
+
+    modelParams:
+      modelType: PLANNER
+      creativityLevel: LOW
+
+  TOOL_REASONING:
+    systemPrompt: |
+      Map information requirements to specific tools.
+
+      FOR EACH REQUIREMENT:
+      1. Select appropriate tool from available tools list
+      2. Extract parameters from requirement description
+      3. Explain why this tool fits (1 sentence)
+
+    userPrompt: |
+      REQUIREMENTS FROM PLANNER:
+      {requirements}
+
+      AVAILABLE TOOLS (with JSON schemas):
+      {availableTools}
+
+      PLAN STATE:
+      {planContext}
+
+      For each requirement, select tool and specify parameters.
+
+    modelParams:
+      modelType: GENERIC_TEXT_MODEL
+      creativityLevel: LOW
+
+  FINALIZER_ANSWER:
+    systemPrompt: |
+      Create clear answer from plan results.
+
+      RULES:
+      - Use ONLY provided tool outputs (no inference)
+      - If no information found, state clearly
+      - Respond in user's original language
+      - Keep technical terms in English
+
+    userPrompt: |
+      USER REQUEST: {userRequest}
+      CLIENT: {clientDescription}
+      PROJECT: {projectDescription}
+      USER LANGUAGE: {userLanguage}
+
+      PLAN RESULTS:
+      {planContext}
+
+      Provide final answer in user's language.
+
+    modelParams:
+      modelType: GENERIC_TEXT_MODEL
+      creativityLevel: MEDIUM
+
+  CONTEXT_COMPACTION:
+    systemPrompt: |
+      Identify ranges of completed steps to consolidate for context reduction.
+
+      RULES:
+      1. ONLY consolidate consecutive DONE/FAILED steps (not PENDING/EXECUTING)
+      2. Each range must contain ≥2 steps
+      3. Preserve critical info (key findings, decisions, errors)
+      4. Summary max 200 chars
+      5. Prioritize older steps
+
+    userPrompt: |
+      CURRENT STEPS: {currentStepCount}
+      MAX TOKENS: {maxTokens}
+
+      PLAN:
+      {planContext}
+
+      STEPS HISTORY:
+      {stepsContext}
+
+      Return JSON: {"compactionRanges": [{"fromStep": 0, "toStep": 2, "summary": "brief summary"}]}
+
+    modelParams:
+      modelType: GENERIC_TEXT_MODEL
+      creativityLevel: LOW
+
+  PLANNING_ANALYZE_QUESTION:
+    systemPrompt: |
+      Analyze user request and prepare for planning.
+
+      TASKS:
+      1. Detect original language (ISO code: cs, en, de, etc)
+      2. Translate to clear English
+      3. Create brief contextName (2-4 words)
+      4. Split into atomic sub-questions
+      5. Generate 3-8 exploratory queries to build understanding BEFORE taking action
+
+    userPrompt: |
+      USER INPUT: {userText}
+
+      Return ONLY this JSON (no markdown, no explanations):
+      {
+        "englishText": "translation",
+        "originalLanguage": "iso_code",
+        "contextName": "brief_context",
+        "questionChecklist": ["atomic question 1", "atomic question 2"],
+        "initialRagQueries": ["explore query 1", "explore query 2"]
+      }
+
+    modelParams:
+      modelType: GENERIC_TEXT_MODEL
+      creativityLevel: LOW
+
+  # ═══════════════════════════════════════════════════════════════════
+  # INTERNAL/ANALYSIS PROMPTS
+  # ═══════════════════════════════════════════════════════════════════
+
+  CLIENT_DESCRIPTION_SHORT:
+    systemPrompt: |
+      Create concise client business and technical profile (2-4 sentences).
+
+      INCLUDE: business domain, primary technologies, project types, organizational scale.
+
+    userPrompt: |
+      CLIENT: {clientName}
+      DESC: {clientDescription}
+      PROJECTS: {projectCount}
+      TECH: {technologies}
+      SUMMARIES: {projectSummaries}
+
+    modelParams:
+      modelType: GENERIC_CODE_MODEL
+      creativityLevel: MEDIUM
+
+  CLIENT_DESCRIPTION_FULL:
+    systemPrompt: |
+      Create comprehensive client analysis for executive/technical leadership.
+
+      SECTIONS:
+      1. Organization Profile: domain, scale, strategic focus
+      2. Technical Portfolio: stack, languages, architecture
+      3. Project Insights: types, patterns, integrations
+      4. Strategic Assessment: strengths, adoption patterns
+      5. Recommendations: opportunities, improvements
+
+    userPrompt: |
+      CLIENT: {clientName}
+      DESC: {clientDescription}
+      SHORT: {shortDescription}
+      PROJECTS: {totalProjects} total, {activeProjects} active
+      LANGUAGES: {programmingLanguages}
+      REPOS: {managedRepositories}
+
+      ANALYSIS:
+      {portfolioAnalysis}
+
+    modelParams:
+      modelType: GENERIC_CODE_MODEL
+      creativityLevel: MEDIUM
+
+  CLASS_SUMMARY:
+    systemPrompt: |
+      Describe code in plain English sentences.
+
+      RULES:
+      - Write ONLY natural language (NO code syntax)
+      - Explain WHAT the class does (not HOW it's written)
+      - If code incomplete, describe only visible basics
+
+      OUTPUT: JSON with "chunks" array containing description strings.
+
+    userPrompt: |
+      CODE:
+      ```
+      {code}
+      ```
+
+      Describe what this does in plain English.
+
+    modelParams:
+      modelType: JOERN
+      creativityLevel: MEDIUM
+
+  GIT_COMMIT_PROCESSING:
+    systemPrompt: |
+      Break commit into atomic, searchable sentences for RAG indexing.
+
+      SENTENCE TYPES:
+      1. Commit overview (author, branch, date)
+      2. Change summary (high-level)
+      3. File-specific changes
+      4. Technical details (specific code changes)
+      5. Impact description (functionality affected)
+
+      Generate 3-8 sentences per commit.
+
+    userPrompt: |
+      HASH: {commitHash}
+      AUTHOR: {commitAuthor}
+      DATE: {commitDate}
+      BRANCH: {commitBranch}
+
+      CONTENT:
+      {commitContent}
+
+      Return JSON: {"sentences": ["sentence1", "sentence2", ...]}
+
+    modelParams:
+      modelType: GENERIC_CODE_MODEL
+      creativityLevel: MEDIUM
+
+  # ═══════════════════════════════════════════════════════════════════
+  # QUALIFIER PROMPTS (small/fast models for pre-filtering)
+  # ═══════════════════════════════════════════════════════════════════
+
+  JIRA_QUALIFIER:
+    systemPrompt: |
+      Pre-qualify Jira issues. Decide: discard (noise) or delegate (needs agent analysis).
+
+      DISCARD: Very old (>6mo) AND done/closed, empty description with no comments, cancelled/won't-do status, spam/test/duplicate.
+      DELEGATE: Assigned to me AND active, recent comments (<30 days), substantial content, questions directed at me, any uncertainty.
+
+      When uncertain → DELEGATE.
+
+    userPrompt: |
+      CURRENT DATE: {currentDate}
+
+      JIRA ISSUE:
+      {content}
+
+      AGENT-CREATED RULES:
+      {activeQualifierRules}
+
+      Return JSON only: {"discard": true/false, "reason": "brief explanation"}
+
+    modelParams:
+      modelType: QUALIFIER
+      creativityLevel: LOW
+
+  EMAIL_QUALIFIER:
+    systemPrompt: |
+      Pre-qualify emails. Decide: discard (noise) or delegate (needs agent analysis).
+
+      DISCARD: >5 years old, old sales/events (>1yr, past dates), system logs (status OK), bank statements, marketing without action, simple acks.
+      DELEGATE: Failed/error notifications, complex requests, client communication, future events, decision-making needed.
+
+      When uncertain → DELEGATE.
+
+    userPrompt: |
+      CURRENT DATE: {currentDate}
+      CURRENT DATETIME: {currentDateTime}
+
+      EMAIL:
+      {content}
+
+      AGENT-CREATED RULES:
+      {activeQualifierRules}
+
+      Return JSON only: {"discard": true/false, "reason": "brief explanation"}
+
+    modelParams:
+      modelType: QUALIFIER
+      creativityLevel: LOW
+
+  LINK_QUALIFIER:
+    systemPrompt: |
+      Pre-qualify links. Decide: discard (unsafe/spam) or delegate (needs agent review).
+
+      DISCARD: Obvious unsafe patterns (unsubscribe, action=accept/decline, confirm, verify, one-time tokens), tracking services, spam, already reviewed.
+      DELEGATE: Unknown legitimate domains, mixed signals, internal company domains, informational content, dev tools (GitHub/GitLab).
+
+      When uncertain → DELEGATE.
+
+    userPrompt: |
+      CURRENT DATE: {currentDate}
+
+      LINK:
+      {content}
+
+      AGENT-CREATED RULES:
+      {activeQualifierRules}
+
+      Return JSON only: {"discard": true/false, "reason": "brief explanation"}
+
+    modelParams:
+      modelType: QUALIFIER
+      creativityLevel: LOW
+
+  QUALIFIER:
+    systemPrompt: |
+      Generic pre-qualifier. Decide: discard (trivial/noise) or delegate (needs agent analysis).
+
+      DISCARD: Empty/nearly empty (<50 chars), chit-chat without analysis, duplicates, simple questions, test files, generated code, simple configs, formatting-only commits, old resolved (>6mo).
+      DELEGATE: Multi-step reasoning needed, security/performance/architecture review, cross-file analysis, source files with logic, logic/API changes in commits, Confluence with decisions/actions.
+
+      When uncertain → DELEGATE.
+
+    userPrompt: |
+      CURRENT DATE: {currentDate}
+
+      TASK:
+      {content}
+
+      AGENT-CREATED RULES:
+      {activeQualifierRules}
+
+      Return JSON only: {"discard": true/false, "reason": "brief explanation"}
+
+    modelParams:
+      modelType: QUALIFIER
+      creativityLevel: LOW
+
+creativityLevels:
+  LOW:
+    temperature: 0.1
+    topP: 0.9
+    description: "Deterministic, consistent results"
+  MEDIUM:
+    temperature: 0.5
+    topP: 0.8
+    description: "Balanced creativity"
+  HIGH:
+    temperature: 0.8
+    topP: 0.7
+    description: "Creative responses"

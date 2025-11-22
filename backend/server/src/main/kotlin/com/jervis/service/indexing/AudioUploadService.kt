@@ -1,7 +1,7 @@
 package com.jervis.service.indexing
 
-import com.jervis.repository.mongo.ClientMongoRepository
-import com.jervis.repository.mongo.ProjectMongoRepository
+import com.jervis.repository.ClientMongoRepository
+import com.jervis.repository.ProjectMongoRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext

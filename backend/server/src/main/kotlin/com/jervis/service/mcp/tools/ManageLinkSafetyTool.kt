@@ -1,10 +1,9 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.entity.UnsafeLinkPatternDocument
-import com.jervis.repository.mongo.UnsafeLinkPatternMongoRepository
-import com.jervis.service.gateway.core.LlmGateway
+import com.jervis.repository.UnsafeLinkPatternMongoRepository
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -29,69 +28,71 @@ import java.time.Instant
 @Service
 class ManageLinkSafetyTool(
     private val unsafeLinkPatternRepository: UnsafeLinkPatternMongoRepository,
-    private val llmGateway: LlmGateway,
     override val promptRepository: PromptRepository,
-) : McpTool {
+) : McpTool<ManageLinkSafetyTool.ManageLinkSafetyParams> {
     companion object {
         private val logger = KotlinLogging.logger {}
     }
 
-    override val name: PromptTypeEnum = PromptTypeEnum.SYSTEM_MANAGE_LINK_SAFETY_TOOL
+    override val name = ToolTypeEnum.SYSTEM_MANAGE_LINK_SAFETY_TOOL
+
+    /**
+     * Supported actions:
+     * - ADD: Add new UNSAFE pattern (regex)
+     * - DISABLE: Disable pattern if causing false positives
+     * - ENABLE: Re-enable disabled pattern
+     * - LIST: List all patterns (enabled-only toggle)
+     * - TEST: Test URL against current patterns
+     */
+    @Serializable
+    enum class Action {
+        ADD,
+        DISABLE,
+        ENABLE,
+        LIST,
+        TEST,
+    }
 
     @Serializable
     data class ManageLinkSafetyParams(
-        val action: String = "list", // add, disable, enable, list, test
-        val pattern: String? = null, // Regex pattern for add action
-        val description: String? = null, // Description for add action
-        val exampleUrl: String? = null, // Example URL that triggered the pattern
-        val patternId: String? = null, // ID for disable/enable actions
-        val testUrl: String? = null, // URL to test against patterns
-        val listOnlyEnabled: Boolean = true, // For list action
+        val action: Action = Action.LIST,
+        val pattern: String? = null,
+        val description: String? = null,
+        val exampleUrl: String? = null,
+        val patternId: String? = null,
+        val testUrl: String? = null,
+        val listOnlyEnabled: Boolean = true,
     )
+
+    override val descriptionObject =
+        ManageLinkSafetyParams(
+            action = Action.ADD, // Allowed values: ADD, DISABLE, ENABLE, LIST, TEST
+            pattern = "https?://.*\\bunsubscribe\\b.*",
+            description = "Block unsubscribe links to prevent accidental indexing",
+            exampleUrl = "https://email.example.com/unsubscribe?id=123",
+            patternId = null,
+            testUrl = null,
+            listOnlyEnabled = true,
+        )
 
     override suspend fun execute(
         plan: Plan,
-        taskDescription: String,
-        stepContext: String,
+        request: ManageLinkSafetyParams,
     ): ToolResult =
         try {
-            logger.info { "Executing link safety management: $taskDescription" }
-
-            val params = parseTaskDescription(taskDescription, plan, stepContext)
-            logger.debug { "Parsed link safety params: $params" }
-
-            when (params.action.lowercase()) {
-                "add" -> handleAddPattern(params)
-                "disable" -> handleDisablePattern(params)
-                "enable" -> handleEnablePattern(params)
-                "list" -> handleListPatterns(params)
-                "test" -> handleTestUrl(params)
-                else -> ToolResult.error("Unknown action: ${params.action}. Allowed: add, disable, enable, list, test")
+            val params = request
+            logger.info { "Executing link safety management: $params" }
+            when (params.action) {
+                Action.ADD -> handleAddPattern(params)
+                Action.DISABLE -> handleDisablePattern(params)
+                Action.ENABLE -> handleEnablePattern(params)
+                Action.LIST -> handleListPatterns(params)
+                Action.TEST -> handleTestUrl(params)
             }
         } catch (e: Exception) {
             logger.error(e) { "Error managing link safety patterns" }
             ToolResult.error("Failed to manage link safety: ${e.message}")
         }
-
-    private suspend fun parseTaskDescription(
-        taskDescription: String,
-        plan: Plan,
-        stepContext: String,
-    ): ManageLinkSafetyParams {
-        return llmGateway
-            .callLlm(
-                type = PromptTypeEnum.SYSTEM_MANAGE_LINK_SAFETY_TOOL,
-                responseSchema = ManageLinkSafetyParams(),
-                quick = plan.quick,
-                mappingValue =
-                    mapOf(
-                        "taskDescription" to taskDescription,
-                        "stepContext" to stepContext,
-                    ),
-                correlationId = plan.correlationId,
-                backgroundMode = plan.backgroundMode,
-            ).result
-    }
 
     private suspend fun handleAddPattern(params: ManageLinkSafetyParams): ToolResult {
         val pattern = params.pattern ?: return ToolResult.error("Pattern is required for add action")
@@ -160,8 +161,9 @@ class ManageLinkSafetyTool(
                 return ToolResult.error("Invalid pattern ID format: $patternId")
             }
 
-        val pattern = unsafeLinkPatternRepository.findById(objectId)
-            ?: return ToolResult.error("Pattern not found with ID: $patternId")
+        val pattern =
+            unsafeLinkPatternRepository.findById(objectId)
+                ?: return ToolResult.error("Pattern not found with ID: $patternId")
 
         if (!pattern.enabled) {
             return ToolResult.error("Pattern is already disabled")
@@ -192,8 +194,9 @@ class ManageLinkSafetyTool(
                 return ToolResult.error("Invalid pattern ID format: $patternId")
             }
 
-        val pattern = unsafeLinkPatternRepository.findById(objectId)
-            ?: return ToolResult.error("Pattern not found with ID: $patternId")
+        val pattern =
+            unsafeLinkPatternRepository.findById(objectId)
+                ?: return ToolResult.error("Pattern not found with ID: $patternId")
 
         if (pattern.enabled) {
             return ToolResult.error("Pattern is already enabled")

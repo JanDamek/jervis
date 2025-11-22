@@ -5,7 +5,7 @@ struct ContentView: View {
     var body: some View {
         // Jervis Compose UI - shared across Android, iOS, Desktop
         // Use localhost for iOS simulator (localhost = host machine)
-        ComposeView(serverUrl: "https://home.damek-soft.eu:5500/")
+        ComposeView(serverUrl: "http://localhost:5500/")
             .ignoresSafeArea()
     }
 }

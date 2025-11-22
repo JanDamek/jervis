@@ -55,7 +55,8 @@ val serverUrls =
     mapOf(
         "local" to "https://localhost:5500/",
         "remote" to "https://192.168.100.117:5500/",
-        "public" to "https://home.damek-soft.eu:5500/",
+        // Placeholder for a publicly reachable server; override via -Pjervis.server.url
+        "public" to "https://example.com:5500/",
     )
 
 val currentProfile = findProperty("jervis.profile")?.toString() ?: "local"

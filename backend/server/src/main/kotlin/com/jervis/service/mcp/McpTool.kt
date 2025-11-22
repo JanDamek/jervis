@@ -1,6 +1,7 @@
 package com.jervis.service.mcp
 
 import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -10,9 +11,20 @@ import com.jervis.service.prompts.PromptRepository
  * Tools should be side-effect free unless explicitly designed to persist changes.
  * All context information is available in the Plan object.
  */
-interface McpTool {
+interface McpTool<T : Any> {
     val promptRepository: PromptRepository
-    val name: PromptTypeEnum
+    val name: ToolTypeEnum
+    val descriptionObject: T
+
+    /**
+     * Short description for planner - what the tool does and when to use it.
+     */
+    val plannerDescription: String
+        get() = promptRepository.getMcpToolPlannerDescription(name)
+
+    /**
+     * Detailed description for Tool Reasoning with JSON schemas.
+     */
     val description: String
         get() = promptRepository.getMcpToolDescription(name)
 
@@ -24,7 +36,6 @@ interface McpTool {
      */
     suspend fun execute(
         plan: Plan,
-        taskDescription: String,
-        stepContext: String = "",
+        request: T,
     ): ToolResult
 }

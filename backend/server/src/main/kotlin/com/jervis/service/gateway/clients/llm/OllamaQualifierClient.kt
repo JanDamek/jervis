@@ -1,6 +1,6 @@
 package com.jervis.service.gateway.clients.llm
 
-import com.jervis.configuration.prompts.PromptConfigBase
+import com.jervis.configuration.prompts.PromptConfig
 import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.domain.gateway.StreamChunk
 import com.jervis.domain.llm.LlmResponse
@@ -27,7 +27,7 @@ class OllamaQualifierClient(
         systemPrompt: String?,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
-        prompt: PromptConfigBase,
+        prompt: PromptConfig,
         estimatedTokens: Int,
     ): LlmResponse =
         ollamaClient.callWithWebClient(
@@ -45,7 +45,7 @@ class OllamaQualifierClient(
         systemPrompt: String?,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
-        prompt: PromptConfigBase,
+        prompt: PromptConfig,
         estimatedTokens: Int,
         debugSessionId: String?,
     ): Flow<StreamChunk> =

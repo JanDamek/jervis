@@ -1,6 +1,6 @@
 package com.jervis.service.listener.jira
 
-import com.jervis.repository.mongo.AtlassianConnectionMongoRepository
+import com.jervis.repository.AtlassianConnectionMongoRepository
 import com.jervis.service.jira.JiraIndexingOrchestrator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,10 +46,14 @@ class JiraIndexerStartupListener(
             logger.info { "Found ${validConnections.size} VALID Atlassian connections" }
 
             validConnections.forEach { connection ->
-                logger.info { "Launching Jira queue processor for client ${connection.clientId.toHexString()} (tenant: ${connection.tenant})" }
+                logger.info {
+                    "Launching Jira queue processor for client ${connection.clientId.toHexString()} (tenant: ${connection.tenant})"
+                }
                 indexerScope.launch {
                     runCatching { orchestrator.processQueuedUrls(connection.clientId) }
-                        .onFailure { e -> logger.error(e) { "Jira queue processor crashed for client ${connection.clientId.toHexString()}" } }
+                        .onFailure { e ->
+                            logger.error(e) { "Jira queue processor crashed for client ${connection.clientId.toHexString()}" }
+                        }
                 }
             }
 

@@ -2,10 +2,9 @@ package com.jervis.service.mcp.tools
 
 import com.jervis.common.client.ITikaClient
 import com.jervis.common.dto.TikaProcessRequest
-import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.rag.RagSourceType
-import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.link.LinkIndexer
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
@@ -28,52 +27,33 @@ import java.util.Base64
  */
 @Service
 class DocumentFromWebTool(
-    private val llmGateway: LlmGateway,
     override val promptRepository: PromptRepository,
     @Qualifier("searxngWebClient") private val webClient: WebClient,
     private val linkIndexer: LinkIndexer,
     private val tikaClient: ITikaClient,
-) : McpTool {
+) : McpTool<DocumentFromWebTool.DocumentFromWebParams> {
     private val logger = KotlinLogging.logger {}
 
-    override val name: PromptTypeEnum = PromptTypeEnum.DOCUMENT_FROM_WEB_TOOL
+    override val name = ToolTypeEnum.DOCUMENT_FROM_WEB_TOOL
+
+    override val descriptionObject =
+        DocumentFromWebParams(
+            url =
+                "Absolute URL to fetch (required)\n" +
+                    "https://example.com/article.html",
+            maxContentLength = 3000,
+        )
 
     @Serializable
     data class DocumentFromWebParams(
-        val url: String = "",
-        val maxContentLength: Int = 5000,
+        val url: String,
+        val maxContentLength: Int,
     )
-
-    private suspend fun parseTaskDescription(
-        taskDescription: String,
-        plan: Plan,
-        stepContext: String,
-    ): DocumentFromWebParams {
-        val llmResponse =
-            llmGateway.callLlm(
-                type = PromptTypeEnum.DOCUMENT_FROM_WEB_TOOL,
-                mappingValue =
-                    mapOf(
-                        "taskDescription" to taskDescription,
-                        "stepContext" to stepContext,
-                    ),
-                correlationId = plan.correlationId,
-                quick = plan.quick,
-                responseSchema = DocumentFromWebParams(),
-                backgroundMode = plan.backgroundMode,
-            )
-        return llmResponse.result
-    }
 
     override suspend fun execute(
         plan: Plan,
-        taskDescription: String,
-        stepContext: String,
-    ): ToolResult {
-        val parsed = parseTaskDescription(taskDescription, plan, stepContext)
-
-        return executeDocumentOperation(parsed, plan)
-    }
+        request: DocumentFromWebParams,
+    ): ToolResult = executeDocumentOperation(request, plan)
 
     private suspend fun executeDocumentOperation(
         params: DocumentFromWebParams,
@@ -146,9 +126,8 @@ class DocumentFromWebTool(
             try {
                 linkIndexer.indexLink(
                     url = params.url,
-                    projectId = plan.projectId,
-                    clientId = plan.clientId,
-                    sourceType = RagSourceType.DOCUMENTATION,
+                    projectId = plan.projectDocument?.id,
+                    clientId = plan.clientDocument.id,
                     content = plainText,
                 )
                 logger.debug { "Background indexed ${params.url} to RAG" }

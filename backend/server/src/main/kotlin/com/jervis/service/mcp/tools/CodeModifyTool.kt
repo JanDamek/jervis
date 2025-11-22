@@ -1,8 +1,7 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
-import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -14,57 +13,33 @@ import java.nio.file.Files
 
 @Service
 class CodeModifyTool(
-    private val llmGateway: LlmGateway,
     private val directoryStructureService: DirectoryStructureService,
     override val promptRepository: PromptRepository,
-) : McpTool {
+) : McpTool<CodeModifyTool.CodeModifyParams> {
     companion object {
         private val logger = KotlinLogging.logger {}
     }
 
-    override val name: PromptTypeEnum = PromptTypeEnum.CODE_MODIFY_TOOL
+    override val name = ToolTypeEnum.CODE_MODIFY_TOOL
+
+    override val descriptionObject =
+        CodeModifyParams(
+            targetPath = "Relative path to target file from project root (required)",
+            patch = "Complete replacement content of the file (required)",
+            createNewFile = false,
+        )
 
     @Serializable
     data class CodeModifyParams(
-        val targetPath: String = "",
-        val patch: String = "",
-        val createNewFile: Boolean = false,
+        val targetPath: String,
+        val patch: String,
+        val createNewFile: Boolean,
     )
-
-    private suspend fun parseTaskDescription(
-        taskDescription: String,
-        plan: Plan,
-        stepContext: String,
-    ): CodeModifyParams {
-        val llmResponse =
-            llmGateway.callLlm(
-                type = PromptTypeEnum.CODE_MODIFY_TOOL,
-                responseSchema = CodeModifyParams(),
-                correlationId = plan.correlationId,
-                quick = plan.quick,
-                mappingValue =
-                    mapOf(
-                        "taskDescription" to taskDescription,
-                        "filePath" to "", // Will be extracted from taskDescription by LLM
-                        "language" to "kotlin", // Default to Kotlin for this project
-                        "requirements" to "", // Additional requirements will be extracted from taskDescription
-                        "stepContext" to stepContext,
-                    ),
-                backgroundMode = plan.backgroundMode,
-            )
-
-        return llmResponse.result
-    }
 
     override suspend fun execute(
         plan: Plan,
-        taskDescription: String,
-        stepContext: String,
-    ): ToolResult {
-        val parsed = parseTaskDescription(taskDescription, plan, stepContext)
-
-        return executeCodeModifyOperation(parsed, plan)
-    }
+        request: CodeModifyParams,
+    ): ToolResult = executeCodeModifyOperation(request, plan)
 
     private suspend fun executeCodeModifyOperation(
         params: CodeModifyParams,

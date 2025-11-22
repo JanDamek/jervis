@@ -2,12 +2,12 @@ package com.jervis.service.git
 
 import com.jervis.domain.git.GitAuthTypeEnum
 import com.jervis.domain.git.GitConfig
-import com.jervis.dto.GitCredentialsDto
 import com.jervis.dto.GitBranchListDto
+import com.jervis.dto.GitCredentialsDto
 import com.jervis.dto.GitSetupRequestDto
 import com.jervis.dto.ProjectGitOverrideRequestDto
-import com.jervis.repository.mongo.ClientMongoRepository
-import com.jervis.repository.mongo.ProjectMongoRepository
+import com.jervis.repository.ClientMongoRepository
+import com.jervis.repository.ProjectMongoRepository
 import com.jervis.service.storage.DirectoryStructureService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -110,11 +110,15 @@ class GitConfigurationService(
     /**
      * Update client's default branch. Persist to Mongo.
      */
-    suspend fun updateDefaultBranch(clientId: ObjectId, branch: String): Result<Unit> =
+    suspend fun updateDefaultBranch(
+        clientId: ObjectId,
+        branch: String,
+    ): Result<Unit> =
         withContext(Dispatchers.IO) {
             try {
-                val client = clientRepository.findById(clientId)
-                    ?: return@withContext Result.failure(IllegalArgumentException("Client not found: $clientId"))
+                val client =
+                    clientRepository.findById(clientId)
+                        ?: return@withContext Result.failure(IllegalArgumentException("Client not found: $clientId"))
                 if (client.defaultBranch == branch) {
                     return@withContext Result.success(Unit)
                 }
@@ -334,10 +338,14 @@ class GitConfigurationService(
      * List remote branches for a client's configured repository (or provided override URL).
      * Attempts to resolve default branch via `git ls-remote --symref` (HEAD) and returns known heads.
      */
-    suspend fun listRemoteBranches(clientId: ObjectId, repoUrl: String?): GitBranchListDto =
+    suspend fun listRemoteBranches(
+        clientId: ObjectId,
+        repoUrl: String?,
+    ): GitBranchListDto =
         withContext(Dispatchers.IO) {
-            val client = clientRepository.findById(clientId)
-                ?: throw IllegalArgumentException("Client not found: $clientId")
+            val client =
+                clientRepository.findById(clientId)
+                    ?: throw IllegalArgumentException("Client not found: $clientId")
 
             val effectiveUrl = repoUrl?.takeIf { it.isNotBlank() } ?: client.monoRepoUrl
             require(!effectiveUrl.isNullOrBlank()) { "No repository URL configured for client and none provided" }
@@ -354,7 +362,10 @@ class GitConfigurationService(
             GitBranchListDto(defaultBranch = defaultBranch, branches = branches)
         }
 
-    private fun runLsRemote(repoUrl: String, env: Map<String, String>): Pair<String?, List<String>> {
+    private fun runLsRemote(
+        repoUrl: String,
+        env: Map<String, String>,
+    ): Pair<String?, List<String>> {
         // Use: git ls-remote --heads --symref <url>
         val processBuilder = ProcessBuilder("git", "ls-remote", "--heads", "--symref", repoUrl)
         processBuilder.redirectErrorStream(true)
@@ -363,7 +374,7 @@ class GitConfigurationService(
         val output = process.inputStream.bufferedReader().use { it.readText() }
         val exit = process.waitFor()
         if (exit != 0) {
-            throw IllegalStateException("git ls-remote failed (${exit}): ${output.trim()}")
+            throw IllegalStateException("git ls-remote failed ($exit): ${output.trim()}")
         }
 
         var defaultBranch: String? = null

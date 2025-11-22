@@ -74,7 +74,6 @@ sealed interface ToolResult {
          */
         fun analysisResult(
             toolName: String,
-            analysisType: String,
             count: Int,
             unit: String,
             details: String = "",

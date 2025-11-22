@@ -1,8 +1,7 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
-import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -12,51 +11,30 @@ import org.springframework.stereotype.Service
 
 @Service
 class CommunicationEmailTool(
-    private val llmGateway: LlmGateway,
     override val promptRepository: PromptRepository,
-) : McpTool {
+) : McpTool<CommunicationEmailTool.CommunicationEmailParams> {
     private val logger = KotlinLogging.logger {}
 
-    override val name: PromptTypeEnum = PromptTypeEnum.COMMUNICATION_EMAIL_TOOL
+    override val name = ToolTypeEnum.COMMUNICATION_EMAIL_TOOL
+
+    override val descriptionObject =
+        CommunicationEmailParams(
+            to = listOf("user@example.com"),
+            subject = "Subject of the email",
+            body = "Body of the email message",
+        )
 
     @Serializable
     data class CommunicationEmailParams(
-        val to: List<String> = listOf(""),
-        val subject: String = "",
-        val body: String = "",
+        val to: List<String>,
+        val subject: String,
+        val body: String,
     )
-
-    private suspend fun parseTaskDescription(
-        taskDescription: String,
-        plan: Plan,
-        stepContext: String,
-    ): CommunicationEmailParams {
-        val llmResponse =
-            llmGateway.callLlm(
-                type = PromptTypeEnum.COMMUNICATION_EMAIL_TOOL,
-                responseSchema = CommunicationEmailParams(),
-                correlationId = plan.correlationId,
-                quick = plan.quick,
-                mappingValue =
-                    mapOf(
-                        "taskDescription" to taskDescription,
-                        "stepContext" to stepContext,
-                    ),
-                backgroundMode = plan.backgroundMode,
-            )
-
-        return llmResponse.result
-    }
 
     override suspend fun execute(
         plan: Plan,
-        taskDescription: String,
-        stepContext: String,
-    ): ToolResult {
-        val parsed = parseTaskDescription(taskDescription, plan, stepContext)
-
-        return executeEmailOperation(parsed, plan)
-    }
+        request: CommunicationEmailParams,
+    ): ToolResult = executeEmailOperation(request, plan)
 
     private suspend fun executeEmailOperation(
         params: CommunicationEmailParams,

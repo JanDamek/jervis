@@ -56,7 +56,6 @@ data class ConfluencePageDocument(
     val lastModifiedBy: String? = null,
     val lastModifiedAt: Instant? = null,
     val lastIndexedAt: Instant? = null,
-    val errorMessage: String? = null,
     val createdAt: Instant = Instant.now(),
     val updatedAt: Instant = Instant.now(),
 )

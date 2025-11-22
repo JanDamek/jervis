@@ -2,18 +2,14 @@ package com.jervis.service.confluence.processor
 
 import com.jervis.common.client.ITikaClient
 import com.jervis.domain.confluence.ConfluenceContentResult
-import com.jervis.domain.model.ModelTypeEnum
-import com.jervis.domain.rag.RagDocument
-import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.ConfluencePageDocument
-import com.jervis.service.rag.RagIndexingService
-import com.jervis.service.rag.VectorStoreIndexService
-import com.jervis.service.text.TextChunkingService
-import com.jervis.service.text.TextNormalizationService
+import com.jervis.rag.DocumentToStore
+import com.jervis.rag.EmbeddingType
+import com.jervis.rag.KnowledgeService
+import com.jervis.rag.KnowledgeType
 import mu.KotlinLogging
 import org.jsoup.Jsoup
 import org.springframework.stereotype.Service
-import java.time.Instant
 
 private val logger = KotlinLogging.logger {}
 
@@ -36,11 +32,8 @@ private val logger = KotlinLogging.logger {}
  */
 @Service
 class ConfluenceContentProcessor(
-    private val ragIndexingService: RagIndexingService,
-    private val vectorStoreIndexService: VectorStoreIndexService,
+    private val knowledgeService: KnowledgeService,
     private val tikaClient: ITikaClient,
-    private val textChunkingService: TextChunkingService,
-    private val textNormalizationService: TextNormalizationService,
     private val linkSafetyQualifier: com.jervis.service.link.LinkSafetyQualifier,
     private val linkIndexingQueue: com.jervis.service.indexing.LinkIndexingQueue,
 ) {
@@ -59,7 +52,6 @@ class ConfluenceContentProcessor(
             // Parse HTML and extract data
             val parsed = parseHtmlContent(page, htmlContent, baseUrl)
 
-            // Check if content is empty
             if (parsed.plainText.isBlank()) {
                 logger.warn { "Page ${page.pageId} has no text content, skipping indexing" }
                 return ConfluenceContentResult(
@@ -70,34 +62,31 @@ class ConfluenceContentProcessor(
                 )
             }
 
-            // Normalize and chunk content via TextChunkingService
-            val normalizedText = textNormalizationService.normalize(parsed.plainText)
-            val segments = textChunkingService.splitText(normalizedText)
-            logger.debug { "Created ${segments.size} chunks for page ${page.pageId}" }
+            val documentToStore =
+                DocumentToStore(
+                    documentId = "confluence:${page.pageId}",
+                    content = parsed.plainText,
+                    clientId = page.clientId,
+                    projectId = page.projectId,
+                    type = KnowledgeType.DOCUMENT,
+                    embeddingType = EmbeddingType.TEXT,
+                    title = page.title,
+                    location = page.url,
+                )
 
-            var indexedChunks = 0
-
-            // Index each chunk
-            for ((index, segment) in segments.withIndex()) {
-                try {
-                    indexChunk(page, segment.text(), index)
-                    indexedChunks++
-                } catch (e: Exception) {
-                    logger.error(e) { "Failed to index chunk $index for page ${page.pageId}" }
-                    // Continue with other chunks even if one fails
-                }
-            }
+            knowledgeService
+                .store(com.jervis.rag.StoreRequest(listOf(documentToStore)))
 
             logger.info {
-                "Indexed page ${page.title}: $indexedChunks chunks, " +
+                "Indexed page ${page.title}, " +
                     "${parsed.internalLinks.size} internal links, ${parsed.externalLinks.size} external links"
             }
 
             return ConfluenceContentResult(
-                indexedChunks = indexedChunks,
+                indexedChunks = 1,
                 internalLinks = parsed.internalLinks,
                 externalLinks = parsed.externalLinks,
-                plainText = normalizedText, // Return normalized text for pending tasks
+                plainText = parsed.plainText,
             )
         } catch (e: Exception) {
             logger.error(e) { "Failed to process page ${page.pageId}" }
@@ -243,59 +232,6 @@ class ConfluenceContentProcessor(
         }
 
     /**
-     * Index a single chunk into RAG.
-     */
-    private suspend fun indexChunk(
-        page: ConfluencePageDocument,
-        chunk: String,
-        chunkIndex: Int,
-    ) {
-        // Create RAG document with actual chunk content for embedding
-        val ragDocument =
-            RagDocument(
-                projectId = page.projectId,
-                clientId = page.clientId,
-                ragSourceType = RagSourceType.CONFLUENCE_PAGE,
-                text = chunk, // ✅ Fixed: embed actual chunk content, not just title
-                fileName = page.title,
-                sourceUri = page.url,
-                confluencePageId = page.pageId,
-                confluenceSpaceKey = page.spaceKey,
-                chunkId = chunkIndex,
-                from = "confluence",
-                timestamp = page.lastModifiedAt?.toString() ?: Instant.now().toString(),
-            )
-
-        // Index using RagIndexingService (handles embedding + storage)
-        val result =
-            ragIndexingService
-                .indexDocument(ragDocument, ModelTypeEnum.EMBEDDING_TEXT)
-                .getOrThrow()
-
-        // Track in MongoDB (only when projectId is available)
-        val pid = page.projectId
-        if (pid != null) {
-            vectorStoreIndexService.trackIndexed(
-                projectId = pid,
-                clientId = page.clientId,
-                branch = "confluence",
-                sourceType = RagSourceType.CONFLUENCE_PAGE,
-                sourceId = "${page.pageId}:chunk-$chunkIndex",
-                vectorStoreId = result.vectorStoreId,
-                vectorStoreName = "confluence-${page.pageId}-$chunkIndex",
-                content = chunk,
-                filePath = null,
-                symbolName = null,
-                commitHash = null,
-            )
-        } else {
-            logger.debug { "Skipping vector index tracking for Confluence page ${page.pageId} - projectId is null" }
-        }
-
-        logger.debug { "Indexed chunk $chunkIndex for page ${page.pageId}" }
-    }
-
-    /**
      * Remove tracking pixels and malicious elements from HTML.
      * SECURITY: Prevents tracking pixel activation during indexing.
      *
@@ -338,8 +274,8 @@ class ConfluenceContentProcessor(
      * Filter links through safety qualifier to remove action/tracking links.
      * SECURITY: Prevents following internal Confluence links that could trigger actions.
      */
-    private suspend fun filterSafeLinks(links: List<String>): List<String> {
-        return links.filter { link ->
+    private suspend fun filterSafeLinks(links: List<String>): List<String> =
+        links.filter { link ->
             val result = linkSafetyQualifier.qualifyLink(link)
             when (result.decision) {
                 com.jervis.service.link.LinkSafetyQualifier.SafetyResult.Decision.SAFE -> true
@@ -349,7 +285,6 @@ class ConfluenceContentProcessor(
                 }
             }
         }
-    }
 
     /**
      * Check if URL is a Jira issue link.

@@ -1,6 +1,7 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
@@ -22,20 +23,23 @@ private val logger = KotlinLogging.logger {}
 class TaskQueryUserTasksTool(
     private val userTaskService: UserTaskService,
     override val promptRepository: PromptRepository,
-) : McpTool {
-    override val name: PromptTypeEnum = PromptTypeEnum.TASK_QUERY_USER_TASKS_TOOL
+) : McpTool<TaskQueryUserTasksTool.QueryUserTasksRequest> {
+    override val name = ToolTypeEnum.TASK_QUERY_USER_TASKS_TOOL
+
+    override val descriptionObject =
+        QueryUserTasksRequest(
+            scope = "active", // active | today | range
+            daysAhead = 7,
+            startDate = null,
+            endDate = null,
+        )
 
     override suspend fun execute(
         plan: Plan,
-        taskDescription: String,
-        stepContext: String,
+        request: QueryUserTasksRequest,
     ): ToolResult {
         return try {
-            logger.info { "Querying user tasks: $taskDescription" }
-
-            val request =
-                runCatching { Json.decodeFromString<QueryUserTasksRequest>(taskDescription) }
-                    .getOrElse { QueryUserTasksRequest() }
+            logger.info { "Querying user tasks: $request" }
 
             val tasks =
                 when (request.scope.lowercase()) {
