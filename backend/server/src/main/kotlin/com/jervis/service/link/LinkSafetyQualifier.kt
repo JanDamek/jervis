@@ -100,6 +100,8 @@ class LinkSafetyQualifier(
                 "unsubscribe|action=(accept|decline)|rsvp=(yes|no)", // Too broad
                 "/cdn|app|unsubscribe|action=(accept|decline)/", // Too broad
                 "/action=(accept|decline)|/rsvp=(yes|no)/", // Too broad
+                // Query parameter patterns that are too broad
+                "space|id|key|token|identifier", // Blocks legitimate ?id= parameters on normal sites (e.g., centrum.cz)
             )
 
         badPatterns.forEach { pattern ->

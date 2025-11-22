@@ -267,13 +267,15 @@ prompts:
     systemPrompt: |
       Pre-qualify Jira issues. Decide: discard (noise) or delegate (needs agent analysis).
 
-      DISCARD: Very old (>6mo) AND done/closed, empty description with no comments, cancelled/won't-do status, spam/test/duplicate.
-      DELEGATE: Assigned to me AND active, recent comments (<30 days), substantial content, questions directed at me, any uncertainty.
+      DISCARD: Old (>3 months) AND done/closed/resolved, very old (>6 months) with no recent activity, empty description with no comments, cancelled/won't-do status, spam/test/duplicate, old completed items without ongoing relevance.
+      DELEGATE: Recent activity (<3 months), assigned to me AND active, recent comments (<30 days), substantial content, open/in-progress status, questions directed at me, any uncertainty.
 
+      IMPORTANT: Age is relative to CURRENT DATE - old resolved issues should not create tasks unless there's recent activity.
       When uncertain → DELEGATE.
 
     userPrompt: |
       CURRENT DATE: {currentDate}
+      CURRENT DATETIME: {currentDateTime}
 
       JIRA ISSUE:
       {content}
@@ -291,9 +293,10 @@ prompts:
     systemPrompt: |
       Pre-qualify emails. Decide: discard (noise) or delegate (needs agent analysis).
 
-      DISCARD: >5 years old, old sales/events (>1yr, past dates), system logs (status OK), bank statements, marketing without action, simple acks.
-      DELEGATE: Failed/error notifications, complex requests, client communication, future events, decision-making needed.
+      DISCARD: Old content (>3 months) without recent activity/urgency, past events/meetings (>2 months), old sales/marketing (>2 months), system logs (status OK), bank statements, newsletters, simple acks, resolved threads with no new questions.
+      DELEGATE: Recent content (<3 months), failed/error notifications, active requests, client communication requiring response, upcoming/future events, unresolved questions, decision-making needed.
 
+      IMPORTANT: Age is relative to CURRENT DATETIME - if email/content is older than 2-3 months AND has no ongoing relevance → DISCARD.
       When uncertain → DELEGATE.
 
     userPrompt: |
@@ -340,13 +343,15 @@ prompts:
     systemPrompt: |
       Generic pre-qualifier. Decide: discard (trivial/noise) or delegate (needs agent analysis).
 
-      DISCARD: Empty/nearly empty (<50 chars), chit-chat without analysis, duplicates, simple questions, test files, generated code, simple configs, formatting-only commits, old resolved (>6mo).
-      DELEGATE: Multi-step reasoning needed, security/performance/architecture review, cross-file analysis, source files with logic, logic/API changes in commits, Confluence with decisions/actions.
+      DISCARD: Empty/nearly empty (<50 chars), chit-chat without analysis, duplicates, simple questions, test files, generated code, simple configs, formatting-only commits, old content (>3 months) without ongoing relevance, old resolved items (>3 months), past scheduled tasks/events (>2 months old).
+      DELEGATE: Recent content (<3 months), multi-step reasoning needed, security/performance/architecture review, cross-file analysis, source files with logic, logic/API changes in commits, Confluence with decisions/actions, upcoming scheduled tasks.
 
+      IMPORTANT: Old content (>2-3 months) should be DISCARDED unless it has clear ongoing relevance or recent activity. Scheduled tasks for past dates should NOT be scheduled again.
       When uncertain → DELEGATE.
 
     userPrompt: |
       CURRENT DATE: {currentDate}
+      CURRENT DATETIME: {currentDateTime}
 
       TASK:
       {content}
