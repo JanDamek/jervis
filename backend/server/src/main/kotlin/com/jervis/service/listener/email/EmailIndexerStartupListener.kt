@@ -1,6 +1,6 @@
 package com.jervis.service.listener.email
 
-import com.jervis.repository.mongo.EmailAccountMongoRepository
+import com.jervis.repository.EmailAccountMongoRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob

@@ -1,19 +1,23 @@
 package com.jervis.service.agent.coordinator
 
 import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.plan.PlanStep
 import com.jervis.domain.task.PendingTask
 import com.jervis.dto.ChatRequestContext
 import com.jervis.dto.ChatResponse
-import com.jervis.repository.mongo.ClientMongoRepository
-import com.jervis.repository.mongo.ProjectMongoRepository
+import com.jervis.repository.ClientMongoRepository
+import com.jervis.repository.ProjectMongoRepository
 import com.jervis.service.agent.compaction.ContextCompactionService
 import com.jervis.service.agent.execution.PlanExecutor
 import com.jervis.service.agent.finalizer.Finalizer
 import com.jervis.service.agent.planner.Planner
 import com.jervis.service.agent.toolreasoning.ToolReasoningService
-import com.jervis.service.background.BackgroundTaskGoalsService
+import com.jervis.service.debug.DebugService
+import com.jervis.service.notification.NotificationsPublisher
+import com.jervis.service.notification.StepNotificationService
+import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import mu.KotlinLogging
@@ -33,12 +37,12 @@ class AgentOrchestratorService(
     private val planner: Planner,
     private val toolReasoningService: ToolReasoningService,
     private val contextCompactionService: ContextCompactionService,
-    private val stepNotificationService: com.jervis.service.notification.StepNotificationService,
+    private val stepNotificationService: StepNotificationService,
     private val clientMongoRepository: ClientMongoRepository,
     private val projectMongoRepository: ProjectMongoRepository,
-    private val backgroundTaskGoalsService: BackgroundTaskGoalsService,
-    private val debugService: com.jervis.service.debug.DebugService,
-    private val notificationsPublisher: com.jervis.service.notification.NotificationsPublisher,
+    private val debugService: DebugService,
+    private val notificationsPublisher: NotificationsPublisher,
+    private val promptRepository: PromptRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -52,7 +56,6 @@ class AgentOrchestratorService(
             clientId = ObjectId(ctx.clientId),
             projectId = ObjectId(ctx.projectId),
             background = background,
-            quick = ctx.quick,
         )
 
     suspend fun handle(
@@ -60,15 +63,13 @@ class AgentOrchestratorService(
         clientId: ObjectId,
         projectId: ObjectId?,
         background: Boolean,
-        quick: Boolean = false,
-    ): ChatResponse = handleWithGoalPrompt(text, clientId, projectId, background, quick, null, null)
+    ): ChatResponse = handleWithGoalPrompt(text, clientId, projectId, background, null, null)
 
     private suspend fun handleWithGoalPrompt(
         text: String,
         clientId: ObjectId,
         projectId: ObjectId?,
         background: Boolean,
-        quick: Boolean,
         goalPrompt: String?,
         taskCorrelationId: String?, // Pass correlationId from task if available
     ): ChatResponse {
@@ -82,7 +83,6 @@ class AgentOrchestratorService(
             val analysisResult =
                 requestAnalyzer.analyze(
                     text = text,
-                    quick = quick,
                     backgroundMode = background,
                     goalPrompt = goalPrompt,
                     correlationId = correlationId,
@@ -106,7 +106,6 @@ class AgentOrchestratorService(
                     initialRagQueries = analysisResult.initialRagQueries,
                     clientDocument = clientDocument,
                     projectDocument = projectDocument,
-                    quick = quick,
                     backgroundMode = background,
                     correlationId = correlationId, // Use correlationId generated earlier
                 )
@@ -118,7 +117,7 @@ class AgentOrchestratorService(
                 planId = plan.id.toHexString(),
                 taskId = if (background && taskCorrelationId != null) taskCorrelationId else null,
                 taskInstruction = plan.taskInstruction,
-                backgroundMode = background
+                backgroundMode = background,
             )
 
             executeInitialRagQueries(plan)
@@ -131,10 +130,12 @@ class AgentOrchestratorService(
             debugService.planStatusChanged(
                 correlationId = plan.correlationId,
                 planId = plan.id.toHexString(),
-                status = plan.status.name
+                status = plan.status.name,
             )
 
-            logger.info { "AGENT_LOOP_START: Planning loop for plan: ${plan.id} taskInstruction='${plan.taskInstruction}' correlationId=${plan.correlationId}" }
+            logger.info {
+                "AGENT_LOOP_START: Planning loop for plan: ${plan.id} taskInstruction='${plan.taskInstruction}' correlationId=${plan.correlationId}"
+            }
 
             // Iterative execution: execute steps, plan next steps, check resolution
             while (true) {
@@ -180,7 +181,7 @@ class AgentOrchestratorService(
                         debugService.planStatusChanged(
                             correlationId = plan.correlationId,
                             planId = plan.id.toHexString(),
-                            status = plan.status.name
+                            status = plan.status.name,
                         )
                     } else {
                         val reason =
@@ -200,7 +201,9 @@ class AgentOrchestratorService(
                 val nextSteps = toolReasoningService.mapRequirementsToTools(plannerResponse.nextSteps, plan)
 
                 if (nextSteps.isNotEmpty()) {
-                    logger.info { "AGENT_LOOP_STEPS_ADDED: planId=${plan.id} newSteps=${nextSteps.size} totalSteps=${plan.steps.size + nextSteps.size}" }
+                    logger.info {
+                        "AGENT_LOOP_STEPS_ADDED: planId=${plan.id} newSteps=${nextSteps.size} totalSteps=${plan.steps.size + nextSteps.size}"
+                    }
                     plan.steps += nextSteps
 
                     // Publish debug event for each step added
@@ -211,7 +214,7 @@ class AgentOrchestratorService(
                             stepId = step.id.toHexString(),
                             toolName = step.stepToolName.name,
                             instruction = step.stepInstruction,
-                            order = step.order
+                            order = step.order,
                         )
                     }
 
@@ -226,21 +229,27 @@ class AgentOrchestratorService(
 
                         if (!compactionResult.needsCompaction) {
                             // Context is within limits, no compaction needed
-                            logger.debug { "AGENT_LOOP_CONTEXT_OK: Plan ${plan.id} context is within limits after $compactionRound compaction round(s)" }
+                            logger.debug {
+                                "AGENT_LOOP_CONTEXT_OK: Plan ${plan.id} context is within limits after $compactionRound compaction round(s)"
+                            }
                             break
                         }
 
                         if (compactionResult.cannotCompact) {
                             // Context too large but cannot compact (≤3 steps remaining)
-                            logger.error { "AGENT_LOOP_COMPACTION_IMPOSSIBLE: Plan ${plan.id} context too large but only ${plan.steps.size} steps remain (minimum 3 required for compaction)" }
+                            logger.error {
+                                "AGENT_LOOP_COMPACTION_IMPOSSIBLE: Plan ${plan.id} context too large but only ${plan.steps.size} steps remain (minimum 3 required for compaction)"
+                            }
                             throw IllegalStateException(
                                 "Context too large for planner model but cannot compact further: " +
-                                "only ${plan.steps.size} steps remain (need >3 for compaction)"
+                                    "only ${plan.steps.size} steps remain (need >3 for compaction)",
                             )
                         }
 
                         compactionRound++
-                        logger.info { "AGENT_LOOP_CONTEXT_COMPACTED: Plan ${plan.id} context compacted (round $compactionRound), checking again..." }
+                        logger.info {
+                            "AGENT_LOOP_CONTEXT_COMPACTED: Plan ${plan.id} context compacted (round $compactionRound), checking again..."
+                        }
 
                         // Loop continues - check context again after compaction
                     }
@@ -258,7 +267,7 @@ class AgentOrchestratorService(
                         debugService.planStatusChanged(
                             correlationId = plan.correlationId,
                             planId = plan.id.toHexString(),
-                            status = plan.status.name
+                            status = plan.status.name,
                         )
                     } else {
                         val reason =
@@ -292,7 +301,7 @@ class AgentOrchestratorService(
                         debugService.planStatusChanged(
                             correlationId = plan.correlationId,
                             planId = plan.id.toHexString(),
-                            status = plan.status.name
+                            status = plan.status.name,
                         )
                     }
 
@@ -307,7 +316,10 @@ class AgentOrchestratorService(
                 notificationsPublisher.publishAgentResponseCompleted(
                     contextId = plan.id,
                     message = response.message,
-                    timestamp = java.time.LocalDateTime.now().toString(),
+                    timestamp =
+                        java.time.LocalDateTime
+                            .now()
+                            .toString(),
                 )
             }
 
@@ -322,7 +334,9 @@ class AgentOrchestratorService(
     }
 
     suspend fun handleBackgroundTask(task: PendingTask): ChatResponse {
-        logger.info { "AGENT_BACKGROUND_START: taskId=${task.id} type=${task.taskType} clientId=${task.clientId.toHexString()} projectId=${task.projectId?.toHexString() ?: "none"} correlationId=${task.correlationId}" }
+        logger.info {
+            "AGENT_BACKGROUND_START: taskId=${task.id} type=${task.taskType} clientId=${task.clientId.toHexString()} projectId=${task.projectId?.toHexString() ?: "none"} correlationId=${task.correlationId}"
+        }
 
         val clientId = requireNotNull(task.clientId) { "Background task must have clientId" }
         val projectId = task.projectId
@@ -331,7 +345,7 @@ class AgentOrchestratorService(
         val taskText = task.content
 
         // Load task-specific goal from YAML and apply content placeholder if present
-        val goalTemplate = backgroundTaskGoalsService.getGoals(task.taskType)
+        val goalTemplate = promptRepository.getGoals(task.taskType)
         val goalPrompt = goalTemplate.replace("{content}", taskText)
         logger.info { "AGENT_BACKGROUND_GOAL: taskId=${task.id} goalLength=${goalPrompt.length} contentLength=${taskText.length}" }
 
@@ -341,7 +355,6 @@ class AgentOrchestratorService(
                     text = taskText,
                     clientId = clientId,
                     projectId = projectId,
-                    quick = false,
                     background = true,
                     goalPrompt = goalPrompt,
                     taskCorrelationId = task.correlationId, // Propagate correlationId from task to plan
@@ -363,7 +376,7 @@ class AgentOrchestratorService(
                     PlanStep(
                         id = ObjectId.get(),
                         order = index,
-                        stepToolName = PromptTypeEnum.KNOWLEDGE_SEARCH_TOOL,
+                        stepToolName = ToolTypeEnum.KNOWLEDGE_SEARCH_TOOL,
                         stepInstruction = query,
                     )
                 }

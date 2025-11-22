@@ -6,7 +6,7 @@ import com.jervis.domain.email.EmailValidationResult
 import com.jervis.domain.email.UpdateEmailAccountRequest
 import com.jervis.entity.EmailAccountDocument
 import com.jervis.mapper.toDomain
-import com.jervis.repository.mongo.EmailAccountMongoRepository
+import com.jervis.repository.EmailAccountMongoRepository
 import jakarta.mail.Session
 import jakarta.mail.Store
 import kotlinx.coroutines.flow.Flow

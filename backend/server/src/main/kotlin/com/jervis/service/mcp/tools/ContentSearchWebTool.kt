@@ -1,8 +1,9 @@
 package com.jervis.service.mcp.tools
 
 import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
-import com.jervis.service.gateway.core.LlmGateway
+import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -19,66 +20,46 @@ import org.springframework.web.reactive.function.client.awaitBody
  */
 @Service
 class ContentSearchWebTool(
-    private val llmGateway: LlmGateway,
     override val promptRepository: PromptRepository,
     @Qualifier("searxngWebClient") private val webClient: WebClient,
-) : McpTool {
+) : McpTool<ContentSearchWebTool.ContentSearchWebParams> {
     private val logger = KotlinLogging.logger {}
 
-    override val name: PromptTypeEnum = PromptTypeEnum.CONTENT_SEARCH_WEB_TOOL
+    override val name = ToolTypeEnum.CONTENT_SEARCH_WEB_TOOL
+
+    override val descriptionObject =
+        ContentSearchWebParams(
+            query =
+                "Kotlin coroutine channels backpressure best practices. " +
+                    "Query string to search on the web (required)",
+        )
 
     @Serializable
     data class ContentSearchWebParams(
-        val query: String = "",
+        val query: String,
     )
 
     @Serializable
     data class SearxngResult(
-        val title: String = "",
-        val url: String = "",
-        val content: String = "",
-        val engine: String = "",
-        val score: Double = 0.0,
+        val title: String,
+        val url: String,
+        val content: String,
+        val engine: String,
+        val score: Double,
     )
 
     @Serializable
     data class SearxngResponse(
-        val query: String = "",
-        val results: List<SearxngResult> = emptyList(),
-        val number_of_results: Int = 0,
-        val engines: List<String> = emptyList(),
+        val query: String,
+        val results: List<SearxngResult>,
+        val number_of_results: Int,
+        val engines: List<String>,
     )
-
-    private suspend fun parseTaskDescription(
-        taskDescription: String,
-        plan: Plan,
-        stepContext: String = "",
-    ): ContentSearchWebParams {
-        val llmResponse =
-            llmGateway.callLlm(
-                type = PromptTypeEnum.CONTENT_SEARCH_WEB_TOOL,
-                mappingValue =
-                    mapOf(
-                        "taskDescription" to taskDescription,
-                        "stepContext" to stepContext,
-                    ),
-                correlationId = plan.correlationId,
-                quick = plan.quick,
-                responseSchema = ContentSearchWebParams(),
-                backgroundMode = plan.backgroundMode,
-            )
-        return llmResponse.result
-    }
 
     override suspend fun execute(
         plan: Plan,
-        taskDescription: String,
-        stepContext: String,
-    ): ToolResult {
-        val parsed = parseTaskDescription(taskDescription, plan, stepContext)
-
-        return executeContentSearchWebOperation(parsed, plan)
-    }
+        request: ContentSearchWebParams,
+    ): ToolResult = executeContentSearchWebOperation(request, plan)
 
     private suspend fun executeContentSearchWebOperation(
         params: ContentSearchWebParams,

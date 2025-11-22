@@ -3,15 +3,14 @@ package com.jervis.service.jira
 import com.jervis.common.client.ITikaClient
 import com.jervis.common.dto.TikaProcessRequest
 import com.jervis.domain.atlassian.AtlassianConnection
-import com.jervis.domain.model.ModelTypeEnum
-import com.jervis.domain.rag.RagDocument
-import com.jervis.domain.rag.RagSourceType
-import com.jervis.repository.mongo.AtlassianConnectionMongoRepository
+import com.jervis.rag.DocumentToStore
+import com.jervis.rag.EmbeddingType
+import com.jervis.rag.KnowledgeService
+import com.jervis.rag.KnowledgeType
+import com.jervis.repository.AtlassianConnectionMongoRepository
+import com.jervis.repository.JiraIssueIndexMongoRepository
 import com.jervis.service.atlassian.AtlassianConnectionService
 import com.jervis.service.error.ErrorLogService
-import com.jervis.service.rag.RagIndexingService
-import com.jervis.service.text.TextChunkingService
-import com.jervis.service.text.TextNormalizationService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -39,15 +38,13 @@ private val logger = KotlinLogging.logger {}
  */
 @Service
 class JiraAttachmentIndexer(
-    private val ragIndexingService: RagIndexingService,
+    private val knowledgeService: KnowledgeService,
     private val tikaClient: ITikaClient,
-    private val textChunkingService: TextChunkingService,
-    private val textNormalizationService: TextNormalizationService,
     private val webClientBuilder: WebClient.Builder,
     private val connectionRepository: AtlassianConnectionMongoRepository,
     private val connectionService: AtlassianConnectionService,
     private val errorLogService: ErrorLogService,
-    private val issueIndexRepository: com.jervis.repository.mongo.JiraIssueIndexMongoRepository,
+    private val issueIndexRepository: JiraIssueIndexMongoRepository,
     private val rateLimiter: com.jervis.service.ratelimit.DomainRateLimiterService,
 ) {
     /**
@@ -122,22 +119,25 @@ class JiraAttachmentIndexer(
 
             // Update index document with newly indexed attachment IDs
             if (newlyIndexedIds.isNotEmpty()) {
-                val updatedDoc = if (indexDoc == null) {
-                    com.jervis.entity.jira.JiraIssueIndexDocument(
-                        clientId = clientId,
-                        issueKey = issueKey,
-                        projectKey = "", // Will be filled by orchestrator
-                        indexedAttachmentIds = newlyIndexedIds,
-                        updatedAt = Instant.now(),
-                    )
-                } else {
-                    indexDoc.copy(
-                        indexedAttachmentIds = (indexDoc.indexedAttachmentIds + newlyIndexedIds).distinct(),
-                        updatedAt = Instant.now(),
-                    )
-                }
+                val updatedDoc =
+                    if (indexDoc == null) {
+                        com.jervis.entity.jira.JiraIssueIndexDocument(
+                            clientId = clientId,
+                            issueKey = issueKey,
+                            projectKey = "", // Will be filled by orchestrator
+                            indexedAttachmentIds = newlyIndexedIds,
+                            updatedAt = Instant.now(),
+                        )
+                    } else {
+                        indexDoc.copy(
+                            indexedAttachmentIds = (indexDoc.indexedAttachmentIds + newlyIndexedIds).distinct(),
+                            updatedAt = Instant.now(),
+                        )
+                    }
                 issueIndexRepository.save(updatedDoc)
-                logger.info { "JIRA_ATTACHMENT: Updated index document with ${newlyIndexedIds.size} new attachment IDs for issue $issueKey" }
+                logger.info {
+                    "JIRA_ATTACHMENT: Updated index document with ${newlyIndexedIds.size} new attachment IDs for issue $issueKey"
+                }
             }
         }.onFailure { e ->
             // Top-level failure when fetching attachments metadata or other fatal error
@@ -198,34 +198,22 @@ class JiraAttachmentIndexer(
             return
         }
 
-        // Normalize, chunk and index
-        val normalizedText = textNormalizationService.normalize(processingResult.plainText)
-        val chunks = textChunkingService.splitText(normalizedText)
-        logger.debug { "JIRA_ATTACHMENT: Split ${attachment.filename} into ${chunks.size} chunks" }
-
-        chunks.forEachIndexed { chunkIndex, chunk ->
-            ragIndexingService.indexDocument(
-                RagDocument(
-                    projectId = projectId, // Map to Jervis project if exists
-                    clientId = clientId,
-                    text = chunk.text(),
-                    ragSourceType = RagSourceType.JIRA_ATTACHMENT,
-                    createdAt = attachment.created,
-                    sourceUri = "https://$tenantHost/secure/attachment/${attachment.id}/${attachment.filename}",
-                    // Universal metadata fields
-                    from = attachment.author,
-                    subject = "Jira attachment: ${attachment.filename}",
-                    timestamp = attachment.created.toString(),
-                    parentRef = issueKey,
-                    chunkId = chunkIndex,
-                    chunkOf = chunks.size,
-                    fileName = attachment.filename,
-                ),
-                ModelTypeEnum.EMBEDDING_TEXT,
+        val documentToStore =
+            DocumentToStore(
+                documentId = "jira:$issueKey:attachment:${attachment.id}",
+                content = processingResult.plainText,
+                clientId = clientId,
+                projectId = projectId,
+                type = KnowledgeType.DOCUMENT,
+                embeddingType = EmbeddingType.TEXT,
+                title = attachment.filename,
+                location = "https://$tenantHost/secure/attachment/${attachment.id}/${attachment.filename}",
             )
-        }
 
-        logger.info { "JIRA_ATTACHMENT: Indexed ${attachment.filename} with ${chunks.size} chunks" }
+        knowledgeService
+            .store(com.jervis.rag.StoreRequest(listOf(documentToStore)))
+
+        logger.info { "JIRA_ATTACHMENT: Indexed ${attachment.filename}" }
     }
 
     private suspend fun fetchAttachmentMetadata(

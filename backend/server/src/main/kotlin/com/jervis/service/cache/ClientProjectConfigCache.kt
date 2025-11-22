@@ -2,8 +2,8 @@ package com.jervis.service.cache
 
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.ProjectDocument
-import com.jervis.repository.mongo.ClientMongoRepository
-import com.jervis.repository.mongo.ProjectMongoRepository
+import com.jervis.repository.ClientMongoRepository
+import com.jervis.repository.ProjectMongoRepository
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.bson.types.ObjectId

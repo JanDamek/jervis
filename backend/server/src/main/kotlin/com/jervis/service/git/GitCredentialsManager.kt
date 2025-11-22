@@ -3,7 +3,7 @@ package com.jervis.service.git
 import com.jervis.domain.git.MonoRepoConfig
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.ProjectDocument
-import com.jervis.repository.mongo.ClientMongoRepository
+import com.jervis.repository.ClientMongoRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging

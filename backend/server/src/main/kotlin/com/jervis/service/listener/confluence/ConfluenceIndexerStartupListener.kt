@@ -1,6 +1,6 @@
 package com.jervis.service.listener.confluence
 
-import com.jervis.repository.mongo.AtlassianConnectionMongoRepository
+import com.jervis.repository.AtlassianConnectionMongoRepository
 import com.jervis.service.confluence.ConfluenceContinuousIndexer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -45,7 +45,9 @@ class ConfluenceIndexerStartupListener(
             logger.info { "Found ${validConnections.size} VALID Atlassian connections" }
 
             validConnections.forEach { connection ->
-                logger.info { "Launching continuous Confluence indexer for client ${connection.clientId.toHexString()} (tenant: ${connection.tenant})" }
+                logger.info {
+                    "Launching continuous Confluence indexer for client ${connection.clientId.toHexString()} (tenant: ${connection.tenant})"
+                }
                 confluenceContinuousIndexer.launchContinuousIndexing(connection, indexerScope)
             }
 

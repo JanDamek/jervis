@@ -1,8 +1,7 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
-import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.git.GitRepositoryService
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
@@ -24,48 +23,33 @@ import org.springframework.stereotype.Service
  */
 @Service
 class ProjectGitSyncTool(
-    private val llmGateway: LlmGateway,
     private val gitRepositoryService: GitRepositoryService,
     override val promptRepository: PromptRepository,
-) : McpTool {
+) : McpTool<ProjectGitSyncTool.ProjectGitSyncParams> {
     private val logger = KotlinLogging.logger {}
-    override val name: PromptTypeEnum = PromptTypeEnum.PROJECT_GIT_SYNC_TOOL
+    override val name = ToolTypeEnum.PROJECT_GIT_SYNC_TOOL
 
     @Serializable
     data class ProjectGitSyncParams(
-        val action: String = "sync",
+        val action: String = "sync", // currently only "sync" is supported
         val validateAccess: Boolean = false,
+        val branch: String? = null, // optional branch to checkout after sync
     )
 
-    private suspend fun parseTaskDescription(
-        taskDescription: String,
-        plan: Plan,
-        stepContext: String,
-    ): ProjectGitSyncParams {
-        val llmResponse =
-            llmGateway.callLlm(
-                type = PromptTypeEnum.PROJECT_GIT_SYNC_TOOL,
-                mappingValue =
-                    mapOf(
-                        "taskDescription" to taskDescription,
-                        "stepContext" to stepContext,
-                    ),
-                correlationId = plan.correlationId,
-                quick = plan.quick,
-                responseSchema = ProjectGitSyncParams(),
-                backgroundMode = plan.backgroundMode,
-            )
-        return llmResponse.result
-    }
+    override val descriptionObject =
+        ProjectGitSyncParams(
+            action = "sync",
+            validateAccess = false,
+            branch = "main",
+        )
 
     override suspend fun execute(
         plan: Plan,
-        taskDescription: String,
-        stepContext: String,
+        request: ProjectGitSyncParams,
     ): ToolResult =
         withContext(Dispatchers.IO) {
             try {
-                val syncParams = parseTaskDescription(taskDescription, plan, stepContext)
+                val syncParams = request
                 logger.info { "PROJECT_GIT_SYNC: Starting Git sync with params: $syncParams" }
 
                 val project =
@@ -85,8 +69,8 @@ class ProjectGitSyncTool(
                         )
                     }
 
-                // Optional branch parsing from task description
-                val branch = extractBranch(taskDescription)
+                // Optional branch checkout from request parameters
+                val branch = syncParams.branch
                 if (!branch.isNullOrBlank()) {
                     runCatching { ensureBranchCheckedOut(gitDir, branch) }
                         .onFailure { e ->
@@ -104,9 +88,9 @@ class ProjectGitSyncTool(
                         buildString {
                             appendLine("Path: $gitDir")
                             branch?.let { appendLine("Branch: $it") }
-                        appendLine("Status: OK")
-                    },
-                        )
+                            appendLine("Status: OK")
+                        },
+                )
             } catch (e: Exception) {
                 logger.error(e) { "PROJECT_GIT_SYNC: Unexpected error" }
                 return@withContext ToolResult.error(
@@ -117,14 +101,14 @@ class ProjectGitSyncTool(
             }
         }
 
-    private fun extractBranch(taskDescription: String): String? {
-        val pattern = Regex("""branch:\s*([^\s,]+)""", RegexOption.IGNORE_CASE)
-        return pattern.find(taskDescription)?.groupValues?.get(1)
-    }
-
-    private fun ensureBranchCheckedOut(gitDir: java.nio.file.Path, branch: String) {
+    private fun ensureBranchCheckedOut(
+        gitDir: java.nio.file.Path,
+        branch: String,
+    ) {
         val fetch =
-            ProcessBuilder("git", "fetch", "origin", branch).directory(gitDir.toFile()).redirectErrorStream(true)
+            ProcessBuilder("git", "fetch", "origin", branch)
+                .directory(gitDir.toFile())
+                .redirectErrorStream(true)
                 .start()
         val fetchOut = fetch.inputStream.bufferedReader().use { it.readText() }
         val fetchExit = fetch.waitFor()

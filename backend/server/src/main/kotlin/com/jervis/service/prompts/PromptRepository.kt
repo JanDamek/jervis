@@ -1,9 +1,10 @@
 package com.jervis.service.prompts
 
-import com.jervis.configuration.prompts.PromptConfigBase
-import com.jervis.configuration.prompts.PromptToolConfig
+import com.jervis.configuration.prompts.PromptConfig
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.configuration.prompts.PromptsConfiguration
+import com.jervis.configuration.prompts.ToolTypeEnum
+import com.jervis.dto.PendingTaskTypeEnum
 import jakarta.annotation.PostConstruct
 import org.springframework.stereotype.Service
 
@@ -13,7 +14,6 @@ class PromptRepository(
 ) {
     @PostConstruct
     fun validateConfiguration() {
-        // Validate no duplicate keys between prompts and tools
         val promptKeys = promptsConfig.prompts.keys
         val toolKeys = promptsConfig.tools.keys
         val duplicateKeys = promptKeys.intersect(toolKeys)
@@ -22,48 +22,53 @@ class PromptRepository(
             throw IllegalStateException("Duplicate keys found in both prompts and tools maps: $duplicateKeys")
         }
 
-        // Validate all tools have non-empty descriptions
         promptsConfig.tools.forEach { (key, toolConfig) ->
             if (toolConfig.description.isBlank()) {
                 throw IllegalStateException("Tool $key has empty or blank description")
             }
+            if (toolConfig.plannerDescription.isBlank()) {
+                throw IllegalStateException("Tool $key has empty or blank plannerDescription")
+            }
         }
 
-        // Log validation success
-        println("[DEBUG] Prompt configuration validation successful:")
-        println("[DEBUG] - Tools configured: ${toolKeys.size} -> ${toolKeys.joinToString()}")
-        println("[DEBUG] - Generic prompts configured: ${promptKeys.size} -> ${promptKeys.joinToString()}")
-        println("[DEBUG] - No duplicate keys found")
-        println("[DEBUG] - All tools have valid descriptions")
+        promptsConfig.pendingTaskGoals.forEach { (key, goals) ->
+            if (goals.isBlank()) {
+                throw IllegalStateException("Pending task type $key has empty or blank goals")
+            }
+        }
 
-        // Fail fast if critical tool prompts are missing
-        val requiredTools = setOf(
-            PromptTypeEnum.PLANNING_CREATE_PLAN_TOOL,
-            PromptTypeEnum.TOOL_REASONING,
-            PromptTypeEnum.PLANNER_TOOL_SELECTOR,
-        )
-
-        val missing = requiredTools - toolKeys
-        if (missing.isNotEmpty()) {
+        // Validate all PromptTypeEnum values have corresponding prompt configuration
+        val missingPrompts = PromptTypeEnum.values().filter { it !in promptsConfig.prompts.keys }
+        if (missingPrompts.isNotEmpty()) {
             throw IllegalStateException(
-                "Missing required tool prompt configurations: $missing. " +
-                    "Check prompts-tools.yaml is on classpath and correctly bound."
+                "Missing prompt configurations for: $missingPrompts. " +
+                    "Available prompts: ${promptsConfig.prompts.keys}. " +
+                    "Add missing prompts to prompts.yaml",
             )
         }
 
-        // Explicit confirmation for TOOL_REASONING presence
-        if (!toolKeys.contains(PromptTypeEnum.TOOL_REASONING)) {
+        // Validate all PendingTaskTypeEnum values have corresponding goal configuration
+        val missingGoals = PendingTaskTypeEnum.values().filter { it !in promptsConfig.pendingTaskGoals.keys }
+        if (missingGoals.isNotEmpty()) {
             throw IllegalStateException(
-                "TOOL_REASONING prompt not loaded. Current tool keys: ${toolKeys.joinToString()}. " +
-                    "Verify prompts-tools.yaml: TOOL_REASONING block exists and properties bind correctly."
+                "Missing goal configurations for pending task types: $missingGoals. " +
+                    "Available goals: ${promptsConfig.pendingTaskGoals.keys}. " +
+                    "Add missing goals to pending-tasks-goals.yaml",
             )
         }
     }
 
     /**
-     * Get MCP tool description directly from the tools configuration
+     * Get MCP tool planner description (short) from tools configuration.
      */
-    fun getMcpToolDescription(toolType: PromptTypeEnum): String =
+    fun getMcpToolPlannerDescription(toolType: ToolTypeEnum): String =
+        promptsConfig.tools[toolType]?.plannerDescription?.takeIf { it.isNotBlank() }
+            ?: throw IllegalArgumentException("No plannerDescription found for tool type: $toolType")
+
+    /**
+     * Get MCP tool description (detailed with JSON schemas) from tools configuration.
+     */
+    fun getMcpToolDescription(toolType: ToolTypeEnum): String =
         promptsConfig.tools[toolType]?.description?.takeIf { it.isNotBlank() }
             ?: throw IllegalArgumentException("No description found for tool type: $toolType")
 
@@ -75,22 +80,14 @@ class PromptRepository(
      * @return the prompt configuration base for the specified type
      * @throws IllegalArgumentException if no prompt configuration is found for the given type
      */
-    fun getPrompt(promptTypeEnum: PromptTypeEnum): PromptConfigBase =
-        promptsConfig.tools[promptTypeEnum] as? PromptConfigBase
-            ?: promptsConfig.prompts[promptTypeEnum] as? PromptConfigBase
+    fun getPrompt(promptTypeEnum: PromptTypeEnum): PromptConfig =
+        promptsConfig.prompts[promptTypeEnum]
             ?: throw IllegalArgumentException(
                 "No prompt configuration found for type: $promptTypeEnum. " +
-                    "Available tool keys=${promptsConfig.tools.keys}. Available prompt keys=${promptsConfig.prompts.keys}"
+                    "Available tool keys=${promptsConfig.tools.keys}. Available prompt keys=${promptsConfig.prompts.keys}",
             )
 
-    /**
-     * Retrieves the tool configuration for MCP tools specifically.
-     *
-     * @param promptTypeEnum the type of tool for which the configuration is to be retrieved
-     * @return the tool configuration for the specified type
-     * @throws IllegalArgumentException if no tool configuration is found for the given type
-     */
-    fun getToolConfig(promptTypeEnum: PromptTypeEnum): PromptToolConfig =
-        promptsConfig.tools[promptTypeEnum]
-            ?: throw IllegalArgumentException("No tool configuration found for type: $promptTypeEnum")
+    fun getGoals(taskType: PendingTaskTypeEnum) =
+        promptsConfig.pendingTaskGoals[taskType]
+            ?: throw IllegalArgumentException("No goals found for pending task type: $taskType")
 }

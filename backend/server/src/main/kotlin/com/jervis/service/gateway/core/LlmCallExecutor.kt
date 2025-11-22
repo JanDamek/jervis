@@ -1,6 +1,6 @@
 package com.jervis.service.gateway.core
 
-import com.jervis.configuration.prompts.PromptConfigBase
+import com.jervis.configuration.prompts.PromptConfig
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.domain.llm.LlmResponse
@@ -19,30 +19,30 @@ class LlmCallExecutor(
     private val clients: List<ProviderClient>,
     private val debugService: DebugService,
     private val llmLoadMonitor: com.jervis.service.background.LlmLoadMonitor,
-    private val modelConcurrencyManager: ModelConcurrencyManager,
+    private val providerConcurrencyManager: ProviderConcurrencyManager,
 ) {
     private val logger = KotlinLogging.logger {}
 
     /**
      * Executes LLM call for the given candidate model with proper reactive patterns.
-     * Routes to streaming if debug window is active.
-     * Respects per-model concurrency limits - will suspend if model is at capacity.
+     * Routes to streaming if a debug window is active.
+     * Respects per-provider concurrency limits - will suspend if provider is at capacity.
      */
     suspend fun executeCall(
         candidate: ModelsProperties.ModelDetail,
         systemPrompt: String,
         userPrompt: String,
-        prompt: PromptConfigBase,
+        prompt: PromptConfig,
         promptType: PromptTypeEnum,
         estimatedTokens: Int,
         correlationId: String,
         backgroundMode: Boolean = false,
-    ): LlmResponse =
-        modelConcurrencyManager.withConcurrencyControl(candidate) {
-            val provider =
-                candidate.provider
-                    ?: throw IllegalStateException("Provider not specified for candidate")
+    ): LlmResponse {
+        val provider =
+            candidate.provider
+                ?: throw IllegalStateException("Provider not specified for candidate")
 
+        return providerConcurrencyManager.withConcurrencyControl(provider) {
             val client = findClientForProvider(provider)
 
             logger.info { "Calling LLM type=$promptType provider=$provider model=${candidate.model} background=$backgroundMode" }
@@ -95,6 +95,7 @@ class LlmCallExecutor(
                 }
             }
         }
+    }
 
     /**
      * Executes streaming LLM call and converts to regular LlmResponse.
@@ -105,7 +106,7 @@ class LlmCallExecutor(
         candidate: ModelsProperties.ModelDetail,
         systemPrompt: String,
         userPrompt: String,
-        prompt: PromptConfigBase,
+        prompt: PromptConfig,
         estimatedTokens: Int,
         debugSessionId: String,
     ): LlmResponse {
@@ -145,7 +146,7 @@ class LlmCallExecutor(
                 }
             }
 
-        // Send debug session completed directly to WebSocket
+        // Send the debug session completed directly to WebSocket
         debugService.sessionCompleted(debugSessionId)
 
         val finalResponse =

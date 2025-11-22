@@ -3,7 +3,7 @@ package com.jervis.service.gateway.clients.llm
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.jervis.configuration.prompts.CreativityConfig
-import com.jervis.configuration.prompts.PromptConfigBase
+import com.jervis.configuration.prompts.PromptConfig
 import com.jervis.configuration.prompts.PromptsConfiguration
 import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.domain.gateway.StreamChunk
@@ -33,7 +33,7 @@ class OllamaClient(
      * Select appropriate WebClient based on ModelType from prompt config.
      * QUALIFIER type uses separate endpoint (CPU server), others use primary (GPU server).
      */
-    private fun selectWebClient(prompt: PromptConfigBase): WebClient =
+    private fun selectWebClient(prompt: PromptConfig): WebClient =
         when (prompt.modelParams.modelType) {
             com.jervis.domain.model.ModelTypeEnum.QUALIFIER -> qualifierWebClient
             else -> primaryWebClient
@@ -44,7 +44,7 @@ class OllamaClient(
         systemPrompt: String?,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
-        prompt: PromptConfigBase,
+        prompt: PromptConfig,
         estimatedTokens: Int,
     ): LlmResponse {
         val webClient = selectWebClient(prompt)
@@ -60,7 +60,7 @@ class OllamaClient(
         systemPrompt: String?,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
-        prompt: PromptConfigBase,
+        prompt: PromptConfig,
         estimatedTokens: Int,
     ): LlmResponse {
         val responseBuilder = StringBuilder()
@@ -89,7 +89,7 @@ class OllamaClient(
         systemPrompt: String?,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
-        prompt: PromptConfigBase,
+        prompt: PromptConfig,
         estimatedTokens: Int,
         debugSessionId: String?,
     ): Flow<StreamChunk> {
@@ -106,7 +106,7 @@ class OllamaClient(
         systemPrompt: String?,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
-        prompt: PromptConfigBase,
+        prompt: PromptConfig,
         estimatedTokens: Int,
     ): Flow<StreamChunk> =
         flow {
@@ -271,7 +271,7 @@ class OllamaClient(
 
     private fun calculateTotalTokens(response: OllamaGenerateResponse): Int = (response.prompt_eval_count ?: 0) + (response.eval_count ?: 0)
 
-    private fun getCreativityConfig(prompt: PromptConfigBase) =
+    private fun getCreativityConfig(prompt: PromptConfig) =
         promptsConfiguration.creativityLevels[prompt.modelParams.creativityLevel]
             ?: throw IllegalStateException("No creativity level configuration found for ${prompt.modelParams.creativityLevel}")
 

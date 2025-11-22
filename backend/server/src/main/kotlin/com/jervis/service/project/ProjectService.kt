@@ -4,7 +4,7 @@ import com.jervis.dto.ProjectDto
 import com.jervis.entity.ProjectDocument
 import com.jervis.mapper.toDocument
 import com.jervis.mapper.toDto
-import com.jervis.repository.mongo.ProjectMongoRepository
+import com.jervis.repository.ProjectMongoRepository
 import com.jervis.service.git.GitRepositoryService
 import com.jervis.service.storage.DirectoryStructureService
 import kotlinx.coroutines.flow.toList

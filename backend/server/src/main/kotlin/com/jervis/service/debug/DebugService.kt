@@ -3,7 +3,6 @@ package com.jervis.service.debug
 import com.jervis.domain.websocket.WebSocketChannelTypeEnum
 import com.jervis.dto.events.DebugEventDto
 import com.jervis.service.websocket.WebSocketSessionManager
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -131,7 +130,6 @@ class DebugService(
         correlationId: String,
         taskId: String,
         decision: String,
-        duration: Long,
         reason: String,
     ) {
         val dto =
@@ -139,7 +137,6 @@ class DebugService(
                 correlationId = correlationId,
                 taskId = taskId,
                 decision = decision,
-                duration = duration,
                 reason = reason,
             )
         broadcast(dto)

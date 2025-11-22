@@ -2,10 +2,9 @@ package com.jervis.service.mcp.tools
 
 import com.jervis.common.client.ITikaClient
 import com.jervis.common.dto.TikaProcessRequest
-import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.storage.ProjectSubdirectoryEnum
-import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -25,52 +24,32 @@ import kotlin.io.path.isRegularFile
  */
 @Service
 class DocumentExtractTextTool(
-    private val llmGateway: LlmGateway,
     override val promptRepository: PromptRepository,
     private val tikaClient: ITikaClient,
     private val directoryStructureService: DirectoryStructureService,
-) : McpTool {
+) : McpTool<DocumentExtractTextTool.DocumentExtractTextParams> {
     companion object {
         private val logger = KotlinLogging.logger {}
     }
 
-    override val name: PromptTypeEnum = PromptTypeEnum.DOCUMENT_EXTRACT_TEXT_TOOL
+    override val name = ToolTypeEnum.DOCUMENT_EXTRACT_TEXT_TOOL
+
+    override val descriptionObject =
+        DocumentExtractTextParams(
+            filePath =
+                "documents/specs/requirements.pdf\n" +
+                    "Relative path within project documents directory (required)",
+        )
 
     @Serializable
     data class DocumentExtractTextParams(
-        val filePath: String = "",
+        val filePath: String,
     )
-
-    private suspend fun parseTaskDescription(
-        taskDescription: String,
-        plan: Plan,
-        stepContext: String = "",
-    ): DocumentExtractTextParams {
-        val llmResponse =
-            llmGateway.callLlm(
-                type = PromptTypeEnum.DOCUMENT_EXTRACT_TEXT_TOOL,
-                mappingValue =
-                    mapOf(
-                        "taskDescription" to taskDescription,
-                        "stepContext" to stepContext,
-                    ),
-                correlationId = plan.correlationId,
-                quick = plan.quick,
-                responseSchema = DocumentExtractTextParams(),
-                backgroundMode = plan.backgroundMode,
-            )
-        return llmResponse.result
-    }
 
     override suspend fun execute(
         plan: Plan,
-        taskDescription: String,
-        stepContext: String,
-    ): ToolResult {
-        val parsed = parseTaskDescription(taskDescription, plan, stepContext)
-
-        return executeDocumentExtractTextOperation(parsed, plan)
-    }
+        request: DocumentExtractTextParams,
+    ): ToolResult = executeDocumentExtractTextOperation(request, plan)
 
     private suspend fun executeDocumentExtractTextOperation(
         params: DocumentExtractTextParams,

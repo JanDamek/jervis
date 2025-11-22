@@ -1,59 +1,39 @@
 package com.jervis.entity
 
-import com.jervis.domain.task.ScheduledTaskStatusEnum
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
-import org.springframework.data.mongodb.core.index.CompoundIndex
-import org.springframework.data.mongodb.core.index.CompoundIndexes
 import org.springframework.data.mongodb.core.index.Indexed
 import org.springframework.data.mongodb.core.mapping.Document
 import java.time.Instant
 
 /**
- * MongoDB document for managing scheduled tasks executed through planner.
- * All tasks are defined as text instructions that are executed by agents through MCP tools.
+ * Scheduled task dispatched to agent 10 minutes before scheduled time.
+ *
+ * LIFECYCLE:
+ * - Non-cron: Dispatched as PendingTask, then DELETED
+ * - Cron: Dispatched as PendingTask, scheduledAt updated to next occurrence, stays in DB
+ *
+ * NO STATUS - tasks are either waiting (in DB) or dispatched (deleted or rescheduled).
  */
 @Document(collection = "scheduled_tasks")
-@CompoundIndexes(
-    CompoundIndex(name = "project_status", def = "{'projectId': 1, 'status': 1}"),
-    CompoundIndex(name = "status_scheduled", def = "{'status': 1, 'scheduledAt': 1}"),
-)
 data class ScheduledTaskDocument(
     @Id
     val id: ObjectId = ObjectId.get(),
+    /** Client this task belongs to */
     @Indexed
-    val projectId: ObjectId,
-    /** Task instruction to be executed through a planner */
+    val clientId: ObjectId,
+    /** Project this task belongs to */
     @Indexed
-    val taskInstruction: String,
-    /** Current task status */
-    @Indexed
-    val status: ScheduledTaskStatusEnum = ScheduledTaskStatusEnum.PENDING,
-    /** Task name/description */
+    val projectId: ObjectId?,
+    /** Task content - what agent should do (full context for agent) */
+    val content: String,
+    /** Task name for display/logging purposes only */
     val taskName: String,
-    /** Task parameters as JSON string */
-    val taskParameters: Map<String, String> = emptyMap(),
-    /** When the task is scheduled to run */
+    /** When the task should be dispatched to agent (10min before this time) */
     @Indexed
     val scheduledAt: Instant,
-    /** When the task actually started */
-    val startedAt: Instant? = null,
-    /** When the task completed */
-    val completedAt: Instant? = null,
-    /** Error message if task failed */
-    val errorMessage: String? = null,
-    /** Number of retry attempts */
-    val retryCount: Int = 0,
-    /** Maximum number of retries allowed */
-    val maxRetries: Int = 3,
-    /** Priority of the task (higher number = higher priority) */
-    val priority: Int = 0,
-    /** Recurring schedule expression (cron-like) if applicable */
+    /** Recurring schedule expression (cron-like). If null, task is one-time. */
     val cronExpression: String? = null,
-    /** When this task was created */
-    val createdAt: Instant = Instant.now(),
-    /** When this task was last updated */
-    val lastUpdatedAt: Instant = Instant.now(),
-    /** User or system that created this task */
-    val createdBy: String = "system",
+    /** CorrelationId linking to source (user task, agent decision, etc) */
+    val correlationId: String? = null,
 )

@@ -6,9 +6,13 @@ import com.jervis.domain.confluence.ThreadStatusEnum
 import com.jervis.domain.email.AliasTypeEnum
 import com.jervis.domain.sender.ConversationThread
 import com.jervis.domain.task.PendingTask
+import com.jervis.dto.PendingTaskState
 import com.jervis.dto.PendingTaskTypeEnum
-import com.jervis.service.gateway.QualifierLlmGateway
+import com.jervis.service.debug.DebugService
+import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.listener.email.imap.ImapMessage
+import com.jervis.service.listener.email.state.EmailMessageStateManager
+import com.jervis.service.qualifier.QualifierRuleService
 import com.jervis.service.sender.ConversationThreadService
 import com.jervis.service.sender.MessageLinkService
 import com.jervis.service.sender.SenderProfileService
@@ -22,36 +26,36 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.bson.types.ObjectId
+import org.jsoup.Jsoup
 import org.springframework.stereotype.Service
 import java.util.Base64
-import org.jsoup.Jsoup
 
 private val logger = KotlinLogging.logger {}
 
 /**
  * Service for pre-qualifying pending tasks using small, fast models.
- * Filters out obvious spam/noise, delegates everything else to strong model.
+ * Filters out obvious spam/noise, delegates everything else to a strong model.
  * Also provides email enrichment with sender profiles and conversation context.
  */
 @Service
 class TaskQualificationService(
-    private val qualifierGateway: QualifierLlmGateway,
     private val pendingTaskService: PendingTaskService,
-    private val backgroundTaskGoalsService: BackgroundTaskGoalsService,
     private val senderProfileService: SenderProfileService,
     private val conversationThreadService: ConversationThreadService,
     private val messageLinkService: MessageLinkService,
     private val userTaskService: UserTaskService,
-    private val emailMessageStateManager: com.jervis.service.listener.email.state.EmailMessageStateManager,
-    private val debugService: com.jervis.service.debug.DebugService,
+    private val emailMessageStateManager: EmailMessageStateManager,
+    private val debugService: DebugService,
     private val tikaClient: ITikaClient,
     private val textNormalizationService: TextNormalizationService,
+    private val qualifierRuleService: QualifierRuleService,
+    private val llmGateway: LlmGateway,
 ) {
     /**
-     * Process entire Flow of tasks needing qualification.
+     * Process the entire Flow of tasks needing qualification.
      * Concurrency is controlled by model-level semaphores (e.g., QUALIFIER model has concurrency: 4).
-     * Back-pressure: if model is at capacity, Flow processing will suspend until permit is available.
-     * Memory safe: doesn't load all 2000+ tasks into heap at once.
+     * Back-pressure: if the model is at capacity, Flow processing will suspend until a permit is available.
+     * Memory safe: doesn't load all 2000+ tasks into a heap at once.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun processAllQualifications() {
@@ -64,9 +68,8 @@ class TaskQualificationService(
                 .findTasksForQualification()
                 .flatMapMerge(concurrency = 32) { task ->
                     flow {
-                        // Branch by current state
                         when (task.state) {
-                            com.jervis.dto.PendingTaskState.READY_FOR_QUALIFICATION -> {
+                            PendingTaskState.READY_FOR_QUALIFICATION -> {
                                 val claimed = pendingTaskService.tryClaimForQualification(task.id)
                                 if (claimed != null) {
                                     processedCount++
@@ -82,8 +85,7 @@ class TaskQualificationService(
                                     logger.debug { "Task ${task.id} could not be claimed (race), skipping" }
                                 }
                             }
-                            com.jervis.dto.PendingTaskState.QUALIFYING -> {
-                                // Reclaim stuck/in-progress task - continue processing without re-claim
+                            PendingTaskState.QUALIFYING -> {
                                 processedCount++
                                 if (processedCount == 1) {
                                     logger.info { "First task received (reclaimed QUALIFYING) - qualification pipeline started" }
@@ -126,7 +128,6 @@ class TaskQualificationService(
     ): QualificationResult {
         logger.info { "Qualifying inbound email: ${email.messageId}" }
 
-        // 1. Create/find sender profile
         val senderProfile =
             senderProfileService.findOrCreateProfile(
                 identifier = email.from,
@@ -134,7 +135,6 @@ class TaskQualificationService(
                 aliasType = AliasTypeEnum.EMAIL_WORK,
             )
 
-        // 2. Create/find thread
         val thread =
             conversationThreadService.findOrCreateThread(
                 emailHeaders = email,
@@ -143,7 +143,6 @@ class TaskQualificationService(
                 projectId = projectId,
             )
 
-        // 3. Create message link
         messageLinkService.createLinkFromEmail(
             email = email,
             threadId = thread.id,
@@ -151,13 +150,11 @@ class TaskQualificationService(
             ragDocumentId = ragDocumentId,
         )
 
-        // 4. Update counters
         senderProfileService.incrementMessagesReceived(senderProfile.id)
         ragDocumentId?.let {
             conversationThreadService.addRagDocumentId(thread.id, it)
         }
 
-        // 4.1 Resolution hook BEFORE creating any new task
         val sourceUri = "email://${accountId.toHexString()}/${email.messageId}"
         val (resolved, closedTaskIds) = resolveExistingUserTasksIfApplicable(thread, clientId, sourceUri, email)
         if (resolved) {
@@ -171,9 +168,6 @@ class TaskQualificationService(
             return QualificationResult.Discard(reason = "Resolved by inbound update; closed tasks: ${closedTaskIds.joinToString()}")
         }
 
-        // 5. Create pending task without any LLM calls – fast path during indexing.
-        //    The actual qualification (DISCARD/DELEGATE) will be performed later by background engine.
-
         val task =
             pendingTaskService.createTask(
                 taskType = PendingTaskTypeEnum.EMAIL_PROCESSING,
@@ -182,42 +176,10 @@ class TaskQualificationService(
                 projectId = projectId,
             )
 
-        // Requirement: writing pending task must atomically flip email state to INDEXED
         emailMessageStateManager.markMessageIdAsIndexed(accountId, email.messageId)
 
         logger.info { "Email ${email.messageId} enqueued for qualification and marked as INDEXED" }
         return QualificationResult.Delegate(task = task)
-    }
-
-    private suspend fun qualifyBasicEmail(
-        email: ImapMessage,
-        clientId: ObjectId,
-        correlationId: String,
-    ): EmailDecision {
-        val cleanSnippet = cleanEmailBody(email.content).take(1000)
-        val emailContent =
-            buildString {
-                appendLine("FROM: ${email.from}")
-                appendLine("SUBJECT: ${email.subject}")
-                appendLine("DATE: ${email.receivedAt}")
-                appendLine()
-                appendLine(cleanSnippet)
-            }
-
-        return try {
-            val taskConfig = backgroundTaskGoalsService.getQualifierPrompts(PendingTaskTypeEnum.EMAIL_PROCESSING)
-            val systemPrompt = taskConfig.qualifierSystemPrompt ?: ""
-            val userPromptTemplate = taskConfig.qualifierUserPrompt ?: ""
-
-            val decision = qualifierGateway.qualify(systemPrompt, userPromptTemplate, mapOf("content" to emailContent), correlationId)
-            when (decision) {
-                is QualifierLlmGateway.QualifierDecision.Discard -> EmailDecision.DISCARD
-                is QualifierLlmGateway.QualifierDecision.Delegate -> EmailDecision.DELEGATE
-            }
-        } catch (e: Exception) {
-            logger.warn(e) { "Qualifier failed, defaulting to DELEGATE: ${e.message}" }
-            EmailDecision.DELEGATE
-        }
     }
 
     private suspend fun formatEmailContent(email: ImapMessage): String =
@@ -269,7 +231,6 @@ class TaskQualificationService(
                 }
             }
 
-        // Remove URLs to avoid noisy anchors/signatures; actual link content is indexed elsewhere
         val withoutUrls = URL_PATTERN.replace(plainText, "[URL]")
 
         return textNormalizationService.normalize(withoutUrls)
@@ -281,120 +242,84 @@ class TaskQualificationService(
 
     /**
      * Build mapping values for qualifier prompt placeholders from task data.
-     * All information is now in content field - just pass it through.
+     * All information is now in the content field - just pass it through.
      * Also provides current datetime for past/future event detection.
+     * Injects active qualifier rules for the specific task type.
      */
-    private fun buildMappingValues(
+    private suspend fun buildMappingValues(
         task: PendingTask,
         truncatedContent: String,
     ): Map<String, String> =
         buildMap {
-            // Only provide values we truly have. Do not invent.
             put("content", truncatedContent)
 
-            // Provide current datetime so qualifier can determine if events are in past or future
-            val now = java.time.ZonedDateTime.now(java.time.ZoneId.of("UTC"))
-            put("currentDateTime", now.format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME))
-            put("currentDate", now.format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE))
+            val rulesText = qualifierRuleService.getRulesText(task.taskType)
+            put("activeQualifierRules", rulesText)
         }
 
+    data class DecisionResponseQualifier(
+        val discard: Boolean,
+        val reason: String?,
+    )
+
     private suspend fun qualifyTask(task: PendingTask) {
-        val startTime = System.currentTimeMillis()
         logger.info { "QUALIFICATION_START: id=${task.id} correlationId=${task.correlationId} type=${task.taskType}" }
 
-        // Publish debug event
         debugService.qualificationStart(
             correlationId = task.correlationId,
             taskId = task.id.toHexString(),
-            taskType = task.taskType.name
+            taskType = task.taskType.name,
         )
 
-        val taskConfig = backgroundTaskGoalsService.getQualifierPrompts(task.taskType)
+        val mappingValues = buildMappingValues(task, task.content)
+        val decision =
+            llmGateway.callLlm(
+                task.taskType.promptType,
+                DecisionResponseQualifier(false, "Task busm be passed to AGENT"),
+                correlationId = task.correlationId,
+                mappingValue = mappingValues,
+                backgroundMode = true,
+            )
 
-        val systemPrompt = taskConfig.qualifierSystemPrompt ?: ""
-        val userPromptTemplate = taskConfig.qualifierUserPrompt ?: ""
-
-        try {
-            val maxContentChars = 20_000
-            val rawContent = task.content
-            val truncatedContent =
-                if (rawContent.length > maxContentChars) {
-                    val truncated = rawContent.take(maxContentChars)
-                    logger.debug {
-                        "Task ${task.id} content truncated from ${rawContent.length} to $maxContentChars chars for qualification"
-                    }
-                    truncated + "\n\n[... content truncated for qualification ...]"
-                } else {
-                    rawContent
+        when (decision.result.discard) {
+            true -> {
+                logger.info {
+                    "QUALIFICATION_DECISION: id=${task.id} correlationId=${task.correlationId} decision=DISCARD reason=spam/noise"
                 }
 
-            val mappingValues = buildMappingValues(task, truncatedContent)
-
-            val decision =
-                qualifierGateway.qualify(
-                    systemPromptTemplate = systemPrompt,
-                    userPromptTemplate = userPromptTemplate,
-                    mappingValues = mappingValues,
+                debugService.qualificationDecision(
                     correlationId = task.correlationId,
+                    taskId = task.id.toHexString(),
+                    decision = "DISCARD",
+                    reason = decision.result.reason ?: "spam/noise",
                 )
 
-            val duration = System.currentTimeMillis() - startTime
-
-            when (decision) {
-                is QualifierLlmGateway.QualifierDecision.Discard -> {
-                    logger.info { "QUALIFICATION_DECISION: id=${task.id} correlationId=${task.correlationId} decision=DISCARD duration=${duration}ms reason=spam/noise" }
-
-                    // Publish debug event
-                    debugService.qualificationDecision(
-                        correlationId = task.correlationId,
-                        taskId = task.id.toHexString(),
-                        decision = "DISCARD",
-                        duration = duration,
-                        reason = "spam/noise"
-                    )
-
-                    pendingTaskService.deleteTask(task.id)
-                }
-
-                is QualifierLlmGateway.QualifierDecision.Delegate -> {
-                    logger.info { "QUALIFICATION_DECISION: id=${task.id} correlationId=${task.correlationId} decision=DELEGATE duration=${duration}ms reason=actionable" }
-
-                    // Publish debug event
-                    debugService.qualificationDecision(
-                        correlationId = task.correlationId,
-                        taskId = task.id.toHexString(),
-                        decision = "DELEGATE",
-                        duration = duration,
-                        reason = "actionable"
-                    )
-
-                    pendingTaskService.updateState(
-                        task.id,
-                        com.jervis.dto.PendingTaskState.QUALIFYING,
-                        com.jervis.dto.PendingTaskState.DISPATCHED_GPU,
-                    )
-                }
+                pendingTaskService.deleteTask(task.id)
             }
-        } catch (e: Exception) {
-            val duration = System.currentTimeMillis() - startTime
-            logger.error(e) { "QUALIFICATION_ERROR: id=${task.id} correlationId=${task.correlationId} duration=${duration}ms error=${e.message} - delegating to GPU" }
-            // Even if qualifier failed, delegate to strong model by transitioning state
-            try {
+
+            false -> {
+                logger.info {
+                    "QUALIFICATION_DECISION: id=${task.id} correlationId=${task.correlationId} decision=DELEGATE reason=actionable"
+                }
+
+                // Publish debug event
+                debugService.qualificationDecision(
+                    correlationId = task.correlationId,
+                    taskId = task.id.toHexString(),
+                    decision = "DELEGATE",
+                    reason = decision.result.reason ?: "actionable",
+                )
+
                 pendingTaskService.updateState(
                     task.id,
-                    com.jervis.dto.PendingTaskState.QUALIFYING,
-                    com.jervis.dto.PendingTaskState.DISPATCHED_GPU,
+                    PendingTaskState.QUALIFYING,
+                    PendingTaskState.DISPATCHED_GPU,
                 )
-            } catch (ie: Exception) {
-                logger.warn(ie) { "QUALIFICATION_FALLBACK_FAILED: id=${task.id} error=${ie.message}" }
             }
         }
     }
 
-    private fun looksLikeResolution(
-        email: ImapMessage,
-        thread: ConversationThread,
-    ): Boolean {
+    private fun looksLikeResolution(email: ImapMessage): Boolean {
         val text = (email.subject + "\n" + email.content).lowercase()
         val resolutionMarkers =
             listOf(
@@ -425,17 +350,12 @@ class TaskQualificationService(
         val active = userTaskService.findActiveTasksByThread(clientId, thread.id).toList()
         if (active.isEmpty()) return false to emptyList()
 
-        return if (looksLikeResolution(email, thread)) {
+        return if (looksLikeResolution(email)) {
             val closed = active.map { userTaskService.completeTask(it.id, resolutionSourceUri).id.toHexString() }
             true to closed
         } else {
             false to emptyList()
         }
-    }
-
-    enum class EmailDecision {
-        DISCARD,
-        DELEGATE,
     }
 
     sealed class QualificationResult {

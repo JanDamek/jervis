@@ -1,17 +1,15 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
-import com.jervis.domain.rag.KnowledgeType
-import com.jervis.domain.task.TaskPriorityEnum
-import com.jervis.domain.task.TaskSourceType
-import com.jervis.service.knowledge.KnowledgeClassifierService
-import com.jervis.service.knowledge.KnowledgeManagementService
+import com.jervis.rag.EmbeddingType
+import com.jervis.rag.KnowledgeService
+import com.jervis.rag.KnowledgeType
+import com.jervis.rag.StoreRequest
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
-import com.jervis.service.task.UserTaskService
-import com.jervis.service.text.TextChunkingService
+import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
@@ -26,152 +24,66 @@ import org.springframework.stereotype.Service
  */
 @Service
 class KnowledgeStoreTool(
-    private val knowledgeManagementService: KnowledgeManagementService,
-    private val knowledgeClassifier: KnowledgeClassifierService,
-    private val userTaskService: UserTaskService,
-    private val textChunkingService: TextChunkingService,
+    private val knowledgeService: KnowledgeService,
     override val promptRepository: PromptRepository,
-) : McpTool {
+) : McpTool<KnowledgeStoreTool.Description> {
     companion object {
         private val logger = KotlinLogging.logger {}
     }
 
-    override val name: PromptTypeEnum = PromptTypeEnum.KNOWLEDGE_STORE_TOOL
+    override val name = ToolTypeEnum.KNOWLEDGE_STORE_TOOL
+
+    @Serializable
+    data class Description(
+        val content: String = "Plain text to store as MEMORY in knowledge base",
+    )
+
+    override val descriptionObject =
+        Description(
+            content = "Meeting notes about client X environment and constraints.",
+        )
 
     override suspend fun execute(
         plan: Plan,
-        taskDescription: String,
-        stepContext: String,
+        request: Description,
     ): ToolResult {
-        logger.info { "KNOWLEDGE_STORE_START: Intelligent classification and storage (${taskDescription.length} chars)" }
+        logger.info { "KNOWLEDGE_STORE_START: Storing content as MEMORY (${request.content.length} chars)" }
 
-        if (taskDescription.isBlank()) {
+        val content = request.content.trim()
+        if (content.isBlank()) {
             return ToolResult.error("Content cannot be blank")
         }
 
-        // Step 1: Classify knowledge using LLM
-        val classification =
-            knowledgeClassifier
-                .classifyKnowledge(taskDescription, plan.correlationId)
-                .getOrElse { error ->
-                    logger.error { "Failed to classify knowledge: ${error.message}" }
-                    return ToolResult.error("Classification failed: ${error.message}")
-                }
-
-        logger.info {
-            "Knowledge classified: type=${classification.type}, severity=${classification.severity}, " +
-                "tags=${classification.tags}, reasoning=${classification.reasoning}"
-        }
-
-        // Step 2: Handle based on type
-        return when (classification.toKnowledgeType()) {
-            KnowledgeType.RULE -> handleRuleStorage(taskDescription, classification, plan)
-            KnowledgeType.MEMORY -> handleMemoryStorage(taskDescription, classification, plan)
-        }
-    }
-
-    /**
-     * RULE: Create UserTask for approval before storing
-     */
-    private suspend fun handleRuleStorage(
-        content: String,
-        classification: KnowledgeClassifierService.KnowledgeClassification,
-        plan: Plan,
-    ): ToolResult {
-        logger.info { "Handling RULE: Creating UserTask for approval" }
-
-        // Create metadata for approval
-        val metadata =
-            mapOf(
-                "knowledgeType" to classification.type,
-                "knowledgeSeverity" to classification.severity,
-                "knowledgeTags" to classification.tags.joinToString(","),
-                "knowledgeText" to content,
-                "reasoning" to classification.reasoning,
-            )
-
-        // Create UserTask
-        val task =
-            userTaskService.createTask(
-                title = "Schválit nové pravidlo",
-                description =
-                    buildString {
-                        appendLine("**Navrhované pravidlo:**")
-                        appendLine(content)
-                        appendLine()
-                        appendLine("**Klasifikace:**")
-                        appendLine("- Typ: ${classification.type}")
-                        appendLine("- Přísnost: ${classification.severity}")
-                        appendLine("- Tagy: ${classification.tags.joinToString(", ")}")
-                        appendLine()
-                        appendLine("**Zdůvodnění:** ${classification.reasoning}")
-                    },
-                priority = TaskPriorityEnum.HIGH,
+        // Store directly as MEMORY without any classification
+        val documentToStore =
+            com.jervis.rag.DocumentToStore(
+                documentId = "memory:${plan.correlationId}:${System.currentTimeMillis()}",
+                content = content,
                 clientId = plan.clientDocument.id,
                 projectId = plan.projectDocument?.id,
-                sourceType = TaskSourceType.KNOWLEDGE_APPROVAL,
-                metadata = metadata,
+                type = KnowledgeType.MEMORY,
+                embeddingType = EmbeddingType.TEXT,
+                title = null,
+                location = null,
+                relatedDocs = emptyList(),
             )
 
-        logger.info { "UserTask created for rule approval: taskId=${task.id}" }
+        val result = knowledgeService.store(StoreRequest(listOf(documentToStore)))
+
+        val stored = result.documents.firstOrNull()
+            ?: return ToolResult.error("Store operation returned no documents")
 
         return ToolResult.success(
             toolName = name.name,
-            summary = "Rule pending approval (task ${task.id})",
-            content =
-                buildString {
-                    appendLine("Detected RULE - requires user approval")
-                    appendLine("Created approval task: ${task.id}")
-                    appendLine()
-                    appendLine("Classification:")
-                    appendLine("  Type: ${classification.type}")
-                    appendLine("  Severity: ${classification.severity}")
-                    appendLine("  Tags: ${classification.tags.joinToString(", ")}")
-                    appendLine()
-                    appendLine("User will need to approve this rule before it becomes active.")
-                },
-        )
-    }
-
-    /**
-     * MEMORY: Store directly using KnowledgeManagementService
-     */
-    private suspend fun handleMemoryStorage(
-        content: String,
-        classification: KnowledgeClassifierService.KnowledgeClassification,
-        plan: Plan,
-    ): ToolResult {
-        logger.info { "Handling MEMORY: Storing directly" }
-
-        val stored =
-            knowledgeManagementService
-                .storeKnowledge(
-                    text = content,
-                    type = classification.toKnowledgeType(),
-                    severity = classification.toKnowledgeSeverity(),
-                    tags = classification.tags,
-                    clientId = plan.clientDocument.id,
-                    projectId = plan.projectDocument?.id,
-                    correlationId = plan.correlationId,
-                ).getOrElse { error ->
-                    logger.error { "Failed to store memory: ${error.message}" }
-                    return ToolResult.error("Failed to store memory: ${error.message}")
-                }
-
-        logger.info { "Memory stored successfully: knowledgeId=${stored.knowledgeId}" }
-
-        return ToolResult.success(
-            toolName = name.name,
-            summary = "Memory stored (ID: ${stored.knowledgeId})",
+            summary = "Memory stored (ID: ${stored.documentId})",
             content =
                 buildString {
                     appendLine("Successfully stored MEMORY")
-                    appendLine("  Knowledge ID: ${stored.knowledgeId}")
-                    appendLine("  Vector Store ID: ${stored.vectorStoreId}")
-                    appendLine("  Tags: ${stored.tags.joinToString(", ")}")
-                    appendLine()
-                    appendLine("Classification reasoning: ${classification.reasoning}")
+                    appendLine("  Document ID: ${stored.documentId}")
+                    appendLine("  Total Chunks: ${stored.totalChunks}")
                 },
         )
     }
+
+    // No classification or rule approval is performed anymore.
 }

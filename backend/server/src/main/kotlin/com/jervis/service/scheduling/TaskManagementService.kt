@@ -1,8 +1,7 @@
 package com.jervis.service.scheduling
 
-import com.jervis.domain.task.ScheduledTaskStatusEnum
 import com.jervis.entity.ScheduledTaskDocument
-import com.jervis.repository.mongo.ScheduledTaskMongoRepository
+import com.jervis.repository.ScheduledTaskMongoRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -11,9 +10,8 @@ import org.springframework.stereotype.Service
 import java.time.Instant
 
 /**
- * Service for basic task management operations without dependencies on execution services.
- * This service provides task creation and cancellation capabilities without depending on
- * AgentOrchestrator, avoiding circular dependencies with McpTools.
+ * Service for basic task management operations (CRUD only).
+ * Scheduling/dispatching handled by BackgroundEngine scheduler loop.
  */
 @Service
 class TaskManagementService(
@@ -27,90 +25,56 @@ class TaskManagementService(
      * Schedule a new task
      */
     suspend fun scheduleTask(
-        projectId: ObjectId,
-        taskInstruction: String,
+        clientId: ObjectId,
+        projectId: ObjectId?,
+        content: String,
         taskName: String,
         scheduledAt: Instant,
-        taskParameters: Map<String, String> = emptyMap(),
-        priority: Int = 0,
-        maxRetries: Int = 3,
         cronExpression: String? = null,
-        createdBy: String = "system",
+        correlationId: String? = null,
     ): ScheduledTaskDocument =
         withContext(Dispatchers.IO) {
             val task =
                 ScheduledTaskDocument(
+                    clientId = clientId,
                     projectId = projectId,
-                    taskInstruction = taskInstruction,
+                    content = content,
                     taskName = taskName,
                     scheduledAt = scheduledAt,
-                    taskParameters = taskParameters,
-                    priority = priority,
-                    maxRetries = maxRetries,
                     cronExpression = cronExpression,
-                    createdBy = createdBy,
+                    correlationId = correlationId,
                 )
 
             val savedTask = scheduledTaskRepository.save(task)
-            logger.info { "Scheduled task: ${savedTask.taskName} for project: $projectId at: $scheduledAt" }
+            logger.info { "Scheduled task: ${savedTask.taskName} for client: $clientId, project: ${projectId ?: "N/A"} at: $scheduledAt" }
             savedTask
         }
 
     /**
-     * Cancel a task
+     * Update scheduled time for recurring task (cron)
      */
-    suspend fun cancelTask(taskId: ObjectId): Boolean =
+    suspend fun updateScheduledTime(
+        taskId: ObjectId,
+        newScheduledAt: Instant,
+    ): ScheduledTaskDocument? =
         withContext(Dispatchers.IO) {
-            val task = scheduledTaskRepository.findById(taskId) ?: return@withContext false
-
-            if (task.status == ScheduledTaskStatusEnum.PENDING ||
-                task.status == ScheduledTaskStatusEnum.FAILED
-            ) {
-                val cancelledTask =
-                    task.copy(
-                        status = ScheduledTaskStatusEnum.CANCELLED,
-                        lastUpdatedAt = Instant.now(),
-                    )
-                scheduledTaskRepository.save(cancelledTask)
-                logger.info { "Cancelled task: ${task.taskName}" }
-                true
-            } else {
-                logger.warn { "Cannot cancel task in status: ${task.status}" }
-                false
-            }
+            val task = scheduledTaskRepository.findById(taskId) ?: return@withContext null
+            val updated = task.copy(scheduledAt = newScheduledAt)
+            scheduledTaskRepository.save(updated)
         }
 
     /**
-     * Update task status
+     * Cancel/delete a task
      */
-    suspend fun updateTaskStatus(
-        task: ScheduledTaskDocument,
-        newStatus: ScheduledTaskStatusEnum,
-        errorMessage: String? = null,
-    ): ScheduledTaskDocument =
+    suspend fun cancelTask(taskId: ObjectId): Boolean =
         withContext(Dispatchers.IO) {
-            val updatedTask =
-                task.copy(
-                    status = newStatus,
-                    errorMessage = errorMessage,
-                    startedAt =
-                        if (newStatus == ScheduledTaskStatusEnum.RUNNING &&
-                            task.startedAt == null
-                        ) {
-                            Instant.now()
-                        } else {
-                            task.startedAt
-                        },
-                    completedAt =
-                        if (newStatus == ScheduledTaskStatusEnum.COMPLETED ||
-                            newStatus == ScheduledTaskStatusEnum.FAILED
-                        ) {
-                            Instant.now()
-                        } else {
-                            task.completedAt
-                        },
-                    lastUpdatedAt = Instant.now(),
-                )
-            scheduledTaskRepository.save(updatedTask)
+            val exists = scheduledTaskRepository.existsById(taskId)
+            if (exists) {
+                scheduledTaskRepository.deleteById(taskId)
+                logger.info { "Cancelled/deleted task: $taskId" }
+                true
+            } else {
+                false
+            }
         }
 }

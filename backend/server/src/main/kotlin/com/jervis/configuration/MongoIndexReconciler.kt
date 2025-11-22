@@ -33,7 +33,6 @@ class MongoIndexReconciler(
     private val logger = KotlinLogging.logger {}
 
     override fun run(args: ApplicationArguments) {
-        // Run asynchronously; do not block application startup
         CoroutineScope(Dispatchers.Default).launch {
             try {
                 reconcileAllEntities()
@@ -57,17 +56,16 @@ class MongoIndexReconciler(
             }
     }
 
-    @Suppress("DEPRECATION")
     private suspend fun ensureIndexWithConflictHandling(
         indexOps: ReactiveIndexOperations,
         def: IndexDefinition,
     ) {
         try {
-            indexOps.ensureIndex(def).awaitSingle()
+            indexOps.createIndex(def).awaitSingle()
         } catch (t: Throwable) {
             if (isIndexOptionsConflict(t)) {
                 val conflictingName = parseConflictingIndexName(t.message)
-                val desiredName = def.indexOptions?.getString("name") ?: "<generated>"
+                val desiredName = def.indexOptions.getString("name") ?: "<generated>"
                 if (conflictingName != null) {
                     logger.warn { "Dropping conflicting index '$conflictingName' and recreating '$desiredName'" }
                     try {
@@ -75,10 +73,8 @@ class MongoIndexReconciler(
                     } catch (dropError: Throwable) {
                         logger.warn(dropError) { "Failed to drop conflicting index '$conflictingName' (may have been removed already)" }
                     }
-                    // retry creation
-                    indexOps.ensureIndex(def).awaitSingle()
+                    indexOps.createIndex(def).awaitSingle()
                 } else {
-                    // No index name parsed; rethrow to avoid unsafe mass-drop
                     throw t
                 }
             } else {

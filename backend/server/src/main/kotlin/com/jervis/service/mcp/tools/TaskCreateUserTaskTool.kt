@@ -1,18 +1,15 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
-import com.jervis.domain.task.TaskPriorityEnum
-import com.jervis.domain.task.TaskSourceType
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
 import com.jervis.service.task.UserTaskService
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import mu.KotlinLogging
-import org.springframework.stereotype.Service
 import org.bson.types.ObjectId
+import org.springframework.stereotype.Service
 import java.time.Instant
 
 private val logger = KotlinLogging.logger {}
@@ -31,27 +28,35 @@ private val logger = KotlinLogging.logger {}
 class TaskCreateUserTaskTool(
     private val userTaskService: UserTaskService,
     override val promptRepository: PromptRepository,
-) : McpTool {
-    override val name: PromptTypeEnum = PromptTypeEnum.TASK_CREATE_USER_TASK_TOOL
+) : McpTool<TaskCreateUserTaskTool.CreateUserTaskRequest> {
+    override val name = ToolTypeEnum.TASK_CREATE_USER_TASK_TOOL
+
+    override val descriptionObject =
+        CreateUserTaskRequest(
+            title = "Confirm deployment to production",
+            description = "Review the release notes and confirm deployment by EOD.",
+            priority = "HIGH",
+            dueDate = "2025-12-31T17:00:00Z",
+            sourceType = "AGENT_SUGGESTION",
+            sourceUri = null,
+            metadata = emptyMap(),
+        )
 
     override suspend fun execute(
         plan: Plan,
-        taskDescription: String,
-        stepContext: String,
+        request: CreateUserTaskRequest,
     ): ToolResult =
         try {
-            logger.info { "Creating user task from: $taskDescription" }
-
-            val request = Json.decodeFromString<CreateUserTaskRequest>(taskDescription)
+            logger.info { "Creating user task from typed request" }
 
             val priority =
                 request.priority?.let {
-                    runCatching { TaskPriorityEnum.valueOf(it.uppercase()) }.getOrNull()
-                } ?: TaskPriorityEnum.MEDIUM
+                    runCatching { com.jervis.service.task.TaskPriorityEnum.valueOf(it.uppercase()) }.getOrNull()
+                } ?: com.jervis.service.task.TaskPriorityEnum.MEDIUM
 
             val sourceType =
-                runCatching { TaskSourceType.valueOf(request.sourceType.uppercase()) }
-                    .getOrElse { TaskSourceType.AGENT_SUGGESTION }
+                runCatching { com.jervis.service.task.TaskSourceType.valueOf(request.sourceType.uppercase()) }
+                    .getOrElse { com.jervis.service.task.TaskSourceType.AGENT_SUGGESTION }
 
             val dueDate =
                 request.dueDate?.let {
@@ -59,7 +64,7 @@ class TaskCreateUserTaskTool(
                 }
 
             val enrichedMetadata = request.metadata.toMutableMap()
-            if (sourceType == TaskSourceType.EMAIL) {
+            if (sourceType == com.jervis.service.task.TaskSourceType.EMAIL) {
                 val uri = request.sourceUri
                 require(!uri.isNullOrBlank()) { "For sourceType=EMAIL, sourceUri must be provided as email://<accountId>/<messageId>" }
                 require(uri.startsWith("email://")) { "For sourceType=EMAIL, sourceUri must start with 'email://'" }
@@ -87,11 +92,7 @@ class TaskCreateUserTaskTool(
                     appendLine()
                     appendLine("Source: $sourceType")
                     request.sourceUri?.let { appendLine("Source URI: $it") }
-                    if (stepContext.isNotBlank()) {
-                        appendLine()
-                        appendLine("Analysis Context:")
-                        appendLine(stepContext)
-                    }
+                    // No stepContext parsing here; content/context is provided explicitly by the planner
                     // Email context (if provided)
                     val emailAccountId = enrichedMetadata["emailAccountId"]
                     val emailMessageId = enrichedMetadata["emailMessageId"]
@@ -155,7 +156,7 @@ class TaskCreateUserTaskTool(
 
             // Determine effective projectId: default from plan, but allow email-scoped override
             var effectiveProjectId: ObjectId? = plan.projectId
-            if (sourceType == TaskSourceType.EMAIL) {
+            if (sourceType == com.jervis.service.task.TaskSourceType.EMAIL) {
                 // support multiple metadata key variants that might be provided by external tools
                 val projectScopedFlag =
                     enrichedMetadata["projectScoped"] ?: enrichedMetadata["email.projectScoped"] ?: "false"
@@ -182,6 +183,7 @@ class TaskCreateUserTaskTool(
                     sourceType = sourceType,
                     sourceUri = request.sourceUri,
                     metadata = enrichedMetadata,
+                    correlationId = plan.correlationId,
                 )
 
             ToolResult.success(
@@ -200,10 +202,7 @@ class TaskCreateUserTaskTool(
             )
         } catch (e: Exception) {
             logger.error(e) { "Failed to create user task" }
-            ToolResult.error(
-                output = "Failed to create user task: ${e.message}",
-                message = e.message,
-            )
+            ToolResult.error("Failed to create user task: ${e.message}")
         }
 
     @Serializable
@@ -212,7 +211,7 @@ class TaskCreateUserTaskTool(
         val description: String? = null,
         val priority: String? = null,
         val dueDate: String? = null,
-        val sourceType: String,
+        val sourceType: String = "AGENT_SUGGESTION",
         val sourceUri: String? = null,
         val metadata: Map<String, String> = emptyMap(),
     )

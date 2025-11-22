@@ -3,7 +3,7 @@ package com.jervis.service.confluence.state
 import com.jervis.domain.confluence.ConfluencePage
 import com.jervis.domain.confluence.ConfluencePageStateEnum
 import com.jervis.entity.ConfluencePageDocument
-import com.jervis.repository.mongo.ConfluencePageMongoRepository
+import com.jervis.repository.ConfluencePageMongoRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -128,7 +128,6 @@ class ConfluencePageStateManager(
             page.copy(
                 state = ConfluencePageStateEnum.INDEXED,
                 lastIndexedAt = Instant.now(),
-                errorMessage = null,
                 updatedAt = Instant.now(),
             )
 
@@ -146,7 +145,6 @@ class ConfluencePageStateManager(
         val updated =
             page.copy(
                 state = ConfluencePageStateEnum.FAILED,
-                errorMessage = errorMessage,
                 updatedAt = Instant.now(),
             )
 

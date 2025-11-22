@@ -72,7 +72,7 @@ class ImapClient {
                     }
 
                 logger.error(e) {
-                    "Failed to fetch message IDs for account ${account.id}: errorType=$errorType, message=${e.message}"
+                    "Failed to fetch message IDs for account ${account.id} (${account.email}): errorType=$errorType, message=${e.message}"
                 }
                 // Fail fast: rethrow so orchestrator/scheduler can avoid updating lastPolledAt and retry next cycle
                 throw e

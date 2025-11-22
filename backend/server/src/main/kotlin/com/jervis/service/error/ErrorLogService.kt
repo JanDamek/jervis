@@ -2,12 +2,10 @@ package com.jervis.service.error
 
 import com.jervis.domain.error.ErrorLog
 import com.jervis.entity.ErrorLogDocument
-import com.jervis.repository.mongo.ErrorLogMongoRepository
+import com.jervis.repository.ErrorLogMongoRepository
 import com.jervis.service.notification.ErrorNotificationsPublisher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.reactive.awaitFirst
-import kotlinx.coroutines.reactive.awaitFirstOrNull
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -40,7 +38,7 @@ class ErrorLogService(
                     stackTrace = stack,
                     causeType = throwable.javaClass.name,
                 )
-            val saved = repository.save(ErrorLogDocument.fromDomain(domain)).awaitFirst().toDomain()
+            val saved = repository.save(ErrorLogDocument.fromDomain(domain)).toDomain()
 
             // Publish over websocket for UI dialog
             errorPublisher.publishError(
@@ -63,9 +61,7 @@ class ErrorLogService(
                 .map { it.toDomain() }
         }
 
-    suspend fun listAll(
-        limit: Int,
-    ): List<ErrorLog> =
+    suspend fun listAll(limit: Int): List<ErrorLog> =
         withContext(Dispatchers.IO) {
             repository
                 .findAllByOrderByCreatedAtDesc(PageRequest.of(0, limit))
@@ -75,14 +71,13 @@ class ErrorLogService(
 
     suspend fun get(id: ObjectId): ErrorLog =
         withContext(Dispatchers.IO) {
-            repository.findById(id).awaitFirstOrNull()?.toDomain()
+            repository.findById(id)?.toDomain()
                 ?: throw NoSuchElementException("ErrorLog with id=$id not found")
         }
 
     suspend fun delete(id: ObjectId): Unit =
         withContext(Dispatchers.IO) {
-            repository.deleteById(id).awaitFirstOrNull()
-            Unit
+            repository.deleteById(id)
         }
 
     suspend fun deleteAll(clientId: ObjectId): Long = withContext(Dispatchers.IO) { repository.deleteAllByClientId(clientId) }

@@ -2,7 +2,7 @@ package com.jervis.service.gateway.clients.llm
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.jervis.configuration.prompts.CreativityConfig
-import com.jervis.configuration.prompts.PromptConfigBase
+import com.jervis.configuration.prompts.PromptConfig
 import com.jervis.configuration.prompts.PromptsConfiguration
 import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.domain.gateway.StreamChunk
@@ -27,7 +27,7 @@ class AnthropicClient(
         systemPrompt: String?,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
-        prompt: PromptConfigBase,
+        prompt: PromptConfig,
         estimatedTokens: Int,
     ): LlmResponse {
         val creativityConfig = getCreativityConfig(prompt)
@@ -50,7 +50,7 @@ class AnthropicClient(
         systemPrompt: String?,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
-        prompt: PromptConfigBase,
+        prompt: PromptConfig,
         estimatedTokens: Int,
         debugSessionId: String?,
     ): Flow<StreamChunk> =
@@ -126,7 +126,7 @@ class AnthropicClient(
         )
     }
 
-    private fun getCreativityConfig(prompt: PromptConfigBase) =
+    private fun getCreativityConfig(prompt: PromptConfig) =
         promptsConfiguration.creativityLevels[prompt.modelParams.creativityLevel]
             ?: throw IllegalStateException("No creativity level configuration found for ${prompt.modelParams.creativityLevel}")
 

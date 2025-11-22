@@ -2,17 +2,18 @@ package com.jervis.service.jira
 
 import com.jervis.domain.jira.JiraIssue
 import com.jervis.domain.jira.JiraProjectKey
-import com.jervis.domain.rag.RagDocument
 import com.jervis.domain.rag.RagSourceType
-import com.jervis.repository.mongo.AtlassianConnectionMongoRepository
-import com.jervis.repository.mongo.JiraIssueIndexMongoRepository
+import com.jervis.rag.DocumentToStore
+import com.jervis.rag.EmbeddingType
+import com.jervis.rag.KnowledgeService
+import com.jervis.rag.KnowledgeType
+import com.jervis.repository.AtlassianConnectionMongoRepository
+import com.jervis.repository.JiraIssueIndexMongoRepository
 import com.jervis.service.atlassian.AtlassianApiClient
 import com.jervis.service.atlassian.AtlassianAuthService
 import com.jervis.service.atlassian.AtlassianConnectionService
 import com.jervis.service.atlassian.AtlassianSelectionService
 import com.jervis.service.link.LinkIndexingService
-import com.jervis.service.rag.RagIndexingService
-import com.jervis.service.text.TextChunkingService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -27,10 +28,9 @@ class JiraIndexingOrchestrator(
     private val selection: AtlassianSelectionService,
     private val api: AtlassianApiClient,
     private val auth: AtlassianAuthService,
-    private val ragIndexingService: RagIndexingService,
+    private val knowledgeService: KnowledgeService,
     private val connectionRepository: AtlassianConnectionMongoRepository,
     private val issueIndexRepository: JiraIssueIndexMongoRepository,
-    private val textChunkingService: TextChunkingService,
     private val linkIndexingService: LinkIndexingService,
     private val jiraAttachmentIndexer: JiraAttachmentIndexer,
     private val configCache: com.jervis.service.cache.ClientProjectConfigCache,
@@ -100,7 +100,9 @@ class JiraIndexingOrchestrator(
                     selection.ensureSelectionsOrCreateTasks(clientId)
 
                 if (selections == null) {
-                    logger.info { "JIRA_INDEX: No selections configured for client=${clientId.toHexString()} - using client-level indexing (all projects)" }
+                    logger.info {
+                        "JIRA_INDEX: No selections configured for client=${clientId.toHexString()} - using client-level indexing (all projects)"
+                    }
                     runCatching {
                         indexingRegistry.info(
                             "jira",
@@ -162,9 +164,13 @@ class JiraIndexingOrchestrator(
 
                 // If preferred user is not configured, try to auto-detect current user; if that fails, proceed without it
                 if (me == null) {
-                    me = runCatching { api.getMyself(connValid) }.onFailure { e ->
-                        logger.info { "JIRA_INDEX: Unable to auto-detect preferred user for client=${clientId.toHexString()}: ${e.message}" }
-                    }.getOrNull()
+                    me =
+                        runCatching { api.getMyself(connValid) }
+                            .onFailure { e ->
+                                logger.info {
+                                    "JIRA_INDEX: Unable to auto-detect preferred user for client=${clientId.toHexString()}: ${e.message}"
+                                }
+                            }.getOrNull()
                 }
 
                 val allJiraProjects: List<JiraProjectKey> =
@@ -213,11 +219,14 @@ class JiraIndexingOrchestrator(
                     }
 
                 val projectsToIndex: List<JiraProjectKey> =
-                    if (allJiraProjects.isNotEmpty()) allJiraProjects
-                    else primaryProject?.let { single ->
-                        logger.info { "JIRA_INDEX: Proceeding with configured primary project=${single.value} only" }
-                        listOf(single)
-                    } ?: emptyList()
+                    if (allJiraProjects.isNotEmpty()) {
+                        allJiraProjects
+                    } else {
+                        primaryProject?.let { single ->
+                            logger.info { "JIRA_INDEX: Proceeding with configured primary project=${single.value} only" }
+                            listOf(single)
+                        } ?: emptyList()
+                    }
 
                 if (projectsToIndex.isEmpty()) {
                     logger.warn { "JIRA_INDEX: No Jira projects available to index for client=${clientId.toHexString()}" }
@@ -247,7 +256,7 @@ class JiraIndexingOrchestrator(
 
                     try {
                         val tenantHost = connValid.tenant.value
-                        
+
                         // Validate tenant hostname before attempting connection
                         if (tenantHost.isBlank()) {
                             logger.error { "JIRA_INDEX: Invalid tenant hostname (blank) for client=${clientId.toHexString()}" }
@@ -258,15 +267,20 @@ class JiraIndexingOrchestrator(
                                 errorLogService.recordError(
                                     IllegalStateException("Invalid tenant hostname: value is blank"),
                                     clientId = clientId,
-                                    projectId = jervisProjectId
+                                    projectId = jervisProjectId,
                                 )
                             }
                             return@forEach
                         }
-                        
+
                         // Basic hostname validation (should contain at least one dot and valid characters)
-                        if (!tenantHost.matches(Regex("^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"))) {
-                            logger.error { "JIRA_INDEX: Invalid tenant hostname format for client=${clientId.toHexString()}: '$tenantHost'" }
+                        if (!tenantHost.matches(
+                                Regex("^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"),
+                            )
+                        ) {
+                            logger.error {
+                                "JIRA_INDEX: Invalid tenant hostname format for client=${clientId.toHexString()}: '$tenantHost'"
+                            }
                             runCatching {
                                 indexingRegistry.error("jira", "Invalid tenant hostname format: '$tenantHost'")
                             }
@@ -274,7 +288,7 @@ class JiraIndexingOrchestrator(
                                 errorLogService.recordError(
                                     IllegalStateException("Invalid tenant hostname format: '$tenantHost'"),
                                     clientId = clientId,
-                                    projectId = jervisProjectId
+                                    projectId = jervisProjectId,
                                 )
                             }
                             return@forEach
@@ -314,13 +328,14 @@ class JiraIndexingOrchestrator(
 
                                 // Always index comments for ALL issues (not just assigned to me)
                                 // Returns comments for potential pending task creation
-                                val allComments = indexIssueCommentsDeep(
-                                    clientId = clientId,
-                                    issueKey = issue.key,
-                                    project = projectKey,
-                                    tenantHost = tenantHost,
-                                    jervisProjectId = jervisProjectId,
-                                )
+                                val allComments =
+                                    indexIssueCommentsDeep(
+                                        clientId = clientId,
+                                        issueKey = issue.key,
+                                        project = projectKey,
+                                        tenantHost = tenantHost,
+                                        jervisProjectId = jervisProjectId,
+                                    )
 
                                 // Always index attachments for ALL issues
                                 // Don't fail entire indexing if attachments fail
@@ -362,24 +377,27 @@ class JiraIndexingOrchestrator(
                         logger.error(e) { "JIRA_INDEX: search failed for client=${clientId.toHexString()} project=$key" }
 
                         // Check for UnresolvedAddressException - invalid tenant hostname
-                        if (e is java.nio.channels.UnresolvedAddressException || 
-                            e.cause is java.nio.channels.UnresolvedAddressException) {
-                            logger.error { "JIRA_INDEX: UnresolvedAddressException for client=${clientId.toHexString()} - tenant hostname '${connValid.tenant.value}' cannot be resolved. Please check Atlassian connection configuration." }
+                        if (e is java.nio.channels.UnresolvedAddressException ||
+                            e.cause is java.nio.channels.UnresolvedAddressException
+                        ) {
+                            logger.error {
+                                "JIRA_INDEX: UnresolvedAddressException for client=${clientId.toHexString()} - tenant hostname '${connValid.tenant.value}' cannot be resolved. Please check Atlassian connection configuration."
+                            }
                             runCatching {
                                 indexingRegistry.error(
                                     "jira",
                                     "Cannot resolve tenant hostname '${connValid.tenant.value}' - check Atlassian connection configuration",
-                                    getFullStackTrace(e)
+                                    getFullStackTrace(e),
                                 )
                             }
                             // Mark connection as invalid since hostname is unresolvable
                             val doc = connectionRepository.findByClientId(clientId)
                             if (doc != null) {
-                                runCatching { 
+                                runCatching {
                                     connectionService.markAuthInvalid(
-                                        doc, 
-                                        "Cannot resolve tenant hostname '${connValid.tenant.value}'. Please verify the tenant URL in Atlassian connection settings."
-                                    ) 
+                                        doc,
+                                        "Cannot resolve tenant hostname '${connValid.tenant.value}'. Please verify the tenant URL in Atlassian connection settings.",
+                                    )
                                 }
                             }
                             runCatching { errorLogService.recordError(e, clientId = clientId, projectId = jervisProjectId) }
@@ -393,7 +411,7 @@ class JiraIndexingOrchestrator(
                                 indexingRegistry.error(
                                     "jira",
                                     "Project $key was deleted from Jira (HTTP 410 Gone)",
-                                    getFullStackTrace(e)
+                                    getFullStackTrace(e),
                                 )
                             }
                             // Skip to next project - no point retrying deleted project
@@ -414,7 +432,7 @@ class JiraIndexingOrchestrator(
                             indexingRegistry.error(
                                 "jira",
                                 "Search failed for project=$key: ${e.message}",
-                                getFullStackTrace(e)
+                                getFullStackTrace(e),
                             )
                         }
                     }
@@ -481,20 +499,19 @@ class JiraIndexingOrchestrator(
                 statusHash = statusHash,
                 existingIndexDoc = existingIndexDoc,
             )
-            summaryChunks = textChunkingService.splitText("${issue.summary} ${issue.description ?: ""}").size
+            summaryChunks = 1
 
             // Index comments
-            val comments = indexIssueCommentsDeep(
-                clientId = clientId,
-                issueKey = issue.key,
-                project = projectKey,
-                tenantHost = tenantHost,
-                jervisProjectId = jervisProjectId,
-            )
+            val comments =
+                indexIssueCommentsDeep(
+                    clientId = clientId,
+                    issueKey = issue.key,
+                    project = projectKey,
+                    tenantHost = tenantHost,
+                    jervisProjectId = jervisProjectId,
+                )
             commentCount = comments.size
-            commentChunks = comments.sumOf {
-                textChunkingService.splitText(it.second).size
-            }
+            commentChunks = comments.size
 
             // Index attachments
             runCatching {
@@ -548,7 +565,9 @@ class JiraIndexingOrchestrator(
         if (!issue.description.isNullOrBlank()) {
             val confluenceLinks = extractLinksFromText(issue.description).filter { isConfluenceWikiLink(it) }
             if (confluenceLinks.isNotEmpty()) {
-                logger.info { "Found ${confluenceLinks.size} Confluence wiki links in Jira issue ${issue.key}, submitting to Confluence indexer queue" }
+                logger.info {
+                    "Found ${confluenceLinks.size} Confluence wiki links in Jira issue ${issue.key}, submitting to Confluence indexer queue"
+                }
                 confluenceLinks.forEach { wikiUrl ->
                     linkIndexingQueue.submitUrl(
                         url = wikiUrl,
@@ -571,31 +590,20 @@ class JiraIndexingOrchestrator(
                 }
             }.trim()
 
-        val chunks = textChunkingService.splitText(text)
-        if (chunks.isEmpty()) {
-            logger.debug { "JIRA_INDEX: No content to index for issue ${issue.key}" }
-            return
-        }
+        val documentToStore =
+            DocumentToStore(
+                documentId = "jira:${issue.key}",
+                content = text,
+                clientId = clientId,
+                projectId = jervisProjectId,
+                type = KnowledgeType.DOCUMENT,
+                embeddingType = EmbeddingType.TEXT,
+                title = "Jira issue ${issue.key}",
+                location = "https://$tenantHost/browse/${issue.key}",
+            )
 
-        var stored = 0
-        chunks.forEachIndexed { index, chunk ->
-            val rag =
-                RagDocument(
-                    projectId = jervisProjectId, // Map to Jervis project if exists
-                    clientId = clientId,
-                    text = chunk.text(),
-                    ragSourceType = RagSourceType.JIRA,
-                    subject = "Jira issue ${issue.key}",
-                    timestamp = issue.updated.toString(),
-                    parentRef = issue.key,
-                    branch = "main",
-                    sourceUri = "https://$tenantHost/browse/${issue.key}",
-                    chunkId = index,
-                    chunkOf = chunks.size,
-                )
-            ragIndexingService.indexDocument(rag, com.jervis.domain.model.ModelTypeEnum.EMBEDDING_TEXT)
-            stored++
-        }
+        knowledgeService
+            .store(com.jervis.rag.StoreRequest(listOf(documentToStore)))
 
         // Update index document with new hashes and timestamp
         val newDoc =
@@ -623,7 +631,7 @@ class JiraIndexingOrchestrator(
         issueIndexRepository.save(newDoc)
 
         val projectInfo = if (jervisProjectId != null) " projectId=${jervisProjectId.toHexString()}" else ""
-        logger.info { "JIRA_INDEX: Stored shallow summary for ${issue.key} chunks=$stored$projectInfo" }
+        logger.info { "JIRA_INDEX: Stored shallow summary for ${issue.key}$projectInfo" }
     }
 
     private suspend fun indexIssueCommentsDeep(
@@ -664,7 +672,9 @@ class JiraIndexingOrchestrator(
             // Extract and hand off Confluence wiki links to Confluence indexer
             val confluenceLinks = links.filter { isConfluenceWikiLink(it) }
             if (confluenceLinks.isNotEmpty()) {
-                logger.info { "Found ${confluenceLinks.size} Confluence wiki links in Jira comment $commentId on issue $issueKey, submitting to Confluence indexer queue" }
+                logger.info {
+                    "Found ${confluenceLinks.size} Confluence wiki links in Jira comment $commentId on issue $issueKey, submitting to Confluence indexer queue"
+                }
                 confluenceLinks.forEach { wikiUrl ->
                     linkIndexingQueue.submitUrl(
                         url = wikiUrl,
@@ -692,26 +702,20 @@ class JiraIndexingOrchestrator(
                     }
                 }.trim()
 
-            val chunks = textChunkingService.splitText(text)
-            if (chunks.isEmpty()) return@collect
+            val documentToStore =
+                DocumentToStore(
+                    documentId = "jira:$issueKey:comment:$commentId",
+                    content = text,
+                    clientId = clientId,
+                    projectId = jervisProjectId,
+                    type = KnowledgeType.DOCUMENT,
+                    embeddingType = EmbeddingType.TEXT,
+                    title = "Jira comment on $issueKey",
+                    location = "https://$tenantHost/browse/$issueKey?focusedCommentId=$commentId&page=com.atlassian.atlassian.plugin.system.issuetabpanels:comment-tabpanel#comment-$commentId",
+                )
 
-            chunks.forEachIndexed { index, chunk ->
-                val rag =
-                    RagDocument(
-                        projectId = jervisProjectId,
-                        clientId = clientId,
-                        text = chunk.text(),
-                        ragSourceType = RagSourceType.JIRA,
-                        subject = "Jira comment on $issueKey",
-                        timestamp = Instant.now().toString(),
-                        parentRef = issueKey,
-                        branch = "main",
-                        sourceUri = "https://$tenantHost/browse/$issueKey?focusedCommentId=$commentId&page=com.atlassian.atlassian.plugin.system.issuetabpanels:comment-tabpanel#comment-$commentId",
-                        chunkId = index,
-                        chunkOf = chunks.size,
-                    )
-                ragIndexingService.indexDocument(rag, com.jervis.domain.model.ModelTypeEnum.EMBEDDING_TEXT)
-            }
+            knowledgeService
+                .store(com.jervis.rag.StoreRequest(listOf(documentToStore)))
 
             // Index links separately
             if (links.isNotEmpty()) {
@@ -721,8 +725,6 @@ class JiraIndexingOrchestrator(
                             url = url,
                             projectId = jervisProjectId,
                             clientId = clientId,
-                            sourceType = RagSourceType.JIRA_LINK_CONTENT,
-                            parentRef = issueKey,
                         )
                     }.onFailure { e ->
                         logger.warn { "Failed to index link $url from Jira comment $commentId: ${e.message}" }
@@ -778,54 +780,55 @@ class JiraIndexingOrchestrator(
         logger.info { "Creating pending task for JIRA issue ${issue.key} assigned to me" }
 
         // Build task content with all information
-        val taskContent = buildString {
-            appendLine("=== JIRA ISSUE ANALYSIS ===")
-            appendLine()
-            appendLine("Issue: ${issue.key}")
-            appendLine("Project: ${projectKey.value}")
-            appendLine("Status: ${issue.status}")
-            appendLine("Summary: ${issue.summary}")
-            appendLine("Assignee: ${issue.assignee?.value ?: "Unassigned"}")
-            appendLine("Reporter: ${issue.reporter?.value ?: "Unknown"}")
-            appendLine("Created: ${issue.created}")
-            appendLine("Updated: ${issue.updated}")
-            appendLine("URL: https://$tenantHost/browse/${issue.key}")
-            appendLine()
+        val taskContent =
+            buildString {
+                appendLine("=== JIRA ISSUE ANALYSIS ===")
+                appendLine()
+                appendLine("Issue: ${issue.key}")
+                appendLine("Project: ${projectKey.value}")
+                appendLine("Status: ${issue.status}")
+                appendLine("Summary: ${issue.summary}")
+                appendLine("Assignee: ${issue.assignee?.value ?: "Unassigned"}")
+                appendLine("Reporter: ${issue.reporter?.value ?: "Unknown"}")
+                appendLine("Created: ${issue.created}")
+                appendLine("Updated: ${issue.updated}")
+                appendLine("URL: https://$tenantHost/browse/${issue.key}")
+                appendLine()
 
-            // Description
-            appendLine("=== DESCRIPTION ===")
-            if (!issue.description.isNullOrBlank()) {
-                val descriptionWithMarkedLinks = markConfluenceLinks(issue.description)
-                appendLine(descriptionWithMarkedLinks)
-            } else {
-                appendLine("(No description)")
-            }
-            appendLine()
-
-            // Comments
-            if (comments.isNotEmpty()) {
-                appendLine("=== COMMENTS (${comments.size}) ===")
-                comments.forEach { (commentId, body) ->
-                    appendLine()
-                    appendLine("--- Comment ID: $commentId ---")
-                    val commentWithMarkedLinks = markConfluenceLinks(body)
-                    appendLine(commentWithMarkedLinks)
+                // Description
+                appendLine("=== DESCRIPTION ===")
+                if (!issue.description.isNullOrBlank()) {
+                    val descriptionWithMarkedLinks = markConfluenceLinks(issue.description)
+                    appendLine(descriptionWithMarkedLinks)
+                } else {
+                    appendLine("(No description)")
                 }
                 appendLine()
-            }
 
-            appendLine("=== END ISSUE CONTENT ===")
-        }
+                // Comments
+                if (comments.isNotEmpty()) {
+                    appendLine("=== COMMENTS (${comments.size}) ===")
+                    comments.forEach { (commentId, body) ->
+                        appendLine()
+                        appendLine("--- Comment ID: $commentId ---")
+                        val commentWithMarkedLinks = markConfluenceLinks(body)
+                        appendLine(commentWithMarkedLinks)
+                    }
+                    appendLine()
+                }
+
+                appendLine("=== END ISSUE CONTENT ===")
+            }
 
         try {
             pendingTaskService.createTask(
-                taskType = com.jervis.dto.PendingTaskTypeEnum.AGENT_ANALYSIS,
+                taskType = com.jervis.dto.PendingTaskTypeEnum.JIRA_PROCESSING,
                 content = taskContent,
                 clientId = clientId,
                 projectId = jervisProjectId,
             )
 
-            logger.info { "Created AGENT_ANALYSIS task for JIRA issue ${issue.key}" }
+            logger.info { "Created JIRA_PROCESSING task for JIRA issue ${issue.key}" }
         } catch (e: Exception) {
             logger.error(e) { "Failed to create pending task for JIRA issue ${issue.key}: ${e.message}" }
             // Don't fail indexing if task creation fails
@@ -857,8 +860,7 @@ class JiraIndexingOrchestrator(
             .filter { url ->
                 // Extra safety: filter out non-http(s) schemes (shouldn't match due to regex, but be explicit)
                 url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true)
-            }
-            .distinct()
+            }.distinct()
             .toList()
     }
 
@@ -906,7 +908,7 @@ class JiraIndexingOrchestrator(
             appendLine(e.toString())
             e.stackTrace.forEach { appendLine("\tat $it") }
             e.cause?.let { cause ->
-                appendLine("Caused by: ${cause}")
+                appendLine("Caused by: $cause")
                 cause.stackTrace.forEach { appendLine("\tat $it") }
             }
         }
@@ -938,25 +940,25 @@ class JiraIndexingOrchestrator(
                 logger.info { "Processing queued Jira URL from ${pendingLink.sourceIndexer}: ${pendingLink.url}" }
 
                 // Try to index the URL via LinkIndexingService
-                val success = runCatching {
-                    linkIndexingService.indexUrl(
-                        url = pendingLink.url,
-                        projectId = pendingLink.projectId,
-                        clientId = pendingLink.clientId,
-                        sourceType = RagSourceType.JIRA_LINK_CONTENT,
-                        parentRef = pendingLink.sourceRef,
-                    )
-                    true
-                }.onFailure { e ->
-                    logger.warn { "Failed to index queued Jira URL ${pendingLink.url}: ${e.message}" }
-                }.getOrDefault(false)
+                val success =
+                    runCatching {
+                        linkIndexingService.indexUrl(
+                            url = pendingLink.url,
+                            projectId = pendingLink.projectId,
+                            clientId = pendingLink.clientId,
+                        )
+                        true
+                    }.onFailure { e ->
+                        logger.warn { "Failed to index queued Jira URL ${pendingLink.url}: ${e.message}" }
+                    }.getOrDefault(false)
 
                 if (!success) {
                     // Mark as failed, which will track retry count
-                    val shouldCreateTask = linkIndexingQueue.markFailed(
-                        url = pendingLink.url,
-                        reason = "Jira indexer could not process URL",
-                    )
+                    val shouldCreateTask =
+                        linkIndexingQueue.markFailed(
+                            url = pendingLink.url,
+                            reason = "Jira indexer could not process URL",
+                        )
 
                     if (shouldCreateTask) {
                         // Max retries exceeded, create user task for manual review

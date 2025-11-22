@@ -9,7 +9,9 @@ import java.time.Instant
 
 enum class GitCommitState {
     NEW,
+    INDEXING,
     INDEXED,
+    FAILED,
 }
 
 @Document(collection = "git_commits")

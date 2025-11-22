@@ -2,21 +2,19 @@ package com.jervis.controller.api
 
 import com.jervis.dto.ClientDto
 import com.jervis.dto.CloneResultDto
-import com.jervis.dto.GitCredentialsDto
 import com.jervis.dto.GitBranchListDto
+import com.jervis.dto.GitCredentialsDto
 import com.jervis.dto.GitSetupRequestDto
+import com.jervis.dto.GitTestConnectionResponseDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ProjectGitOverrideRequestDto
-import com.jervis.dto.GitTestConnectionResponseDto
 import com.jervis.mapper.toDto
-import com.jervis.repository.mongo.ProjectMongoRepository
+import com.jervis.repository.ProjectMongoRepository
 import com.jervis.service.IGitConfigurationService
 import com.jervis.service.client.ClientService
 import com.jervis.service.git.GitConfigurationService
 import mu.KotlinLogging
 import org.bson.types.ObjectId
-import org.springframework.http.HttpStatus
-import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 
 /**
@@ -201,8 +199,9 @@ class GitConfigurationRestController(
         if (result.isFailure) {
             throw IllegalStateException("Failed to set default branch: ${result.exceptionOrNull()?.message}")
         }
-        val client = clientService.getClientById(ObjectId(clientId))
-            ?: throw IllegalStateException("Client not found after update: $clientId")
+        val client =
+            clientService.getClientById(ObjectId(clientId))
+                ?: throw IllegalStateException("Client not found after update: $clientId")
         return client.toDto()
     }
 }

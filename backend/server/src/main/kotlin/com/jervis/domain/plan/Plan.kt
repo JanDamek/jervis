@@ -19,15 +19,14 @@ data class Plan(
     var requestedKnowledge: List<KnowledgeRequest> = emptyList(),
     val clientDocument: ClientDocument,
     val projectDocument: ProjectDocument? = null,
-    val quick: Boolean,
     val backgroundMode: Boolean = false,
-    val correlationId: String, // For distributed tracing across all services
+    val correlationId: String,
 ) {
     data class KnowledgeRequest(
         val query: String,
         val type: String,
-        val reason: String,
     )
+
     val clientId: ObjectId
         get() = clientDocument.id
 
@@ -37,7 +36,6 @@ data class Plan(
     override fun toString(): String =
         when {
             backgroundMode -> "$taskInstruction (background)"
-            quick -> taskInstruction
             else -> taskInstruction
         }
 }

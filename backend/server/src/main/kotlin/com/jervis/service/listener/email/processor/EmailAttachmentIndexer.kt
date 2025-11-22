@@ -2,13 +2,12 @@ package com.jervis.service.listener.email.processor
 
 import com.jervis.common.client.ITikaClient
 import com.jervis.common.dto.TikaProcessRequest
-import com.jervis.domain.model.ModelTypeEnum
-import com.jervis.domain.rag.RagDocument
-import com.jervis.domain.rag.RagSourceType
+import com.jervis.rag.DocumentToStore
+import com.jervis.rag.EmbeddingType
+import com.jervis.rag.KnowledgeService
+import com.jervis.rag.KnowledgeType
 import com.jervis.service.listener.email.imap.ImapAttachment
 import com.jervis.service.listener.email.imap.ImapMessage
-import com.jervis.service.rag.RagIndexingService
-import com.jervis.service.text.TextChunkingService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -20,10 +19,8 @@ private val logger = KotlinLogging.logger {}
 
 @Service
 class EmailAttachmentIndexer(
-    private val ragIndexingService: RagIndexingService,
+    private val knowledgeService: KnowledgeService,
     private val tikaClient: ITikaClient,
-    private val textChunkingService: TextChunkingService,
-    private val vectorIndexService: com.jervis.service.rag.VectorStoreIndexService,
 ) {
     suspend fun indexAttachments(
         message: ImapMessage,
@@ -31,7 +28,7 @@ class EmailAttachmentIndexer(
         clientId: ObjectId,
         projectId: ObjectId?,
     ) = withContext(Dispatchers.IO) {
-        logger.debug { "Processing ${message.attachments.size} attachments for email ${message.messageId}" }
+        logger.debug { "Processing ${message.attachments.size} attachments for email from=${message.from} subject=${message.subject}" }
 
         message.attachments.forEachIndexed { index, attachment ->
             try {
@@ -57,25 +54,8 @@ class EmailAttachmentIndexer(
         clientId: ObjectId,
         projectId: ObjectId?,
     ) {
-        // Build canonical source ID from attachment content hash to deduplicate across forwards/replies
         val contentHash = sha256(attachment.data)
         val canonicalSourceId = "email-attachment://${accountId.toHexString()}/$contentHash"
-
-        // If already indexed for this project, skip re-indexing identical attachment content
-        if (projectId != null) {
-            val already =
-                kotlin.runCatching {
-                    vectorIndexService.existsActive(
-                        RagSourceType.EMAIL_ATTACHMENT,
-                        canonicalSourceId,
-                        projectId,
-                    )
-                }.getOrDefault(false)
-            if (already) {
-                logger.info { "Skipped duplicate attachment by hash ${attachment.fileName} ($contentHash)" }
-                return
-            }
-        }
 
         val processingResult =
             tikaClient.process(
@@ -94,33 +74,22 @@ class EmailAttachmentIndexer(
             return
         }
 
-        val chunks = textChunkingService.splitText(processingResult.plainText)
-        logger.debug { "Split attachment ${attachment.fileName} into ${chunks.size} chunks" }
-
-        chunks.forEachIndexed { chunkIndex, chunk ->
-            ragIndexingService.indexDocument(
-                RagDocument(
-                    projectId = projectId,
-                    clientId = clientId,
-                    text = chunk.text(),
-                    ragSourceType = RagSourceType.EMAIL_ATTACHMENT,
-                    createdAt = message.receivedAt,
-                    // Use canonical source ID by attachment content hash
-                    sourceUri = canonicalSourceId,
-                    // Universal metadata fields
-                    from = message.from,
-                    subject = message.subject,
-                    timestamp = message.receivedAt.toString(),
-                    parentRef = message.messageId,
-                    chunkId = chunkIndex,
-                    chunkOf = chunks.size,
-                    fileName = attachment.fileName,
-                ),
-                ModelTypeEnum.EMBEDDING_TEXT,
+        val documentToStore =
+            DocumentToStore(
+                documentId = canonicalSourceId,
+                content = processingResult.plainText,
+                clientId = clientId,
+                projectId = projectId,
+                type = KnowledgeType.DOCUMENT,
+                embeddingType = EmbeddingType.TEXT,
+                title = attachment.fileName,
+                location = "email:${message.from}/${message.subject}",
             )
-        }
 
-        logger.info { "Indexed attachment ${attachment.fileName} with ${chunks.size} chunks" }
+        knowledgeService
+            .store(com.jervis.rag.StoreRequest(listOf(documentToStore)))
+
+        logger.info { "Indexed attachment ${attachment.fileName} for email from=${message.from} subject=${message.subject}" }
     }
 
     private fun sha256(bytes: ByteArray): String {

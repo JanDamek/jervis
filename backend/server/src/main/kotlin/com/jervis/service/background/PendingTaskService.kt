@@ -4,7 +4,8 @@ import com.jervis.domain.task.PendingTask
 import com.jervis.dto.PendingTaskState
 import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.entity.PendingTaskDocument
-import com.jervis.repository.mongo.PendingTaskMongoRepository
+import com.jervis.repository.PendingTaskMongoRepository
+import com.jervis.service.task.TaskSourceType
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
@@ -36,7 +37,7 @@ class PendingTaskService(
                 content = content,
                 projectId = projectId,
                 clientId = clientId,
-                // Current pipeline does not have explicit indexing step yet; start at READY_FOR_QUALIFICATION
+                // The current pipeline does not have an explicit indexing step yet; start at READY_FOR_QUALIFICATION
                 state = PendingTaskState.READY_FOR_QUALIFICATION,
                 correlationId =
                     correlationId ?: java.util.UUID
@@ -107,55 +108,6 @@ class PendingTaskService(
         return domainTask
     }
 
-    suspend fun finalizeCompleted(
-        taskId: ObjectId,
-        from: PendingTaskState,
-    ) {
-        val task = pendingTaskRepository.findById(taskId) ?: return
-        if (PendingTaskState.valueOf(task.state) != from) return
-        logger.info { "TASK_COMPLETED_DELETE: id=$taskId type=${task.type}" }
-        pendingTaskRepository.deleteById(taskId)
-    }
-
-    suspend fun failAndEscalateToUserTask(
-        taskId: ObjectId,
-        from: PendingTaskState,
-        reason: String,
-        error: String? = null,
-    ): ObjectId {
-        val taskDoc = pendingTaskRepository.findById(taskId) ?: error("Task not found: $taskId")
-        require(PendingTaskState.valueOf(taskDoc.state) == from) { "State changed for $taskId; expected=$from actual=${taskDoc.state}" }
-        val domain = taskDoc.toDomain()
-        val title = "Indexing/Qualification failed: ${domain.taskType.name}"
-        val description =
-            buildString {
-                appendLine("Pending task ${domain.id} failed in state ${domain.state}")
-                appendLine("Reason: $reason")
-                error?.let { appendLine("Error: $it") }
-                appendLine()
-                appendLine("Task Content:")
-                appendLine(domain.content)
-            }
-        val userTask =
-            userTaskService.createTask(
-                title = title,
-                description = description,
-                projectId = domain.projectId,
-                clientId = domain.clientId,
-                sourceType = com.jervis.domain.task.TaskSourceType.AGENT_SUGGESTION,
-                metadata =
-                    mapOf(
-                        "snapshot_taskType" to domain.taskType.name,
-                        "snapshot_state" to domain.state.name,
-                    ),
-            )
-        logger.info { "TASK_FAILED_ESCALATED: id=$taskId userTaskId=${userTask.id} reason=$reason" }
-        pendingTaskRepository.deleteById(taskId)
-        return userTask.id
-    }
-
-    fun findTasksReadyForQualification(): Flow<PendingTask> = findTasksByState(PendingTaskState.READY_FOR_QUALIFICATION)
-
     /**
      * Return all tasks that should be considered for qualification now:
      * - READY_FOR_QUALIFICATION: need to be claimed
@@ -176,11 +128,6 @@ class PendingTaskService(
         }
         return result
     }
-
-    fun findAllTasks(): Flow<PendingTask> =
-        pendingTaskRepository
-            .findAllByOrderByCreatedAtAsc()
-            .map { it.toDomain() }
 
     fun findAllTasks(
         taskType: String?,
@@ -228,7 +175,7 @@ class PendingTaskService(
                 description = description,
                 projectId = task.projectId,
                 clientId = task.clientId,
-                sourceType = com.jervis.domain.task.TaskSourceType.AGENT_SUGGESTION,
+                sourceType = TaskSourceType.AGENT_SUGGESTION,
                 metadata =
                     mapOf(
                         "snapshot_taskType" to task.taskType.name,

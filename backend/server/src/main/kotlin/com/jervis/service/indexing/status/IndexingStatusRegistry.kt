@@ -1,11 +1,12 @@
 package com.jervis.service.indexing.status
 
 import com.jervis.domain.websocket.WebSocketChannelTypeEnum
+import com.jervis.repository.ConfluencePageMongoRepository
+import com.jervis.repository.JiraIssueIndexMongoRepository
 import com.jervis.service.websocket.WebSocketSessionManager
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.springframework.stereotype.Service
 import java.time.Instant
@@ -23,8 +24,8 @@ class IndexingStatusRegistry(
     private val webSocketSessionManager: WebSocketSessionManager,
     private val emailMessageRepository: com.jervis.service.listener.email.state.EmailMessageRepository,
     private val gitCommitRepository: com.jervis.service.git.state.GitCommitRepository,
-    private val confluencePageRepository: com.jervis.repository.mongo.ConfluencePageMongoRepository,
-    private val jiraIssueIndexRepository: com.jervis.repository.mongo.JiraIssueIndexMongoRepository,
+    private val confluencePageRepository: ConfluencePageMongoRepository,
+    private val jiraIssueIndexRepository: JiraIssueIndexMongoRepository,
 ) {
     private val json = Json { encodeDefaults = true }
 

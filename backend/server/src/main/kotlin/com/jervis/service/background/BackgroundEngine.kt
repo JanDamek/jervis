@@ -1,8 +1,15 @@
 package com.jervis.service.background
 
+import com.jervis.configuration.properties.BackgroundProperties
 import com.jervis.domain.task.PendingTask
 import com.jervis.dto.PendingTaskState
+import com.jervis.dto.PendingTaskTypeEnum
+import com.jervis.repository.ProjectMongoRepository
+import com.jervis.repository.ScheduledTaskMongoRepository
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
+import com.jervis.service.debug.DebugService
+import com.jervis.service.notification.ErrorNotificationsPublisher
+import com.jervis.service.scheduling.TaskManagementService
 import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
 import kotlinx.coroutines.CancellationException
@@ -12,30 +19,45 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import mu.KotlinLogging
+import org.springframework.core.annotation.Order
+import org.springframework.scheduling.support.CronExpression
 import org.springframework.stereotype.Service
 import java.time.Duration
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Background cognitive engine that processes PendingTasks.
  *
- * TWO INDEPENDENT LOOPS:
+ * THREE INDEPENDENT LOOPS:
  * 1. Qualification loop (CPU) - runs continuously, checks DB every 30s
  * 2. Execution loop (GPU) - processes qualified tasks during idle GPU time
+ * 3. Scheduler loop - dispatches scheduled tasks 10 minutes before scheduled time
+ *
+ * STARTUP ORDER:
+ * @Order(10) ensures this starts AFTER WeaviateSchemaInitializer (@Order(0))
+ * This guarantees vector store schema is ready before any indexing/processing begins.
  */
 @Service
+@Order(10) // Start after schema initialization
 class BackgroundEngine(
     private val llmLoadMonitor: LlmLoadMonitor,
     private val pendingTaskService: PendingTaskService,
     private val agentOrchestrator: AgentOrchestratorService,
     private val taskQualificationService: TaskQualificationService,
-    private val backgroundProperties: com.jervis.configuration.properties.BackgroundProperties,
-    private val errorNotificationsPublisher: com.jervis.service.notification.ErrorNotificationsPublisher,
-    private val debugService: com.jervis.service.debug.DebugService,
+    private val backgroundProperties: BackgroundProperties,
+    private val errorNotificationsPublisher: ErrorNotificationsPublisher,
+    private val debugService: DebugService,
+    private val scheduledTaskRepository: ScheduledTaskMongoRepository,
+    private val taskManagementService: TaskManagementService,
+    private val projectMongoRepository: ProjectMongoRepository,
 ) {
     private val logger = KotlinLogging.logger {}
     private val supervisor = SupervisorJob()
@@ -43,12 +65,14 @@ class BackgroundEngine(
 
     private var qualificationJob: Job? = null
     private var executionJob: Job? = null
+    private var schedulerJob: Job? = null
     private var consecutiveFailures = 0
     private val maxRetryDelay = 300_000L // 5 minutes
+    private val schedulerAdvanceMinutes = 10L // Dispatch tasks 10 minutes before scheduled time
 
     @PostConstruct
     fun start() {
-        logger.info { "BackgroundEngine starting - initializing qualification and execution loops..." }
+        logger.info { "BackgroundEngine starting - initializing three independent loops..." }
 
         // Start qualification loop (CPU, independent)
         qualificationJob =
@@ -72,7 +96,18 @@ class BackgroundEngine(
                 }
             }
 
-        logger.info { "BackgroundEngine initialization complete - both loops launched" }
+        // Start scheduler loop (10-minute advance dispatch)
+        schedulerJob =
+            scope.launch {
+                try {
+                    logger.info { "Scheduler loop STARTED (10-minute interval)" }
+                    runSchedulerLoop()
+                } catch (e: Exception) {
+                    logger.error(e) { "Scheduler loop FAILED to start!" }
+                }
+            }
+
+        logger.info { "BackgroundEngine initialization complete - all three loops launched" }
     }
 
     @PreDestroy
@@ -81,6 +116,7 @@ class BackgroundEngine(
         currentTaskJob.getAndSet(null)?.cancel(CancellationException("Application shutdown"))
         qualificationJob?.cancel()
         executionJob?.cancel()
+        schedulerJob?.cancel()
         supervisor.cancel(CancellationException("Application shutdown"))
 
         try {
@@ -88,6 +124,7 @@ class BackgroundEngine(
                 withTimeout(3000) {
                     qualificationJob?.join()
                     executionJob?.join()
+                    schedulerJob?.join()
                 }
             }
         } catch (_: Exception) {
@@ -165,14 +202,16 @@ class BackgroundEngine(
                             .firstOrNull()
 
                     if (task != null) {
-                        logger.info { "GPU_TASK_PICKUP: id=${task.id} correlationId=${task.correlationId} type=${task.taskType} state=${task.state}" }
+                        logger.info {
+                            "GPU_TASK_PICKUP: id=${task.id} correlationId=${task.correlationId} type=${task.taskType} state=${task.state}"
+                        }
 
                         // Publish debug event
                         debugService.gpuTaskPickup(
                             correlationId = task.correlationId,
                             taskId = task.id.toHexString(),
                             taskType = task.taskType.name,
-                            state = task.state.name
+                            state = task.state.name,
                         )
 
                         executeTask(task) // Blocks until task completes - no other task can start
@@ -300,6 +339,95 @@ class BackgroundEngine(
         currentTaskJob.set(taskJob)
         taskJob.join()
         currentTaskJob.compareAndSet(taskJob, null)
+    }
+
+    /**
+     * Scheduler loop - dispatches scheduled tasks 10 minutes before their scheduled time.
+     * Runs every 10 minutes, finds tasks scheduled within next 10 minutes, and creates pending tasks.
+     */
+    private suspend fun runSchedulerLoop() {
+        logger.info { "Scheduler loop entering main loop..." }
+
+        while (scope.isActive) {
+            try {
+                val now = Instant.now()
+                val advanceWindow = Duration.ofMinutes(schedulerAdvanceMinutes)
+                val windowEnd = now.plus(advanceWindow)
+
+                logger.debug { "Scheduler: checking tasks scheduled between $now and $windowEnd" }
+
+                // Find tasks scheduled within next 10 minutes
+                val upcomingTasks =
+                    scheduledTaskRepository
+                        .findTasksScheduledBetween(now, windowEnd)
+                        .toList()
+
+                if (upcomingTasks.isNotEmpty()) {
+                    logger.info { "Scheduler: found ${upcomingTasks.size} upcoming task(s) to dispatch" }
+
+                    upcomingTasks.forEach { task ->
+                        try {
+                            // Create pending task with correlationId linking back to scheduled task
+                            pendingTaskService.createTask(
+                                taskType = PendingTaskTypeEnum.SCHEDULED_TASK,
+                                content = task.content, // Agent gets full context directly
+                                clientId = task.clientId,
+                                projectId = task.projectId,
+                                correlationId = task.correlationId ?: task.id.toHexString(),
+                            )
+
+                            // Handle lifecycle based on cron
+                            if (task.cronExpression != null) {
+                                // Recurring task - calculate next occurrence and update scheduledAt
+                                try {
+                                    val cron = CronExpression.parse(task.cronExpression)
+                                    val nextOccurrence = cron.next(ZonedDateTime.ofInstant(task.scheduledAt, ZoneId.systemDefault()))
+
+                                    if (nextOccurrence != null) {
+                                        taskManagementService.updateScheduledTime(task.id, nextOccurrence.toInstant())
+                                        logger.info {
+                                            "Scheduler: dispatched recurring task '${task.taskName}', next occurrence: $nextOccurrence"
+                                        }
+                                    } else {
+                                        logger.warn {
+                                            "Scheduler: no next occurrence for recurring task '${task.taskName}', deleting"
+                                        }
+                                        scheduledTaskRepository.deleteById(task.id)
+                                    }
+                                } catch (e: Exception) {
+                                    logger.error(e) {
+                                        "Scheduler: failed to parse cron expression '${task.cronExpression}' for task '${task.taskName}', deleting task"
+                                    }
+                                    scheduledTaskRepository.deleteById(task.id)
+                                }
+                            } else {
+                                // One-time task - delete after dispatch
+                                scheduledTaskRepository.deleteById(task.id)
+                                logger.info {
+                                    "Scheduler: dispatched one-time task '${task.taskName}' (scheduled for ${task.scheduledAt}), task deleted"
+                                }
+                            }
+                        } catch (e: Exception) {
+                            logger.error(e) { "Scheduler: failed to dispatch task ${task.id}" }
+                        }
+                    }
+                } else {
+                    logger.debug { "Scheduler: no upcoming tasks in next $schedulerAdvanceMinutes minutes" }
+                }
+
+                // Sleep 10 minutes before next check
+                delay(advanceWindow.toMillis())
+            } catch (e: CancellationException) {
+                logger.info { "Scheduler loop cancelled" }
+                throw e
+            } catch (e: Exception) {
+                val waitMs = backgroundProperties.waitOnError.toMillis()
+                logger.error(e) { "ERROR in scheduler loop - will retry in ${waitMs / 1000}s (configured)" }
+                delay(waitMs)
+            }
+        }
+
+        logger.warn { "Scheduler loop exited - scope is no longer active" }
     }
 
     companion object {

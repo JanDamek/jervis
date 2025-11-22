@@ -4,6 +4,9 @@ import com.jervis.dto.events.DebugEventDto
 import com.jervis.dto.events.ErrorNotificationEventDto
 import com.jervis.dto.events.UserTaskCreatedEventDto
 import com.jervis.dto.events.UserTaskCancelledEventDto
+import com.jervis.dto.events.UserDialogRequestEventDto
+import com.jervis.dto.events.UserDialogCloseEventDto
+import com.jervis.dto.events.UserDialogResponseEventDto
 import com.jervis.dto.events.AgentResponseEventDto
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
@@ -61,8 +64,17 @@ class WebSocketClient(private val serverBaseUrl: String) {
     private val _debugEvents = MutableSharedFlow<DebugEventDto>(replay = 0)
     val debugEvents: SharedFlow<DebugEventDto> = _debugEvents
 
+    private val _userDialogRequests = MutableSharedFlow<UserDialogRequestEventDto>(replay = 0)
+    val userDialogRequests: SharedFlow<UserDialogRequestEventDto> = _userDialogRequests
+
+    private val _userDialogCloses = MutableSharedFlow<UserDialogCloseEventDto>(replay = 0)
+    val userDialogCloses: SharedFlow<UserDialogCloseEventDto> = _userDialogCloses
+
     @Volatile
     private var isRunning = false
+
+    @Volatile
+    private var currentSession: DefaultClientWebSocketSession? = null
 
     /**
      * Start WebSocket connection with automatic reconnection
@@ -111,6 +123,7 @@ class WebSocketClient(private val serverBaseUrl: String) {
             }
         ) {
             println("WebSocket connected to $wsUrl")
+            currentSession = this
             try {
                 for (frame in incoming) {
                     val text = (frame as? Frame.Text)?.readText() ?: continue
@@ -118,6 +131,7 @@ class WebSocketClient(private val serverBaseUrl: String) {
                 }
             } finally {
                 println("WebSocket disconnected")
+                currentSession = null
             }
         }
     }
@@ -176,7 +190,41 @@ class WebSocketClient(private val serverBaseUrl: String) {
             return
         }
 
+        // User dialog request
+        runCatching {
+            json.decodeFromString<UserDialogRequestEventDto>(text)
+        }.onSuccess {
+            _userDialogRequests.emit(it)
+            return
+        }
+
+        // User dialog close
+        runCatching {
+            json.decodeFromString<UserDialogCloseEventDto>(text)
+        }.onSuccess {
+            _userDialogCloses.emit(it)
+            return
+        }
+
         println("Unknown WebSocket message: $text")
+    }
+
+    suspend fun sendUserDialogResponse(dto: UserDialogResponseEventDto) {
+        val session = currentSession
+        if (session != null) {
+            session.send(Frame.Text(json.encodeToString(UserDialogResponseEventDto.serializer(), dto)))
+        } else {
+            println("Cannot send dialog response: no active WS session")
+        }
+    }
+
+    suspend fun sendUserDialogClose(dto: UserDialogCloseEventDto) {
+        val session = currentSession
+        if (session != null) {
+            session.send(Frame.Text(json.encodeToString(UserDialogCloseEventDto.serializer(), dto)))
+        } else {
+            println("Cannot send dialog close: no active WS session")
+        }
     }
 
     /**

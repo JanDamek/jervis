@@ -3,7 +3,7 @@ package com.jervis.service.git
 import com.jervis.domain.git.MonoRepoConfig
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.ProjectDocument
-import com.jervis.repository.mongo.ClientMongoRepository
+import com.jervis.repository.ClientMongoRepository
 import com.jervis.service.storage.DirectoryStructureService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -342,7 +342,10 @@ class GitRepositoryService(
             m.contains("could not find remote ref")
     }
 
-    private fun runLsRemote(repoUrl: String, env: Map<String, String>): Pair<String?, List<String>> {
+    private fun runLsRemote(
+        repoUrl: String,
+        env: Map<String, String>,
+    ): Pair<String?, List<String>> {
         val processBuilder = ProcessBuilder("git", "ls-remote", "--heads", "--symref", repoUrl)
         processBuilder.redirectErrorStream(true)
         processBuilder.environment().putAll(env)
@@ -350,7 +353,7 @@ class GitRepositoryService(
         val output = process.inputStream.bufferedReader().use { it.readText() }
         val exit = process.waitFor()
         if (exit != 0) {
-            throw IllegalStateException("git ls-remote failed (${exit}): ${output.trim()}")
+            throw IllegalStateException("git ls-remote failed ($exit): ${output.trim()}")
         }
 
         var defaultBranch: String? = null
@@ -367,7 +370,10 @@ class GitRepositoryService(
         return defaultBranch to branches.distinct().sorted()
     }
 
-    private fun chooseLikelyDefaultBranch(defaultRemote: String?, branches: List<String>): String {
+    private fun chooseLikelyDefaultBranch(
+        defaultRemote: String?,
+        branches: List<String>,
+    ): String {
         val normalized = branches.map { it.trim() }
         if (!defaultRemote.isNullOrBlank() && normalized.contains(defaultRemote)) return defaultRemote
         val candidates = listOf("main", "master", "trunk", "develop", "dev")
@@ -375,7 +381,10 @@ class GitRepositoryService(
         return found ?: normalized.firstOrNull() ?: "main"
     }
 
-    private suspend fun updateClientDefaultBranch(project: ProjectDocument, newBranch: String) {
+    private suspend fun updateClientDefaultBranch(
+        project: ProjectDocument,
+        newBranch: String,
+    ) {
         val client = clientMongoRepository.findById(project.clientId)
         if (client != null && client.defaultBranch != newBranch) {
             val updated = client.copy(defaultBranch = newBranch)
@@ -401,7 +410,10 @@ class GitRepositoryService(
      * - Git command fails
      * - Branch is in detached HEAD state
      */
-    suspend fun getCurrentBranch(repositoryPath: Path, clientId: org.bson.types.ObjectId? = null): String =
+    suspend fun getCurrentBranch(
+        repositoryPath: Path,
+        clientId: org.bson.types.ObjectId? = null,
+    ): String =
         withContext(Dispatchers.IO) {
             try {
                 // Check if .git directory exists before attempting git command

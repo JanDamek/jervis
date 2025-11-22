@@ -2,13 +2,11 @@ package com.jervis.service.listener.git.processor
 
 import com.jervis.common.client.ITikaClient
 import com.jervis.common.dto.TikaProcessRequest
-import com.jervis.domain.model.ModelTypeEnum
-import com.jervis.domain.rag.RagDocument
-import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.ProjectDocument
-import com.jervis.service.rag.RagIndexingService
-import com.jervis.service.rag.VectorStoreIndexService
-import com.jervis.service.text.TextNormalizationService
+import com.jervis.rag.DocumentToStore
+import com.jervis.rag.EmbeddingType
+import com.jervis.rag.KnowledgeService
+import com.jervis.rag.KnowledgeType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -35,11 +33,8 @@ import java.util.Base64
  */
 @Service
 class GitDiffCodeIndexer(
-    private val ragIndexingService: RagIndexingService,
-    private val vectorStoreIndexService: VectorStoreIndexService,
+    private val knowledgeService: KnowledgeService,
     private val tikaClient: ITikaClient,
-    private val textChunkingService: com.jervis.service.text.TextChunkingService,
-    private val textNormalizationService: TextNormalizationService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -171,96 +166,38 @@ class GitDiffCodeIndexer(
         branch: String,
         codeChange: CodeChange,
     ): Int {
-        // Prepare file for reindexing if it was modified
-        if (codeChange.changeType == ChangeType.MODIFIED) {
-            val needsReindex =
-                vectorStoreIndexService.prepareFileReindexing(
-                    projectId = project.id,
-                    branch = branch,
-                    filePath = codeChange.filePath,
-                    newContent = codeChange.addedLines.joinToString("\n"),
-                )
+        val lang = codeChange.filePath.substringAfterLast('.', missingDelimiterValue = "unknown")
+        val codeText = codeChange.addedLines.joinToString("\n")
 
-            if (!needsReindex) {
-                logger.debug { "File ${codeChange.filePath} unchanged, skipping reindex" }
-                return 0
-            }
+        if (codeText.isBlank()) {
+            logger.debug { "Skipping empty code for ${codeChange.filePath}" }
+            return 0
         }
 
-        // Create chunks from added code
-        val codeChunks = createCodeChunks(codeChange)
-        var indexedChunks = 0
+        val documentToStore =
+            DocumentToStore(
+                documentId = "git:$commitHash:${codeChange.filePath}",
+                content =
+                    buildString {
+                        append("CODE_CHANGE ${codeChange.changeType} ")
+                        append("lang=$lang ")
+                        append("file=${codeChange.filePath} ")
+                        append("commit=$commitHash\n\n")
+                        append(codeText)
+                    },
+                clientId = project.clientId,
+                projectId = project.id,
+                type = KnowledgeType.CODE,
+                embeddingType = EmbeddingType.CODE,
+                title = codeChange.filePath,
+                location = "git:$commitHash:${codeChange.filePath}",
+            )
 
-        for ((index, chunk) in codeChunks.withIndex()) {
-            // Validate chunk is not empty
-            if (chunk.isBlank()) {
-                logger.debug { "Skipping empty chunk $index for ${codeChange.filePath}" }
-                continue
-            }
+        knowledgeService
+            .store(com.jervis.rag.StoreRequest(listOf(documentToStore)))
 
-            try {
-                val sourceId = "$commitHash:${codeChange.filePath}:chunk-$index"
-
-                val total = codeChunks.size
-                val lang = codeChange.filePath.substringAfterLast('.', missingDelimiterValue = "unknown")
-
-                val ragDocument =
-                    RagDocument(
-                        projectId = project.id,
-                        ragSourceType = RagSourceType.CODE_CHANGE,
-                        text =
-                            buildString {
-                                append("CODE_CHANGE ${codeChange.changeType} ")
-                                append("lang=$lang ")
-                                append("file=${codeChange.filePath} ")
-                                append("commit=$commitHash chunk=${index + 1}/$total\n\n")
-                                append(chunk)
-                            },
-                        clientId = project.clientId,
-                        fileName = codeChange.filePath,
-                        branch = branch,
-                        chunkId = index,
-                        chunkOf = total,
-                        parentRef = commitHash,
-                        from = "git-commit",
-                        timestamp =
-                            java.time.Instant
-                                .now()
-                                .toString(),
-                    )
-
-                // Use RagIndexingService for embedding + storage
-                val result =
-                    ragIndexingService
-                        .indexDocument(ragDocument, ModelTypeEnum.EMBEDDING_CODE)
-                        .getOrThrow()
-
-                // Track in MongoDB (explicit tracking for Git processors)
-                vectorStoreIndexService.trackIndexed(
-                    projectId = project.id,
-                    clientId = project.clientId,
-                    branch = branch,
-                    sourceType = RagSourceType.CODE_CHANGE,
-                    sourceId = sourceId,
-                    vectorStoreId = result.vectorStoreId,
-                    vectorStoreName = "code-change-${commitHash.take(8)}-$index",
-                    content = chunk,
-                    filePath = codeChange.filePath,
-                    symbolName = null,
-                    commitHash = commitHash,
-                )
-
-                indexedChunks++
-            } catch (e: Exception) {
-                logger.warn(e) {
-                    "Failed to index chunk $index of ${codeChange.filePath}: ${e.message}. " +
-                        "File may contain unsupported characters."
-                }
-            }
-        }
-
-        logger.debug { "Indexed $indexedChunks code chunks for ${codeChange.filePath}" }
-        return indexedChunks
+        logger.debug { "Indexed code for ${codeChange.filePath}" }
+        return 1
     }
 
     /**
@@ -310,84 +247,34 @@ class GitDiffCodeIndexer(
                     return@withContext 0
                 }
 
-                // Chunk extracted text
-                val textChunks = chunkText(extractedText)
-                var indexedChunks = 0
+                val documentToStore =
+                    DocumentToStore(
+                        documentId = "git:$commitHash:${codeChange.filePath}",
+                        content =
+                            buildString {
+                                append("TEXT_CHANGE ")
+                                append("file=${codeChange.filePath} ")
+                                append("commit=$commitHash\n\n")
+                                append(extractedText)
+                            },
+                        clientId = project.clientId,
+                        projectId = project.id,
+                        type = KnowledgeType.DOCUMENT,
+                        embeddingType = EmbeddingType.TEXT,
+                        title = codeChange.filePath,
+                        location = "git:$commitHash:${codeChange.filePath}",
+                    )
 
-                for ((index, chunk) in textChunks.withIndex()) {
-                    try {
-                        val sourceId = "$commitHash:${codeChange.filePath}:text-chunk-$index"
+                knowledgeService
+                    .store(com.jervis.rag.StoreRequest(listOf(documentToStore)))
 
-                        val total = textChunks.size
-
-                        val ragDocument =
-                            RagDocument(
-                                projectId = project.id,
-                                ragSourceType = RagSourceType.CODE_CHANGE,
-                                text =
-                                    buildString {
-                                        append("TEXT_CHANGE ")
-                                        append("file=${codeChange.filePath} ")
-                                        append("commit=$commitHash chunk=${index + 1}/$total\n\n")
-                                        append(chunk)
-                                    },
-                                clientId = project.clientId,
-                                fileName = codeChange.filePath,
-                                branch = branch,
-                                chunkId = index,
-                                chunkOf = total,
-                                parentRef = commitHash,
-                                from = "git-commit-tika",
-                                timestamp =
-                                    java.time.Instant
-                                        .now()
-                                        .toString(),
-                            )
-
-                        // Use RagIndexingService for embedding + storage
-                        val result =
-                            ragIndexingService
-                                .indexDocument(ragDocument, ModelTypeEnum.EMBEDDING_TEXT)
-                                .getOrThrow()
-
-                        // Track in MongoDB (explicit tracking for Git processors)
-                        vectorStoreIndexService.trackIndexed(
-                            projectId = project.id,
-                            clientId = project.clientId,
-                            branch = branch,
-                            sourceType = RagSourceType.CODE_CHANGE,
-                            sourceId = sourceId,
-                            vectorStoreId = result.vectorStoreId,
-                            vectorStoreName = "text-change-${commitHash.take(8)}-$index",
-                            content = chunk,
-                            filePath = codeChange.filePath,
-                            symbolName = null,
-                            commitHash = commitHash,
-                        )
-
-                        indexedChunks++
-                    } catch (e: Exception) {
-                        logger.warn(e) {
-                            "Failed to index text chunk $index of ${codeChange.filePath}: ${e.message}"
-                        }
-                    }
-                }
-
-                logger.debug { "Indexed $indexedChunks text chunks for ${codeChange.filePath}" }
-                indexedChunks
+                logger.debug { "Indexed text for ${codeChange.filePath}" }
+                1
             } catch (e: Exception) {
                 logger.error(e) { "Failed to index text file ${codeChange.filePath}" }
                 0
             }
         }
-
-    /**
-     * Chunk text into smaller pieces for embedding
-     */
-    private fun chunkText(text: String): List<String> {
-        val normalizedText = textNormalizationService.normalize(text)
-        return textChunkingService.splitText(normalizedText).map { it.text() }
-    }
 
     // ========== Mono-Repo Methods ==========
 
@@ -453,67 +340,44 @@ class GitDiffCodeIndexer(
         branch: String,
         codeChange: CodeChange,
     ): Int {
-        // Skip deleted files - no code to index
         if (codeChange.changeType == ChangeType.DELETED) {
             logger.debug { "Skipping deleted file: ${codeChange.filePath}" }
             return 0
         }
 
-        // Create chunks from added code
-        val codeChunks = createCodeChunks(codeChange)
-        var indexedChunks = 0
+        val lang = codeChange.filePath.substringAfterLast('.', missingDelimiterValue = "unknown")
+        val codeText = codeChange.addedLines.joinToString("\n")
 
-        for ((index, chunk) in codeChunks.withIndex()) {
-            val sourceId = "$commitHash:${codeChange.filePath}:chunk-$index"
-
-            // Generate CODE embedding (not TEXT!)
-            val ragDocument =
-                RagDocument(
-                    projectId = null, // No projectId for mono-repo
-                    ragSourceType = RagSourceType.CODE_CHANGE,
-                    text = chunk, // ✅ Fixed: embed actual code chunk, not just filepath
-                    clientId = clientId,
-                    // Code-specific metadata
-                    fileName = codeChange.filePath,
-                    branch = branch,
-                    chunkId = index,
-                    // Content
-                    from = "git-commit",
-                    timestamp =
-                        java.time.Instant
-                            .now()
-                            .toString(),
-                )
-
-            // Use RagIndexingService for embedding + storage
-            val result =
-                ragIndexingService
-                    .indexDocument(ragDocument, ModelTypeEnum.EMBEDDING_CODE)
-                    .getOrThrow()
-
-            // Track in MongoDB with monoRepoId (special mono-repo tracking)
-            vectorStoreIndexService.trackIndexedForMonoRepo(
-                clientId = clientId,
-                monoRepoId = monoRepoId,
-                branch = branch,
-                sourceType = RagSourceType.CODE_CHANGE,
-                sourceId = sourceId,
-                vectorStoreId = result.vectorStoreId,
-                vectorStoreName = "code-change-${commitHash.take(8)}-$index",
-                content = chunk,
-                filePath = codeChange.filePath,
-                symbolName = null,
-                commitHash = commitHash,
-            )
-
-            indexedChunks++
+        if (codeText.isBlank()) {
+            logger.debug { "Skipping empty code for ${codeChange.filePath}" }
+            return 0
         }
 
-        logger.debug { "Indexed ${codeChunks.size} mono-repo code chunks for ${codeChange.filePath}" }
-        return indexedChunks
-    }
+        val documentToStore =
+            DocumentToStore(
+                documentId = "git:monorepo:$monoRepoId:$commitHash:${codeChange.filePath}",
+                content =
+                    buildString {
+                        append("CODE_CHANGE ${codeChange.changeType} ")
+                        append("lang=$lang ")
+                        append("file=${codeChange.filePath} ")
+                        append("commit=$commitHash\n\n")
+                        append(codeText)
+                    },
+                clientId = clientId,
+                projectId = null,
+                type = KnowledgeType.CODE,
+                embeddingType = EmbeddingType.CODE,
+                title = codeChange.filePath,
+                location = "git:monorepo:$monoRepoId:$commitHash:${codeChange.filePath}",
+            )
 
-    // ========== Shared Methods ==========
+        knowledgeService
+            .store(com.jervis.rag.StoreRequest(listOf(documentToStore)))
+
+        logger.debug { "Indexed mono-repo code for ${codeChange.filePath}" }
+        return 1
+    }
 
     /**
      * Extract code changes from a commit using git show
@@ -616,15 +480,6 @@ class GitDiffCodeIndexer(
                 emptyList()
             }
         }
-
-    /**
-     * Create code chunks from code change using TextChunkingService.
-     */
-    private fun createCodeChunks(codeChange: CodeChange): List<String> {
-        val codeText = codeChange.addedLines.joinToString("\n")
-        val normalizedCode = textNormalizationService.normalizePreservingCode(codeText)
-        return textChunkingService.splitText(normalizedCode).map { it.text() }
-    }
 
     /**
      * Detect programming language from file path

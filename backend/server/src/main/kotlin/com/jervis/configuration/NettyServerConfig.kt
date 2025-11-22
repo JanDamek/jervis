@@ -21,7 +21,7 @@ class NettyServerConfig {
                     httpServer
                         .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 60_000)
                         .option(ChannelOption.SO_KEEPALIVE, true)
-                        .idleTimeout(Duration.ofMinutes(10)) // 10 minutes for long-running operations
+                        .idleTimeout(Duration.ofMinutes(10))
                         .doOnConnection { conn ->
                             conn.addHandlerLast(ReadTimeoutHandler(600, TimeUnit.SECONDS)) // 10 minutes
                             conn.addHandlerLast(WriteTimeoutHandler(600, TimeUnit.SECONDS)) // 10 minutes

@@ -1,16 +1,15 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.requirement.RequirementStatusEnum
-import com.jervis.repository.mongo.UserRequirementMongoRepository
+import com.jervis.repository.UserRequirementMongoRepository
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
@@ -23,42 +22,27 @@ import org.springframework.stereotype.Service
 class RequirementQueryUserTool(
     private val requirementRepository: UserRequirementMongoRepository,
     override val promptRepository: PromptRepository,
-) : McpTool {
+) : McpTool<RequirementQueryUserTool.RequirementQueryRequest> {
     companion object {
         private val logger = KotlinLogging.logger {}
-        private val json = Json { ignoreUnknownKeys = true }
     }
 
-    override val name: PromptTypeEnum = PromptTypeEnum.REQUIREMENT_QUERY_USER_TOOL
+    override val name = ToolTypeEnum.REQUIREMENT_QUERY_USER_TOOL
+
+    @Serializable
+    data class RequirementQueryRequest(
+        val keywords: List<String> = emptyList(),
+    )
+
+    override val descriptionObject = RequirementQueryRequest(keywords = listOf("gpu", "nvidia", "price"))
 
     override suspend fun execute(
         plan: Plan,
-        taskDescription: String,
-        stepContext: String,
+        request: RequirementQueryRequest,
     ): ToolResult {
         logger.info { "REQUIREMENT_QUERY_TOOL: Querying user requirements" }
 
-        // Parse parameters - handle both JSON and text with keywords
-        val request =
-            try {
-                // Try JSON first
-                json.decodeFromString<RequirementQueryRequest>(taskDescription)
-            } catch (e: Exception) {
-                // Fallback: extract keywords from text (e.g., "Check user requirements for keywords: rigips, sádrokarton")
-                logger.debug { "Parsing keywords from text: $taskDescription" }
-                val keywords =
-                    taskDescription
-                        .substringAfter("keywords:", "")
-                        .split(",")
-                        .map { it.trim() }
-                        .filter { it.isNotBlank() }
-
-                if (keywords.isNotEmpty()) {
-                    RequirementQueryRequest(keywords)
-                } else {
-                    RequirementQueryRequest()
-                }
-            }
+        val keywords = request.keywords
 
         // Query requirements
         val flow =
@@ -77,11 +61,11 @@ class RequirementQueryUserTool(
 
         // Filter by keywords if provided and convert to list
         val requirements =
-            if (request.keywords.isNotEmpty()) {
+            if (keywords.isNotEmpty()) {
                 flow
                     .filter { doc ->
                         doc.keywords.any { keyword ->
-                            request.keywords.any { searchKeyword ->
+                            keywords.any { searchKeyword ->
                                 keyword.contains(searchKeyword, ignoreCase = true) ||
                                     searchKeyword.contains(keyword, ignoreCase = true)
                             }
@@ -95,8 +79,8 @@ class RequirementQueryUserTool(
             if (requirements.isEmpty()) {
                 buildString {
                     appendLine("No matching requirements found")
-                    if (request.keywords.isNotEmpty()) {
-                        appendLine("Search keywords: ${request.keywords.joinToString(", ")}")
+                    if (keywords.isNotEmpty()) {
+                        appendLine("Search keywords: ${keywords.joinToString(", ")}")
                     }
                 }
             } else {
@@ -124,8 +108,4 @@ class RequirementQueryUserTool(
         )
     }
 
-    @Serializable
-    data class RequirementQueryRequest(
-        val keywords: List<String> = emptyList(),
-    )
 }

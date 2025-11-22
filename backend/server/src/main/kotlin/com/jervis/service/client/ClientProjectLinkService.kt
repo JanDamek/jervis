@@ -3,7 +3,7 @@ package com.jervis.service.client
 import com.jervis.dto.ClientProjectLinkDto
 import com.jervis.entity.ClientProjectLinkDocument
 import com.jervis.mapper.toDto
-import com.jervis.repository.mongo.ClientProjectLinkMongoRepository
+import com.jervis.repository.ClientProjectLinkMongoRepository
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging

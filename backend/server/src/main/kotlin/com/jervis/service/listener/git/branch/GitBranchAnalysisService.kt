@@ -10,14 +10,13 @@ import com.jervis.domain.git.branch.OperationsImpact
 import com.jervis.domain.git.branch.RepoId
 import com.jervis.domain.git.branch.ScopeOfChange
 import com.jervis.domain.git.branch.TestingSummary
-import com.jervis.domain.model.ModelTypeEnum
-import com.jervis.domain.rag.RagDocument
-import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.ProjectDocument
+import com.jervis.rag.DocumentToStore
+import com.jervis.rag.EmbeddingType
+import com.jervis.rag.KnowledgeService
+import com.jervis.rag.KnowledgeType
 import com.jervis.service.git.GitRemoteClient
 import com.jervis.service.git.collectWithLogging
-import com.jervis.service.rag.RagIndexingService
-import com.jervis.service.rag.VectorStoreIndexService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -37,8 +36,7 @@ import java.nio.file.Path
  */
 @Service
 class GitBranchAnalysisService(
-    private val ragIndexingService: RagIndexingService,
-    private val vectorStoreIndexService: VectorStoreIndexService,
+    private val knowledgeService: KnowledgeService,
     private val gitRemoteClient: GitRemoteClient,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -377,41 +375,23 @@ class GitBranchAnalysisService(
         project: ProjectDocument,
         summary: BranchSummary,
     ) {
-        val sourceId = "branch-summary:${summary.branch}@${summary.headSha}"
         val text = narrative(summary)
-        val hasChanged =
-            vectorStoreIndexService.hasContentChanged(RagSourceType.GIT_HISTORY, sourceId, project.id, text)
-        if (!hasChanged) {
-            logger.debug { "GIT_BRANCH: Skipping ${summary.branch} - summary unchanged" }
-            return
-        }
 
-        val rag =
-            RagDocument(
-                projectId = project.id,
+        val documentToStore =
+            DocumentToStore(
+                documentId = "git:${project.id.toHexString()}:branch:${summary.branch}@${summary.headSha}",
+                content = text,
                 clientId = project.clientId,
-                text = text,
-                ragSourceType = RagSourceType.GIT_HISTORY,
-                subject = "Branch summary ${summary.branch}",
-                timestamp = summary.generatedAt.toString(),
-                parentRef = summary.headSha,
-                branch = summary.branch,
+                projectId = project.id,
+                type = KnowledgeType.DOCUMENT,
+                embeddingType = EmbeddingType.TEXT,
+                title = "Branch summary ${summary.branch}",
+                location = "git:branch:${summary.branch}",
             )
-        val result = ragIndexingService.indexDocument(rag, ModelTypeEnum.EMBEDDING_TEXT).getOrThrow()
-        vectorStoreIndexService.trackIndexed(
-            projectId = project.id,
-            clientId = project.clientId,
-            branch = summary.branch,
-            sourceType = RagSourceType.GIT_HISTORY,
-            sourceId = sourceId,
-            vectorStoreId = result.vectorStoreId,
-            vectorStoreName = "git-branch-summary",
-            content = text,
-            commitHash = summary.headSha,
-        )
-    }
 
-    // ========== Git helpers ==========
+        knowledgeService
+            .store(com.jervis.rag.StoreRequest(listOf(documentToStore)))
+    }
 
     private fun computeForkPoint(
         projectPath: Path,

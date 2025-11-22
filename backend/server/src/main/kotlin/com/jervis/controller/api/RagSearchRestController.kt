@@ -3,36 +3,51 @@ package com.jervis.controller.api
 import com.jervis.dto.rag.RagSearchItemDto
 import com.jervis.dto.rag.RagSearchRequestDto
 import com.jervis.dto.rag.RagSearchResponseDto
+import com.jervis.rag.EmbeddingType
+import com.jervis.rag.KnowledgeService
+import com.jervis.rag.SearchRequest
 import com.jervis.service.IRagSearchService
-import com.jervis.service.rag.RagDirectSearchService
+import org.bson.types.ObjectId
 import org.springframework.web.bind.annotation.*
 
 @RestController
 @RequestMapping("/api/rag")
 class RagSearchRestController(
-    private val searchService: RagDirectSearchService,
+    private val knowledgeService: KnowledgeService,
 ) : IRagSearchService {
     @PostMapping("/search")
-    override suspend fun search(@RequestBody request: RagSearchRequestDto): RagSearchResponseDto {
-        val result =
-            searchService.search(
-                clientId = request.clientId,
-                projectId = request.projectId,
-                searchText = request.searchText,
-                filterKey = request.filterKey,
-                filterValue = request.filterValue,
-                maxChunks = request.maxChunks,
-                minSimilarityThreshold = request.minSimilarityThreshold,
+    override suspend fun search(
+        @RequestBody request: RagSearchRequestDto,
+    ): RagSearchResponseDto {
+        val searchRequest =
+            SearchRequest(
+                query = request.searchText,
+                clientId = ObjectId(request.clientId),
+                projectId = request.projectId?.let { ObjectId(it) },
+                maxResults = request.maxChunks ?: 20,
+                minScore = request.minSimilarityThreshold ?: 0.15,
+                embeddingType = EmbeddingType.TEXT,
+                knowledgeTypes = null, // Search all types
             )
 
+        val searchResult = knowledgeService.search(searchRequest)
+
+        // Parse the text result back into items for backward compatibility
+        // In new system, we return plain text, but old API expects structured items
         val items =
-            result.items.map { RagSearchItemDto(content = it.content, score = it.score, metadata = it.metadata) }
+            listOf(
+                RagSearchItemDto(
+                    content = searchResult.text,
+                    score = 1.0,
+                    metadata = emptyMap(),
+                ),
+            )
 
         return RagSearchResponseDto(
             items = items,
-            queriesProcessed = result.queriesProcessed,
-            totalChunksFound = result.totalChunksFound,
-            totalChunksFiltered = result.totalChunksFiltered,
+            queriesProcessed = 1,
+            totalChunksFound = 1,
+            totalChunksFiltered = 1,
         )
     }
 }

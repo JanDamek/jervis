@@ -1,14 +1,12 @@
 package com.jervis.service.link
 
 import com.jervis.configuration.properties.LinkIndexingProperties
-import com.jervis.domain.model.ModelTypeEnum
-import com.jervis.domain.rag.RagDocument
-import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.IndexedLinkDocument
-import com.jervis.repository.mongo.IndexedLinkMongoRepository
-import com.jervis.service.rag.RagIndexingService
-import com.jervis.service.text.TextChunkingService
-import com.jervis.service.text.TextNormalizationService
+import com.jervis.rag.DocumentToStore
+import com.jervis.rag.EmbeddingType
+import com.jervis.rag.KnowledgeService
+import com.jervis.rag.KnowledgeType
+import com.jervis.repository.IndexedLinkMongoRepository
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -18,9 +16,7 @@ private val logger = KotlinLogging.logger {}
 
 @Service
 class LinkIndexer(
-    private val ragIndexingService: RagIndexingService,
-    private val textChunkingService: TextChunkingService,
-    private val textNormalizationService: TextNormalizationService,
+    private val knowledgeService: KnowledgeService,
     private val linkContentService: LinkContentService,
     private val indexedLinkRepo: IndexedLinkMongoRepository,
     private val props: LinkIndexingProperties,
@@ -40,12 +36,8 @@ class LinkIndexer(
         url: String,
         projectId: ObjectId?,
         clientId: ObjectId,
-        sourceType: RagSourceType,
-        createdAt: Instant = Instant.now(),
-        emailMessageId: String? = null,
         content: String? = null,
     ): IndexResult {
-        // Skip if indexed recently
         val existing = indexedLinkRepo.findByUrl(url)
         val threshold = Instant.now().minus(props.skipIfIndexedWithin)
         if (existing != null && existing.lastIndexedAt.isAfter(threshold)) {
@@ -60,39 +52,31 @@ class LinkIndexer(
                 val link = linkContentService.fetchPlainText(url)
                 if (!link.success || link.plainText.isBlank()) {
                     logger.debug { "No text to index for $url (success=${link.success})" }
-                    // Mark as indexed even if empty, so we don't retry repeatedly
                     upsertIndexedLink(url)
                     return IndexResult(processedChunks = 0, skipped = true)
                 }
                 link.plainText
             }
 
-        val normalizedText = textNormalizationService.normalize(plainText)
-        val chunks = textChunkingService.splitText(normalizedText)
-        logger.debug { "Split link content from $url into ${chunks.size} chunks" }
-
-        chunks.forEachIndexed { chunkIndex, chunk ->
-            ragIndexingService.indexDocument(
-                RagDocument(
-                    projectId = projectId,
-                    clientId = clientId,
-                    text = chunk.text(),
-                    ragSourceType = sourceType,
-                    createdAt = createdAt,
-                    sourceUri = url,
-                    parentRef = emailMessageId,
-                    chunkId = chunkIndex,
-                    chunkOf = chunks.size,
-                ),
-                ModelTypeEnum.EMBEDDING_TEXT,
+        val documentToStore =
+            DocumentToStore(
+                documentId = "link:$url",
+                content = plainText,
+                clientId = clientId,
+                projectId = projectId,
+                type = KnowledgeType.DOCUMENT,
+                embeddingType = EmbeddingType.TEXT,
+                title = url,
+                location = url,
             )
-        }
 
-        // Update/insert index record atomically to avoid duplicate key races
+        knowledgeService
+            .store(com.jervis.rag.StoreRequest(listOf(documentToStore)))
+
         upsertIndexedLink(url)
 
-        logger.info { "Indexed link $url with ${chunks.size} chunks" }
-        return IndexResult(processedChunks = chunks.size, skipped = false)
+        logger.info { "Indexed link $url" }
+        return IndexResult(processedChunks = 1, skipped = false)
     }
 
     private suspend fun upsertIndexedLink(url: String) {

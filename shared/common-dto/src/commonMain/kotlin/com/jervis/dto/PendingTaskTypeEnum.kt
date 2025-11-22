@@ -1,54 +1,63 @@
 package com.jervis.dto
 
-enum class PendingTaskTypeEnum {
-    EMAIL_PROCESSING,
-    AGENT_ANALYSIS,
-    COMMIT_ANALYSIS,
+import com.jervis.configuration.prompts.PromptTypeEnum
+
+enum class PendingTaskTypeEnum(
+    val promptType: PromptTypeEnum,
+) {
+    EMAIL_PROCESSING(PromptTypeEnum.EMAIL_QUALIFIER),
+
+    /**
+     * Agent-created task for deeper investigation.
+     * Agent discovered something requiring focused analysis.
+     * Bypasses qualification - goes directly to GPU for execution.
+     * Task content contains specific analysis instructions.
+     */
+    AGENT_ANALYSIS(PromptTypeEnum.QUALIFIER),
+
+    /**
+     * Scheduled task dispatched 10 minutes before scheduled time.
+     * Bypasses qualification - goes directly to GPU for execution.
+     * Used for: reminders, scheduled emails/calls, maintenance tasks, recurring actions.
+     * Task content contains scheduled action instructions and original scheduled time.
+     */
+    SCHEDULED_TASK(PromptTypeEnum.QUALIFIER),
+
+    COMMIT_ANALYSIS(PromptTypeEnum.QUALIFIER),
 
     /**
      * Analyze source file structure and create AI description.
      * Creates class/file description stored in RAG for future reference.
      * Used to build architectural knowledge without reading source code repeatedly.
      */
-    FILE_STRUCTURE_ANALYSIS,
+    FILE_STRUCTURE_ANALYSIS(PromptTypeEnum.QUALIFIER),
 
     /**
      * Update project short and full descriptions based on recent commits.
      * Uses file descriptions from RAG, not source code (avoids context limits).
      */
-    PROJECT_DESCRIPTION_UPDATE,
-
-    /**
-     * Delayed response to user question.
-     * Used when agent can't answer immediately (e.g., branch not indexed yet).
-     * Task waits for condition to be met, then agent answers original question.
-     */
-    DELAYED_USER_RESPONSE,
-
-    /**
-     * Jira configuration/setup actions were previously used to enable indexing.
-     * Note: Configuration must be performed during user-guided desktop/server setup; not used for background tasks.
-     */
-    JIRA_CONFIG,
-
-    /**
-     * Jira synchronization and deep indexing tasks.
-     */
-    JIRA_SYNC,
+    PROJECT_DESCRIPTION_UPDATE(PromptTypeEnum.QUALIFIER),
 
     /**
      * Confluence documentation page analysis.
      * Analyzes page content, extracts key concepts, creates structured summary,
      * links to related code/commits/emails, identifies action items.
      */
-    CONFLUENCE_PAGE_ANALYSIS,
+    CONFLUENCE_PAGE_ANALYSIS(PromptTypeEnum.QUALIFIER),
 
     /**
      * Manual review of a link that could not be indexed automatically.
      * Created when cross-indexer URL handoff fails after max retry attempts.
      * User should review and decide: add to safe patterns, ignore, or index manually.
      */
-    LINK_REVIEW,
+    LINK_REVIEW(PromptTypeEnum.LINK_QUALIFIER),
+
+    /**
+     * Jira issue assigned to current user - needs qualification and analysis.
+     * Contains issue summary, description, comments, and context.
+     * Qualifies whether issue requires action from user.
+     */
+    JIRA_PROCESSING(PromptTypeEnum.JIRA_QUALIFIER),
 
     /**
      * Link safety qualification is UNCERTAIN - needs agent review.
@@ -64,5 +73,5 @@ enum class PendingTaskTypeEnum {
      * - Source (email, Jira, Confluence)
      * - LLM reasoning for UNCERTAIN decision
      */
-    LINK_SAFETY_REVIEW,
+    LINK_SAFETY_REVIEW(PromptTypeEnum.LINK_QUALIFIER),
 }

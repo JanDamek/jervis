@@ -16,9 +16,9 @@ import org.springframework.web.reactive.config.WebFluxConfigurer
  */
 @Configuration
 class JsonConfiguration : WebFluxConfigurer {
-    @OptIn(ExperimentalSerializationApi::class)
     @Bean
     @Primary
+    @OptIn(ExperimentalSerializationApi::class)
     fun json(): Json =
         Json {
             ignoreUnknownKeys = true

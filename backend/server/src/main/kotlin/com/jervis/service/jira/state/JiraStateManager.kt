@@ -1,10 +1,9 @@
 package com.jervis.service.jira.state
 
 import com.jervis.entity.jira.JiraIssueIndexDocument
-import com.jervis.repository.mongo.JiraIssueIndexMongoRepository
+import com.jervis.repository.JiraIssueIndexMongoRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -32,10 +31,11 @@ class JiraStateManager(
     fun continuousNewIssues(clientId: ObjectId): Flow<JiraIssueIndexDocument> =
         flow {
             while (true) {
-                val issues = repository.findByClientIdAndStateAndArchivedFalseOrderByUpdatedAtAsc(
-                    clientId,
-                    JiraIssueState.NEW.name
-                )
+                val issues =
+                    repository.findByClientIdAndStateAndArchivedFalseOrderByUpdatedAtAsc(
+                        clientId,
+                        JiraIssueState.NEW.name,
+                    )
 
                 var emittedAny = false
                 issues.collect { issue ->
@@ -57,10 +57,11 @@ class JiraStateManager(
      * Mark issue as INDEXING (claim it for processing).
      */
     suspend fun markAsIndexing(issue: JiraIssueIndexDocument) {
-        val updated = issue.copy(
-            state = JiraIssueState.INDEXING.name,
-            updatedAt = Instant.now()
-        )
+        val updated =
+            issue.copy(
+                state = JiraIssueState.INDEXING.name,
+                updatedAt = Instant.now(),
+            )
         repository.save(updated)
         logger.debug { "Marked Jira issue ${issue.issueKey} as INDEXING" }
     }
@@ -75,17 +76,17 @@ class JiraStateManager(
         commentCount: Int = 0,
         attachmentCount: Int = 0,
     ) {
-        val updated = issue.copy(
-            state = JiraIssueState.INDEXED.name,
-            lastIndexedAt = Instant.now(),
-            summaryChunkCount = summaryChunks,
-            commentChunkCount = commentChunks,
-            commentCount = commentCount,
-            attachmentCount = attachmentCount,
-            totalRagChunks = summaryChunks + commentChunks,
-            errorMessage = null,
-            updatedAt = Instant.now()
-        )
+        val updated =
+            issue.copy(
+                state = JiraIssueState.INDEXED.name,
+                lastIndexedAt = Instant.now(),
+                summaryChunkCount = summaryChunks,
+                commentChunkCount = commentChunks,
+                commentCount = commentCount,
+                attachmentCount = attachmentCount,
+                totalRagChunks = summaryChunks + commentChunks,
+                updatedAt = Instant.now(),
+            )
         repository.save(updated)
         logger.info { "Marked Jira issue ${issue.issueKey} as INDEXED (${updated.totalRagChunks} chunks)" }
     }
@@ -97,12 +98,11 @@ class JiraStateManager(
         issue: JiraIssueIndexDocument,
         reason: String,
     ) {
-        val updated = issue.copy(
-            state = JiraIssueState.FAILED.name,
-            errorMessage = reason.take(500),
-            lastIndexingError = reason.take(500),
-            updatedAt = Instant.now()
-        )
+        val updated =
+            issue.copy(
+                state = JiraIssueState.FAILED.name,
+                updatedAt = Instant.now(),
+            )
         repository.save(updated)
         logger.warn { "Marked Jira issue ${issue.issueKey} as FAILED: $reason" }
     }
@@ -124,29 +124,13 @@ class JiraStateManager(
     ): JiraIssueIndexDocument {
         val existing = repository.findByClientIdAndIssueKey(clientId, issueKey)
 
-        val doc = if (existing == null) {
-            // New issue - create with NEW state
-            JiraIssueIndexDocument(
-                clientId = clientId,
-                issueKey = issueKey,
-                projectKey = projectKey,
-                lastSeenUpdated = updated,
-                contentHash = contentHash,
-                statusHash = statusHash,
-                state = JiraIssueState.NEW.name,
-                issueSummary = summary.take(200),
-                currentStatus = status,
-                currentAssignee = assignee,
-                updatedAt = Instant.now()
-            )
-        } else {
-            // Existing issue - check if changed
-            val contentChanged = existing.contentHash != contentHash
-            val statusChanged = existing.statusHash != statusHash
-
-            if (contentChanged || statusChanged) {
-                // Content changed - mark as NEW to re-index
-                existing.copy(
+        val doc =
+            if (existing == null) {
+                // New issue - create with NEW state
+                JiraIssueIndexDocument(
+                    clientId = clientId,
+                    issueKey = issueKey,
+                    projectKey = projectKey,
                     lastSeenUpdated = updated,
                     contentHash = contentHash,
                     statusHash = statusHash,
@@ -154,16 +138,33 @@ class JiraStateManager(
                     issueSummary = summary.take(200),
                     currentStatus = status,
                     currentAssignee = assignee,
-                    updatedAt = Instant.now()
+                    updatedAt = Instant.now(),
                 )
             } else {
-                // No changes - keep existing state
-                existing.copy(
-                    lastSeenUpdated = updated,
-                    updatedAt = Instant.now()
-                )
+                // Existing issue - check if changed
+                val contentChanged = existing.contentHash != contentHash
+                val statusChanged = existing.statusHash != statusHash
+
+                if (contentChanged || statusChanged) {
+                    // Content changed - mark as NEW to re-index
+                    existing.copy(
+                        lastSeenUpdated = updated,
+                        contentHash = contentHash,
+                        statusHash = statusHash,
+                        state = JiraIssueState.NEW.name,
+                        issueSummary = summary.take(200),
+                        currentStatus = status,
+                        currentAssignee = assignee,
+                        updatedAt = Instant.now(),
+                    )
+                } else {
+                    // No changes - keep existing state
+                    existing.copy(
+                        lastSeenUpdated = updated,
+                        updatedAt = Instant.now(),
+                    )
+                }
             }
-        }
 
         return repository.save(doc)
     }

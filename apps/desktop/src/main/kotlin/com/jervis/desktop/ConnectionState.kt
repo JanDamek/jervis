@@ -113,6 +113,9 @@ class ConnectionManager(private val serverBaseUrl: String) : com.jervis.ui.Debug
         debugWebSocketClient = DebugWebSocketClient(serverBaseUrl)
         debugWebSocketClient?.start()
 
+        // User dialog manager (single instance)
+        val dialogManager = UserDialogManager(webSocketClient!!, scope)
+
         // Listen for user task events
         scope.launch {
             webSocketClient?.userTaskEvents?.collect { event ->
@@ -141,6 +144,20 @@ class ConnectionManager(private val serverBaseUrl: String) : com.jervis.ui.Debug
 
         // Debug events are now consumed directly by DebugWindow via debugWebSocketFlow
         // No need to accumulate them here
+
+        // Listen for user dialog requests
+        scope.launch {
+            webSocketClient?.userDialogRequests?.collect { req ->
+                dialogManager.showRequest(req)
+            }
+        }
+
+        // Listen for user dialog close events (close everywhere)
+        scope.launch {
+            webSocketClient?.userDialogCloses?.collect { closeEvt ->
+                dialogManager.closeIfMatches(closeEvt.dialogId)
+            }
+        }
     }
 
     /**

@@ -2,28 +2,38 @@ package com.jervis.service.listener.email
 
 import com.jervis.domain.rag.RagSourceType
 import com.jervis.entity.EmailAccountDocument
+import com.jervis.repository.EmailAccountMongoRepository
 import com.jervis.service.background.TaskQualificationService
+import com.jervis.service.indexing.AbstractContinuousIndexer
 import com.jervis.service.indexing.status.IndexingStatusRegistry
 import com.jervis.service.link.LinkIndexingService
 import com.jervis.service.listener.email.imap.ImapClient
 import com.jervis.service.listener.email.imap.ImapMessage
 import com.jervis.service.listener.email.processor.EmailAttachmentIndexer
 import com.jervis.service.listener.email.processor.EmailContentIndexer
+import com.jervis.service.listener.email.state.EmailMessageDocument
 import com.jervis.service.listener.email.state.EmailMessageStateManager
+import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import mu.KotlinLogging
+import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Service
 
 private val logger = KotlinLogging.logger {}
 
 /**
- * Continuous indexer that runs as a background Flow.
- * Polls NEW messages from DB, processes them, and marks as INDEXED.
- * Never stops - uses polling with 30s delay when queue is empty.
+ * Continuous indexer that processes NEW email messages from MongoDB.
+ * Reads messages saved by EmailContinuousPoller, indexes them to RAG,
+ * creates pending tasks for qualification, and marks as INDEXED.
  */
 @Service
+@Order(10) // Start after WeaviateSchemaInitializer
 class EmailContinuousIndexer(
+    private val emailAccountRepository: EmailAccountMongoRepository,
     private val imapClient: ImapClient,
     private val stateManager: EmailMessageStateManager,
     private val contentIndexer: EmailContentIndexer,
@@ -32,19 +42,36 @@ class EmailContinuousIndexer(
     private val taskQualificationService: TaskQualificationService,
     private val flowProps: com.jervis.configuration.properties.IndexingFlowProperties,
     private val indexingRegistry: IndexingStatusRegistry,
-    private val vectorIndexService: com.jervis.service.rag.VectorStoreIndexService,
-) : com.jervis.service.indexing.AbstractContinuousIndexer<EmailAccountDocument, com.jervis.service.listener.email.state.EmailMessageDocument>() {
+) : AbstractContinuousIndexer<EmailAccountDocument, EmailMessageDocument>() {
     override val indexerName: String = "EmailContinuousIndexer"
     override val bufferSize: Int get() = flowProps.bufferSize
 
+    private val supervisor = SupervisorJob()
+    private val scope = CoroutineScope(Dispatchers.IO + supervisor)
+
+    @PostConstruct
+    fun start() {
+        logger.info { "Starting $indexerName for all email accounts..." }
+        scope.launch {
+            // Start indexer for each email account
+            val accounts = emailAccountRepository.findAll().toList()
+            accounts.forEach { account ->
+                launch {
+                    logger.info { "Starting continuous indexing for account: ${account.email}" }
+                    startContinuousIndexing(account)
+                }
+            }
+        }
+    }
+
     override fun newItemsFlow(account: EmailAccountDocument) = stateManager.continuousNewMessages(account.id)
 
-    override fun itemLogLabel(item: com.jervis.service.listener.email.state.EmailMessageDocument) =
-        "UID:${item.uid} msgId:${item.messageId} subject:${item.subject}"
+    override fun itemLogLabel(item: EmailMessageDocument) =
+        "UID:${item.uid} from:${item.from ?: "<unknown>"} subject:${item.subject ?: "<no subject>"}"
 
     override suspend fun fetchContentIO(
         account: EmailAccountDocument,
-        item: com.jervis.service.listener.email.state.EmailMessageDocument,
+        item: EmailMessageDocument,
     ): ImapMessage? {
         // Claim the item by marking it INDEXING before any remote IO
         stateManager.markAsIndexing(item)
@@ -55,7 +82,7 @@ class EmailContinuousIndexer(
 
     override suspend fun processAndIndex(
         account: EmailAccountDocument,
-        item: com.jervis.service.listener.email.state.EmailMessageDocument,
+        item: EmailMessageDocument,
         content: Any,
     ): IndexingResult {
         val message = content as ImapMessage
@@ -65,9 +92,13 @@ class EmailContinuousIndexer(
             kotlin.runCatching {
                 val toolKey = "email"
                 indexingRegistry.ensureTool(toolKey, displayName = "Email Indexing")
-                indexingRegistry.progress(toolKey, processedInc = 1, message = "Skipped duplicate email ${message.messageId}")
+                indexingRegistry.progress(
+                    toolKey,
+                    processedInc = 1,
+                    message = "Skipped duplicate email from=${message.from} subject=${message.subject}",
+                )
             }
-            logger.info { "Duplicate email detected, skipping indexing for messageId=${message.messageId}" }
+            logger.info { "Duplicate email detected, skipping indexing for from=${message.from} subject=${message.subject}" }
             return IndexingResult(
                 success = true,
                 plainText = null,
@@ -79,17 +110,6 @@ class EmailContinuousIndexer(
         val normalizedSubject = normalizeSubject(message.subject)
         val subjectHash = sha256(normalizedSubject.lowercase())
         val canonicalSourceId = "email-thread://${account.id.toHexString()}/$subjectHash"
-
-        // Always keep only latest thread snapshot in RAG: deactivate older records for this canonical source
-        if (account.projectId != null) {
-            kotlin.runCatching {
-                vectorIndexService.markAllInactiveForSource(
-                    com.jervis.domain.rag.RagSourceType.EMAIL,
-                    canonicalSourceId,
-                    account.projectId!!,
-                )
-            }
-        }
 
         val ragDocumentId =
             contentIndexer.indexEmailContent(
@@ -112,20 +132,20 @@ class EmailContinuousIndexer(
             projectId = account.projectId,
             clientId = account.clientId,
             sourceType = RagSourceType.EMAIL_LINK_CONTENT,
-            createdAt = message.receivedAt,
             parentRef = message.messageId,
         )
 
-        val success = ragDocumentId != null
-        // Report progress to indexing registry under tool key "email"
         kotlin.runCatching {
             val toolKey = "email"
-            // ensure running state started once per process lifecycle
             indexingRegistry.ensureTool(toolKey, displayName = "Email Indexing")
-            if (success) indexingRegistry.progress(toolKey, processedInc = 1, message = "Indexed email ${message.messageId}")
+            indexingRegistry.progress(
+                toolKey,
+                processedInc = 1,
+                message = "Indexed email from=${message.from} subject=${message.subject}",
+            )
         }
         return IndexingResult(
-            success = success,
+            success = true,
             plainText = message.content,
             ragDocumentId = ragDocumentId,
         )
@@ -143,7 +163,7 @@ class EmailContinuousIndexer(
 
     override suspend fun createTask(
         account: EmailAccountDocument,
-        item: com.jervis.service.listener.email.state.EmailMessageDocument,
+        item: EmailMessageDocument,
         content: Any,
         result: IndexingResult,
     ) {
@@ -164,12 +184,18 @@ class EmailContinuousIndexer(
         kotlin
             .runCatching { stateManager.markAsIndexed(item) }
             .onFailure { e ->
-                logger.warn(e) { "markAsIndexed failed for messageId:${item.messageId}, trying by messageId" }
+                logger.warn(e) {
+                    "markAsIndexed failed for email from=${item.from ?: "<unknown>"} subject=${item.subject ?: "<no subject>"}, trying by messageId"
+                }
                 kotlin
                     .runCatching { stateManager.markMessageIdAsIndexed(account.id, item.messageId) }
-                    .onFailure { e2 -> logger.error(e2) { "Fallback mark by messageId also failed for messageId:${item.messageId}" } }
+                    .onFailure { e2 ->
+                        logger.error(e2) {
+                            "Fallback mark by messageId also failed for email from=${item.from ?: "<unknown>"} subject=${item.subject ?: "<no subject>"}"
+                        }
+                    }
             }
-        logger.info { "Successfully indexed messageId:${item.messageId}" }
+        logger.info { "Successfully indexed email from=${item.from ?: "<unknown>"} subject=${item.subject ?: "<no subject>"}" }
     }
 
     override suspend fun markAsFailed(
@@ -181,7 +207,10 @@ class EmailContinuousIndexer(
         kotlin.runCatching {
             val toolKey = "email"
             indexingRegistry.ensureTool(toolKey, displayName = "Email Indexing")
-            indexingRegistry.error(toolKey, "Failed to index messageId=${item.messageId}: $reason")
+            indexingRegistry.error(
+                toolKey,
+                "Failed to index email from=${item.from ?: "<unknown>"} subject=${item.subject ?: "<no subject>"}: $reason",
+            )
         }
     }
 

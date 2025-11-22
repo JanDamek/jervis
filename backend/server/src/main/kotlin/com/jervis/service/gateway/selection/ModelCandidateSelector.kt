@@ -21,7 +21,6 @@ class ModelCandidateSelector(
      */
     fun selectCandidates(
         modelTypeEnum: ModelTypeEnum,
-        quickModeOnly: Boolean,
         estimatedTokens: Int,
     ): Flow<ModelsProperties.ModelDetail> {
         val baseModels = modelsProperties.models[modelTypeEnum] ?: emptyList()
@@ -30,26 +29,16 @@ class ModelCandidateSelector(
             return emptyFlow()
         }
 
-        // Apply quick mode filter first
-        val quickFilteredModels =
-            baseModels.filter { candidate ->
-                !quickModeOnly || candidate.quick
-            }
-
-        if (quickFilteredModels.isEmpty()) {
-            return emptyFlow()
-        }
-
         // Try to find models that can handle the estimated tokens
         val capacityFilteredModels =
-            quickFilteredModels.filter { candidate ->
+            baseModels.filter { candidate ->
                 hasCapacityForTokens(candidate, estimatedTokens)
             }
 
         val selectedModels =
             capacityFilteredModels.ifEmpty {
                 val largestModel =
-                    quickFilteredModels.maxByOrNull { it.contextLength ?: 0 }
+                    baseModels.maxByOrNull { it.contextLength ?: 0 }
                         ?: error("No models available after filtering")
                 listOf(largestModel)
             }

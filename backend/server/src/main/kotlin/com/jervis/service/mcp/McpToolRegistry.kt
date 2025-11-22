@@ -1,7 +1,8 @@
 package com.jervis.service.mcp
 
-import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import jakarta.annotation.PostConstruct
+import mu.KotlinLogging
 import org.springframework.context.annotation.DependsOn
 import org.springframework.stereotype.Service
 
@@ -12,11 +13,12 @@ import org.springframework.stereotype.Service
 @Service
 @DependsOn("promptRepository")
 class McpToolRegistry(
-    private val tools: List<McpTool>,
+    private val tools: List<McpTool<*>>,
 ) {
-    fun byName(name: PromptTypeEnum): McpTool = tools.first { it.name == name }
+    @Suppress("UNCHECKED_CAST")
+    fun byName(name: ToolTypeEnum): McpTool<Any> = tools.first { it.name.name == name.name } as McpTool<Any>
 
-    fun getAllTools(): List<McpTool> = tools
+    fun getAllTools(): List<McpTool<*>> = tools
 
     @PostConstruct
     fun initialize() {
@@ -30,4 +32,6 @@ class McpToolRegistry(
             }
         }
     }
+
+    fun getAllToolsPlannerDescriptions() = tools.joinToString("\n") { it.plannerDescription }
 }

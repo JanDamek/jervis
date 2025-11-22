@@ -1,7 +1,8 @@
 package com.jervis.service.listener.email
 
 import com.jervis.entity.EmailAccountDocument
-import com.jervis.repository.mongo.EmailAccountMongoRepository
+import com.jervis.repository.EmailAccountMongoRepository
+import com.jervis.service.task.TaskSourceType
 import com.jervis.service.task.UserTaskService
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -61,7 +62,7 @@ class EmailConnectionService(
                 description = description,
                 projectId = account.projectId,
                 clientId = account.clientId,
-                sourceType = com.jervis.domain.task.TaskSourceType.EXTERNAL_SYSTEM,
+                sourceType = TaskSourceType.EMAIL,
                 sourceUri = "email-connection-auth://${account.id}",
                 metadata = mapOf("clientId" to account.clientId.toHexString(), "email" to account.email),
             )

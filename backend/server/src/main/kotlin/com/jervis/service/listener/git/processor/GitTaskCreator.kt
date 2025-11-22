@@ -20,7 +20,7 @@ import java.nio.file.Path
  * - Set appropriate context data (commit hash, files, author)
  * - Schedule tasks for background execution
  *
- * Task goals (defined in background-task-goals.yaml):
+ * Task goals (defined in pending-tasks-goals.yaml):
  * - Find potential bugs in code changes
  * - Detect architectural gaps
  * - Link to requirements from meetings, planning, documentation

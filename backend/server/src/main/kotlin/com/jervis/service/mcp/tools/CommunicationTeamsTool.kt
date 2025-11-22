@@ -1,8 +1,7 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
-import com.jervis.service.gateway.core.LlmGateway
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -12,50 +11,28 @@ import org.springframework.stereotype.Service
 
 @Service
 class CommunicationTeamsTool(
-    private val llmGateway: LlmGateway,
     override val promptRepository: PromptRepository,
-) : McpTool {
+) : McpTool<CommunicationTeamsTool.CommunicationTeamsParams> {
     private val logger = KotlinLogging.logger {}
 
-    override val name: PromptTypeEnum = PromptTypeEnum.COMMUNICATION_TEAMS_TOOL
+    override val name = ToolTypeEnum.COMMUNICATION_TEAMS_TOOL
+
+    override val descriptionObject =
+        CommunicationTeamsParams(
+            target = "general",
+            message = "Daily standup starts in 5 minutes.",
+        )
 
     @Serializable
     data class CommunicationTeamsParams(
-        val target: String = "",
-        val message: String = "",
+        val target: String,
+        val message: String,
     )
-
-    private suspend fun parseTaskDescription(
-        taskDescription: String,
-        plan: Plan,
-        stepContext: String,
-    ): CommunicationTeamsParams {
-        val llmResponse =
-            llmGateway.callLlm(
-                type = PromptTypeEnum.COMMUNICATION_TEAMS_TOOL,
-                mappingValue =
-                    mapOf(
-                        "taskDescription" to taskDescription,
-                        "stepContext" to stepContext,
-                    ),
-                correlationId = plan.correlationId,
-                quick = plan.quick,
-                responseSchema = CommunicationTeamsParams(),
-                backgroundMode = plan.backgroundMode,
-            )
-
-        return llmResponse.result
-    }
 
     override suspend fun execute(
         plan: Plan,
-        taskDescription: String,
-        stepContext: String,
-    ): ToolResult {
-        val parsed = parseTaskDescription(taskDescription, plan, stepContext)
-
-        return executeTeamsOperation(parsed, plan)
-    }
+        request: CommunicationTeamsParams,
+    ): ToolResult = executeTeamsOperation(request, plan)
 
     private suspend fun executeTeamsOperation(
         params: CommunicationTeamsParams,

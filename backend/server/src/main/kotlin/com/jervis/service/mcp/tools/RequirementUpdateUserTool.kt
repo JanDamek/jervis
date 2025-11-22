@@ -1,10 +1,9 @@
 package com.jervis.service.mcp.tools
 
-import com.jervis.configuration.prompts.PromptTypeEnum
+import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.requirement.RequirementStatusEnum
-import com.jervis.repository.mongo.UserRequirementMongoRepository
-import com.jervis.service.gateway.core.LlmGateway
+import com.jervis.repository.UserRequirementMongoRepository
 import com.jervis.service.mcp.McpTool
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
@@ -20,34 +19,32 @@ import java.time.Instant
  */
 @Service
 class RequirementUpdateUserTool(
-    private val llmGateway: LlmGateway,
     private val requirementRepository: UserRequirementMongoRepository,
     override val promptRepository: PromptRepository,
-) : McpTool {
+) : McpTool<RequirementUpdateUserTool.RequirementUpdateRequest> {
     companion object {
         private val logger = KotlinLogging.logger {}
     }
 
-    override val name: PromptTypeEnum = PromptTypeEnum.REQUIREMENT_UPDATE_USER_TOOL
+    override val name = ToolTypeEnum.REQUIREMENT_UPDATE_USER_TOOL
+
+    @Serializable
+    data class RequirementUpdateRequest(
+        val requirementId: String = "",
+        val status: RequirementStatusEnum = RequirementStatusEnum.ACTIVE,
+    )
+
+    override val descriptionObject =
+        RequirementUpdateRequest(
+            requirementId = "673e5f8a9b2c1a0012345678",
+            status = RequirementStatusEnum.COMPLETED,
+        )
 
     override suspend fun execute(
         plan: Plan,
-        taskDescription: String,
-        stepContext: String,
+        request: RequirementUpdateRequest,
     ): ToolResult {
         logger.info { "REQUIREMENT_UPDATE_TOOL: Updating requirement status" }
-
-        val result =
-            llmGateway.callLlm(
-                type = name,
-                mappingValue = mapOf("taskDescription" to taskDescription),
-                correlationId = plan.correlationId,
-                quick = false,
-                responseSchema = RequirementUpdateRequest(),
-                backgroundMode = plan.backgroundMode,
-            )
-
-        val request = result.result
 
         // Validate requirement ID
         val requirementId =
@@ -95,10 +92,4 @@ class RequirementUpdateUserTool(
             content = content,
         )
     }
-
-    @Serializable
-    data class RequirementUpdateRequest(
-        val requirementId: String = "",
-        val status: RequirementStatusEnum = RequirementStatusEnum.ACTIVE,
-    )
 }

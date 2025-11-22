@@ -3,15 +3,23 @@ package com.jervis.service.jira
 import com.jervis.domain.jira.JiraIssue
 import com.jervis.entity.atlassian.AtlassianConnectionDocument
 import com.jervis.entity.jira.JiraIssueIndexDocument
-import com.jervis.repository.mongo.JiraIssueIndexMongoRepository
+import com.jervis.repository.AtlassianConnectionMongoRepository
+import com.jervis.repository.JiraIssueIndexMongoRepository
 import com.jervis.service.atlassian.AtlassianApiClient
 import com.jervis.service.atlassian.AtlassianAuthService
 import com.jervis.service.indexing.AbstractContinuousIndexer
 import com.jervis.service.indexing.status.IndexingStatusRegistry
 import com.jervis.service.jira.state.JiraStateManager
+import jakarta.annotation.PostConstruct
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import mu.KotlinLogging
+import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Service
 
 private val logger = KotlinLogging.logger {}
@@ -21,13 +29,15 @@ private val logger = KotlinLogging.logger {}
  * Polls DB for NEW issues, fetches full content from API, indexes to RAG.
  *
  * Pattern:
- * 1. JiraPollingScheduler discovers issues via API search → saves to DB as NEW
+ * 1. JiraContinuousPoller discovers issues via API search → saves to DB as NEW
  * 2. This indexer picks up NEW issues → fetches details → indexes → marks INDEXED
  *
  * This separates discovery (fast, bulk) from indexing (slow, detailed).
  */
 @Service
+@Order(10) // Start after WeaviateSchemaInitializer
 class JiraContinuousIndexer(
+    private val connectionRepository: AtlassianConnectionMongoRepository,
     private val api: AtlassianApiClient,
     private val auth: AtlassianAuthService,
     private val stateManager: JiraStateManager,
@@ -39,11 +49,28 @@ class JiraContinuousIndexer(
     override val indexerName: String = "JiraContinuousIndexer"
     override val bufferSize: Int get() = flowProps.bufferSize
 
+    private val supervisor = SupervisorJob()
+    private val scope = CoroutineScope(Dispatchers.IO + supervisor)
+
+    @PostConstruct
+    fun start() {
+        logger.info { "Starting $indexerName for all Atlassian connections..." }
+        scope.launch {
+            // Start indexer for each Atlassian connection
+            val connections = connectionRepository.findAll().toList()
+            connections.forEach { connection ->
+                launch {
+                    logger.info { "Starting continuous indexing for connection: ${connection.id}" }
+                    startContinuousIndexing(connection)
+                }
+            }
+        }
+    }
+
     override fun newItemsFlow(account: AtlassianConnectionDocument): Flow<JiraIssueIndexDocument> =
         stateManager.continuousNewIssues(account.clientId)
 
-    override fun itemLogLabel(item: JiraIssueIndexDocument) =
-        "Issue:${item.issueKey} project:${item.projectKey}"
+    override fun itemLogLabel(item: JiraIssueIndexDocument) = "Issue:${item.issueKey} project:${item.projectKey}"
 
     override suspend fun fetchContentIO(
         account: AtlassianConnectionDocument,
@@ -72,12 +99,13 @@ class JiraContinuousIndexer(
 
         // Use existing orchestrator logic to index issue
         // This indexes: summary, comments, attachments, links
-        val result = orchestrator.indexSingleIssue(
-            clientId = account.clientId,
-            issue = issue,
-            tenantHost = account.tenant,
-            jervisProjectId = null, // TODO: resolve projectId from mapping
-        )
+        val result =
+            orchestrator.indexSingleIssue(
+                clientId = account.clientId,
+                issue = issue,
+                tenantHost = account.tenant,
+                jervisProjectId = null, // TODO: resolve projectId from mapping
+            )
 
         // Store result for markAsIndexed
         latestResult.set(result)
@@ -90,7 +118,7 @@ class JiraContinuousIndexer(
                 indexingRegistry.progress(
                     toolKey,
                     processedInc = 1,
-                    message = "Indexed issue ${issue.key}"
+                    message = "Indexed issue ${issue.key}",
                 )
             }
         }
@@ -98,7 +126,7 @@ class JiraContinuousIndexer(
         return IndexingResult(
             success = result.success,
             plainText = "${issue.summary} ${issue.description ?: ""}",
-            ragDocumentId = null
+            ragDocumentId = null,
         )
     }
 
@@ -113,7 +141,7 @@ class JiraContinuousIndexer(
             summaryChunks = result?.summaryChunks ?: 0,
             commentChunks = result?.commentChunks ?: 0,
             commentCount = result?.commentCount ?: 0,
-            attachmentCount = result?.attachmentCount ?: 0
+            attachmentCount = result?.attachmentCount ?: 0,
         )
     }
 
@@ -126,6 +154,8 @@ class JiraContinuousIndexer(
     }
 
     companion object {
-        private val latestResult = java.util.concurrent.atomic.AtomicReference<JiraIndexingOrchestrator.IndexSingleIssueResult?>()
+        private val latestResult =
+            java.util.concurrent.atomic
+                .AtomicReference<JiraIndexingOrchestrator.IndexSingleIssueResult?>()
     }
 }
