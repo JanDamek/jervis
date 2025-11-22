@@ -255,6 +255,9 @@ class TaskQualificationService(
 
             val rulesText = qualifierRuleService.getRulesText(task.taskType)
             put("activeQualifierRules", rulesText)
+
+            // Provide current datetime for temporal reasoning
+            put("currentDateTime", java.time.Instant.now().toString())
         }
 
     data class DecisionResponseQualifier(
