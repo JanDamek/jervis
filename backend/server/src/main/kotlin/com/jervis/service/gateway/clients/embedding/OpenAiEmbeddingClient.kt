@@ -1,19 +1,19 @@
 package com.jervis.service.gateway.clients.embedding
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
+import com.jervis.configuration.WebClientFactory
 import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.service.gateway.clients.EmbeddingProviderClient
-import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
-import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.WebClientRequestException
 import org.springframework.web.reactive.function.client.WebClientResponseException
 import org.springframework.web.reactive.function.client.awaitBody
 
 @Service
 class OpenAiEmbeddingClient(
-    @Qualifier("openaiWebClient") private val client: WebClient,
+    private val webClientFactory: WebClientFactory,
 ) : EmbeddingProviderClient {
+    private val client by lazy { webClientFactory.getWebClient("openai") }
     override val provider = ModelProviderEnum.OPENAI
 
     override suspend fun call(

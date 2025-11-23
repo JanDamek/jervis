@@ -16,10 +16,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-            // Use host machine from Android emulator via 10.0.2.2
-            val serverBaseUrl = "http://10.0.2.2:5500/"
-
-            // Create lifecycle-aware debug provider that starts/stops WebSocket based on app state
+            val serverBaseUrl = "https://home.damek-soft.eu:5500/"
             val debugProvider = rememberLifecycleAwareDebugProvider(serverBaseUrl)
 
             JervisApp(

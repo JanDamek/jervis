@@ -14,7 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
-import org.springframework.beans.factory.annotation.Qualifier
+import com.jervis.configuration.WebClientFactory
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.awaitBody
@@ -28,10 +28,11 @@ import java.util.Base64
 @Service
 class DocumentFromWebTool(
     override val promptRepository: PromptRepository,
-    @Qualifier("searxngWebClient") private val webClient: WebClient,
+    private val webClientFactory: WebClientFactory,
     private val linkIndexer: LinkIndexer,
     private val tikaClient: ITikaClient,
 ) : McpTool<DocumentFromWebTool.DocumentFromWebParams> {
+    private val webClient: WebClient by lazy { webClientFactory.getWebClient("searxng") }
     private val logger = KotlinLogging.logger {}
 
     override val name = ToolTypeEnum.DOCUMENT_FROM_WEB_TOOL

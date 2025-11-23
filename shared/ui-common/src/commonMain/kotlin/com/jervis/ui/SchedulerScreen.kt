@@ -53,22 +53,18 @@ fun SchedulerScreen(
             isLoadingTasks = true
             errorMessage = null
             try {
-                val allTasks = if (pendingOnly) {
-                    repository.scheduledTasks.listPendingTasks()
-                } else {
-                    repository.scheduledTasks.listAllTasks()
-                }
+                val allTasks = repository.scheduledTasks.listAllTasks()
 
                 // Enhance tasks with project and client names
                 tasks = allTasks.map { task ->
-                    val project = projects.find { it.id == task.projectId }
-                    val client = project?.clientId?.let { clientId ->
-                        clients.find { it.id == clientId }
+                    val client = clients.find { it.id == task.clientId }
+                    val project = task.projectId?.let { projId ->
+                        projects.find { it.id == projId }
                     }
                     EnhancedScheduledTask(
                         task = task,
                         projectName = project?.name ?: "Unknown",
-                        clientName = client?.name
+                        clientName = client?.name ?: "Unknown"
                     )
                 }.sortedByDescending { it.task.scheduledAt }
             } catch (e: Exception) {
@@ -106,8 +102,9 @@ fun SchedulerScreen(
     // Schedule task
     fun scheduleTask() {
         val project = selectedProject
-        if (project == null) {
-            errorMessage = "Please select a project"
+        val client = selectedClient
+        if (project == null || client == null) {
+            errorMessage = "Please select a client and project"
             return
         }
 
@@ -117,18 +114,18 @@ fun SchedulerScreen(
         }
 
         val taskNameFinal = taskName.ifBlank { "Task: ${taskInstruction.take(50)}" }
-        val priorityInt = priority.toIntOrNull() ?: 0
 
         scope.launch {
             isLoading = true
             errorMessage = null
             try {
                 repository.scheduledTasks.scheduleTask(
-                    projectId = project.id ?: return@launch,
+                    clientId = client.id ?: return@launch,
+                    projectId = project.id,
                     taskName = taskNameFinal,
-                    taskInstruction = taskInstruction,
+                    content = taskInstruction,
                     cronExpression = cronExpression.ifBlank { null },
-                    priority = priorityInt
+                    correlationId = null
                 )
 
                 taskInstruction = ""
@@ -166,14 +163,7 @@ fun SchedulerScreen(
                 title = "Task Scheduler",
                 onBack = onBack,
                 actions = {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Pending Only")
-                        Switch(checked = pendingOnly, onCheckedChange = {
-                            pendingOnly = it
-                            loadTasks()
-                        })
-                        com.jervis.ui.util.RefreshIconButton(onClick = { loadTasks() })
-                    }
+                    com.jervis.ui.util.RefreshIconButton(onClick = { loadTasks() })
                 }
             )
         }
@@ -277,13 +267,7 @@ fun SchedulerScreen(
                     enabled = !isLoading
                 )
 
-                OutlinedTextField(
-                    value = priority,
-                    onValueChange = { priority = it },
-                    label = { Text("Priority") },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isLoading
-                )
+
 
                 Button(
                     onClick = { scheduleTask() },
@@ -381,23 +365,19 @@ fun SchedulerScreen(
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             SchedulerDetailField("Task Name", selectedTask!!.task.taskName)
-                            SchedulerDetailField("Status", selectedTask!!.task.status.name)
-                            SchedulerDetailField("Priority", selectedTask!!.task.priority.toString())
+                            SchedulerDetailField("Client", selectedTask!!.clientName)
                             SchedulerDetailField("Project", selectedTask!!.projectName)
-                            selectedTask!!.clientName?.let {
-                                SchedulerDetailField("Client", it)
-                            }
                             selectedTask!!.task.cronExpression?.let {
                                 SchedulerDetailField("Cron", it)
                             }
                             SchedulerDetailField("Scheduled", formatInstant(selectedTask!!.task.scheduledAt))
-                            selectedTask!!.task.completedAt?.let {
-                                SchedulerDetailField("Completed", formatInstant(it))
+                            selectedTask!!.task.correlationId?.let {
+                                SchedulerDetailField("Correlation ID", it)
                             }
 
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Instruction:",
+                                text = "Content:",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -408,32 +388,10 @@ fun SchedulerScreen(
                                 )
                             ) {
                                 Text(
-                                    text = selectedTask!!.task.taskInstruction,
+                                    text = selectedTask!!.task.content,
                                     style = MaterialTheme.typography.bodySmall,
                                     modifier = Modifier.padding(12.dp)
                                 )
-                            }
-
-                            selectedTask!!.task.errorMessage?.let { error ->
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = "Error:",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.error
-                                )
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.errorContainer
-                                    )
-                                ) {
-                                    Text(
-                                        text = error,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.padding(12.dp),
-                                        color = MaterialTheme.colorScheme.onErrorContainer
-                                    )
-                                }
                             }
                         }
                     } else {
@@ -466,7 +424,7 @@ fun SchedulerScreen(
 data class EnhancedScheduledTask(
     val task: ScheduledTaskDto,
     val projectName: String,
-    val clientName: String?
+    val clientName: String
 )
 
 @Composable
@@ -504,15 +462,16 @@ private fun ScheduledTaskCard(
                     text = task.task.taskName,
                     style = MaterialTheme.typography.titleSmall
                 )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(top = 4.dp)
-                ) {
-                    Badge { Text(task.task.status.name) }
-                    Badge { Text("P${task.task.priority}") }
+                task.task.cronExpression?.let { cron ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Badge { Text("🔁 $cron") }
+                    }
                 }
                 Text(
-                    text = "${task.projectName}${task.clientName?.let { " • $it" } ?: ""}",
+                    text = "${task.clientName} • ${task.projectName}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp)

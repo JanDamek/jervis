@@ -85,6 +85,7 @@ class ConfluenceContinuousPoller(
      */
     private suspend fun discoverAndSaveNewPages(connection: AtlassianConnectionDocument) {
         val clientId = connection.clientId
+        val siteUrl = "https://${connection.tenant}"
 
         // Fetch all spaces
         val spaces = mutableListOf<String>()
@@ -103,7 +104,6 @@ class ConfluenceContinuousPoller(
         spaces.forEach { spaceKey ->
             try {
                 var discoveredCount = 0
-                val siteUrl = "https://${connection.tenant}"
 
                 confluenceApiClient.listPagesInSpace(connection, spaceKey).collect { page ->
                     val url = "$siteUrl/wiki/spaces/$spaceKey/pages/${page.id}"

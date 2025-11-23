@@ -207,11 +207,21 @@ class ConfluenceApiClient(
     private fun createHttpClient(connection: AtlassianConnectionDocument): HttpClient {
         val client = httpClientFactory.createClient()
 
+        // Validate required auth fields
+        if (connection.email.isNullOrBlank()) {
+            logger.error { "Missing email for Atlassian connection ${connection.id} (tenant=${connection.tenant})" }
+            throw ConfluenceAuthException("Missing email for connection ${connection.id}")
+        }
+        if (connection.accessToken.isBlank()) {
+            logger.error { "Missing accessToken for Atlassian connection ${connection.id} (tenant=${connection.tenant})" }
+            throw ConfluenceAuthException("Missing accessToken for connection ${connection.id}")
+        }
+
         // Configure Atlassian-specific auth
         return client.config {
             defaultRequest {
                 // Atlassian API uses Basic auth with email:token
-                val credentials = "${connection.email ?: ""}:${connection.accessToken}"
+                val credentials = "${connection.email}:${connection.accessToken}"
                 val encoded = java.util.Base64.getEncoder().encodeToString(credentials.toByteArray())
                 header("Authorization", "Basic $encoded")
                 contentType(ContentType.Application.Json)

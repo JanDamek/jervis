@@ -19,7 +19,8 @@ private val logger = KotlinLogging.logger {}
  * INTERRUPTIBLE providers (GPU models): Respect concurrency limits with foreground priority.
  *
  * This ensures back-pressure: if a provider's concurrency limit is reached,
- * callers will suspend until a permit is available.
+ * callers will suspend indefinitely until a permit is available.
+ * HTTP timeout will handle stuck requests.
  */
 @Component
 class ProviderConcurrencyManager(
@@ -30,7 +31,7 @@ class ProviderConcurrencyManager(
     /**
      * Executes the given block with concurrency control for the specified provider.
      * NONBLOCKING providers execute immediately.
-     * INTERRUPTIBLE providers wait for permits based on concurrency limits.
+     * INTERRUPTIBLE providers wait for permits based on concurrency limits (no timeout - waits indefinitely).
      */
     suspend fun <T> withConcurrencyControl(
         provider: ModelProviderEnum,
@@ -53,7 +54,7 @@ class ProviderConcurrencyManager(
             }
 
         if (semaphore.availablePermits == 0) {
-            logger.debug { "Provider at capacity for $provider ($maxConcurrent). Waiting for a free permit..." }
+            logger.warn { "Provider at capacity for $provider ($maxConcurrent). Waiting for a free permit..." }
         }
 
         return semaphore.withPermit {
