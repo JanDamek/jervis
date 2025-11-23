@@ -33,12 +33,13 @@ private val logger = KotlinLogging.logger {}
 @Service
 @Order(10) // Start after WeaviateSchemaInitializer
 class JiraContinuousPoller(
+    private val connectionResolver: com.jervis.service.atlassian.AtlassianConnectionResolver,
     private val connectionRepository: AtlassianConnectionMongoRepository,
     private val api: AtlassianApiClient,
     private val auth: AtlassianAuthService,
     private val stateManager: JiraStateManager,
     private val flowProps: com.jervis.configuration.properties.IndexingFlowProperties,
-) : AbstractPeriodicPoller<AtlassianConnectionDocument>() {
+) : AbstractPeriodicPoller<com.jervis.service.atlassian.AtlassianConnectionResolver.ConnectionBinding>() {
     override val pollerName: String = "JiraContinuousPoller"
     override val pollingIntervalMs: Long = 300_000L // 5 minutes (Jira changes less frequently)
 
@@ -53,15 +54,15 @@ class JiraContinuousPoller(
         }
     }
 
-    override fun accountsFlow(): Flow<AtlassianConnectionDocument> =
-        connectionRepository.findAll()
+    override fun accountsFlow(): Flow<com.jervis.service.atlassian.AtlassianConnectionResolver.ConnectionBinding> =
+        connectionResolver.getAllConnectionBindings()
 
-    override suspend fun getLastPollTime(account: AtlassianConnectionDocument): Long? =
-        account.lastSyncedAt?.toEpochMilli()
+    override suspend fun getLastPollTime(account: com.jervis.service.atlassian.AtlassianConnectionResolver.ConnectionBinding): Long? =
+        account.connection.lastSyncedAt?.toEpochMilli()
 
-    override suspend fun executePoll(account: AtlassianConnectionDocument): Boolean {
-        if (account.authStatus != "VALID") {
-            logger.debug { "[$pollerName] Skipping connection ${account.id} - authStatus=${account.authStatus}" }
+    override suspend fun executePoll(account: com.jervis.service.atlassian.AtlassianConnectionResolver.ConnectionBinding): Boolean {
+        if (account.connection.authStatus != "VALID") {
+            logger.debug { "[$pollerName] Skipping binding client=${account.clientId} project=${account.projectId} - authStatus=${account.connection.authStatus}" }
             return false
         }
 
@@ -69,43 +70,59 @@ class JiraContinuousPoller(
             discoverAndSaveNewIssues(account)
             true
         }.onFailure { e ->
-            logger.error(e) { "[$pollerName] Failed to poll connection ${account.id}: ${e.message}" }
+            logger.error(e) { "[$pollerName] Failed to poll binding client=${account.clientId} project=${account.projectId}: ${e.message}" }
+
+            // Mark connection as INVALID on auth errors
+            if (e is com.jervis.service.atlassian.JiraAuthException || e.cause is com.jervis.service.atlassian.JiraAuthException) {
+                logger.warn { "[$pollerName] Auth error for connection ${account.connectionId}, marking as INVALID" }
+                val updated = account.connection.copy(
+                    authStatus = "INVALID",
+                    updatedAt = java.time.Instant.now()
+                )
+                connectionRepository.save(updated)
+            }
         }.getOrDefault(false)
     }
 
-    override suspend fun updateLastPollTime(account: AtlassianConnectionDocument, timestamp: Long) {
-        val updated = account.copy(
+    override suspend fun updateLastPollTime(account: com.jervis.service.atlassian.AtlassianConnectionResolver.ConnectionBinding, timestamp: Long) {
+        val updated = account.connection.copy(
             lastSyncedAt = Instant.ofEpochMilli(timestamp),
             updatedAt = Instant.now()
         )
         connectionRepository.save(updated)
     }
 
-    override fun accountLogLabel(account: AtlassianConnectionDocument): String =
-        "Atlassian connection ${account.id} (tenant=${account.tenant})"
+    override fun accountLogLabel(account: com.jervis.service.atlassian.AtlassianConnectionResolver.ConnectionBinding): String =
+        "Client ${account.clientId} project ${account.projectId ?: "N/A"} (tenant=${account.connection.tenant})"
 
     /**
      * Discover all Jira issues from API and save to MongoDB with state NEW.
      * Uses hash-based change detection to skip unchanged issues.
      */
-    private suspend fun discoverAndSaveNewIssues(connection: AtlassianConnectionDocument) {
+    private suspend fun discoverAndSaveNewIssues(binding: com.jervis.service.atlassian.AtlassianConnectionResolver.ConnectionBinding) {
+        val connection = binding.connection
         val conn = auth.ensureValidToken(connection.toDomain())
-        val clientId = connection.clientId
+        val accountId = connection.id
+        val clientId = binding.clientId
 
-        // Fetch all projects for this connection
-        val projects = try {
-            api.listProjects(conn).map { (key, _) -> key }
-        } catch (e: Exception) {
-            logger.warn(e) { "[$pollerName] Failed to list projects for connection ${connection.id}" }
-            return
+        // Fetch all projects (or use filtered projects from binding)
+        val projects = if (binding.jiraProjectKeys.isNotEmpty()) {
+            binding.jiraProjectKeys.map { com.jervis.domain.jira.JiraProjectKey(it) }
+        } else {
+            try {
+                api.listProjects(conn).map { (key, _) -> key }
+            } catch (e: Exception) {
+                logger.warn(e) { "[$pollerName] Failed to list projects for client=$clientId project=${binding.projectId}" }
+                return
+            }
         }
 
         if (projects.isEmpty()) {
-            logger.info { "[$pollerName] No projects found for connection ${connection.id}" }
+            logger.info { "[$pollerName] No projects found for client=$clientId project=${binding.projectId}" }
             return
         }
 
-        logger.info { "[$pollerName] Polling ${projects.size} projects for connection ${connection.id}" }
+        logger.info { "[$pollerName] Polling ${projects.size} Jira projects for client=$clientId project=${binding.projectId}" }
 
         // Poll each project
         projects.forEach { projectKey ->
@@ -120,6 +137,7 @@ class JiraContinuousPoller(
 
                     // Save to MongoDB - will mark as NEW if changed
                     stateManager.upsertIssueFromApi(
+                        accountId = accountId,
                         clientId = clientId,
                         issueKey = issue.key,
                         projectKey = projectKey.value,
@@ -133,9 +151,9 @@ class JiraContinuousPoller(
                     discoveredCount++
                 }
 
-                logger.info { "[$pollerName] Discovered $discoveredCount issues in project ${projectKey.value}" }
+                logger.info { "[$pollerName] Discovered $discoveredCount issues in Jira project ${projectKey.value}" }
             } catch (e: Exception) {
-                logger.error(e) { "[$pollerName] Failed to poll project ${projectKey.value}: ${e.message}" }
+                logger.error(e) { "[$pollerName] Failed to poll Jira project ${projectKey.value}: ${e.message}" }
             }
         }
     }

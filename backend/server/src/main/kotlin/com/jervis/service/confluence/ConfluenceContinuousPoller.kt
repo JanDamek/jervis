@@ -30,10 +30,11 @@ private val logger = KotlinLogging.logger {}
 @Service
 @Order(10) // Start after WeaviateSchemaInitializer
 class ConfluenceContinuousPoller(
-    private val connectionRepository: AtlassianConnectionMongoRepository,
+    private val connectionResolver: com.jervis.service.atlassian.AtlassianConnectionResolver,
     private val confluenceApiClient: ConfluenceApiClient,
     private val stateManager: ConfluencePageStateManager,
-) : AbstractPeriodicPoller<AtlassianConnectionDocument>() {
+    private val connectionRepository: AtlassianConnectionMongoRepository,
+) : AbstractPeriodicPoller<com.jervis.service.atlassian.AtlassianConnectionResolver.ConnectionBinding>() {
     override val pollerName: String = "ConfluenceContinuousPoller"
     override val pollingIntervalMs: Long = 600_000L // 10 minutes (Confluence changes less frequently)
 
@@ -48,15 +49,15 @@ class ConfluenceContinuousPoller(
         }
     }
 
-    override fun accountsFlow(): Flow<AtlassianConnectionDocument> =
-        connectionRepository.findAll()
+    override fun accountsFlow(): Flow<com.jervis.service.atlassian.AtlassianConnectionResolver.ConnectionBinding> =
+        connectionResolver.getAllConnectionBindings()
 
-    override suspend fun getLastPollTime(account: AtlassianConnectionDocument): Long? =
-        account.lastSyncedAt?.toEpochMilli()
+    override suspend fun getLastPollTime(account: com.jervis.service.atlassian.AtlassianConnectionResolver.ConnectionBinding): Long? =
+        account.connection.lastConfluencePolledAt?.toEpochMilli()
 
-    override suspend fun executePoll(account: AtlassianConnectionDocument): Boolean {
-        if (account.authStatus != "VALID") {
-            logger.debug { "[$pollerName] Skipping connection ${account.id} - authStatus=${account.authStatus}" }
+    override suspend fun executePoll(account: com.jervis.service.atlassian.AtlassianConnectionResolver.ConnectionBinding): Boolean {
+        if (account.connection.authStatus != "VALID") {
+            logger.debug { "[$pollerName] Skipping binding client=${account.clientId} project=${account.projectId} - authStatus=${account.connection.authStatus}" }
             return false
         }
 
@@ -64,41 +65,58 @@ class ConfluenceContinuousPoller(
             discoverAndSaveNewPages(account)
             true
         }.onFailure { e ->
-            logger.error(e) { "[$pollerName] Failed to poll connection ${account.id}: ${e.message}" }
+            logger.error(e) { "[$pollerName] Failed to poll binding client=${account.clientId} project=${account.projectId}: ${e.message}" }
+
+            // Mark connection as INVALID on auth errors
+            if (e is ConfluenceAuthException || e.cause is ConfluenceAuthException) {
+                logger.warn { "[$pollerName] Auth error for connection ${account.connectionId}, marking as INVALID" }
+                val updated = account.connection.copy(
+                    authStatus = "INVALID",
+                    updatedAt = java.time.Instant.now()
+                )
+                connectionRepository.save(updated)
+            }
         }.getOrDefault(false)
     }
 
-    override suspend fun updateLastPollTime(account: AtlassianConnectionDocument, timestamp: Long) {
-        val updated = account.copy(
-            lastSyncedAt = Instant.ofEpochMilli(timestamp),
+    override suspend fun updateLastPollTime(account: com.jervis.service.atlassian.AtlassianConnectionResolver.ConnectionBinding, timestamp: Long) {
+        val updated = account.connection.copy(
+            lastConfluencePolledAt = Instant.ofEpochMilli(timestamp),
             updatedAt = Instant.now()
         )
         connectionRepository.save(updated)
     }
 
-    override fun accountLogLabel(account: AtlassianConnectionDocument): String =
-        "Atlassian connection ${account.id} (tenant=${account.tenant})"
+    override fun accountLogLabel(account: com.jervis.service.atlassian.AtlassianConnectionResolver.ConnectionBinding): String =
+        "Client ${account.clientId} project ${account.projectId ?: "N/A"} (tenant=${account.connection.tenant})"
 
     /**
      * Discover all Confluence pages from API and save to MongoDB with state NEW.
      * Uses version-based change detection to skip unchanged pages.
      */
-    private suspend fun discoverAndSaveNewPages(connection: AtlassianConnectionDocument) {
-        val clientId = connection.clientId
+    private suspend fun discoverAndSaveNewPages(binding: com.jervis.service.atlassian.AtlassianConnectionResolver.ConnectionBinding) {
+        val connection = binding.connection
+        val clientId = binding.clientId
+        val projectId = binding.projectId
         val siteUrl = "https://${connection.tenant}"
 
-        // Fetch all spaces
-        val spaces = mutableListOf<String>()
-        confluenceApiClient.listSpaces(connection).collect { space ->
-            spaces.add(space.key)
+        // Fetch all spaces (or use filtered spaces from binding)
+        val spaces = if (binding.confluenceSpaceKeys.isNotEmpty()) {
+            binding.confluenceSpaceKeys
+        } else {
+            val allSpaces = mutableListOf<String>()
+            confluenceApiClient.listSpaces(connection).collect { space ->
+                allSpaces.add(space.key)
+            }
+            allSpaces
         }
 
         if (spaces.isEmpty()) {
-            logger.info { "[$pollerName] No spaces found for connection ${connection.id}" }
+            logger.info { "[$pollerName] No spaces found for client=$clientId project=$projectId" }
             return
         }
 
-        logger.info { "[$pollerName] Polling ${spaces.size} spaces for connection ${connection.id}" }
+        logger.info { "[$pollerName] Polling ${spaces.size} spaces for client=$clientId project=$projectId" }
 
         // Poll each space
         spaces.forEach { spaceKey ->
@@ -112,7 +130,7 @@ class ConfluenceContinuousPoller(
                     val needsIndexing = stateManager.saveOrUpdatePage(
                         accountId = connection.id,
                         clientId = clientId,
-                        projectId = null, // TODO: resolve projectId from mapping
+                        projectId = projectId,
                         spaceKey = spaceKey,
                         page = page,
                         url = url,

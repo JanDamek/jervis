@@ -48,6 +48,11 @@ data class ClientDocument(
     val isDisabled: Boolean = false,
     val disabledProjects: List<ObjectId> = emptyList(),
     val lastSelectedProjectId: ObjectId? = null,
+    // Atlassian integration (Jira + Confluence) - can be overridden per project
+    val atlassianConnectionId: ObjectId? = null,
+    // Optional: Filter to specific Jira projects/Confluence spaces
+    val atlassianJiraProjects: List<String> = emptyList(), // List of Jira project keys to index
+    val atlassianConfluenceSpaces: List<String> = emptyList(), // List of Confluence space keys to index
     val createdAt: Instant = Instant.now(),
     val updatedAt: Instant = Instant.now(),
 )

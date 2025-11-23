@@ -11,14 +11,21 @@ import java.time.Instant
 /**
  * Lightweight Jira issue index state for reconciliation and idempotency.
  * Tracks what has been indexed to enable incremental updates.
+ *
+ * Note: accountId refers to AtlassianConnectionDocument.id (not clientId).
+ * This allows a single client to have multiple Atlassian accounts.
  */
 @Document(collection = "jira_issue_index")
 @CompoundIndexes(
-    CompoundIndex(name = "client_issue_unique", def = "{'clientId': 1, 'issueKey': 1}", unique = true),
+    CompoundIndex(name = "account_issue_unique", def = "{'accountId': 1, 'issueKey': 1}", unique = true),
+    CompoundIndex(name = "client_idx", def = "{'clientId': 1}"),
+    CompoundIndex(name = "account_state_idx", def = "{'accountId': 1, 'state': 1}"),
 )
 data class JiraIssueIndexDocument(
     @Id
     val id: ObjectId = ObjectId.get(),
+    @Indexed
+    val accountId: ObjectId,
     @Indexed
     val clientId: ObjectId,
     @Indexed

@@ -17,7 +17,6 @@ import com.jervis.service.sender.ConversationThreadService
 import com.jervis.service.sender.MessageLinkService
 import com.jervis.service.sender.SenderProfileService
 import com.jervis.service.task.UserTaskService
-import com.jervis.service.text.TextNormalizationService
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.catch
@@ -47,7 +46,6 @@ class TaskQualificationService(
     private val emailMessageStateManager: EmailMessageStateManager,
     private val debugService: DebugService,
     private val tikaClient: ITikaClient,
-    private val textNormalizationService: TextNormalizationService,
     private val qualifierRuleService: QualifierRuleService,
     private val llmGateway: LlmGateway,
     private val unsafeLinkPatternRepository: com.jervis.repository.UnsafeLinkPatternMongoRepository,
@@ -235,7 +233,8 @@ class TaskQualificationService(
 
         val withoutUrls = URL_PATTERN.replace(plainText, "[URL]")
 
-        return textNormalizationService.normalize(withoutUrls)
+        // TiKa already handles text normalization
+        return withoutUrls.trim()
     }
 
     companion object {
@@ -441,6 +440,7 @@ class TaskQualificationService(
 
     /**
      * Save suggested regex pattern to MongoDB for future link blocking.
+     * Automatically escapes invalid JSON escape sequences (e.g., \. → \\. or just .).
      */
     private suspend fun saveLinkPattern(
         pattern: String,
@@ -448,24 +448,29 @@ class TaskQualificationService(
         exampleUrl: String,
     ) {
         try {
+            // Fix common JSON escape issues in regex patterns
+            // Model might return /track\.jobs\.cz/ which is invalid JSON escape
+            // We'll clean it up to be valid regex
+            val cleanedPattern = fixRegexEscaping(pattern)
+
             // Check if pattern already exists
-            val existing = unsafeLinkPatternRepository.findByPattern(pattern)
+            val existing = unsafeLinkPatternRepository.findByPattern(cleanedPattern)
             if (existing != null) {
-                logger.debug { "Pattern already exists: $pattern" }
+                logger.debug { "Pattern already exists: $cleanedPattern" }
                 return
             }
 
             // Validate regex pattern
             try {
-                Regex(pattern)
+                Regex(cleanedPattern)
             } catch (e: Exception) {
-                logger.warn { "Invalid regex pattern suggested by LLM: $pattern - ${e.message}" }
+                logger.warn { "Invalid regex pattern after cleanup: $cleanedPattern (original: $pattern) - ${e.message}" }
                 return
             }
 
             val document =
                 com.jervis.entity.UnsafeLinkPatternDocument(
-                    pattern = pattern,
+                    pattern = cleanedPattern,
                     description = description,
                     exampleUrl = exampleUrl,
                     matchCount = 1,
@@ -473,10 +478,31 @@ class TaskQualificationService(
                 )
 
             unsafeLinkPatternRepository.save(document)
-            logger.info { "Saved new UNSAFE link pattern: $pattern (${description})" }
+            logger.info { "Saved new UNSAFE link pattern: $cleanedPattern (${description})" }
         } catch (e: Exception) {
             logger.error(e) { "Failed to save link pattern: $pattern" }
         }
+    }
+
+    /**
+     * Fix regex escaping issues from LLM output.
+     * Common issues:
+     * - Single backslash escapes that are invalid in JSON: \. → .
+     * - Over-escaped patterns: \\. → \\.
+     */
+    private fun fixRegexEscaping(pattern: String): String {
+        // If pattern contains single backslash followed by special chars,
+        // it's likely an invalid JSON escape that Jackson couldn't parse
+        // In this case, we assume the model wanted to match literally, so remove backslash
+
+        // For safety, just remove single backslashes before dots and other special chars
+        // Regex special chars that might be escaped: . * + ? [ ] { } ( ) | ^ $
+        return pattern
+            .replace(Regex("""\\([.*+?\[\]{}()|^$])""")) { match ->
+                // Keep the character, drop the backslash
+                // In regex, unescaped . matches any char which is fine for most use cases
+                match.groupValues[1]
+            }
     }
 
     /**

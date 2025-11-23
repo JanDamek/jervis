@@ -15,42 +15,28 @@ import org.springframework.stereotype.Component
 private val logger = KotlinLogging.logger {}
 
 /**
- * Starts continuous indexers for all active Atlassian connections on application startup.
- * Launches Confluence indexers for connections with VALID auth status.
+ * DISABLED: Confluence continuous indexer now runs as single instance for all connections.
+ * The indexer is started automatically via @PostConstruct in ConfluenceContinuousIndexer.
  *
- * Architecture:
- * - Launches one continuous indexer per VALID connection
- * - Each indexer polls for NEW Confluence pages and indexes them
- * - ConfluencePollingScheduler discovers pages and marks them NEW
- * - This listener ensures indexers are running to process those NEW pages
+ * Old behavior:
+ * - Launched one continuous indexer per VALID connection
+ * - Each indexer polled for NEW Confluence pages and indexed them
+ *
+ * New behavior (refactored):
+ * - Single indexer instance processes all connections
+ * - Indexer queries NEW pages across all accounts
+ * - Started automatically, no manual launch needed
  */
-@Component
+// @Component - DISABLED, indexer now starts automatically
 class ConfluenceIndexerStartupListener(
     private val connectionRepository: AtlassianConnectionMongoRepository,
     private val confluenceContinuousIndexer: ConfluenceContinuousIndexer,
 ) {
     private val indexerScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
-    @EventListener(ApplicationReadyEvent::class)
+    // @EventListener(ApplicationReadyEvent::class) - DISABLED
     fun startContinuousIndexers() =
         runBlocking {
-            logger.info { "Starting continuous Confluence indexers for all VALID Atlassian connections..." }
-
-            val validConnections =
-                connectionRepository
-                    .findAll()
-                    .toList()
-                    .filter { it.authStatus == "VALID" }
-
-            logger.info { "Found ${validConnections.size} VALID Atlassian connections" }
-
-            validConnections.forEach { connection ->
-                logger.info {
-                    "Launching continuous Confluence indexer for client ${connection.clientId.toHexString()} (tenant: ${connection.tenant})"
-                }
-                confluenceContinuousIndexer.launchContinuousIndexing(connection, indexerScope)
-            }
-
-            logger.info { "All Confluence continuous indexers launched successfully" }
+            logger.info { "ConfluenceIndexerStartupListener is DISABLED - indexer now starts automatically via @PostConstruct" }
         }
 }

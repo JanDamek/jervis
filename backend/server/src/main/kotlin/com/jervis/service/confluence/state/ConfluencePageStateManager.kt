@@ -121,6 +121,28 @@ class ConfluencePageStateManager(
         }
 
     /**
+     * Continuous Flow of NEW pages for ALL accounts (newest first).
+     * Single indexer instance processes pages from all accounts,
+     * ordered by lastModifiedAt descending (newest pages prioritized).
+     */
+    fun continuousNewPagesAllAccounts(): Flow<ConfluencePageDocument> =
+        flow {
+            while (true) {
+                var emittedAny = false
+
+                pageRepository.findNewPagesAllAccountsOrderByModifiedDesc().collect { page ->
+                    emit(page)
+                    emittedAny = true
+                }
+
+                if (!emittedAny) {
+                    logger.debug { "No NEW pages across all accounts, sleeping 30s..." }
+                    delay(30_000)
+                }
+            }
+        }
+
+    /**
      * Mark page as successfully indexed.
      */
     suspend fun markAsIndexed(page: ConfluencePageDocument) {

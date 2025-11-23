@@ -19,6 +19,11 @@ private val logger = KotlinLogging.logger {}
  * Implements: polling -> fetch -> process+index -> task (optional) -> mark state.
  * Fail-fast, no fallback guessing. IO parts forced on Dispatchers.IO.
  *
+ * Architecture:
+ * - Single indexer instance per type (Email, Confluence, Jira)
+ * - Processes items from ALL accounts, ordered by priority (newest first)
+ * - Account lookup happens per-item via getAccountForItem()
+ *
  * Notes:
  * - No explicit concurrency parameter. Scheduling is controlled by coroutines runtime.
  * - Buffer default is 128 to decouple fast producers from slower consumers without delaying first items.
@@ -38,8 +43,11 @@ abstract class AbstractContinuousIndexer<A, I> {
 
     // --- Domain-specific hooks to be implemented by subclasses ---
 
-    /** Stream of NEW items for given account/context. Can be endless or finite. */
-    protected abstract fun newItemsFlow(account: A): Flow<I>
+    /** Stream of NEW items across ALL accounts. Can be endless or finite. Ordered by priority (newest first). */
+    protected abstract fun newItemsFlow(): Flow<I>
+
+    /** Get account/connection for a specific item. Used to lookup account info per-item. */
+    protected abstract suspend fun getAccountForItem(item: I): A?
 
     /** Fetch raw/full content necessary to process the item. Runs on IO dispatcher. Return null to indicate fetch failure. */
     protected abstract suspend fun fetchContentIO(
@@ -79,9 +87,9 @@ abstract class AbstractContinuousIndexer<A, I> {
         item: I,
     )
 
-    /** Mark item as failed with reason. */
+    /** Mark item as failed with reason. Account may be null if lookup failed. */
     protected abstract suspend fun markAsFailed(
-        account: A,
+        account: A?,
         item: I,
         reason: String,
     )
@@ -107,14 +115,23 @@ abstract class AbstractContinuousIndexer<A, I> {
     )
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    suspend fun startContinuousIndexing(account: A) {
+    suspend fun startContinuousIndexing() {
         logger.info { "Starting $indexerName" }
 
-        newItemsFlow(account)
+        newItemsFlow()
             .buffer(bufferSize)
             .flatMapConcat { item ->
                 flow {
                     val label = itemLogLabel(item)
+
+                    // Lookup account for this item
+                    val account = getAccountForItem(item)
+                    if (account == null) {
+                        logger.warn { "[$indexerName] Account not found for $label, skipping" }
+                        markAsFailed(null, item, "Account not found")
+                        return@flow
+                    }
+
                     logger.info { "[$indexerName] Indexing $label" }
 
                     val content = withContext(Dispatchers.IO) { fetchContentIO(account, item) }
@@ -141,7 +158,7 @@ abstract class AbstractContinuousIndexer<A, I> {
                         }
                     }
 
-                    emit(item)
+                    emit(Pair(account, item))
                 }.catch { e ->
                     val label = itemLogLabel(item)
                     logger.error(e) { "[$indexerName] Indexing failed for $label" }
@@ -151,9 +168,10 @@ abstract class AbstractContinuousIndexer<A, I> {
                         delay(communicationErrorDelayMs)
                     }
 
+                    val account = getAccountForItem(item)
                     markAsFailed(account, item, e.message?.take(500) ?: "Unknown error")
                 }
-            }.onEach { item ->
+            }.onEach { (account, item) ->
                 runCatching { markAsIndexed(account, item) }
                     .onFailure { e -> logger.error(e) { "[$indexerName] markAsIndexed failed for ${itemLogLabel(item)}" } }
             }.collect { }

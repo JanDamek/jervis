@@ -4,7 +4,6 @@ import com.jervis.domain.task.PendingTask
 import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.entity.ProjectDocument
 import com.jervis.service.background.PendingTaskService
-import com.jervis.service.text.TextNormalizationService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -29,7 +28,6 @@ import java.nio.file.Path
 @Service
 class GitTaskCreator(
     private val pendingTaskService: PendingTaskService,
-    private val textNormalizationService: TextNormalizationService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -162,12 +160,12 @@ class GitTaskCreator(
         }
 
         val rawDiff = sample.toString(Charsets.UTF_8)
-        val normalizedDiff = textNormalizationService.normalizePreservingCode(rawDiff)
+        // No normalization needed - preserve code/diffs as-is
 
         return if (bytes.size > MAX_FILE_BYTES) {
-            normalizedDiff + "\n\n[Truncated: ${bytes.size - MAX_FILE_BYTES} more bytes omitted]"
+            rawDiff + "\n\n[Truncated: ${bytes.size - MAX_FILE_BYTES} more bytes omitted]"
         } else {
-            normalizedDiff
+            rawDiff
         }
     }
 

@@ -54,21 +54,33 @@ class JiraContinuousIndexer(
 
     @PostConstruct
     fun start() {
-        logger.info { "Starting $indexerName for all Atlassian connections..." }
+        logger.info { "Starting $indexerName (single instance for all accounts)..." }
         scope.launch {
-            // Start indexer for each Atlassian connection
-            val connections = connectionRepository.findAll().toList()
-            connections.forEach { connection ->
-                launch {
-                    logger.info { "Starting continuous indexing for connection: ${connection.id}" }
-                    startContinuousIndexing(connection)
-                }
+            kotlin.runCatching {
+                indexingRegistry.start(
+                    "jira",
+                    displayName = "Atlassian (Jira)",
+                    message = "Starting continuous Jira indexing for all accounts",
+                )
             }
+            runCatching { startContinuousIndexing() }
+                .onFailure { e -> logger.error(e) { "Continuous indexer crashed" } }
+                .also {
+                    kotlin.runCatching {
+                        indexingRegistry.finish(
+                            "jira",
+                            message = "Jira indexer stopped",
+                        )
+                    }
+                }
         }
     }
 
-    override fun newItemsFlow(account: AtlassianConnectionDocument): Flow<JiraIssueIndexDocument> =
-        stateManager.continuousNewIssues(account.clientId)
+    override fun newItemsFlow(): Flow<JiraIssueIndexDocument> =
+        stateManager.continuousNewIssuesAllAccounts()
+
+    override suspend fun getAccountForItem(item: JiraIssueIndexDocument): AtlassianConnectionDocument? =
+        connectionRepository.findById(item.accountId)
 
     override fun itemLogLabel(item: JiraIssueIndexDocument) = "Issue:${item.issueKey} project:${item.projectKey}"
 
@@ -101,10 +113,10 @@ class JiraContinuousIndexer(
         // This indexes: summary, comments, attachments, links
         val result =
             orchestrator.indexSingleIssue(
-                clientId = account.clientId,
+                clientId = item.clientId,
                 issue = issue,
                 tenantHost = account.tenant,
-                jervisProjectId = null, // TODO: resolve projectId from mapping
+                jervisProjectId = null, // Jira issues don't have Jervis project association at index level
             )
 
         // Store result for markAsIndexed
@@ -146,7 +158,7 @@ class JiraContinuousIndexer(
     }
 
     override suspend fun markAsFailed(
-        account: AtlassianConnectionDocument,
+        account: AtlassianConnectionDocument?,
         item: JiraIssueIndexDocument,
         reason: String,
     ) {

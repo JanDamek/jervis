@@ -169,7 +169,27 @@ class GitCommitStateManager(
     // ========== Shared Methods ==========
 
     /**
-     * Continuous stream of NEW commits for a project (for AbstractContinuousIndexer).
+     * Continuous stream of NEW commits across all projects (for single-instance AbstractContinuousIndexer).
+     * Polls every 30s when queue empty. Ordered by commit date DESC (newest first).
+     */
+    fun continuousNewCommits(): Flow<GitCommitDocument> = flow {
+        while (true) {
+            var emittedAny = false
+            gitCommitRepository
+                .findByStateOrderByCommitDateDesc(GitCommitState.NEW)
+                .collect { commit ->
+                    emit(commit)
+                    emittedAny = true
+                }
+
+            if (!emittedAny) {
+                delay(30_000) // Wait 30s if queue empty
+            }
+        }
+    }
+
+    /**
+     * Continuous stream of NEW commits for a specific project (legacy, if needed).
      * Polls every 30s when queue empty.
      */
     fun continuousNewCommits(projectId: ObjectId): Flow<GitCommitDocument> = flow {

@@ -53,6 +53,7 @@ class JiraAttachmentIndexer(
      * Only indexes NEW attachments that haven't been indexed before.
      */
     suspend fun indexIssueAttachments(
+        accountId: ObjectId,
         conn: AtlassianConnection,
         issueKey: String,
         clientId: ObjectId,
@@ -72,7 +73,7 @@ class JiraAttachmentIndexer(
             logger.info { "JIRA_ATTACHMENT: Found ${attachments.size} attachments for issue $issueKey" }
 
             // Load existing index document to check which attachments are already indexed
-            val indexDoc = issueIndexRepository.findByClientIdAndIssueKey(clientId, issueKey)
+            val indexDoc = issueIndexRepository.findByAccountIdAndIssueKey(accountId, issueKey)
             val alreadyIndexed = indexDoc?.indexedAttachmentIds?.toSet() ?: emptySet()
 
             val newlyIndexedIds = mutableListOf<String>()
@@ -98,9 +99,9 @@ class JiraAttachmentIndexer(
                     // If this looks like an auth error, mark connection INVALID and stop further attachment processing
                     if (isAuthError(e)) {
                         try {
-                            val doc = connectionRepository.findByClientId(clientId)
+                            val doc = connectionRepository.findById(accountId)
                             if (doc != null) {
-                                connectionService.markAuthInvalid(doc, e.message)
+                                connectionService.markAuthInvalid(doc, clientId, e.message)
                             }
                         } catch (inner: Exception) {
                             logger.warn(inner) { "Failed to mark Jira connection INVALID after auth error while indexing attachments" }
@@ -122,6 +123,7 @@ class JiraAttachmentIndexer(
                 val updatedDoc =
                     if (indexDoc == null) {
                         com.jervis.entity.jira.JiraIssueIndexDocument(
+                            accountId = accountId,
                             clientId = clientId,
                             issueKey = issueKey,
                             projectKey = "", // Will be filled by orchestrator
@@ -144,9 +146,9 @@ class JiraAttachmentIndexer(
             // If auth error, mark connection invalid so UI can prompt user to fix it
             if (isAuthError(e)) {
                 try {
-                    val doc = connectionRepository.findByClientId(clientId)
+                    val doc = connectionRepository.findById(accountId)
                     if (doc != null) {
-                        connectionService.markAuthInvalid(doc, e.message)
+                        connectionService.markAuthInvalid(doc, clientId, e.message)
                     }
                 } catch (inner: Exception) {
                     logger.warn(inner) { "Failed to mark Jira connection INVALID after auth error while fetching attachments" }

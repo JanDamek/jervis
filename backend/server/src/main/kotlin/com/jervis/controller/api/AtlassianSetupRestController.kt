@@ -32,12 +32,12 @@ import java.util.UUID
 @RestController
 @RequestMapping("/api/atlassian/setup")
 class AtlassianSetupRestController(
-    private val jiraAuthService: AtlassianAuthService,
+    private val connectionService: com.jervis.service.atlassian.AtlassianConnectionService,
+    private val authValidator: com.jervis.service.atlassian.AtlassianAuthValidator,
     private val jiraSelectionService: AtlassianSelectionService,
     private val sessionManager: WebSocketSessionManager,
     private val jiraApiClient: com.jervis.service.atlassian.AtlassianApiClient,
     private val errorPublisher: com.jervis.service.notification.ErrorNotificationsPublisher,
-    private val jiraConnectionService: com.jervis.service.atlassian.AtlassianConnectionService,
 ) : IAtlassianSetupService {
     private val logger = KotlinLogging.logger {}
     private val json = Json { encodeDefaults = true }
@@ -52,9 +52,18 @@ class AtlassianSetupRestController(
     @PostMapping("/test-api-token")
     override suspend fun testApiToken(@RequestBody request: AtlassianApiTokenTestRequestDto): AtlassianApiTokenTestResponseDto =
         try {
-            val ok = jiraAuthService.testApiToken(request.tenant, request.email, request.apiToken)
+            val credentials = com.jervis.domain.atlassian.AtlassianCredentials(
+                tenant = request.tenant,
+                email = request.email,
+                apiToken = request.apiToken,
+            )
+            val result = authValidator.validateCredentials(credentials)
+            val ok = result.isSuccess
             logger.info { "JIRA_UI_SETUP: testApiToken tenant=${request.tenant} email=${request.email} ok=$ok" }
-            AtlassianApiTokenTestResponseDto(success = ok, message = if (ok) null else "Unauthorized")
+            AtlassianApiTokenTestResponseDto(
+                success = ok,
+                message = if (ok) null else (result.exceptionOrNull()?.message ?: "Unauthorized")
+            )
         } catch (e: Exception) {
             errorPublisher.publishError(
                 message = "Jira token test failed: ${e.message}",
@@ -66,12 +75,20 @@ class AtlassianSetupRestController(
     @PostMapping("/save-api-token")
     override suspend fun saveApiToken(@RequestBody request: AtlassianApiTokenSaveRequestDto): AtlassianSetupStatusDto =
         try {
-            val conn = jiraAuthService.saveApiToken(request.clientId, request.tenant, request.email, request.apiToken)
-            logger.info { "JIRA_UI_SETUP: saveApiToken succeeded for client=${conn.clientId} tenant=${conn.tenant.value}" }
+            val credentials = com.jervis.domain.atlassian.AtlassianCredentials(
+                tenant = request.tenant,
+                email = request.email,
+                apiToken = request.apiToken,
+            )
+
+            val result = connectionService.saveAndLinkConnection(credentials, ObjectId(request.clientId))
+            result.getOrThrow()
+
+            logger.info { "JIRA_UI_SETUP: saveApiToken succeeded for tenant=${request.tenant} client=${request.clientId}" }
             fetchStatus(request.clientId)
         } catch (e: Exception) {
             errorPublisher.publishError(
-                message = "Failed to save Jira API token: ${e.message}",
+                message = "Failed to save Atlassian API token: ${e.message}",
                 stackTrace = e.stackTraceToString(),
             )
             throw e
@@ -79,35 +96,18 @@ class AtlassianSetupRestController(
 
     @PostMapping("/begin-auth")
     override suspend fun beginAuth(@RequestBody request: AtlassianBeginAuthRequestDto): AtlassianBeginAuthResponseDto {
-        val correlationId = UUID.randomUUID().toString()
-        val authUrl = jiraAuthService.beginCloudOauth(request.clientId, request.tenant, request.redirectUri)
-
-        val event =
-            AtlassianAuthPromptEventDto(
-                clientId = request.clientId,
-                correlationId = correlationId,
-                authUrl = authUrl,
-                redirectUri = request.redirectUri,
-            )
-        val payload = json.encodeToString(event)
-        sessionManager.broadcastToChannel(payload, WebSocketChannelTypeEnum.NOTIFICATIONS)
-        logger.info { "JIRA_UI_SETUP: beginAuth published prompt for client=${request.clientId} correlationId=$correlationId" }
-
-        return AtlassianBeginAuthResponseDto(correlationId = correlationId, authUrl = authUrl)
+        // OAuth2 is NOT implemented - Atlassian uses API token with Basic Auth
+        // This endpoint is no longer needed but kept for backwards compatibility
+        logger.warn { "JIRA_UI_SETUP: beginAuth called but OAuth is not supported - use API token instead" }
+        throw UnsupportedOperationException("OAuth2 not supported - use API token authentication")
     }
 
     @PostMapping("/complete-auth")
     override suspend fun completeAuth(@RequestBody request: AtlassianCompleteAuthRequestDto): AtlassianSetupStatusDto {
-        val conn =
-            jiraAuthService.completeCloudOauth(
-                request.clientId,
-                request.tenant,
-                request.code,
-                request.verifier,
-                request.redirectUri,
-            )
-        logger.info { "JIRA_UI_SETUP: completeAuth succeeded for client=${conn.clientId} tenant=${conn.tenant.value}" }
-        return fetchStatus(request.clientId)
+        // OAuth2 is NOT implemented - Atlassian uses API token with Basic Auth
+        // This endpoint is no longer needed but kept for backwards compatibility
+        logger.warn { "JIRA_UI_SETUP: completeAuth called but OAuth is not supported - use API token instead" }
+        throw UnsupportedOperationException("OAuth2 not supported - use API token authentication")
     }
 
     @PutMapping("/primary-project")
@@ -134,15 +134,15 @@ class AtlassianSetupRestController(
     @PostMapping("/test-connection")
     override suspend fun testConnection(@RequestParam clientId: String): AtlassianSetupStatusDto =
         try {
-            jiraConnectionService.testConnection(ObjectId(clientId))
+            connectionService.testConnectionForClient(ObjectId(clientId)).getOrThrow()
             logger.info { "JIRA_UI_SETUP: testConnection OK for client=$clientId" }
             fetchStatus(clientId)
         } catch (e: Exception) {
             errorPublisher.publishError(
-                message = "Jira test connection failed for client=$clientId: ${e.message}",
+                message = "Atlassian test connection failed for client=$clientId: ${e.message}",
                 stackTrace = e.stackTraceToString(),
             )
-            // Even on failure, return current status (likely remains INVALID/UNKNOWN)
+            // Even on failure, return current status (likely remains INVALID)
             fetchStatus(clientId)
         }
 

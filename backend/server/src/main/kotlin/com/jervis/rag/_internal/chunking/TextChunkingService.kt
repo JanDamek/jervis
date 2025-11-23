@@ -1,36 +1,34 @@
 package com.jervis.rag._internal.chunking
 
 import com.jervis.rag.KnowledgeType
+import dev.langchain4j.data.document.Document
+import dev.langchain4j.data.document.DocumentSplitter
+import dev.langchain4j.data.document.splitter.DocumentSplitters
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
 
 /**
- * Text chunking service - package-private.
+ * Text chunking service using langchain4j DocumentSplitters.
  * Handles intelligent document splitting with overlap for context preservation.
  *
- * Best practices:
- * - Different strategies for CODE vs TEXT/DOCUMENT
- * - Semantic boundaries (paragraphs, sections, functions)
- * - Overlap for context continuity
- * - Metadata preservation
+ * Uses recursive document splitter from langchain4j which:
+ * - Respects semantic boundaries (paragraphs, sections, sentences)
+ * - Handles overlap for context continuity
+ * - Properly tokenizes content
  */
 @Component
 internal class TextChunkingService {
     private val logger = KotlinLogging.logger {}
 
     companion object {
-        // Chunk sizes optimized for embedding models
-        private const val CODE_CHUNK_SIZE = 1500 // tokens ~= 6000 chars
-        private const val TEXT_CHUNK_SIZE = 1000 // tokens ~= 4000 chars
-        private const val OVERLAP_SIZE = 200 // ~800 chars overlap
-
-        // Semantic boundaries
-        private val PARAGRAPH_DELIMITERS = listOf("\n\n", "\r\n\r\n")
-        private val CODE_DELIMITERS = listOf("\n\n", "}\n", ");\n", "}\n\n")
+        // Chunk sizes optimized for embedding models (in tokens)
+        private const val CODE_MAX_TOKENS = 1500
+        private const val TEXT_MAX_TOKENS = 1000
+        private const val OVERLAP_PERCENTAGE = 10 // 10% overlap for context
     }
 
     /**
-     * Chunk document into fragments.
+     * Chunk document into fragments using langchain4j recursive splitter.
      * Returns list of chunks with metadata.
      */
     fun chunk(
@@ -38,6 +36,10 @@ internal class TextChunkingService {
         knowledgeType: KnowledgeType,
     ): List<ChunkResult> {
         logger.debug { "Chunking document: type=$knowledgeType, length=${content.length}" }
+
+        if (content.isBlank()) {
+            return emptyList()
+        }
 
         if (content.length < 500) {
             // Small document - no chunking needed
@@ -52,109 +54,35 @@ internal class TextChunkingService {
             )
         }
 
-        val chunks =
+        // Choose token size based on content type
+        val maxTokens =
             when (knowledgeType) {
-                KnowledgeType.CODE -> chunkCode(content)
-                else -> chunkText(content)
+                KnowledgeType.CODE -> CODE_MAX_TOKENS
+                else -> TEXT_MAX_TOKENS
+            }
+        val overlapTokens = (maxTokens * OVERLAP_PERCENTAGE) / 100
+
+        // Use langchain4j recursive splitter
+        val splitter: DocumentSplitter = DocumentSplitters.recursive(maxTokens, overlapTokens)
+        val document = Document.from(content)
+        val segments = splitter.split(document)
+
+        // Convert to ChunkResult with metadata
+        val chunks =
+            segments.mapIndexed { index, segment ->
+                val text = segment.text()
+                val startOffset = content.indexOf(text).takeIf { it >= 0 } ?: 0
+                ChunkResult(
+                    content = text,
+                    chunkIndex = index,
+                    totalChunks = segments.size,
+                    startOffset = startOffset,
+                    endOffset = startOffset + text.length,
+                )
             }
 
-        logger.info { "Chunked document into ${chunks.size} fragments (type=$knowledgeType)" }
+        logger.info { "Chunked document into ${chunks.size} fragments using langchain4j (type=$knowledgeType)" }
         return chunks
-    }
-
-    /**
-     * Chunk code with awareness of structure.
-     */
-    private fun chunkCode(content: String): List<ChunkResult> {
-        val chunks = mutableListOf<ChunkResult>()
-        var position = 0
-        var chunkIndex = 0
-
-        while (position < content.length) {
-            val endPosition = findSemanticBoundary(content, position, CODE_CHUNK_SIZE, CODE_DELIMITERS)
-            val chunkContent = content.substring(position, endPosition)
-
-            chunks.add(
-                ChunkResult(
-                    content = chunkContent,
-                    chunkIndex = chunkIndex,
-                    totalChunks = -1, // Will be set later
-                    startOffset = position,
-                    endOffset = endPosition,
-                ),
-            )
-
-            chunkIndex++
-            position = maxOf(endPosition - OVERLAP_SIZE, endPosition)
-        }
-
-        // Set total chunks
-        return chunks.mapIndexed { idx, chunk ->
-            chunk.copy(chunkIndex = idx, totalChunks = chunks.size)
-        }
-    }
-
-    /**
-     * Chunk text with paragraph awareness.
-     */
-    private fun chunkText(content: String): List<ChunkResult> {
-        val chunks = mutableListOf<ChunkResult>()
-        var position = 0
-        var chunkIndex = 0
-
-        while (position < content.length) {
-            val endPosition = findSemanticBoundary(content, position, TEXT_CHUNK_SIZE, PARAGRAPH_DELIMITERS)
-            val chunkContent = content.substring(position, endPosition)
-
-            chunks.add(
-                ChunkResult(
-                    content = chunkContent,
-                    chunkIndex = chunkIndex,
-                    totalChunks = -1,
-                    startOffset = position,
-                    endOffset = endPosition,
-                ),
-            )
-
-            chunkIndex++
-            position = maxOf(endPosition - OVERLAP_SIZE, endPosition)
-        }
-
-        return chunks.mapIndexed { idx, chunk ->
-            chunk.copy(chunkIndex = idx, totalChunks = chunks.size)
-        }
-    }
-
-    /**
-     * Find semantic boundary for chunk end.
-     * Tries to split at natural boundaries (paragraphs, function ends, etc.)
-     */
-    private fun findSemanticBoundary(
-        content: String,
-        start: Int,
-        targetSize: Int,
-        delimiters: List<String>,
-    ): Int {
-        val idealEnd = minOf(start + targetSize, content.length)
-
-        // If at end, return
-        if (idealEnd >= content.length) {
-            return content.length
-        }
-
-        // Search for delimiter near ideal end
-        val searchStart = maxOf(start, idealEnd - OVERLAP_SIZE)
-        val searchEnd = minOf(content.length, idealEnd + OVERLAP_SIZE)
-
-        for (delimiter in delimiters) {
-            val delimiterIndex = content.indexOf(delimiter, searchStart)
-            if (delimiterIndex in searchStart until searchEnd) {
-                return delimiterIndex + delimiter.length
-            }
-        }
-
-        // No semantic boundary found - hard split
-        return idealEnd
     }
 }
 

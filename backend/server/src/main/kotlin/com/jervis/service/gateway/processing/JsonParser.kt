@@ -132,12 +132,22 @@ class JsonParser {
 
             when {
                 escapeNext -> {
-                    result.append(char)
+                    // Fix invalid JSON escape sequences from LLM regex patterns
+                    // Valid JSON escapes: \", \\, \/, \b, \f, \n, \r, \t, \uXXXX
+                    // Invalid: \. \* \+ \? \[ \] \{ \} \( \) \| \^ \$
+                    // These are valid regex escapes but invalid JSON escapes
+                    if (char in setOf('.', '*', '+', '?', '[', ']', '{', '}', '(', ')', '|', '^', '$')) {
+                        // Remove the backslash, keep only the character
+                        result.append(char)
+                    } else {
+                        // Valid JSON escape or unknown - keep both backslash and char
+                        result.append('\\').append(char)
+                    }
                     escapeNext = false
                 }
 
                 char == '\\' && insideString -> {
-                    result.append(char)
+                    // Don't append yet - wait to see next char
                     escapeNext = true
                 }
 
