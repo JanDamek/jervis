@@ -14,16 +14,17 @@ import kotlinx.coroutines.reactive.asFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
-import org.springframework.beans.factory.annotation.Qualifier
+import com.jervis.configuration.WebClientFactory
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
 
 @Service
 class GoogleLlmClient(
-    @Qualifier("googleWebClient") private val webClient: WebClient,
+    private val webClientFactory: WebClientFactory,
     private val promptsConfiguration: PromptsConfiguration,
 ) : ProviderClient {
+    private val webClient: WebClient by lazy { webClientFactory.getWebClient("google") }
     private val logger = KotlinLogging.logger {}
     private val json = Json { ignoreUnknownKeys = true }
 

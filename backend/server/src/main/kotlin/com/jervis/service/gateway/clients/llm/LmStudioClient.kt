@@ -14,16 +14,17 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.reactive.asFlow
 import mu.KotlinLogging
-import org.springframework.beans.factory.annotation.Qualifier
+import com.jervis.configuration.WebClientFactory
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
 
 @Service
 class LmStudioClient(
-    @Qualifier("lmStudioWebClient") private val webClient: WebClient,
+    private val webClientFactory: WebClientFactory,
     private val promptsConfiguration: PromptsConfiguration,
 ) : ProviderClient {
+    private val webClient: WebClient by lazy { webClientFactory.getWebClient("lmStudio") }
     private val logger = KotlinLogging.logger {}
 
     override val provider: ModelProviderEnum = ModelProviderEnum.LM_STUDIO

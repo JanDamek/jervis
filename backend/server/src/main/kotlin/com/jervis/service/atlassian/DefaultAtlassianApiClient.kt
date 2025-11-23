@@ -419,11 +419,21 @@ class DefaultAtlassianApiClient(
     private fun createHttpClient(conn: AtlassianConnection): HttpClient {
         val client = httpClientFactory.createClient()
 
+        // Validate required auth fields
+        if (conn.email.isNullOrBlank()) {
+            logger.error { "Missing email for Atlassian connection (tenant=${conn.tenant.value})" }
+            throw JiraAuthException("Missing email for connection ${conn.tenant.value}")
+        }
+        if (conn.accessToken.isBlank()) {
+            logger.error { "Missing accessToken for Atlassian connection (tenant=${conn.tenant.value})" }
+            throw JiraAuthException("Missing accessToken for connection ${conn.tenant.value}")
+        }
+
         // Configure Atlassian-specific auth
         return client.config {
             defaultRequest {
                 // Atlassian API uses Basic auth with email:token
-                val credentials = "${conn.email ?: ""}:${conn.accessToken}"
+                val credentials = "${conn.email}:${conn.accessToken}"
                 val encoded = java.util.Base64.getEncoder().encodeToString(credentials.toByteArray())
                 header("Authorization", "Basic $encoded")
                 contentType(ContentType.Application.Json)

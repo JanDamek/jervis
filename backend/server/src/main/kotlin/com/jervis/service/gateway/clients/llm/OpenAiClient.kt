@@ -13,7 +13,7 @@ import com.jervis.service.gateway.clients.ProviderClient
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.reactive.asFlow
-import org.springframework.beans.factory.annotation.Qualifier
+import com.jervis.configuration.WebClientFactory
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
@@ -21,9 +21,10 @@ import org.springframework.web.reactive.function.client.awaitBody
 
 @Service
 class OpenAiClient(
-    @Qualifier("openaiWebClient") private val webClient: WebClient,
+    private val webClientFactory: WebClientFactory,
     private val promptsConfiguration: PromptsConfiguration,
 ) : ProviderClient {
+    private val webClient: WebClient by lazy { webClientFactory.getWebClient("openai") }
     override val provider: ModelProviderEnum = ModelProviderEnum.OPENAI
 
     override suspend fun call(

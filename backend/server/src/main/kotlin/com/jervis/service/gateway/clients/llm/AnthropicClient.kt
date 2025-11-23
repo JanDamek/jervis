@@ -8,18 +8,19 @@ import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.domain.gateway.StreamChunk
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProviderEnum
+import com.jervis.configuration.WebClientFactory
 import com.jervis.service.gateway.clients.ProviderClient
 import kotlinx.coroutines.flow.Flow
-import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.awaitBody
 
 @Service
 class AnthropicClient(
-    @Qualifier("anthropicWebClient") private val webClient: WebClient,
+    private val webClientFactory: WebClientFactory,
     private val promptsConfiguration: PromptsConfiguration,
 ) : ProviderClient {
+    private val webClient: WebClient by lazy { webClientFactory.getWebClient("anthropic") }
     override val provider: ModelProviderEnum = ModelProviderEnum.ANTHROPIC
 
     override suspend fun call(

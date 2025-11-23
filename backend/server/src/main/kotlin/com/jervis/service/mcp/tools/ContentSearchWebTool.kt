@@ -5,11 +5,11 @@ import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.mcp.McpTool
+import com.jervis.configuration.WebClientFactory
 import com.jervis.service.mcp.domain.ToolResult
 import com.jervis.service.prompts.PromptRepository
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
-import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.awaitBody
@@ -21,8 +21,9 @@ import org.springframework.web.reactive.function.client.awaitBody
 @Service
 class ContentSearchWebTool(
     override val promptRepository: PromptRepository,
-    @Qualifier("searxngWebClient") private val webClient: WebClient,
+    private val webClientFactory: WebClientFactory,
 ) : McpTool<ContentSearchWebTool.ContentSearchWebParams> {
+    private val webClient: WebClient by lazy { webClientFactory.getWebClient("searxng") }
     private val logger = KotlinLogging.logger {}
 
     override val name = ToolTypeEnum.CONTENT_SEARCH_WEB_TOOL

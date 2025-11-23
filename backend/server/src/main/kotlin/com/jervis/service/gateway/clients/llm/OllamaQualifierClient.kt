@@ -5,9 +5,9 @@ import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.domain.gateway.StreamChunk
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProviderEnum
+import com.jervis.configuration.WebClientFactory
 import com.jervis.service.gateway.clients.ProviderClient
 import kotlinx.coroutines.flow.Flow
-import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
 
@@ -17,9 +17,10 @@ import org.springframework.web.reactive.function.client.WebClient
  */
 @Service
 class OllamaQualifierClient(
-    @Qualifier("ollamaQualifierWebClient") private val webClient: WebClient,
+    private val webClientFactory: WebClientFactory,
     private val ollamaClient: OllamaClient,
 ) : ProviderClient {
+    private val webClient: WebClient by lazy { webClientFactory.getWebClient("ollama.qualifier") }
     override val provider: ModelProviderEnum = ModelProviderEnum.OLLAMA_QUALIFIER
 
     override suspend fun call(

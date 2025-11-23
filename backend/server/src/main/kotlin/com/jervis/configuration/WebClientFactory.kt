@@ -148,7 +148,22 @@ class WebClientFactory(
                     )
                     .maxBackoff(Duration.ofMillis(retryProperties.webclient.maxBackoffMillis))
                     .filter { throwable ->
-                        throwable is ConnectException || throwable is IOException
+                        // DO NOT retry timeouts - they are final failures (server is slow/overloaded)
+                        val isTimeout = throwable is java.util.concurrent.TimeoutException ||
+                            throwable is io.netty.handler.timeout.ReadTimeoutException ||
+                            throwable is io.netty.handler.timeout.WriteTimeoutException ||
+                            throwable.cause is java.util.concurrent.TimeoutException ||
+                            throwable.cause is io.netty.handler.timeout.ReadTimeoutException
+                        
+                        if (isTimeout) {
+                            return@filter false
+                        }
+
+                        // Retry only on transient connection errors
+                        throwable is ConnectException ||
+                            (throwable is IOException && !isTimeout) ||
+                            throwable.message?.contains("Connection prematurely closed", ignoreCase = true) == true ||
+                            throwable.message?.contains("Connection reset", ignoreCase = true) == true
                     },
             )
         }

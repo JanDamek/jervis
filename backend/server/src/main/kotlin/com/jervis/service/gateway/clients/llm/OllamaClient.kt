@@ -14,17 +14,18 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.reactive.asFlow
 import mu.KotlinLogging
-import org.springframework.beans.factory.annotation.Qualifier
+import com.jervis.configuration.WebClientFactory
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
 
 @Service
 class OllamaClient(
-    @Qualifier("ollamaWebClient") private val primaryWebClient: WebClient,
-    @Qualifier("ollamaQualifierWebClient") private val qualifierWebClient: WebClient,
+    private val webClientFactory: WebClientFactory,
     private val promptsConfiguration: PromptsConfiguration,
 ) : ProviderClient {
+    private val primaryWebClient: WebClient by lazy { webClientFactory.getWebClient("ollama.primary") }
+    private val qualifierWebClient: WebClient by lazy { webClientFactory.getWebClient("ollama.qualifier") }
     private val logger = KotlinLogging.logger {}
 
     override val provider: ModelProviderEnum = ModelProviderEnum.OLLAMA

@@ -10,7 +10,6 @@ import com.jervis.ui.rememberLifecycleAwareDebugProvider
  */
 fun MainViewController(serverBaseUrl: String) =
     ComposeUIViewController {
-        // Create lifecycle-aware debug provider that starts/stops WebSocket based on app state
         val debugProvider = rememberLifecycleAwareDebugProvider(serverBaseUrl)
 
         JervisApp(
