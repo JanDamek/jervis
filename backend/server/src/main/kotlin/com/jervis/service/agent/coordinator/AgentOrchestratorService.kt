@@ -426,8 +426,8 @@ class AgentOrchestratorService(
                 .forEachIndexed { index, step ->
                     appendLine("${index + 1}. ${step.stepToolName}: ${step.stepInstruction}")
                     step.toolResult?.let { result ->
-                        val preview = result.summary?.take(200) ?: result.content.take(200)
-                        appendLine("   Result: $preview${if (preview.length >= 200) "..." else ""}")
+                        val preview = result.output.take(200)
+                        appendLine("   Result: $preview${if (result.output.length > 200) "..." else ""}")
                     }
                 }
 
