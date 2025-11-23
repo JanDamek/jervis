@@ -25,15 +25,15 @@ class JiraStateManager(
     }
 
     /**
-     * Continuous flow of NEW issues for given client.
+     * Continuous flow of NEW issues for given account.
      * Polls DB every 30s when empty, never ends.
      */
-    fun continuousNewIssues(clientId: ObjectId): Flow<JiraIssueIndexDocument> =
+    fun continuousNewIssues(accountId: ObjectId): Flow<JiraIssueIndexDocument> =
         flow {
             while (true) {
                 val issues =
-                    repository.findByClientIdAndStateAndArchivedFalseOrderByUpdatedAtAsc(
-                        clientId,
+                    repository.findByAccountIdAndStateAndArchivedFalseOrderByUpdatedAtAsc(
+                        accountId,
                         JiraIssueState.NEW.name,
                     )
 
@@ -44,11 +44,39 @@ class JiraStateManager(
                 }
 
                 if (!emittedAny) {
-                    logger.debug { "No NEW Jira issues for client $clientId, sleeping ${POLL_DELAY_MS}ms" }
+                    logger.debug { "No NEW Jira issues for account $accountId, sleeping ${POLL_DELAY_MS}ms" }
                     delay(POLL_DELAY_MS)
                 } else {
                     // Immediately check for more
                     logger.debug { "Processed NEW issues, immediately checking for more..." }
+                }
+            }
+        }
+
+    /**
+     * Continuous flow of NEW issues across ALL accounts (newest first).
+     * Single indexer instance processes issues from all accounts,
+     * ordered by updatedAt descending (newest issues prioritized).
+     */
+    fun continuousNewIssuesAllAccounts(): Flow<JiraIssueIndexDocument> =
+        flow {
+            while (true) {
+                val issues =
+                    repository.findByStateAndArchivedFalseOrderByUpdatedAtDesc(
+                        JiraIssueState.NEW.name,
+                    )
+
+                var emittedAny = false
+                issues.collect { issue ->
+                    emit(issue)
+                    emittedAny = true
+                }
+
+                if (!emittedAny) {
+                    logger.debug { "No NEW Jira issues across all accounts, sleeping ${POLL_DELAY_MS}ms" }
+                    delay(POLL_DELAY_MS)
+                } else {
+                    logger.debug { "Processed NEW issues across all accounts, immediately checking for more..." }
                 }
             }
         }
@@ -112,6 +140,7 @@ class JiraStateManager(
      * Returns the document in NEW state.
      */
     suspend fun upsertIssueFromApi(
+        accountId: ObjectId,
         clientId: ObjectId,
         issueKey: String,
         projectKey: String,
@@ -122,12 +151,13 @@ class JiraStateManager(
         contentHash: String,
         statusHash: String,
     ): JiraIssueIndexDocument {
-        val existing = repository.findByClientIdAndIssueKey(clientId, issueKey)
+        val existing = repository.findByAccountIdAndIssueKey(accountId, issueKey)
 
         val doc =
             if (existing == null) {
                 // New issue - create with NEW state
                 JiraIssueIndexDocument(
+                    accountId = accountId,
                     clientId = clientId,
                     issueKey = issueKey,
                     projectKey = projectKey,

@@ -16,47 +16,26 @@ import org.springframework.stereotype.Component
 private val logger = KotlinLogging.logger {}
 
 /**
- * Starts continuous URL queue processors for all active Atlassian connections on application startup.
- * Launches Jira queue processors for connections with VALID auth status.
+ * DISABLED: Queue processing for Jira URLs needs refactoring for new connection architecture.
+ * TODO: Refactor to use ConnectionBinding pattern from AtlassianConnectionResolver
  *
- * Architecture:
+ * Old behavior:
  * - Launches one queue processor per VALID connection
  * - Each processor polls LinkIndexingQueue for Jira URLs discovered by other indexers
  * - JiraPollingScheduler handles regular issue indexing
- * - This listener ensures queue processors are running to handle cross-indexer URLs
  */
-@Component
+// @Component - DISABLED until refactored
 class JiraIndexerStartupListener(
     private val connectionRepository: AtlassianConnectionMongoRepository,
     private val orchestrator: JiraIndexingOrchestrator,
 ) {
     private val indexerScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
-    @EventListener(ApplicationReadyEvent::class)
+    // @EventListener(ApplicationReadyEvent::class) - DISABLED
     fun startQueueProcessors() =
         runBlocking {
-            logger.info { "Starting Jira queue processors for all VALID Atlassian connections..." }
-
-            val validConnections =
-                connectionRepository
-                    .findAll()
-                    .toList()
-                    .filter { it.authStatus == "VALID" }
-
-            logger.info { "Found ${validConnections.size} VALID Atlassian connections" }
-
-            validConnections.forEach { connection ->
-                logger.info {
-                    "Launching Jira queue processor for client ${connection.clientId.toHexString()} (tenant: ${connection.tenant})"
-                }
-                indexerScope.launch {
-                    runCatching { orchestrator.processQueuedUrls(connection.clientId) }
-                        .onFailure { e ->
-                            logger.error(e) { "Jira queue processor crashed for client ${connection.clientId.toHexString()}" }
-                        }
-                }
-            }
-
-            logger.info { "All Jira queue processors launched successfully" }
+            logger.warn { "JiraIndexerStartupListener is DISABLED - queue processing needs refactoring for new connection architecture" }
+            // TODO: Refactor to iterate ConnectionBindings instead of connections
+            // TODO: processQueuedUrls needs to accept (connectionId, clientId) instead of just clientId
         }
 }

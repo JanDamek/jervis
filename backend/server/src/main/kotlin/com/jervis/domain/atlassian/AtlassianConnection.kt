@@ -7,11 +7,11 @@ import com.jervis.domain.jira.JiraTenant
 import java.time.Instant
 
 /**
- * Connection details for a client's Atlassian Cloud (Jira + Confluence).
+ * Connection details for Atlassian Cloud (Jira + Confluence).
+ * This is a shared resource that can be referenced by multiple clients/projects.
  * Uses simple API token authentication (not OAuth).
  */
 data class AtlassianConnection(
-    val clientId: String,
     val tenant: JiraTenant,
     val email: String? = null,
     /** Atlassian API token (works for both Jira and Confluence) */

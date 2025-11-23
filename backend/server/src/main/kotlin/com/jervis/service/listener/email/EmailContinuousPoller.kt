@@ -51,11 +51,38 @@ class EmailContinuousPoller(
     override suspend fun getLastPollTime(account: EmailAccountDocument): Long? =
         account.lastPolledAt?.toEpochMilli()
 
-    override suspend fun executePoll(account: EmailAccountDocument): Boolean =
-        runCatching {
+    override suspend fun executePoll(account: EmailAccountDocument): Boolean {
+        // Skip inactive accounts
+        if (!account.isActive) {
+            logger.debug { "[$pollerName] Skipping inactive account ${account.id} (${account.email})" }
+            return false
+        }
+
+        return runCatching {
             emailIndexingOrchestrator.syncMessageHeaders(account)
             true
+        }.onFailure { e ->
+            logger.error(e) { "[$pollerName] Failed to poll account ${account.id} (${account.email}): ${e.message}" }
+
+            // Mark account as inactive on auth errors (IMAP login failure)
+            if (isAuthError(e)) {
+                logger.warn { "[$pollerName] Auth error for account ${account.id} (${account.email}), marking as inactive" }
+                val updated = account.copy(
+                    isActive = false,
+                    lastAuthCheckedAt = java.time.Instant.now(),
+                    lastErrorMessage = e.message?.take(500)
+                )
+                emailAccountRepository.save(updated)
+                // TODO: Create user task to notify about auth failure
+            }
         }.getOrDefault(false)
+    }
+
+    private fun isAuthError(e: Throwable): Boolean =
+        e.message?.contains("authentication", ignoreCase = true) == true ||
+            e.message?.contains("login", ignoreCase = true) == true ||
+            e.message?.contains("password", ignoreCase = true) == true ||
+            e.message?.contains("credentials", ignoreCase = true) == true
 
     override suspend fun updateLastPollTime(account: EmailAccountDocument, timestamp: Long) {
         val updated = account.copy(lastPolledAt = java.time.Instant.ofEpochMilli(timestamp))

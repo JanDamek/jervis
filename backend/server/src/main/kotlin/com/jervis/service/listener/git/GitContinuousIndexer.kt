@@ -38,6 +38,8 @@ class GitContinuousIndexer(
     private val stateManager: GitCommitStateManager,
     private val metadataIndexer: GitCommitMetadataIndexer,
     private val codeIndexer: GitDiffCodeIndexer,
+    private val directoryStructureService: com.jervis.service.storage.DirectoryStructureService,
+    private val gitRepositoryService: com.jervis.service.git.GitRepositoryService,
     // private val taskCreator: GitTaskCreator,
     private val flowProps: com.jervis.configuration.properties.IndexingFlowProperties,
 ) : AbstractContinuousIndexer<ProjectDocument, com.jervis.service.git.state.GitCommitDocument>() {
@@ -49,21 +51,19 @@ class GitContinuousIndexer(
 
     @PostConstruct
     fun start() {
-        logger.info { "Starting $indexerName for all projects..." }
+        logger.info { "Starting $indexerName (single instance for all projects)..." }
         scope.launch {
-            // Start indexer for each project
-            val projects = projectRepository.findAll().toList()
-            projects.forEach { project ->
-                launch {
-                    logger.info { "Starting continuous Git indexing for project: ${project.name}" }
-                    startContinuousIndexing(project)
-                }
-            }
+            startContinuousIndexing()
         }
     }
 
-    override fun newItemsFlow(account: ProjectDocument): Flow<com.jervis.service.git.state.GitCommitDocument> =
-        stateManager.continuousNewCommits(account.id)
+    override fun newItemsFlow(): Flow<com.jervis.service.git.state.GitCommitDocument> =
+        stateManager.continuousNewCommits()
+
+    override suspend fun getAccountForItem(item: com.jervis.service.git.state.GitCommitDocument): ProjectDocument? {
+        val projectId = item.projectId ?: return null
+        return projectRepository.findById(projectId)
+    }
 
     override fun itemLogLabel(item: com.jervis.service.git.state.GitCommitDocument) =
         "Commit:${item.commitHash.take(8)} by ${item.author}"
@@ -72,6 +72,22 @@ class GitContinuousIndexer(
         account: ProjectDocument,
         item: com.jervis.service.git.state.GitCommitDocument,
     ): Any? {
+        // Ensure Git repository is cloned before indexing
+        val gitDir = getProjectGitDir(account)
+        if (gitDir == null || !gitDir.resolve(".git").toFile().exists()) {
+            logger.info { "Git repository not found for project ${account.name}, attempting to clone..." }
+
+            // Attempt to clone/update repository
+            val cloneResult = gitRepositoryService.cloneOrUpdateRepository(account)
+            if (cloneResult.isFailure) {
+                logger.warn { "Failed to clone repository for project ${account.name}: ${cloneResult.exceptionOrNull()?.message}" }
+                // Return null - commit stays in NEW state and will be retried later
+                return null
+            }
+
+            logger.info { "Successfully cloned repository for project ${account.name}" }
+        }
+
         // Mark as INDEXING to prevent concurrent processing
         stateManager.markAsIndexing(item)
 
@@ -87,10 +103,11 @@ class GitContinuousIndexer(
     ): IndexingResult {
         val commit = content as com.jervis.service.git.state.GitCommitDocument
 
-        // Get project Git directory
-        val gitDir = getProjectGitDir(account) ?: return IndexingResult(
-            success = false,
-        )
+        // Get project Git directory (should exist because we checked in fetchContentIO)
+        val gitDir = getProjectGitDir(account) ?: run {
+            logger.error { "Git directory disappeared after fetch check - this should not happen" }
+            return IndexingResult(success = false)
+        }
 
         try {
             // Step 1: Index commit metadata (message, author, files changed)
@@ -110,6 +127,10 @@ class GitContinuousIndexer(
             )
 
             val success = metadataResult.processedCommits > 0 || codeResult.indexedFiles > 0
+
+            if (!success) {
+                logger.warn { "Indexing produced 0 chunks for commit ${commit.commitHash.take(8)} - metadata: ${metadataResult.processedCommits}, code: ${codeResult.indexedFiles}" }
+            }
 
             return IndexingResult(
                 success = success,
@@ -150,7 +171,7 @@ class GitContinuousIndexer(
     }
 
     override suspend fun markAsFailed(
-        account: ProjectDocument,
+        account: ProjectDocument?,
         item: com.jervis.service.git.state.GitCommitDocument,
         reason: String,
     ) {
@@ -159,11 +180,9 @@ class GitContinuousIndexer(
 
     /**
      * Get project Git directory from workspace.
-     * TODO: Implement proper workspace management
      */
     private fun getProjectGitDir(project: ProjectDocument): Path? {
-        // This should come from workspace service that manages cloned repos
-        // For now, return null - GitContinuousPoller handles cloning
-        return null
+        val gitDir = directoryStructureService.projectGitDir(project)
+        return if (gitDir.toFile().exists()) gitDir else null
     }
 }

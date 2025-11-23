@@ -1,11 +1,13 @@
 package com.jervis.service.atlassian
 
 import com.jervis.domain.atlassian.AtlassianConnection
+import com.jervis.domain.atlassian.AtlassianCredentials
 import com.jervis.domain.jira.JiraAccountId
 import com.jervis.domain.jira.JiraBoardId
 import com.jervis.domain.jira.JiraProjectKey
 import com.jervis.domain.jira.JiraTenant
 import com.jervis.repository.AtlassianConnectionMongoRepository
+import com.jervis.repository.ClientMongoRepository
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -14,8 +16,9 @@ import java.time.Instant
 @Service
 class DefaultAtlassianSelectionService(
     private val connectionRepo: AtlassianConnectionMongoRepository,
+    private val clientRepo: ClientMongoRepository,
     private val api: AtlassianApiClient,
-    private val auth: AtlassianAuthService,
+    private val authValidator: AtlassianAuthValidator,
 ) : AtlassianSelectionService {
     private val logger = KotlinLogging.logger {}
 
@@ -23,7 +26,10 @@ class DefaultAtlassianSelectionService(
         clientId: ObjectId,
         accountId: JiraAccountId,
     ) {
-        val doc = connectionRepo.findByClientId(clientId) ?: missingConnection(clientId)
+        val client = clientRepo.findById(clientId) ?: missingClient(clientId)
+        val connectionId = client.atlassianConnectionId ?: missingConnection(clientId)
+        val doc = connectionRepo.findById(connectionId) ?: missingConnectionById(connectionId)
+
         val updated = doc.copy(preferredUser = accountId.value, updatedAt = Instant.now())
         connectionRepo.save(updated)
         logger.info { "JIRA_SELECTION: Set preferred user for client=${clientId.toHexString()} accountId=${accountId.value}" }
@@ -36,7 +42,11 @@ class DefaultAtlassianSelectionService(
         val conn = getConnection(clientId)
         val exists = api.projectExists(conn, projectKey)
         require(exists) { "Jira project ${projectKey.value} does not exist or is not accessible" }
-        val doc = requireNotNull(connectionRepo.findByClientId(clientId))
+
+        val client = clientRepo.findById(clientId) ?: missingClient(clientId)
+        val connectionId = client.atlassianConnectionId ?: missingConnection(clientId)
+        val doc = connectionRepo.findById(connectionId) ?: missingConnectionById(connectionId)
+
         val updated = doc.copy(primaryProject = projectKey.value, updatedAt = Instant.now())
         connectionRepo.save(updated)
         logger.info { "JIRA_SELECTION: Set primary project for client=${clientId.toHexString()} project=${projectKey.value}" }
@@ -46,31 +56,36 @@ class DefaultAtlassianSelectionService(
         clientId: ObjectId,
         boardId: JiraBoardId,
     ) {
-        val doc = connectionRepo.findByClientId(clientId) ?: missingConnection(clientId)
+        val client = clientRepo.findById(clientId) ?: missingClient(clientId)
+        val connectionId = client.atlassianConnectionId ?: missingConnection(clientId)
+        val doc = connectionRepo.findById(connectionId) ?: missingConnectionById(connectionId)
+
         val updated = doc.copy(mainBoard = boardId.value, updatedAt = Instant.now())
         connectionRepo.save(updated)
         logger.info { "JIRA_SELECTION: Set main board for client=${clientId.toHexString()} board=${boardId.value}" }
     }
 
     override suspend fun getConnection(clientId: ObjectId): AtlassianConnection {
-        val doc = connectionRepo.findByClientId(clientId) ?: missingConnection(clientId)
-        return AtlassianConnection(
-            clientId = clientId.toHexString(),
-            tenant = JiraTenant(doc.tenant),
-            email = doc.email,
-            accessToken = doc.accessToken,
-            preferredUser = doc.preferredUser?.let { JiraAccountId(it) },
-            mainBoard = doc.mainBoard?.let { JiraBoardId(it) },
-            primaryProject = doc.primaryProject?.let { JiraProjectKey(it) },
-            updatedAt = doc.updatedAt,
-        )
+        val client = clientRepo.findById(clientId) ?: missingClient(clientId)
+        val connectionId = client.atlassianConnectionId ?: missingConnection(clientId)
+        val doc = connectionRepo.findById(connectionId) ?: missingConnectionById(connectionId)
+
+        return doc.toDomain()
     }
 
     override suspend fun ensureSelectionsOrCreateTasks(
         clientId: ObjectId,
         allowAutoDetectUser: Boolean,
     ): Pair<JiraProjectKey, JiraAccountId>? {
-        val conn = getConnection(clientId).let { auth.ensureValidToken(it) }
+        val conn = getConnection(clientId)
+
+        // Validate credentials
+        val credentials = AtlassianCredentials(
+            tenant = conn.tenant.value,
+            email = conn.email ?: "",
+            apiToken = conn.accessToken,
+        )
+        authValidator.validateCredentials(credentials).getOrThrow()
 
         val projectKey = conn.primaryProject
         val preferredUser = conn.preferredUser
@@ -88,6 +103,12 @@ class DefaultAtlassianSelectionService(
         return Pair(projectKey, preferredUser)
     }
 
+    private fun missingClient(clientId: ObjectId): Nothing =
+        throw IllegalStateException("Client not found: ${clientId.toHexString()}")
+
     private fun missingConnection(clientId: ObjectId): Nothing =
         throw IllegalStateException("Jira connection not configured for client ${clientId.toHexString()}")
+
+    private fun missingConnectionById(connectionId: ObjectId): Nothing =
+        throw IllegalStateException("Jira connection not found: ${connectionId.toHexString()}")
 }

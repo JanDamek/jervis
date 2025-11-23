@@ -16,6 +16,13 @@ interface ConfluencePageMongoRepository : CoroutineCrudRepository<ConfluencePage
     fun findNewPagesByAccount(accountId: ObjectId): Flow<ConfluencePageDocument>
 
     /**
+     * Find all NEW pages across all accounts, ordered by lastModifiedAt descending (newest first).
+     * Used by single indexer instance that processes all accounts.
+     */
+    @Query(value = "{ 'state': 'NEW' }", sort = "{ 'lastModifiedAt': -1 }")
+    fun findNewPagesAllAccountsOrderByModifiedDesc(): Flow<ConfluencePageDocument>
+
+    /**
      * Find page by accountId and pageId (Confluence page ID).
      * Used for change detection - check if page exists and compare version.
      */

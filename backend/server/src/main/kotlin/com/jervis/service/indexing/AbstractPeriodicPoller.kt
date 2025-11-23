@@ -60,10 +60,15 @@ abstract class AbstractPeriodicPoller<A> {
      * Runs until coroutine is cancelled.
      */
     suspend fun startPeriodicPolling() {
-        logger.info { "Starting $pollerName with interval ${pollingIntervalMs}ms" }
+        logger.info { "Starting $pollerName with interval ${pollingIntervalMs}ms, initial delay ${initialDelayMs}ms" }
 
         // Initial delay
+        if (initialDelayMs > 0) {
+            logger.info { "[$pollerName] Waiting ${initialDelayMs}ms before first poll..." }
+        }
         delay(initialDelayMs)
+
+        logger.info { "[$pollerName] Starting polling loop, checking accounts every ${cycleDelayMs}ms" }
 
         while (coroutineContext.isActive) {
             try {
@@ -78,7 +83,12 @@ abstract class AbstractPeriodicPoller<A> {
     }
 
     private suspend fun pollAllAccounts() {
+        var accountCount = 0
+        var polledCount = 0
+        var skippedCount = 0
+
         accountsFlow().collect { account ->
+            accountCount++
             try {
                 val label = accountLogLabel(account)
                 val now = System.currentTimeMillis()
@@ -94,6 +104,7 @@ abstract class AbstractPeriodicPoller<A> {
                         true
                     } else {
                         logger.debug { "[$pollerName] Skipping $label (next poll in ${pollingIntervalMs - elapsed}ms)" }
+                        skippedCount++
                         false
                     }
                 }
@@ -103,6 +114,7 @@ abstract class AbstractPeriodicPoller<A> {
                     if (success) {
                         updateLastPollTime(account, now)
                         logger.info { "[$pollerName] Completed poll for $label" }
+                        polledCount++
                     } else {
                         logger.warn { "[$pollerName] Poll failed for $label" }
                     }
@@ -110,6 +122,12 @@ abstract class AbstractPeriodicPoller<A> {
             } catch (e: Exception) {
                 logger.error(e) { "[$pollerName] Error polling ${accountLogLabel(account)}" }
             }
+        }
+
+        if (accountCount == 0) {
+            logger.info { "[$pollerName] No accounts found to poll" }
+        } else {
+            logger.debug { "[$pollerName] Checked $accountCount accounts: polled=$polledCount, skipped=$skippedCount" }
         }
     }
 }

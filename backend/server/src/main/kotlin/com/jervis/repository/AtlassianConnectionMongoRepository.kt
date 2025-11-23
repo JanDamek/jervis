@@ -8,11 +8,12 @@ import org.springframework.stereotype.Repository
 
 @Repository
 interface AtlassianConnectionMongoRepository : CoroutineCrudRepository<AtlassianConnectionDocument, ObjectId> {
-    suspend fun findByClientId(clientId: ObjectId): AtlassianConnectionDocument?
+    @Query("{ 'tenant': ?0 }")
+    suspend fun findByTenant(tenant: String): AtlassianConnectionDocument?
 
-    @Query("{ 'clientId': ?0, 'tenant': ?1 }")
-    suspend fun findByClientIdAndTenant(
-        clientId: ObjectId,
+    @Query("{ 'tenant': ?0, 'email': ?1 }")
+    suspend fun findByTenantAndEmail(
         tenant: String,
+        email: String?,
     ): AtlassianConnectionDocument?
 }

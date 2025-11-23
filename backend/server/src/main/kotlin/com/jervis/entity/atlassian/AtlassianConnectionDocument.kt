@@ -9,20 +9,22 @@ import org.springframework.data.mongodb.core.mapping.Document
 import java.time.Instant
 
 /**
- * MongoDB entity representing Atlassian Cloud connection (Jira + Confluence) for a client.
+ * MongoDB entity representing Atlassian Cloud connection (Jira + Confluence).
+ * This is a shared resource that can be referenced by multiple clients/projects.
  * Uses simple API token authentication (not OAuth).
  * Secrets (tokens) are stored as plain strings; avoid logging them anywhere.
+ *
+ * Note: ClientDocument and ProjectDocument reference this via atlassianConnectionId.
+ * One connection can be shared across multiple clients/projects.
  */
 @Document(collection = "jira_connections")
 @CompoundIndexes(
-    CompoundIndex(name = "client_tenant_unique", def = "{'clientId': 1, 'tenant': 1}", unique = true),
-    CompoundIndex(name = "auth_status_idx", def = "{'clientId': 1, 'tenant': 1, 'updatedAt': 1, 'authStatus': 1}"),
+    CompoundIndex(name = "tenant_email_unique", def = "{'tenant': 1, 'email': 1}", unique = true),
+    CompoundIndex(name = "auth_status_idx", def = "{'updatedAt': 1, 'authStatus': 1}"),
 )
 data class AtlassianConnectionDocument(
     @Id
     val id: ObjectId = ObjectId.get(),
-    @Indexed
-    val clientId: ObjectId,
     /** Atlassian cloud tenant hostname, e.g. example.atlassian.net */
     val tenant: String,
     /** Account email used for API token authentication */
@@ -64,7 +66,6 @@ data class AtlassianConnectionDocument(
      */
     fun toDomain(): com.jervis.domain.atlassian.AtlassianConnection =
         com.jervis.domain.atlassian.AtlassianConnection(
-            clientId = clientId.toHexString(),
             tenant = com.jervis.domain.jira.JiraTenant(tenant),
             email = email,
             accessToken = accessToken,

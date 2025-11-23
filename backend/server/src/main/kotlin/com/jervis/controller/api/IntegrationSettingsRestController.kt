@@ -34,7 +34,11 @@ class IntegrationSettingsRestController(
             val client =
                 clientRepository.findById(ObjectId(clientId))
                     ?: return IntegrationClientStatusDto(clientId = clientId, jiraConnected = false)
-            val jiraConn = jiraConnectionRepository.findByClientId(client.id)
+
+            // Get connection via client.atlassianConnectionId
+            val jiraConn = client.atlassianConnectionId?.let {
+                jiraConnectionRepository.findById(it)
+            }
             val jiraConnected = jiraConn != null && jiraConn.authStatus == "VALID"
             IntegrationClientStatusDto(
                 clientId = client.id.toHexString(),
@@ -80,7 +84,11 @@ class IntegrationSettingsRestController(
             requireNotNull(projectRepository.findById(ObjectId(projectId))) { "Project not found: $projectId" }
         val client =
             requireNotNull(clientRepository.findById(project.clientId)) { "Client not found: ${project.clientId}" }
-        val jiraConn = jiraConnectionRepository.findByClientId(client.id)
+
+        // Get connection via project override or client default
+        val connectionId = project.atlassianConnectionId ?: client.atlassianConnectionId
+        val jiraConn = connectionId?.let { jiraConnectionRepository.findById(it) }
+
         val override = project.overrides
 
         val effectiveJiraProject = override?.jiraProjectKey ?: jiraConn?.primaryProject

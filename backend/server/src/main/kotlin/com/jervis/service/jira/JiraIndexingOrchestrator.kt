@@ -40,6 +40,7 @@ class JiraIndexingOrchestrator(
     private val linkIndexingQueue: com.jervis.service.indexing.LinkIndexingQueue,
     private val taskCreator: com.jervis.service.confluence.processor.ConfluenceTaskCreator,
     private val pendingTaskService: com.jervis.service.background.PendingTaskService,
+    private val clientRepository: com.jervis.repository.ClientMongoRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -53,10 +54,22 @@ class JiraIndexingOrchestrator(
                 logger.info { "JIRA_INDEX: Start for client=${clientId.toHexString()}" }
 
                 // Ensure we have a connection and it's VALID before proceeding
-                val connectionDoc = connectionRepository.findByClientId(clientId)
-                if (connectionDoc == null) {
+                val client = clientRepository.findById(clientId)
+                if (client == null) {
+                    logger.warn { "JIRA_INDEX: Client not found: ${clientId.toHexString()}" }
+                    runCatching { indexingRegistry.info("jira", "Client not found: ${clientId.toHexString()}") }
+                    return@withContext
+                }
+                val accountId = client.atlassianConnectionId
+                if (accountId == null) {
                     logger.warn { "JIRA_INDEX: No Jira connection configured for client=${clientId.toHexString()}" }
                     runCatching { indexingRegistry.info("jira", "No Jira connection configured for client=${clientId.toHexString()}") }
+                    return@withContext
+                }
+                val connectionDoc = connectionRepository.findById(accountId)
+                if (connectionDoc == null) {
+                    logger.warn { "JIRA_INDEX: Connection document not found for accountId=${accountId.toHexString()}" }
+                    runCatching { indexingRegistry.info("jira", "Connection document not found for accountId=${accountId.toHexString()}") }
                     return@withContext
                 }
                 if (connectionDoc.authStatus != "VALID") {
@@ -77,10 +90,7 @@ class JiraIndexingOrchestrator(
                     selection.getConnection(clientId).let { auth.ensureValidToken(it) }
                 } catch (e: Exception) {
                     if (isAuthError(e)) {
-                        val doc = connectionRepository.findByClientId(clientId)
-                        if (doc != null) {
-                            runCatching { connectionService.markAuthInvalid(doc, e.message) }
-                        }
+                        runCatching { connectionService.markAuthInvalid(connectionDoc, clientId, e.message) }
                         logger.warn(
                             e,
                         ) { "JIRA_INDEX: Auth check failed for client=${clientId.toHexString()}, marking INVALID and skipping" }
@@ -139,10 +149,7 @@ class JiraIndexingOrchestrator(
                         selection.getConnection(clientId).let { auth.ensureValidToken(it) }
                     } catch (e: Exception) {
                         if (isAuthError(e)) {
-                            val doc = connectionRepository.findByClientId(clientId)
-                            if (doc != null) {
-                                runCatching { connectionService.markAuthInvalid(doc, e.message) }
-                            }
+                            runCatching { connectionService.markAuthInvalid(connectionDoc, clientId, e.message) }
                             logger.warn(
                                 e,
                             ) {
@@ -186,10 +193,7 @@ class JiraIndexingOrchestrator(
                     } catch (e: Exception) {
                         // If this looks like an auth error, mark INVALID to stop further attempts until user fixes it
                         if (isAuthError(e)) {
-                            val doc = connectionRepository.findByClientId(clientId)
-                            if (doc != null) {
-                                runCatching { connectionService.markAuthInvalid(doc, e.message) }
-                            }
+                            runCatching { connectionService.markAuthInvalid(connectionDoc, clientId, e.message) }
                             logger.warn(
                                 e,
                             ) { "JIRA_INDEX: Failed to list all Jira projects for client=${clientId.toHexString()} due to auth error" }
@@ -234,7 +238,7 @@ class JiraIndexingOrchestrator(
                 }
 
                 // Determine incremental window based on last sync
-                val latestConnDoc = connectionRepository.findByClientId(clientId)
+                val latestConnDoc = connectionRepository.findById(accountId)
                 val lastSyncedAt = latestConnDoc?.lastSyncedAt
                 logger.info { "JIRA_INDEX: lastSyncedAt=$lastSyncedAt for client=${clientId.toHexString()}" }
                 // First sync: index ALL issues (no time filter)
@@ -298,7 +302,7 @@ class JiraIndexingOrchestrator(
                             .collect { issue ->
                                 logger.debug { "JIRA_INDEX: Processing issue ${issue.key} from project $key" }
                                 // Load existing index document to check what's already indexed
-                                val existingIndexDoc = issueIndexRepository.findByClientIdAndIssueKey(clientId, issue.key)
+                                val existingIndexDoc = issueIndexRepository.findByAccountIdAndIssueKey(accountId, issue.key)
 
                                 // Calculate hashes for change detection
                                 val currentContentHash = computeHash("${issue.summary}|${issue.description ?: ""}")
@@ -314,6 +318,7 @@ class JiraIndexingOrchestrator(
                                 // This ensures comprehensive search across all project knowledge
                                 if (contentChanged || statusChanged || existingIndexDoc == null) {
                                     indexIssueSummaryShallow(
+                                        accountId,
                                         clientId,
                                         issue,
                                         projectKey,
@@ -330,6 +335,7 @@ class JiraIndexingOrchestrator(
                                 // Returns comments for potential pending task creation
                                 val allComments =
                                     indexIssueCommentsDeep(
+                                        accountId = accountId,
                                         clientId = clientId,
                                         issueKey = issue.key,
                                         project = projectKey,
@@ -341,6 +347,7 @@ class JiraIndexingOrchestrator(
                                 // Don't fail entire indexing if attachments fail
                                 runCatching {
                                     jiraAttachmentIndexer.indexIssueAttachments(
+                                        accountId = accountId,
                                         conn = connValid,
                                         issueKey = issue.key,
                                         clientId = clientId,
@@ -391,14 +398,12 @@ class JiraIndexingOrchestrator(
                                 )
                             }
                             // Mark connection as invalid since hostname is unresolvable
-                            val doc = connectionRepository.findByClientId(clientId)
-                            if (doc != null) {
-                                runCatching {
-                                    connectionService.markAuthInvalid(
-                                        doc,
-                                        "Cannot resolve tenant hostname '${connValid.tenant.value}'. Please verify the tenant URL in Atlassian connection settings.",
-                                    )
-                                }
+                            runCatching {
+                                connectionService.markAuthInvalid(
+                                    connectionDoc,
+                                    clientId,
+                                    "Cannot resolve tenant hostname '${connValid.tenant.value}'. Please verify the tenant URL in Atlassian connection settings.",
+                                )
                             }
                             runCatching { errorLogService.recordError(e, clientId = clientId, projectId = jervisProjectId) }
                             return@withContext // Stop indexing this client entirely
@@ -420,10 +425,7 @@ class JiraIndexingOrchestrator(
 
                         // If this looks like an auth error, mark INVALID to stop further attempts until user fixes it
                         if (isAuthError(e)) {
-                            val doc = connectionRepository.findByClientId(clientId)
-                            if (doc != null) {
-                                runCatching { connectionService.markAuthInvalid(doc, e.message) }
-                            }
+                            runCatching { connectionService.markAuthInvalid(connectionDoc, clientId, e.message) }
                         }
                         // Persist error for visibility regardless of type
                         runCatching { errorLogService.recordError(e, clientId = clientId, projectId = jervisProjectId) }
@@ -442,7 +444,7 @@ class JiraIndexingOrchestrator(
 
                 // Update last synced timestamp on successful completion
                 try {
-                    val doc = connectionRepository.findByClientId(clientId)
+                    val doc = connectionRepository.findById(accountId)
                     if (doc != null) {
                         val updated = doc.copy(lastSyncedAt = Instant.now(), updatedAt = Instant.now())
                         connectionRepository.save(updated)
@@ -476,6 +478,14 @@ class JiraIndexingOrchestrator(
         val conn = selection.getConnection(clientId).let { auth.ensureValidToken(it) }
         val projectKey = issue.project
 
+        // Get accountId from client
+        val client = clientRepository.findById(clientId)
+        val accountId = client?.atlassianConnectionId
+        if (accountId == null) {
+            logger.warn { "No Atlassian connection for client ${clientId.toHexString()}" }
+            return IndexSingleIssueResult(success = false)
+        }
+
         // Calculate hashes
         val contentHash = computeHash("${issue.summary}|${issue.description ?: ""}")
         val statusHash = computeHash(issue.status)
@@ -487,8 +497,9 @@ class JiraIndexingOrchestrator(
 
         try {
             // Index summary
-            val existingIndexDoc = issueIndexRepository.findByClientIdAndIssueKey(clientId, issue.key)
+            val existingIndexDoc = issueIndexRepository.findByAccountIdAndIssueKey(accountId, issue.key)
             indexIssueSummaryShallow(
+                accountId = accountId,
                 clientId = clientId,
                 issue = issue,
                 project = projectKey,
@@ -504,6 +515,7 @@ class JiraIndexingOrchestrator(
             // Index comments
             val comments =
                 indexIssueCommentsDeep(
+                    accountId = accountId,
                     clientId = clientId,
                     issueKey = issue.key,
                     project = projectKey,
@@ -516,6 +528,7 @@ class JiraIndexingOrchestrator(
             // Index attachments
             runCatching {
                 jiraAttachmentIndexer.indexIssueAttachments(
+                    accountId = accountId,
                     conn = conn,
                     issueKey = issue.key,
                     clientId = clientId,
@@ -523,7 +536,7 @@ class JiraIndexingOrchestrator(
                     projectId = jervisProjectId,
                 )
                 // Count attachments from existing doc
-                val doc = issueIndexRepository.findByClientIdAndIssueKey(clientId, issue.key)
+                val doc = issueIndexRepository.findByAccountIdAndIssueKey(accountId, issue.key)
                 attachmentCount = doc?.indexedAttachmentIds?.size ?: 0
             }.onFailure { e ->
                 logger.warn(e) { "Failed to index attachments for ${issue.key}" }
@@ -551,6 +564,7 @@ class JiraIndexingOrchestrator(
     )
 
     private suspend fun indexIssueSummaryShallow(
+        accountId: ObjectId,
         clientId: ObjectId,
         issue: JiraIssue,
         project: JiraProjectKey,
@@ -609,6 +623,7 @@ class JiraIndexingOrchestrator(
         val newDoc =
             if (existingIndexDoc == null) {
                 com.jervis.entity.jira.JiraIssueIndexDocument(
+                    accountId = accountId,
                     clientId = clientId,
                     issueKey = issue.key,
                     projectKey = project.value,
@@ -635,6 +650,7 @@ class JiraIndexingOrchestrator(
     }
 
     private suspend fun indexIssueCommentsDeep(
+        accountId: ObjectId,
         clientId: ObjectId,
         issueKey: String,
         project: JiraProjectKey,
@@ -642,7 +658,7 @@ class JiraIndexingOrchestrator(
         jervisProjectId: ObjectId?,
     ): List<Pair<String, String>> {
         val conn = selection.getConnection(clientId).let { auth.ensureValidToken(it) }
-        val indexDoc = issueIndexRepository.findByClientIdAndIssueKey(clientId, issueKey)
+        val indexDoc = issueIndexRepository.findByAccountIdAndIssueKey(accountId, issueKey)
         var lastProcessedId = indexDoc?.lastEmbeddedCommentId
         var process = lastProcessedId == null
         var processedCount = 0
@@ -740,6 +756,7 @@ class JiraIndexingOrchestrator(
             val newDoc =
                 if (indexDoc == null) {
                     com.jervis.entity.jira.JiraIssueIndexDocument(
+                        accountId = accountId,
                         clientId = clientId,
                         issueKey = issueKey,
                         projectKey = project.value,

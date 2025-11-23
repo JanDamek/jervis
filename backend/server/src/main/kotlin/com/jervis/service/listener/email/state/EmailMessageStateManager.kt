@@ -130,6 +130,29 @@ class EmailMessageStateManager(
             }
         }
 
+    /**
+     * Continuous polling Flow for ALL accounts (newest first).
+     * Single indexer instance processes messages from all accounts,
+     * ordered by receivedAt descending (newest messages prioritized).
+     */
+    fun continuousNewMessagesAllAccounts(): Flow<EmailMessageDocument> =
+        flow {
+            while (currentCoroutineContext().isActive) {
+                var foundAny = false
+
+                emailMessageRepository
+                    .findByStateOrderByReceivedAtDesc(EmailMessageState.NEW)
+                    .onEach { foundAny = true }
+                    .collect { emit(it) }
+
+                if (!foundAny) {
+                    delay(30_000) // No new messages, wait 30s
+                } else {
+                    logger.debug { "Batch of NEW messages processed across all accounts, checking for more immediately" }
+                }
+            }
+        }
+
     suspend fun markAsIndexed(messageDocument: EmailMessageDocument) {
         val updated = messageDocument.copy(state = EmailMessageState.INDEXED)
         emailMessageRepository.save(updated)

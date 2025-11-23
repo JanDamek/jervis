@@ -27,7 +27,7 @@ spring:
       username: root
       password: REDACTED_MONGODB_PASSWORD
       authentication-database: admin
-      auto-index-creation: true
+      auto-index-creation: false  # Disabled - indexes managed by MongoIndexInitializer
 
 # Vector database configuration
 # Weaviate - hybrid search vector DB with BM25 + semantic search

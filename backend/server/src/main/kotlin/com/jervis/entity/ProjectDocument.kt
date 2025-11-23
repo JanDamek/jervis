@@ -52,6 +52,11 @@ data class ProjectDocument(
     val overrides: ProjectOverrides? = null,
     // Last Git sync timestamp.
     val lastGitSyncAt: Instant? = null,
+    // Atlassian integration (Jira + Confluence) - overrides client-level if set
+    val atlassianConnectionId: ObjectId? = null,
+    // Optional: Filter to specific Jira projects/Confluence spaces (project-level)
+    val atlassianJiraProjects: List<String> = emptyList(),
+    val atlassianConfluenceSpaces: List<String> = emptyList(),
     // Audit timestamps.
     val createdAt: Instant = Instant.now(),
     val updatedAt: Instant = Instant.now(),

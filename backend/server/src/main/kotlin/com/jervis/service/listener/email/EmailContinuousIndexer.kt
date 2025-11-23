@@ -51,20 +51,32 @@ class EmailContinuousIndexer(
 
     @PostConstruct
     fun start() {
-        logger.info { "Starting $indexerName for all email accounts..." }
+        logger.info { "Starting $indexerName (single instance for all accounts)..." }
         scope.launch {
-            // Start indexer for each email account
-            val accounts = emailAccountRepository.findAll().toList()
-            accounts.forEach { account ->
-                launch {
-                    logger.info { "Starting continuous indexing for account: ${account.email}" }
-                    startContinuousIndexing(account)
-                }
+            kotlin.runCatching {
+                indexingRegistry.start(
+                    "email",
+                    displayName = "Email Indexing",
+                    message = "Starting continuous email indexing for all accounts",
+                )
             }
+            runCatching { startContinuousIndexing() }
+                .onFailure { e -> logger.error(e) { "Continuous indexer crashed" } }
+                .also {
+                    kotlin.runCatching {
+                        indexingRegistry.finish(
+                            "email",
+                            message = "Email indexer stopped",
+                        )
+                    }
+                }
         }
     }
 
-    override fun newItemsFlow(account: EmailAccountDocument) = stateManager.continuousNewMessages(account.id)
+    override fun newItemsFlow() = stateManager.continuousNewMessagesAllAccounts()
+
+    override suspend fun getAccountForItem(item: EmailMessageDocument): EmailAccountDocument? =
+        emailAccountRepository.findById(item.accountId)
 
     override fun itemLogLabel(item: EmailMessageDocument) =
         "UID:${item.uid} from:${item.from ?: "<unknown>"} subject:${item.subject ?: "<no subject>"}"
@@ -199,7 +211,7 @@ class EmailContinuousIndexer(
     }
 
     override suspend fun markAsFailed(
-        account: EmailAccountDocument,
+        account: EmailAccountDocument?,
         item: com.jervis.service.listener.email.state.EmailMessageDocument,
         reason: String,
     ) {
@@ -211,35 +223,6 @@ class EmailContinuousIndexer(
                 toolKey,
                 "Failed to index email from=${item.from ?: "<unknown>"} subject=${item.subject ?: "<no subject>"}: $reason",
             )
-        }
-    }
-
-    /**
-     * Helper to launch continuous indexing in a scope.
-     * Use this from application startup or account activation.
-     */
-    fun launchContinuousIndexing(
-        account: EmailAccountDocument,
-        scope: CoroutineScope,
-    ) {
-        scope.launch {
-            kotlin.runCatching {
-                indexingRegistry.start(
-                    "email",
-                    displayName = "Email Indexing",
-                    message = "Starting continuous email indexing for account ${account.id}",
-                )
-            }
-            runCatching { startContinuousIndexing(account) }
-                .onFailure { e -> logger.error(e) { "Continuous indexer crashed for account ${account.id}" } }
-                .also {
-                    kotlin.runCatching {
-                        indexingRegistry.finish(
-                            "email",
-                            message = "Email indexer stopped for account ${account.id}",
-                        )
-                    }
-                }
         }
     }
 
