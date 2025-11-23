@@ -11,10 +11,26 @@ import org.springframework.web.reactive.function.client.support.WebClientAdapter
 import org.springframework.web.service.invoker.HttpServiceProxyFactory
 
 @Configuration
-class InternalHttpClientsConfig {
+class InternalHttpClientsConfig(
+    private val webClientFactory: WebClientFactory,
+) {
     private fun factory(webClient: WebClient): HttpServiceProxyFactory =
         HttpServiceProxyFactory.builderFor(WebClientAdapter.create(webClient)).build()
 
+    // WebClient beans for internal services (Tika, Joern, Whisper)
+    @Bean
+    @Qualifier("tikaWebClient")
+    fun tikaWebClient(): WebClient = webClientFactory.getWebClient("tika")
+
+    @Bean
+    @Qualifier("joernWebClient")
+    fun joernWebClient(): WebClient = webClientFactory.getWebClient("joern")
+
+    @Bean
+    @Qualifier("whisperWebClient")
+    fun whisperWebClient(): WebClient = webClientFactory.getWebClient("whisper")
+
+    // HTTP service clients
     @Bean
     fun tikaClient(
         @Qualifier("tikaWebClient") webClient: WebClient,
