@@ -109,6 +109,27 @@ class PendingTaskService(
     }
 
     /**
+     * Append progress context to task content for interrupted task resumption.
+     * The task will resume with all previous progress included in content.
+     */
+    suspend fun appendProgressContext(
+        taskId: ObjectId,
+        progressContext: String,
+    ) {
+        val task = pendingTaskRepository.findById(taskId) ?: error("Task not found: $taskId")
+
+        val updatedContent = task.content + progressContext
+
+        val updated = task.copy(content = updatedContent)
+        pendingTaskRepository.save(updated)
+
+        logger.info {
+            "TASK_PROGRESS_APPENDED: id=$taskId added ${progressContext.length} chars, " +
+                "total content now ${updatedContent.length} chars"
+        }
+    }
+
+    /**
      * Return all tasks that should be considered for qualification now:
      * - READY_FOR_QUALIFICATION: need to be claimed
      * - QUALIFYING: tasks that might have been claimed previously (e.g., before restart) and should continue

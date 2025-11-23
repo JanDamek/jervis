@@ -9,11 +9,17 @@ import com.jervis.service.git.GitRepositoryService
 import com.jervis.service.git.state.GitCommitStateManager
 import com.jervis.service.indexing.AbstractPeriodicPoller
 import com.jervis.service.listener.git.processor.GitCommitMetadataIndexer
+import jakarta.annotation.PostConstruct
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import mu.KotlinLogging
+import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Service
 import java.time.Instant
 
@@ -34,6 +40,7 @@ private val logger = KotlinLogging.logger {}
  * - NO indexing here - that's done by GitContinuousIndexer
  */
 @Service
+@Order(10) // Start after WeaviateSchemaInitializer
 class GitContinuousPoller(
     private val clientMongoRepository: ClientMongoRepository,
     private val projectMongoRepository: ProjectMongoRepository,
@@ -46,6 +53,17 @@ class GitContinuousPoller(
     override val pollingIntervalMs: Long = 600_000L // 10 minutes
     override val initialDelayMs: Long = 120_000L // 2 minutes
     override val cycleDelayMs: Long = 120_000L // Check all repos every 2 minutes
+
+    private val supervisor = SupervisorJob()
+    private val scope = CoroutineScope(Dispatchers.IO + supervisor)
+
+    @PostConstruct
+    fun start() {
+        logger.info { "Starting $pollerName for all Git repositories..." }
+        scope.launch {
+            startPeriodicPolling()
+        }
+    }
 
     sealed class GitTarget {
         data class MonoRepo(

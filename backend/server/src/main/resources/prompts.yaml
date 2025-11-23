@@ -299,6 +299,9 @@ prompts:
       IMPORTANT: Age is relative to CURRENT DATETIME - if email/content is older than 2-3 months AND has no ongoing relevance → DISCARD.
       When uncertain → DELEGATE.
 
+      For discard:true - reason is optional (just marking as noise).
+      For discard:false - provide clear reason WHY agent should analyze this (will be passed to agent as context).
+
     userPrompt: |
       CURRENT DATE: {currentDate}
       CURRENT DATETIME: {currentDateTime}
@@ -309,7 +312,7 @@ prompts:
       AGENT-CREATED RULES:
       {activeQualifierRules}
 
-      Return JSON only: {"discard": true/false, "reason": "brief explanation"}
+      Return JSON only: {"discard": true/false, "reason": "brief explanation (required only if discard=false)"}
 
     modelParams:
       modelType: QUALIFIER
@@ -317,12 +320,29 @@ prompts:
 
   LINK_QUALIFIER:
     systemPrompt: |
-      Pre-qualify links. Decide: discard (unsafe/spam) or delegate (needs agent review).
+      Qualify links. Decide: discard=true (UNSAFE) or discard=false (SAFE to download).
 
-      DISCARD: Obvious unsafe patterns (unsubscribe, action=accept/decline, confirm, verify, one-time tokens), tracking services, spam, already reviewed.
-      DELEGATE: Unknown legitimate domains, mixed signals, internal company domains, informational content, dev tools (GitHub/GitLab).
+      DISCARD (discard=true): Obvious unsafe patterns (unsubscribe, action=accept/decline, confirm, verify, one-time tokens), tracking services, spam, action links.
+      SAFE (discard=false): Legitimate content domains, documentation, news, internal company domains, dev tools (GitHub/GitLab), e-commerce product pages.
 
-      When uncertain → DELEGATE.
+      When you mark UNSAFE (discard=true) with a clear pattern:
+      1. Provide suggestedRegex: regex pattern matching this type of unsafe link
+      2. Provide patternDescription: short description of what pattern blocks
+
+      Examples:
+      - URL: https://example.com/unsubscribe?email=user@example.com
+        → discard: true, suggestedRegex: "/unsubscribe", patternDescription: "Unsubscribe links"
+
+      - URL: https://calendar.google.com/calendar/event?action=RESPOND&eventAction=ACCEPT
+        → discard: true, suggestedRegex: "action=RESPOND|eventAction=ACCEPT", patternDescription: "Calendar response actions"
+
+      - URL: https://example.com/confirm/a1b2c3d4e5f6
+        → discard: true, suggestedRegex: "/confirm/[a-zA-Z0-9]+", patternDescription: "Confirmation token links"
+
+      - URL: https://github.com/user/repo/issues/123
+        → discard: false, reason: "GitHub issue - safe to download"
+
+      When uncertain about safety → discard: false (prefer downloading over missing content).
 
     userPrompt: |
       CURRENT DATE: {currentDate}
@@ -333,7 +353,13 @@ prompts:
       AGENT-CREATED RULES:
       {activeQualifierRules}
 
-      Return JSON only: {"discard": true/false, "reason": "brief explanation"}
+      Return JSON only:
+      {
+        "discard": true/false,
+        "reason": "brief explanation (optional for discard=true, required for discard=false)",
+        "suggestedRegex": "regex pattern (only if discard=true and pattern is clear)",
+        "patternDescription": "description of pattern (only if suggestedRegex provided)"
+      }
 
     modelParams:
       modelType: QUALIFIER

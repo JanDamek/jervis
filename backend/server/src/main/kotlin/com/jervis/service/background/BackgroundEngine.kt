@@ -246,15 +246,30 @@ class BackgroundEngine(
 
                 try {
                     // All tasks go through agent orchestrator with goals from YAML
-                    agentOrchestrator.handleBackgroundTask(task)
+                    val response = agentOrchestrator.handleBackgroundTask(task)
 
                     pendingTaskService.deleteTask(task.id)
                     logger.info { "GPU_EXECUTION_SUCCESS: id=${task.id} correlationId=${task.correlationId}" }
 
                     // Reset failure counter on success
                     consecutiveFailures = 0
-                } catch (_: CancellationException) {
+                } catch (e: CancellationException) {
                     logger.info { "GPU_EXECUTION_INTERRUPTED: id=${task.id} correlationId=${task.correlationId}" }
+
+                    // Save progress context for task resumption
+                    try {
+                        val progressContext = agentOrchestrator.getLastPlanContext(task.correlationId)
+                        if (progressContext != null) {
+                            pendingTaskService.appendProgressContext(task.id, progressContext)
+                            logger.info { "Saved progress context for interrupted task ${task.id} (${progressContext.length} chars)" }
+                        } else {
+                            logger.debug { "No progress context to save for interrupted task ${task.id}" }
+                        }
+                    } catch (saveError: Exception) {
+                        logger.error(saveError) { "Failed to save progress context for task ${task.id}" }
+                    }
+
+                    // Task remains in DISPATCHED_GPU state and will be retried with progress context
                 } catch (e: Exception) {
                     // Classify error type for appropriate handling
                     val errorType =
