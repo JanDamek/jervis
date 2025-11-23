@@ -97,7 +97,7 @@ connections:
     pending-acquire-max-count: 1000
   timeouts:
     connect-timeout-millis: 60000
-    response-timeout-millis: 180000  # 3 minutes for embedding operations
+    response-timeout-millis: 1800000  # 30 minutes for reasoning models (Qwen3, DeepSeek, etc.)
 
 # Retry configuration for external HTTP calls
 retry:

@@ -46,6 +46,9 @@ class AgentOrchestratorService(
 ) {
     private val logger = KotlinLogging.logger {}
 
+    // Map to store active plans by correlationId for progress tracking on interruption
+    private val activePlans = java.util.concurrent.ConcurrentHashMap<String, Plan>()
+
     suspend fun handle(
         text: String,
         ctx: ChatRequestContext,
@@ -109,6 +112,9 @@ class AgentOrchestratorService(
                     backgroundMode = background,
                     correlationId = correlationId, // Use correlationId generated earlier
                 )
+
+            // Store plan in active plans map for progress tracking
+            activePlans[correlationId] = plan
 
             // Publish debug event for plan creation
             // Note: taskId will be passed if this comes from background task, null for chat requests
@@ -323,12 +329,16 @@ class AgentOrchestratorService(
                 )
             }
 
+            // Remove plan from active plans after completion
+            activePlans.remove(correlationId)
+
             return response
         } catch (e: Exception) {
             val projectIdLog = projectId?.toHexString() ?: "none"
             logger.error(e) {
                 "AGENT_ERROR: Error handling query for client='${clientId.toHexString()}', project='$projectIdLog': ${e.message}"
             }
+            // Don't remove from activePlans on exception - may be CancellationException (interruption)
             throw e
         }
     }
@@ -391,5 +401,50 @@ class AgentOrchestratorService(
             searchJobs.forEach { it.await() }
             plan.steps += searchSteps
         }
+    }
+
+    /**
+     * Get serialized plan context for interrupted task resumption.
+     * Returns null if plan not found or has no progress.
+     */
+    fun getLastPlanContext(correlationId: String): String? {
+        val plan = activePlans[correlationId] ?: return null
+
+        if (plan.steps.isEmpty()) {
+            return null // No progress to save
+        }
+
+        val progressSummary = buildString {
+            appendLine()
+            appendLine("=== PREVIOUS EXECUTION PROGRESS (INTERRUPTED) ===")
+            appendLine()
+            appendLine("Task was interrupted by foreground request. Resuming from saved state.")
+            appendLine()
+            appendLine("Completed steps (${plan.steps.count { it.status == com.jervis.domain.plan.StepStatusEnum.DONE }}):")
+            plan.steps
+                .filter { it.status == com.jervis.domain.plan.StepStatusEnum.DONE }
+                .forEachIndexed { index, step ->
+                    appendLine("${index + 1}. ${step.stepToolName}: ${step.stepInstruction}")
+                    step.toolResult?.let { result ->
+                        val preview = result.summary?.take(200) ?: result.content.take(200)
+                        appendLine("   Result: $preview${if (preview.length >= 200) "..." else ""}")
+                    }
+                }
+
+            if (plan.contextSummary != null) {
+                appendLine()
+                appendLine("Context summary:")
+                appendLine(plan.contextSummary)
+            }
+
+            appendLine()
+            appendLine("=== END OF PREVIOUS PROGRESS ===")
+            appendLine()
+        }
+
+        // Remove from active plans now that we've captured the context
+        activePlans.remove(correlationId)
+
+        return progressSummary
     }
 }

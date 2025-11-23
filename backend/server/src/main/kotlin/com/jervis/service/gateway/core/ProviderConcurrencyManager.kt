@@ -15,9 +15,10 @@ private val logger = KotlinLogging.logger {}
  * Manages concurrency limits per provider using Semaphores.
  * Provider concurrency is defined in models-config.yaml.
  *
- * NONBLOCKING providers (CPU qualifiers): Always execute immediately, never wait.
- * INTERRUPTIBLE providers (GPU models): Respect concurrency limits with foreground priority.
+ * NONBLOCKING providers (CPU qualifiers): Respect concurrency limits, cannot be interrupted.
+ * INTERRUPTIBLE providers (GPU models): Respect concurrency limits, can be interrupted by foreground tasks.
  *
+ * ALL providers respect maxConcurrentRequests to prevent overwhelming the backend server.
  * This ensures back-pressure: if a provider's concurrency limit is reached,
  * callers will suspend indefinitely until a permit is available.
  * HTTP timeout will handle stuck requests.
@@ -30,8 +31,8 @@ class ProviderConcurrencyManager(
 
     /**
      * Executes the given block with concurrency control for the specified provider.
-     * NONBLOCKING providers execute immediately.
-     * INTERRUPTIBLE providers wait for permits based on concurrency limits (no timeout - waits indefinitely).
+     * Both NONBLOCKING and INTERRUPTIBLE providers respect concurrency limits.
+     * The difference is in interruption behavior (handled elsewhere), not in concurrency control.
      */
     suspend fun <T> withConcurrencyControl(
         provider: ModelProviderEnum,
@@ -40,16 +41,11 @@ class ProviderConcurrencyManager(
         val capabilities = providerCapabilitiesService.getProviderCapabilities(provider)
             ?: return block() // Provider not configured, execute immediately
 
-        // NONBLOCKING providers always run immediately
-        if (capabilities.executionMode == ExecutionMode.NONBLOCKING) {
-            return block()
-        }
-
-        // INTERRUPTIBLE providers respect concurrency limits
+        // ALL providers respect concurrency limits
         val maxConcurrent = capabilities.maxConcurrentRequests
         val semaphore =
             semaphores.computeIfAbsent(provider) {
-                logger.info { "Initializing semaphore for provider $provider with maxConcurrentRequests=$maxConcurrent" }
+                logger.info { "Initializing semaphore for provider $provider (${capabilities.executionMode}) with maxConcurrentRequests=$maxConcurrent" }
                 Semaphore(maxConcurrent)
             }
 

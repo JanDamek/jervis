@@ -50,6 +50,8 @@ class TaskQualificationService(
     private val textNormalizationService: TextNormalizationService,
     private val qualifierRuleService: QualifierRuleService,
     private val llmGateway: LlmGateway,
+    private val unsafeLinkPatternRepository: com.jervis.repository.UnsafeLinkPatternMongoRepository,
+    private val linkIndexer: com.jervis.service.link.LinkIndexer,
 ) {
     /**
      * Process the entire Flow of tasks needing qualification.
@@ -66,7 +68,7 @@ class TaskQualificationService(
             pendingTaskService
                 // Include both READY and already QUALIFYING tasks (e.g., reclaimed after restart)
                 .findTasksForQualification()
-                .flatMapMerge(concurrency = 32) { task ->
+                .flatMapMerge(concurrency = 8) { task ->
                     flow {
                         when (task.state) {
                             PendingTaskState.READY_FOR_QUALIFICATION -> {
@@ -105,7 +107,7 @@ class TaskQualificationService(
                     }.catch { e ->
                         logger.error(e) { "Failed to qualify task: ${task.id}" }
                     }
-                }.buffer(32)
+                }.buffer(8)
                 .collect { }
 
             if (processedCount > 0) {
@@ -242,7 +244,7 @@ class TaskQualificationService(
 
     /**
      * Build mapping values for qualifier prompt placeholders from task data.
-     * All information is now in the content field - just pass it through.
+     * Truncates content to fit within model's context window.
      * Also provides current datetime for past/future event detection.
      * Injects active qualifier rules for the specific task type.
      */
@@ -251,7 +253,21 @@ class TaskQualificationService(
         truncatedContent: String,
     ): Map<String, String> =
         buildMap {
-            put("content", truncatedContent)
+            // Truncate content to fit in qualifier context window
+            // QUALIFIER model: contextLength=32768, numPredict=128
+            // Budget: system prompt (~500 tokens) + response (128) + safety margin (200) = ~828 tokens
+            // Available for content: ~32000 tokens ≈ 128000 chars
+            val maxContentChars = 128000
+            val finalContent =
+                if (truncatedContent.length > maxContentChars) {
+                    val truncated = truncatedContent.take(maxContentChars)
+                    logger.debug { "Content truncated from ${truncatedContent.length} to $maxContentChars chars for task ${task.id}" }
+                    truncated + "\n\n[... content truncated for qualifier ...]"
+                } else {
+                    truncatedContent
+                }
+
+            put("content", finalContent)
 
             val rulesText = qualifierRuleService.getRulesText(task.taskType)
             put("activeQualifierRules", rulesText)
@@ -265,6 +281,17 @@ class TaskQualificationService(
         val reason: String?,
     )
 
+    /**
+     * Link-specific qualifier response that includes suggested regex pattern.
+     * When LLM identifies UNSAFE link with a pattern, it suggests regex to add to blacklist.
+     */
+    data class LinkDecisionResponse(
+        val discard: Boolean,
+        val reason: String?,
+        val suggestedRegex: String? = null,
+        val patternDescription: String? = null,
+    )
+
     private suspend fun qualifyTask(task: PendingTask) {
         logger.info { "QUALIFICATION_START: id=${task.id} correlationId=${task.correlationId} type=${task.taskType}" }
 
@@ -274,6 +301,97 @@ class TaskQualificationService(
             taskType = task.taskType.name,
         )
 
+        // Use link-specific response format for LINK tasks
+        when (task.taskType) {
+            PendingTaskTypeEnum.LINK_REVIEW, PendingTaskTypeEnum.LINK_SAFETY_REVIEW -> {
+                qualifyLinkTask(task)
+            }
+            else -> {
+                qualifyGenericTask(task)
+            }
+        }
+    }
+
+    /**
+     * Qualify link-specific tasks with regex pattern suggestion.
+     * Links NEVER go to agent - either SAFE (download) or UNSAFE (discard + save pattern).
+     */
+    private suspend fun qualifyLinkTask(task: PendingTask) {
+        val mappingValues = buildMappingValues(task, task.content)
+        val decision =
+            llmGateway.callLlm(
+                task.taskType.promptType,
+                LinkDecisionResponse(false, "Link is safe to download", null, null),
+                correlationId = task.correlationId,
+                mappingValue = mappingValues,
+                backgroundMode = true,
+            )
+
+        when (decision.result.discard) {
+            true -> {
+                // UNSAFE - discard link and optionally save pattern
+                logger.info {
+                    "LINK_QUALIFICATION: id=${task.id} decision=UNSAFE pattern=${decision.result.suggestedRegex}"
+                }
+
+                debugService.qualificationDecision(
+                    correlationId = task.correlationId,
+                    taskId = task.id.toHexString(),
+                    decision = "UNSAFE",
+                    reason = decision.result.reason ?: "unsafe link",
+                )
+
+                // If LLM suggested a regex pattern for blocking, save it
+                if (!decision.result.suggestedRegex.isNullOrBlank()) {
+                    saveLinkPattern(
+                        pattern = decision.result.suggestedRegex,
+                        description = decision.result.patternDescription ?: decision.result.reason ?: "UNSAFE link pattern",
+                        exampleUrl = extractUrlFromContent(task.content),
+                    )
+                }
+
+                pendingTaskService.deleteTask(task.id)
+            }
+
+            false -> {
+                // SAFE - download link and index it
+                logger.info {
+                    "LINK_QUALIFICATION: id=${task.id} decision=SAFE - indexing link"
+                }
+
+                debugService.qualificationDecision(
+                    correlationId = task.correlationId,
+                    taskId = task.id.toHexString(),
+                    decision = "SAFE",
+                    reason = decision.result.reason ?: "safe to download",
+                )
+
+                // Extract URL from task content
+                val url = extractUrlFromContent(task.content)
+
+                try {
+                    // Index the link directly (content will be fetched by indexer)
+                    linkIndexer.indexLink(
+                        url = url,
+                        projectId = task.projectId,
+                        clientId = task.clientId,
+                        content = null, // Let indexer fetch content
+                    )
+                    logger.info { "Successfully indexed SAFE link: $url" }
+                } catch (e: Exception) {
+                    logger.error(e) { "Failed to index SAFE link: $url" }
+                }
+
+                // Delete task after indexing (success or failure)
+                pendingTaskService.deleteTask(task.id)
+            }
+        }
+    }
+
+    /**
+     * Qualify generic (non-link) tasks.
+     */
+    private suspend fun qualifyGenericTask(task: PendingTask) {
         val mappingValues = buildMappingValues(task, task.content)
         val decision =
             llmGateway.callLlm(
@@ -305,7 +423,6 @@ class TaskQualificationService(
                     "QUALIFICATION_DECISION: id=${task.id} correlationId=${task.correlationId} decision=DELEGATE reason=actionable"
                 }
 
-                // Publish debug event
                 debugService.qualificationDecision(
                     correlationId = task.correlationId,
                     taskId = task.id.toHexString(),
@@ -321,6 +438,63 @@ class TaskQualificationService(
             }
         }
     }
+
+    /**
+     * Save suggested regex pattern to MongoDB for future link blocking.
+     */
+    private suspend fun saveLinkPattern(
+        pattern: String,
+        description: String,
+        exampleUrl: String,
+    ) {
+        try {
+            // Check if pattern already exists
+            val existing = unsafeLinkPatternRepository.findByPattern(pattern)
+            if (existing != null) {
+                logger.debug { "Pattern already exists: $pattern" }
+                return
+            }
+
+            // Validate regex pattern
+            try {
+                Regex(pattern)
+            } catch (e: Exception) {
+                logger.warn { "Invalid regex pattern suggested by LLM: $pattern - ${e.message}" }
+                return
+            }
+
+            val document =
+                com.jervis.entity.UnsafeLinkPatternDocument(
+                    pattern = pattern,
+                    description = description,
+                    exampleUrl = exampleUrl,
+                    matchCount = 1,
+                    enabled = true,
+                )
+
+            unsafeLinkPatternRepository.save(document)
+            logger.info { "Saved new UNSAFE link pattern: $pattern (${description})" }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to save link pattern: $pattern" }
+        }
+    }
+
+    /**
+     * Extract URL from task content (format varies by task type).
+     */
+    private fun extractUrlFromContent(content: String): String {
+        // Try to extract URL from content - line starting with "URL: "
+        val urlLineRegex = Regex("""URL:\s*(https?://[^\s<>"{}|\\^`\[\]]+)""")
+        urlLineRegex.find(content)?.let { match ->
+            return match.groupValues[1]
+        }
+
+        // Fallback: find any URL in content
+        val urlRegex = Regex("""https?://[^\s<>"{}|\\^`\[\]]+""")
+        val match = urlRegex.find(content)
+        return match?.value ?: content.take(200)
+    }
+
 
     private fun looksLikeResolution(email: ImapMessage): Boolean {
         val text = (email.subject + "\n" + email.content).lowercase()
