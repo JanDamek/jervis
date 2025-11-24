@@ -280,23 +280,27 @@ backend/server/src/main/kotlin/com/jervis/
 │
 ├── service/
 │   ├── connection/
-│   │   └── ConnectionService.kt         # ✅ Connection CRUD + encryption
+│   │   └── ConnectionService.kt         # ✅ Connection CRUD + credential parsing
 │   ├── http/
-│   │   └── HttpClientExtensions.kt      # ✅ getWithConnection(), postWithConnection()
-│   ├── encryption/
-│   │   └── EncryptionService.kt         # ✅ Credentials encryption (Base64 - TODO: real encryption)
+│   │   ├── HttpClientExtensions.kt      # ✅ getWithConnection(), postWithConnection()
+│   │   ├── RateLimitedHttpClientFactory.kt  # Rate limiting per domain
+│   │   └── DomainRateLimiter.kt         # Token bucket rate limiter
 │   ├── atlassian/
-│   │   ├── AtlassianApiClient.kt        # ✅ Jira/Confluence API (getMyself, searchAndFetchFullIssues)
-│   │   ├── AtlassianConnectionResolver.kt
-│   │   └── AtlassianSelectionService.kt
+│   │   └── AtlassianApiClient.kt        # ✅ Jira/Confluence API (getMyself, searchAndFetchFullIssues)
 │   ├── polling/
-│   │   ├── CentralPoller.kt             # ✅ Single poller for all connections
+│   │   ├── CentralPoller.kt             # ✅ Single poller for ALL connections
 │   │   └── handler/
-│   │       └── JiraPollingHandler.kt    # ✅ Jira-specific polling (fetches FULL data)
+│   │       ├── PollingHandler.kt        # Interface pro všechny handlery
+│   │       ├── JiraPollingHandler.kt    # ✅ Jira issues (HTTP Atlassian)
+│   │       ├── ImapPollingHandler.kt    # ✅ IMAP emails (Jakarta Mail)
+│   │       └── Pop3PollingHandler.kt    # ✅ POP3 emails (Jakarta Mail)
 │   ├── jira/
 │   │   ├── JiraContinuousIndexer.kt     # ✅ MongoDB → RAG (NO API calls!)
-│   │   ├── JiraIndexingOrchestrator.kt  # Chunking + embedding
-│   │   └── state/
+│   │   └── JiraIndexingOrchestrator.kt  # ✅ Chunking + embedding + RAG storage
+│   ├── rag/
+│   │   ├── KnowledgeService.kt          # Public RAG API
+│   │   └── _internal/
+│   │       └── KnowledgeServiceImpl.kt  # RAG implementation
 │   │       └── JiraStateManager.kt      # State transitions (NEW/INDEXING/INDEXED/FAILED)
 │   ├── client/
 │   │   └── ClientService.kt             # Client CRUD
@@ -969,60 +973,327 @@ db.atlassian_connections.drop()  # Replaced by connections
 
 ---
 
-## Aktuální Stav
+## Connection Management System - Kompletní Implementace
 
-### ✅ Hotovo
+### 🎯 Architecture Overview
 
-1. Connection sealed class (HttpConnection, ImapConnection, atd.)
-2. ConnectionService s encryption/decryption
-3. CentralPoller + type-specific handlers
-4. JiraPollingHandler - polluje a ukládá FULL data
-5. JiraContinuousIndexer - čte z MongoDB, NIKDY nevolá API
-6. JiraIssueIndexDocument s complete data
-7. AtlassianApiClient - fetchuje full data
-8. Build kompiluje ✅
+**Koncept:** Jeden unified Connection systém pro všechny externí služby (Jira, Confluence, IMAP, POP3, SMTP, atd.)
 
-### ⏳ Temporarily Disabled (needs refactoring)
+```
+1. Connection (entity) - kredenciály + konfigurace
+2. Client/Project - přiřazují connections s filtry
+3. CentralPoller - polluje všechny enabled connections
+4. Type-specific Handlers - zpracovávají jednotlivé typy
+5. MongoDB staging area - ukládá FULL content
+6. ContinuousIndexer - indexuje do RAG
+```
 
-**Git services:**
-- GitConfigurationService
-- GitRepositoryService
-- GitCredentialsManager
-- GitContinuousIndexer
-- ProjectGitSyncTool
+### ✅ Connection Entity - Sealed Class
 
-→ Používají starou strukturu ClientDocument (gitConfig, monoRepoUrl)
-→ Potřeba refactorovat na Connection
+**Location:** `backend/server/src/main/kotlin/com/jervis/entity/connection/Connection.kt`
 
-**Email services:**
-- ConversationThreadService
-- MessageLinkService
+```kotlin
+@TypeAlias("Connection")
+sealed class Connection {
+    abstract val id: ObjectId
+    abstract val name: String
+    abstract val enabled: Boolean
 
-→ Používají staré ImapMessage
-→ Potřeba refactorovat na Connection.ImapConnection
+    // HTTP (Atlassian, REST APIs)
+    data class HttpConnection(
+        override val id: ObjectId = ObjectId.get(),
+        override val name: String,
+        override val enabled: Boolean = true,
+        val baseUrl: String,
+        val authType: HttpAuthType,
+        val credentials: String?, // Plain text: "email:api_token" or "bearer_token"
+        val rateLimitConfig: RateLimitConfig? = null,
+        val timeoutMs: Long = 30000
+    ) : Connection()
 
-### 🔄 Další Kroky
+    // IMAP (Gmail, Outlook, atd.)
+    data class ImapConnection(
+        override val id: ObjectId = ObjectId.get(),
+        override val name: String,
+        override val enabled: Boolean = true,
+        val host: String,
+        val port: Int,
+        val username: String,
+        val password: String, // Plain text
+        val useSsl: Boolean = true,
+        val folderName: String = "INBOX"
+    ) : Connection()
 
-1. **UI pro Connection setup (PRIORITA!)**
-   - REST endpoint pro CRUD na Connection
-   - Test connection button (POUZE v UI)
-   - Formulář pro HttpConnection (baseUrl, authType, credentials)
+    // POP3
+    data class Pop3Connection(...)
 
-2. **Drop MongoDB collections**
-   - Dokumentovat co je třeba dropnout
-   - Script pro migraci
+    // SMTP
+    data class SmtpConnection(...)
 
-3. **Refactor Git services**
-   - Přesunout git config někam jinam
-   - Odstranit z ClientDocument
+    // OAuth2
+    data class OAuth2Connection(...)
+}
+```
 
-4. **Refactor Email services**
-   - Implementovat ImapConnection polling
-   - Nový pattern jako Jira
+**MongoDB Collection:** `connections`
+**Poznámka:** Sealed class vyžaduje `@TypeAlias` pro polymorphic serialization
+
+### ✅ Client/Project Connection Assignment
+
+**ClientDocument:**
+```kotlin
+data class ClientDocument(
+    val id: ObjectId,
+    val name: String,
+
+    // ✅ NEW: Unified connections
+    val connectionIds: List<ObjectId> = emptyList(),
+    val connectionFilters: List<ConnectionFilter> = emptyList(),
+
+    // ❌ DEPRECATED (ale stále existují pro backward compatibility)
+    @Deprecated("Use connectionIds instead")
+    val atlassianConnectionId: ObjectId? = null,
+    @Deprecated("Use connectionFilters instead")
+    val atlassianJiraProjects: List<String> = emptyList()
+)
+```
+
+**ConnectionFilter:**
+```kotlin
+data class ConnectionFilter(
+    val connectionId: ObjectId,
+
+    // Jira-specific
+    val jiraProjects: List<String> = emptyList(),      // ["PROJ", "DEV"]
+    val jiraBoardIds: List<String> = emptyList(),
+
+    // Confluence-specific
+    val confluenceSpaces: List<String> = emptyList(),  // ["SUPPORT", "DOCS"]
+
+    // Email-specific
+    val emailFolders: List<String> = emptyList()       // ["INBOX", "Support"]
+)
+```
+
+**ProjectDocument:** Stejná struktura - project-level přebíjí client-level
+
+### ✅ CentralPoller - Single Poller for All
+
+**Location:** `backend/server/src/main/kotlin/com/jervis/service/polling/CentralPoller.kt`
+
+**Flow:**
+1. Každých 5 sekund polluje všechny `enabled` connections
+2. Pro každou connection najde klienty: `clientRepository.findByConnectionIdsContaining(connectionId)`
+3. Najde správný handler: `handlers.firstOrNull { it.canHandle(connection) }`
+4. Parse credentials: `connectionService.parseCredentials(connection)`
+5. Spustí polling: `handler.poll(connection, credentials, clients)`
+
+**Polling Intervals:**
+- HTTP (Jira/Confluence): 5 minut
+- IMAP: 1 minuta
+- POP3: 2 minuty
+- SMTP: 1 hodina (většinou pro sending, ne polling)
+
+### ✅ Polling Handlers
+
+**Interface:** `backend/server/src/main/kotlin/com/jervis/service/polling/handler/PollingHandler.kt`
+
+```kotlin
+interface PollingHandler {
+    fun canHandle(connection: Connection): Boolean
+
+    suspend fun poll(
+        connection: Connection,
+        credentials: HttpCredentials?,
+        clients: List<ClientDocument>
+    ): PollingResult
+}
+```
+
+**Implementované Handlers:**
+
+1. **JiraPollingHandler** (`JiraPollingHandler.kt`)
+   - `canHandle`: `connection is HttpConnection && baseUrl.contains("atlassian.net")`
+   - Používá `AtlassianApiClient.searchAndFetchFullIssues()`
+   - Parsuje `connectionFilters.jiraProjects` do JQL
+   - Ukládá do `jira_issue_index` (state = NEW)
+
+2. **ImapPollingHandler** (`ImapPollingHandler.kt`)
+   - `canHandle`: `connection is ImapConnection`
+   - Používá Jakarta Mail API
+   - Polluje posledních 50 zpráv
+   - Ukládá do `email_message_index` (state = NEW)
+
+3. **Pop3PollingHandler** (`Pop3PollingHandler.kt`)
+   - `canHandle`: `connection is Pop3Connection`
+   - Podobné jako IMAP, ale pro POP3 protocol
+   - Ukládá do `email_message_index`
+
+### ✅ MongoDB Staging Area
+
+**JiraIssueIndexDocument:** `jira_issue_index` collection
+```kotlin
+data class JiraIssueIndexDocument(
+    val id: ObjectId,
+    val clientId: ObjectId,
+    val connectionId: ObjectId,
+
+    // FULL content (ne jen metadata!)
+    val issueKey: String,
+    val summary: String,
+    val description: String?,
+    val comments: List<JiraComment> = emptyList(),    // FULL
+    val attachments: List<JiraAttachment> = emptyList(), // FULL
+
+    // State machine
+    val state: String = "NEW", // NEW → INDEXED → ARCHIVED
+    val indexedAt: Instant? = null,
+    val updatedAt: Instant = Instant.now()
+)
+```
+
+**EmailMessageIndexDocument:** `email_message_index` collection
+```kotlin
+data class EmailMessageIndexDocument(
+    val id: ObjectId,
+    val clientId: ObjectId,
+    val connectionId: ObjectId,
+
+    // FULL content
+    val messageUid: String,
+    val subject: String,
+    val from: String,
+    val to: List<String>,
+    val textBody: String?,
+    val htmlBody: String?,
+    val attachments: List<EmailAttachment> = emptyList(),
+
+    // State machine
+    val state: String = "NEW", // NEW → INDEXED → ARCHIVED
+    val indexedAt: Instant? = null
+)
+```
+
+### ✅ RAG Indexing
+
+**JiraIndexingOrchestrator** (`JiraIndexingOrchestrator.kt`)
+- Čte z `jira_issue_index` WHERE state = "NEW"
+- NIKDY nevolá Jira API!
+- Vytváří `DocumentToStore` pro RAG:
+  - Main issue: summary + description + metadata
+  - Každý comment jako separate document s `relatedDocs`
+- Volá `knowledgeService.store(StoreRequest(documents))`
+- Mění state na "INDEXED"
+
+**EmailIndexingOrchestrator** (připraven, ale neimplementován)
+- Bude číst z `email_message_index` WHERE state = "NEW"
+- Indexuje emails do RAG
+
+### ✅ REST API - ConnectionRestController
+
+**Endpoints:**
+- `GET /api/connections` - list all
+- `GET /api/connections/{id}` - get by ID
+- `POST /api/connections` - create
+- `PUT /api/connections/{id}` - update
+- `DELETE /api/connections/{id}` - delete
+- `POST /api/connections/{id}/test` - test connection
+
+**Test Connection Logic:**
+- HTTP: Ping URL s credentials, pro Atlassian volá `/rest/api/3/myself`
+- IMAP: Připojí se k serveru, otevře folder, vrátí count zpráv
+- POP3: Podobné jako IMAP
+- SMTP: Test autentizace
+
+### ✅ UI - Connection Management
+
+**ConnectionsWindow** (`apps/desktop/src/main/kotlin/com/jervis/desktop/ui/ConnectionsWindow.kt`)
+- List všech connections
+- Create/Edit/Delete buttons
+- Test button - zobrazí výsledek (success/failure + details)
+- ConnectionCreateDialog - formulář pro vytvoření connection
+- ConnectionEditDialog - formulář pro editaci (s volitelným password update)
+
+**ClientsWindow - ClientDialog**
+- Multi-select connections (checkbox list)
+- Zobrazuje typ každé connection (HTTP, IMAP, POP3, ...)
+- Pro Atlassian connections (HTTP + atlassian.net):
+  - "Filters" button → AtlassianFilterDialog
+
+**AtlassianFilterDialog**
+- **Jira Projects:** comma-separated keys (PROJ, DEV, SUPPORT)
+- **Confluence Spaces:** comma-separated keys (DEV, SUPPORT, DOCS)
+- Uloženo jako `ConnectionFilter` per connection per client
+
+### ✅ Complete Data Flow Example
+
+**Scenario:** Pollování Jira issues
+
+1. **Setup:**
+   ```
+   ConnectionsWindow:
+     → Create HTTP connection "Atlassian Prod"
+     → URL: https://company.atlassian.net
+     → Credentials: email@company.com:api_token
+     → Test → Success!
+
+   ClientsWindow:
+     → Edit client "MyClient"
+     → Select "Atlassian Prod" connection
+     → Click "Filters"
+     → Jira Projects: "PROJ, DEV"
+     → Save
+   ```
+
+2. **Polling (každých 5 minut):**
+   ```
+   CentralPoller:
+     → Find enabled connections
+     → Find "Atlassian Prod" connection
+     → Find clients: ["MyClient"]
+
+     → JiraPollingHandler:
+         - Get filter: connectionFilters.jiraProjects = ["PROJ", "DEV"]
+         - Build JQL: "project IN ('PROJ', 'DEV') AND updated >= -7d"
+         - Call AtlassianApiClient.searchAndFetchFullIssues()
+         - For each issue:
+             - Check if exists (by connectionId + issueKey)
+             - If changed: update + state = NEW
+             - If new: insert + state = NEW
+         - Result: 15 issues discovered, 3 created, 12 skipped
+   ```
+
+3. **Indexing:**
+   ```
+   JiraContinuousIndexer (každých 10s):
+     → Find jira_issue_index WHERE state = "NEW"
+     → For each issue:
+         - JiraIndexingOrchestrator.indexSingleIssue()
+         - Create main document (summary + description)
+         - Create comment documents (each comment separate)
+         - KnowledgeService.store()
+         - State = "INDEXED"
+   ```
+
+### 🔄 Next Steps / TODO
+
+1. **ProjectDialog** - stejná struktura jako ClientDialog:
+   - Multi-select connections
+   - Filters per connection
+   - Project-level přebíjí client-level
+
+2. **EmailContinuousIndexer** - implementace indexování emailů do RAG
+
+3. **Confluence Polling** - podobný handler jako Jira:
+   - ConfluencePollingHandler
+   - ConfluencePageIndexDocument
+   - ConfluenceContinuousIndexer
+
+4. **OAuth2 Connection** - implementace OAuth2 flow pro moderní API
 
 ---
 
-**Poslední aktualizace:** 2025-11-24
+**Poslední aktualizace:** 2025-01-24
 
 **⚠️ DŮLEŽITÉ:**
 Tento dokument je ŽIVÝ - aktualizuj ho po každé změně!
