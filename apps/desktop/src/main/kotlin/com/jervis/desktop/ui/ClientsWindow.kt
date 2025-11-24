@@ -7,6 +7,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -127,6 +128,7 @@ fun ClientsWindow(repository: JervisRepository) {
     if (showCreateDialog || selectedClient != null) {
         ClientDialog(
             client = selectedClient,
+            repository = repository,
             onDismiss = {
                 showCreateDialog = false
                 selectedClient = null
@@ -225,30 +227,198 @@ private fun ClientCard(
 @Composable
 private fun ClientDialog(
     client: ClientDto?,
+    repository: JervisRepository,
     onDismiss: () -> Unit,
     onSave: (ClientDto) -> Unit
 ) {
     var name by remember { mutableStateOf(client?.name ?: "") }
+    var connections by remember { mutableStateOf<List<com.jervis.dto.connection.ConnectionResponseDto>>(emptyList()) }
+    var selectedConnectionIds by remember { mutableStateOf(client?.connectionIds?.toSet() ?: emptySet()) }
+    val connectionFilters = remember { mutableStateMapOf<String, com.jervis.dto.ConnectionFilterDto>() }
+    var showFilterDialog by remember { mutableStateOf<String?>(null) }
+
+    val scope = rememberCoroutineScope()
+
+    // Initialize filters from client
+    LaunchedEffect(client) {
+        connectionFilters.clear()
+        client?.connectionFilters?.forEach {
+            connectionFilters[it.connectionId] = it
+        }
+    }
+
+    // Load connections
+    LaunchedEffect(Unit) {
+        try {
+            connections = repository.connections.listConnections()
+        } catch (e: Exception) {
+            // Handle error
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (client == null) "Create Client" else "Edit Client") },
         text = {
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text("Client Name") },
-                modifier = Modifier.fillMaxWidth()
-            )
+            Column(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp).padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Client Name") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text("Connections:", style = MaterialTheme.typography.labelMedium)
+
+                if (connections.isEmpty()) {
+                    Text(
+                        "No connections available. Create connections first.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(connections) { conn ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Checkbox(
+                                        checked = selectedConnectionIds.contains(conn.id),
+                                        onCheckedChange = { checked ->
+                                            selectedConnectionIds = if (checked) {
+                                                selectedConnectionIds + conn.id
+                                            } else {
+                                                connectionFilters.remove(conn.id)
+                                                selectedConnectionIds - conn.id
+                                            }
+                                        }
+                                    )
+                                    Column(modifier = Modifier.padding(start = 8.dp)) {
+                                        Text(conn.name, style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            conn.type,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+
+                                if (selectedConnectionIds.contains(conn.id) &&
+                                    conn.type == "HTTP" &&
+                                    conn.baseUrl?.contains("atlassian.net") == true) {
+                                    TextButton(onClick = { showFilterDialog = conn.id }) {
+                                        Text("Filters", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    val newClient = (client ?: ClientDto(name = "")).copy(name = name)
+                    val newClient = (client ?: ClientDto(name = "")).copy(
+                        name = name,
+                        connectionIds = selectedConnectionIds.toList(),
+                        connectionFilters = connectionFilters.values.toList()
+                    )
                     onSave(newClient)
                 },
                 enabled = name.isNotBlank()
             ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+
+    // Filter dialog for Atlassian connections
+    showFilterDialog?.let { connId ->
+        val conn = connections.firstOrNull { it.id == connId }
+        if (conn != null) {
+            AtlassianFilterDialog(
+                connection = conn,
+                filter = connectionFilters[connId],
+                onDismiss = { showFilterDialog = null },
+                onSave = { filter ->
+                    connectionFilters[connId] = filter
+                    showFilterDialog = null
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun AtlassianFilterDialog(
+    connection: com.jervis.dto.connection.ConnectionResponseDto,
+    filter: com.jervis.dto.ConnectionFilterDto?,
+    onDismiss: () -> Unit,
+    onSave: (com.jervis.dto.ConnectionFilterDto) -> Unit
+) {
+    var jiraProjects by remember { mutableStateOf(filter?.jiraProjects?.joinToString(", ") ?: "") }
+    var confluenceSpaces by remember { mutableStateOf(filter?.confluenceSpaces?.joinToString(", ") ?: "") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Filters for ${connection.name}") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    "Specify which Jira projects and Confluence spaces to poll for this client.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                OutlinedTextField(
+                    value = jiraProjects,
+                    onValueChange = { jiraProjects = it },
+                    label = { Text("Jira Projects") },
+                    placeholder = { Text("e.g., PROJ, DEV, SUPPORT") },
+                    modifier = Modifier.fillMaxWidth(),
+                    supportingText = { Text("Comma-separated project keys") }
+                )
+
+                OutlinedTextField(
+                    value = confluenceSpaces,
+                    onValueChange = { confluenceSpaces = it },
+                    label = { Text("Confluence Spaces") },
+                    placeholder = { Text("e.g., DEV, SUPPORT, DOCS") },
+                    modifier = Modifier.fillMaxWidth(),
+                    supportingText = { Text("Comma-separated space keys") }
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val newFilter = com.jervis.dto.ConnectionFilterDto(
+                    connectionId = connection.id,
+                    jiraProjects = jiraProjects.split(",").map { it.trim() }.filter { it.isNotBlank() },
+                    confluenceSpaces = confluenceSpaces.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                )
+                onSave(newFilter)
+            }) {
                 Text("Save")
             }
         },

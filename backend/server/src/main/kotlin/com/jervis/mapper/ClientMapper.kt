@@ -1,7 +1,9 @@
 package com.jervis.mapper
 
+import com.jervis.domain.connection.ConnectionFilter
 import com.jervis.domain.git.MonoRepoConfig
 import com.jervis.dto.ClientDto
+import com.jervis.dto.ConnectionFilterDto
 import com.jervis.dto.GitCredentialsDto
 import com.jervis.dto.MonoRepoConfigDto
 import com.jervis.entity.ClientDocument
@@ -27,6 +29,7 @@ fun ClientDocument.toDto(gitCredentials: GitCredentialsDto? = null): ClientDto =
         disabledProjects = this.disabledProjects.map { it.toHexString() },
         lastSelectedProjectId = this.lastSelectedProjectId?.toHexString(),
         connectionIds = this.connectionIds.map { it.toHexString() },
+        connectionFilters = this.connectionFilters.map { it.toDto() },
     )
 
 fun MonoRepoConfig.toDto(): MonoRepoConfigDto =
@@ -56,6 +59,7 @@ fun ClientDto.toDocument(): ClientDocument =
         disabledProjects = this.disabledProjects.map { ObjectId(it) },
         lastSelectedProjectId = this.lastSelectedProjectId?.let { ObjectId(it) },
         connectionIds = this.connectionIds.map { ObjectId(it) },
+        connectionFilters = this.connectionFilters.map { it.toDomain() },
     )
 
 fun MonoRepoConfigDto.toDomain(): MonoRepoConfig =
@@ -65,4 +69,22 @@ fun MonoRepoConfigDto.toDomain(): MonoRepoConfig =
         repositoryUrl = this.repositoryUrl,
         defaultBranch = this.defaultBranch,
         credentialsOverride = null,
+    )
+
+fun ConnectionFilter.toDto(): ConnectionFilterDto =
+    ConnectionFilterDto(
+        connectionId = this.connectionId.toHexString(),
+        jiraProjects = this.jiraProjects,
+        jiraBoardIds = this.jiraBoardIds,
+        confluenceSpaces = this.confluenceSpaces,
+        emailFolders = this.emailFolders,
+    )
+
+fun ConnectionFilterDto.toDomain(): ConnectionFilter =
+    ConnectionFilter(
+        connectionId = ObjectId(this.connectionId),
+        jiraProjects = this.jiraProjects,
+        jiraBoardIds = this.jiraBoardIds,
+        confluenceSpaces = this.confluenceSpaces,
+        emailFolders = this.emailFolders,
     )

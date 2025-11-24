@@ -28,4 +28,5 @@ data class ClientDto(
 
     // External service connections
     val connectionIds: List<String> = emptyList(),
+    val connectionFilters: List<ConnectionFilterDto> = emptyList(),
 )
