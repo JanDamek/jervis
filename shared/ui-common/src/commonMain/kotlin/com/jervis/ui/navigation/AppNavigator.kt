@@ -13,6 +13,7 @@ sealed class Screen {
 
     // Settings & Configuration
     object Settings : Screen()
+    object Connections : Screen()  // Connection management (HTTP, IMAP, SMTP, etc.)
 
     // Tasks & Scheduling
     object UserTasks : Screen()

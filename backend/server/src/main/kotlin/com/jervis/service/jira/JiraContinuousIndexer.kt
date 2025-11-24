@@ -1,22 +1,12 @@
 package com.jervis.service.jira
 
-import com.jervis.domain.jira.JiraIssue
-import com.jervis.entity.atlassian.AtlassianConnectionDocument
 import com.jervis.entity.jira.JiraIssueIndexDocument
-import com.jervis.repository.AtlassianConnectionMongoRepository
-import com.jervis.repository.JiraIssueIndexMongoRepository
-import com.jervis.service.atlassian.AtlassianApiClient
-import com.jervis.service.atlassian.AtlassianAuthService
-import com.jervis.service.indexing.AbstractContinuousIndexer
 import com.jervis.service.indexing.status.IndexingStatusRegistry
 import com.jervis.service.jira.state.JiraStateManager
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import mu.KotlinLogging
 import org.springframework.core.annotation.Order
@@ -26,44 +16,37 @@ private val logger = KotlinLogging.logger {}
 
 /**
  * Continuous indexer for Jira issues.
- * Polls DB for NEW issues, fetches full content from API, indexes to RAG.
  *
- * Pattern:
- * 1. JiraContinuousPoller discovers issues via API search → saves to DB as NEW
- * 2. This indexer picks up NEW issues → fetches details → indexes → marks INDEXED
+ * Architecture:
+ * - CentralPoller fetches FULL data from API → stores in MongoDB as NEW
+ * - This indexer reads NEW documents from MongoDB (NO API CALLS)
+ * - Chunks text, creates embeddings, stores to Weaviate
+ * - Marks as INDEXED
  *
- * This separates discovery (fast, bulk) from indexing (slow, detailed).
+ * Pure ETL: MongoDB → Weaviate
  */
 @Service
 @Order(10) // Start after WeaviateSchemaInitializer
 class JiraContinuousIndexer(
-    private val connectionRepository: AtlassianConnectionMongoRepository,
-    private val api: AtlassianApiClient,
-    private val auth: AtlassianAuthService,
     private val stateManager: JiraStateManager,
     private val orchestrator: JiraIndexingOrchestrator,
-    private val flowProps: com.jervis.configuration.properties.IndexingFlowProperties,
     private val indexingRegistry: IndexingStatusRegistry,
-    private val repository: JiraIssueIndexMongoRepository,
-) : AbstractContinuousIndexer<AtlassianConnectionDocument, JiraIssueIndexDocument>() {
-    override val indexerName: String = "JiraContinuousIndexer"
-    override val bufferSize: Int get() = flowProps.bufferSize
-
+) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
 
     @PostConstruct
     fun start() {
-        logger.info { "Starting $indexerName (single instance for all accounts)..." }
+        logger.info { "Starting JiraContinuousIndexer (MongoDB → Weaviate)..." }
         scope.launch {
             kotlin.runCatching {
                 indexingRegistry.start(
                     "jira",
                     displayName = "Atlassian (Jira)",
-                    message = "Starting continuous Jira indexing for all accounts",
+                    message = "Starting continuous Jira indexing from MongoDB",
                 )
             }
-            runCatching { startContinuousIndexing() }
+            runCatching { indexContinuously() }
                 .onFailure { e -> logger.error(e) { "Continuous indexer crashed" } }
                 .also {
                     kotlin.runCatching {
@@ -76,98 +59,54 @@ class JiraContinuousIndexer(
         }
     }
 
-    override fun newItemsFlow(): Flow<JiraIssueIndexDocument> =
-        stateManager.continuousNewIssuesAllAccounts()
-
-    override suspend fun getAccountForItem(item: JiraIssueIndexDocument): AtlassianConnectionDocument? =
-        connectionRepository.findById(item.accountId)
-
-    override fun itemLogLabel(item: JiraIssueIndexDocument) = "Issue:${item.issueKey} project:${item.projectKey}"
-
-    override suspend fun fetchContentIO(
-        account: AtlassianConnectionDocument,
-        item: JiraIssueIndexDocument,
-    ): JiraIssue? {
-        // Mark as INDEXING to prevent concurrent processing
-        stateManager.markAsIndexing(item)
-
-        // Fetch full issue from API using searchIssues with specific key
-        val conn = auth.ensureValidToken(account.toDomain())
-        return try {
-            val jql = "key = ${item.issueKey}"
-            api.searchIssues(conn, jql).firstOrNull()
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to fetch Jira issue ${item.issueKey}: ${e.message}" }
-            null
-        }
-    }
-
-    override suspend fun processAndIndex(
-        account: AtlassianConnectionDocument,
-        item: JiraIssueIndexDocument,
-        content: Any,
-    ): IndexingResult {
-        val issue = content as JiraIssue
-
-        // Use existing orchestrator logic to index issue
-        // This indexes: summary, comments, attachments, links
-        val result =
-            orchestrator.indexSingleIssue(
-                clientId = item.clientId,
-                issue = issue,
-                tenantHost = account.tenant,
-                jervisProjectId = null, // Jira issues don't have Jervis project association at index level
-            )
-
-        // Store result for markAsIndexed
-        latestResult.set(result)
-
-        // Report progress to indexing registry
-        kotlin.runCatching {
-            val toolKey = "jira"
-            indexingRegistry.ensureTool(toolKey, displayName = "Atlassian (Jira)")
-            if (result.success) {
-                indexingRegistry.progress(
-                    toolKey,
-                    processedInc = 1,
-                    message = "Indexed issue ${issue.key}",
-                )
+    private suspend fun indexContinuously() {
+        // Continuous flow of NEW issues from MongoDB
+        stateManager.continuousNewIssuesAllAccounts().collect { doc ->
+            try {
+                indexIssue(doc)
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to index Jira issue ${doc.issueKey}" }
+                stateManager.markAsFailed(doc, "Indexing error: ${e.message}")
             }
         }
+    }
 
-        return IndexingResult(
-            success = result.success,
-            plainText = "${issue.summary} ${issue.description ?: ""}",
-            ragDocumentId = null,
+    private suspend fun indexIssue(doc: JiraIssueIndexDocument) {
+        logger.debug { "Indexing Jira issue ${doc.issueKey} (${doc.summary})" }
+
+        // Mark as INDEXING to prevent concurrent processing
+        stateManager.markAsIndexing(doc)
+
+        // Index to RAG (uses data already in MongoDB, NO API CALLS)
+        val result = orchestrator.indexSingleIssue(
+            clientId = doc.clientId,
+            document = doc, // Pass full document with all data
         )
-    }
 
-    override suspend fun markAsIndexed(
-        account: AtlassianConnectionDocument,
-        item: JiraIssueIndexDocument,
-    ) {
-        val result = latestResult.get()
+        if (result.success) {
+            // Mark as indexed with stats
+            stateManager.markAsIndexed(
+                issue = doc,
+                summaryChunks = result.summaryChunks,
+                commentChunks = result.commentChunks,
+                commentCount = result.commentCount,
+                attachmentCount = result.attachmentCount,
+            )
 
-        stateManager.markAsIndexed(
-            issue = item,
-            summaryChunks = result?.summaryChunks ?: 0,
-            commentChunks = result?.commentChunks ?: 0,
-            commentCount = result?.commentCount ?: 0,
-            attachmentCount = result?.attachmentCount ?: 0,
-        )
-    }
+            // Report progress
+            kotlin.runCatching {
+                indexingRegistry.ensureTool("jira", displayName = "Atlassian (Jira)")
+                indexingRegistry.progress(
+                    "jira",
+                    processedInc = 1,
+                    message = "Indexed issue ${doc.issueKey}",
+                )
+            }
 
-    override suspend fun markAsFailed(
-        account: AtlassianConnectionDocument?,
-        item: JiraIssueIndexDocument,
-        reason: String,
-    ) {
-        stateManager.markAsFailed(item, reason)
-    }
-
-    companion object {
-        private val latestResult =
-            java.util.concurrent.atomic
-                .AtomicReference<JiraIndexingOrchestrator.IndexSingleIssueResult?>()
+            logger.info { "Indexed Jira issue ${doc.issueKey}: ${result.summaryChunks + result.commentChunks} chunks" }
+        } else {
+            stateManager.markAsFailed(doc, "Indexing failed")
+            logger.warn { "Failed to index Jira issue ${doc.issueKey}" }
+        }
     }
 }

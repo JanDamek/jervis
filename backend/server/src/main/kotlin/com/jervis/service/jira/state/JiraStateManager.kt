@@ -25,15 +25,15 @@ class JiraStateManager(
     }
 
     /**
-     * Continuous flow of NEW issues for given account.
+     * Continuous flow of NEW issues for given connection.
      * Polls DB every 30s when empty, never ends.
      */
-    fun continuousNewIssues(accountId: ObjectId): Flow<JiraIssueIndexDocument> =
+    fun continuousNewIssues(connectionId: ObjectId): Flow<JiraIssueIndexDocument> =
         flow {
             while (true) {
                 val issues =
-                    repository.findByAccountIdAndStateAndArchivedFalseOrderByUpdatedAtAsc(
-                        accountId,
+                    repository.findByConnectionIdAndStateAndArchivedFalseOrderByUpdatedAtAsc(
+                        connectionId,
                         JiraIssueState.NEW.name,
                     )
 
@@ -44,7 +44,7 @@ class JiraStateManager(
                 }
 
                 if (!emittedAny) {
-                    logger.debug { "No NEW Jira issues for account $accountId, sleeping ${POLL_DELAY_MS}ms" }
+                    logger.debug { "No NEW Jira issues for connection $connectionId, sleeping ${POLL_DELAY_MS}ms" }
                     delay(POLL_DELAY_MS)
                 } else {
                     // Immediately check for more
@@ -108,11 +108,9 @@ class JiraStateManager(
             issue.copy(
                 state = JiraIssueState.INDEXED.name,
                 lastIndexedAt = Instant.now(),
-                summaryChunkCount = summaryChunks,
-                commentChunkCount = commentChunks,
-                commentCount = commentCount,
-                attachmentCount = attachmentCount,
                 totalRagChunks = summaryChunks + commentChunks,
+                commentChunkCount = commentChunks,
+                attachmentCount = attachmentCount,
                 updatedAt = Instant.now(),
             )
         repository.save(updated)
@@ -135,67 +133,7 @@ class JiraStateManager(
         logger.warn { "Marked Jira issue ${issue.issueKey} as FAILED: $reason" }
     }
 
-    /**
-     * Create or update issue index document from Jira API search results.
-     * Returns the document in NEW state.
-     */
-    suspend fun upsertIssueFromApi(
-        accountId: ObjectId,
-        clientId: ObjectId,
-        issueKey: String,
-        projectKey: String,
-        summary: String,
-        status: String,
-        assignee: String?,
-        updated: Instant,
-        contentHash: String,
-        statusHash: String,
-    ): JiraIssueIndexDocument {
-        val existing = repository.findByAccountIdAndIssueKey(accountId, issueKey)
-
-        val doc =
-            if (existing == null) {
-                // New issue - create with NEW state
-                JiraIssueIndexDocument(
-                    accountId = accountId,
-                    clientId = clientId,
-                    issueKey = issueKey,
-                    projectKey = projectKey,
-                    lastSeenUpdated = updated,
-                    contentHash = contentHash,
-                    statusHash = statusHash,
-                    state = JiraIssueState.NEW.name,
-                    issueSummary = summary.take(200),
-                    currentStatus = status,
-                    currentAssignee = assignee,
-                    updatedAt = Instant.now(),
-                )
-            } else {
-                // Existing issue - check if changed
-                val contentChanged = existing.contentHash != contentHash
-                val statusChanged = existing.statusHash != statusHash
-
-                if (contentChanged || statusChanged) {
-                    // Content changed - mark as NEW to re-index
-                    existing.copy(
-                        lastSeenUpdated = updated,
-                        contentHash = contentHash,
-                        statusHash = statusHash,
-                        state = JiraIssueState.NEW.name,
-                        issueSummary = summary.take(200),
-                        currentStatus = status,
-                        currentAssignee = assignee,
-                        updatedAt = Instant.now(),
-                    )
-                } else {
-                    // No changes - keep existing state
-                    existing.copy(
-                        lastSeenUpdated = updated,
-                        updatedAt = Instant.now(),
-                    )
-                }
-            }
-
-        return repository.save(doc)
-    }
+    // OLD METHODS - Deprecated, kept for reference only
+    // These methods used old structure with accountId and metadata-only approach
+    // New approach: CentralPoller fetches FULL data and saves directly to MongoDB
 }

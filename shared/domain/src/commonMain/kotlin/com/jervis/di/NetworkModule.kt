@@ -93,6 +93,7 @@ object NetworkModule {
             indexingStatusService = ktorfit.createIIndexingStatusService(),
             confluenceService = ktorfit.createIConfluenceService(),
             pendingTaskService = ktorfit.createIPendingTaskService(),
+            connectionService = ktorfit.createIConnectionService(),
         )
 
     /**
@@ -114,6 +115,7 @@ object NetworkModule {
         val indexingStatusService: IIndexingStatusService,
         val confluenceService: IConfluenceService,
         val pendingTaskService: IPendingTaskService,
+        val connectionService: IConnectionService,
     )
 
     // Simple fallback implementation of IUserTaskService using raw HttpClient calls.

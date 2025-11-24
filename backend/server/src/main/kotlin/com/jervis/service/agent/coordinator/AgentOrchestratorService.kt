@@ -97,7 +97,12 @@ class AgentOrchestratorService(
                     ?: throw IllegalArgumentException("Client with ID $clientId not found")
 
             // Load project document (optional - only if projectId provided)
-            val projectDocument = projectId?.let { projectMongoRepository.findById(it) }
+            val projectDocument =
+                if (projectId != null) {
+                    projectMongoRepository.findById(projectId)
+                } else {
+                    null
+                }
 
             val plan =
                 Plan(
@@ -414,33 +419,34 @@ class AgentOrchestratorService(
             return null // No progress to save
         }
 
-        val progressSummary = buildString {
-            appendLine()
-            appendLine("=== PREVIOUS EXECUTION PROGRESS (INTERRUPTED) ===")
-            appendLine()
-            appendLine("Task was interrupted by foreground request. Resuming from saved state.")
-            appendLine()
-            appendLine("Completed steps (${plan.steps.count { it.status == com.jervis.domain.plan.StepStatusEnum.DONE }}):")
-            plan.steps
-                .filter { it.status == com.jervis.domain.plan.StepStatusEnum.DONE }
-                .forEachIndexed { index, step ->
-                    appendLine("${index + 1}. ${step.stepToolName}: ${step.stepInstruction}")
-                    step.toolResult?.let { result ->
-                        val preview = result.output.take(200)
-                        appendLine("   Result: $preview${if (result.output.length > 200) "..." else ""}")
+        val progressSummary =
+            buildString {
+                appendLine()
+                appendLine("=== PREVIOUS EXECUTION PROGRESS (INTERRUPTED) ===")
+                appendLine()
+                appendLine("Task was interrupted by foreground request. Resuming from saved state.")
+                appendLine()
+                appendLine("Completed steps (${plan.steps.count { it.status == com.jervis.domain.plan.StepStatusEnum.DONE }}):")
+                plan.steps
+                    .filter { it.status == com.jervis.domain.plan.StepStatusEnum.DONE }
+                    .forEachIndexed { index, step ->
+                        appendLine("${index + 1}. ${step.stepToolName}: ${step.stepInstruction}")
+                        step.toolResult?.let { result ->
+                            val preview = result.output.take(200)
+                            appendLine("   Result: $preview${if (result.output.length > 200) "..." else ""}")
+                        }
                     }
+
+                if (plan.contextSummary != null) {
+                    appendLine()
+                    appendLine("Context summary:")
+                    appendLine(plan.contextSummary)
                 }
 
-            if (plan.contextSummary != null) {
                 appendLine()
-                appendLine("Context summary:")
-                appendLine(plan.contextSummary)
+                appendLine("=== END OF PREVIOUS PROGRESS ===")
+                appendLine()
             }
-
-            appendLine()
-            appendLine("=== END OF PREVIOUS PROGRESS ===")
-            appendLine()
-        }
 
         // Remove from active plans now that we've captured the context
         activePlans.remove(correlationId)

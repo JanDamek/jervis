@@ -48,11 +48,22 @@ data class ClientDocument(
     val isDisabled: Boolean = false,
     val disabledProjects: List<ObjectId> = emptyList(),
     val lastSelectedProjectId: ObjectId? = null,
-    // Atlassian integration (Jira + Confluence) - can be overridden per project
+
+    // External service connections (can have multiple of each type)
+    // Examples:
+    // - Multiple Atlassian instances (production, staging)
+    // - Multiple email accounts (support@, info@, sales@, etc.)
+    // - Multiple Slack workspaces, Teams tenants, etc.
+    val connectionIds: List<ObjectId> = emptyList(),
+
+    // DEPRECATED - migrate to connectionIds
+    @Deprecated("Use connectionIds instead")
     val atlassianConnectionId: ObjectId? = null,
-    // Optional: Filter to specific Jira projects/Confluence spaces
-    val atlassianJiraProjects: List<String> = emptyList(), // List of Jira project keys to index
-    val atlassianConfluenceSpaces: List<String> = emptyList(), // List of Confluence space keys to index
+    @Deprecated("Use connection-specific filters")
+    val atlassianJiraProjects: List<String> = emptyList(),
+    @Deprecated("Use connection-specific filters")
+    val atlassianConfluenceSpaces: List<String> = emptyList(),
+
     val createdAt: Instant = Instant.now(),
     val updatedAt: Instant = Instant.now(),
 )

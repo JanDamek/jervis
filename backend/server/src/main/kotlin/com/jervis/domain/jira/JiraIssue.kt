@@ -1,17 +1,25 @@
 package com.jervis.domain.jira
 
+import kotlinx.serialization.Serializable
 import java.time.Instant
 
-/** Minimal issue snapshot used for reconciliation and indexing policy decisions. */
+/**
+ * Jira issue domain model.
+ */
+@Serializable
 data class JiraIssue(
+    val id: String,
     val key: String,
-    val project: JiraProjectKey,
     val summary: String,
-    val description: String? = null,
-    val type: String,
-    val status: String,
-    val assignee: JiraAccountId?,
-    val reporter: JiraAccountId?,
+    @Serializable(with = InstantSerializer::class)
     val updated: Instant,
-    val created: Instant,
+    val issueType: String,
+    val status: String,
 )
+
+// Instant serializer for kotlinx.serialization
+private object InstantSerializer : kotlinx.serialization.KSerializer<Instant> {
+    override val descriptor = kotlinx.serialization.descriptors.PrimitiveSerialDescriptor("Instant", kotlinx.serialization.descriptors.PrimitiveKind.STRING)
+    override fun serialize(encoder: kotlinx.serialization.encoding.Encoder, value: Instant) = encoder.encodeString(value.toString())
+    override fun deserialize(decoder: kotlinx.serialization.encoding.Decoder): Instant = Instant.parse(decoder.decodeString())
+}

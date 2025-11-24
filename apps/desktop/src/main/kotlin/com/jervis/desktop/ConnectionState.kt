@@ -74,6 +74,7 @@ class ConnectionManager(private val serverBaseUrl: String) : com.jervis.ui.Debug
                     emailAccountService = services!!.emailAccountService,
                     indexingStatusService = services!!.indexingStatusService,
                     pendingTaskService = services!!.pendingTaskService,
+                    connectionService = services!!.connectionService,
                 )
 
                 // Try a simple test call to verify connectivity

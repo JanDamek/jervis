@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.navigation.AppNavigator
 import com.jervis.ui.navigation.Screen
+import com.jervis.ui.screens.ConnectionsScreen
 
 /**
  * Root Compose Application
@@ -106,6 +107,10 @@ fun App(
                 onBack = { appNavigator.navigateTo(Screen.Main) }
             )
             Screen.Scheduler -> SchedulerScreen(
+                repository = repository,
+                onBack = { appNavigator.navigateTo(Screen.Main) }
+            )
+            Screen.Connections -> ConnectionsScreen(
                 repository = repository,
                 onBack = { appNavigator.navigateTo(Screen.Main) }
             )

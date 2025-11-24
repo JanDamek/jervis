@@ -51,7 +51,7 @@ class BackgroundEngine(
     private val llmLoadMonitor: LlmLoadMonitor,
     private val pendingTaskService: PendingTaskService,
     private val agentOrchestrator: AgentOrchestratorService,
-    private val taskQualificationService: TaskQualificationService,
+    // private val taskQualificationService: TaskQualificationService, // TODO: Re-enable after email refactoring
     private val backgroundProperties: BackgroundProperties,
     private val errorNotificationsPublisher: ErrorNotificationsPublisher,
     private val debugService: DebugService,
@@ -145,7 +145,8 @@ class BackgroundEngine(
                 logger.debug { "Qualification loop: starting processAllQualifications..." }
 
                 // Process all tasks in Flow with concurrency limit (e.g., 8 parallel)
-                taskQualificationService.processAllQualifications()
+                // TODO: Re-enable after email refactoring
+                // taskQualificationService.processAllQualifications()
 
                 // Flow exhausted for this scan
                 logger.info { "Qualification cycle complete - sleeping 30s..." }
