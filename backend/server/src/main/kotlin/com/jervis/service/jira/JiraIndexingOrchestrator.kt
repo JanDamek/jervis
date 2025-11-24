@@ -1,6 +1,10 @@
 package com.jervis.service.jira
 
 import com.jervis.entity.jira.JiraIssueIndexDocument
+import com.jervis.rag.DocumentToStore
+import com.jervis.rag.KnowledgeService
+import com.jervis.rag.KnowledgeType
+import com.jervis.rag.StoreRequest
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -11,7 +15,9 @@ import org.springframework.stereotype.Service
  * Handles: summary, description, comments, attachments.
  */
 @Service
-class JiraIndexingOrchestrator {
+class JiraIndexingOrchestrator(
+    private val knowledgeService: KnowledgeService,
+) {
     private val logger = KotlinLogging.logger {}
 
     /**
@@ -25,41 +31,103 @@ class JiraIndexingOrchestrator {
     ): IndexingResult {
         logger.debug { "Indexing issue ${document.issueKey}: ${document.summary}" }
 
-        // TODO: Implement actual RAG indexing logic
-        // For now, just count what would be indexed
-        var summaryChunks = 0
-        var commentChunks = 0
+        val documentsToStore = mutableListOf<DocumentToStore>()
 
-        // Index summary + description
-        val content = buildString {
-            append(document.summary)
+        // 1. Index summary + description as main document
+        val mainContent = buildString {
+            append("# ${document.issueKey}: ${document.summary}\n\n")
+            append("**Type:** ${document.issueType}\n")
+            append("**Status:** ${document.status}\n")
+            append("**Priority:** ${document.priority}\n")
+            if (!document.assignee.isNullOrBlank()) {
+                append("**Assignee:** ${document.assignee}\n")
+            }
+            if (!document.reporter.isNullOrBlank()) {
+                append("**Reporter:** ${document.reporter}\n")
+            }
+            append("\n")
+
             if (!document.description.isNullOrBlank()) {
-                append("\n\n")
+                append("## Description\n\n")
                 append(document.description)
+                append("\n\n")
+            }
+
+            if (document.labels.isNotEmpty()) {
+                append("**Labels:** ${document.labels.joinToString(", ")}\n")
             }
         }
 
-        if (content.isNotBlank()) {
-            // TODO: Chunk and embed content
-            summaryChunks = (content.length / 500).coerceAtLeast(1) // Rough estimate
+        if (mainContent.isNotBlank()) {
+            documentsToStore.add(
+                DocumentToStore(
+                    documentId = "jira:${document.issueKey}",
+                    content = mainContent,
+                    clientId = clientId,
+                    type = KnowledgeType.DOCUMENT,
+                    title = "${document.issueKey}: ${document.summary}",
+                    location = "Jira Issue ${document.issueKey}",
+                    projectId = null, // TODO: Add project mapping if available
+                )
+            )
         }
 
-        // Index comments
-        for (comment in document.comments) {
+        // 2. Index each comment as separate document
+        document.comments.forEachIndexed { index, comment ->
             if (comment.body.isNotBlank()) {
-                // TODO: Chunk and embed comment
-                commentChunks += (comment.body.length / 500).coerceAtLeast(1)
+                val commentContent = buildString {
+                    append("# Comment on ${document.issueKey}\n\n")
+                    append("**Author:** ${comment.author}\n")
+                    append("**Created:** ${comment.created}\n\n")
+                    append(comment.body)
+                }
+
+                documentsToStore.add(
+                    DocumentToStore(
+                        documentId = "jira:${document.issueKey}:comment:$index",
+                        content = commentContent,
+                        clientId = clientId,
+                        type = KnowledgeType.DOCUMENT,
+                        title = "Comment by ${comment.author} on ${document.issueKey}",
+                        location = "Jira Issue ${document.issueKey} - Comment",
+                        relatedDocs = listOf("jira:${document.issueKey}"),
+                        projectId = null,
+                    )
+                )
             }
         }
 
-        // TODO: Index attachments (download, extract text, chunk, embed)
+        // 3. Store all documents in RAG
+        val result = if (documentsToStore.isNotEmpty()) {
+            try {
+                knowledgeService.store(StoreRequest(documents = documentsToStore))
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to store Jira issue ${document.issueKey} in RAG" }
+                return IndexingResult(
+                    success = false,
+                    summaryChunks = 0,
+                    commentChunks = 0,
+                    commentCount = document.comments.size,
+                    attachmentCount = document.attachments.size,
+                )
+            }
+        } else {
+            null
+        }
 
-        logger.info { "Indexed ${document.issueKey}: $summaryChunks summary chunks, $commentChunks comment chunks, ${document.comments.size} comments, ${document.attachments.size} attachments" }
+        val mainDoc = result?.documents?.firstOrNull { it.documentId == "jira:${document.issueKey}" }
+        val commentDocs = result?.documents?.filter { it.documentId.startsWith("jira:${document.issueKey}:comment:") } ?: emptyList()
+
+        logger.info {
+            "Indexed ${document.issueKey}: ${mainDoc?.totalChunks ?: 0} summary chunks, " +
+            "${commentDocs.sumOf { it.totalChunks }} comment chunks across ${document.comments.size} comments, " +
+            "${document.attachments.size} attachments (not yet indexed)"
+        }
 
         return IndexingResult(
             success = true,
-            summaryChunks = summaryChunks,
-            commentChunks = commentChunks,
+            summaryChunks = mainDoc?.totalChunks ?: 0,
+            commentChunks = commentDocs.sumOf { it.totalChunks },
             commentCount = document.comments.size,
             attachmentCount = document.attachments.size,
         )
