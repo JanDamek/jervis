@@ -6,15 +6,12 @@ import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
-import io.ktor.client.request.header
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
-import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
-import java.net.URI
 
 private val logger = KotlinLogging.logger {}
 
@@ -61,10 +58,9 @@ class RateLimitedHttpClientFactory(
      * @param socketTimeoutMs Socket read timeout (default 60s)
      */
     fun createClient(
-        maxInMemorySize: Int = DEFAULT_MAX_IN_MEMORY_SIZE,
-        requestTimeoutMs: Long = DEFAULT_REQUEST_TIMEOUT_MS,
-        connectTimeoutMs: Long = DEFAULT_CONNECT_TIMEOUT_MS,
-        socketTimeoutMs: Long = DEFAULT_SOCKET_TIMEOUT_MS,
+        requestTimeoutMs: Long,
+        connectTimeoutMs: Long,
+        socketTimeoutMs: Long,
     ): HttpClient =
         HttpClient(CIO) {
             // AUTOMATIC rate limiting plugin - intercepts ALL requests
@@ -90,47 +86,14 @@ class RateLimitedHttpClientFactory(
                 socketTimeoutMillis = socketTimeoutMs
             }
 
-            // Default headers
             defaultRequest {
                 contentType(ContentType.Application.Json)
             }
 
-            // Engine configuration
             engine {
-                // Connection pool
                 maxConnectionsCount = 1000
-                // CIO engine doesn't support per-route configuration
-                // Timeouts are handled by HttpTimeout plugin above
             }
 
-            // Don't throw on non-2xx responses (let caller handle)
             expectSuccess = false
         }
-
-    /**
-     * DEPRECATED: Rate limiting is now automatic via RateLimitingPlugin.
-     * This method is kept for backward compatibility but does nothing.
-     *
-     * @param url Full URL of the request
-     */
-    @Deprecated(
-        "Rate limiting is now automatic via Ktor plugin. No need to call this manually.",
-        ReplaceWith(""),
-        DeprecationLevel.WARNING,
-    )
-    suspend fun acquirePermit(url: String) {
-        // No-op: Rate limiting is handled by RateLimitingPlugin automatically
-        // Kept for backward compatibility during migration
-    }
-
-    companion object {
-        // Default buffer size for response bodies (8 MB)
-        // Callers can override for specific use cases (e.g., large file downloads)
-        private const val DEFAULT_MAX_IN_MEMORY_SIZE = 8 * 1024 * 1024
-
-        // Default timeouts (conservative for reliability)
-        private const val DEFAULT_REQUEST_TIMEOUT_MS = 60_000L // 60 seconds
-        private const val DEFAULT_CONNECT_TIMEOUT_MS = 30_000L // 30 seconds
-        private const val DEFAULT_SOCKET_TIMEOUT_MS = 60_000L // 60 seconds
-    }
 }

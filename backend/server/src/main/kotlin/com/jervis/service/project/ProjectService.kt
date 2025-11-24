@@ -5,7 +5,6 @@ import com.jervis.entity.ProjectDocument
 import com.jervis.mapper.toDocument
 import com.jervis.mapper.toDto
 import com.jervis.repository.ProjectMongoRepository
-import com.jervis.service.git.GitRepositoryService
 import com.jervis.service.storage.DirectoryStructureService
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
@@ -15,9 +14,8 @@ import java.time.Instant
 @Service
 class ProjectService(
     private val projectRepository: ProjectMongoRepository,
-    private val gitRepositoryService: GitRepositoryService,
+    // private val gitRepositoryService: GitRepositoryService, // Temporarily disabled
     private val directoryStructureService: DirectoryStructureService,
-    private val configCache: com.jervis.service.cache.ClientProjectConfigCache,
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -81,13 +79,10 @@ class ProjectService(
 
         directoryStructureService.ensureProjectDirectories(savedProject.clientId, savedProject.id)
 
-        // Invalidate cache for this client so changes propagate immediately
-        configCache.invalidateClient(savedProject.clientId)
-
         if (isNew) {
-            logger.info { "Created new project: ${savedProject.name}, cache invalidated" }
+            logger.info { "Created new project: ${savedProject.name}" }
         } else {
-            logger.info { "Updated project: ${savedProject.name}, cache invalidated" }
+            logger.info { "Updated project: ${savedProject.name}" }
         }
 
         return savedProject.toDto()
@@ -101,10 +96,7 @@ class ProjectService(
 
         projectRepository.delete(projectDoc)
 
-        // Invalidate cache for this client so deletion propagates immediately
-        configCache.invalidateClient(projectDoc.clientId)
-
-        logger.info { "Deleted project: ${projectDoc.name}, cache invalidated" }
+        logger.info { "Deleted project: ${projectDoc.name}" }
     }
 
     suspend fun getProjectByName(name: String?): ProjectDocument =

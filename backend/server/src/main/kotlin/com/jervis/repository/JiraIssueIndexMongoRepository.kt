@@ -9,20 +9,14 @@ import org.springframework.stereotype.Repository
 
 @Repository
 interface JiraIssueIndexMongoRepository : CoroutineCrudRepository<JiraIssueIndexDocument, ObjectId> {
-    @Query("{ 'accountId': ?0, 'issueKey': ?1 }")
-    suspend fun findByAccountIdAndIssueKey(
-        accountId: ObjectId,
-        issueKey: String,
-    ): JiraIssueIndexDocument?
-
-    // Continuous indexing support - per account
-    @Query("{ 'accountId': ?0, 'state': ?1, 'archived': false }")
-    fun findByAccountIdAndStateAndArchivedFalseOrderByUpdatedAtAsc(
-        accountId: ObjectId,
+    // Continuous indexing support - per connection
+    @Query("{ 'connectionId': ?0, 'state': ?1, 'archived': false }")
+    fun findByConnectionIdAndStateAndArchivedFalseOrderByUpdatedAtAsc(
+        connectionId: ObjectId,
         state: String,
     ): Flow<JiraIssueIndexDocument>
 
-    // Continuous indexing support - all accounts (newest first)
+    // Continuous indexing support - all connections (newest first)
     @Query(value = "{ 'state': ?0, 'archived': false }", sort = "{ 'updatedAt': -1 }")
     fun findByStateAndArchivedFalseOrderByUpdatedAtDesc(state: String): Flow<JiraIssueIndexDocument>
 
@@ -32,4 +26,10 @@ interface JiraIssueIndexMongoRepository : CoroutineCrudRepository<JiraIssueIndex
 
     @Query(value = "{ 'archived': false, 'state': 'NEW' }", count = true)
     suspend fun countNewActive(): Long
+
+    @Query("{ 'connectionId': ?0, 'issueKey': ?1 }")
+    suspend fun findByConnectionIdAndIssueKey(
+        connectionId: ObjectId,
+        issueKey: String,
+    ): JiraIssueIndexDocument?
 }

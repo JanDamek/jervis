@@ -39,6 +39,7 @@ fun JervisApp(
             emailAccountService = services.emailAccountService,
             indexingStatusService = services.indexingStatusService,
             pendingTaskService = services.pendingTaskService,
+            connectionService = services.connectionService,
         )
     }
 

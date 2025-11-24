@@ -22,7 +22,7 @@ import java.time.Instant
 @Service
 class IndexingStatusRegistry(
     private val webSocketSessionManager: WebSocketSessionManager,
-    private val emailMessageRepository: com.jervis.service.listener.email.state.EmailMessageRepository,
+    // private val emailMessageRepository: com.jervis.service.listener.email.state.EmailMessageRepository, // TODO: Re-enable after email refactoring
     private val gitCommitRepository: com.jervis.service.git.state.GitCommitRepository,
     private val confluencePageRepository: ConfluencePageMongoRepository,
     private val jiraIssueIndexRepository: JiraIssueIndexMongoRepository,
@@ -113,9 +113,8 @@ class IndexingStatusRegistry(
     suspend fun getIndexedAndNewCounts(toolKey: String): Pair<Long, Long> =
         when (toolKey) {
             "email" -> {
-                val indexed = emailMessageRepository.countByState(com.jervis.service.listener.email.state.EmailMessageState.INDEXED)
-                val new = emailMessageRepository.countByState(com.jervis.service.listener.email.state.EmailMessageState.NEW)
-                indexed to new
+                // TODO: Re-enable after email refactoring
+                0L to 0L
             }
             "git" -> {
                 val indexed = gitCommitRepository.countByState(com.jervis.service.git.state.GitCommitState.INDEXED)

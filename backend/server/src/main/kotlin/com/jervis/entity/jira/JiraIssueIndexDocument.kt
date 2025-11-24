@@ -9,63 +9,129 @@ import org.springframework.data.mongodb.core.mapping.Document
 import java.time.Instant
 
 /**
- * Lightweight Jira issue index state for reconciliation and idempotency.
- * Tracks what has been indexed to enable incremental updates.
+ * Jira issue document with COMPLETE data for indexing.
  *
- * Note: accountId refers to AtlassianConnectionDocument.id (not clientId).
- * This allows a single client to have multiple Atlassian accounts.
+ * Architecture:
+ * - CentralPoller fetches FULL issue data from API and saves here as NEW
+ * - JiraContinuousIndexer reads from MongoDB (no API calls) and indexes to RAG
+ * - MongoDB is staging area between API and RAG
+ *
+ * Note: connectionId refers to Connection.id (HttpConnection for Atlassian)
  */
-@Document(collection = "jira_issue_index")
+@Document(collection = "jira_issues")
 @CompoundIndexes(
-    CompoundIndex(name = "account_issue_unique", def = "{'accountId': 1, 'issueKey': 1}", unique = true),
+    CompoundIndex(name = "connection_issue_unique", def = "{'connectionId': 1, 'issueKey': 1}", unique = true),
     CompoundIndex(name = "client_idx", def = "{'clientId': 1}"),
-    CompoundIndex(name = "account_state_idx", def = "{'accountId': 1, 'state': 1}"),
+    CompoundIndex(name = "connection_state_idx", def = "{'connectionId': 1, 'state': 1}"),
+    CompoundIndex(name = "state_updated_idx", def = "{'state': 1, 'updatedAt': -1}"),
 )
 data class JiraIssueIndexDocument(
     @Id
     val id: ObjectId = ObjectId.get(),
+
+    /** Connection ID (Connection.HttpConnection) */
     @Indexed
-    val accountId: ObjectId,
+    val connectionId: ObjectId,
+
+    /** Client ID */
     @Indexed
     val clientId: ObjectId,
+
+    /** Jira issue key (e.g., "PROJ-123") */
     @Indexed
     val issueKey: String,
+
+    /** Project key (e.g., "PROJ") */
     val projectKey: String,
-    val lastSeenUpdated: Instant? = null,
-    val lastEmbeddedCommentId: String? = null,
-    val etag: String? = null,
-    val archived: Boolean = false,
-    @Indexed
-    val updatedAt: Instant = Instant.now(),
-    /** Indexing state: NEW, INDEXING, INDEXED, FAILED (similar to EmailMessageDocument) */
+
+    // === FULL CONTENT (fetched by CentralPoller) ===
+
+    /** Issue summary/title */
+    val summary: String,
+
+    /** Full description in markdown/text */
+    val description: String? = null,
+
+    /** Issue type (Bug, Task, Story, etc.) */
+    val issueType: String,
+
+    /** Current status (To Do, In Progress, Done, etc.) */
+    val status: String,
+
+    /** Priority (High, Medium, Low, etc.) */
+    val priority: String? = null,
+
+    /** Assignee account ID */
+    val assignee: String? = null,
+
+    /** Reporter account ID */
+    val reporter: String? = null,
+
+    /** Labels */
+    val labels: List<String> = emptyList(),
+
+    /** Comments (full text) */
+    val comments: List<JiraComment> = emptyList(),
+
+    /** Attachments metadata */
+    val attachments: List<JiraAttachment> = emptyList(),
+
+    /** Links to other issues */
+    val linkedIssues: List<String> = emptyList(),
+
+    /** When issue was created in Jira */
+    val createdAt: Instant,
+
+    /** When issue was last updated in Jira */
+    val jiraUpdatedAt: Instant,
+
+    // === STATE MANAGEMENT ===
+
+    /** Indexing state: NEW, INDEXING, INDEXED, FAILED */
     @Indexed
     val state: String = "NEW",
 
-    // Incremental indexing: track what has been indexed
-    /** Hash of summary + description to detect changes */
-    val contentHash: String? = null,
-    /** Hash of status field to detect status changes */
-    val statusHash: String? = null,
-    /** List of indexed attachment IDs to detect new attachments */
-    val indexedAttachmentIds: List<String> = emptyList(),
-    /** Timestamp when issue was last fully indexed (shallow or deep) */
+    /** When document was created/updated in our DB */
+    @Indexed
+    val updatedAt: Instant = Instant.now(),
+
+    /** When issue was last indexed to RAG */
     val lastIndexedAt: Instant? = null,
 
-    // UI status tracking - updated after each indexing run
-    /** Number of RAG chunks for issue summary */
-    val summaryChunkCount: Int = 0,
-    /** Number of RAG chunks for comments */
-    val commentChunkCount: Int = 0,
-    /** Number of comments indexed */
-    val commentCount: Int = 0,
-    /** Number of attachments successfully indexed */
-    val attachmentCount: Int = 0,
-    /** Total RAG chunks (summary + comments + attachments) */
+    /** Is archived (deleted from Jira or manually archived) */
+    val archived: Boolean = false,
+
+    // === INDEXING STATS (updated by ContinuousIndexer) ===
+
+    /** Number of RAG chunks created */
     val totalRagChunks: Int = 0,
-    /** Current Jira status (e.g., "In Progress", "Done") */
-    val currentStatus: String? = null,
-    /** Current assignee account ID */
-    val currentAssignee: String? = null,
-    /** Issue summary/title for quick display */
-    val issueSummary: String? = null,
+
+    /** Number of comments indexed */
+    val commentChunkCount: Int = 0,
+
+    /** Number of attachments indexed */
+    val attachmentCount: Int = 0,
+)
+
+/**
+ * Jira comment (fetched by CentralPoller, stored in JiraIssueDocument).
+ */
+data class JiraComment(
+    val id: String,
+    val author: String,
+    val body: String,
+    val created: Instant,
+    val updated: Instant,
+)
+
+/**
+ * Jira attachment metadata (fetched by CentralPoller).
+ */
+data class JiraAttachment(
+    val id: String,
+    val filename: String,
+    val mimeType: String,
+    val size: Long,
+    val downloadUrl: String,
+    val created: Instant,
 )

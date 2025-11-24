@@ -20,6 +20,7 @@ class JervisRepository(
     emailAccountService: IEmailAccountService,
     indexingStatusService: IIndexingStatusService,
     pendingTaskService: IPendingTaskService,
+    connectionService: IConnectionService,
 ) {
     val clients: ClientRepository = ClientRepository(clientService)
     val projects: ProjectRepository = ProjectRepository(projectService)
@@ -34,4 +35,5 @@ class JervisRepository(
     val emailAccounts: EmailAccountRepository = EmailAccountRepository(emailAccountService)
     val indexingStatus: IndexingStatusRepository = IndexingStatusRepository(indexingStatusService)
     val pendingTasks: PendingTaskRepository = PendingTaskRepository(pendingTaskService)
+    val connections: ConnectionRepository = ConnectionRepository(connectionService)
 }

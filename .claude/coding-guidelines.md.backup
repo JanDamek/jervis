@@ -1,0 +1,517 @@
+# Jervis - Coding Guidelines
+
+Tento dokument obsahuje pravidla a konvence pro vývoj projektu Jervis.
+
+---
+
+## HTTP Klienti a Rate Limiting
+
+### HTTP Klient Architektura
+
+**NIKDY nevytvářet ad-hoc WebClient/HttpClient instances v kódu:**
+
+```kotlin
+// ❌ ŠPATNĚ - vytvářet přímo v kódu
+val client = webClientBuilder.baseUrl(...).build()
+val response = client.get().uri("/api/endpoint")
+    .header("Authorization", credentials.toBasicAuthHeader())
+    .retrieve()
+    .awaitBody()
+
+// ✅ SPRÁVNĚ - použít globální bean
+@Service
+class SomeService(
+    private val httpClient: HttpClient // Ktor HttpClient bean
+)
+```
+
+**Centrální konfigurace:**
+- Jeden globální bean pro Ktor `HttpClient` s rate limiting per domain
+- Spring `WebClient` pouze pro `@HttpExchange` rozhraní (pokud je to nutné)
+- Rate limiting je automaticky per domain (ne per service)
+- Authorization headers se přidávají automaticky přes BaseConnection
+
+### BaseConnection - Konfigurace Připojení
+
+**Všechna HTTP připojení používají BaseConnection:**
+
+BaseConnection obsahuje kompletní konfiguraci pro připojení k externím službám:
+- URL a auth credentials
+- Rate limit nastavení (konfigurovatelné v UI)
+- Timeout settings
+
+```kotlin
+data class BaseConnection(
+    val id: ObjectId,
+    val name: String,
+    val baseUrl: String,
+    val authType: AuthType, // BASIC, BEARER, API_KEY, NONE
+    val credentials: ConnectionCredentials?,
+    val rateLimitConfig: RateLimitConfig,
+    val timeoutMs: Long = 30000
+)
+
+data class RateLimitConfig(
+    val maxRequestsPerSecond: Int = 10,
+    val maxRequestsPerMinute: Int = 100,
+    val enabled: Boolean = true
+)
+
+enum class AuthType {
+    BASIC, BEARER, API_KEY, NONE
+}
+```
+
+**Použití v kódu:**
+
+```kotlin
+// ✅ SPRÁVNĚ - HttpClient automaticky aplikuje rate limit a auth
+@Service
+class AtlassianApiClient(
+    private val httpClient: HttpClient,
+    private val connectionRepository: ConnectionRepository
+) {
+    suspend fun callApi(connectionId: ObjectId) {
+        val connection = connectionRepository.findById(connectionId)
+        httpClient.getWithConnection(
+            url = connection.baseUrl + "/rest/api/3/myself",
+            connection = connection
+        )
+    }
+}
+```
+
+### Rate Limiting
+
+**Globální pravidla:**
+- Rate limit platí **PER DOMAIN** (ne per service či per connection)
+- Jeden globální `DomainRateLimiter` pro celou aplikaci
+- Rate limit konfigurace je součástí `BaseConnection`
+- Automatické čištění domén po expiraci (TTL-based cleanup)
+
+**Architektura:**
+- `HttpClient` bean má zabudovaný `DomainRateLimiter` interceptor
+- `DomainRateLimiter` si drží mapu `domain -> RateLimitState`
+- Po expiraci TTL se doména automaticky vymaže z mapy (memory efficient)
+- Rate limit se aplikuje před každým requestem
+- Pokud je překročen limit, request čeká
+
+**Co se nastavuje per connection (v UI):**
+- ✅ Počet volání (maxRequestsPerSecond, maxRequestsPerMinute)
+- ✅ Timeout (může se lišit per connection/service)
+- ✅ Auth type a credentials
+- ✅ Enable/disable rate limiting
+
+**Dynamické URL (Link Scraper):**
+- Link scraper používá stejný globální HttpClient
+- URL se zadává dynamicky při volání (ne v BaseConnection)
+- Rate limit se počítá per domain (ne per URL)
+- Jeden rate limiter sleduje všechny domény napříč všemi scraping operacemi
+- Pro link scraper lze vytvořit default BaseConnection s obecným rate limitem
+
+```kotlin
+// ✅ SPRÁVNĚ - dynamické URL s rate limitingem
+@Service
+class LinkScraperService(
+    private val httpClient: HttpClient
+) {
+    suspend fun scrapeUrl(url: String): String {
+        // Rate limit se automaticky aplikuje na doménu z URL
+        return httpClient.get(url) {
+            // Domain se extrahuje z URL, rate limit se aplikuje automaticky
+        }.bodyAsText()
+    }
+}
+```
+
+### Authorization Headers
+
+**Automatické přidávání z BaseConnection:**
+- Authorization headers NESMÍ být manuálně přidávány v každém requestu
+- HttpClient interceptor automaticky přidá auth z BaseConnection
+- BaseConnection se předává přes request attributes
+
+```kotlin
+// ❌ ŠPATNĚ - manuální přidávání v každém requestu
+httpClient.get(url) {
+    header("Authorization", "Bearer $token")
+    header("Accept", "application/json")
+}
+
+// ✅ SPRÁVNĚ - použít extension funkci s BaseConnection
+httpClient.getWithConnection(url, connection) {
+    // Authorization se přidá automaticky z connection.credentials
+}
+
+// Implementace extension funkce:
+suspend fun HttpClient.getWithConnection(
+    url: String,
+    connection: BaseConnection,
+    block: HttpRequestBuilder.() -> Unit = {}
+): HttpResponse {
+    return get(url) {
+        attributes.put(BaseConnectionKey, connection)
+        block()
+    }
+}
+```
+
+### Naming Convention
+
+- `HttpClient` = Ktor client (ne Spring WebClient!)
+- `WebClient` = Spring WebClient (pouze pro `@HttpExchange` pokud je to nutné)
+- `DomainRateLimiter` = globální rate limiter per domain
+- `BaseConnection` = konfigurace připojení (URL, auth, rate limits)
+
+### Git over HTTP
+
+- Git používá SSH, ale pokud by byl HTTP remote:
+- NEBUDEME předělávat git klienta
+- Vycházíme že git je v systému
+- Používáme git přes terminal jako process volání (ProcessBuilder/Runtime.exec)
+- HTTP git credentials se řeší přes git credential helper (ne přes náš HttpClient)
+
+---
+
+## Properties Pattern
+
+**Každá služba která potřebuje konfiguraci MUSÍ:**
+
+1. Mít vlastní `@ConfigurationProperties` POJO
+2. Číst hodnoty z `application.yml`
+3. NIKDY nehardcodovat parametry v kódu
+4. NIKDY nepředávat parametry jako constructor argumenty
+
+```kotlin
+// ✅ SPRÁVNĚ
+@Service
+class SomeService(
+    private val httpClient: HttpClient,
+    private val properties: ServiceProperties
+) {
+    suspend fun doSomething() {
+        // Use properties.someValue
+    }
+}
+
+@ConfigurationProperties("service")
+data class ServiceProperties(
+    val someValue: String,
+    val timeout: Long = 30000
+)
+
+// ❌ ŠPATNĚ - parametry v constructoru
+@Service
+class SomeService(
+    private val someValue: String,
+    private val timeout: Long
+)
+```
+
+---
+
+## MongoDB Indexy
+
+### Index Management
+
+- Indexy jsou spravovány pomocí `MongoIndexInitializer` (@Order(0))
+- `auto-index-creation: false` v application.yml
+- Indexy se automaticky reconcilují při startu
+- Duplicate key errors jsou logovány jako WARN (ne ERROR)
+- Stack traces pouze pro neočekávané chyby
+
+---
+
+## Logging
+
+### Pravidla pro logy
+
+1. **Startup logy:**
+   - Každý poller/indexer musí logovat když startuje
+   - Logovat initial delay a interval
+   - Logovat proč se něco nestane (např. "No connections found")
+
+2. **Error handling:**
+   - Očekávané chyby (duplicate keys, konflikty) = INFO/WARN
+   - Stack traces jen pro neočekávané chyby
+   - Error messages zkracovat na max 200 znaků
+
+3. **Progress tracking:**
+   - Logovat statistiky (kolik processed, skipped, failed)
+   - Používat prefix pro snadné vyhledávání (např. "ATLASSIAN_RESOLVER:")
+
+---
+
+## Git Repository Handling
+
+### Clone Before Index
+
+- Git indexer MUSÍ zajistit clone před indexací
+- Pokud repository neexistuje, automaticky zavolat `gitRepositoryService.cloneOrUpdateRepository()`
+- Pokud clone selže, vrátit null → commit zůstane v NEW stavu
+- NIKDY nemarkovat commity jako FAILED pokud repository není naklonované
+
+```kotlin
+// ✅ SPRÁVNĚ
+override suspend fun fetchContentIO(account: ProjectDocument, item: GitCommitDocument): Any? {
+    val gitDir = getProjectGitDir(account)
+    if (gitDir == null || !gitDir.resolve(".git").exists()) {
+        // Attempt to clone
+        val result = gitRepositoryService.cloneOrUpdateRepository(account)
+        if (result.isFailure) {
+            return null // Will retry later
+        }
+    }
+    // ... continue
+}
+```
+
+---
+
+## Architecture Patterns
+
+### Continuous Indexing Pattern
+
+**KRITICKY DŮLEŽITÉ - Separace Pollingu a Indexování:**
+
+1. **CentralPoller (má přístup k API):**
+   - Polluje externí API (Jira, Confluence, Email, atd.)
+   - Stahuje KOMPLETNÍ data (issue details, comments, attachments, email content, atd.)
+   - Ukládá VŠE do MongoDB jako NEW state documents
+   - Kontroluje co už je stažené podle MongoDB state
+   - Stahuje pouze nové/změněné věci (incremental)
+
+2. **ContinuousIndexer (NEMÁ přístup k API):**
+   - Čte NEW state documents z MongoDB
+   - Všechna data již má v MongoDB (poller je stáhl)
+   - Indexuje do RAG (chunking, embeddings, Weaviate)
+   - Označí jako INDEXED
+   - NIKDY NEVOLÁ EXTERNÍ API
+
+**Proč toto rozdělení:**
+- Polling je rychlý, bulk operation (stáhne všechno najednou)
+- Indexing je pomalý (embeddings, chunking, Weaviate)
+- Pokud indexing selže, data jsou už v MongoDB a můžeme retry
+- Polling a indexing běží nezávisle, různou rychlostí
+- Rate limiting se aplikuje jen při pollingu
+
+**Příklad - Jira:**
+```kotlin
+// ✅ SPRÁVNĚ
+
+// CentralPoller / JiraPollingHandler:
+suspend fun poll(connection: Connection.HttpConnection) {
+    // 1. Search issues via JQL
+    val issues = apiClient.searchJiraIssues(jql = "updated >= -7d")
+
+    for (issue in issues) {
+        // 2. Fetch FULL details (comments, attachments, everything)
+        val fullIssue = apiClient.getIssueDetails(issue.key)
+        val comments = apiClient.getComments(issue.key)
+        val attachments = apiClient.getAttachments(issue.key)
+
+        // 3. Save EVERYTHING to MongoDB
+        val doc = JiraIssueDocument(
+            issueKey = issue.key,
+            summary = fullIssue.summary,
+            description = fullIssue.description,
+            comments = comments,
+            attachments = attachments,
+            state = "NEW"
+        )
+        repository.save(doc)
+    }
+}
+
+// JiraContinuousIndexer:
+suspend fun indexIssue(doc: JiraIssueDocument) {
+    // Read data from MongoDB (already complete!)
+    val chunks = chunkText(doc.description)
+    val embeddings = embeddingService.embed(chunks)
+
+    // Store to Weaviate
+    weaviateClient.store(embeddings)
+
+    // Mark as indexed
+    doc.state = "INDEXED"
+    repository.save(doc)
+
+    // NO API CALLS!
+}
+```
+
+**Co to znamená pro strukturu:**
+- State documents (JiraIssueDocument, EmailMessageDocument, atd.) obsahují KOMPLETNÍ data
+- Ne jen metadata (key, hash), ale i content (description, comments, body, atd.)
+- MongoDB je "staging area" mezi API a RAG
+- Continuous indexer je čistý ETL: MongoDB → Weaviate
+
+### Connection Resolution
+
+- Jeden connection může být sdílený více klienty/projekty
+- ConnectionBinding = tuple (connection, clientId, projectId, filters)
+- Empty filters = ALL (např. empty jiraProjectKeys = index ALL projects)
+
+---
+
+## Přehled Aplikace
+
+### Tech Stack
+
+- **Backend**: Kotlin + Spring Boot (Reactive)
+- **Database**: MongoDB (reactive driver)
+- **Vector Store**: Weaviate
+- **HTTP Client**: Ktor HttpClient (pro externí API), Spring WebClient (pro @HttpExchange)
+- **Git**: System git přes ProcessBuilder
+- **RAG**: langchain4j
+
+### Hlavní Komponenty
+
+#### 1. HTTP Layer
+
+- `HttpClientConfiguration` - globální Ktor HttpClient bean
+- `DomainRateLimiter` - per-domain rate limiting s TTL cleanup
+- `BaseConnectionService` - správa HTTP connections (credentials encryption)
+- `BaseConnectionDocument` - MongoDB collection: `base_connections`
+- Extension funkce: `getWithConnection()`, `postWithConnection()`, atd.
+
+#### 2. External Services
+
+**Atlassian (Jira/Confluence):**
+- `AtlassianConnectionDocument` → **MIGRATE na BaseConnection**
+- `AtlassianApiClient` - HTTP API klient
+- `JiraContinuousPoller` + `JiraContinuousIndexer`
+- `ConfluenceContinuousPoller` + `ConfluenceContinuousIndexer`
+- `AtlassianConnectionResolver` - resolves connections per client/project
+
+**Git:**
+- `GitRepositoryService` - clone/pull přes system git
+- `GitContinuousPoller` + `GitContinuousIndexer`
+- SSH credentials, ne HTTP (pokud HTTP → use system git)
+
+**Email:**
+- `EmailContinuousPoller` + `EmailContinuousIndexer`
+- IMAP protocol
+
+**Link Scraper:**
+- Používá globální HttpClient
+- Dynamické URL (ne BaseConnection)
+- Rate limit per domain automaticky
+
+#### 3. Storage
+
+**MongoDB Collections:**
+- `base_connections` - HTTP connection configs
+- `clients` - klienti systému
+- `projects` - projekty klientů
+- `jira_connections` → **DEPRECATED** - migrate na base_connections
+- `jira_issue_index` - Jira issue indexing state
+- `confluence_pages` - Confluence page indexing state
+- `git_commits` - Git commit indexing state
+- `email_messages` - Email indexing state
+
+**Weaviate Collections:**
+- `KnowledgeText` - textové dokumenty v RAG
+- `KnowledgeCode` - zdrojový kód v RAG
+
+#### 4. Indexing Pipeline
+
+```
+External Source (Jira/Git/Email/Confluence)
+    ↓
+[Poller] discovers items
+    ↓
+Save to MongoDB as NEW
+    ↓
+[Indexer] picks up NEW items
+    ↓
+Process & chunk content
+    ↓
+Embed to Weaviate (RAG)
+    ↓
+Mark as INDEXED
+    ↓
+Optional: Create pending task for AI analysis
+```
+
+#### 5. Directory Structure
+
+```
+/Users/damekjan/git/jervis/
+├── backend/server/src/main/kotlin/com/jervis/
+│   ├── configuration/     # Spring beans, HTTP clients
+│   ├── domain/           # Domain models (BaseConnection, etc.)
+│   ├── entity/           # MongoDB documents
+│   ├── repository/       # MongoDB repositories
+│   ├── service/
+│   │   ├── http/        # HTTP clients, rate limiting
+│   │   ├── atlassian/   # Jira/Confluence services
+│   │   ├── git/         # Git services
+│   │   ├── listener/    # Pollers & indexers
+│   │   ├── indexing/    # Abstract indexing patterns
+│   │   └── storage/     # Filesystem management
+│   └── rag/             # Weaviate, embeddings, RAG
+```
+
+### Workspace Structure
+
+```
+{DATA_ROOT_DIR}/
+├── clients/{clientId}/
+│   ├── audio/
+│   ├── projects/{projectId}/
+│   │   ├── git/           # Git repositories
+│   │   ├── uploads/
+│   │   ├── documents/
+│   │   └── meetings/
+│   └── mono-repos/{monoRepoId}/
+│       └── git/
+├── keys/
+│   ├── ssh/              # SSH keys per project
+│   └── gpg/
+├── tmp/
+│   ├── scraping/
+│   └── processing/
+├── storage/
+└── cache/
+```
+
+### Klíčové Služby
+
+- `DirectoryStructureService` - správa workspace adresářů
+- `MongoIndexInitializer` - index reconciliation při startu
+- `WeaviateSchemaInitializer` - Weaviate schema management
+- `BackgroundEngine` - task orchestration
+- `AtlassianConnectionResolver` - connection binding resolution
+
+---
+
+## Migrace na BaseConnection
+
+### Co je potřeba udělat
+
+1. ✅ Vytvořit BaseConnection domain model
+2. ✅ Vytvořit DomainRateLimiter
+3. ✅ Vytvořit HttpClient configuration
+4. ✅ Vytvořit BaseConnectionDocument & repository
+5. ✅ Vytvořit BaseConnectionService
+6. ⏳ Migrace AtlassianConnectionDocument na BaseConnection
+7. ⏳ Refactor AtlassianApiClient na Ktor HttpClient
+8. ⏳ UI pro správu BaseConnection (rate limits, credentials)
+
+### Migration Strategy
+
+**Krok 1**: Vytvořit BaseConnection infrastrukturu (✅ HOTOVO)
+
+**Krok 2**: Migrace Atlassian connections
+- Přidat migrační script pro převod jira_connections → base_connections
+- Aktualizovat AtlassianConnectionResolver na BaseConnectionService
+- Refaktorovat AtlassianApiClient z WebClient na Ktor HttpClient
+
+**Krok 3**: Link Scraper
+- Vytvořit default BaseConnection pro link scraping
+- Refaktorovat scraper na HttpClient extension funkce
+
+---
+
+**Poslední aktualizace:** 2025-11-23

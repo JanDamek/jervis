@@ -2,7 +2,6 @@ package com.jervis.service.client
 
 import com.jervis.entity.ClientDocument
 import com.jervis.repository.ClientMongoRepository
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -12,23 +11,20 @@ import java.time.Instant
 @Service
 class ClientService(
     private val clientRepository: ClientMongoRepository,
-    private val configCache: com.jervis.service.cache.ClientProjectConfigCache,
 ) {
     private val logger = KotlinLogging.logger {}
 
     suspend fun create(clientName: String): ClientDocument {
         val document = ClientDocument(name = clientName)
         val saved = clientRepository.save(document)
-        configCache.invalidateAll()
-        logger.info { "Created client ${saved.name}, cache invalidated" }
+        logger.info { "Created client ${saved.name}" }
         return saved
     }
 
     suspend fun create(client: ClientDocument): ClientDocument {
         val newClient = client.copy(id = ObjectId.get(), createdAt = Instant.now(), updatedAt = Instant.now())
         val saved = clientRepository.save(newClient)
-        configCache.invalidateAll()
-        logger.info { "Created client ${saved.name} with id ${saved.id}, cache invalidated" }
+        logger.info { "Created client ${saved.name} with id ${saved.id}" }
         return saved
     }
 
@@ -91,20 +87,17 @@ class ClientService(
             )
 
         val updated = clientRepository.save(merged)
-        configCache.invalidateAll()
-        logger.info { "Updated client ${updated.name}, cache invalidated" }
+        logger.info { "Updated client ${updated.name}" }
         return updated
     }
 
     suspend fun delete(id: ObjectId) {
-        val existing =
-            clientRepository.findById(id) ?: return
+        val existing = clientRepository.findById(id) ?: return
         clientRepository.delete(existing)
-        configCache.invalidateAll()
-        logger.info { "Deleted client ${existing.name}, cache invalidated" }
+        logger.info { "Deleted client ${existing.name}" }
     }
 
-    suspend fun list(): List<ClientDocument> = clientRepository.findAll().map { it }.toList()
+    suspend fun list(): List<ClientDocument> = clientRepository.findAll().toList()
 
     suspend fun getClientById(id: ObjectId): ClientDocument? = clientRepository.findById(id)
 }
