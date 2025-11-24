@@ -26,6 +26,7 @@ fun ClientDocument.toDto(gitCredentials: GitCredentialsDto? = null): ClientDto =
         isDisabled = this.isDisabled,
         disabledProjects = this.disabledProjects.map { it.toHexString() },
         lastSelectedProjectId = this.lastSelectedProjectId?.toHexString(),
+        connectionIds = this.connectionIds.map { it.toHexString() },
     )
 
 fun MonoRepoConfig.toDto(): MonoRepoConfigDto =
@@ -54,6 +55,7 @@ fun ClientDto.toDocument(): ClientDocument =
         isDisabled = this.isDisabled,
         disabledProjects = this.disabledProjects.map { ObjectId(it) },
         lastSelectedProjectId = this.lastSelectedProjectId?.let { ObjectId(it) },
+        connectionIds = this.connectionIds.map { ObjectId(it) },
     )
 
 fun MonoRepoConfigDto.toDomain(): MonoRepoConfig =

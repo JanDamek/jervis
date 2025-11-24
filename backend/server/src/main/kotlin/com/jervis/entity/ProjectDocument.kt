@@ -52,11 +52,21 @@ data class ProjectDocument(
     val overrides: ProjectOverrides? = null,
     // Last Git sync timestamp.
     val lastGitSyncAt: Instant? = null,
-    // Atlassian integration (Jira + Confluence) - overrides client-level if set
+
+    // External service connections (project-specific, overrides client-level)
+    val connectionIds: List<ObjectId> = emptyList(),
+
+    // Connection-specific filters (project-level, overrides client-level)
+    val connectionFilters: List<com.jervis.domain.connection.ConnectionFilter> = emptyList(),
+
+    // DEPRECATED - migrate to connectionIds + connectionFilters
+    @Deprecated("Use connectionIds instead")
     val atlassianConnectionId: ObjectId? = null,
-    // Optional: Filter to specific Jira projects/Confluence spaces (project-level)
+    @Deprecated("Use connectionFilters instead")
     val atlassianJiraProjects: List<String> = emptyList(),
+    @Deprecated("Use connectionFilters instead")
     val atlassianConfluenceSpaces: List<String> = emptyList(),
+
     // Audit timestamps.
     val createdAt: Instant = Instant.now(),
     val updatedAt: Instant = Instant.now(),
