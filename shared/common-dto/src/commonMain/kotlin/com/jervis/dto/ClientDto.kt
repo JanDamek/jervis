@@ -25,4 +25,7 @@ data class ClientDto(
     val isDisabled: Boolean = false,
     val disabledProjects: List<String> = emptyList(),
     val lastSelectedProjectId: String? = null,
+
+    // External service connections
+    val connectionIds: List<String> = emptyList(),
 )

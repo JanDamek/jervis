@@ -69,7 +69,7 @@ class JiraPollingHandler(
         client: ClientDocument,
     ): PollingResult {
         // Build JQL query based on client configuration
-        val jql = buildJqlQuery(client)
+        val jql = buildJqlQuery(client, connection)
 
         logger.debug { "Polling Jira for client ${client.name} with JQL: $jql" }
 
@@ -123,12 +123,15 @@ class JiraPollingHandler(
         )
     }
 
-    private fun buildJqlQuery(client: ClientDocument): String {
+    private fun buildJqlQuery(client: ClientDocument, connection: Connection.HttpConnection): String {
         // Build JQL based on client configuration
-        val projectFilter = if (client.atlassianJiraProjects.isNotEmpty()) {
-            "project IN (${client.atlassianJiraProjects.joinToString(",") { "'$it'" }})"
-        } else {
-            null
+        // Try new connectionFilters first, fall back to deprecated fields
+        val filter = client.connectionFilters.firstOrNull { it.connectionId == connection.id }
+        val projects = filter?.jiraProjects?.takeIf { it.isNotEmpty() }
+            ?: client.atlassianJiraProjects.takeIf { it.isNotEmpty() }
+
+        val projectFilter = projects?.let {
+            "project IN (${it.joinToString(",") { proj -> "'$proj'" }})"
         }
 
         val dateFilter = "updated >= -7d" // Last 7 days

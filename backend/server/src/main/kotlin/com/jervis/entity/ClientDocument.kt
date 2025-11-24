@@ -56,12 +56,15 @@ data class ClientDocument(
     // - Multiple Slack workspaces, Teams tenants, etc.
     val connectionIds: List<ObjectId> = emptyList(),
 
-    // DEPRECATED - migrate to connectionIds
+    // Connection-specific filters (e.g., Jira projects, Confluence spaces, email folders)
+    val connectionFilters: List<com.jervis.domain.connection.ConnectionFilter> = emptyList(),
+
+    // DEPRECATED - migrate to connectionIds + connectionFilters
     @Deprecated("Use connectionIds instead")
     val atlassianConnectionId: ObjectId? = null,
-    @Deprecated("Use connection-specific filters")
+    @Deprecated("Use connectionFilters instead")
     val atlassianJiraProjects: List<String> = emptyList(),
-    @Deprecated("Use connection-specific filters")
+    @Deprecated("Use connectionFilters instead")
     val atlassianConfluenceSpaces: List<String> = emptyList(),
 
     val createdAt: Instant = Instant.now(),
