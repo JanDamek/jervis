@@ -64,6 +64,13 @@ fun MainScreen(
                                 onNavigate(com.jervis.ui.navigation.Screen.Settings)
                             }
                         )
+                        DropdownMenuItem(
+                            text = { Text("Connections") },
+                            onClick = {
+                                showMenu = false
+                                onNavigate(com.jervis.ui.navigation.Screen.Connections)
+                            }
+                        )
                         HorizontalDivider()
 
                         // Tasks & Scheduling (mirrors Desktop: UserTasks/Scheduler windows)

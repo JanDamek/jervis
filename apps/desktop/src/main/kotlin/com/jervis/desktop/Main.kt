@@ -28,6 +28,8 @@ fun main() =
         // Window state
         var showMainWindow by remember { mutableStateOf(true) }
         var showDebug by remember { mutableStateOf(false) }
+        var showClients by remember { mutableStateOf(false) }
+        var showConnections by remember { mutableStateOf(false) }
 
         // Set dock icon and click handler on macOS
         LaunchedEffect(Unit) {
@@ -87,6 +89,8 @@ fun main() =
                     navigator.navigateTo(com.jervis.ui.navigation.Screen.Scheduler)
                 })
                 Separator()
+                Item("Clients", onClick = { showClients = true })
+                Item("Connections", onClick = { showConnections = true })
                 Item("Debug Console", onClick = { showDebug = true })
                 Item("Settings", onClick = {
                     showMainWindow = true
@@ -121,6 +125,8 @@ fun main() =
                         Item("RAG Search", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.RagSearch) })
                         Item("Scheduler", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.Scheduler) })
                         Separator()
+                        Item("Clients", onClick = { showClients = true })
+                        Item("Connections", onClick = { showConnections = true })
                         Item("Debug Console", onClick = { showDebug = true })
                     }
                     Menu("Indexing") {
@@ -154,6 +160,28 @@ fun main() =
                 state = rememberWindowState(width = 1000.dp, height = 700.dp),
             ) {
                 com.jervis.ui.DebugWindow(eventsProvider = connectionManager)
+            }
+        }
+
+        // Clients Window - desktop-only feature for client management
+        if (showClients && repository != null) {
+            Window(
+                onCloseRequest = { showClients = false },
+                title = "Client Management",
+                state = rememberWindowState(width = 800.dp, height = 600.dp),
+            ) {
+                ClientsWindow(repository = repository)
+            }
+        }
+
+        // Connections Window - desktop-only feature for connection management
+        if (showConnections && repository != null) {
+            Window(
+                onCloseRequest = { showConnections = false },
+                title = "Connection Management",
+                state = rememberWindowState(width = 900.dp, height = 700.dp),
+            ) {
+                ConnectionsWindow(repository = repository)
             }
         }
 
