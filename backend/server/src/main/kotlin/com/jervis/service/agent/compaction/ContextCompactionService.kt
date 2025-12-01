@@ -7,9 +7,9 @@ import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.plan.PlanStep
 import com.jervis.domain.plan.StepStatusEnum
+import com.jervis.mcp.domain.ToolResult
 import com.jervis.service.gateway.LlmGateway
-import com.jervis.service.gateway.processing.TokenEstimationService
-import com.jervis.service.mcp.domain.ToolResult
+import com.jervis.service.text.TokenEstimationService
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.bson.types.ObjectId

@@ -1,0 +1,139 @@
+package com.jervis.mcp.tools
+
+import com.jervis.configuration.WebClientFactory
+import com.jervis.configuration.prompts.ToolTypeEnum
+import com.jervis.domain.plan.Plan
+import com.jervis.mcp.McpTool
+import com.jervis.mcp.domain.ToolResult
+import com.jervis.service.prompts.PromptRepository
+import kotlinx.serialization.Serializable
+import mu.KotlinLogging
+import org.springframework.stereotype.Service
+import org.springframework.web.reactive.function.client.WebClient
+import org.springframework.web.reactive.function.client.awaitBody
+
+/**
+ * Content Search Web tool using Searxng for web search capabilities.
+ * Uses configured Searxng WebClient for search operations.
+ */
+@Service
+class ContentSearchWebTool(
+    override val promptRepository: PromptRepository,
+    private val webClientFactory: WebClientFactory,
+) : McpTool<ContentSearchWebTool.ContentSearchWebParams> {
+    private val webClient: WebClient by lazy { webClientFactory.getWebClient("searxng") }
+    private val logger = KotlinLogging.logger {}
+
+    override val name = ToolTypeEnum.CONTENT_SEARCH_WEB_TOOL
+
+    override val descriptionObject =
+        ContentSearchWebParams(
+            query =
+                "Kotlin coroutine channels backpressure best practices. " +
+                    "Query string to search on the web (required)",
+        )
+
+    @Serializable
+    data class ContentSearchWebParams(
+        val query: String,
+    )
+
+    @Serializable
+    data class SearxngResult(
+        val title: String,
+        val url: String,
+        val content: String,
+        val engine: String,
+        val score: Double,
+    )
+
+    @Serializable
+    data class SearxngResponse(
+        val query: String,
+        val results: List<SearxngResult>,
+        val number_of_results: Int,
+        val engines: List<String>,
+    )
+
+    override suspend fun execute(
+        plan: Plan,
+        request: ContentSearchWebParams,
+    ): ToolResult = executeContentSearchWebOperation(request, plan)
+
+    private suspend fun executeContentSearchWebOperation(
+        params: ContentSearchWebParams,
+        plan: Plan,
+    ): ToolResult {
+        logger.info { "CONTENT_SEARCH_WEB_START: Executing web search for query='${params.query}'" }
+
+        val query = params.query.trim()
+        if (query.isBlank()) {
+            return ToolResult.error(
+                output = "Web search failed",
+                message = "Query must not be blank.",
+            )
+        }
+
+        val searchResult = performSearch(query)
+
+        logger.info { "CONTENT_SEARCH_WEB_SUCCESS: Completed web search operation" }
+        return ToolResult.ok(searchResult)
+    }
+
+    private suspend fun performSearch(query: String): String {
+        logger.debug { "CONTENT_SEARCH_WEB_QUERY: '$query'" }
+
+        val response =
+            webClient
+                .get()
+                .uri { uriBuilder ->
+                    uriBuilder
+                        .path("/search")
+                        .queryParam("q", query)
+                        .queryParam("format", "json")
+                        .queryParam("safesearch", "1")
+                        .build()
+                }.retrieve()
+                .awaitBody<SearxngResponse>()
+
+        logger.info { "CONTENT_SEARCH_WEB_ENDPOINT_OK: path='/search', param='q'" }
+        return formatSearchResults(query, response)
+    }
+
+    private fun formatSearchResults(
+        query: String,
+        response: SearxngResponse,
+    ): String {
+        val maxResults = 10
+
+        return buildString {
+            appendLine("Search results for: '$query'")
+            appendLine("Found ${response.number_of_results} results")
+
+            if (response.engines.isNotEmpty()) {
+                appendLine("Search engines used: ${response.engines.joinToString(", ")}")
+            }
+
+            appendLine()
+
+            response.results.take(maxResults).forEachIndexed { index, result ->
+                appendLine("${index + 1}. ${result.title}")
+                appendLine("   URL: ${result.url}")
+                if (result.content.isNotEmpty()) {
+                    appendLine("   Summary: ${result.content.take(200)}${if (result.content.length > 200) "..." else ""}")
+                }
+                if (result.engine.isNotEmpty()) {
+                    appendLine("   Source: ${result.engine}")
+                }
+                if (result.score > 0) {
+                    appendLine("   Score: ${result.score}")
+                }
+                appendLine()
+            }
+
+            if (response.results.size > maxResults) {
+                appendLine("... and ${response.results.size - maxResults} more results")
+            }
+        }
+    }
+}

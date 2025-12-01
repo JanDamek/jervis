@@ -3,6 +3,7 @@ package com.jervis.repository
 import com.jervis.entity.connection.Connection
 import kotlinx.coroutines.flow.Flow
 import org.bson.types.ObjectId
+import org.springframework.data.mongodb.repository.Query
 import org.springframework.data.repository.kotlin.CoroutineCrudRepository
 import org.springframework.stereotype.Repository
 
@@ -14,24 +15,15 @@ import org.springframework.stereotype.Repository
  */
 @Repository
 interface ConnectionMongoRepository : CoroutineCrudRepository<Connection, ObjectId> {
-
     /**
      * Find connection by unique name.
      */
     suspend fun findByName(name: String): Connection?
 
     /**
-     * Find all enabled connections as Flow.
+     * Find all connections by state.
+     * Uses explicit query because 'state' is defined in subclasses, not on sealed class.
      */
-    fun findByEnabled(enabled: Boolean): Flow<Connection>
-
-    /**
-     * Find all enabled connections (convenience for findByEnabled(true)).
-     */
-    fun findByEnabledTrue(): Flow<Connection>
-
-    /**
-     * Check if connection with name exists.
-     */
-    suspend fun existsByName(name: String): Boolean
+    @Query("{ 'state': ?0 }")
+    fun findByState(state: String): Flow<Connection>
 }

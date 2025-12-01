@@ -2,11 +2,16 @@
 logging:
   level:
     root: INFO
+    com.arangodb.internal.serde.SerdeUtils: ERROR
     com.jervis: INFO
     com.jervis.service: INFO
+    # Enable verbose logging for Koog framework and our Koog integration
+    ai.koog: DEBUG
+    com.jervis.koog: DEBUG
     org.springframework.web: INFO
     org.springframework.web.reactive.socket: INFO
     org.springframework.web.reactive.handler: INFO
+    org.springframework.data.mongodb.core.convert.QueryMapper: WARN
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
     file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
@@ -68,6 +73,16 @@ management:
       probes:
         enabled: true
 
+# ArangoDB (Knowledge Graph) configuration
+arango:
+  scheme: http
+  host: 192.168.100.117
+  port: 8529
+  database: jervis
+  username: root
+  password: changeit
+  timeout-ms: 5000
+
 jervis:
   background:
     enabled: true
@@ -86,6 +101,24 @@ jervis:
     phase2-delay-ms: 100         # 100ms = 10 req/sec
     phase3-delay-ms: 1000        # After 500 items: 1000ms = 1 req/sec (prevents API bans)
 
+  # Ktor HttpClient configuration (for external HTTP calls)
+  http-client:
+    max-requests-per-second: 10
+    max-requests-per-minute: 100
+    rate-limit-enabled: true
+    rate-limit-ttl-seconds: 300  # 5 minutes TTL for unused domain rate limiters
+    request-timeout-ms: 30000    # 30 seconds
+    connect-timeout-ms: 10000    # 10 seconds
+    socket-timeout-ms: 30000     # 30 seconds
+
+  # Netty server configuration (embedded Netty for WebFlux)
+  netty:
+    connect-timeout-ms: 60000    # 60 seconds
+    idle-timeout-seconds: 600    # 10 minutes
+    read-timeout-seconds: 600    # 10 minutes
+    write-timeout-seconds: 600   # 10 minutes
+    so-keepalive: true
+
 # HTTP client connections and timeouts (used by WebClient)
 connections:
   connection-pool:
@@ -98,6 +131,11 @@ connections:
   timeouts:
     connect-timeout-millis: 60000
     response-timeout-millis: 1800000  # 30 minutes for reasoning models (Qwen3, DeepSeek, etc.)
+  buffers:
+    default-max-in-memory-bytes: 8388608      # 8 MB (default for most endpoints)
+    tika-max-in-memory-bytes: 67108864        # 64 MB (for large Tika document payloads)
+  api-versions:
+    anthropic-version: "2023-06-01"
 
 # Retry configuration for external HTTP calls
 retry:
@@ -142,3 +180,22 @@ git:
     # Interval for checking and syncing Git repositories (in milliseconds)
     polling-interval-ms: 300000 # 5 minutes
     initial-delay-ms: 60000 # 1 minute after startup
+
+# Ollama preload and keep-alive configuration (fail-fast: all values must be provided)
+preload:
+  ollama:
+    gpu:
+      concurrency: 2
+    cpu:
+      concurrency: 6
+    llm:
+      keep-alive: 1h
+      refresh-safety-factor: 0.9
+    embed:
+      concurrency: 6
+      keep-alive: 1h
+      refresh-safety-factor: 0.9
+
+ollama:
+  keep-alive:
+    default: 1h

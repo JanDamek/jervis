@@ -74,4 +74,12 @@ enum class PendingTaskTypeEnum(
      * - LLM reasoning for UNCERTAIN decision
      */
     LINK_SAFETY_REVIEW(PromptTypeEnum.LINK_QUALIFIER),
+
+    /**
+     * Connection authentication error requiring manual fix.
+     * Created when connection fails during polling with authentication error (invalid credentials).
+     * User should check and update connection credentials.
+     * Connection is set to INVALID state until fixed.
+     */
+    CONNECTION_ERROR(PromptTypeEnum.QUALIFIER),
 }

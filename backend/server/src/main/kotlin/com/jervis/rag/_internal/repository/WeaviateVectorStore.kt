@@ -47,16 +47,18 @@ internal class WeaviateVectorStore(
     override suspend fun store(
         collection: VectorCollection,
         document: VectorDocument,
+        classNameOverride: String?,
     ): Result<String> =
         withContext(Dispatchers.IO) {
             runCatching {
-                logger.debug { "Storing in ${collection.collectionName}: id=${document.id}" }
+                val className = classNameOverride ?: collection.collectionName
+                logger.debug { "Storing in $className: id=${document.id}" }
 
                 val result =
                     client
                         .data()
                         .creator()
-                        .withClassName(collection.collectionName)
+                        .withClassName(className)
                         .withID(document.id)
                         .withProperties(document.metadata)
                         .withVector(document.embedding.toTypedArray())
@@ -66,7 +68,7 @@ internal class WeaviateVectorStore(
                     throw IllegalStateException("Store failed: ${result.error?.messages?.joinToString()}")
                 }
 
-                logger.debug { "Stored successfully: ${collection.collectionName}/${document.id}" }
+                logger.debug { "Stored successfully: $className/${document.id}" }
                 document.id
             }
         }
@@ -74,11 +76,13 @@ internal class WeaviateVectorStore(
     override suspend fun search(
         collection: VectorCollection,
         query: VectorQuery,
+        classNameOverride: String?,
     ): Result<List<VectorSearchResult>> =
         withContext(Dispatchers.IO) {
             runCatching {
+                val className = classNameOverride ?: collection.collectionName
                 logger.debug {
-                    "Searching ${collection.collectionName}: " +
+                    "Searching $className: " +
                         "limit=${query.limit}, minScore=${query.minScore}"
                 }
 
@@ -108,7 +112,7 @@ internal class WeaviateVectorStore(
                     client
                         .graphQL()
                         .get()
-                        .withClassName(collection.collectionName)
+                        .withClassName(className)
                         .withFields(*fields)
                         .withLimit(query.limit)
 
@@ -136,7 +140,7 @@ internal class WeaviateVectorStore(
 
                 val data = result.result?.data as? Map<*, *> ?: return@runCatching emptyList()
                 val get = data["Get"] as? Map<*, *> ?: return@runCatching emptyList()
-                val collectionResults = get[collection.collectionName] as? List<*> ?: return@runCatching emptyList()
+                val collectionResults = get[className] as? List<*> ?: return@runCatching emptyList()
 
                 val results =
                     collectionResults.mapNotNull { item ->
@@ -161,14 +165,16 @@ internal class WeaviateVectorStore(
     override suspend fun getById(
         collection: VectorCollection,
         id: String,
+        classNameOverride: String?,
     ): Result<VectorSearchResult?> =
         withContext(Dispatchers.IO) {
             runCatching {
+                val className = classNameOverride ?: collection.collectionName
                 val result =
                     client
                         .data()
                         .objectsGetter()
-                        .withClassName(collection.collectionName)
+                        .withClassName(className)
                         .withID(id)
                         .run()
 
@@ -190,14 +196,16 @@ internal class WeaviateVectorStore(
     override suspend fun delete(
         collection: VectorCollection,
         id: String,
+        classNameOverride: String?,
     ): Result<Unit> =
         withContext(Dispatchers.IO) {
             runCatching {
+                val className = classNameOverride ?: collection.collectionName
                 val result =
                     client
                         .data()
                         .deleter()
-                        .withClassName(collection.collectionName)
+                        .withClassName(className)
                         .withID(id)
                         .run()
 
@@ -205,23 +213,25 @@ internal class WeaviateVectorStore(
                     throw IllegalStateException("Delete failed: ${result.error?.messages?.joinToString()}")
                 }
 
-                logger.debug { "Deleted: ${collection.collectionName}/$id" }
+                logger.debug { "Deleted: $className/$id" }
             }
         }
 
     override suspend fun deleteByFilter(
         collection: VectorCollection,
         filters: VectorFilters,
+        classNameOverride: String?,
     ): Result<Int> =
         withContext(Dispatchers.IO) {
             runCatching {
+                val className = classNameOverride ?: collection.collectionName
                 val whereFilter = buildWhereFilter(filters) ?: return@runCatching 0
 
                 val result =
                     client
                         .batch()
                         .objectsBatchDeleter()
-                        .withClassName(collection.collectionName)
+                        .withClassName(className)
                         .withWhere(whereFilter)
                         .run()
 
@@ -231,7 +241,7 @@ internal class WeaviateVectorStore(
 
                 // Weaviate batch delete doesn't return deleted count directly
                 // We just return 0 as success indicator since hasErrors() already checked
-                logger.info { "Deleted objects from ${collection.collectionName}" }
+                logger.info { "Deleted objects from $className" }
                 0
             }
         }

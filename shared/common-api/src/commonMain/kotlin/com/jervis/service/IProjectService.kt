@@ -13,20 +13,8 @@ interface IProjectService {
     @GET("api/projects")
     suspend fun getAllProjects(): List<ProjectDto>
 
-    @GET("api/projects/default")
-    suspend fun getDefaultProject(): ProjectDto?
-
-    @PUT("api/projects/active")
-    suspend fun setActiveProject(@Body project: ProjectDto)
-
-    @PUT("api/projects/default")
-    suspend fun setDefaultProject(@Body project: ProjectDto)
-
     @POST("api/projects")
-    suspend fun saveProject(
-        @Body project: ProjectDto,
-        @Query makeDefault: Boolean = false
-    ): ProjectDto
+    suspend fun saveProject(@Body project: ProjectDto): ProjectDto
 
     @DELETE("api/projects")
     suspend fun deleteProject(@Body project: ProjectDto)

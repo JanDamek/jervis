@@ -2,7 +2,6 @@ package com.jervis.service.polling.handler
 
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.Connection
-import com.jervis.entity.connection.HttpCredentials
 import com.jervis.service.polling.PollingResult
 
 /**
@@ -24,13 +23,11 @@ interface PollingHandler {
      * Poll the external service and create NEW state documents.
      *
      * @param connection The connection configuration
-     * @param credentials Decrypted credentials (null for non-HTTP connections)
      * @param clients List of clients using this connection
      * @return Polling result with counts
      */
     suspend fun poll(
         connection: Connection,
-        credentials: HttpCredentials?,
         clients: List<ClientDocument>,
     ): PollingResult
 }

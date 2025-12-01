@@ -24,22 +24,24 @@ class IndexingStatusRestController(
     @GetMapping
     override suspend fun getOverview(): IndexingOverviewDto {
         // Ensure Atlassian (Jira) tool is visible in overview even before first run
-        registry.ensureTool(toolKey = "jira", displayName = "Atlassian (Jira)")
+        registry.ensureTool(toolKey = IndexingStatusRegistry.ToolStateEnum.JIRA, displayName = "Atlassian (Jira)")
         // Ensure other indexing tools are visible as well
-        registry.ensureTool(toolKey = "email", displayName = "Email Indexing")
-        registry.ensureTool(toolKey = "git", displayName = "Git Indexing")
-        registry.ensureTool(toolKey = "confluence", displayName = "Atlassian (Confluence)")
+        registry.ensureTool(toolKey = IndexingStatusRegistry.ToolStateEnum.EMAIL, displayName = "Email Indexing")
+        registry.ensureTool(toolKey = IndexingStatusRegistry.ToolStateEnum.GIT, displayName = "Git Indexing")
+        registry.ensureTool(toolKey = IndexingStatusRegistry.ToolStateEnum.CONFLUENCE, displayName = "Atlassian (Confluence)")
 
         val tools =
             registry.snapshot().map { t ->
-                val (indexedCount, newCount) = kotlin.runCatching { registry.getIndexedAndNewCounts(t.toolKey) }
-                    .getOrDefault(0L to 0L)
+                val (indexedCount, newCount) =
+                    kotlin
+                        .runCatching { registry.getIndexedAndNewCounts(t.toolKey) }
+                        .getOrDefault(0L to 0L)
 
                 // idleReason removed - pollers run continuously via AbstractPeriodicPoller
                 val idleReason: String? = null
 
                 IndexingToolSummaryDto(
-                    toolKey = t.toolKey,
+                    toolKey = t.toolKey.name,
                     displayName = t.displayName,
                     state = if (t.state == IndexingStatusRegistry.State.RUNNING) IndexingStateDto.RUNNING else IndexingStateDto.IDLE,
                     reason = t.reason,
@@ -62,16 +64,19 @@ class IndexingStatusRestController(
     override suspend fun getToolDetail(
         @PathVariable("toolKey") toolKey: String,
     ): IndexingToolDetailDto {
-        val t = registry.toolDetail(toolKey) ?: IndexingStatusRegistry.ToolState(toolKey, toolKey)
-        val (indexedCount, newCount) = kotlin.runCatching { registry.getIndexedAndNewCounts(t.toolKey) }
-            .getOrDefault(0L to 0L)
+        val toolEnum = IndexingStatusRegistry.ToolStateEnum.valueOf(toolKey.uppercase())
+        val t = registry.toolDetail(toolEnum) ?: IndexingStatusRegistry.ToolState(toolEnum, toolKey)
+        val (indexedCount, newCount) =
+            kotlin
+                .runCatching { registry.getIndexedAndNewCounts(t.toolKey) }
+                .getOrDefault(0L to 0L)
 
         // idleReason removed - pollers run continuously via AbstractPeriodicPoller
         val idleReason: String? = null
 
         val summary =
             IndexingToolSummaryDto(
-                toolKey = t.toolKey,
+                toolKey = t.toolKey.name,
                 displayName = t.displayName,
                 state = if (t.state == IndexingStatusRegistry.State.RUNNING) IndexingStateDto.RUNNING else IndexingStateDto.IDLE,
                 reason = t.reason,

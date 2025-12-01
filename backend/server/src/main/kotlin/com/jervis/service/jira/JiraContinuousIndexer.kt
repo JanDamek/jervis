@@ -41,7 +41,7 @@ class JiraContinuousIndexer(
         scope.launch {
             kotlin.runCatching {
                 indexingRegistry.start(
-                    "jira",
+                    com.jervis.service.indexing.status.IndexingStatusRegistry.ToolStateEnum.JIRA,
                     displayName = "Atlassian (Jira)",
                     message = "Starting continuous Jira indexing from MongoDB",
                 )
@@ -51,13 +51,13 @@ class JiraContinuousIndexer(
                 .also {
                     kotlin.runCatching {
                         indexingRegistry.finish(
-                            "jira",
+                            com.jervis.service.indexing.status.IndexingStatusRegistry.ToolStateEnum.JIRA,
                             message = "Jira indexer stopped",
                         )
                     }
                 }
+            }
         }
-    }
 
     private suspend fun indexContinuously() {
         // Continuous flow of NEW issues from MongoDB
@@ -95,9 +95,9 @@ class JiraContinuousIndexer(
 
             // Report progress
             kotlin.runCatching {
-                indexingRegistry.ensureTool("jira", displayName = "Atlassian (Jira)")
+                indexingRegistry.ensureTool(com.jervis.service.indexing.status.IndexingStatusRegistry.ToolStateEnum.JIRA, displayName = "Atlassian (Jira)")
                 indexingRegistry.progress(
-                    "jira",
+                    com.jervis.service.indexing.status.IndexingStatusRegistry.ToolStateEnum.JIRA,
                     processedInc = 1,
                     message = "Indexed issue ${doc.issueKey}",
                 )

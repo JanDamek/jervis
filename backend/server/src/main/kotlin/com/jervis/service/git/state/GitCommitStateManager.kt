@@ -1,8 +1,6 @@
 package com.jervis.service.git.state
 
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -22,10 +20,8 @@ private val logger = KotlinLogging.logger {}
 class GitCommitStateManager(
     private val gitCommitRepository: GitCommitRepository,
 ) {
-    // ========== Standalone Project Methods ==========
-
     /**
-     * Save new commit hashes from Git log for a standalone project.
+     * Save new commit hashes from the Git log for a standalone project.
      */
     suspend fun saveNewCommits(
         clientId: ObjectId,
@@ -72,7 +68,6 @@ class GitCommitStateManager(
             GitCommitDocument(
                 clientId = clientId,
                 projectId = projectId,
-                monoRepoId = null,
                 commitHash = commitInfo.commitHash,
                 state = GitCommitState.NEW,
                 author = commitInfo.author,
@@ -84,6 +79,7 @@ class GitCommitStateManager(
         logger.debug { "Saved new commit ${commitInfo.commitHash.take(8)} by ${commitInfo.author} with state NEW" }
     }
 
+
     /**
      * Find commits that need to be indexed for a standalone project (state = NEW).
      */
@@ -91,154 +87,10 @@ class GitCommitStateManager(
         gitCommitRepository
             .findByProjectIdAndStateOrderByCommitDateAsc(projectId, GitCommitState.NEW)
 
-    // ========== Mono-Repo Methods ==========
+    // Mono-repo feature removed from the project
 
     /**
-     * Save new commit hashes from Git log for a client mono-repo.
-     */
-    suspend fun saveNewMonoRepoCommits(
-        clientId: ObjectId,
-        monoRepoId: String,
-        commits: List<GitCommitInfo>,
-        branch: String = "main",
-    ) {
-        logger.info { "Starting batch commit sync for mono-repo $monoRepoId" }
-
-        if (commits.isEmpty()) {
-            logger.info { "No commits to process for mono-repo $monoRepoId" }
-            return
-        }
-
-        logger.info { "Found ${commits.size} commits in Git for mono-repo $monoRepoId" }
-
-        val existingCommitHashes = loadExistingMonoRepoCommitHashes(clientId, monoRepoId)
-        logger.info { "Found ${existingCommitHashes.size} existing commits in DB for mono-repo $monoRepoId" }
-
-        val newCommits = commits.filterNot { existingCommitHashes.contains(it.commitHash) }
-        logger.info { "Identified ${newCommits.size} new commits to save for mono-repo $monoRepoId" }
-
-        newCommits.forEach { saveNewMonoRepoCommit(clientId, monoRepoId, it, branch) }
-        logger.info { "Batch sync completed for mono-repo $monoRepoId" }
-    }
-
-    private suspend fun loadExistingMonoRepoCommitHashes(
-        clientId: ObjectId,
-        monoRepoId: String,
-    ): Set<String> {
-        val existingCommits = mutableListOf<GitCommitDocument>()
-
-        gitCommitRepository
-            .findByClientIdAndMonoRepoId(clientId, monoRepoId)
-            .collect { existingCommits.add(it) }
-
-        return existingCommits.map { it.commitHash }.toSet()
-    }
-
-    private suspend fun saveNewMonoRepoCommit(
-        clientId: ObjectId,
-        monoRepoId: String,
-        commitInfo: GitCommitInfo,
-        branch: String,
-    ) {
-        val newCommit =
-            GitCommitDocument(
-                clientId = clientId,
-                projectId = null,
-                monoRepoId = monoRepoId,
-                commitHash = commitInfo.commitHash,
-                state = GitCommitState.NEW,
-                author = commitInfo.author,
-                message = commitInfo.message,
-                commitDate = commitInfo.commitDate,
-                branch = branch,
-            )
-        gitCommitRepository.save(newCommit)
-        logger.debug { "Saved new mono-repo commit ${commitInfo.commitHash.take(8)} by ${commitInfo.author} with state NEW" }
-    }
-
-    /**
-     * Find commits that need to be indexed for a mono-repo (state = NEW).
-     */
-    fun findNewMonoRepoCommits(
-        clientId: ObjectId,
-        monoRepoId: String,
-    ): Flow<GitCommitDocument> =
-        gitCommitRepository
-            .findByClientIdAndMonoRepoIdAndStateOrderByCommitDateAsc(clientId, monoRepoId, GitCommitState.NEW)
-
-    // ========== Shared Methods ==========
-
-    /**
-     * Continuous stream of NEW commits across all projects (for single-instance AbstractContinuousIndexer).
-     * Polls every 30s when queue empty. Ordered by commit date DESC (newest first).
-     */
-    fun continuousNewCommits(): Flow<GitCommitDocument> = flow {
-        while (true) {
-            var emittedAny = false
-            gitCommitRepository
-                .findByStateOrderByCommitDateDesc(GitCommitState.NEW)
-                .collect { commit ->
-                    emit(commit)
-                    emittedAny = true
-                }
-
-            if (!emittedAny) {
-                delay(30_000) // Wait 30s if queue empty
-            }
-        }
-    }
-
-    /**
-     * Continuous stream of NEW commits for a specific project (legacy, if needed).
-     * Polls every 30s when queue empty.
-     */
-    fun continuousNewCommits(projectId: ObjectId): Flow<GitCommitDocument> = flow {
-        while (true) {
-            var emittedAny = false
-            gitCommitRepository
-                .findByProjectIdAndStateOrderByCommitDateAsc(projectId, GitCommitState.NEW)
-                .collect { commit ->
-                    emit(commit)
-                    emittedAny = true
-                }
-
-            if (!emittedAny) {
-                delay(30_000) // Wait 30s if queue empty
-            }
-        }
-    }
-
-    /**
-     * Continuous stream of NEW commits for a mono-repo (for AbstractContinuousIndexer).
-     * Polls every 30s when queue empty.
-     */
-    fun continuousNewMonoRepoCommits(clientId: ObjectId, monoRepoId: String): Flow<GitCommitDocument> = flow {
-        while (true) {
-            var emittedAny = false
-            gitCommitRepository
-                .findByClientIdAndMonoRepoIdAndStateOrderByCommitDateAsc(clientId, monoRepoId, GitCommitState.NEW)
-                .collect { commit ->
-                    emit(commit)
-                    emittedAny = true
-                }
-
-            if (!emittedAny) {
-                delay(30_000) // Wait 30s if queue empty
-            }
-        }
-    }
-
-    /**
-     * Mark commit as INDEXING to prevent concurrent processing.
-     */
-    suspend fun markAsIndexing(commitDocument: GitCommitDocument) {
-        val updated = commitDocument.copy(state = GitCommitState.INDEXING)
-        gitCommitRepository.save(updated)
-        logger.debug { "Marked commit ${commitDocument.commitHash.take(8)} as INDEXING" }
-    }
-
-    /**
-     * Mark commit as indexed after successful processing.
+     * Mark the commit as indexed after successful processing.
      * Works for both standalone and mono-repo commits.
      */
     suspend fun markAsIndexed(commitDocument: GitCommitDocument) {
@@ -248,23 +100,16 @@ class GitCommitStateManager(
     }
 
     /**
-     * Mark commit as failed after error during processing.
+     * Mark commit as failed after an error during processing.
      * Fail-fast: error logged, no retry - errors tracked in ErrorLogService.
      */
-    suspend fun markAsFailed(commitDocument: GitCommitDocument, reason: String) {
+    suspend fun markAsFailed(
+        commitDocument: GitCommitDocument,
+        reason: String,
+    ) {
         val updated = commitDocument.copy(state = GitCommitState.FAILED)
         gitCommitRepository.save(updated)
         logger.warn { "Marked commit ${commitDocument.commitHash.take(8)} as FAILED: $reason" }
-    }
-
-    /**
-     * Get counts of INDEXED and NEW commits for UI status.
-     * Returns (indexedCount, newCount).
-     */
-    suspend fun getIndexedAndNewCounts(): Pair<Long, Long> {
-        val indexedCount = gitCommitRepository.countByState(GitCommitState.INDEXED)
-        val newCount = gitCommitRepository.countByState(GitCommitState.NEW)
-        return indexedCount to newCount
     }
 }
 

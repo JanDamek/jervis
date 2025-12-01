@@ -64,6 +64,9 @@ dependencies {
     // Weaviate client (HTTP/GraphQL)
     implementation(libs.weaviate.client)
 
+    // ArangoDB (Graph DB)
+    implementation(libs.arangodb.driver)
+
     // Native DNS resolver for macOS
     implementation(libs.netty.resolver.dns.native.macos) {
         artifact { classifier = "osx-x86_64" }
@@ -101,6 +104,10 @@ dependencies {
 
     // Bucket4j for rate limiting
     implementation("com.bucket4j:bucket4j-core:8.10.1")
+
+    // JetBrains Koog – complex workflow agents (official framework)
+    // Pinned to 0.5.3 as requested
+    implementation("ai.koog:koog-agents:0.5.3")
 }
 
 kotlin {

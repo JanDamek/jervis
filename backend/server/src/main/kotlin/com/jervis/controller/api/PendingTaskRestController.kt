@@ -1,6 +1,8 @@
 package com.jervis.controller.api
 
 import com.jervis.dto.PendingTaskDto
+import com.jervis.dto.PendingTaskStateEnum
+import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.service.IPendingTaskService
 import com.jervis.service.background.PendingTaskService
 import kotlinx.coroutines.flow.map
@@ -34,13 +36,16 @@ class PendingTaskRestController(
     override suspend fun listPendingTasks(
         @RequestParam("taskType") taskType: String?,
         @RequestParam("state") state: String?,
-    ): List<PendingTaskDto> =
-        pendingTaskService
-            .findAllTasks(taskType, state)
+    ): List<PendingTaskDto> {
+        val taskTypeEnum = taskType?.let { runCatching { PendingTaskTypeEnum.valueOf(it) }.getOrNull() }
+        val stateEnum = state?.let { runCatching { PendingTaskStateEnum.valueOf(it) }.getOrNull() }
+        
+        return pendingTaskService
+            .findAllTasks(taskTypeEnum, stateEnum)
             .map { task ->
                 PendingTaskDto(
                     id = task.id.toHexString(),
-                    taskType = task.taskType.name,
+                    taskType = task.type.name,
                     content = task.content,
                     projectId = task.projectId?.toHexString(),
                     clientId = task.clientId.toHexString(),
@@ -48,12 +53,17 @@ class PendingTaskRestController(
                     state = task.state.name,
                 )
             }.toList()
+    }
 
     @GetMapping("/count")
     override suspend fun countPendingTasks(
         @RequestParam("taskType") taskType: String?,
         @RequestParam("state") state: String?,
-    ): Long = pendingTaskService.countTasks(taskType, state)
+    ): Long {
+        val taskTypeEnum = taskType?.let { runCatching { PendingTaskTypeEnum.valueOf(it) }.getOrNull() }
+        val stateEnum = state?.let { runCatching { PendingTaskStateEnum.valueOf(it) }.getOrNull() }
+        return pendingTaskService.countTasks(taskTypeEnum, stateEnum)
+    }
 
     @DeleteMapping("/{id}")
     override suspend fun deletePendingTask(

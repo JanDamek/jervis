@@ -156,6 +156,12 @@ class WebSocketClient(private val serverBaseUrl: String) {
     }
 
     private suspend fun handleMessage(text: String) {
+        // Ignore informational events that don't need handling
+        if (text.contains("\"eventType\":\"PLAN_STATUS_CHANGED\"")) {
+            // Agent plan status updates are informational only, ignore silently
+            return
+        }
+
         // Try to parse as different event types
 
         // User task created

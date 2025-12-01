@@ -1,6 +1,5 @@
 package com.jervis.service.gateway.processing
 
-import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.service.gateway.processing.domain.ParsedResponse
@@ -16,7 +15,6 @@ class JsonParser {
         jacksonObjectMapper().apply {
             configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
             configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES, false)
-            // Allow missing creator properties (use Kotlin default values in data classes)
             configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES, false)
             configure(com.fasterxml.jackson.databind.DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY, true)
         }
@@ -51,10 +49,10 @@ class JsonParser {
         while (startIndex != -1) {
             val endIndex = cleaned.indexOf(thinkEndTag, startIndex)
             if (endIndex != -1) {
-                cleaned = cleaned.substring(0, startIndex) + cleaned.substring(endIndex + thinkEndTag.length)
+                cleaned = cleaned.take(startIndex) + cleaned.substring(endIndex + thinkEndTag.length)
                 startIndex = cleaned.indexOf(thinkStartTag)
             } else {
-                cleaned = cleaned.substring(0, startIndex) + cleaned.substring(startIndex + thinkStartTag.length)
+                cleaned = cleaned.take(startIndex) + cleaned.substring(startIndex + thinkStartTag.length)
                 break
             }
         }
@@ -82,7 +80,7 @@ class JsonParser {
                 cleaned = cleaned.substring(firstNewline + 1)
             }
             if (cleaned.endsWith("```")) {
-                cleaned = cleaned.substring(0, cleaned.length - 3).trim()
+                cleaned = cleaned.dropLast(3).trim()
             }
         }
 
@@ -132,22 +130,15 @@ class JsonParser {
 
             when {
                 escapeNext -> {
-                    // Fix invalid JSON escape sequences from LLM regex patterns
-                    // Valid JSON escapes: \", \\, \/, \b, \f, \n, \r, \t, \uXXXX
-                    // Invalid: \. \* \+ \? \[ \] \{ \} \( \) \| \^ \$
-                    // These are valid regex escapes but invalid JSON escapes
                     if (char in setOf('.', '*', '+', '?', '[', ']', '{', '}', '(', ')', '|', '^', '$')) {
-                        // Remove the backslash, keep only the character
                         result.append(char)
                     } else {
-                        // Valid JSON escape or unknown - keep both backslash and char
                         result.append('\\').append(char)
                     }
                     escapeNext = false
                 }
 
                 char == '\\' && insideString -> {
-                    // Don't append yet - wait to see next char
                     escapeNext = true
                 }
 
@@ -215,45 +206,6 @@ class JsonParser {
             return ParsedResponse(thinkContent, parsedResult)
         } catch (e: Exception) {
             logger.error { "JSON parsing with think extraction failed for $provider/$model: ${e.message}" }
-            logger.error { "Raw response: $rawResponse" }
-            throw e
-        }
-    }
-
-    fun <T : Any> validateAndParse(
-        rawResponse: String,
-        responseSchema: T,
-        provider: ModelProviderEnum,
-        model: String,
-    ): T {
-        try {
-            val finalJson = findFinalJsonBlock(rawResponse)
-            val trimmedResponse = cleanJsonResponse(finalJson)
-
-            return when (responseSchema) {
-                is Collection<*> -> {
-                    if (responseSchema.isEmpty()) {
-                        @Suppress("UNCHECKED_CAST")
-                        responseSchema as T
-                    } else {
-                        val firstElement =
-                            requireNotNull(responseSchema.firstOrNull()) {
-                                "Collection schema must have at least one element"
-                            }
-                        val elementType = firstElement::class.java
-                        val listType =
-                            objectMapper.typeFactory.constructCollectionType(ArrayList::class.java, elementType)
-                        @Suppress("UNCHECKED_CAST")
-                        objectMapper.readValue(trimmedResponse, listType) as T
-                    }
-                }
-
-                else -> {
-                    objectMapper.readValue(trimmedResponse, responseSchema::class.java)
-                }
-            }
-        } catch (e: Exception) {
-            logger.error { "JSON parsing failed for $provider/$model: ${e.message}" }
             logger.error { "Raw response: $rawResponse" }
             throw e
         }

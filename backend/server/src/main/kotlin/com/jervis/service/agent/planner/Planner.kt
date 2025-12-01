@@ -3,11 +3,11 @@ package com.jervis.service.agent.planner
 import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.plan.StepStatusEnum
+import com.jervis.mcp.McpToolRegistry
 import com.jervis.rag.KnowledgeService
 import com.jervis.rag.KnowledgeType
 import com.jervis.rag.SearchRequest
 import com.jervis.service.gateway.LlmGateway
-import com.jervis.service.mcp.McpToolRegistry
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.springframework.stereotype.Service

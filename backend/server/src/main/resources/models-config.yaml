@@ -9,6 +9,11 @@ providers:
     executionMode: NONBLOCKING
     maxConcurrentRequests: 4
 
+  OLLAMA_EMBEDDING:
+    endpoint: ollama.embedding
+    executionMode: NONBLOCKING
+    maxConcurrentRequests: 50
+
   ANTHROPIC:
     endpoint: anthropic
     executionMode: NONBLOCKING
@@ -31,18 +36,18 @@ providers:
 
 models:
   EMBEDDING_TEXT:
-    - provider: LM_STUDIO
-      model: text-embedding-bge-m3
+    - provider: OLLAMA_EMBEDDING
+      model: bge-m3
       context-length: 4096
       dimension: 1024
-      concurrency: 8
+      concurrency: 50
 
   EMBEDDING_CODE:
-    - provider: LM_STUDIO
-      model: text-embedding-nomic-embed-code
+    - provider: OLLAMA_EMBEDDING
+      model: bge-m3
       context-length: 4096
-      dimension: 3584
-      concurrency: 4
+      dimension: 1024
+      concurrency: 50
 
   PLANNER:
     - provider: OLLAMA
@@ -117,6 +122,8 @@ endpoints:
       baseUrl: ${OLLAMA_BASE_URL:http://192.168.100.117:11434/}
     qualifier:
       baseUrl: ${OLLAMA_QUALIFIER_BASE_URL:http://192.168.100.117:11435/}
+    embedding:
+      baseUrl: ${OLLAMA_EMBEDDING_BASE_URL:http://192.168.100.117:11436/}
   lmStudio:
     baseUrl: ${LMSTUDIO_BASE_URL:http://192.168.101.249:1234/}
   searxng:

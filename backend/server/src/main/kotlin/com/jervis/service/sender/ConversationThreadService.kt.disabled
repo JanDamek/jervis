@@ -1,9 +1,9 @@
 package com.jervis.service.sender
 
 import com.jervis.domain.MessageChannelEnum
-import com.jervis.domain.confluence.ConversationCategoryEnum
-import com.jervis.domain.confluence.PriorityEnum
-import com.jervis.domain.confluence.ThreadStatusEnum
+import com.jervis.domain.atlassian.confluence.ConversationCategoryEnum
+import com.jervis.domain.atlassian.confluence.PriorityEnum
+import com.jervis.domain.atlassian.confluence.ThreadStatusEnum
 import com.jervis.domain.sender.ChannelMapping
 import com.jervis.domain.sender.ConversationThread
 import com.jervis.mapper.toDomain

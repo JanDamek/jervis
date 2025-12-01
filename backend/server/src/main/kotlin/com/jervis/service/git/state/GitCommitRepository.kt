@@ -14,21 +14,8 @@ interface GitCommitRepository : CoroutineCrudRepository<GitCommitDocument, Objec
         state: GitCommitState,
     ): Flow<GitCommitDocument>
 
-    fun findByClientIdAndMonoRepoId(
-        clientId: ObjectId,
-        monoRepoId: String,
-    ): Flow<GitCommitDocument>
-
-    fun findByClientIdAndMonoRepoIdAndStateOrderByCommitDateAsc(
-        clientId: ObjectId,
-        monoRepoId: String,
-        state: GitCommitState,
-    ): Flow<GitCommitDocument>
-
-    // All NEW commits across all projects (for single-instance indexer)
     fun findByStateOrderByCommitDateDesc(state: GitCommitState): Flow<GitCommitDocument>
 
     // Global counts for UI overview
-    @org.springframework.data.mongodb.repository.Query(value = "{ 'state': ?0 }", count = true)
     suspend fun countByState(state: GitCommitState): Long
 }

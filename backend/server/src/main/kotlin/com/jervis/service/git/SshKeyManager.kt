@@ -1,6 +1,5 @@
 package com.jervis.service.git
 
-import com.jervis.entity.ClientDocument
 import com.jervis.entity.ProjectDocument
 import com.jervis.service.storage.DirectoryStructureService
 import kotlinx.coroutines.Dispatchers
@@ -168,67 +167,4 @@ class SshKeyManager(
                 null
             }
         }
-
-    /**
-     * Prepare SSH authentication for mono-repo with decrypted private key.
-     * Returns path to SSH config file.
-     * Keys are stored per client + monoRepoId to support multiple mono-repos.
-     */
-    suspend fun prepareMonoRepoSshAuthentication(
-        client: ClientDocument,
-        monoRepoId: String,
-        decryptedPrivateKey: String,
-        publicKey: String? = null,
-    ): Path? =
-        withContext(Dispatchers.IO) {
-            try {
-                // Use client-level SSH key storage for mono-repos
-                val keyDir =
-                    directoryStructureService
-                        .sshKeysDir()
-                        .resolve(client.id.toHexString())
-                        .resolve("mono-repos")
-                        .resolve(monoRepoId)
-
-                directoryStructureService.ensureDirectoryExists(keyDir)
-
-                val privateKeyPath = keyDir.resolve("id_rsa")
-                Files.writeString(privateKeyPath, decryptedPrivateKey)
-                setFilePermissions(privateKeyPath, "600")
-
-                publicKey?.let { pubKey ->
-                    val publicKeyPath = keyDir.resolve("id_rsa.pub")
-                    Files.writeString(publicKeyPath, pubKey)
-                    setFilePermissions(publicKeyPath, "644")
-                }
-
-                val sshConfigPath = createMonoRepoSshConfig(keyDir, privateKeyPath, client, monoRepoId)
-                logger.info { "SSH authentication prepared for mono-repo $monoRepoId at $keyDir" }
-
-                sshConfigPath
-            } catch (e: Exception) {
-                logger.error(e) { "Failed to prepare SSH authentication for mono-repo $monoRepoId" }
-                null
-            }
-        }
-
-    private fun createMonoRepoSshConfig(
-        keyDir: Path,
-        privateKeyPath: Path,
-        client: ClientDocument,
-        monoRepoId: String,
-    ): Path {
-        val configPath = keyDir.resolve("config")
-        val configContent =
-            """
-            Host *
-                StrictHostKeyChecking no
-                UserKnownHostsFile=/dev/null
-                IdentityFile ${privateKeyPath.toAbsolutePath()}
-            """.trimIndent()
-
-        Files.writeString(configPath, configContent)
-        setFilePermissions(configPath, "600")
-        return configPath
-    }
 }

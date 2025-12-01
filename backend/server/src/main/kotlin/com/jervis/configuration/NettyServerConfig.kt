@@ -1,5 +1,6 @@
 package com.jervis.configuration
 
+import com.jervis.configuration.properties.NettyProperties
 import io.netty.channel.ChannelOption
 import io.netty.handler.timeout.ReadTimeoutHandler
 import io.netty.handler.timeout.WriteTimeoutHandler
@@ -12,19 +13,19 @@ import java.time.Duration
 import java.util.concurrent.TimeUnit
 
 @Configuration
-class NettyServerConfig {
+class NettyServerConfig(private val properties: NettyProperties) {
     @Bean
     fun jervisNettyWebServerCustomizer(): WebServerFactoryCustomizer<NettyReactiveWebServerFactory> =
         WebServerFactoryCustomizer { factory ->
             factory.addServerCustomizers(
                 NettyServerCustomizer { httpServer ->
                     httpServer
-                        .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 60_000)
-                        .option(ChannelOption.SO_KEEPALIVE, true)
-                        .idleTimeout(Duration.ofMinutes(10))
+                        .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, properties.connectTimeoutMs)
+                        .option(ChannelOption.SO_KEEPALIVE, properties.soKeepalive)
+                        .idleTimeout(Duration.ofSeconds(properties.idleTimeoutSeconds))
                         .doOnConnection { conn ->
-                            conn.addHandlerLast(ReadTimeoutHandler(600, TimeUnit.SECONDS)) // 10 minutes
-                            conn.addHandlerLast(WriteTimeoutHandler(600, TimeUnit.SECONDS)) // 10 minutes
+                            conn.addHandlerLast(ReadTimeoutHandler(properties.readTimeoutSeconds, TimeUnit.SECONDS))
+                            conn.addHandlerLast(WriteTimeoutHandler(properties.writeTimeoutSeconds, TimeUnit.SECONDS))
                         }
                 },
             )

@@ -12,9 +12,10 @@ import java.time.Instant
  */
 @Document(collection = "unsafe_links")
 data class UnsafeLinkDocument(
-    @Id val id: ObjectId = ObjectId(),
-    @Indexed(unique = true) val url: String,
+    @Id
+    val id: ObjectId = ObjectId(),
+    @Indexed
+    val url: String,
+    val pattern: String,
     val reason: String,
-    val suggestedRegex: String? = null,
-    val createdAt: Instant = Instant.now(),
 )

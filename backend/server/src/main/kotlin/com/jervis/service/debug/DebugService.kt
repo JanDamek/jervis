@@ -1,6 +1,8 @@
 package com.jervis.service.debug
 
 import com.jervis.domain.websocket.WebSocketChannelTypeEnum
+import com.jervis.dto.PendingTaskStateEnum
+import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.dto.events.DebugEventDto
 import com.jervis.service.websocket.WebSocketSessionManager
 import kotlinx.serialization.json.Json
@@ -99,7 +101,7 @@ class DebugService(
         taskId: String,
         fromState: String,
         toState: String,
-        taskType: String,
+        taskType: PendingTaskTypeEnum,
     ) {
         val dto =
             DebugEventDto.TaskStateTransition(
@@ -145,8 +147,8 @@ class DebugService(
     fun gpuTaskPickup(
         correlationId: String,
         taskId: String,
-        taskType: String,
-        state: String,
+        taskType: PendingTaskTypeEnum,
+        state: PendingTaskStateEnum,
     ) {
         val dto =
             DebugEventDto.GpuTaskPickup(

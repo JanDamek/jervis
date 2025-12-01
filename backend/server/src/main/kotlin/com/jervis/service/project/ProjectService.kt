@@ -23,59 +23,11 @@ class ProjectService(
 
     suspend fun getAllProjects(): List<ProjectDocument> = projectRepository.findAll().toList()
 
-    suspend fun getDefaultProject(): ProjectDocument? = projectRepository.findByIsActiveIsTrue()
-
-    suspend fun setActiveProject(project: ProjectDocument) {
-        setDefaultProject(project)
-    }
-
-    suspend fun setDefaultProject(project: ProjectDocument) {
-        val allProjects = projectRepository.findAll().toList()
-        allProjects.forEach { existingProject ->
-            if (existingProject.isActive && existingProject.id != project.id) {
-                val updatedProject =
-                    existingProject.copy(
-                        isActive = false,
-                        updatedAt = Instant.now(),
-                    )
-                projectRepository.save(updatedProject)
-            }
-        }
-
-        // Set the default status for the selected project
-        if (!project.isActive) {
-            val updatedProject =
-                project.copy(
-                    isActive = true,
-                    updatedAt = Instant.now(),
-                )
-            projectRepository.save(updatedProject)
-        }
-    }
-
-    suspend fun saveProject(
-        project: ProjectDocument,
-        makeDefault: Boolean,
-    ): ProjectDto {
+    suspend fun saveProject(project: ProjectDocument): ProjectDto {
         val existing = projectRepository.findById(project.id)
         val isNew = existing == null
 
-        val savedProject =
-            if (isNew) {
-                val newProject = project.copy(createdAt = Instant.now(), updatedAt = Instant.now())
-                projectRepository.save(newProject)
-            } else {
-                val updatedProject =
-                    project.copy(
-                        createdAt = existing.createdAt,
-                        updatedAt = Instant.now(),
-                    )
-                projectRepository.save(updatedProject)
-            }
-
-        if (makeDefault) {
-            setDefaultProject(savedProject)
-        }
+        val savedProject = projectRepository.save(project)
 
         directoryStructureService.ensureProjectDirectories(savedProject.clientId, savedProject.id)
 
@@ -90,12 +42,7 @@ class ProjectService(
 
     suspend fun deleteProject(project: ProjectDto) {
         val projectDoc = project.toDocument()
-        if (projectDoc.isActive) {
-            logger.warn { "Attempting to delete default project: ${projectDoc.name}" }
-        }
-
         projectRepository.delete(projectDoc)
-
         logger.info { "Deleted project: ${projectDoc.name}" }
     }
 

@@ -1,9 +1,10 @@
 package com.jervis.configuration
 
+import com.jervis.configuration.properties.DomainRateLimitProperties
 import com.jervis.entity.connection.Connection
 import com.jervis.entity.connection.HttpCredentials
-import com.jervis.entity.connection.RateLimitConfig
-import com.jervis.service.http.DomainRateLimiter
+import com.jervis.service.http.RateLimitingPlugin
+import com.jervis.service.ratelimit.DomainRateLimiterService
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.*
@@ -13,12 +14,10 @@ import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.util.*
-import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
-import java.net.URL
 
 private val logger = KotlinLogging.logger {}
 
@@ -38,23 +37,6 @@ private val logger = KotlinLogging.logger {}
  */
 @Configuration
 class HttpClientConfiguration {
-
-    /**
-     * Global rate limiter instance.
-     * Shared across all HTTP requests to enforce per-domain rate limits.
-     */
-    @Bean
-    fun domainRateLimiter(): DomainRateLimiter {
-        return DomainRateLimiter(
-            defaultConfig = RateLimitConfig(
-                maxRequestsPerSecond = 10,
-                maxRequestsPerMinute = 100,
-                enabled = true
-            ),
-            ttlSeconds = 300 // 5 minutes TTL for unused domains
-        )
-    }
-
     /**
      * Global Ktor HttpClient bean.
      *
@@ -66,7 +48,7 @@ class HttpClientConfiguration {
      * - Request/response logging (debug level)
      */
     @Bean
-    fun httpClient(domainRateLimiter: DomainRateLimiter): HttpClient {
+    fun httpClient(rateLimiterService: DomainRateLimiterService, properties: DomainRateLimitProperties): HttpClient {
         return HttpClient(CIO) {
             // JSON serialization
             install(ContentNegotiation) {
@@ -79,13 +61,15 @@ class HttpClientConfiguration {
 
             // Default timeout (can be overridden per request)
             install(HttpTimeout) {
-                requestTimeoutMillis = 30000
-                connectTimeoutMillis = 10000
-                socketTimeoutMillis = 30000
+                requestTimeoutMillis = properties.requestTimeoutMs
+                connectTimeoutMillis = properties.connectTimeoutMs
+                socketTimeoutMillis = properties.socketTimeoutMs
             }
 
-            // Rate limiting interceptor
-            install(createRateLimitPlugin(domainRateLimiter))
+            // Rate limiting interceptor (Bucket4j-based service)
+            install(RateLimitingPlugin) {
+                rateLimiter = rateLimiterService
+            }
 
             // Authorization header injection
             install(createAuthPlugin())
@@ -104,22 +88,6 @@ class HttpClientConfiguration {
     /**
      * Rate limiting plugin - applies rate limits before each request.
      */
-    private fun createRateLimitPlugin(rateLimiter: DomainRateLimiter) = createClientPlugin("RateLimitPlugin") {
-        onRequest { request, _ ->
-            val url = request.url.toString()
-            val domain = extractDomain(url)
-
-            // Get rate limit config from Connection if available
-            val connection = request.attributes.getOrNull(ConnectionKey)
-            val config = connection?.rateLimitConfig
-
-            logger.debug { "Rate limiting request to domain: $domain" }
-            runBlocking {
-                rateLimiter.acquire(domain, config)
-            }
-        }
-    }
-
     /**
      * Authorization plugin - injects auth headers from Connection.
      * Credentials must be provided via ConnectionCredentialsKey attribute.
@@ -131,17 +99,10 @@ class HttpClientConfiguration {
 
             if (connection is Connection.HttpConnection && credentials != null) {
                 when (credentials) {
-                    is HttpCredentials.Basic -> {
-                        request.header(HttpHeaders.Authorization, credentials.toAuthHeader())
-                    }
-                    is HttpCredentials.Bearer -> {
-                        request.header(HttpHeaders.Authorization, credentials.toAuthHeader())
-                    }
-                    is HttpCredentials.ApiKey -> {
-                        request.header(credentials.headerName, credentials.apiKey)
-                    }
+                    is HttpCredentials.Basic -> request.header(HttpHeaders.Authorization, credentials.toAuthHeader())
+                    is HttpCredentials.Bearer -> request.header(HttpHeaders.Authorization, credentials.toAuthHeader())
                 }
-                logger.debug { "Added ${connection.authType} authentication for ${connection.name}" }
+                logger.debug { "Added authentication header for ${connection.name}" }
             }
         }
     }
@@ -152,18 +113,6 @@ class HttpClientConfiguration {
     private fun createLoggingPlugin() = createClientPlugin("LoggingPlugin") {
         onRequest { request, _ ->
             logger.debug { "HTTP ${request.method.value} ${request.url}" }
-        }
-    }
-
-    /**
-     * Extract domain from URL for rate limiting.
-     */
-    private fun extractDomain(url: String): String {
-        return try {
-            URL(url).host
-        } catch (e: Exception) {
-            logger.warn { "Failed to extract domain from URL: $url" }
-            url
         }
     }
 }

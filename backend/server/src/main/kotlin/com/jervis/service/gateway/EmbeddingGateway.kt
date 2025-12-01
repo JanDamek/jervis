@@ -21,6 +21,7 @@ class EmbeddingGateway(
         type: ModelTypeEnum,
         text: String,
     ): List<Float> {
+        // Use candidates strictly in the order defined in models properties (no implicit prioritization)
         val candidates = modelsProperties.models[type].orEmpty()
         check(candidates.isNotEmpty()) { "No embedding model candidates configured for $type" }
 

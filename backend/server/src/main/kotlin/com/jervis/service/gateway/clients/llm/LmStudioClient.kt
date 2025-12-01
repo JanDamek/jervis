@@ -2,6 +2,7 @@ package com.jervis.service.gateway.clients.llm
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.jervis.configuration.WebClientFactory
 import com.jervis.configuration.prompts.CreativityConfig
 import com.jervis.configuration.prompts.PromptConfig
 import com.jervis.configuration.prompts.PromptsConfiguration
@@ -14,7 +15,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.reactive.asFlow
 import mu.KotlinLogging
-import com.jervis.configuration.WebClientFactory
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
@@ -143,7 +143,6 @@ class LmStudioClient(
                         }
                     } catch (e: Exception) {
                         logger.error { "Error parsing LM Studio streaming response: ${e.message}" }
-                        // Continue processing other chunks
                     }
                 }
             }

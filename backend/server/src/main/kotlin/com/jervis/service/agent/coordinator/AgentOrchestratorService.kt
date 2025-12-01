@@ -1,12 +1,11 @@
 package com.jervis.service.agent.coordinator
 
-import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.plan.PlanStep
-import com.jervis.domain.task.PendingTask
 import com.jervis.dto.ChatRequestContext
 import com.jervis.dto.ChatResponse
+import com.jervis.entity.PendingTaskDocument
 import com.jervis.repository.ClientMongoRepository
 import com.jervis.repository.ProjectMongoRepository
 import com.jervis.service.agent.compaction.ContextCompactionService
@@ -348,9 +347,9 @@ class AgentOrchestratorService(
         }
     }
 
-    suspend fun handleBackgroundTask(task: PendingTask): ChatResponse {
+    suspend fun handleBackgroundTask(task: PendingTaskDocument): ChatResponse {
         logger.info {
-            "AGENT_BACKGROUND_START: taskId=${task.id} type=${task.taskType} clientId=${task.clientId.toHexString()} projectId=${task.projectId?.toHexString() ?: "none"} correlationId=${task.correlationId}"
+            "AGENT_BACKGROUND_START: taskId=${task.id} type=${task.type} clientId=${task.clientId.toHexString()} projectId=${task.projectId?.toHexString() ?: "none"} correlationId=${task.correlationId}"
         }
 
         val clientId = requireNotNull(task.clientId) { "Background task must have clientId" }
@@ -360,7 +359,7 @@ class AgentOrchestratorService(
         val taskText = task.content
 
         // Load task-specific goal from YAML and apply content placeholder if present
-        val goalTemplate = promptRepository.getGoals(task.taskType)
+        val goalTemplate = promptRepository.getGoals(task.type)
         val goalPrompt = goalTemplate.replace("{content}", taskText)
         logger.info { "AGENT_BACKGROUND_GOAL: taskId=${task.id} goalLength=${goalPrompt.length} contentLength=${taskText.length}" }
 

@@ -8,7 +8,6 @@ import androidx.compose.ui.Modifier
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.navigation.AppNavigator
 import com.jervis.ui.navigation.Screen
-import com.jervis.ui.screens.ConnectionsScreen
 
 /**
  * Root Compose Application
@@ -110,10 +109,7 @@ fun App(
                 repository = repository,
                 onBack = { appNavigator.navigateTo(Screen.Main) }
             )
-            Screen.Connections -> ConnectionsScreen(
-                repository = repository,
-                onBack = { appNavigator.navigateTo(Screen.Main) }
-            )
+            // Connections screen removed – connections are managed within Settings under Client/Project edit
             Screen.DebugConsole -> {
                 val provider = LocalDebugEventsProvider.current
                 requireNotNull(provider) { "DebugEventsProvider is not available. Provide it via LocalDebugEventsProvider at the app root." }

@@ -15,12 +15,15 @@ import kotlin.math.min
  * Multiplatform WebSocket client for debug events (LLM calls)
  * Works on Android, iOS, and Desktop
  */
-class DebugWebSocketClient(private val serverBaseUrl: String) {
+class DebugWebSocketClient(
+    private val serverBaseUrl: String,
+) {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    private val json = Json {
-        ignoreUnknownKeys = true
-        classDiscriminator = "type"
-    }
+    private val json =
+        Json {
+            ignoreUnknownKeys = true
+            classDiscriminator = "type"
+        }
 
     private val _debugEvents = MutableSharedFlow<DebugEventDto>(replay = 0)
     val debugEvents: SharedFlow<DebugEventDto> = _debugEvents
@@ -51,10 +54,11 @@ class DebugWebSocketClient(private val serverBaseUrl: String) {
     }
 
     private suspend fun connect() {
-        val wsUrl = serverBaseUrl
-            .replaceFirst("http://", "ws://")
-            .replaceFirst("https://", "wss://")
-            .plus("ws/debug")
+        val wsUrl =
+            serverBaseUrl
+                .replaceFirst("http://", "ws://")
+                .replaceFirst("https://", "wss://")
+                .plus("ws/debug")
 
         createPlatformHttpClient().use { client ->
             client.webSocket(
@@ -71,7 +75,7 @@ class DebugWebSocketClient(private val serverBaseUrl: String) {
                     } catch (e: Exception) {
                         // Ignore - IP is optional
                     }
-                }
+                },
             ) {
                 println("Debug WebSocket connected to $wsUrl")
                 try {
@@ -87,13 +91,8 @@ class DebugWebSocketClient(private val serverBaseUrl: String) {
     }
 
     private suspend fun handleMessage(text: String) {
-        runCatching {
-            println("Debug event received: ${text.take(100)}")
-            val event = json.decodeFromString<DebugEventDto>(text)
-            _debugEvents.emit(event)
-        }.onFailure {
-            println("Failed to parse debug event: ${it.message}")
-        }
+        val event = json.decodeFromString<DebugEventDto>(text)
+        _debugEvents.emit(event)
     }
 
     /**

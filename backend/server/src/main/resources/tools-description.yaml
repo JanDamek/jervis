@@ -80,6 +80,22 @@ tools:
     description: "Extract text from documents using Apache Tika. Use for: extract text from PDF/DOCX/XLSX/PPTX, convert to plain text, extract metadata, process downloaded docs. Supports PDF, DOCX, XLSX, PPTX, HTML, RTF, TXT, MD. Parameters: file path (absolute/relative), 'no metadata'/'text only' to exclude metadata, 'max: [number]' to limit length"
 
   # ═══════════════════════════════════════════════════════════════════
+  # GRAPH & AGENTS
+  # ═══════════════════════════════════════════════════════════════════
+
+  GRAPH_UPSERT_NODE_TOOL:
+    plannerDescription: "Upsert a node in the per-client Knowledge Graph (Arango)"
+    description: "Create or update a graph node. Parameters (JSON): { 'entityType': 'entity|document|class|method|...', 'key': 'stable key e.g. entity::module::Name', 'props': { ... arbitrary string map ... }, 'ragChunks': ['weaviate://class/id', ...] }. Returns JSON with ok, key, created, warnings."
+
+  GRAPH_UPSERT_EDGE_TOOL:
+    plannerDescription: "Upsert an edge between two graph nodes"
+    description: "Create or update an edge. Parameters (JSON): { 'edgeType': 'mentions|defines|implements|...', 'fromKey': 'node key', 'toKey': 'node key', 'props': { ... } }. Returns JSON with ok, edgeType, fromKey, toKey, created, warnings."
+
+  KOOG_AGENT_TOOL:
+    plannerDescription: "Plan-and-route Koog agent (produces deterministic plan of tool calls)"
+    description: "Plan the next concrete tool calls for a given role and goals. Parameters (JSON): { 'role': 'graph-builder|rag-enricher|triage', 'goals': ['...'], 'context': { 'projectId': '<ObjectId>' } }. Returns JSON with ok, agent, plannedSteps[]."
+
+  # ═══════════════════════════════════════════════════════════════════
   # TASK & REQUIREMENT TOOLS
   # ═══════════════════════════════════════════════════════════════════
 

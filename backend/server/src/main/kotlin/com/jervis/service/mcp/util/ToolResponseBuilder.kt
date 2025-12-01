@@ -1,4 +1,4 @@
-package com.jervis.service.mcp.util
+package com.jervis.mcp.util
 
 /**
  * Utility class for building standardized MCP tool responses.

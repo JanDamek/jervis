@@ -52,7 +52,6 @@ class RateLimitedHttpClientFactory(
     /**
      * Create HTTP client with automatic rate limiting based on request domain.
      *
-     * @param maxInMemorySize Maximum buffer size for response bodies (default 8 MB)
      * @param requestTimeoutMs Timeout for individual requests (default 60s)
      * @param connectTimeoutMs Connection establishment timeout (default 30s)
      * @param socketTimeoutMs Socket read timeout (default 60s)

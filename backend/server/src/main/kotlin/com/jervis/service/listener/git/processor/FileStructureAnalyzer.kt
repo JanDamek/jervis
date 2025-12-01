@@ -1,6 +1,6 @@
 package com.jervis.service.listener.git.processor
 
-import com.jervis.domain.task.PendingTask
+import com.jervis.entity.PendingTaskDocument
 import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.entity.ProjectDocument
 import com.jervis.service.background.PendingTaskService
@@ -98,7 +98,7 @@ class FileStructureAnalyzer(
         commitHash: String,
         fileContent: String,
         dynamicGoal: String? = null,
-    ): PendingTask {
+    ): PendingTaskDocument {
         // Truncate file content if too large
         val truncatedContent =
             if (fileContent.length > MAX_FILE_CONTENT_FOR_CONTEXT) {

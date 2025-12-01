@@ -29,7 +29,7 @@ import org.springframework.data.mongodb.core.mapping.Document as MongoDocument
  * 4. Log INFO messages (no ERROR/WARN for expected operations)
  */
 @Component
-@Order(0) // Run BEFORE other components (BackgroundEngine, pollers, indexers)
+@Order(0)
 class MongoIndexInitializer(
     private val template: ReactiveMongoTemplate,
     private val mappingContext: MongoMappingContext,
@@ -70,7 +70,7 @@ class MongoIndexInitializer(
 
     private fun reconcileIndexes(
         collectionName: String,
-        desiredIndexes: Iterable<org.springframework.data.mongodb.core.index.IndexDefinition>
+        desiredIndexes: Iterable<org.springframework.data.mongodb.core.index.IndexDefinition>,
     ) {
         val collectionExists = template.collectionExists(collectionName).block() ?: false
         if (!collectionExists) {
@@ -81,15 +81,14 @@ class MongoIndexInitializer(
         val indexOps = template.indexOps(collectionName)
         val existingIndexes: List<IndexInfo> = indexOps.indexInfo.collectList().block() ?: emptyList()
 
-        // Build map of existing indexes by name
         val existingByName = existingIndexes.filter { it.name != "_id_" }.associateBy { it.name }
 
-        // Build set of desired index names
-        val desiredNames = desiredIndexes.mapNotNull { def ->
-            def.indexOptions.getString("name")
-        }.toSet()
+        val desiredNames =
+            desiredIndexes
+                .mapNotNull { def ->
+                    def.indexOptions.getString("name")
+                }.toSet()
 
-        // Drop obsolete indexes (exist in DB but not in annotations)
         val obsoleteIndexes = existingByName.keys - desiredNames
         if (obsoleteIndexes.isNotEmpty()) {
             logger.info { "  Dropping ${obsoleteIndexes.size} obsolete indexes: ${obsoleteIndexes.joinToString()}" }
@@ -103,7 +102,6 @@ class MongoIndexInitializer(
             }
         }
 
-        // Create or recreate desired indexes
         desiredIndexes.forEach { def ->
             val indexName = def.indexOptions.getString("name") ?: "generated"
 
@@ -113,7 +111,6 @@ class MongoIndexInitializer(
             } catch (e: Exception) {
                 val errorMsg = e.message ?: ""
 
-                // Handle duplicate key errors for unique indexes
                 if (errorMsg.contains("E11000") || errorMsg.contains("duplicate key error")) {
                     logger.warn { "    ~ Index $indexName cannot be created due to duplicate keys in collection $collectionName" }
                     logger.info { "      This collection has duplicate data that violates unique constraint" }
@@ -121,15 +118,12 @@ class MongoIndexInitializer(
                     return@forEach
                 }
 
-                // If creation fails due to conflict, drop and recreate
                 if (errorMsg.contains("IndexOptionsConflict") ||
                     errorMsg.contains("IndexKeySpecsConflict") ||
-                    errorMsg.contains("already exists")) {
-
+                    errorMsg.contains("already exists")
+                ) {
                     logger.info { "    ~ Index $indexName conflict detected, finding conflicting index..." }
 
-                    // Parse the conflicting index name from error message
-                    // Example: "Index already exists with a different name: client_idx"
                     val conflictingName = parseConflictingIndexName(errorMsg)
 
                     if (conflictingName != null) {
@@ -141,7 +135,6 @@ class MongoIndexInitializer(
                             logger.warn { "      - Failed to drop $conflictingName: ${dropEx.message}" }
                         }
                     } else {
-                        // Try dropping by desired name as fallback
                         try {
                             indexOps.dropIndex(indexName).block()
                             logger.info { "      ✓ Dropped index: $indexName" }
@@ -172,10 +165,8 @@ class MongoIndexInitializer(
 
     private fun parseConflictingIndexName(errorMessage: String?): String? {
         if (errorMessage.isNullOrBlank()) return null
-        // Example: "Index already exists with a different name: client_idx"
         val regex = Regex("different name: ([^\\s'}]+)")
         val match = regex.find(errorMessage)
         return match?.groupValues?.getOrNull(1)
     }
-
 }

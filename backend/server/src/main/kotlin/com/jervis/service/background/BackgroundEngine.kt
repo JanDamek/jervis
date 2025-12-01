@@ -1,10 +1,9 @@
 package com.jervis.service.background
 
 import com.jervis.configuration.properties.BackgroundProperties
-import com.jervis.domain.task.PendingTask
-import com.jervis.dto.PendingTaskState
+import com.jervis.dto.PendingTaskStateEnum
 import com.jervis.dto.PendingTaskTypeEnum
-import com.jervis.repository.ProjectMongoRepository
+import com.jervis.entity.PendingTaskDocument
 import com.jervis.repository.ScheduledTaskMongoRepository
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.debug.DebugService
@@ -39,7 +38,7 @@ import java.util.concurrent.atomic.AtomicReference
  * THREE INDEPENDENT LOOPS:
  * 1. Qualification loop (CPU) - runs continuously, checks DB every 30s
  * 2. Execution loop (GPU) - processes qualified tasks during idle GPU time
- * 3. Scheduler loop - dispatches scheduled tasks 10 minutes before scheduled time
+ * 3. Scheduler loop - dispatches scheduled tasks 10 minutes before the scheduled time
  *
  * STARTUP ORDER:
  * @Order(10) ensures this starts AFTER WeaviateSchemaInitializer (@Order(0))
@@ -51,13 +50,11 @@ class BackgroundEngine(
     private val llmLoadMonitor: LlmLoadMonitor,
     private val pendingTaskService: PendingTaskService,
     private val agentOrchestrator: AgentOrchestratorService,
-    // private val taskQualificationService: TaskQualificationService, // TODO: Re-enable after email refactoring
     private val backgroundProperties: BackgroundProperties,
     private val errorNotificationsPublisher: ErrorNotificationsPublisher,
     private val debugService: DebugService,
     private val scheduledTaskRepository: ScheduledTaskMongoRepository,
     private val taskManagementService: TaskManagementService,
-    private val projectMongoRepository: ProjectMongoRepository,
 ) {
     private val logger = KotlinLogging.logger {}
     private val supervisor = SupervisorJob()
@@ -67,14 +64,13 @@ class BackgroundEngine(
     private var executionJob: Job? = null
     private var schedulerJob: Job? = null
     private var consecutiveFailures = 0
-    private val maxRetryDelay = 300_000L // 5 minutes
-    private val schedulerAdvanceMinutes = 10L // Dispatch tasks 10 minutes before scheduled time
+    private val maxRetryDelay = 300_000L
+    private val schedulerAdvanceMinutes = 10L
 
     @PostConstruct
     fun start() {
         logger.info { "BackgroundEngine starting - initializing three independent loops..." }
 
-        // Start qualification loop (CPU, independent)
         qualificationJob =
             scope.launch {
                 try {
@@ -85,7 +81,6 @@ class BackgroundEngine(
                 }
             }
 
-        // Start execution loop (GPU, idle-based)
         executionJob =
             scope.launch {
                 try {
@@ -96,7 +91,6 @@ class BackgroundEngine(
                 }
             }
 
-        // Start scheduler loop (10-minute advance dispatch)
         schedulerJob =
             scope.launch {
                 try {
@@ -133,9 +127,9 @@ class BackgroundEngine(
     }
 
     /**
-     * Qualification loop - runs continuously on CPU, independent of GPU state.
-     * Processes entire Flow of tasks needing qualification using concurrency limit.
-     * Simple: load Flow, process all with semaphore, wait 30s if nothing, repeat.
+     * Qualification loop - runs continuously on CPU, independent of the GPU state.
+     * Processes the entire Flow of tasks needing qualification using concurrency limit.
+     * Simple: load Flow, process all with semaphore, wait the 30s if nothing, repeat.
      */
     private suspend fun runQualificationLoop() {
         logger.info { "Qualification loop entering main loop..." }
@@ -176,9 +170,6 @@ class BackgroundEngine(
 
                 logger.debug { "Execution loop: activeRequests=$activeRequests, idleDuration=${idleDuration.seconds}s" }
 
-                // Check if GPU is available for strong model tasks
-                // If no foreground activity, run background tasks immediately,
-                // Idle threshold only applies when there are active foreground requests
                 val canRunBackgroundTask =
                     if (activeRequests == 0) {
                         logger.debug { "No active foreground requests, background can run immediately" }
@@ -196,28 +187,25 @@ class BackgroundEngine(
                     }
 
                 if (canRunBackgroundTask) {
-                    // Get next task for strong model (state = DISPATCHED_GPU)
                     val task =
                         pendingTaskService
-                            .findTasksByState(PendingTaskState.DISPATCHED_GPU)
+                            .findTasksByState(PendingTaskStateEnum.DISPATCHED_GPU)
                             .firstOrNull()
 
                     if (task != null) {
                         logger.info {
-                            "GPU_TASK_PICKUP: id=${task.id} correlationId=${task.correlationId} type=${task.taskType} state=${task.state}"
+                            "GPU_TASK_PICKUP: id=${task.id} correlationId=${task.correlationId} type=${task.type} state=${task.state}"
                         }
 
-                        // Publish debug event
                         debugService.gpuTaskPickup(
                             correlationId = task.correlationId,
                             taskId = task.id.toHexString(),
-                            taskType = task.taskType.name,
-                            state = task.state.name,
+                            taskType = task.type,
+                            state = task.state,
                         )
 
-                        executeTask(task) // Blocks until task completes - no other task can start
+                        executeTask(task)
                         logger.info { "GPU_TASK_FINISHED: id=${task.id} correlationId=${task.correlationId}" }
-                        // Loop immediately to check for next task (no delay)
                     } else {
                         logger.debug { "No qualified tasks found, sleeping 30s..." }
                         delay(30_000)
@@ -240,24 +228,20 @@ class BackgroundEngine(
         }
     }
 
-    private suspend fun executeTask(task: PendingTask) {
+    private suspend fun executeTask(task: PendingTaskDocument) {
         val taskJob =
             scope.launch {
-                logger.info { "GPU_EXECUTION_START: id=${task.id} correlationId=${task.correlationId} type=${task.taskType}" }
+                logger.info { "GPU_EXECUTION_START: id=${task.id} correlationId=${task.correlationId} type=${task.type}" }
 
                 try {
-                    // All tasks go through agent orchestrator with goals from YAML
-                    val response = agentOrchestrator.handleBackgroundTask(task)
-
+                    agentOrchestrator.handleBackgroundTask(task)
                     pendingTaskService.deleteTask(task.id)
                     logger.info { "GPU_EXECUTION_SUCCESS: id=${task.id} correlationId=${task.correlationId}" }
 
-                    // Reset failure counter on success
                     consecutiveFailures = 0
-                } catch (e: CancellationException) {
+                } catch (_: CancellationException) {
                     logger.info { "GPU_EXECUTION_INTERRUPTED: id=${task.id} correlationId=${task.correlationId}" }
 
-                    // Save progress context for task resumption
                     try {
                         val progressContext = agentOrchestrator.getLastPlanContext(task.correlationId)
                         if (progressContext != null) {
@@ -269,10 +253,7 @@ class BackgroundEngine(
                     } catch (saveError: Exception) {
                         logger.error(saveError) { "Failed to save progress context for task ${task.id}" }
                     }
-
-                    // Task remains in DISPATCHED_GPU state and will be retried with progress context
                 } catch (e: Exception) {
-                    // Classify error type for appropriate handling
                     val errorType =
                         when {
                             e.message?.contains("Connection prematurely closed") == true -> "LLM_CONNECTION_FAILED"
@@ -315,29 +296,22 @@ class BackgroundEngine(
                             "consecutiveFailures=$consecutiveFailures isCommunication=$isCommunicationError"
                     }
 
-                    // Handle error based on type:
-                    // - Communication/LLM errors: publish to error notifications (desktop popup)
-                    // - Logic/data errors: escalate to user task (requires human intervention)
                     try {
                         if (isCommunicationError) {
-                            // LLM/network errors go to error notifications
                             val errorMessage =
-                                "Background task failed (${task.taskType.name}): $errorType - ${e.message}"
+                                "Background task failed (${task.type}): $errorType - ${e.message}"
                             errorNotificationsPublisher.publishError(
                                 message = errorMessage,
                                 stackTrace = e.stackTraceToString(),
                                 correlationId = task.id.toHexString(),
                             )
                             logger.info { "Published LLM error to notifications for task ${task.id}" }
-                            // Delete the pending task - it will be retried by next background cycle
                             pendingTaskService.deleteTask(task.id)
                         } else {
-                            // Logic errors require human intervention - create user task
                             pendingTaskService.failAndEscalateToUserTask(task, reason = errorType, error = e)
                         }
                     } catch (esc: Exception) {
                         logger.error(esc) { "Failed to handle task error for ${task.id}" }
-                        // Ensure deletion to avoid retry loop even if error handling fails
                         pendingTaskService.deleteTask(task.id)
                     }
 
@@ -359,7 +333,7 @@ class BackgroundEngine(
 
     /**
      * Scheduler loop - dispatches scheduled tasks 10 minutes before their scheduled time.
-     * Runs every 10 minutes, finds tasks scheduled within next 10 minutes, and creates pending tasks.
+     * Runs every 10 minutes, finds tasks scheduled within the next 10 minutes, and creates pending tasks.
      */
     private suspend fun runSchedulerLoop() {
         logger.info { "Scheduler loop entering main loop..." }
@@ -372,7 +346,6 @@ class BackgroundEngine(
 
                 logger.debug { "Scheduler: checking tasks scheduled between $now and $windowEnd" }
 
-                // Find tasks scheduled within next 10 minutes
                 val upcomingTasks =
                     scheduledTaskRepository
                         .findTasksScheduledBetween(now, windowEnd)
@@ -383,18 +356,15 @@ class BackgroundEngine(
 
                     upcomingTasks.forEach { task ->
                         try {
-                            // Create pending task with correlationId linking back to scheduled task
                             pendingTaskService.createTask(
                                 taskType = PendingTaskTypeEnum.SCHEDULED_TASK,
-                                content = task.content, // Agent gets full context directly
+                                content = task.content,
                                 clientId = task.clientId,
                                 projectId = task.projectId,
                                 correlationId = task.correlationId ?: task.id.toHexString(),
                             )
 
-                            // Handle lifecycle based on cron
                             if (task.cronExpression != null) {
-                                // Recurring task - calculate next occurrence and update scheduledAt
                                 try {
                                     val cron = CronExpression.parse(task.cronExpression)
                                     val nextOccurrence = cron.next(ZonedDateTime.ofInstant(task.scheduledAt, ZoneId.systemDefault()))
@@ -431,7 +401,6 @@ class BackgroundEngine(
                     logger.debug { "Scheduler: no upcoming tasks in next $schedulerAdvanceMinutes minutes" }
                 }
 
-                // Sleep 10 minutes before next check
                 delay(advanceWindow.toMillis())
             } catch (e: CancellationException) {
                 logger.info { "Scheduler loop cancelled" }
@@ -451,7 +420,7 @@ class BackgroundEngine(
 
         /**
          * Immediately interrupts the currently running background task.
-         * Called by LlmLoadMonitor when transitioning to busy state.
+         * Called by LlmLoadMonitor when transitioning to a busy state.
          */
         fun interruptNow() {
             currentTaskJob.getAndSet(null)?.cancel(CancellationException("Foreground request"))
