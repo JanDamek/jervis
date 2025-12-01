@@ -10,10 +10,5 @@ import org.springframework.stereotype.Repository
  */
 @Repository
 interface ProjectMongoRepository : CoroutineCrudRepository<ProjectDocument, ObjectId> {
-    /**
-     * Finds the project marked as active (default).
-     */
-    suspend fun findByIsActiveIsTrue(): ProjectDocument?
-
     suspend fun findByName(name: String): ProjectDocument?
 }

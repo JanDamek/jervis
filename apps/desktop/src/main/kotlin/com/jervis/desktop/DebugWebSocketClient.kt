@@ -18,34 +18,47 @@ import kotlin.math.min
 /**
  * Separate WebSocket client for debug events (LLM calls)
  */
-class DebugWebSocketClient(private val serverBaseUrl: String) {
+class DebugWebSocketClient(
+    private val serverBaseUrl: String,
+) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val json = Json { 
-        ignoreUnknownKeys = true
-        classDiscriminator = "type"
-    }
+    private val json =
+        Json {
+            ignoreUnknownKeys = true
+            classDiscriminator = "type"
+        }
 
-    private val client = HttpClient(CIO) {
-        engine {
-            https {
-                // Accept all certificates for development (self-signed certificates)
-                val trustAllCerts = object : X509TrustManager {
-                    override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
-                    override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {}
-                    override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+    private val client =
+        HttpClient(CIO) {
+            engine {
+                https {
+                    // Accept all certificates for development (self-signed certificates)
+                    val trustAllCerts =
+                        object : X509TrustManager {
+                            override fun checkClientTrusted(
+                                chain: Array<X509Certificate>,
+                                authType: String,
+                            ) {}
+
+                            override fun checkServerTrusted(
+                                chain: Array<X509Certificate>,
+                                authType: String,
+                            ) {}
+
+                            override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+                        }
+
+                    val sslContext = SSLContext.getInstance("TLS")
+                    sslContext.init(null, arrayOf(trustAllCerts), SecureRandom())
+
+                    trustManager = trustAllCerts
                 }
-
-                val sslContext = SSLContext.getInstance("TLS")
-                sslContext.init(null, arrayOf(trustAllCerts), SecureRandom())
-
-                trustManager = trustAllCerts
+            }
+            install(WebSockets) {
+                pingIntervalMillis = 20_000
+                maxFrameSize = Long.MAX_VALUE
             }
         }
-        install(WebSockets) {
-            pingIntervalMillis = 20_000
-            maxFrameSize = Long.MAX_VALUE
-        }
-    }
 
     private val _debugEvents = MutableSharedFlow<DebugEventDto>(replay = 0)
     val debugEvents: SharedFlow<DebugEventDto> = _debugEvents
@@ -78,10 +91,11 @@ class DebugWebSocketClient(private val serverBaseUrl: String) {
     }
 
     private suspend fun connect() {
-        val wsUrl = serverBaseUrl
-            .replaceFirst("http://", "ws://")
-            .replaceFirst("https://", "wss://")
-            .plus("ws/debug")
+        val wsUrl =
+            serverBaseUrl
+                .replaceFirst("http://", "ws://")
+                .replaceFirst("https://", "wss://")
+                .plus("ws/debug")
 
         client.webSocket(
             urlString = wsUrl,
@@ -97,7 +111,7 @@ class DebugWebSocketClient(private val serverBaseUrl: String) {
                 } catch (e: Exception) {
                     // Ignore - IP is optional
                 }
-            }
+            },
         ) {
             println("Debug WebSocket connected to $wsUrl")
             try {
@@ -131,13 +145,8 @@ class DebugWebSocketClient(private val serverBaseUrl: String) {
     }
 
     private suspend fun handleMessage(text: String) {
-        runCatching {
-            println("Debug event received: ${text.take(100)}")
-            val event = json.decodeFromString<DebugEventDto>(text)
-            _debugEvents.emit(event)
-        }.onFailure {
-            println("Failed to parse debug event: ${it.message}")
-        }
+        val event = json.decodeFromString<DebugEventDto>(text)
+        _debugEvents.emit(event)
     }
 
     /**

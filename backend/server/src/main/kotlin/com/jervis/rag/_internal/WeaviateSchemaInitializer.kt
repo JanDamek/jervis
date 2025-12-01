@@ -75,11 +75,6 @@ class WeaviateSchemaInitializer(
 
     @PostConstruct
     fun initializeSchema() {
-        if (!weaviateProperties.enabled) {
-            logger.info { "Weaviate is DISABLED - skipping schema initialization" }
-            return
-        }
-
         logger.info { "═══════════════════════════════════════════════════════════" }
         logger.info { "WEAVIATE SCHEMA INITIALIZATION - CRITICAL STARTUP PHASE" }
         logger.info { "═══════════════════════════════════════════════════════════" }

@@ -5,6 +5,8 @@ import com.jervis.dto.connection.ConnectionResponseDto
 import com.jervis.dto.connection.ConnectionTestResultDto
 import com.jervis.dto.connection.ConnectionUpdateRequestDto
 import com.jervis.entity.connection.Connection
+import com.jervis.entity.connection.HttpCredentials
+import com.jervis.entity.connection.RateLimitConfig
 import com.jervis.service.atlassian.AtlassianApiClient
 import com.jervis.service.connection.ConnectionService
 import io.ktor.client.*
@@ -49,7 +51,59 @@ class ConnectionRestController(
     suspend fun createConnection(
         @RequestBody request: ConnectionCreateRequestDto
     ): ConnectionResponseDto {
-        val connection = request.toEntity()
+        val connection: Connection = when (request.type.uppercase()) {
+            "HTTP" -> Connection.HttpConnection(
+                name = request.name,
+                baseUrl = request.baseUrl ?: error("baseUrl required for HTTP connection"),
+                credentials = mapHttpCredentials(request.authType, request.credentials),
+                timeoutMs = request.timeoutMs ?: 30000,
+                rateLimitConfig = RateLimitConfig(maxRequestsPerSecond = 10, maxRequestsPerMinute = 100),
+                state = request.state.toEntity(),
+            )
+            "IMAP" -> Connection.ImapConnection(
+                name = request.name,
+                host = request.host ?: error("host required for IMAP connection"),
+                port = request.port ?: 993,
+                username = request.username ?: error("username required for IMAP connection"),
+                password = request.password ?: error("password required for IMAP connection"),
+                useSsl = request.useSsl ?: true,
+                rateLimitConfig = RateLimitConfig(maxRequestsPerSecond = 10, maxRequestsPerMinute = 100),
+                state = request.state.toEntity(),
+            )
+            "POP3" -> Connection.Pop3Connection(
+                name = request.name,
+                host = request.host ?: error("host required for POP3 connection"),
+                port = request.port ?: 995,
+                username = request.username ?: error("username required for POP3 connection"),
+                password = request.password ?: error("password required for POP3 connection"),
+                useSsl = request.useSsl ?: true,
+                rateLimitConfig = RateLimitConfig(maxRequestsPerSecond = 10, maxRequestsPerMinute = 100),
+                state = request.state.toEntity(),
+            )
+            "SMTP" -> Connection.SmtpConnection(
+                name = request.name,
+                host = request.host ?: error("host required for SMTP connection"),
+                port = request.port ?: 587,
+                username = request.username ?: error("username required for SMTP connection"),
+                password = request.password ?: error("password required for SMTP connection"),
+                useTls = request.useTls ?: true,
+                rateLimitConfig = RateLimitConfig(maxRequestsPerSecond = 10, maxRequestsPerMinute = 100),
+                state = request.state.toEntity(),
+            )
+            "OAUTH2" -> Connection.OAuth2Connection(
+                name = request.name,
+                authorizationUrl = request.authorizationUrl ?: error("authorizationUrl required for OAuth2 connection"),
+                tokenUrl = request.tokenUrl ?: error("tokenUrl required for OAuth2 connection"),
+                clientId = request.clientId ?: error("clientId required for OAuth2 connection"),
+                clientSecret = request.clientSecret ?: error("clientSecret required for OAuth2 connection"),
+                scopes = listOfNotNull(request.scope),
+                redirectUri = request.redirectUri ?: error("redirectUri required for OAuth2 connection"),
+                rateLimitConfig = RateLimitConfig(maxRequestsPerSecond = 10, maxRequestsPerMinute = 100),
+                state = request.state.toEntity(),
+            )
+            else -> error("Unknown connection type: ${request.type}")
+        }
+
         val created = connectionService.create(connection)
         logger.info { "Created connection: ${created.name} (${created.id})" }
         return created.toDto()
@@ -63,7 +117,45 @@ class ConnectionRestController(
         val existing = connectionService.findById(ObjectId(id))
             ?: throw IllegalArgumentException("Connection not found: $id")
 
-        val updated = request.applyTo(existing)
+        val updated: Connection = when (existing) {
+            is Connection.HttpConnection -> existing.copy(
+                name = request.name ?: existing.name,
+                state = request.state?.toEntity() ?: existing.state,
+                baseUrl = request.baseUrl ?: existing.baseUrl,
+                credentials = request.credentials?.let { mapHttpCredentials(null, it) } ?: existing.credentials,
+                timeoutMs = request.timeoutMs ?: existing.timeoutMs,
+            )
+            is Connection.ImapConnection -> existing.copy(
+                name = request.name ?: existing.name,
+                state = request.state?.toEntity() ?: existing.state,
+                host = request.host ?: existing.host,
+                port = request.port ?: existing.port,
+                username = request.username ?: existing.username,
+                password = request.password ?: existing.password,
+            )
+            is Connection.Pop3Connection -> existing.copy(
+                name = request.name ?: existing.name,
+                state = request.state?.toEntity() ?: existing.state,
+                host = request.host ?: existing.host,
+                port = request.port ?: existing.port,
+                username = request.username ?: existing.username,
+                password = request.password ?: existing.password,
+            )
+            is Connection.SmtpConnection -> existing.copy(
+                name = request.name ?: existing.name,
+                state = request.state?.toEntity() ?: existing.state,
+                host = request.host ?: existing.host,
+                port = request.port ?: existing.port,
+                username = request.username ?: existing.username,
+                password = request.password ?: existing.password,
+            )
+            is Connection.OAuth2Connection -> existing.copy(
+                name = request.name ?: existing.name,
+                state = request.state?.toEntity() ?: existing.state,
+                clientSecret = request.clientSecret ?: existing.clientSecret,
+            )
+        }
+
         val saved = connectionService.update(updated)
         logger.info { "Updated connection: ${saved.name}" }
         return saved.toDto()
@@ -100,8 +192,7 @@ class ConnectionRestController(
 
     private suspend fun testHttpConnection(connection: Connection.HttpConnection): ConnectionTestResultDto {
         return try {
-            // Parse credentials (plain text, no decryption needed)
-            val credentials = connectionService.parseCredentials(connection)
+            val credentials = connection.credentials
 
             // Test Atlassian connection (if it's Atlassian URL)
             if (connection.baseUrl.contains("atlassian.net")) {
@@ -120,15 +211,8 @@ class ConnectionRestController(
                 val response = httpClient.get(connection.baseUrl) {
                     credentials?.let { creds ->
                         when (creds) {
-                            is com.jervis.entity.connection.HttpCredentials.Basic -> {
-                                header(HttpHeaders.Authorization, creds.toAuthHeader())
-                            }
-                            is com.jervis.entity.connection.HttpCredentials.Bearer -> {
-                                header(HttpHeaders.Authorization, creds.toAuthHeader())
-                            }
-                            is com.jervis.entity.connection.HttpCredentials.ApiKey -> {
-                                header(creds.headerName, creds.apiKey)
-                            }
+                            is com.jervis.entity.connection.HttpCredentials.Basic -> header(HttpHeaders.Authorization, creds.toAuthHeader())
+                            is com.jervis.entity.connection.HttpCredentials.Bearer -> header(HttpHeaders.Authorization, creds.toAuthHeader())
                         }
                     }
                 }
@@ -319,6 +403,28 @@ class ConnectionRestController(
 }
 
 /**
+ * Convert Entity ConnectionStateEnum to DTO ConnectionStateEnum.
+ */
+private fun com.jervis.entity.connection.ConnectionStateEnum.toDto(): com.jervis.dto.connection.ConnectionStateEnum {
+    return when (this) {
+        com.jervis.entity.connection.ConnectionStateEnum.NEW -> com.jervis.dto.connection.ConnectionStateEnum.NEW
+        com.jervis.entity.connection.ConnectionStateEnum.INVALID -> com.jervis.dto.connection.ConnectionStateEnum.INVALID
+        com.jervis.entity.connection.ConnectionStateEnum.VALID -> com.jervis.dto.connection.ConnectionStateEnum.VALID
+    }
+}
+
+/**
+ * Convert DTO ConnectionStateEnum to Entity ConnectionStateEnum.
+ */
+private fun com.jervis.dto.connection.ConnectionStateEnum.toEntity(): com.jervis.entity.connection.ConnectionStateEnum {
+    return when (this) {
+        com.jervis.dto.connection.ConnectionStateEnum.NEW -> com.jervis.entity.connection.ConnectionStateEnum.NEW
+        com.jervis.dto.connection.ConnectionStateEnum.INVALID -> com.jervis.entity.connection.ConnectionStateEnum.INVALID
+        com.jervis.dto.connection.ConnectionStateEnum.VALID -> com.jervis.entity.connection.ConnectionStateEnum.VALID
+    }
+}
+
+/**
  * Extension to convert Connection to DTO.
  */
 private fun Connection.toDto(): ConnectionResponseDto {
@@ -327,61 +433,93 @@ private fun Connection.toDto(): ConnectionResponseDto {
             id = id.toString(),
             type = "HTTP",
             name = name,
-            enabled = enabled,
+            state = state.toDto(),
             baseUrl = baseUrl,
-            authType = authType.name,
+            authType = when (credentials) {
+                is HttpCredentials.Basic -> "BASIC"
+                is HttpCredentials.Bearer -> "BEARER"
+                null -> null
+            },
+            credentials = when (credentials) {
+                is HttpCredentials.Basic -> "${credentials.username}:${credentials.password}"
+                is HttpCredentials.Bearer -> credentials.token
+                null -> null
+            },
+            timeoutMs = timeoutMs,
             hasCredentials = credentials != null,
-            rateLimitConfig = rateLimitConfig,
-            createdAtMs = createdAt.toEpochMilli(),
-            updatedAtMs = updatedAt.toEpochMilli()
+            createdAtMs = 0L,
+            updatedAtMs = 0L,
         )
         is Connection.ImapConnection -> ConnectionResponseDto(
             id = id.toString(),
             type = "IMAP",
             name = name,
-            enabled = enabled,
+            state = state.toDto(),
             host = host,
             port = port,
             username = username,
+            password = password,
+            useSsl = useSsl,
             hasCredentials = true,
-            createdAtMs = createdAt.toEpochMilli(),
-            updatedAtMs = updatedAt.toEpochMilli()
+            createdAtMs = 0L,
+            updatedAtMs = 0L,
         )
         is Connection.Pop3Connection -> ConnectionResponseDto(
             id = id.toString(),
             type = "POP3",
             name = name,
-            enabled = enabled,
+            state = state.toDto(),
             host = host,
             port = port,
             username = username,
+            password = password,
+            useSsl = useSsl,
             hasCredentials = true,
-            createdAtMs = createdAt.toEpochMilli(),
-            updatedAtMs = updatedAt.toEpochMilli()
+            createdAtMs = 0L,
+            updatedAtMs = 0L,
         )
         is Connection.SmtpConnection -> ConnectionResponseDto(
             id = id.toString(),
             type = "SMTP",
             name = name,
-            enabled = enabled,
+            state = state.toDto(),
             host = host,
             port = port,
             username = username,
+            password = password,
+            useTls = useTls,
             hasCredentials = true,
-            createdAtMs = createdAt.toEpochMilli(),
-            updatedAtMs = updatedAt.toEpochMilli()
+            createdAtMs = 0L,
+            updatedAtMs = 0L,
         )
         is Connection.OAuth2Connection -> ConnectionResponseDto(
             id = id.toString(),
             type = "OAUTH2",
             name = name,
-            enabled = enabled,
+            state = state.toDto(),
             authorizationUrl = authorizationUrl,
             tokenUrl = tokenUrl,
             clientId = clientId,
+            clientSecret = clientSecret,
+            redirectUri = redirectUri,
+            scope = scopes.joinToString(" "),
             hasCredentials = true,
-            createdAtMs = createdAt.toEpochMilli(),
-            updatedAtMs = updatedAt.toEpochMilli()
+            createdAtMs = 0L,
+            updatedAtMs = 0L,
         )
+    }
+}
+
+private fun mapHttpCredentials(authType: String?, credentials: String?): HttpCredentials? {
+    if (credentials.isNullOrBlank()) return null
+    return when (authType?.uppercase()) {
+        "BASIC" -> {
+            val parts = credentials.split(":", limit = 2)
+            val user = parts.getOrNull(0) ?: return null
+            val pass = parts.getOrNull(1) ?: ""
+            HttpCredentials.Basic(user, pass)
+        }
+        "BEARER" -> HttpCredentials.Bearer(credentials)
+        else -> null
     }
 }

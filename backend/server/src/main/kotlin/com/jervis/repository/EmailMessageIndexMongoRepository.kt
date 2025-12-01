@@ -3,7 +3,6 @@ package com.jervis.repository
 import com.jervis.entity.email.EmailMessageIndexDocument
 import kotlinx.coroutines.flow.Flow
 import org.bson.types.ObjectId
-import org.springframework.data.mongodb.repository.Query
 import org.springframework.data.repository.kotlin.CoroutineCrudRepository
 import org.springframework.stereotype.Repository
 
@@ -15,25 +14,13 @@ interface EmailMessageIndexMongoRepository : CoroutineCrudRepository<EmailMessag
     /**
      * Find message by connection and UID (for duplicate detection).
      */
-    suspend fun findByConnectionIdAndMessageUid(connectionId: ObjectId, messageUid: String): EmailMessageIndexDocument?
+    suspend fun findByConnectionIdAndMessageUid(
+        connectionId: ObjectId,
+        messageUid: String,
+    ): EmailMessageIndexDocument?
 
     /**
      * Find all NEW messages that need indexing.
      */
     fun findByStateOrderByReceivedDateAsc(state: String): Flow<EmailMessageIndexDocument>
-
-    /**
-     * Find NEW messages for specific client.
-     */
-    fun findByClientIdAndStateOrderByReceivedDateAsc(clientId: ObjectId, state: String): Flow<EmailMessageIndexDocument>
-
-    /**
-     * Count messages by state for monitoring.
-     */
-    suspend fun countByState(state: String): Long
-
-    /**
-     * Find messages for a connection.
-     */
-    fun findByConnectionIdOrderByReceivedDateDesc(connectionId: ObjectId): Flow<EmailMessageIndexDocument>
 }

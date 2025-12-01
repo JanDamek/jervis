@@ -1,7 +1,7 @@
 package com.jervis.configuration
 
+import com.jervis.configuration.prompts.ProviderCapabilitiesService
 import com.jervis.configuration.properties.ModelsProperties
-import com.jervis.service.config.ProviderCapabilitiesService
 import jakarta.annotation.PostConstruct
 import mu.KotlinLogging
 import org.springframework.context.annotation.Configuration

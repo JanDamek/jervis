@@ -1,10 +1,9 @@
 package com.jervis.service.task
 
-import com.jervis.domain.task.UserTask
 import com.jervis.entity.UserTaskDocument
 import com.jervis.repository.UserTaskMongoRepository
+import com.jervis.service.notification.NotificationsPublisher
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -15,7 +14,7 @@ import java.time.ZoneId
 @Service
 class UserTaskService(
     private val userTaskRepository: UserTaskMongoRepository,
-    private val notificationsPublisher: com.jervis.service.notification.NotificationsPublisher,
+    private val notificationsPublisher: NotificationsPublisher,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -27,26 +26,21 @@ class UserTaskService(
         projectId: ObjectId? = null,
         clientId: ObjectId,
         sourceType: TaskSourceType,
-        sourceUri: String? = null,
-        metadata: Map<String, String> = emptyMap(),
-        correlationId: String? = null,
-    ): UserTask {
-        if (sourceUri != null) {
-            val existing =
-                userTaskRepository.findFirstByClientIdAndSourceTypeAndSourceUriAndStatusIn(
-                    clientId = clientId,
-                    sourceType = sourceType.name,
-                    sourceUri = sourceUri,
-                    status = listOf(TaskStatusEnum.TODO.name, TaskStatusEnum.IN_PROGRESS.name),
-                )
-            if (existing != null) {
-                logger.info { "Skipped duplicate user task for sourceUri=$sourceUri (existing=${existing.id})" }
-                return existing.toDomain()
-            }
+        correlationId: String,
+    ): UserTaskDocument {
+        val existing =
+            userTaskRepository.findFirstByClientIdAndSourceTypeAndStatusIn(
+                clientId = clientId,
+                sourceType = sourceType,
+                statuses = listOf(TaskStatusEnum.TODO, TaskStatusEnum.IN_PROGRESS),
+            )
+        if (existing != null) {
+            logger.info { "Skipped duplicate user task for (existing=${existing.id})" }
+            return existing
         }
 
         val task =
-            UserTask(
+            UserTaskDocument(
                 title = title,
                 description = description,
                 priority = priority,
@@ -54,35 +48,31 @@ class UserTaskService(
                 projectId = projectId,
                 clientId = clientId,
                 sourceType = sourceType,
-                sourceUri = sourceUri,
-                metadata = metadata,
                 correlationId = correlationId,
+                status = TaskStatusEnum.TODO,
             )
 
-        val document = UserTaskDocument.fromDomain(task)
-        val saved = userTaskRepository.save(document)
+        val saved = userTaskRepository.save(task)
 
         logger.info { "Created user task: ${saved.id} - $title" }
-        val domain = saved.toDomain()
-        // Broadcast notification about new user task
         notificationsPublisher.publishUserTaskCreated(
             clientId = clientId,
-            task = domain,
+            task = saved,
             timestamp = Instant.now().toString(),
         )
-        return domain
+        return saved
     }
 
-    suspend fun getTaskById(taskId: ObjectId): UserTask? = userTaskRepository.findById(taskId)?.toDomain()
+    suspend fun getTaskById(taskId: ObjectId): UserTaskDocument? = userTaskRepository.findById(taskId)
 
-    fun findActiveTasksByClient(clientId: ObjectId): Flow<UserTask> =
+    fun findActiveTasksByClient(clientId: ObjectId): Flow<UserTaskDocument> =
         userTaskRepository
             .findActiveTasksByClientIdAndStatusIn(
                 clientId = clientId,
-                statuses = listOf(TaskStatusEnum.TODO.name, TaskStatusEnum.IN_PROGRESS.name),
-            ).map { it.toDomain() }
+                statuses = listOf(TaskStatusEnum.TODO, TaskStatusEnum.IN_PROGRESS),
+            )
 
-    fun findTasksForToday(clientId: ObjectId): Flow<UserTask> {
+    fun findTasksForToday(clientId: ObjectId): Flow<UserTaskDocument> {
         val today = LocalDate.now()
         val startOfDay = today.atStartOfDay(ZoneId.systemDefault()).toInstant()
         val endOfDay = today.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant()
@@ -92,76 +82,35 @@ class UserTaskService(
                 clientId = clientId,
                 startDate = startOfDay,
                 endDate = endOfDay,
-                statuses = listOf(TaskStatusEnum.TODO.name, TaskStatusEnum.IN_PROGRESS.name),
-            ).map { it.toDomain() }
+                statuses = listOf(TaskStatusEnum.TODO, TaskStatusEnum.IN_PROGRESS),
+            )
     }
 
     fun findTasksByDateRange(
         clientId: ObjectId,
         startDate: Instant,
         endDate: Instant,
-    ): Flow<UserTask> =
+    ): Flow<UserTaskDocument> =
         userTaskRepository
             .findAllByClientIdAndDueDateBetweenAndStatusInOrderByDueDateAsc(
                 clientId = clientId,
                 startDate = startDate,
                 endDate = endDate,
-                statuses = listOf(TaskStatusEnum.TODO.name, TaskStatusEnum.IN_PROGRESS.name),
-            ).map { it.toDomain() }
-
-    fun findActiveTasksByThread(
-        clientId: ObjectId,
-        threadId: ObjectId,
-    ): Flow<UserTask> =
-        userTaskRepository
-            .findActiveByClientAndThreadId(
-                clientId = clientId,
-                statuses = listOf(TaskStatusEnum.TODO.name, TaskStatusEnum.IN_PROGRESS.name),
-                threadId = threadId.toHexString(),
-            ).map { it.toDomain() }
-
-    suspend fun completeTask(
-        taskId: ObjectId,
-        resolvedBySourceUri: String? = null,
-    ): UserTask {
-        val existing =
-            userTaskRepository.findById(taskId)
-                ?: error("User task not found: $taskId")
-
-        val newMetadata =
-            if (resolvedBySourceUri != null) {
-                existing.metadata + ("resolvedBySourceUri" to resolvedBySourceUri)
-            } else {
-                existing.metadata
-            }
-
-        val updated =
-            existing.copy(
-                status = TaskStatusEnum.COMPLETED.name,
-                completedAt = Instant.now(),
-                metadata = newMetadata,
+                statuses = listOf(TaskStatusEnum.TODO, TaskStatusEnum.IN_PROGRESS),
             )
 
-        val saved = userTaskRepository.save(updated)
-        logger.info { "Completed user task: ${saved.id}" }
-        return saved.toDomain()
-    }
-
-    suspend fun cancelTask(taskId: ObjectId): UserTask {
+    suspend fun cancelTask(taskId: ObjectId): UserTaskDocument {
         val existing = userTaskRepository.findById(taskId) ?: error("User task not found: $taskId")
-        val domain = existing.toDomain()
 
-        // As per requirements, revoking a user task should remove it entirely (no cancelled status persisted)
         userTaskRepository.deleteById(taskId)
         logger.info { "Revoked user task deleted: ${existing.id}" }
 
-        // Broadcast notification about cancelled user task
         notificationsPublisher.publishUserTaskCancelled(
             clientId = existing.clientId,
-            task = domain,
+            task = existing,
             timestamp = Instant.now().toString(),
         )
 
-        return domain
+        return existing
     }
 }

@@ -2,7 +2,6 @@ package com.jervis.service.polling.handler
 
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.Connection
-import com.jervis.entity.connection.HttpCredentials
 import com.jervis.entity.email.EmailAttachment
 import com.jervis.entity.email.EmailMessageIndexDocument
 import com.jervis.repository.EmailMessageIndexMongoRepository
@@ -39,7 +38,6 @@ class Pop3PollingHandler(
 
     override suspend fun poll(
         connection: Connection,
-        credentials: HttpCredentials?,
         clients: List<ClientDocument>,
     ): PollingResult {
         if (connection !is Connection.Pop3Connection) {

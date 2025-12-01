@@ -1,8 +1,7 @@
 package com.jervis.domain.plan
 
-import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.configuration.prompts.ToolTypeEnum
-import com.jervis.service.mcp.domain.ToolResult
+import com.jervis.mcp.domain.ToolResult
 import org.bson.types.ObjectId
 
 data class PlanStep(

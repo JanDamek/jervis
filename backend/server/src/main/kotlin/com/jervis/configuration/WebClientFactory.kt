@@ -33,28 +33,36 @@ class WebClientFactory(
      */
     private val webClients: Map<String, WebClient> by lazy {
         buildMap {
-            // LLM providers
-            put("lmStudio", createWebClient(endpoints.lmStudio.baseUrl))
-            put("ollama.primary", createWebClient(endpoints.ollama.primary.baseUrl))
-            put("ollama.qualifier", createWebClient(endpoints.ollama.qualifier.baseUrl))
-            put("openai", createWebClientWithAuth(endpoints.openai.baseUrl, endpoints.openai.apiKey) { key ->
-                listOf("Authorization" to "Bearer $key")
-            })
-            put("anthropic", createWebClientWithAuth(endpoints.anthropic.baseUrl, endpoints.anthropic.apiKey) { key ->
-                listOf(
-                    "x-api-key" to key,
-                    "anthropic-version" to ANTHROPIC_VERSION,
-                )
-            })
-            put("google", createWebClientWithAuth(endpoints.google.baseUrl, endpoints.google.apiKey) { key ->
-                listOf("x-goog-api-key" to key)
-            })
+            put("lmStudio", createWebClient(endpoints.lmStudio.baseUrl, webClientProperties.buffers.defaultMaxInMemoryBytes))
+            put("ollama.primary", createWebClient(endpoints.ollama.primary.baseUrl, webClientProperties.buffers.defaultMaxInMemoryBytes))
+            put("ollama.qualifier", createWebClient(endpoints.ollama.qualifier.baseUrl, webClientProperties.buffers.defaultMaxInMemoryBytes))
+            put("ollama.embedding", createWebClient(endpoints.ollama.embedding.baseUrl, webClientProperties.buffers.defaultMaxInMemoryBytes))
+            put(
+                "openai",
+                createWebClientWithAuth(endpoints.openai.baseUrl, endpoints.openai.apiKey) { key ->
+                    listOf("Authorization" to "Bearer $key")
+                },
+            )
+            put(
+                "anthropic",
+                createWebClientWithAuth(endpoints.anthropic.baseUrl, endpoints.anthropic.apiKey) { key ->
+                    listOf(
+                        "x-api-key" to key,
+                        "anthropic-version" to webClientProperties.apiVersions.anthropicVersion,
+                    )
+                },
+            )
+            put(
+                "google",
+                createWebClientWithAuth(endpoints.google.baseUrl, endpoints.google.apiKey) { key ->
+                    listOf("x-goog-api-key" to key)
+                },
+            )
 
-            // Services
-            put("searxng", createWebClient(endpoints.searxng.baseUrl, acceptHtml = true))
-            put("tika", createWebClient(endpoints.tika.baseUrl, maxBufferSize = TIKA_MAX_IN_MEMORY_BYTES))
-            put("joern", createWebClient(endpoints.joern.baseUrl))
-            put("whisper", createWebClient(endpoints.whisper.baseUrl))
+            put("searxng", createWebClient(endpoints.searxng.baseUrl, webClientProperties.buffers.defaultMaxInMemoryBytes))
+            put("tika", createWebClient(endpoints.tika.baseUrl, webClientProperties.buffers.tikaMaxInMemoryBytes))
+            put("joern", createWebClient(endpoints.joern.baseUrl, webClientProperties.buffers.defaultMaxInMemoryBytes))
+            put("whisper", createWebClient(endpoints.whisper.baseUrl, webClientProperties.buffers.defaultMaxInMemoryBytes))
         }
     }
 
@@ -70,20 +78,14 @@ class WebClientFactory(
 
     private fun createWebClient(
         baseUrl: String,
-        acceptHtml: Boolean = false,
-        maxBufferSize: Int = DEFAULT_MAX_IN_MEMORY_BYTES,
+        maxBufferSize: Int,
     ): WebClient =
         webClientBuilder
             .baseUrl(baseUrl.trimEnd('/'))
             .defaultHeaders { headers ->
                 headers.contentType = MediaType.APPLICATION_JSON
-                headers.accept = if (acceptHtml) {
-                    listOf(MediaType.APPLICATION_JSON, MediaType.TEXT_HTML)
-                } else {
-                    listOf(MediaType.APPLICATION_JSON)
-                }
-            }
-            .exchangeStrategies(createExchangeStrategies(maxBufferSize))
+                headers.accept = listOf(MediaType.APPLICATION_JSON)
+            }.exchangeStrategies(createExchangeStrategies(maxBufferSize))
             .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
             .filter(createRetryFilter())
             .build()
@@ -103,8 +105,7 @@ class WebClientFactory(
                         headers[name] = value
                     }
                 }
-            }
-            .exchangeStrategies(createExchangeStrategies(DEFAULT_MAX_IN_MEMORY_BYTES))
+            }.exchangeStrategies(createExchangeStrategies(webClientProperties.buffers.defaultMaxInMemoryBytes))
             .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
             .filter(createRetryFilter())
             .build()
@@ -132,29 +133,28 @@ class WebClientFactory(
             .option(
                 ChannelOption.CONNECT_TIMEOUT_MILLIS,
                 webClientProperties.timeouts.connectTimeoutMillis,
-            )
-            .responseTimeout(Duration.ofMillis(webClientProperties.timeouts.responseTimeoutMillis))
+            ).responseTimeout(Duration.ofMillis(webClientProperties.timeouts.responseTimeoutMillis))
     }
 
     private fun createRetryFilter() =
-        { request: org.springframework.web.reactive.function.client.ClientRequest,
-          next: org.springframework.web.reactive.function.client.ExchangeFunction,
-          ->
+        {
+            request: org.springframework.web.reactive.function.client.ClientRequest,
+            next: org.springframework.web.reactive.function.client.ExchangeFunction,
+            ->
             next.exchange(request).retryWhen(
                 Retry
                     .backoff(
                         retryProperties.webclient.maxAttempts,
                         Duration.ofMillis(retryProperties.webclient.initialBackoffMillis),
-                    )
-                    .maxBackoff(Duration.ofMillis(retryProperties.webclient.maxBackoffMillis))
+                    ).maxBackoff(Duration.ofMillis(retryProperties.webclient.maxBackoffMillis))
                     .filter { throwable ->
-                        // DO NOT retry timeouts - they are final failures (server is slow/overloaded)
-                        val isTimeout = throwable is java.util.concurrent.TimeoutException ||
-                            throwable is io.netty.handler.timeout.ReadTimeoutException ||
-                            throwable is io.netty.handler.timeout.WriteTimeoutException ||
-                            throwable.cause is java.util.concurrent.TimeoutException ||
-                            throwable.cause is io.netty.handler.timeout.ReadTimeoutException
-                        
+                        val isTimeout =
+                            throwable is java.util.concurrent.TimeoutException ||
+                                throwable is io.netty.handler.timeout.ReadTimeoutException ||
+                                throwable is io.netty.handler.timeout.WriteTimeoutException ||
+                                throwable.cause is java.util.concurrent.TimeoutException ||
+                                throwable.cause is io.netty.handler.timeout.ReadTimeoutException
+
                         if (isTimeout) {
                             return@filter false
                         }
@@ -168,9 +168,4 @@ class WebClientFactory(
             )
         }
 
-    companion object {
-        private const val DEFAULT_MAX_IN_MEMORY_BYTES = 8 * 1024 * 1024 // 8 MB
-        private const val TIKA_MAX_IN_MEMORY_BYTES = 64 * 1024 * 1024 // 64 MB for large Tika payloads
-        private const val ANTHROPIC_VERSION = "2023-06-01"
-    }
 }

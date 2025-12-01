@@ -6,6 +6,7 @@ package com.jervis.domain.model
 enum class ModelProviderEnum {
     OLLAMA,
     OLLAMA_QUALIFIER,
+    OLLAMA_EMBEDDING,
     LM_STUDIO,
     OPENAI,
     ANTHROPIC,

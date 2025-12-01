@@ -16,10 +16,4 @@ interface ClientMongoRepository : CoroutineCrudRepository<ClientDocument, Object
      * Find all clients that use the specified connection as Flow.
      */
     fun findByConnectionIdsContaining(connectionId: ObjectId): Flow<ClientDocument>
-
-    /**
-     * Find all clients that have the deprecated atlassianConnectionId field set.
-     * Used for migration purposes.
-     */
-    fun findByAtlassianConnectionIdIsNotNull(): Flow<ClientDocument>
 }

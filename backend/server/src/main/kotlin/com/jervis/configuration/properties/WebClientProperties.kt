@@ -7,6 +7,8 @@ import java.time.Duration
 data class WebClientProperties(
     val connectionPool: WebClientConnectionPool,
     val timeouts: WebClientTimeouts,
+    val buffers: WebClientBuffers,
+    val apiVersions: ApiVersions,
 ) {
     data class WebClientConnectionPool(
         var maxConnections: Int,
@@ -19,6 +21,15 @@ data class WebClientProperties(
 
     data class WebClientTimeouts(
         val connectTimeoutMillis: Int,
-        val responseTimeoutMillis: Long = 120000, // Default 2 minutes for embeddings
+        val responseTimeoutMillis: Long,
+    )
+
+    data class WebClientBuffers(
+        var defaultMaxInMemoryBytes: Int,
+        var tikaMaxInMemoryBytes: Int,
+    )
+
+    data class ApiVersions(
+        var anthropicVersion: String,
     )
 }

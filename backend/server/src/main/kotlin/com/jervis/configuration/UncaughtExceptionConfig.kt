@@ -21,7 +21,6 @@ class UncaughtExceptionConfig(
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
             logger.error(e) { "Uncaught exception in thread ${t.name}" }
-            // Persist asynchronously to avoid blocking critical crash paths
             exceptionScope.launch {
                 errorLogService.recordError(e)
             }

@@ -4,8 +4,8 @@ import com.jervis.domain.plan.Plan
 import com.jervis.domain.plan.PlanStatusEnum
 import com.jervis.domain.plan.PlanStep
 import com.jervis.domain.plan.StepStatusEnum
-import com.jervis.service.mcp.McpToolRegistry
-import com.jervis.service.mcp.domain.ToolResult
+import com.jervis.mcp.McpToolRegistry
+import com.jervis.mcp.domain.ToolResult
 import com.jervis.service.notification.StepNotificationService
 import com.jervis.util.fromJsonToObject
 import mu.KotlinLogging

@@ -1,6 +1,6 @@
 package com.jervis.service.listener.git.processor
 
-import com.jervis.domain.task.PendingTask
+import com.jervis.entity.PendingTaskDocument
 import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.entity.ProjectDocument
 import com.jervis.service.background.PendingTaskService
@@ -61,7 +61,7 @@ class GitTaskCreator(
         projectPath: Path,
         commitData: CommitData,
         filePath: String,
-    ): PendingTask =
+    ): PendingTaskDocument =
         withContext(Dispatchers.IO) {
             logger.info {
                 "Creating file analysis task for ${commitData.commitHash.take(8)}:$filePath " +
@@ -177,11 +177,11 @@ class GitTaskCreator(
         project: ProjectDocument,
         projectPath: Path,
         commits: List<CommitData>,
-    ): List<PendingTask> =
+    ): List<PendingTaskDocument> =
         withContext(Dispatchers.IO) {
             logger.info { "Creating file analysis tasks for ${commits.size} commits in project ${project.name}" }
 
-            val tasks = mutableListOf<PendingTask>()
+            val tasks = mutableListOf<PendingTaskDocument>()
 
             for (commit in commits) {
                 for (filePath in commit.changedFiles) {

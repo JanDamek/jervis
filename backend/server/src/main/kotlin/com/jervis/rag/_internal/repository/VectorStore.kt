@@ -11,6 +11,7 @@ internal interface VectorStore {
     suspend fun store(
         collection: VectorCollection,
         document: VectorDocument,
+        classNameOverride: String? = null,
     ): Result<String>
 
     /**
@@ -19,6 +20,7 @@ internal interface VectorStore {
     suspend fun search(
         collection: VectorCollection,
         query: VectorQuery,
+        classNameOverride: String? = null,
     ): Result<List<VectorSearchResult>>
 
     /**
@@ -27,6 +29,7 @@ internal interface VectorStore {
     suspend fun getById(
         collection: VectorCollection,
         id: String,
+        classNameOverride: String? = null,
     ): Result<VectorSearchResult?>
 
     /**
@@ -35,6 +38,7 @@ internal interface VectorStore {
     suspend fun delete(
         collection: VectorCollection,
         id: String,
+        classNameOverride: String? = null,
     ): Result<Unit>
 
     /**
@@ -43,5 +47,6 @@ internal interface VectorStore {
     suspend fun deleteByFilter(
         collection: VectorCollection,
         filters: VectorFilters,
+        classNameOverride: String? = null,
     ): Result<Int>
 }

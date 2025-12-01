@@ -1,5 +1,7 @@
 package com.jervis.dto.events
 
+import com.jervis.dto.PendingTaskStateEnum
+import com.jervis.dto.PendingTaskTypeEnum
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -50,7 +52,7 @@ sealed class DebugEventDto {
         val taskId: String,
         val fromState: String,
         val toState: String,
-        val taskType: String,
+        val taskType: PendingTaskTypeEnum,
     ) : DebugEventDto()
 
     @Serializable
@@ -75,8 +77,8 @@ sealed class DebugEventDto {
     data class GpuTaskPickup(
         val correlationId: String,
         val taskId: String,
-        val taskType: String,
-        val state: String,
+        val taskType: PendingTaskTypeEnum,
+        val state: PendingTaskStateEnum,
     ) : DebugEventDto()
 
     @Serializable

@@ -2,12 +2,15 @@ package com.jervis.service.polling.handler
 
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.Connection
-import com.jervis.entity.connection.HttpCredentials
 import com.jervis.repository.JiraIssueIndexMongoRepository
+import com.jervis.repository.PollingStateMongoRepository
 import com.jervis.service.atlassian.AtlassianApiClient
 import com.jervis.service.polling.PollingResult
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 /**
  * Polling handler for Jira issues.
@@ -19,6 +22,7 @@ import org.springframework.stereotype.Component
 class JiraPollingHandler(
     private val apiClient: AtlassianApiClient,
     private val repository: JiraIssueIndexMongoRepository,
+    private val pollingStateRepository: PollingStateMongoRepository,
 ) : PollingHandler {
     private val logger = KotlinLogging.logger {}
 
@@ -29,10 +33,9 @@ class JiraPollingHandler(
 
     override suspend fun poll(
         connection: Connection,
-        credentials: HttpCredentials?,
         clients: List<ClientDocument>,
     ): PollingResult {
-        if (connection !is Connection.HttpConnection || credentials == null) {
+        if (connection !is Connection.HttpConnection || connection.credentials == null) {
             logger.warn { "Invalid connection or credentials for Jira polling" }
             return PollingResult(errors = 1)
         }
@@ -44,7 +47,7 @@ class JiraPollingHandler(
 
         for (client in clients) {
             try {
-                val result = pollClientIssues(connection, credentials, client)
+                val result = pollClientIssues(connection, client)
                 totalDiscovered += result.itemsDiscovered
                 totalCreated += result.itemsCreated
                 totalSkipped += result.itemsSkipped
@@ -65,11 +68,12 @@ class JiraPollingHandler(
 
     private suspend fun pollClientIssues(
         connection: Connection.HttpConnection,
-        credentials: HttpCredentials,
         client: ClientDocument,
     ): PollingResult {
-        // Build JQL query based on client configuration
-        val jql = buildJqlQuery(client, connection)
+        val credentials = requireNotNull(connection.credentials) { "HTTP credentials required for Jira polling" }
+        // Build JQL query based on last successful poll state (per connection)
+        val state = pollingStateRepository.findByConnectionIdAndTool(connection.id, TOOL_JIRA)
+        val jql = buildJqlQuery(client, connection, state?.lastSeenUpdatedAt)
 
         logger.debug { "Polling Jira for client ${client.name} with JQL: $jql" }
 
@@ -116,6 +120,25 @@ class JiraPollingHandler(
 
         logger.info { "Jira polling for ${client.name}: created/updated=$created, skipped=$skipped" }
 
+        // Persist latest seen updatedAt to Mongo for incremental polling next time
+        val latestUpdated = fullIssues.maxOfOrNull { it.jiraUpdatedAt }
+        if (latestUpdated != null) {
+            val updatedState =
+                if (state == null) {
+                    com.jervis.entity.polling.PollingStateDocument(
+                        connectionId = connection.id,
+                        tool = TOOL_JIRA,
+                        lastSeenUpdatedAt = latestUpdated,
+                    )
+                } else {
+                    state.copy(
+                        lastSeenUpdatedAt = maxOf(state.lastSeenUpdatedAt ?: Instant.EPOCH, latestUpdated),
+                        updatedAt = Instant.now(),
+                    )
+                }
+            pollingStateRepository.save(updatedState)
+        }
+
         return PollingResult(
             itemsDiscovered = fullIssues.size,
             itemsCreated = created,
@@ -123,21 +146,26 @@ class JiraPollingHandler(
         )
     }
 
-    private fun buildJqlQuery(client: ClientDocument, connection: Connection.HttpConnection): String {
-        // Build JQL based on client configuration
-        // Try new connectionFilters first, fall back to deprecated fields
-        val filter = client.connectionFilters.firstOrNull { it.connectionId == connection.id }
-        val projects = filter?.jiraProjects?.takeIf { it.isNotEmpty() }
-            ?: client.atlassianJiraProjects.takeIf { it.isNotEmpty() }
+    private fun buildJqlQuery(
+        client: ClientDocument,
+        connection: Connection.HttpConnection,
+        lastSeenUpdatedAt: Instant?,
+    ): String {
+        // NOTE:
+        // We do not have per-connection filters yet. We rely on lastSeenUpdatedAt
+        // to build an incremental query. If not available, default to last 7 days.
 
-        val projectFilter = projects?.let {
-            "project IN (${it.joinToString(",") { proj -> "'$proj'" }})"
-        }
+        val timeFilter =
+            lastSeenUpdatedAt?.let { ts ->
+                val fmt = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm").withZone(ZoneOffset.UTC)
+                "updated >= \"${fmt.format(ts)}\""
+            } ?: "updated >= -7d"
 
-        val dateFilter = "updated >= -7d" // Last 7 days
+        // No per-connection filters; default to time-based incremental polling only
+        return timeFilter
+    }
 
-        return listOfNotNull(projectFilter, dateFilter)
-            .joinToString(" AND ")
-            .ifEmpty { "updated >= -7d" }
+    companion object {
+        private const val TOOL_JIRA = "JIRA"
     }
 }

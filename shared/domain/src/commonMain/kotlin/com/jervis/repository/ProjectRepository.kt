@@ -28,31 +28,10 @@ class ProjectRepository(
     }
 
     /**
-     * Get default project
-     */
-    suspend fun getDefaultProject(): ProjectDto? {
-        return projectService.getDefaultProject()
-    }
-
-    /**
-     * Set active project
-     */
-    suspend fun setActiveProject(project: ProjectDto) {
-        projectService.setActiveProject(project)
-    }
-
-    /**
-     * Set default project
-     */
-    suspend fun setDefaultProject(project: ProjectDto) {
-        projectService.setDefaultProject(project)
-    }
-
-    /**
      * Save project
      */
-    suspend fun saveProject(project: ProjectDto, makeDefault: Boolean = false): ProjectDto {
-        return projectService.saveProject(project, makeDefault)
+    suspend fun saveProject(project: ProjectDto): ProjectDto {
+        return projectService.saveProject(project)
     }
 
     /**

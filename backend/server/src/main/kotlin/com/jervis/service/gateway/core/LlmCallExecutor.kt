@@ -26,7 +26,7 @@ class LlmCallExecutor(
     /**
      * Executes LLM call for the given candidate model with proper reactive patterns.
      * Routes to streaming if a debug window is active.
-     * Respects per-provider concurrency limits - will suspend if provider is at capacity.
+     * Respects per-provider concurrency limits - will suspend if the provider is at capacity.
      */
     suspend fun executeCall(
         candidate: ModelsProperties.ModelDetail,
@@ -48,16 +48,13 @@ class LlmCallExecutor(
             logger.info { "Calling LLM type=$promptType provider=$provider model=${candidate.model} background=$backgroundMode" }
             val startTime = System.nanoTime()
 
-            // Always register requests (foreground or background) to track total LLM load
             if (!backgroundMode) {
                 llmLoadMonitor.registerRequestStart()
             }
 
             try {
-                // Always use streaming for debug purposes - debug window will be shown automatically
                 val debugSessionId = UUID.randomUUID().toString()
 
-                // Send debug session started directly to WebSocket
                 debugService.sessionStarted(
                     sessionId = debugSessionId,
                     promptType = promptType.name,

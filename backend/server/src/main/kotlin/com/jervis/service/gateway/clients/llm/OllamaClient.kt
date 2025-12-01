@@ -15,18 +15,26 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.reactive.asFlow
 import mu.KotlinLogging
 import com.jervis.configuration.WebClientFactory
+import com.jervis.configuration.properties.OllamaProperties
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
+import org.springframework.web.reactive.function.client.awaitBody
+import org.springframework.web.reactive.function.client.WebClientResponseException
+import java.util.concurrent.ConcurrentHashMap
 
 @Service
 class OllamaClient(
     private val webClientFactory: WebClientFactory,
     private val promptsConfiguration: PromptsConfiguration,
+    private val ollamaProps: OllamaProperties,
 ) : ProviderClient {
     private val primaryWebClient: WebClient by lazy { webClientFactory.getWebClient("ollama.primary") }
     private val qualifierWebClient: WebClient by lazy { webClientFactory.getWebClient("ollama.qualifier") }
     private val logger = KotlinLogging.logger {}
+    private val defaultKeepAlive: String get() = ollamaProps.keepAlive.default
+
+    private val ensuredModels: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     override val provider: ModelProviderEnum = ModelProviderEnum.OLLAMA
 
@@ -111,13 +119,12 @@ class OllamaClient(
         estimatedTokens: Int,
     ): Flow<StreamChunk> =
         flow {
+            // Ensure model is available (pulled); waits for pull if missing
+            ensureModelAvailable(webClient, model)
+
             val creativityConfig = getCreativityConfig(prompt)
             val options = buildOptions(creativityConfig, config, estimatedTokens)
-            val keepAlive: String? =
-                when (prompt.modelParams.modelType) {
-                    com.jervis.domain.model.ModelTypeEnum.QUALIFIER -> "1h"
-                    else -> null
-                }
+            val keepAlive: String? = defaultKeepAlive.takeUnless { it.isBlank() }
             val requestBody = buildRequestBody(model, userPrompt, systemPrompt, options, keepAlive)
 
             val responseFlow =
@@ -181,6 +188,42 @@ class OllamaClient(
                 }
             }
         }
+
+    private suspend fun ensureModelAvailable(webClient: WebClient, model: String) {
+        if (ensuredModels.contains(model)) return
+        try {
+            val showBody = mapOf("name" to model)
+            webClient
+                .post()
+                .uri("/api/show")
+                .bodyValue(showBody)
+                .retrieve()
+                .awaitBody<Map<String, Any>>()
+            logger.debug { "Ollama model available: $model" }
+            ensuredModels.add(model)
+        } catch (e: WebClientResponseException) {
+            logger.info { "Model '$model' not present on Ollama (status=${e.statusCode}). Pulling before first use..." }
+            pullModelBlocking(webClient, model)
+            ensuredModels.add(model)
+        } catch (e: Exception) {
+            // If unknown error during show, attempt pull once
+            logger.warn(e) { "Checking model '$model' failed, attempting pull..." }
+            pullModelBlocking(webClient, model)
+            ensuredModels.add(model)
+        }
+    }
+
+    private suspend fun pullModelBlocking(webClient: WebClient, model: String) {
+        val body = mapOf("name" to model)
+        val resp =
+            webClient
+                .post()
+                .uri("/api/pull")
+                .bodyValue(body)
+                .retrieve()
+                .awaitBody<Map<String, Any>>()
+        logger.info { "Ollama pull completed for $model before first use: $resp" }
+    }
 
     private fun buildOptions(
         creativityConfig: CreativityConfig,

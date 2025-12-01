@@ -1,7 +1,6 @@
 package com.jervis.service.indexing.status
 
 import com.jervis.domain.websocket.WebSocketChannelTypeEnum
-import com.jervis.repository.ConfluencePageMongoRepository
 import com.jervis.repository.JiraIssueIndexMongoRepository
 import com.jervis.service.websocket.WebSocketSessionManager
 import kotlinx.coroutines.sync.Mutex
@@ -22,9 +21,7 @@ import java.time.Instant
 @Service
 class IndexingStatusRegistry(
     private val webSocketSessionManager: WebSocketSessionManager,
-    // private val emailMessageRepository: com.jervis.service.listener.email.state.EmailMessageRepository, // TODO: Re-enable after email refactoring
     private val gitCommitRepository: com.jervis.service.git.state.GitCommitRepository,
-    private val confluencePageRepository: ConfluencePageMongoRepository,
     private val jiraIssueIndexRepository: JiraIssueIndexMongoRepository,
 ) {
     private val json = Json { encodeDefaults = true }
@@ -34,18 +31,24 @@ class IndexingStatusRegistry(
         private const val ERROR_PREVIEW_LENGTH = 500
     }
 
+    enum class ToolStateEnum {
+        EMAIL,
+        GIT,
+        CONFLUENCE,
+        JIRA,
+    }
+
     data class ToolState(
-        val toolKey: String,
+        val toolKey: ToolStateEnum,
         var displayName: String,
         var state: State = State.IDLE,
         var runningSince: Instant? = null,
         var processed: Int = 0,
         var errors: Int = 0,
         var lastError: String? = null,
-        var lastErrorFull: String? = null, // Full error details for copy/paste
+        var lastErrorFull: String? = null,
         var lastRunStartedAt: Instant? = null,
         var lastRunFinishedAt: Instant? = null,
-        /** Short human readable reason/context for current run (or last run) */
         var reason: String? = null,
         val items: ArrayDeque<Item> = ArrayDeque(),
     )
@@ -63,7 +66,7 @@ class IndexingStatusRegistry(
 
     @Serializable
     data class IndexingStatusUpdateEvent(
-        val toolKey: String,
+        val toolKey: ToolStateEnum,
         val displayName: String,
         val state: String,
         val processed: Int,
@@ -73,19 +76,19 @@ class IndexingStatusRegistry(
     )
 
     private val mutex = Mutex()
-    private val tools = linkedMapOf<String, ToolState>()
+    private val tools = linkedMapOf<ToolStateEnum, ToolState>()
 
     suspend fun ensureTool(
-        toolKey: String,
-        displayName: String = toolKey,
+        toolKey: ToolStateEnum,
+        displayName: String,
     ): ToolState =
         mutex.withLock {
             tools.getOrPut(toolKey) { ToolState(toolKey, displayName) }
         }
 
     suspend fun start(
-        toolKey: String,
-        displayName: String = toolKey,
+        toolKey: ToolStateEnum,
+        displayName: String,
         message: String? = null,
     ) {
         mutex.withLock {
@@ -110,32 +113,30 @@ class IndexingStatusRegistry(
      * Indexed = successfully processed (indexed) items so far.
      * New = items discovered and waiting (NEW state or equivalent).
      */
-    suspend fun getIndexedAndNewCounts(toolKey: String): Pair<Long, Long> =
+    suspend fun getIndexedAndNewCounts(toolKey: ToolStateEnum): Pair<Long, Long> =
         when (toolKey) {
-            "email" -> {
+            ToolStateEnum.EMAIL -> {
                 // TODO: Re-enable after email refactoring
                 0L to 0L
             }
-            "git" -> {
+            ToolStateEnum.GIT -> {
                 val indexed = gitCommitRepository.countByState(com.jervis.service.git.state.GitCommitState.INDEXED)
                 val new = gitCommitRepository.countByState(com.jervis.service.git.state.GitCommitState.NEW)
                 indexed to new
             }
-            "confluence" -> {
-                val indexed = confluencePageRepository.countByState(com.jervis.domain.confluence.ConfluencePageStateEnum.INDEXED)
-                val new = confluencePageRepository.countByState(com.jervis.domain.confluence.ConfluencePageStateEnum.NEW)
-                indexed to new
+            ToolStateEnum.CONFLUENCE -> {
+                // TODO: Re-enable after confluence refactoring
+                0L to 0L
             }
-            "jira" -> {
+            ToolStateEnum.JIRA -> {
                 val indexed = jiraIssueIndexRepository.countIndexedActive()
                 val new = jiraIssueIndexRepository.countNewActive()
                 indexed to new
             }
-            else -> 0L to 0L
         }
 
     suspend fun progress(
-        toolKey: String,
+        toolKey: ToolStateEnum,
         processedInc: Int = 1,
         message: String? = null,
     ) {
@@ -152,7 +153,7 @@ class IndexingStatusRegistry(
     }
 
     suspend fun info(
-        toolKey: String,
+        toolKey: ToolStateEnum,
         message: String,
     ) {
         mutex.withLock {
@@ -164,7 +165,7 @@ class IndexingStatusRegistry(
     }
 
     suspend fun error(
-        toolKey: String,
+        toolKey: ToolStateEnum,
         message: String,
         fullStackTrace: String? = null,
     ) {
@@ -179,7 +180,7 @@ class IndexingStatusRegistry(
     }
 
     suspend fun finish(
-        toolKey: String,
+        toolKey: ToolStateEnum,
         message: String? = null,
     ) {
         mutex.withLock {
@@ -195,7 +196,7 @@ class IndexingStatusRegistry(
 
     suspend fun snapshot(): List<ToolState> = mutex.withLock { tools.values.map { it.copy(items = ArrayDeque(it.items)) } }
 
-    suspend fun toolDetail(toolKey: String): ToolState? =
+    suspend fun toolDetail(toolKey: ToolStateEnum): ToolState? =
         mutex.withLock {
             tools[toolKey]?.copy(items = ArrayDeque(tools[toolKey]!!.items))
         }

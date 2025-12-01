@@ -25,7 +25,6 @@ class GlobalExceptionHandler(
 
     @ExceptionHandler(Throwable::class)
     fun handleAny(throwable: Throwable): ResponseEntity<ErrorResponse> {
-        // Persist and publish. We don't have clientId/projectId here; controllers should pass if known per endpoint.
         runBlocking {
             errorLogService.recordError(throwable)
         }

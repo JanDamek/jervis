@@ -29,72 +29,6 @@ class GitRemoteClient {
     private val hostMutexes = ConcurrentHashMap<String, Mutex>()
 
     /**
-     * Clone repository with automatic retry for communication errors.
-     * Returns Flow with progress updates.
-     */
-    fun clone(
-        repoUrl: String,
-        targetPath: Path,
-        branch: String = "main",
-        envVars: Map<String, String> = emptyMap(),
-        sparseCheckoutPath: String? = null,
-    ): Flow<GitOperationResult> =
-        flow {
-            val host = extractHost(repoUrl)
-            val mutex = hostMutexes.getOrPut(host) { Mutex() }
-
-            mutex.withLock {
-                emit(GitOperationResult.Started("clone", repoUrl))
-
-                if (sparseCheckoutPath != null) {
-                    // Sparse checkout for mono-repo subdirectory
-                    executeWithRetry(
-                        operation = "clone",
-                        repoUrl = repoUrl,
-                        command = listOf("git", "clone", "--no-checkout", repoUrl, targetPath.toString()),
-                        workingDir = null,
-                        envVars = envVars,
-                    ).collect { emit(it) }
-
-                    executeWithRetry(
-                        operation = "sparse-checkout-init",
-                        repoUrl = repoUrl,
-                        command = listOf("git", "sparse-checkout", "init", "--cone"),
-                        workingDir = targetPath,
-                        envVars = envVars,
-                    ).collect { emit(it) }
-
-                    executeWithRetry(
-                        operation = "sparse-checkout-set",
-                        repoUrl = repoUrl,
-                        command = listOf("git", "sparse-checkout", "set", sparseCheckoutPath),
-                        workingDir = targetPath,
-                        envVars = envVars,
-                    ).collect { emit(it) }
-
-                    executeWithRetry(
-                        operation = "checkout",
-                        repoUrl = repoUrl,
-                        command = listOf("git", "checkout", branch),
-                        workingDir = targetPath,
-                        envVars = envVars,
-                    ).collect { emit(it) }
-                } else {
-                    // Full clone
-                    executeWithRetry(
-                        operation = "clone",
-                        repoUrl = repoUrl,
-                        command = listOf("git", "clone", "--branch", branch, repoUrl, targetPath.toString()),
-                        workingDir = null,
-                        envVars = envVars,
-                    ).collect { emit(it) }
-                }
-
-                emit(GitOperationResult.Completed("clone", repoUrl))
-            }
-        }
-
-    /**
      * Fetch latest changes from remote repository.
      */
     fun fetch(
@@ -211,15 +145,16 @@ class GitRemoteClient {
             processBuilder.environment().putAll(envVars)
             processBuilder.redirectErrorStream(true)
 
-            val process = try {
-                processBuilder.start()
-            } catch (e: java.io.IOException) {
-                // Provide explicit guidance, avoid retry loops for non-retryable environment error
-                throw IllegalStateException(
-                    "Required executable '$binary' was not found on PATH. Install it and restart the server. Original: ${e.message}",
-                    e,
-                )
-            }
+            val process =
+                try {
+                    processBuilder.start()
+                } catch (e: java.io.IOException) {
+                    // Provide explicit guidance, avoid retry loops for non-retryable environment error
+                    throw IllegalStateException(
+                        "Required executable '$binary' was not found on PATH. Install it and restart the server. Original: ${e.message}",
+                        e,
+                    )
+                }
             val output = BufferedReader(InputStreamReader(process.inputStream)).use { it.readText() }
             val exitCode = process.waitFor()
 
@@ -263,17 +198,14 @@ class GitRemoteClient {
     private fun extractHost(repoUrl: String): String =
         when {
             repoUrl.startsWith("git@") -> {
-                // SSH format: git@host:path
                 repoUrl.substringAfter("git@").substringBefore(":")
             }
 
             repoUrl.startsWith("ssh://") || repoUrl.startsWith("https://") || repoUrl.startsWith("http://") -> {
-                // Standard URI format
                 runCatching { URI(repoUrl).host }.getOrNull() ?: repoUrl
             }
 
             else -> {
-                // Fallback - use whole URL as key
                 logger.warn { "Unable to parse Git URL format: $repoUrl, using full URL as mutex key" }
                 repoUrl
             }

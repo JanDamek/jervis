@@ -6,7 +6,6 @@ import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
-import java.time.Instant
 
 @Service
 class ClientService(
@@ -22,7 +21,7 @@ class ClientService(
     }
 
     suspend fun create(client: ClientDocument): ClientDocument {
-        val newClient = client.copy(id = ObjectId.get(), createdAt = Instant.now(), updatedAt = Instant.now())
+        val newClient = client.copy(id = ObjectId.get())
         val saved = clientRepository.save(newClient)
         logger.info { "Created client ${saved.name} with id ${saved.id}" }
         return saved
@@ -46,9 +45,7 @@ class ClientService(
                         requireLinearHistory = client.gitConfig.requireLinearHistory,
                         conventionalCommits = client.gitConfig.conventionalCommits,
                         commitRules =
-                            if (client.gitConfig.commitRules.isNotEmpty()) {
-                                client.gitConfig.commitRules
-                            } else {
+                            client.gitConfig.commitRules.ifEmpty {
                                 existing.gitConfig.commitRules
                             },
                         sshPrivateKey = client.gitConfig.sshPrivateKey ?: existing.gitConfig.sshPrivateKey,
@@ -72,18 +69,9 @@ class ClientService(
                 name = client.name,
                 gitProvider = client.gitProvider,
                 gitAuthType = client.gitAuthType,
-                monoRepoUrl = client.monoRepoUrl,
-                defaultBranch = client.defaultBranch,
                 gitConfig = mergedGitConfig,
                 description = client.description,
-                shortDescription = client.shortDescription,
-                fullDescription = client.fullDescription,
                 defaultLanguageEnum = client.defaultLanguageEnum,
-                audioPath = client.audioPath,
-                dependsOnProjects = client.dependsOnProjects,
-                isDisabled = client.isDisabled,
-                disabledProjects = client.disabledProjects,
-                updatedAt = Instant.now(),
             )
 
         val updated = clientRepository.save(merged)

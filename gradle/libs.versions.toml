@@ -9,6 +9,7 @@ datetime = "0.7.1"
 ktor = "3.3.2"
 logging = "3.0.5"
 weaviate = "5.5.0"
+arangodb = "7.4.0"
 commons-text = "1.14.0"
 javaparser = "3.27.1"
 jsoup = "1.21.2"
@@ -74,6 +75,7 @@ jackson-dataformat-yaml = { module = "com.fasterxml.jackson.dataformat:jackson-d
 
 # Weaviate & gRPC
 weaviate-client = { module = "io.weaviate:client", version.ref = "weaviate" }
+arangodb-driver = { module = "com.arangodb:arangodb-java-driver", version.ref = "arangodb" }
 
 # Netty native DNS resolver for macOS (version managed by Spring BOM)
 netty-resolver-dns-native-macos = { module = "io.netty:netty-resolver-dns-native-macos" }

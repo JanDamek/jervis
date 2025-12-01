@@ -1,5 +1,7 @@
 package com.jervis.repository
 
+import com.jervis.dto.PendingTaskStateEnum
+import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.entity.PendingTaskDocument
 import kotlinx.coroutines.flow.Flow
 import org.bson.types.ObjectId
@@ -10,21 +12,21 @@ import org.springframework.stereotype.Repository
 interface PendingTaskMongoRepository : CoroutineCrudRepository<PendingTaskDocument, ObjectId> {
     fun findAllByOrderByCreatedAtAsc(): Flow<PendingTaskDocument>
 
-    fun findByStateOrderByCreatedAtAsc(state: String): Flow<PendingTaskDocument>
+    fun findByStateOrderByCreatedAtAsc(state: PendingTaskStateEnum): Flow<PendingTaskDocument>
 
     fun findByTypeAndStateOrderByCreatedAtAsc(
-        type: String,
-        state: String,
+        type: PendingTaskTypeEnum,
+        state: PendingTaskStateEnum,
     ): Flow<PendingTaskDocument>
 
-    fun findByTypeOrderByCreatedAtAsc(type: String): Flow<PendingTaskDocument>
+    fun findByTypeOrderByCreatedAtAsc(type: PendingTaskTypeEnum): Flow<PendingTaskDocument>
 
     suspend fun countByTypeAndState(
-        type: String,
-        state: String,
+        type: PendingTaskTypeEnum,
+        state: PendingTaskStateEnum,
     ): Long
 
-    suspend fun countByType(type: String): Long
+    suspend fun countByType(type: PendingTaskTypeEnum): Long
 
-    suspend fun countByState(state: String): Long
+    suspend fun countByState(state: PendingTaskStateEnum): Long
 }

@@ -1,5 +1,6 @@
 package com.jervis.rag._internal.chunking
 
+import com.jervis.configuration.properties.TextChunkingProperties
 import com.jervis.rag.KnowledgeType
 import dev.langchain4j.data.document.Document
 import dev.langchain4j.data.document.DocumentSplitter
@@ -17,15 +18,10 @@ import org.springframework.stereotype.Component
  * - Properly tokenizes content
  */
 @Component
-internal class TextChunkingService {
+internal class TextChunkingService(
+    private val properties: TextChunkingProperties,
+) {
     private val logger = KotlinLogging.logger {}
-
-    companion object {
-        // Chunk sizes optimized for embedding models (in tokens)
-        private const val CODE_MAX_TOKENS = 1500
-        private const val TEXT_MAX_TOKENS = 1000
-        private const val OVERLAP_PERCENTAGE = 10 // 10% overlap for context
-    }
 
     /**
      * Chunk document into fragments using langchain4j recursive splitter.
@@ -57,10 +53,10 @@ internal class TextChunkingService {
         // Choose token size based on content type
         val maxTokens =
             when (knowledgeType) {
-                KnowledgeType.CODE -> CODE_MAX_TOKENS
-                else -> TEXT_MAX_TOKENS
+                KnowledgeType.CODE -> properties.maxTokens * 2
+                else -> properties.maxTokens
             }
-        val overlapTokens = (maxTokens * OVERLAP_PERCENTAGE) / 100
+        val overlapTokens = (maxTokens * properties.overlapPercentage) / 100
 
         // Use langchain4j recursive splitter
         val splitter: DocumentSplitter = DocumentSplitters.recursive(maxTokens, overlapTokens)

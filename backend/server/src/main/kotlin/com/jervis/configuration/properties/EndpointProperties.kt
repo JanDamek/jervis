@@ -30,5 +30,6 @@ data class EndpointProperties(
     data class OllamaConfig(
         val primary: Host,
         val qualifier: Host,
+        val embedding: Host,
     )
 }

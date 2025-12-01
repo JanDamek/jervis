@@ -10,7 +10,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.PendingTaskDto
-import com.jervis.dto.PendingTaskState
+import com.jervis.dto.PendingTaskStateEnum
 import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.JTopBar
@@ -34,7 +34,7 @@ fun PendingTasksScreen(
     var selectedState by rememberSaveable { mutableStateOf<String?>(null) }
 
     val taskTypes = remember { PendingTaskTypeEnum.values().map { it.name } }
-    val taskStates = remember { PendingTaskState.values().map { it.name } }
+    val taskStates = remember { PendingTaskStateEnum.values().map { it.name } }
 
     fun load() {
         scope.launch {
@@ -43,8 +43,7 @@ fun PendingTasksScreen(
             runCatching {
                 tasks = repository.pendingTasks.listPendingTasks(selectedTaskType, selectedState)
                 totalTasks = repository.pendingTasks.countPendingTasks(selectedTaskType, selectedState)
-            }
-                .onFailure { error = it.message }
+            }.onFailure { error = it.message }
             isLoading = false
         }
     }
@@ -59,7 +58,6 @@ fun PendingTasksScreen(
                 infoMessage = "Failed to delete task: ${t.message}"
             }
         }
-
     }
 
     LaunchedEffect(selectedTaskType, selectedState) { load() }
@@ -71,42 +69,45 @@ fun PendingTasksScreen(
                 title = "Pending Tasks ($totalTasks)",
                 onBack = onBack,
                 actions = {
-                    com.jervis.ui.util.RefreshIconButton(onClick = { load() })
-                }
+                    com.jervis.ui.util
+                        .RefreshIconButton(onClick = { load() })
+                },
             )
         },
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 FilterDropdown(
                     label = "Task Type",
                     items = taskTypes,
                     selectedItem = selectedTaskType,
-                    onItemSelected = { selectedTaskType = it }
+                    onItemSelected = { selectedTaskType = it },
                 )
                 FilterDropdown(
                     label = "State",
                     items = taskStates,
                     selectedItem = selectedState,
-                    onItemSelected = { selectedState = it }
+                    onItemSelected = { selectedState = it },
                 )
             }
             Box(modifier = Modifier.fillMaxSize()) {
                 when {
                     isLoading -> {
-                        com.jervis.ui.design.JCenteredLoading()
+                        com.jervis.ui.design
+                            .JCenteredLoading()
                     }
                     error != null -> {
                         com.jervis.ui.design.JErrorState(
                             message = "Failed to load: $error",
-                            onRetry = { load() }
+                            onRetry = { load() },
                         )
                     }
                     tasks.isEmpty() -> {
-                        com.jervis.ui.design.JEmptyState(message = "No pending tasks")
+                        com.jervis.ui.design
+                            .JEmptyState(message = "No pending tasks")
                     }
                     else -> {
                         LazyColumn(modifier = Modifier.fillMaxSize().padding(12.dp)) {
@@ -114,49 +115,49 @@ fun PendingTasksScreen(
                                 Card(
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
                                 ) {
-                                Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Text(task.taskType, style = MaterialTheme.typography.titleMedium)
-                                        com.jervis.ui.util.DeleteIconButton(
-                                            onClick = { pendingDeleteTaskId = task.id },
+                                    Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Text(task.taskType, style = MaterialTheme.typography.titleMedium)
+                                            com.jervis.ui.util.DeleteIconButton(
+                                                onClick = { pendingDeleteTaskId = task.id },
+                                            )
+                                        }
+                                        Spacer(Modifier.height(4.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) {
+                                            AssistChip(onClick = {}, label = { Text(task.state) })
+                                            task.projectId?.let {
+                                                AssistChip(onClick = {}, label = { Text("Project: ${it.take(8)}") })
+                                            }
+                                        }
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(
+                                            "Client: ${task.clientId.take(8)}...",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        Text(
+                                            "Created: ${task.createdAt}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        Spacer(Modifier.height(8.dp))
+                                        Text(
+                                            task.content.take(200) + if (task.content.length > 200) "..." else "",
+                                            style = MaterialTheme.typography.bodySmall,
                                         )
                                     }
-                                    Spacer(Modifier.height(4.dp))
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    ) {
-                                        AssistChip(onClick = {}, label = { Text(task.state) })
-                                        task.projectId?.let {
-                                            AssistChip(onClick = {}, label = { Text("Project: ${it.take(8)}") })
-                                        }
-                                    }
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(
-                                        "Client: ${task.clientId.take(8)}...",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                    Text(
-                                        "Created: ${task.createdAt}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                    Spacer(Modifier.height(8.dp))
-                                    Text(
-                                        task.content.take(200) + if (task.content.length > 200) "..." else "",
-                                        style = MaterialTheme.typography.bodySmall,
-                                    )
-                                }
                                 }
                             }
                         }
-                        }
                     }
+                }
             }
         }
 
@@ -195,13 +196,13 @@ fun FilterDropdown(
     label: String,
     items: List<String>,
     selectedItem: String?,
-    onItemSelected: (String?) -> Unit
+    onItemSelected: (String?) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
     ExposedDropdownMenuBox(
         expanded = expanded,
-        onExpandedChange = { expanded = !expanded }
+        onExpandedChange = { expanded = !expanded },
     ) {
         TextField(
             value = selectedItem ?: "All",
@@ -209,18 +210,18 @@ fun FilterDropdown(
             readOnly = true,
             label = { Text(label) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier.menuAnchor()
+            modifier = Modifier.menuAnchor(),
         )
         ExposedDropdownMenu(
             expanded = expanded,
-            onDismissRequest = { expanded = false }
+            onDismissRequest = { expanded = false },
         ) {
             DropdownMenuItem(
                 text = { Text("All") },
                 onClick = {
                     onItemSelected(null)
                     expanded = false
-                }
+                },
             )
             items.forEach { item ->
                 DropdownMenuItem(
@@ -228,7 +229,7 @@ fun FilterDropdown(
                     onClick = {
                         onItemSelected(item)
                         expanded = false
-                    }
+                    },
                 )
             }
         }

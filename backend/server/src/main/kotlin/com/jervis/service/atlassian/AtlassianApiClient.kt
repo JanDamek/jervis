@@ -1,5 +1,8 @@
 package com.jervis.service.atlassian
 
+import com.jervis.entity.confluence.ConfluenceAttachment
+import com.jervis.entity.confluence.ConfluenceComment
+import com.jervis.entity.confluence.ConfluencePageIndexDocument
 import com.jervis.entity.connection.Connection
 import com.jervis.entity.connection.HttpCredentials
 import com.jervis.entity.jira.JiraAttachment
@@ -195,5 +198,140 @@ class AtlassianApiClient(
         val displayName: String,
         val emailAddress: String? = null,
         val active: Boolean = true,
+    )
+
+    /**
+     * Search Confluence pages and fetch FULL details for each.
+     * Returns complete ConfluencePageIndexDocument ready for MongoDB.
+     */
+    suspend fun searchAndFetchFullPages(
+        connection: Connection.HttpConnection,
+        credentials: HttpCredentials,
+        clientId: ObjectId,
+        cql: String? = null,
+        spaceKey: String? = null,
+        maxResults: Int = 100,
+    ): List<ConfluencePageIndexDocument> {
+        // 1. Search for pages with all expansions
+        val searchResponse = httpClient.getWithConnection(
+            url = "${connection.baseUrl}/wiki/rest/api/content",
+            connection = connection,
+            credentials = credentials
+        ) {
+            parameter("type", "page")
+            parameter("status", "current")
+            if (spaceKey != null) {
+                parameter("spaceKey", spaceKey)
+            }
+            if (cql != null) {
+                parameter("cql", cql)
+            }
+            parameter("limit", maxResults)
+            parameter("expand", "body.storage,version,space,ancestors,children.comment,metadata.labels")
+        }
+
+        val searchResult = searchResponse.body<ConfluenceSearchResponseDto>()
+
+        // 2. Convert to full documents
+        return searchResult.results.mapNotNull { pageDto ->
+            try {
+                pageDto.toDocument(connection.id, clientId)
+            } catch (e: Exception) {
+                logger.warn(e) { "Failed to parse Confluence page ${pageDto.id}" }
+                null
+            }
+        }
+    }
+
+    @Serializable
+    private data class ConfluenceSearchResponseDto(
+        val results: List<ConfluencePageDto>,
+        val size: Int,
+    )
+
+    @Serializable
+    private data class ConfluencePageDto(
+        val id: String,
+        val type: String,
+        val status: String,
+        val title: String,
+        val space: ConfluenceSpaceDto? = null,
+        val body: ConfluenceBodyDto? = null,
+        val version: ConfluenceVersionDto? = null,
+        val ancestors: List<ConfluenceAncestorDto>? = null,
+        val metadata: ConfluenceMetadataDto? = null,
+    ) {
+        fun toDocument(connectionId: ObjectId, clientId: ObjectId): ConfluencePageIndexDocument {
+            val versionTimestamp = version?.`when`?.let { Instant.parse(it) } ?: Instant.now()
+            return ConfluencePageIndexDocument(
+                connectionId = connectionId,
+                clientId = clientId,
+                pageId = id,
+                spaceKey = space?.key ?: "",
+                title = title,
+                content = body?.storage?.value,
+                parentPageId = ancestors?.lastOrNull()?.id,
+                pageType = type,
+                status = status,
+                creator = version?.by?.accountId,
+                lastModifier = version?.by?.accountId,
+                labels = metadata?.labels?.results?.map { it.name } ?: emptyList(),
+                comments = emptyList(),
+                attachments = emptyList(),
+                createdAt = versionTimestamp,
+                confluenceUpdatedAt = versionTimestamp,
+                state = "NEW",
+            )
+        }
+    }
+
+    @Serializable
+    private data class ConfluenceSpaceDto(
+        val key: String,
+        val name: String? = null,
+    )
+
+    @Serializable
+    private data class ConfluenceBodyDto(
+        val storage: ConfluenceStorageDto? = null,
+    )
+
+    @Serializable
+    private data class ConfluenceStorageDto(
+        val value: String,
+        val representation: String = "storage",
+    )
+
+    @Serializable
+    private data class ConfluenceVersionDto(
+        val number: Int,
+        val `when`: String,
+        val by: ConfluenceUserDto? = null,
+    )
+
+    @Serializable
+    private data class ConfluenceUserDto(
+        val accountId: String,
+        val displayName: String? = null,
+    )
+
+    @Serializable
+    private data class ConfluenceAncestorDto(
+        val id: String,
+    )
+
+    @Serializable
+    private data class ConfluenceMetadataDto(
+        val labels: ConfluenceLabelsDto? = null,
+    )
+
+    @Serializable
+    private data class ConfluenceLabelsDto(
+        val results: List<ConfluenceLabelDto>,
+    )
+
+    @Serializable
+    private data class ConfluenceLabelDto(
+        val name: String,
     )
 }

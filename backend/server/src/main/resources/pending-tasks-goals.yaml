@@ -228,6 +228,13 @@ pendingTaskGoals:
   LINK_SAFETY_REVIEW: |
     Review UNCERTAIN link and classify safety.
 
+    RAG SEARCH RULES (if you decide to use knowledge_search):
+    - DO NOT use entire task content as query
+    - Extract 2-3 keywords ONLY from URL/domain
+    - Examples of GOOD queries: "infotext.isrv.cz link", "atlas.cz unsubscribe", "hash parameter"
+    - Examples of BAD queries: entire task content, full URL with context, safety analysis text
+    - Most links can be decided WITHOUT RAG search - use RAG only if truly needed
+
     DECISION (choose ONE):
     A) INDEX AS SAFE: Docs, articles, product pages → system_index_link
     B) ADD UNSAFE PATTERN: Action links (unsubscribe, confirm, tokens) → system_manage_link_safety with SPECIFIC regex
@@ -241,3 +248,50 @@ pendingTaskGoals:
     PHILOSOPHY: When uncertain → UNSAFE (better skip than trigger action).
 
     COMPLETION: Return empty plan [] if spam/irrelevant.
+
+  CONNECTION_ERROR: |
+    Analyze connection authentication error and help user fix the issue.
+    Connection has been set to INVALID state and requires manual intervention.
+
+    CONTEXT ANALYSIS (from task content):
+    - Connection name and type (HTTP, IMAP, POP3, SMTP, OAuth2)
+    - Connection source identifier (connection://<connectionId>)
+    - Error details (authentication failed, invalid credentials)
+    - Connection configuration (baseUrl/host, port, username)
+
+    INVESTIGATION STRATEGY:
+    1. Identify connection type and service (Atlassian, email server, OAuth provider)
+    2. Search RAG for:
+       - Previous successful authentications with this connection
+       - Related configuration changes in commits
+       - Documentation about this service/integration
+       - Similar connection errors and their resolutions
+    3. Check for common authentication issues:
+       - Expired API tokens/passwords
+       - Changed credentials on service side
+       - Network/firewall issues
+       - Service API changes or deprecations
+       - Rate limiting or temporary service outage
+
+    TASKS:
+    1. Search RAG for connection history → knowledge_search(sourceType=CONNECTION)
+    2. Identify root cause based on error pattern
+    3. Create user task with specific fix instructions → task_create_user
+       - Include: which credentials to check/update
+       - Include: where to find correct credentials
+       - Include: how to test connection after fix
+    4. Store investigation findings → knowledge_store as MEMORY
+    5. If service API changed, store as RULE → knowledge_store
+
+    USER TASK CONTENT should include:
+    - Clear diagnosis of the problem
+    - Step-by-step fix instructions
+    - Links to service admin panels (if known)
+    - How to verify fix worked
+
+    EXAMPLES:
+    - "Atlassian API token expired → Generate new token in Atlassian Settings → Update connection"
+    - "IMAP password changed → Check email provider settings → Update connection password"
+    - "OAuth2 client secret rotated → Get new secret from provider console → Update connection"
+
+    COMPLETION: Always create user task with fix instructions. Return plan with task_create_user.

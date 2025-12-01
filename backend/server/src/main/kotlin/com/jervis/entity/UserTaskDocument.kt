@@ -1,6 +1,5 @@
 package com.jervis.entity
 
-import com.jervis.domain.task.UserTask
 import com.jervis.service.task.TaskPriorityEnum
 import com.jervis.service.task.TaskSourceType
 import com.jervis.service.task.TaskStatusEnum
@@ -16,60 +15,13 @@ data class UserTaskDocument(
     val id: ObjectId = ObjectId(),
     val title: String,
     val description: String? = null,
-    val priority: String,
+    val priority: TaskPriorityEnum,
     @Indexed
-    val status: String,
+    val status: TaskStatusEnum,
     @Indexed
     val dueDate: Instant? = null,
-    @Indexed
     val projectId: ObjectId? = null,
-    @Indexed
     val clientId: ObjectId,
-    val sourceType: String,
-    val sourceUri: String? = null,
-    val metadata: Map<String, String> = emptyMap(),
-    @Indexed
-    val createdAt: Instant = Instant.now(),
-    val completedAt: Instant? = null,
-) {
-    fun toDomain(): UserTask =
-        UserTask(
-            id = id,
-            title = title,
-            description = description,
-            priority = TaskPriorityEnum.valueOf(priority),
-            status = TaskStatusEnum.valueOf(status),
-            dueDate = dueDate,
-            projectId = projectId,
-            clientId = clientId,
-            sourceType = TaskSourceType.valueOf(sourceType),
-            sourceUri = sourceUri,
-            metadata = metadata,
-            createdAt = createdAt,
-            completedAt = completedAt,
-        )
-
-    companion object {
-        private fun sanitizeKeys(map: Map<String, String>): Map<String, String> =
-            map.mapKeys { (k, _) ->
-                k.replace('.', '_').replace('$', '_')
-            }
-
-        fun fromDomain(domain: UserTask): UserTaskDocument =
-            UserTaskDocument(
-                id = domain.id,
-                title = domain.title,
-                description = domain.description,
-                priority = domain.priority.name,
-                status = domain.status.name,
-                dueDate = domain.dueDate,
-                projectId = domain.projectId,
-                clientId = domain.clientId,
-                sourceType = domain.sourceType.name,
-                sourceUri = domain.sourceUri,
-                metadata = sanitizeKeys(domain.metadata),
-                createdAt = domain.createdAt,
-                completedAt = domain.completedAt,
-            )
-    }
-}
+    val sourceType: TaskSourceType,
+    val correlationId: String,
+)

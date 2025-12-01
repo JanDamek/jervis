@@ -224,6 +224,7 @@ private fun ClientCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ClientDialog(
     client: ClientDto?,
@@ -233,19 +234,10 @@ private fun ClientDialog(
 ) {
     var name by remember { mutableStateOf(client?.name ?: "") }
     var connections by remember { mutableStateOf<List<com.jervis.dto.connection.ConnectionResponseDto>>(emptyList()) }
-    var selectedConnectionIds by remember { mutableStateOf(client?.connectionIds?.toSet() ?: emptySet()) }
-    val connectionFilters = remember { mutableStateMapOf<String, com.jervis.dto.ConnectionFilterDto>() }
-    var showFilterDialog by remember { mutableStateOf<String?>(null) }
+    var selectedConnectionId by remember { mutableStateOf(client?.connectionIds?.firstOrNull()) }
+    var expanded by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
-
-    // Initialize filters from client
-    LaunchedEffect(client) {
-        connectionFilters.clear()
-        client?.connectionFilters?.forEach {
-            connectionFilters[it.connectionId] = it
-        }
-    }
 
     // Load connections
     LaunchedEffect(Unit) {
@@ -271,7 +263,7 @@ private fun ClientDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Text("Connections:", style = MaterialTheme.typography.labelMedium)
+                Text("Connection (optional):", style = MaterialTheme.typography.labelMedium)
 
                 if (connections.isEmpty()) {
                     Text(
@@ -280,48 +272,47 @@ private fun ClientDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ExposedDropdownMenuBox(
+                        expanded = expanded,
+                        onExpandedChange = { expanded = it },
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        items(connections) { conn ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Checkbox(
-                                        checked = selectedConnectionIds.contains(conn.id),
-                                        onCheckedChange = { checked ->
-                                            selectedConnectionIds = if (checked) {
-                                                selectedConnectionIds + conn.id
-                                            } else {
-                                                connectionFilters.remove(conn.id)
-                                                selectedConnectionIds - conn.id
-                                            }
+                        OutlinedTextField(
+                            value = connections.firstOrNull { it.id == selectedConnectionId }?.name ?: "None",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Select Connection") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("None") },
+                                onClick = {
+                                    selectedConnectionId = null
+                                    expanded = false
+                                }
+                            )
+                            connections.forEach { conn ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(conn.name, style = MaterialTheme.typography.bodyMedium)
+                                            Text(
+                                                "${conn.type} - ${conn.state.name}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
                                         }
-                                    )
-                                    Column(modifier = Modifier.padding(start = 8.dp)) {
-                                        Text(conn.name, style = MaterialTheme.typography.bodyMedium)
-                                        Text(
-                                            conn.type,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                    },
+                                    onClick = {
+                                        selectedConnectionId = conn.id
+                                        expanded = false
                                     }
-                                }
-
-                                if (selectedConnectionIds.contains(conn.id) &&
-                                    conn.type == "HTTP" &&
-                                    conn.baseUrl?.contains("atlassian.net") == true) {
-                                    TextButton(onClick = { showFilterDialog = conn.id }) {
-                                        Text("Filters", style = MaterialTheme.typography.labelSmall)
-                                    }
-                                }
+                                )
                             }
                         }
                     }
@@ -333,92 +324,12 @@ private fun ClientDialog(
                 onClick = {
                     val newClient = (client ?: ClientDto(name = "")).copy(
                         name = name,
-                        connectionIds = selectedConnectionIds.toList(),
-                        connectionFilters = connectionFilters.values.toList()
+                        connectionIds = listOfNotNull(selectedConnectionId),
                     )
                     onSave(newClient)
                 },
                 enabled = name.isNotBlank()
             ) {
-                Text("Save")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
-
-    // Filter dialog for Atlassian connections
-    showFilterDialog?.let { connId ->
-        val conn = connections.firstOrNull { it.id == connId }
-        if (conn != null) {
-            AtlassianFilterDialog(
-                connection = conn,
-                filter = connectionFilters[connId],
-                onDismiss = { showFilterDialog = null },
-                onSave = { filter ->
-                    connectionFilters[connId] = filter
-                    showFilterDialog = null
-                }
-            )
-        }
-    }
-}
-
-@Composable
-private fun AtlassianFilterDialog(
-    connection: com.jervis.dto.connection.ConnectionResponseDto,
-    filter: com.jervis.dto.ConnectionFilterDto?,
-    onDismiss: () -> Unit,
-    onSave: (com.jervis.dto.ConnectionFilterDto) -> Unit
-) {
-    var jiraProjects by remember { mutableStateOf(filter?.jiraProjects?.joinToString(", ") ?: "") }
-    var confluenceSpaces by remember { mutableStateOf(filter?.confluenceSpaces?.joinToString(", ") ?: "") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Filters for ${connection.name}") },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    "Specify which Jira projects and Confluence spaces to poll for this client.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                OutlinedTextField(
-                    value = jiraProjects,
-                    onValueChange = { jiraProjects = it },
-                    label = { Text("Jira Projects") },
-                    placeholder = { Text("e.g., PROJ, DEV, SUPPORT") },
-                    modifier = Modifier.fillMaxWidth(),
-                    supportingText = { Text("Comma-separated project keys") }
-                )
-
-                OutlinedTextField(
-                    value = confluenceSpaces,
-                    onValueChange = { confluenceSpaces = it },
-                    label = { Text("Confluence Spaces") },
-                    placeholder = { Text("e.g., DEV, SUPPORT, DOCS") },
-                    modifier = Modifier.fillMaxWidth(),
-                    supportingText = { Text("Comma-separated space keys") }
-                )
-            }
-        },
-        confirmButton = {
-            Button(onClick = {
-                val newFilter = com.jervis.dto.ConnectionFilterDto(
-                    connectionId = connection.id,
-                    jiraProjects = jiraProjects.split(",").map { it.trim() }.filter { it.isNotBlank() },
-                    confluenceSpaces = confluenceSpaces.split(",").map { it.trim() }.filter { it.isNotBlank() }
-                )
-                onSave(newFilter)
-            }) {
                 Text("Save")
             }
         },

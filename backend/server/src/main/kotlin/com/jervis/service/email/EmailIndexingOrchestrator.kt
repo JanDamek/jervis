@@ -31,45 +31,47 @@ class EmailIndexingOrchestrator(
         logger.debug { "Indexing email: ${document.subject}" }
 
         // Build email content for RAG
-        val emailContent = buildString {
-            append("# Email: ${document.subject}\n\n")
-            append("**From:** ${document.from}\n")
-            if (document.to.isNotEmpty()) {
-                append("**To:** ${document.to.joinToString(", ")}\n")
-            }
-            if (document.cc.isNotEmpty()) {
-                append("**Cc:** ${document.cc.joinToString(", ")}\n")
-            }
-            append("**Date:** ${document.sentDate ?: document.receivedDate}\n")
-            append("**Folder:** ${document.folder}\n")
-            append("\n---\n\n")
+        val emailContent =
+            buildString {
+                append("# Email: ${document.subject}\n\n")
+                append("**From:** ${document.from}\n")
+                if (document.to.isNotEmpty()) {
+                    append("**To:** ${document.to.joinToString(", ")}\n")
+                }
+                if (document.cc.isNotEmpty()) {
+                    append("**Cc:** ${document.cc.joinToString(", ")}\n")
+                }
+                append("**Date:** ${document.sentDate ?: document.receivedDate}\n")
+                append("**Folder:** ${document.folder}\n")
+                append("\n---\n\n")
 
-            // Prefer text body, fallback to HTML
-            val body = document.textBody ?: document.htmlBody
-            if (!body.isNullOrBlank()) {
-                append(body)
-            }
+                // Prefer text body, fallback to HTML
+                val body = document.textBody ?: document.htmlBody
+                if (!body.isNullOrBlank()) {
+                    append(body)
+                }
 
-            if (document.attachments.isNotEmpty()) {
-                append("\n\n## Attachments\n")
-                document.attachments.forEach { att ->
-                    append("- ${att.filename} (${att.contentType}, ${att.size} bytes)\n")
+                if (document.attachments.isNotEmpty()) {
+                    append("\n\n## Attachments\n")
+                    document.attachments.forEach { att ->
+                        append("- ${att.filename} (${att.contentType}, ${att.size} bytes)\n")
+                    }
                 }
             }
-        }
 
         // Store in RAG
-        val documentsToStore = listOf(
-            DocumentToStore(
-                documentId = "email:${document.id.toHexString()}",
-                content = emailContent,
-                clientId = clientId,
-                type = KnowledgeType.DOCUMENT,
-                title = document.subject,
-                location = "Email (${document.folder})",
-                projectId = null,
+        val documentsToStore =
+            listOf(
+                DocumentToStore(
+                    documentId = "email:${document.id.toHexString()}",
+                    content = emailContent,
+                    clientId = clientId,
+                    type = KnowledgeType.DOCUMENT,
+                    title = document.subject,
+                    location = "Email (${document.folder})",
+                    projectId = null,
+                ),
             )
-        )
 
         return try {
             val result = knowledgeService.store(StoreRequest(documents = documentsToStore))

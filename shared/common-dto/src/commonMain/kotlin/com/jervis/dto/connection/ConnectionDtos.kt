@@ -10,15 +10,26 @@ data class ConnectionResponseDto(
     val id: String,
     val type: String, // HTTP, IMAP, POP3, SMTP, OAUTH2
     val name: String,
-    val enabled: Boolean,
+    val state: ConnectionStateEnum,
     val baseUrl: String? = null,
     val host: String? = null,
     val port: Int? = null,
     val username: String? = null,
+    // HTTP specific
     val authType: String? = null,
+    val credentials: String? = null, // Plain text for dev-mode
+    val timeoutMs: Long? = null,
+    // OAuth2 specific
     val authorizationUrl: String? = null,
     val tokenUrl: String? = null,
     val clientId: String? = null,
+    val clientSecret: String? = null, // Plain text for dev-mode
+    val redirectUri: String? = null,
+    val scope: String? = null,
+    // Email specific (IMAP/POP3/SMTP) – dev-mode plaintext
+    val password: String? = null,
+    val useSsl: Boolean? = null,
+    val useTls: Boolean? = null,
     val hasCredentials: Boolean = false,
     val createdAtMs: Long,  // Epoch millis
     val updatedAtMs: Long,  // Epoch millis
@@ -31,7 +42,7 @@ data class ConnectionResponseDto(
 data class ConnectionCreateRequestDto(
     val type: String, // HTTP, IMAP, POP3, SMTP, OAUTH2
     val name: String,
-    val enabled: Boolean = true,
+    val state: ConnectionStateEnum = ConnectionStateEnum.NEW,
 
     // HTTP specific
     val baseUrl: String? = null,
@@ -63,7 +74,7 @@ data class ConnectionCreateRequestDto(
 @Serializable
 data class ConnectionUpdateRequestDto(
     val name: String? = null,
-    val enabled: Boolean? = null,
+    val state: ConnectionStateEnum? = null,
 
     // HTTP specific
     val baseUrl: String? = null,

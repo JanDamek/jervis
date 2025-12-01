@@ -4,30 +4,16 @@ import com.jervis.configuration.ConnectionCredentialsKey
 import com.jervis.configuration.ConnectionKey
 import com.jervis.entity.connection.Connection
 import com.jervis.entity.connection.HttpCredentials
-import io.ktor.client.*
-import io.ktor.client.plugins.*
-import io.ktor.client.request.*
-import io.ktor.client.statement.*
-import io.ktor.http.*
-
-/**
- * Extension functions for HttpClient with Connection support.
- *
- * These functions automatically:
- * - Apply rate limiting per domain
- * - Inject authorization headers from Connection
- * - Use timeout from Connection
- * - Log requests
- *
- * Usage:
- * ```kotlin
- * val response = httpClient.getWithConnection(
- *     url = "${connection.baseUrl}/rest/api/3/myself",
- *     connection = connection,
- *     credentials = decryptedCredentials
- * )
- * ```
- */
+import io.ktor.client.HttpClient
+import io.ktor.client.plugins.timeout
+import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.client.request.delete
+import io.ktor.client.request.get
+import io.ktor.client.request.head
+import io.ktor.client.request.patch
+import io.ktor.client.request.post
+import io.ktor.client.request.put
+import io.ktor.client.statement.HttpResponse
 
 /**
  * Execute GET request with Connection.
@@ -41,9 +27,9 @@ suspend fun HttpClient.getWithConnection(
     url: String,
     connection: Connection.HttpConnection,
     credentials: HttpCredentials? = null,
-    block: HttpRequestBuilder.() -> Unit = {}
-): HttpResponse {
-    return get(url) {
+    block: HttpRequestBuilder.() -> Unit = {},
+): HttpResponse =
+    get(url) {
         attributes.put(ConnectionKey, connection)
         credentials?.let { attributes.put(ConnectionCredentialsKey, it) }
         timeout {
@@ -51,7 +37,6 @@ suspend fun HttpClient.getWithConnection(
         }
         block()
     }
-}
 
 /**
  * Execute POST request with Connection.
@@ -65,9 +50,9 @@ suspend fun HttpClient.postWithConnection(
     url: String,
     connection: Connection.HttpConnection,
     credentials: HttpCredentials? = null,
-    block: HttpRequestBuilder.() -> Unit = {}
-): HttpResponse {
-    return post(url) {
+    block: HttpRequestBuilder.() -> Unit = {},
+): HttpResponse =
+    post(url) {
         attributes.put(ConnectionKey, connection)
         credentials?.let { attributes.put(ConnectionCredentialsKey, it) }
         timeout {
@@ -75,7 +60,6 @@ suspend fun HttpClient.postWithConnection(
         }
         block()
     }
-}
 
 /**
  * Execute PUT request with Connection.
@@ -84,9 +68,9 @@ suspend fun HttpClient.putWithConnection(
     url: String,
     connection: Connection.HttpConnection,
     credentials: HttpCredentials? = null,
-    block: HttpRequestBuilder.() -> Unit = {}
-): HttpResponse {
-    return put(url) {
+    block: HttpRequestBuilder.() -> Unit = {},
+): HttpResponse =
+    put(url) {
         attributes.put(ConnectionKey, connection)
         credentials?.let { attributes.put(ConnectionCredentialsKey, it) }
         timeout {
@@ -94,7 +78,6 @@ suspend fun HttpClient.putWithConnection(
         }
         block()
     }
-}
 
 /**
  * Execute DELETE request with Connection.
@@ -103,9 +86,9 @@ suspend fun HttpClient.deleteWithConnection(
     url: String,
     connection: Connection.HttpConnection,
     credentials: HttpCredentials? = null,
-    block: HttpRequestBuilder.() -> Unit = {}
-): HttpResponse {
-    return delete(url) {
+    block: HttpRequestBuilder.() -> Unit = {},
+): HttpResponse =
+    delete(url) {
         attributes.put(ConnectionKey, connection)
         credentials?.let { attributes.put(ConnectionCredentialsKey, it) }
         timeout {
@@ -113,7 +96,6 @@ suspend fun HttpClient.deleteWithConnection(
         }
         block()
     }
-}
 
 /**
  * Execute PATCH request with Connection.
@@ -122,9 +104,9 @@ suspend fun HttpClient.patchWithConnection(
     url: String,
     connection: Connection.HttpConnection,
     credentials: HttpCredentials? = null,
-    block: HttpRequestBuilder.() -> Unit = {}
-): HttpResponse {
-    return patch(url) {
+    block: HttpRequestBuilder.() -> Unit = {},
+): HttpResponse =
+    patch(url) {
         attributes.put(ConnectionKey, connection)
         credentials?.let { attributes.put(ConnectionCredentialsKey, it) }
         timeout {
@@ -132,7 +114,6 @@ suspend fun HttpClient.patchWithConnection(
         }
         block()
     }
-}
 
 /**
  * Execute HEAD request with Connection.
@@ -141,9 +122,9 @@ suspend fun HttpClient.headWithConnection(
     url: String,
     connection: Connection.HttpConnection,
     credentials: HttpCredentials? = null,
-    block: HttpRequestBuilder.() -> Unit = {}
-): HttpResponse {
-    return head(url) {
+    block: HttpRequestBuilder.() -> Unit = {},
+): HttpResponse =
+    head(url) {
         attributes.put(ConnectionKey, connection)
         credentials?.let { attributes.put(ConnectionCredentialsKey, it) }
         timeout {
@@ -151,4 +132,3 @@ suspend fun HttpClient.headWithConnection(
         }
         block()
     }
-}

@@ -1,6 +1,7 @@
 package com.jervis.service.gateway.clients.llm
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
+import com.jervis.configuration.WebClientFactory
 import com.jervis.configuration.prompts.CreativityConfig
 import com.jervis.configuration.prompts.PromptConfig
 import com.jervis.configuration.prompts.PromptsConfiguration
@@ -8,7 +9,6 @@ import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.domain.gateway.StreamChunk
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProviderEnum
-import com.jervis.configuration.WebClientFactory
 import com.jervis.service.gateway.clients.ProviderClient
 import kotlinx.coroutines.flow.Flow
 import org.springframework.stereotype.Service
@@ -56,13 +56,10 @@ class AnthropicClient(
         debugSessionId: String?,
     ): Flow<StreamChunk> =
         kotlinx.coroutines.flow.flow {
-            // Anthropic streaming not implemented yet, use fallback
             val response = call(model, systemPrompt, userPrompt, config, prompt, estimatedTokens)
 
-            // Emit the complete response as a single chunk
             emit(StreamChunk(content = response.answer, isComplete = false))
 
-            // Emit final chunk with metadata
             emit(
                 StreamChunk(
                     content = "",

@@ -1,11 +1,8 @@
 package com.jervis.service.http
 
 import com.jervis.service.ratelimit.DomainRateLimiterService
-import io.ktor.client.HttpClient
-import io.ktor.client.plugins.api.ClientPlugin
 import io.ktor.client.plugins.api.createClientPlugin
 import io.ktor.client.request.HttpRequestPipeline
-import io.ktor.util.AttributeKey
 
 /**
  * Ktor client plugin for automatic domain-based rate limiting.
@@ -32,14 +29,15 @@ class RateLimitingPluginConfig {
     lateinit var rateLimiter: DomainRateLimiterService
 }
 
-val RateLimitingPlugin = createClientPlugin("RateLimitingPlugin", ::RateLimitingPluginConfig) {
-    val rateLimiter = pluginConfig.rateLimiter
+val RateLimitingPlugin =
+    createClientPlugin("RateLimitingPlugin", ::RateLimitingPluginConfig) {
+        val rateLimiter = pluginConfig.rateLimiter
 
-    // Intercept requests in the Before phase (before sending)
-    client.requestPipeline.intercept(HttpRequestPipeline.Before) {
-        val url = context.url.toString()
+        // Intercept requests in the Before phase (before sending)
+        client.requestPipeline.intercept(HttpRequestPipeline.Before) {
+            val url = context.url.toString()
 
-        // Apply rate limiting before request execution
-        rateLimiter.acquirePermit(url)
+            // Apply rate limiting before request execution
+            rateLimiter.acquirePermit(url)
+        }
     }
-}

@@ -34,9 +34,12 @@ data class DocumentToStore(
     val embeddingType: EmbeddingType = EmbeddingType.TEXT,
     val severity: KnowledgeSeverity? = null,
     val title: String? = null,
-    val location: String? = null,
+    val location: String? = null, // sourcePath
     val relatedDocs: List<String> = emptyList(),
     val projectId: ObjectId? = null,
+    // New metadata for per-client RAG collections
+    val graphRefs: List<String> = emptyList(),
+    val entityTypes: List<String> = emptyList(),
 )
 
 data class StoreResult(

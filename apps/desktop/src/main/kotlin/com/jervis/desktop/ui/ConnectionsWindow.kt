@@ -24,6 +24,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun ConnectionsWindow(repository: JervisRepository) {
     var connections by remember { mutableStateOf<List<ConnectionResponseDto>>(emptyList()) }
+    var clients by remember { mutableStateOf<List<com.jervis.dto.ClientDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -35,13 +36,14 @@ fun ConnectionsWindow(repository: JervisRepository) {
 
     val scope = rememberCoroutineScope()
 
-    // Load connections
+    // Load connections and clients
     fun loadConnections() {
         scope.launch {
             isLoading = true
             errorMessage = null
             try {
                 connections = repository.connections.listConnections()
+                clients = repository.clients.listClients()
             } catch (e: Exception) {
                 errorMessage = "Failed to load connections: ${e.message}"
             } finally {
@@ -114,6 +116,7 @@ fun ConnectionsWindow(repository: JervisRepository) {
                         items(connections) { connection ->
                             ConnectionCard(
                                 connection = connection,
+                                clients = clients,
                                 onTest = {
                                     scope.launch {
                                         try {
@@ -235,10 +238,13 @@ fun ConnectionsWindow(repository: JervisRepository) {
 @Composable
 private fun ConnectionCard(
     connection: ConnectionResponseDto,
+    clients: List<com.jervis.dto.ClientDto>,
     onTest: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val assignedClient = clients.firstOrNull { it.connectionIds.contains(connection.id) }
+    
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -256,17 +262,33 @@ private fun ConnectionCard(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Surface(
-                        color = if (connection.enabled) {
-                            MaterialTheme.colorScheme.primaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        },
+                        color = MaterialTheme.colorScheme.primaryContainer,
                         shape = MaterialTheme.shapes.small
                     ) {
                         Text(
                             text = connection.type,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Surface(
+                        color = when (connection.state.name) {
+                            "VALID" -> MaterialTheme.colorScheme.primaryContainer
+                            "INVALID" -> MaterialTheme.colorScheme.errorContainer
+                            else -> MaterialTheme.colorScheme.surfaceVariant
+                        },
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            text = connection.state.name,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = when (connection.state.name) {
+                                "VALID" -> MaterialTheme.colorScheme.onPrimaryContainer
+                                "INVALID" -> MaterialTheme.colorScheme.onErrorContainer
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            }
                         )
                     }
                 }
@@ -285,15 +307,13 @@ private fun ConnectionCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Text(
-                    text = if (connection.enabled) "Enabled" else "Disabled",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (connection.enabled) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                )
+                assignedClient?.let {
+                    Text(
+                        text = "Used by: ${it.name}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -318,7 +338,6 @@ private fun ConnectionEditDialog(
     onUpdate: (ConnectionUpdateRequestDto) -> Unit
 ) {
     var name by remember { mutableStateOf(connection.name) }
-    var enabled by remember { mutableStateOf(connection.enabled) }
 
     // HTTP fields
     var baseUrl by remember { mutableStateOf(connection.baseUrl ?: "") }
@@ -391,11 +410,6 @@ private fun ConnectionEditDialog(
                         )
                     }
                 }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = enabled, onCheckedChange = { enabled = it })
-                    Text("Enabled")
-                }
             }
         },
         confirmButton = {
@@ -403,7 +417,6 @@ private fun ConnectionEditDialog(
                 onClick = {
                     val request = ConnectionUpdateRequestDto(
                         name = name,
-                        enabled = enabled,
                         baseUrl = if (connection.type == "HTTP" && baseUrl.isNotBlank()) baseUrl else null,
                         credentials = if (connection.type == "HTTP" && credentials.isNotBlank()) credentials else null,
                         host = if (connection.type != "HTTP" && host.isNotBlank()) host else null,
@@ -433,7 +446,6 @@ private fun ConnectionCreateDialog(
 ) {
     var connectionType by remember { mutableStateOf("HTTP") }
     var name by remember { mutableStateOf("") }
-    var enabled by remember { mutableStateOf(true) }
 
     // HTTP fields
     var baseUrl by remember { mutableStateOf("") }
@@ -521,11 +533,6 @@ private fun ConnectionCreateDialog(
                         )
                     }
                 }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = enabled, onCheckedChange = { enabled = it })
-                    Text("Enabled")
-                }
             }
         },
         confirmButton = {
@@ -534,7 +541,6 @@ private fun ConnectionCreateDialog(
                     val request = ConnectionCreateRequestDto(
                         type = connectionType,
                         name = name,
-                        enabled = enabled,
                         baseUrl = if (connectionType == "HTTP") baseUrl else null,
                         authType = if (connectionType == "HTTP") authType else null,
                         credentials = if (connectionType == "HTTP") credentials.ifBlank { null } else null,

@@ -5,10 +5,10 @@ import com.jervis.configuration.prompts.ToolTypeEnum
 import com.jervis.domain.plan.Plan
 import com.jervis.domain.plan.PlanStep
 import com.jervis.domain.plan.StepStatusEnum
+import com.jervis.mcp.McpToolRegistry
 import com.jervis.service.agent.planner.Planner
 import com.jervis.service.gateway.LlmGateway
 import com.jervis.service.gateway.processing.PromptBuilderService
-import com.jervis.service.mcp.McpToolRegistry
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.bson.types.ObjectId

@@ -34,15 +34,4 @@ class JsonConfiguration : WebFluxConfigurer {
         configurer.defaultCodecs().kotlinSerializationJsonEncoder(KotlinSerializationJsonEncoder(json))
         configurer.defaultCodecs().kotlinSerializationJsonDecoder(KotlinSerializationJsonDecoder(json))
     }
-
-    @OptIn(ExperimentalSerializationApi::class)
-    @Bean
-    fun providerJson(): Json =
-        Json {
-            ignoreUnknownKeys = true
-            prettyPrint = true
-            isLenient = true
-            encodeDefaults = true
-            explicitNulls = false
-        }
 }

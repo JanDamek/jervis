@@ -61,24 +61,25 @@ class EmailContinuousIndexer(
         }
     }
 
-    private fun continuousNewEmails() = flow {
-        while (true) {
-            val emails = repository.findByStateOrderByReceivedDateAsc("NEW")
+    private fun continuousNewEmails() =
+        flow {
+            while (true) {
+                val emails = repository.findByStateOrderByReceivedDateAsc("NEW")
 
-            var emittedAny = false
-            emails.collect { email ->
-                emit(email)
-                emittedAny = true
-            }
+                var emittedAny = false
+                emails.collect { email ->
+                    emit(email)
+                    emittedAny = true
+                }
 
-            if (!emittedAny) {
-                logger.debug { "No NEW emails, sleeping ${POLL_DELAY_MS}ms" }
-                delay(POLL_DELAY_MS)
-            } else {
-                logger.debug { "Processed NEW emails, immediately checking for more..." }
+                if (!emittedAny) {
+                    logger.debug { "No NEW emails, sleeping ${POLL_DELAY_MS}ms" }
+                    delay(POLL_DELAY_MS)
+                } else {
+                    logger.debug { "Processed NEW emails, immediately checking for more..." }
+                }
             }
         }
-    }
 
     private suspend fun indexEmail(doc: EmailMessageIndexDocument) {
         logger.debug { "Indexing email: ${doc.subject}" }
@@ -87,10 +88,11 @@ class EmailContinuousIndexer(
         markAsIndexing(doc)
 
         // Index to RAG (uses data already in MongoDB, NO email server calls)
-        val result = orchestrator.indexSingleEmail(
-            clientId = doc.clientId,
-            document = doc,
-        )
+        val result =
+            orchestrator.indexSingleEmail(
+                clientId = doc.clientId,
+                document = doc,
+            )
 
         if (result.success) {
             markAsIndexed(doc, result.chunkCount)
@@ -102,30 +104,39 @@ class EmailContinuousIndexer(
     }
 
     private suspend fun markAsIndexing(doc: EmailMessageIndexDocument) {
-        val updated = doc.copy(
-            state = "INDEXING",
-            updatedAt = Instant.now(),
-        )
+        val updated =
+            doc.copy(
+                state = "INDEXING",
+                updatedAt = Instant.now(),
+            )
         repository.save(updated)
         logger.debug { "Marked email as INDEXING: ${doc.subject}" }
     }
 
-    private suspend fun markAsIndexed(doc: EmailMessageIndexDocument, chunkCount: Int) {
-        val updated = doc.copy(
-            state = "INDEXED",
-            indexedAt = Instant.now(),
-            updatedAt = Instant.now(),
-        )
+    private suspend fun markAsIndexed(
+        doc: EmailMessageIndexDocument,
+        chunkCount: Int,
+    ) {
+        val updated =
+            doc.copy(
+                state = "INDEXED",
+                indexedAt = Instant.now(),
+                updatedAt = Instant.now(),
+            )
         repository.save(updated)
         logger.debug { "Marked email as INDEXED: ${doc.subject} ($chunkCount chunks)" }
     }
 
-    private suspend fun markAsFailed(doc: EmailMessageIndexDocument, error: String) {
-        val updated = doc.copy(
-            state = "FAILED",
-            indexingError = error,
-            updatedAt = Instant.now(),
-        )
+    private suspend fun markAsFailed(
+        doc: EmailMessageIndexDocument,
+        error: String,
+    ) {
+        val updated =
+            doc.copy(
+                state = "FAILED",
+                indexingError = error,
+                updatedAt = Instant.now(),
+            )
         repository.save(updated)
         logger.warn { "Marked email as FAILED: ${doc.subject}" }
     }

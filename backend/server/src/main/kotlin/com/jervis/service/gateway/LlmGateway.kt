@@ -4,10 +4,10 @@ import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.service.gateway.core.LlmCallExecutor
 import com.jervis.service.gateway.processing.JsonParser
 import com.jervis.service.gateway.processing.PromptBuilderService
-import com.jervis.service.gateway.processing.TokenEstimationService
 import com.jervis.service.gateway.processing.domain.ParsedResponse
 import com.jervis.service.gateway.selection.ModelCandidateSelector
 import com.jervis.service.prompts.PromptRepository
+import com.jervis.service.text.TokenEstimationService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging

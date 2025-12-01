@@ -12,8 +12,12 @@ import com.jervis.rag.SearchResult
 import com.jervis.rag.StoreRequest
 import com.jervis.rag.StoreResult
 import com.jervis.rag.StoredDocument
+import com.jervis.rag._internal.RagMetadataUpdater
+import com.jervis.rag._internal.WeaviateClassNameUtil
+import com.jervis.rag._internal.WeaviatePerClientProvisioner
 import com.jervis.rag._internal.chunking.ChunkResult
 import com.jervis.rag._internal.chunking.TextChunkingService
+import com.jervis.rag._internal.model.RagMetadata
 import com.jervis.rag._internal.repository.VectorCollection
 import com.jervis.rag._internal.repository.VectorDocument
 import com.jervis.rag._internal.repository.VectorFilters
@@ -37,6 +41,8 @@ internal class KnowledgeServiceImpl(
     private val vectorStore: VectorStore,
     private val embeddingGateway: EmbeddingGateway,
     private val chunkingService: TextChunkingService,
+    private val ragMetadataUpdater: RagMetadataUpdater,
+    private val weaviateProvisioner: WeaviatePerClientProvisioner,
 ) : KnowledgeService {
     private val logger = KotlinLogging.logger {}
 
@@ -68,10 +74,12 @@ internal class KnowledgeServiceImpl(
                     ),
             )
 
-        // Execute search
+        weaviateProvisioner.ensureClientCollections(request.clientId)
+
+        val classNameOverride = perClientClassName(request.clientId, request.embeddingType)
         val results =
             vectorStore
-                .search(collection, query)
+                .search(collection, query, classNameOverride)
                 .getOrThrow()
 
         logger.info { "Search completed: found=${results.size} results" }
@@ -241,11 +249,22 @@ internal class KnowledgeServiceImpl(
 
         document.severity?.let { metadata["knowledgeSeverity"] = it.name }
         document.title?.let { metadata["documentTitle"] = it }
-        document.location?.let { metadata["documentLocation"] = it }
+        document.location?.let {
+            metadata["documentLocation"] = it // backward compat
+            metadata["sourcePath"] = it // new schema field
+        }
         document.projectId?.let { metadata["projectId"] = it.toHexString() }
+
+        if (document.entityTypes.isNotEmpty()) {
+            metadata["entityTypes"] = document.entityTypes
+        }
 
         if (document.relatedDocs.isNotEmpty()) {
             metadata["relatedDocuments"] = document.relatedDocs
+        }
+
+        if (document.graphRefs.isNotEmpty()) {
+            metadata["graphRefs"] = document.graphRefs
         }
 
         // Store
@@ -258,7 +277,29 @@ internal class KnowledgeServiceImpl(
                 metadata = metadata,
             )
 
-        vectorStore.store(collection, vectorDoc).getOrThrow()
+        weaviateProvisioner.ensureClientCollections(document.clientId)
+
+        val classNameOverride = perClientClassName(document.clientId, document.embeddingType)
+        vectorStore.store(collection, vectorDoc, classNameOverride).getOrThrow()
+
+        // Cross-link RAG -> Graph (best-effort)
+        runCatching {
+            val meta =
+                RagMetadata(
+                    projectId = document.projectId?.toHexString() ?: "",
+                    sourcePath = document.location ?: "",
+                    chunkIndex = chunk.chunkIndex,
+                    totalChunks = chunk.totalChunks,
+                    entityTypes = document.entityTypes,
+                    contentHash = sha256Hex(chunk.content),
+                    graphRefs = document.graphRefs,
+                )
+            ragMetadataUpdater.onChunkStored(
+                clientId = document.clientId,
+                ragChunkId = knowledgeId,
+                meta = meta,
+            )
+        }
 
         return knowledgeId
     }
@@ -345,6 +386,21 @@ internal class KnowledgeServiceImpl(
             EmbeddingType.TEXT -> ModelTypeEnum.EMBEDDING_TEXT
             EmbeddingType.CODE -> ModelTypeEnum.EMBEDDING_CODE
         }
+
+    private suspend fun perClientClassName(
+        clientId: ObjectId,
+        embeddingType: EmbeddingType,
+    ): String =
+        when (embeddingType) {
+            EmbeddingType.TEXT -> WeaviateClassNameUtil.textClassFor(clientId)
+            EmbeddingType.CODE -> WeaviateClassNameUtil.codeClassFor(clientId)
+        }
+
+    private fun sha256Hex(input: String): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        val digest = md.digest(input.toByteArray(Charsets.UTF_8))
+        return digest.joinToString("") { b -> "%02x".format(b) }
+    }
 }
 
 /**

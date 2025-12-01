@@ -17,18 +17,9 @@ enum class GitCommitState {
 @Document(collection = "git_commits")
 @CompoundIndexes(
     CompoundIndex(
-        name = "client_monorepo_commitHash_idx",
-        def = "{'clientId':1,'monoRepoId':1,'commitHash':1}",
-        unique = true,
-    ),
-    CompoundIndex(
         name = "project_commitHash_idx",
         def = "{'projectId':1,'commitHash':1}",
         unique = true,
-    ),
-    CompoundIndex(
-        name = "client_monorepo_state_idx",
-        def = "{'clientId':1,'monoRepoId':1,'state':1,'commitDate':1}",
     ),
     CompoundIndex(
         name = "project_state_idx",
@@ -39,7 +30,6 @@ data class GitCommitDocument(
     @Id val id: ObjectId = ObjectId(),
     val clientId: ObjectId,
     val projectId: ObjectId? = null,
-    val monoRepoId: String? = null,
     val commitHash: String,
     val state: GitCommitState,
     val author: String? = null,

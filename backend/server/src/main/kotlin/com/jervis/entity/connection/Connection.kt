@@ -6,8 +6,7 @@ import org.springframework.data.annotation.TypeAlias
 import org.springframework.data.mongodb.core.index.CompoundIndex
 import org.springframework.data.mongodb.core.index.CompoundIndexes
 import org.springframework.data.mongodb.core.mapping.Document
-import java.net.URL
-import java.time.Instant
+import java.net.URI
 
 /**
  * Sealed class hierarchy for all external service connections.
@@ -30,16 +29,13 @@ import java.time.Instant
 @Document(collection = "connections")
 @CompoundIndexes(
     CompoundIndex(name = "name_unique_idx", def = "{'name': 1}", unique = true),
-    CompoundIndex(name = "enabled_idx", def = "{'enabled': 1}"),
+    CompoundIndex(name = "state_idx", def = "{'state': 1}"),
 )
 sealed class Connection {
     abstract val id: ObjectId
     abstract val name: String
-    abstract val enabled: Boolean
+    abstract val state: ConnectionStateEnum
     abstract val rateLimitConfig: RateLimitConfig
-    abstract val createdAt: Instant
-    abstract val updatedAt: Instant
-    abstract val createdBy: String?
 
     /**
      * HTTP/REST API connection.
@@ -51,22 +47,17 @@ sealed class Connection {
         @Id override val id: ObjectId = ObjectId.get(),
         override val name: String,
         val baseUrl: String,
-        val authType: AuthType = AuthType.NONE,
-        val credentials: String? = null, // Plain text: "username:password" or "token"
+        val credentials: HttpCredentials? = null,
         val timeoutMs: Long = 30000,
-        override val rateLimitConfig: RateLimitConfig = RateLimitConfig(),
-        override val enabled: Boolean = true,
-        override val createdAt: Instant = Instant.now(),
-        override val updatedAt: Instant = Instant.now(),
-        override val createdBy: String? = null
+        override val rateLimitConfig: RateLimitConfig,
+        override val state: ConnectionStateEnum = ConnectionStateEnum.NEW,
     ) : Connection() {
-        fun extractDomain(): String {
-            return try {
-                URL(baseUrl).host
+        fun extractDomain(): String =
+            try {
+                URI(baseUrl).host
             } catch (e: Exception) {
                 baseUrl
             }
-        }
     }
 
     /**
@@ -84,11 +75,8 @@ sealed class Connection {
         val password: String, // Plain text!
         val useSsl: Boolean = true,
         val folderName: String = "INBOX",
-        override val rateLimitConfig: RateLimitConfig = RateLimitConfig(),
-        override val enabled: Boolean = true,
-        override val createdAt: Instant = Instant.now(),
-        override val updatedAt: Instant = Instant.now(),
-        override val createdBy: String? = null
+        override val rateLimitConfig: RateLimitConfig,
+        override val state: ConnectionStateEnum = ConnectionStateEnum.NEW,
     ) : Connection()
 
     /**
@@ -105,11 +93,8 @@ sealed class Connection {
         val username: String,
         val password: String, // Plain text!
         val useSsl: Boolean = true,
-        override val rateLimitConfig: RateLimitConfig = RateLimitConfig(),
-        override val enabled: Boolean = true,
-        override val createdAt: Instant = Instant.now(),
-        override val updatedAt: Instant = Instant.now(),
-        override val createdBy: String? = null
+        override val rateLimitConfig: RateLimitConfig,
+        override val state: ConnectionStateEnum = ConnectionStateEnum.NEW,
     ) : Connection()
 
     /**
@@ -126,11 +111,8 @@ sealed class Connection {
         val username: String,
         val password: String, // Plain text!
         val useTls: Boolean = true,
-        override val rateLimitConfig: RateLimitConfig = RateLimitConfig(),
-        override val enabled: Boolean = true,
-        override val createdAt: Instant = Instant.now(),
-        override val updatedAt: Instant = Instant.now(),
-        override val createdBy: String? = null
+        override val rateLimitConfig: RateLimitConfig,
+        override val state: ConnectionStateEnum = ConnectionStateEnum.NEW,
     ) : Connection()
 
     /**
@@ -148,20 +130,9 @@ sealed class Connection {
         val clientSecret: String, // Plain text!
         val scopes: List<String> = emptyList(),
         val redirectUri: String,
-        override val rateLimitConfig: RateLimitConfig = RateLimitConfig(),
-        override val enabled: Boolean = true,
-        override val createdAt: Instant = Instant.now(),
-        override val updatedAt: Instant = Instant.now(),
-        override val createdBy: String? = null
+        override val rateLimitConfig: RateLimitConfig,
+        override val state: ConnectionStateEnum = ConnectionStateEnum.NEW,
     ) : Connection()
-
-    // Future connection types:
-    // - SlackConnection
-    // - TeamsConnection
-    // - DiscordConnection
-    // - WebSocketConnection
-    // - GraphQLConnection
-    // - etc.
 }
 
 /**
@@ -169,44 +140,33 @@ sealed class Connection {
  * Applied per domain/host (not per connection).
  */
 data class RateLimitConfig(
-    val maxRequestsPerSecond: Int = 10,
-    val maxRequestsPerMinute: Int = 100,
-    val enabled: Boolean = true
+    val maxRequestsPerSecond: Int,
+    val maxRequestsPerMinute: Int,
 )
-
-/**
- * Authentication type for HTTP connections.
- */
-enum class AuthType {
-    NONE,
-    BASIC,
-    BEARER,
-    API_KEY
-}
 
 /**
  * Credentials for HTTP connections (sealed class for type safety).
  */
 sealed class HttpCredentials {
+    abstract fun toAuthHeader(): String
+
     data class Basic(
         val username: String,
-        val password: String
+        val password: String,
     ) : HttpCredentials() {
-        fun toAuthHeader(): String {
+        override fun toAuthHeader(): String {
             val credentials = "$username:$password"
-            val encoded = java.util.Base64.getEncoder().encodeToString(credentials.toByteArray())
+            val encoded =
+                java.util.Base64
+                    .getEncoder()
+                    .encodeToString(credentials.toByteArray())
             return "Basic $encoded"
         }
     }
 
     data class Bearer(
-        val token: String
+        val token: String,
     ) : HttpCredentials() {
-        fun toAuthHeader(): String = "Bearer $token"
+        override fun toAuthHeader(): String = "Bearer $token"
     }
-
-    data class ApiKey(
-        val headerName: String,
-        val apiKey: String
-    ) : HttpCredentials()
 }
