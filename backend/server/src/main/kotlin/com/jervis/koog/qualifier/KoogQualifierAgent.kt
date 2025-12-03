@@ -184,18 +184,62 @@ class KoogQualifierAgent(
         userPrompt: String,
         modelName: String,
     ): LlmResponse {
-        logger.info { "KOOG_QUALIFIER: start model=$modelName, provider=OLLAMA_QUALIFIER" }
-        val agent = create(plan, systemPrompt, modelName)
-        val output: String = agent.run(userPrompt)
-        logger.info { "KOOG_QUALIFIER: finish chars=${output.length}" }
+        val startTime = System.currentTimeMillis()
 
-        return LlmResponse(
-            answer = output,
-            model = modelName,
-            promptTokens = 0,
-            completionTokens = 0,
-            totalTokens = 0,
-            finishReason = "stop",
-        )
+        logger.info {
+            "🔵 KOOG_QUALIFIER_START | " +
+            "correlationId=${plan.correlationId} | " +
+            "model=$modelName | " +
+            "provider=OLLAMA_QUALIFIER | " +
+            "clientId=${plan.clientDocument.id.toHexString()} | " +
+            "projectId=${plan.projectDocument?.id?.toHexString() ?: "none"} | " +
+            "userPromptLength=${userPrompt.length} | " +
+            "systemPromptLength=${systemPrompt.length}"
+        }
+
+        try {
+            val agent = create(plan, systemPrompt, modelName)
+
+            logger.info {
+                "🔧 KOOG_QUALIFIER_AGENT_CREATED | " +
+                "correlationId=${plan.correlationId} | " +
+                "maxIterations=10 | " +
+                "tools=[SequentialIndexing,GraphRagLinker,TaskRouting,RAG,Graph,Memory,File]"
+            }
+
+            val output: String = agent.run(userPrompt)
+            val duration = System.currentTimeMillis() - startTime
+
+            // Check for routing decision in plan metadata
+            val routingDecision = plan.metadata["routing_decision"] as? String
+            val routingReason = plan.metadata["routing_reason"] as? String
+
+            logger.info {
+                "✅ KOOG_QUALIFIER_SUCCESS | " +
+                "correlationId=${plan.correlationId} | " +
+                "duration=${duration}ms | " +
+                "outputLength=${output.length} | " +
+                "routing=${routingDecision ?: "not_set"} | " +
+                "reason=${routingReason ?: "n/a"}"
+            }
+
+            return LlmResponse(
+                answer = output,
+                model = modelName,
+                promptTokens = 0,
+                completionTokens = 0,
+                totalTokens = 0,
+                finishReason = "stop",
+            )
+        } catch (e: Exception) {
+            val duration = System.currentTimeMillis() - startTime
+            logger.error(e) {
+                "❌ KOOG_QUALIFIER_FAILED | " +
+                "correlationId=${plan.correlationId} | " +
+                "duration=${duration}ms | " +
+                "error=${e.message}"
+            }
+            throw e
+        }
     }
 }

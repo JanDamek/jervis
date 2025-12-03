@@ -16,9 +16,9 @@ import org.springframework.stereotype.Component
  * - OLLAMA (primary GPU endpoint)
  * - OLLAMA_QUALIFIER (CPU endpoint)
  * - OLLAMA_EMBEDDING (CPU embeddings)
- * - ANTHROPIC (Claude with API key)
- * - OPENAI (GPT with API key)
- * - GOOGLE (Gemini with API key)
+ * - ANTHROPIC (Claude with an API key)
+ * - OPENAI (GPT with an API key)
+ * - GOOGLE (Gemini with an API key)
  *
  * Usage:
  * ```kotlin
@@ -33,11 +33,11 @@ class KoogPromptExecutorFactory(
     private val logger = KotlinLogging.logger {}
 
     /**
-     * Create PromptExecutor for specified provider.
+     * Create PromptExecutor for a specified provider.
      * Provider names: OLLAMA, OLLAMA_QUALIFIER, OLLAMA_EMBEDDING, ANTHROPIC, OPENAI, GOOGLE
      */
-    fun createExecutor(providerName: String): PromptExecutor {
-        return when (providerName) {
+    fun createExecutor(providerName: String): PromptExecutor =
+        when (providerName) {
             "OLLAMA" -> {
                 val baseUrl = endpointProperties.ollama.primary.baseUrl
                 require(baseUrl.isNotBlank()) { "Ollama primary endpoint has blank baseUrl" }
@@ -83,7 +83,8 @@ class KoogPromptExecutorFactory(
                 simpleGoogleAIExecutor(apiKey)
             }
 
-            else -> throw IllegalArgumentException("Unknown provider: $providerName")
+            else -> {
+                throw IllegalArgumentException("Unknown provider: $providerName")
+            }
         }
-    }
 }

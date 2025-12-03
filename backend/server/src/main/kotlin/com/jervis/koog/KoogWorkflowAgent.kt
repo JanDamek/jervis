@@ -29,6 +29,7 @@ import com.jervis.service.link.LinkIndexingService
 import com.jervis.service.scheduling.TaskManagementService
 import com.jervis.service.task.UserTaskService
 import kotlinx.coroutines.runBlocking
+import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
 /**
@@ -67,6 +68,7 @@ class KoogWorkflowAgent(
     private val promptExecutorFactory: KoogPromptExecutorFactory,
     private val taskMemoryService: com.jervis.service.agent.TaskMemoryService,
 ) {
+    private val logger = KotlinLogging.logger {}
     data class EnrichmentContext(
         val ragContext: String,
         val graphContext: String,
@@ -351,7 +353,49 @@ class KoogWorkflowAgent(
         providerName: String = "OLLAMA",
         modelName: String = "qwen3:30b",
     ): String {
-        val agent: AIAgent<String, String> = create(plan, graph, providerName, modelName)
-        return agent.run(userInput)
+        val startTime = System.currentTimeMillis()
+
+        logger.info {
+            "🟢 KOOG_WORKFLOW_START | " +
+            "correlationId=${plan.correlationId} | " +
+            "model=$modelName | " +
+            "provider=$providerName | " +
+            "clientId=${plan.clientDocument.id.toHexString()} | " +
+            "projectId=${plan.projectDocument?.id?.toHexString() ?: "none"} | " +
+            "userInputLength=${userInput.length}"
+        }
+
+        try {
+            val agent: AIAgent<String, String> = create(plan, graph, providerName, modelName)
+
+            logger.info {
+                "🔧 KOOG_WORKFLOW_AGENT_CREATED | " +
+                "correlationId=${plan.correlationId} | " +
+                "maxIterations=20 | " +
+                "tools=[TaskMemory,RAG,Graph,Memory,Task,System,Communication,File,Shell] | " +
+                "subgraphs=[Research,Analysis,Execution,Storage]"
+            }
+
+            val output: String = agent.run(userInput)
+            val duration = System.currentTimeMillis() - startTime
+
+            logger.info {
+                "✅ KOOG_WORKFLOW_SUCCESS | " +
+                "correlationId=${plan.correlationId} | " +
+                "duration=${duration}ms | " +
+                "outputLength=${output.length}"
+            }
+
+            return output
+        } catch (e: Exception) {
+            val duration = System.currentTimeMillis() - startTime
+            logger.error(e) {
+                "❌ KOOG_WORKFLOW_FAILED | " +
+                "correlationId=${plan.correlationId} | " +
+                "duration=${duration}ms | " +
+                "error=${e.message}"
+            }
+            throw e
+        }
     }
 }
