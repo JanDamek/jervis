@@ -12,6 +12,8 @@ import com.jervis.service.http.getWithConnection
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.parameter
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.isSuccess
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -67,7 +69,20 @@ class AtlassianApiClient(
             parameter("expand", "renderedFields")
         }
 
-        val searchResult = searchResponse.body<JiraSearchResponseDto>()
+        // Check response status
+        if (!searchResponse.status.isSuccess()) {
+            val errorBody = searchResponse.bodyAsText()
+            logger.error { "Jira API error (${searchResponse.status.value}): $errorBody" }
+            throw IllegalStateException("Jira API returned ${searchResponse.status.value}: $errorBody")
+        }
+
+        val searchResult = try {
+            searchResponse.body<JiraSearchResponseDto>()
+        } catch (e: Exception) {
+            val responseBody = searchResponse.bodyAsText()
+            logger.error { "Failed to parse Jira search response. Status: ${searchResponse.status.value}, Body: $responseBody" }
+            throw IllegalStateException("Failed to parse Jira response: ${e.message}", e)
+        }
 
         // 2. Convert to full documents
         return searchResult.issues.mapNotNull { issueDto ->

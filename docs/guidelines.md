@@ -1,6 +1,6 @@
-# Jervis – jednotné Engineering & UI Guidelines (2025‑11)
+# Jervis – jednotné Engineering & UI Guidelines (2025‑12)
 
-Poslední aktualizace: 2025‑11‑28
+Poslední aktualizace: 2025‑12‑03
 
 Tento dokument je jediný zdroj pravdy (SSOT) pro architekturu, programovací pravidla a UI zásady v projektu Jervis. Všechny ostatní historické „guidelines“ soubory jsou aliasy odkazující sem.
 
@@ -520,6 +520,230 @@ Před každým během agent automaticky načte:
 - **Target language:** Z `plan.originalLanguage`
 
 Tento context se předá do LLM jako prefix před user input.
+
+### 3.3.7) Graph-Based Routing Architecture (implementováno 2025-12-03)
+
+**Nová architektura pro efektivní zpracování dat s CPU/GPU separací a inteligentním routingem.**
+
+#### Přehled architektury
+
+**Problém:** Původní architektura auto-indexovala vše přímo do RAG bez strukturování, způsobovala context overflow u velkých dokumentů a neefektivně využívala drahé GPU modely.
+
+**Řešení:** Dvoustupňová architektura s CPU-based kvalifikací (structuring) a GPU-based exekucí (analysis/actions).
+
+```
+┌─────────────────┐
+│ CentralPoller   │ → MongoDB (NEW items)
+└─────────────────┘
+        ↓
+┌─────────────────┐
+│ContinuousIndexer│ → PendingTask (DATA_PROCESSING)
+└─────────────────┘
+        ↓
+┌─────────────────────────────────────────────────┐
+│ BackgroundEngine - Qualification Loop (CPU)     │
+│ • Runs continuously (30s interval)              │
+│ • Processes DATA_PROCESSING tasks               │
+└─────────────────────────────────────────────────┘
+        ↓
+┌─────────────────────────────────────────────────┐
+│ KoogQualifierAgent (CPU - OLLAMA_QUALIFIER)     │
+│ • SequentialIndexingTool (chunking: 4000/200)  │
+│ • GraphRagLinkerTool (Graph ↔ RAG links)       │
+│ • TaskRoutingTool (DONE vs READY_FOR_GPU)      │
+│ • TaskMemory creation (context summary)        │
+└─────────────────────────────────────────────────┘
+        ↓
+    ┌───┴───┐
+    ↓       ↓
+┌────────┐ ┌──────────────────────────────────────┐
+│  DONE  │ │ READY_FOR_GPU (complex analysis)     │
+└────────┘ └──────────────────────────────────────┘
+                    ↓
+        ┌─────────────────────────────────────────┐
+        │ BackgroundEngine - Execution Loop (GPU) │
+        │ • Runs ONLY when idle (no user requests)│
+        │ • Preemption: interrupted by user       │
+        └─────────────────────────────────────────┘
+                    ↓
+        ┌─────────────────────────────────────────┐
+        │ KoogWorkflowAgent (GPU - OLLAMA)        │
+        │ • TaskMemoryTool (loads context)        │
+        │ • Focus on analysis/actions             │
+        │ • No redundant structuring work         │
+        └─────────────────────────────────────────┘
+```
+
+#### Komponenty implementace
+
+**1. Enums (PendingTaskTypeEnum, PendingTaskStateEnum):**
+- ✅ `DATA_PROCESSING` - nový task type pro nově objevené dokumenty
+- ✅ `QUALIFICATION_IN_PROGRESS` - Qualifier zpracovává task
+- ✅ `READY_FOR_GPU` - kvalifikace hotova, čeká na GPU exekuci
+
+**2. ContinuousIndexers (vypnuté auto-indexování):**
+- ✅ `EmailContinuousIndexer` - vytváří DATA_PROCESSING task místo auto-indexu
+- ✅ `JiraContinuousIndexer` - vytváří DATA_PROCESSING task místo auto-indexu
+- ✅ `GitContinuousIndexer` - vytváří DATA_PROCESSING task místo auto-indexu
+
+**3. KoogQualifierAgent - nové tools:**
+
+```kotlin
+// SequentialIndexingTool - chunking pro velké dokumenty
+@Tool
+fun indexDocument(
+    documentId: String,
+    content: String,
+    title: String,
+    location: String,
+    knowledgeType: String = "DOCUMENT",
+    relatedDocs: List<String> = emptyList()
+): String
+
+// GraphRagLinkerTool - bi-directional linking
+@Tool
+fun createNodeWithRagLinks(
+    nodeKey: String,
+    nodeType: String,
+    properties: String,
+    ragChunkIds: String = ""
+): String
+
+@Tool
+fun createRelationship(
+    fromKey: String,
+    toKey: String,
+    edgeType: String,
+    properties: String = ""
+): String
+
+// TaskRoutingTool - routing decision
+@Tool
+fun routeTask(
+    routing: String, // "DONE" or "READY_FOR_GPU"
+    reason: String,
+    contextSummary: String = ""
+): String
+```
+
+**Chunking strategie (SequentialIndexingTool):**
+- Malé dokumenty (< 4000 chars): single-pass indexing
+- Velké dokumenty (≥ 4000 chars): multi-pass s overlap
+  - Chunk size: 4000 znaků
+  - Overlap: 200 znaků (kontext kontinuita)
+  - Každý chunk indexován samostatně s metadata
+
+**4. TaskMemory - context passing:**
+
+```kotlin
+@Document(collection = "task_memory")
+data class TaskMemoryDocument(
+    val correlationId: String,           // 1:1 s PendingTask
+    val clientId: ObjectId,
+    val projectId: ObjectId?,
+    val contextSummary: String,          // Brief overview pro GPU
+    val graphNodeKeys: List<String>,     // Graph references
+    val ragDocumentIds: List<String>,    // RAG chunk IDs
+    val structuredData: Map<String, String>, // Metadata
+    val routingDecision: String,         // DONE / READY_FOR_GPU
+    val routingReason: String,
+    val sourceType: String?,             // EMAIL, JIRA, GIT_COMMIT
+    val sourceId: String?
+)
+```
+
+**Repository:** `TaskMemoryRepository : CoroutineCrudRepository<TaskMemoryDocument, ObjectId>`
+
+**Service API:**
+```kotlin
+suspend fun saveTaskMemory(...): TaskMemoryDocument
+suspend fun loadTaskMemory(correlationId: String): TaskMemoryDocument?
+suspend fun deleteTaskMemory(correlationId: String)
+```
+
+**5. KoogWorkflowAgent - TaskMemoryTool:**
+
+```kotlin
+// Načte context z Qualifiera
+@Tool
+fun loadTaskContext(): String
+```
+
+**Použití v workflow:**
+1. Agent zavolá `loadTaskContext()` na začátku
+2. Získá: context summary, Graph node keys, RAG document IDs
+3. Použije Graph/RAG tools s poskytnutými keys/IDs pro full content
+4. Fokus na analýzu a akce, ne na strukturování
+
+**6. BackgroundEngine - preemption:**
+
+**Mechanismus:**
+- `LlmLoadMonitor` trackuje aktivní user requesty
+- User request start → `registerRequestStart()` → `interruptNow()`
+- `interruptNow()` ruší aktuální background task (Job.cancel())
+- Background tasky pokračují až po idle thresholdu (30s)
+
+**Dva loops:**
+- **Qualification loop (CPU):** běží kontinuálně, 30s interval
+- **Execution loop (GPU):** běží POUZE když je idle (žádné user requesty)
+
+**Preemption garantuje:** User requesty mají VŽDY prioritu nad background tasky
+
+#### Routing kritéria (TaskRoutingTool)
+
+**DONE (simple structuring):**
+- Dokument indexován a strukturován (Graph + RAG)
+- Žádné action items nebo rozhodnutí
+- Jednoduchý informační obsah
+- Rutinní updaty (status change, minor commit)
+
+**READY_FOR_GPU (complex analysis):**
+- Vyžaduje akci uživatele (odpovědět na email, update Jira, review code)
+- Komplexní rozhodování
+- Analýza nebo investigace
+- Code changes nebo architektonická rozhodnutí
+- Koordinace více entit
+- Task zmiňuje current usera nebo vyžaduje jeho expertízu
+
+**Context Summary (pro READY_FOR_GPU):**
+- Stručný přehled strukturovaných dat
+- Klíčové nálezy a action items
+- Otázky vyžadující odpověď
+- Graph node keys pro quick reference
+- RAG document IDs pro full content retrieval
+
+#### Výhody architektury
+
+1. **Cost efficiency:** Drahé GPU modely jen když nutné
+2. **No context overflow:** Chunking řeší velké dokumenty
+3. **Bi-directional navigation:** Graph (structured) ↔ RAG (semantic)
+4. **Efficient context passing:** TaskMemory eliminuje redundantní práci
+5. **User priority:** Preemption zajišťuje okamžitou response
+6. **Scalability:** CPU kvalifikace může běžet paralelně na více tasků
+
+#### Referenční implementace
+
+**Lokace:**
+- Tools: `backend/server/src/main/kotlin/com/jervis/koog/tools/`
+  - `SequentialIndexingTool.kt`
+  - `GraphRagLinkerTool.kt`
+  - `TaskRoutingTool.kt`
+  - `TaskMemoryTool.kt`
+- Agents: `backend/server/src/main/kotlin/com/jervis/koog/`
+  - `qualifier/KoogQualifierAgent.kt`
+  - `KoogWorkflowAgent.kt`
+- Memory: `backend/server/src/main/kotlin/com/jervis/service/agent/TaskMemoryService.kt`
+- Indexers: `backend/server/src/main/kotlin/com/jervis/service/`
+  - `email/EmailContinuousIndexer.kt`
+  - `jira/JiraContinuousIndexer.kt`
+  - `listener/git/GitContinuousIndexer.kt`
+- Background: `backend/server/src/main/kotlin/com/jervis/service/background/BackgroundEngine.kt`
+
+**Konfigurace:**
+- Max iterations Qualifier: 10 (pro chunking loops)
+- Max iterations Workflow: 20 (komplexní workflow)
+- Idle threshold: 30s (GPU execution)
+- Qualification interval: 30s (DB polling)
 
 ## 3.4) Bezpečnostní hlavičky klienta (nutné pro Desktop/Mobile)
 

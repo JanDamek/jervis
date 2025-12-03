@@ -10,5 +10,7 @@ enum class PendingTaskStateEnum {
     INDEXED, // RAG is written
     READY_FOR_QUALIFICATION, // Awaiting qualifier claim
     QUALIFYING, // Claimed by qualifier, making decision
+    QUALIFICATION_IN_PROGRESS, // Qualifier is processing (indexing to Graph/RAG with potential chunking)
+    READY_FOR_GPU, // Qualification complete, complex task needs GPU execution
     DISPATCHED_GPU, // Delegated to strong model / GPU pipeline
 }
