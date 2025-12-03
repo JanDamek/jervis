@@ -1,7 +1,10 @@
 package com.jervis.service.email
 
+import com.jervis.dto.PendingTaskStateEnum
+import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.entity.email.EmailMessageIndexDocument
 import com.jervis.repository.EmailMessageIndexMongoRepository
+import com.jervis.service.background.PendingTaskService
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,19 +22,24 @@ private val logger = KotlinLogging.logger {}
 /**
  * Continuous indexer for email messages.
  *
- * Architecture:
+ * NEW ARCHITECTURE (Graph-Based Routing):
  * - CentralPoller fetches FULL email data from IMAP/POP3 → stores in MongoDB as NEW
  * - This indexer reads NEW documents from MongoDB (NO email server calls)
- * - Chunks text, creates embeddings, stores to RAG
- * - Marks as INDEXED
+ * - Creates DATA_PROCESSING PendingTask instead of auto-indexing
+ * - Task goes to KoogQualifierAgent (CPU) for structuring:
+ *   - Chunks large emails with overlap
+ *   - Creates Graph nodes (email metadata)
+ *   - Creates RAG chunks (searchable content)
+ *   - Links Graph ↔ RAG bi-directionally
+ * - After qualification: task marked DONE or READY_FOR_GPU
  *
- * Pure ETL: MongoDB → RAG
+ * Pure ETL: MongoDB → PendingTask → Qualifier → Graph + RAG
  */
 @Service
 @Order(11) // Start after JiraContinuousIndexer
 class EmailContinuousIndexer(
     private val repository: EmailMessageIndexMongoRepository,
-    private val orchestrator: EmailIndexingOrchestrator,
+    private val pendingTaskService: PendingTaskService,
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
@@ -82,24 +90,63 @@ class EmailContinuousIndexer(
         }
 
     private suspend fun indexEmail(doc: EmailMessageIndexDocument) {
-        logger.debug { "Indexing email: ${doc.subject}" }
+        logger.debug { "Processing email: ${doc.subject}" }
 
         // Mark as INDEXING to prevent concurrent processing
         markAsIndexing(doc)
 
-        // Index to RAG (uses data already in MongoDB, NO email server calls)
-        val result =
-            orchestrator.indexSingleEmail(
+        try {
+            // Build email content for task
+            val emailContent =
+                buildString {
+                    append("# Email: ${doc.subject}\n\n")
+                    append("**From:** ${doc.from}\n")
+                    if (doc.to.isNotEmpty()) {
+                        append("**To:** ${doc.to.joinToString(", ")}\n")
+                    }
+                    if (doc.cc.isNotEmpty()) {
+                        append("**Cc:** ${doc.cc.joinToString(", ")}\n")
+                    }
+                    append("**Date:** ${doc.sentDate ?: doc.receivedDate}\n")
+                    append("**Folder:** ${doc.folder}\n")
+                    append("**Message-ID:** ${doc.messageId ?: "none"}\n")
+                    append("\n---\n\n")
+
+                    // Prefer text body, fallback to HTML
+                    val body = doc.textBody ?: doc.htmlBody
+                    if (!body.isNullOrBlank()) {
+                        append(body)
+                    }
+
+                    if (doc.attachments.isNotEmpty()) {
+                        append("\n\n## Attachments\n")
+                        doc.attachments.forEach { att ->
+                            append("- ${att.filename} (${att.contentType}, ${att.size} bytes)\n")
+                        }
+                    }
+
+                    // Add metadata for qualifier
+                    append("\n\n## Document Metadata\n")
+                    append("- **Source:** Email (${doc.folder})\n")
+                    append("- **Document ID:** email:${doc.id.toHexString()}\n")
+                    append("- **Connection ID:** ${doc.connectionId.toHexString()}\n")
+                }
+
+            // Create DATA_PROCESSING task instead of auto-indexing
+            pendingTaskService.createTask(
+                taskType = PendingTaskTypeEnum.DATA_PROCESSING,
+                content = emailContent,
+                projectId = null,
                 clientId = doc.clientId,
-                document = doc,
+                correlationId = "email:${doc.id.toHexString()}",
             )
 
-        if (result.success) {
-            markAsIndexed(doc, result.chunkCount)
-            logger.info { "Indexed email ${doc.subject}: ${result.chunkCount} chunks" }
-        } else {
-            markAsFailed(doc, "Indexing failed")
-            logger.warn { "Failed to index email ${doc.subject}" }
+            // Mark as task created (reusing INDEXED state for now)
+            markAsIndexed(doc, 0)
+            logger.info { "Created DATA_PROCESSING task for email: ${doc.subject}" }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to create task for email ${doc.subject}" }
+            markAsFailed(doc, "Task creation failed: ${e.message}")
         }
     }
 

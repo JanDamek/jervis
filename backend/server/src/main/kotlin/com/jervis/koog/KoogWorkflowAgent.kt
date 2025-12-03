@@ -34,15 +34,26 @@ import org.springframework.stereotype.Service
 /**
  * KoogWorkflowAgent - modular multi-subgraph architecture for JERVIS workflows.
  *
+ * NEW ARCHITECTURE (Graph-Based Routing):
+ * - GPU-based workflow agent for complex analysis and actions
+ * - Receives tasks routed from KoogQualifierAgent (CPU) via READY_FOR_GPU state
+ * - Loads structured context from TaskMemory instead of re-reading documents
+ * - Focus on analysis and actions, not data structuring (already done by Qualifier)
+ *
  * Architecture:
  * - Parallel enrichment (RAG + Graph simultaneously)
- * - ResearchSubgraph: information gathering phase
+ * - ResearchSubgraph: information gathering phase (can load TaskMemory context)
  * - AnalysisSubgraph: decision-making phase
  * - ExecutionSubgraph: action execution phase (files, shell, tasks, communication)
  * - StorageSubgraph: persist results to RAG/Graph/Memory
  * - History compression in Research/Analysis (50 msgs), Execution (30 msgs)
  * - Sequential flow through all subgraphs
  * - All tools registered globally in ToolRegistry, available to all subgraphs
+ *
+ * NEW Tool: TaskMemoryTool
+ * - Loads context prepared by Qualifier (findings, action items, Graph/RAG references)
+ * - Avoids redundant work - data already structured
+ * - Enables efficient GPU usage by skipping structuring phase
  */
 @Service
 class KoogWorkflowAgent(
@@ -54,6 +65,7 @@ class KoogWorkflowAgent(
     private val linkIndexingService: LinkIndexingService,
     private val pendingTaskService: PendingTaskService,
     private val promptExecutorFactory: KoogPromptExecutorFactory,
+    private val taskMemoryService: com.jervis.service.agent.TaskMemoryService,
 ) {
     data class EnrichmentContext(
         val ragContext: String,
@@ -315,6 +327,7 @@ class KoogWorkflowAgent(
                 )
 
                 // JERVIS native tools (ToolSets)
+                tools(TaskMemoryTool(plan, taskMemoryService)) // NEW: Load context from Qualifier
                 tools(RagTools(plan, knowledgeService))
                 tools(GraphTools(plan, graph))
                 tools(MemoryTools(plan, memoryService))

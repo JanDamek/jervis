@@ -82,4 +82,16 @@ enum class PendingTaskTypeEnum(
      * Connection is set to INVALID state until fixed.
      */
     CONNECTION_ERROR(PromptTypeEnum.QUALIFIER),
+
+    /**
+     * Generic data processing task for newly discovered documents.
+     * Created by ContinuousIndexers (Email, Jira, Confluence, Git) after polling discovers new items.
+     * Goes through: NEW → INDEXING → READY_FOR_QUALIFICATION → Qualifier (CPU) → routing decision.
+     * Qualifier structures the data into Graph and creates RAG chunks.
+     * Large documents are processed in chunks with overlap to handle context limits.
+     * After qualification, task is either:
+     * - DONE (simple structuring complete)
+     * - READY_FOR_GPU (complex analysis needed)
+     */
+    DATA_PROCESSING(PromptTypeEnum.QUALIFIER),
 }

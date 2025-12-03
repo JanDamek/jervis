@@ -35,10 +35,32 @@ import java.util.concurrent.atomic.AtomicReference
 /**
  * Background cognitive engine that processes PendingTasks.
  *
+ * NEW ARCHITECTURE (Graph-Based Routing):
+ * - Processes DATA_PROCESSING tasks through Qualifier (CPU) and Workflow (GPU)
+ * - Qualifier structures data → routes to DONE or READY_FOR_GPU
+ * - GPU tasks processed only during idle time (no user requests)
+ * - Preemption: User requests immediately interrupt background tasks
+ *
  * THREE INDEPENDENT LOOPS:
  * 1. Qualification loop (CPU) - runs continuously, checks DB every 30s
+ *    - Processes DATA_PROCESSING tasks through KoogQualifierAgent
+ *    - Creates Graph nodes and RAG chunks with chunking for large documents
+ *    - Routes tasks: DONE (simple) or READY_FOR_GPU (complex)
+ *
  * 2. Execution loop (GPU) - processes qualified tasks during idle GPU time
- * 3. Scheduler loop - dispatches scheduled tasks 10 minutes before the scheduled time
+ *    - Only runs when no active user requests (checked via LlmLoadMonitor)
+ *    - Processes READY_FOR_GPU tasks through KoogWorkflowAgent
+ *    - Loads TaskMemory context from Qualifier for efficient execution
+ *    - Preemption: Interrupted immediately when user request arrives
+ *
+ * 3. Scheduler loop - dispatches scheduled tasks 10 minutes before scheduled time
+ *
+ * PREEMPTION LOGIC:
+ * - LlmLoadMonitor tracks active foreground (user) requests
+ * - When user request starts: registerRequestStart() → interruptNow()
+ * - interruptNow() cancels currently running background task
+ * - Background tasks resume only after idle threshold (30s with no activity)
+ * - This ensures user requests ALWAYS get priority over background tasks
  *
  * STARTUP ORDER:
  * @Order(10) ensures this starts AFTER WeaviateSchemaInitializer (@Order(0))

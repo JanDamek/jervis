@@ -1,6 +1,8 @@
 package com.jervis.service.jira
 
+import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.entity.jira.JiraIssueIndexDocument
+import com.jervis.service.background.PendingTaskService
 import com.jervis.service.indexing.status.IndexingStatusRegistry
 import com.jervis.service.jira.state.JiraStateManager
 import jakarta.annotation.PostConstruct
@@ -17,19 +19,24 @@ private val logger = KotlinLogging.logger {}
 /**
  * Continuous indexer for Jira issues.
  *
- * Architecture:
+ * NEW ARCHITECTURE (Graph-Based Routing):
  * - CentralPoller fetches FULL data from API → stores in MongoDB as NEW
  * - This indexer reads NEW documents from MongoDB (NO API CALLS)
- * - Chunks text, creates embeddings, stores to Weaviate
- * - Marks as INDEXED
+ * - Creates DATA_PROCESSING PendingTask instead of auto-indexing
+ * - Task goes to KoogQualifierAgent (CPU) for structuring:
+ *   - Chunks large issues with overlap (description + comments)
+ *   - Creates Graph nodes (issue metadata, assignee, status, links)
+ *   - Creates RAG chunks (searchable content)
+ *   - Links Graph ↔ RAG bi-directionally
+ * - After qualification: task marked DONE or READY_FOR_GPU
  *
- * Pure ETL: MongoDB → Weaviate
+ * Pure ETL: MongoDB → PendingTask → Qualifier → Graph + RAG
  */
 @Service
 @Order(10) // Start after WeaviateSchemaInitializer
 class JiraContinuousIndexer(
     private val stateManager: JiraStateManager,
-    private val orchestrator: JiraIndexingOrchestrator,
+    private val pendingTaskService: PendingTaskService,
     private val indexingRegistry: IndexingStatusRegistry,
 ) {
     private val supervisor = SupervisorJob()
@@ -72,25 +79,84 @@ class JiraContinuousIndexer(
     }
 
     private suspend fun indexIssue(doc: JiraIssueIndexDocument) {
-        logger.debug { "Indexing Jira issue ${doc.issueKey} (${doc.summary})" }
+        logger.debug { "Processing Jira issue ${doc.issueKey} (${doc.summary})" }
 
         // Mark as INDEXING to prevent concurrent processing
         stateManager.markAsIndexing(doc)
 
-        // Index to RAG (uses data already in MongoDB, NO API CALLS)
-        val result = orchestrator.indexSingleIssue(
-            clientId = doc.clientId,
-            document = doc, // Pass full document with all data
-        )
+        try {
+            // Build Jira issue content for task
+            val issueContent = buildString {
+                append("# ${doc.issueKey}: ${doc.summary}\n\n")
+                append("**Type:** ${doc.issueType}\n")
+                append("**Status:** ${doc.status}\n")
+                append("**Priority:** ${doc.priority}\n")
+                if (!doc.assignee.isNullOrBlank()) {
+                    append("**Assignee:** ${doc.assignee}\n")
+                }
+                if (!doc.reporter.isNullOrBlank()) {
+                    append("**Reporter:** ${doc.reporter}\n")
+                }
+                append("**Created:** ${doc.created}\n")
+                append("**Updated:** ${doc.updated}\n")
+                append("\n")
 
-        if (result.success) {
-            // Mark as indexed with stats
+                if (!doc.description.isNullOrBlank()) {
+                    append("## Description\n\n")
+                    append(doc.description)
+                    append("\n\n")
+                }
+
+                if (doc.labels.isNotEmpty()) {
+                    append("**Labels:** ${doc.labels.joinToString(", ")}\n\n")
+                }
+
+                // Add comments
+                if (doc.comments.isNotEmpty()) {
+                    append("## Comments\n\n")
+                    doc.comments.forEachIndexed { index, comment ->
+                        append("### Comment ${index + 1} by ${comment.author}\n")
+                        append("**Created:** ${comment.created}\n\n")
+                        append(comment.body)
+                        append("\n\n")
+                    }
+                }
+
+                // Add attachments list
+                if (doc.attachments.isNotEmpty()) {
+                    append("## Attachments\n")
+                    doc.attachments.forEach { att ->
+                        append("- ${att.filename} (${att.mimeType}, ${att.size} bytes)\n")
+                    }
+                    append("\n")
+                }
+
+                // Add metadata for qualifier
+                append("## Document Metadata\n")
+                append("- **Source:** Jira Issue\n")
+                append("- **Document ID:** jira:${doc.issueKey}\n")
+                append("- **Connection ID:** ${doc.connectionId.toHexString()}\n")
+                append("- **Issue ID:** ${doc.issueId}\n")
+                append("- **Comment Count:** ${doc.comments.size}\n")
+                append("- **Attachment Count:** ${doc.attachments.size}\n")
+            }
+
+            // Create DATA_PROCESSING task instead of auto-indexing
+            pendingTaskService.createTask(
+                taskType = PendingTaskTypeEnum.DATA_PROCESSING,
+                content = issueContent,
+                projectId = null,
+                clientId = doc.clientId,
+                correlationId = "jira:${doc.issueKey}",
+            )
+
+            // Mark as task created
             stateManager.markAsIndexed(
                 issue = doc,
-                summaryChunks = result.summaryChunks,
-                commentChunks = result.commentChunks,
-                commentCount = result.commentCount,
-                attachmentCount = result.attachmentCount,
+                summaryChunks = 0,
+                commentChunks = 0,
+                commentCount = doc.comments.size,
+                attachmentCount = doc.attachments.size,
             )
 
             // Report progress
@@ -99,14 +165,14 @@ class JiraContinuousIndexer(
                 indexingRegistry.progress(
                     com.jervis.service.indexing.status.IndexingStatusRegistry.ToolStateEnum.JIRA,
                     processedInc = 1,
-                    message = "Indexed issue ${doc.issueKey}",
+                    message = "Created task for ${doc.issueKey}",
                 )
             }
 
-            logger.info { "Indexed Jira issue ${doc.issueKey}: ${result.summaryChunks + result.commentChunks} chunks" }
-        } else {
-            stateManager.markAsFailed(doc, "Indexing failed")
-            logger.warn { "Failed to index Jira issue ${doc.issueKey}" }
+            logger.info { "Created DATA_PROCESSING task for Jira issue: ${doc.issueKey}" }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to create task for Jira issue ${doc.issueKey}" }
+            stateManager.markAsFailed(doc, "Task creation failed: ${e.message}")
         }
     }
 }
