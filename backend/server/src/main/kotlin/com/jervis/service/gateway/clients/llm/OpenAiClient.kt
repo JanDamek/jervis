@@ -2,6 +2,7 @@ package com.jervis.service.gateway.clients.llm
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.jervis.configuration.KtorClientFactory
 import com.jervis.configuration.prompts.CreativityConfig
 import com.jervis.configuration.prompts.PromptConfig
 import com.jervis.configuration.prompts.PromptsConfiguration
@@ -10,26 +11,27 @@ import com.jervis.domain.gateway.StreamChunk
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.service.gateway.clients.ProviderClient
+import io.ktor.client.*
+import io.ktor.client.call.*
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import io.ktor.http.*
+import io.ktor.utils.io.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.reactive.asFlow
-import com.jervis.configuration.WebClientFactory
-import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
-import org.springframework.web.reactive.function.client.WebClient
-import org.springframework.web.reactive.function.client.awaitBody
 
 @Service
 class OpenAiClient(
-    private val webClientFactory: WebClientFactory,
+    private val ktorClientFactory: KtorClientFactory,
     private val promptsConfiguration: PromptsConfiguration,
 ) : ProviderClient {
-    private val webClient: WebClient by lazy { webClientFactory.getWebClient("openai") }
+    private val httpClient: HttpClient by lazy { ktorClientFactory.getHttpClient("openai") }
     override val provider: ModelProviderEnum = ModelProviderEnum.OPENAI
 
     override suspend fun call(
         model: String,
-        systemPrompt: String?,
+        systemPrompt: String,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
         prompt: PromptConfig,
@@ -40,19 +42,16 @@ class OpenAiClient(
         val requestBody = buildRequestBody(model, messages, creativityConfig, config)
 
         val response: OpenAiStyleResponse =
-            webClient
-                .post()
-                .uri("/chat/completions")
-                .bodyValue(requestBody)
-                .retrieve()
-                .awaitBody()
+            httpClient.post("/chat/completions") {
+                setBody(requestBody)
+            }.body()
 
         return parseResponse(response, model)
     }
 
     override fun callWithStreaming(
         model: String,
-        systemPrompt: String?,
+        systemPrompt: String,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
         prompt: PromptConfig,
@@ -64,15 +63,11 @@ class OpenAiClient(
             val messages = buildMessagesList(systemPrompt, userPrompt)
             val requestBody = buildStreamingRequestBody(model, messages, creativityConfig, config)
 
-            val responseFlow =
-                webClient
-                    .post()
-                    .uri("/chat/completions")
-                    .bodyValue(requestBody)
-                    .accept(MediaType.TEXT_EVENT_STREAM)
-                    .retrieve()
-                    .bodyToFlux(String::class.java)
-                    .asFlow()
+            val response: HttpResponse =
+                httpClient.post("/chat/completions") {
+                    contentType(ContentType.Text.EventStream)
+                    setBody(requestBody)
+                }
 
             val responseBuilder = StringBuilder()
             var totalPromptTokens = 0
@@ -80,7 +75,9 @@ class OpenAiClient(
             var finalModel = model
             var finishReason = "stop"
 
-            responseFlow.collect { sseChunk ->
+            val channel: ByteReadChannel = response.bodyAsChannel()
+            while (!channel.isClosedForRead) {
+                val sseChunk = channel.readUTF8Line() ?: break
                 if (sseChunk.startsWith("data: ")) {
                     val jsonPart = sseChunk.substring(6).trim()
 
@@ -101,7 +98,7 @@ class OpenAiClient(
                                     ),
                             ),
                         )
-                        return@collect
+                        break
                     }
 
                     try {

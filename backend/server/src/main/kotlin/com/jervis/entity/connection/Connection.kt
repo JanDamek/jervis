@@ -1,21 +1,21 @@
 package com.jervis.entity.connection
 
+import com.jervis.dto.connection.ConnectionStateEnum
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.annotation.TypeAlias
 import org.springframework.data.mongodb.core.index.CompoundIndex
 import org.springframework.data.mongodb.core.index.CompoundIndexes
 import org.springframework.data.mongodb.core.mapping.Document
-import java.net.URI
 
 /**
  * Sealed class hierarchy for all external service connections.
  *
- * Stored directly in MongoDB as discriminated union.
+ * Stored directly in MongoDB as a discriminated union.
  * Spring Data MongoDB handles polymorphism automatically.
  *
- * NO domain/entity mapping needed - entity is used directly in services.
- * Entity stops/starts at Controller boundary (REST DTOs only there).
+ * NO domain/entity mappings are needed - entity is used directly in services.
+ * Entity stops/starts at the Controller boundary (REST DTOs only there).
  *
  * Supported connection types:
  * - HttpConnection: REST APIs, Atlassian, Link Scraper
@@ -34,7 +34,7 @@ import java.net.URI
 sealed class Connection {
     abstract val id: ObjectId
     abstract val name: String
-    abstract val state: ConnectionStateEnum
+    var state: ConnectionStateEnum = ConnectionStateEnum.NEW
     abstract val rateLimitConfig: RateLimitConfig
 
     /**
@@ -50,15 +50,7 @@ sealed class Connection {
         val credentials: HttpCredentials? = null,
         val timeoutMs: Long = 30000,
         override val rateLimitConfig: RateLimitConfig,
-        override val state: ConnectionStateEnum = ConnectionStateEnum.NEW,
-    ) : Connection() {
-        fun extractDomain(): String =
-            try {
-                URI(baseUrl).host
-            } catch (e: Exception) {
-                baseUrl
-            }
-    }
+    ) : Connection()
 
     /**
      * IMAP email connection.
@@ -76,7 +68,6 @@ sealed class Connection {
         val useSsl: Boolean = true,
         val folderName: String = "INBOX",
         override val rateLimitConfig: RateLimitConfig,
-        override val state: ConnectionStateEnum = ConnectionStateEnum.NEW,
     ) : Connection()
 
     /**
@@ -94,7 +85,6 @@ sealed class Connection {
         val password: String, // Plain text!
         val useSsl: Boolean = true,
         override val rateLimitConfig: RateLimitConfig,
-        override val state: ConnectionStateEnum = ConnectionStateEnum.NEW,
     ) : Connection()
 
     /**
@@ -112,7 +102,6 @@ sealed class Connection {
         val password: String, // Plain text!
         val useTls: Boolean = true,
         override val rateLimitConfig: RateLimitConfig,
-        override val state: ConnectionStateEnum = ConnectionStateEnum.NEW,
     ) : Connection()
 
     /**
@@ -131,7 +120,6 @@ sealed class Connection {
         val scopes: List<String> = emptyList(),
         val redirectUri: String,
         override val rateLimitConfig: RateLimitConfig,
-        override val state: ConnectionStateEnum = ConnectionStateEnum.NEW,
     ) : Connection()
 }
 

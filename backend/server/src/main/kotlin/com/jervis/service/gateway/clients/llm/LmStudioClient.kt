@@ -2,7 +2,7 @@ package com.jervis.service.gateway.clients.llm
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.jervis.configuration.WebClientFactory
+import com.jervis.configuration.KtorClientFactory
 import com.jervis.configuration.prompts.CreativityConfig
 import com.jervis.configuration.prompts.PromptConfig
 import com.jervis.configuration.prompts.PromptsConfiguration
@@ -11,27 +11,29 @@ import com.jervis.domain.gateway.StreamChunk
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.service.gateway.clients.ProviderClient
+import io.ktor.client.*
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import io.ktor.http.*
+import io.ktor.utils.io.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.reactive.asFlow
 import mu.KotlinLogging
-import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
-import org.springframework.web.reactive.function.client.WebClient
 
 @Service
 class LmStudioClient(
-    private val webClientFactory: WebClientFactory,
+    private val ktorClientFactory: KtorClientFactory,
     private val promptsConfiguration: PromptsConfiguration,
 ) : ProviderClient {
-    private val webClient: WebClient by lazy { webClientFactory.getWebClient("lmStudio") }
+    private val httpClient: HttpClient by lazy { ktorClientFactory.getHttpClient("lmStudio") }
     private val logger = KotlinLogging.logger {}
 
     override val provider: ModelProviderEnum = ModelProviderEnum.LM_STUDIO
 
     override suspend fun call(
         model: String,
-        systemPrompt: String?,
+        systemPrompt: String,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
         prompt: PromptConfig,
@@ -61,7 +63,7 @@ class LmStudioClient(
 
     override fun callWithStreaming(
         model: String,
-        systemPrompt: String?,
+        systemPrompt: String,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
         prompt: PromptConfig,
@@ -73,15 +75,11 @@ class LmStudioClient(
             val messages = buildMessagesList(systemPrompt, userPrompt)
             val requestBody = buildRequestBody(model, messages, creativityConfig, config)
 
-            val responseFlow =
-                webClient
-                    .post()
-                    .uri("/v1/chat/completions")
-                    .bodyValue(requestBody)
-                    .accept(MediaType.TEXT_EVENT_STREAM)
-                    .retrieve()
-                    .bodyToFlux(String::class.java)
-                    .asFlow()
+            val response: HttpResponse =
+                httpClient.post("/v1/chat/completions") {
+                    contentType(ContentType.Text.EventStream)
+                    setBody(requestBody)
+                }
 
             val responseBuilder = StringBuilder()
             var totalPromptTokens = 0
@@ -89,7 +87,9 @@ class LmStudioClient(
             var finalModel = model
             var finishReason = "stop"
 
-            responseFlow.collect { sseChunk ->
+            val channel: ByteReadChannel = response.bodyAsChannel()
+            while (!channel.isClosedForRead) {
+                val sseChunk = channel.readUTF8Line() ?: break
                 if (sseChunk.startsWith("data: ")) {
                     val jsonPart = sseChunk.substring(6).trim()
 
@@ -110,7 +110,7 @@ class LmStudioClient(
                                     ),
                             ),
                         )
-                        return@collect
+                        break
                     }
 
                     try {

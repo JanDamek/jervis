@@ -1,5 +1,6 @@
 package com.jervis.service.connection
 
+import com.jervis.dto.connection.ConnectionStateEnum
 import com.jervis.entity.connection.Connection
 import com.jervis.repository.ConnectionMongoRepository
 import kotlinx.coroutines.flow.Flow
@@ -18,20 +19,15 @@ class ConnectionService(
     private val logger = KotlinLogging.logger {}
 
     /**
-     * Create a new connection (plain text credentials).
-     */
-    suspend fun create(connection: Connection): Connection {
-        val saved = repository.save(connection)
-        logger.info { "Created connection: ${saved.name} (${saved::class.simpleName})" }
-        return saved
-    }
-
-    /**
      * Update existing connection.
      */
-    suspend fun update(connection: Connection): Connection {
+    suspend fun save(connection: Connection): Connection {
+        repository.findById(connection.id)?.let {
+            repository.deleteById(connection.id)
+            logger.debug { "Removed connection: ${connection.name} before store." }
+        }
         val saved = repository.save(connection)
-        logger.info { "Updated connection: ${saved.name}" }
+        logger.info { "Stored connection: ${saved.name} (${saved::class.simpleName})" }
         return saved
     }
 
@@ -44,7 +40,7 @@ class ConnectionService(
      * Find all VALID connections as Flow.
      * Only VALID connections are eligible for polling and indexing.
      */
-    fun findAllValid(): Flow<Connection> = repository.findByState("VALID")
+    fun findAllValid(): Flow<Connection> = repository.findAllByState(ConnectionStateEnum.VALID)
 
     /**
      * Find all connections as Flow.

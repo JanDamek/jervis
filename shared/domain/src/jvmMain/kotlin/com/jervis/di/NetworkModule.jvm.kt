@@ -39,20 +39,8 @@ actual fun createPlatformHttpClient(block: HttpClientConfig<*>.() -> Unit): Http
             }
         }
         
-        // Add security headers for all requests
-        defaultRequest {
-            headers.append(SecurityConstants.CLIENT_HEADER, SecurityConstants.CLIENT_TOKEN)
-            headers.append(SecurityConstants.PLATFORM_HEADER, SecurityConstants.PLATFORM_DESKTOP)
-            // Get local IP - best effort
-            try {
-                val localIp = getLocalIpAddress()
-                if (localIp != null) {
-                    headers.append(SecurityConstants.CLIENT_IP_HEADER, localIp)
-                }
-            } catch (e: Exception) {
-                // Ignore - IP is optional
-            }
-        }
+        // Security headers are added centrally in NetworkModule.createHttpClient() (commonMain)
+        // to avoid duplicates across platforms.
 
         block()
     }

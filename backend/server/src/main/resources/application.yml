@@ -119,7 +119,7 @@ jervis:
     write-timeout-seconds: 600   # 10 minutes
     so-keepalive: true
 
-# HTTP client connections and timeouts (used by WebClient)
+# HTTP client connections and timeouts (WebClient for external compute services with @HttpExchange: joern, tika, whisper)
 connections:
   connection-pool:
     max-connections: 500
@@ -134,8 +134,22 @@ connections:
   buffers:
     default-max-in-memory-bytes: 8388608      # 8 MB (default for most endpoints)
     tika-max-in-memory-bytes: 67108864        # 64 MB (for large Tika document payloads)
+
+# Ktor HTTP client for LLM providers (OpenAI, Anthropic, Google, Ollama, LM Studio) and HTTP services (searxng)
+ktor:
+  connection-pool:
+    max-connections: 500
+    max-connections-per-route: 100
+    keep-alive-time-millis: 300000  # 5 minutes
+  timeouts:
+    connect-timeout-millis: 60000
+    request-timeout-millis: 1800000  # 30 minutes for reasoning models (Qwen3, DeepSeek, etc.)
+    socket-timeout-millis: 1800000   # 30 minutes
   api-versions:
     anthropic-version: "2023-06-01"
+  logging:
+    enabled: false
+    level: "INFO"
 
 # Retry configuration for external HTTP calls
 retry:
@@ -144,6 +158,10 @@ retry:
     initial-backoff-millis: 1000
     max-backoff-millis: 30000
     backoff-multiplier: 2.0
+  ktor:
+    max-attempts: 5
+    initial-backoff-millis: 1000
+    max-backoff-millis: 30000
 
 # Workspace configuration - central root for all server-managed files
 data:

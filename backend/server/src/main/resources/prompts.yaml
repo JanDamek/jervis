@@ -302,6 +302,17 @@ prompts:
       For discard:true - reason is optional (just marking as noise).
       For discard:false - provide clear reason WHY agent should analyze this (will be passed to agent as context).
 
+      TOOLS YOU CAN USE (optional, only when needed):
+      - ragSearch(query, clientId, projectId?, maxResult?, minScore?) → find prior knowledge to support decision
+      - ragIndex(content, clientId, projectId?, title?) → persist short context you derived for future use
+      - graphUpsertNode(clientId, key, entityType, title?, props?) → ensure presence of key entities in graph
+      - graphLink(clientId, edgeType, fromKey, toKey, props?) → connect entities discovered during qualification
+      - webSearch(query, maxResults?) → verify facts if uncertain
+
+      RULES FOR TOOLS:
+      - Always pass the provided CLIENT_ID and (if present) PROJECT_ID exactly as given in the prompt variables below.
+      - Keep operations minimal and deterministic (only what helps decision making or future reuse).
+
     userPrompt: |
       CURRENT DATE: {currentDate}
       CURRENT DATETIME: {currentDateTime}
@@ -311,6 +322,11 @@ prompts:
 
       AGENT-CREATED RULES:
       {activeQualifierRules}
+
+      IDENTITY:
+      CLIENT_ID: {clientId}
+      PROJECT_ID: {projectId}
+      CORRELATION_ID: {correlationId}
 
       Return JSON only: {"discard": true/false, "reason": "brief explanation (required only if discard=false)"}
 
@@ -344,6 +360,17 @@ prompts:
 
       When uncertain about safety → discard: false (prefer downloading over missing content).
 
+      TOOLS YOU CAN USE (optional, only when needed):
+      - ragSearch(query, clientId, projectId?, maxResult?, minScore?) → check existing knowledge about the domain
+      - ragIndex(content, clientId, projectId?, title?) → store short safety assessment for future rules
+      - graphUpsertNode(clientId, key, entityType, title?, props?) → record domains/entities
+      - graphLink(clientId, edgeType, fromKey, toKey, props?) → connect content to domains/entities
+      - webSearch(query, maxResults?) → verify domain legitimacy quickly
+
+      RULES FOR TOOLS:
+      - Always pass CLIENT_ID and (if present) PROJECT_ID from the prompt variables below.
+      - Only minimal writes needed for future automation; do not over-index.
+
     userPrompt: |
       CURRENT DATE: {currentDate}
 
@@ -352,6 +379,11 @@ prompts:
 
       AGENT-CREATED RULES:
       {activeQualifierRules}
+
+      IDENTITY:
+      CLIENT_ID: {clientId}
+      PROJECT_ID: {projectId}
+      CORRELATION_ID: {correlationId}
 
       Return JSON only:
       {
@@ -375,6 +407,17 @@ prompts:
       IMPORTANT: Old content (>2-3 months) should be DISCARDED unless it has clear ongoing relevance or recent activity. Scheduled tasks for past dates should NOT be scheduled again.
       When uncertain → DELEGATE.
 
+      TOOLS YOU CAN USE (optional, only when needed):
+      - ragSearch(query, clientId, projectId?, maxResult?, minScore?)
+      - ragIndex(content, clientId, projectId?, title?)
+      - graphUpsertNode(clientId, key, entityType, title?, props?)
+      - graphLink(clientId, edgeType, fromKey, toKey, props?)
+      - webSearch(query, maxResults?)
+
+      RULES FOR TOOLS:
+      - Always pass CLIENT_ID and PROJECT_ID as provided below; do not invent values.
+      - Keep changes minimal and useful for upcoming main agent analysis.
+
     userPrompt: |
       CURRENT DATE: {currentDate}
       CURRENT DATETIME: {currentDateTime}
@@ -384,6 +427,11 @@ prompts:
 
       AGENT-CREATED RULES:
       {activeQualifierRules}
+
+      IDENTITY:
+      CLIENT_ID: {clientId}
+      PROJECT_ID: {projectId}
+      CORRELATION_ID: {correlationId}
 
       Return JSON only: {"discard": true/false, "reason": "brief explanation"}
 

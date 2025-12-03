@@ -1,6 +1,7 @@
 package com.jervis.di
 
 import com.jervis.service.*
+import com.jervis.api.SecurityConstants
 import de.jensklingenberg.ktorfit.Ktorfit
 import io.ktor.client.*
 import io.ktor.client.call.body
@@ -11,6 +12,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.put
+import io.ktor.client.request.header
 import io.ktor.client.request.setBody
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
@@ -55,6 +57,8 @@ object NetworkModule {
 
             defaultRequest {
                 contentType(ContentType.Application.Json)
+                headers[SecurityConstants.CLIENT_HEADER] = SecurityConstants.CLIENT_TOKEN
+                headers[SecurityConstants.PLATFORM_HEADER] = SecurityConstants.PLATFORM_DESKTOP
             }
         }
 

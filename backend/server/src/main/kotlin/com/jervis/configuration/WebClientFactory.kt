@@ -17,8 +17,14 @@ import java.net.ConnectException
 import java.time.Duration
 
 /**
- * Factory for creating WebClients based on endpoint configuration.
- * Provides dynamic WebClient creation with proper configuration per endpoint type.
+ * Factory for creating WebClients for external compute services that use HttpExchange.
+ *
+ * Architecture:
+ * - WebClient (Spring WebFlux) ONLY for external compute services with @HttpExchange: joern, tika, whisper
+ * - These services use @HttpExchange interfaces for declarative HTTP clients
+ * - For LLM providers (OpenAI, Anthropic, Google, Ollama, LM Studio) and other HTTP services (searxng), use KtorClientFactory
+ *
+ * Note: This factory is being phased out. New services should use Ktor (see KtorClientFactory).
  */
 @Component
 class WebClientFactory(
@@ -29,37 +35,10 @@ class WebClientFactory(
     private val webClientBuilder = WebClient.builder()
 
     /**
-     * Registry of configured WebClients, initialized lazily on first access.
+     * Registry of configured WebClients for external compute services with @HttpExchange.
      */
     private val webClients: Map<String, WebClient> by lazy {
         buildMap {
-            put("lmStudio", createWebClient(endpoints.lmStudio.baseUrl, webClientProperties.buffers.defaultMaxInMemoryBytes))
-            put("ollama.primary", createWebClient(endpoints.ollama.primary.baseUrl, webClientProperties.buffers.defaultMaxInMemoryBytes))
-            put("ollama.qualifier", createWebClient(endpoints.ollama.qualifier.baseUrl, webClientProperties.buffers.defaultMaxInMemoryBytes))
-            put("ollama.embedding", createWebClient(endpoints.ollama.embedding.baseUrl, webClientProperties.buffers.defaultMaxInMemoryBytes))
-            put(
-                "openai",
-                createWebClientWithAuth(endpoints.openai.baseUrl, endpoints.openai.apiKey) { key ->
-                    listOf("Authorization" to "Bearer $key")
-                },
-            )
-            put(
-                "anthropic",
-                createWebClientWithAuth(endpoints.anthropic.baseUrl, endpoints.anthropic.apiKey) { key ->
-                    listOf(
-                        "x-api-key" to key,
-                        "anthropic-version" to webClientProperties.apiVersions.anthropicVersion,
-                    )
-                },
-            )
-            put(
-                "google",
-                createWebClientWithAuth(endpoints.google.baseUrl, endpoints.google.apiKey) { key ->
-                    listOf("x-goog-api-key" to key)
-                },
-            )
-
-            put("searxng", createWebClient(endpoints.searxng.baseUrl, webClientProperties.buffers.defaultMaxInMemoryBytes))
             put("tika", createWebClient(endpoints.tika.baseUrl, webClientProperties.buffers.tikaMaxInMemoryBytes))
             put("joern", createWebClient(endpoints.joern.baseUrl, webClientProperties.buffers.defaultMaxInMemoryBytes))
             put("whisper", createWebClient(endpoints.whisper.baseUrl, webClientProperties.buffers.defaultMaxInMemoryBytes))
@@ -67,14 +46,14 @@ class WebClientFactory(
     }
 
     /**
-     * Get WebClient by endpoint name.
-     * @param endpointName The endpoint name (e.g., "openai", "ollama.primary", "anthropic")
+     * Get WebClient by endpoint name (external compute services with @HttpExchange only).
+     * @param endpointName The endpoint name ("tika", "joern", "whisper")
      * @return Configured WebClient
      * @throws IllegalArgumentException if endpoint not found
      */
     fun getWebClient(endpointName: String): WebClient =
         webClients[endpointName]
-            ?: throw IllegalArgumentException("WebClient not found for endpoint: $endpointName")
+            ?: throw IllegalArgumentException("WebClient not found for endpoint: $endpointName. Available: ${webClients.keys}")
 
     private fun createWebClient(
         baseUrl: String,
@@ -86,26 +65,6 @@ class WebClientFactory(
                 headers.contentType = MediaType.APPLICATION_JSON
                 headers.accept = listOf(MediaType.APPLICATION_JSON)
             }.exchangeStrategies(createExchangeStrategies(maxBufferSize))
-            .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
-            .filter(createRetryFilter())
-            .build()
-
-    private fun createWebClientWithAuth(
-        baseUrl: String,
-        apiKey: String,
-        headersProvider: (String) -> List<Pair<String, String>>,
-    ): WebClient =
-        webClientBuilder
-            .baseUrl(baseUrl.trimEnd('/'))
-            .defaultHeaders { headers ->
-                headers.contentType = MediaType.APPLICATION_JSON
-                headers.accept = listOf(MediaType.APPLICATION_JSON)
-                if (apiKey.isNotBlank()) {
-                    headersProvider(apiKey).forEach { (name, value) ->
-                        headers[name] = value
-                    }
-                }
-            }.exchangeStrategies(createExchangeStrategies(webClientProperties.buffers.defaultMaxInMemoryBytes))
             .clientConnector(ReactorClientHttpConnector(createHttpClientWithTimeouts()))
             .filter(createRetryFilter())
             .build()

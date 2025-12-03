@@ -20,6 +20,7 @@ class LlmCallExecutor(
     private val debugService: DebugService,
     private val llmLoadMonitor: com.jervis.service.background.LlmLoadMonitor,
     private val providerConcurrencyManager: ProviderConcurrencyManager,
+    private val modelConcurrencyManager: ModelConcurrencyManager,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -41,12 +42,15 @@ class LlmCallExecutor(
         val provider =
             candidate.provider
                 ?: throw IllegalStateException("Provider not specified for candidate")
+        val modelName = candidate.model
+        val modelLimit = candidate.concurrency
 
-        return providerConcurrencyManager.withConcurrencyControl(provider) {
-            val client = findClientForProvider(provider)
+        return modelConcurrencyManager.withConcurrencyControl(provider, modelName, modelLimit) {
+            providerConcurrencyManager.withConcurrencyControl(provider) {
+                val client = findClientForProvider(provider)
 
-            logger.info { "Calling LLM type=$promptType provider=$provider model=${candidate.model} background=$backgroundMode" }
-            val startTime = System.nanoTime()
+                logger.info { "Calling LLM type=$promptType provider=$provider model=${candidate.model} background=$backgroundMode" }
+                val startTime = System.nanoTime()
 
             if (!backgroundMode) {
                 llmLoadMonitor.registerRequestStart()
@@ -90,6 +94,7 @@ class LlmCallExecutor(
                 if (!backgroundMode) {
                     llmLoadMonitor.registerRequestEnd()
                 }
+            }
             }
         }
     }

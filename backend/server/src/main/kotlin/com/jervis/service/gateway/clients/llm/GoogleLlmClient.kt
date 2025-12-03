@@ -1,5 +1,6 @@
 package com.jervis.service.gateway.clients.llm
 
+import com.jervis.configuration.KtorClientFactory
 import com.jervis.configuration.prompts.CreativityConfig
 import com.jervis.configuration.prompts.PromptConfig
 import com.jervis.configuration.prompts.PromptsConfiguration
@@ -8,23 +9,24 @@ import com.jervis.domain.gateway.StreamChunk
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.service.gateway.clients.ProviderClient
+import io.ktor.client.*
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import io.ktor.http.*
+import io.ktor.utils.io.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.reactive.asFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
-import com.jervis.configuration.WebClientFactory
-import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
-import org.springframework.web.reactive.function.client.WebClient
 
 @Service
 class GoogleLlmClient(
-    private val webClientFactory: WebClientFactory,
+    private val ktorClientFactory: KtorClientFactory,
     private val promptsConfiguration: PromptsConfiguration,
 ) : ProviderClient {
-    private val webClient: WebClient by lazy { webClientFactory.getWebClient("google") }
+    private val httpClient: HttpClient by lazy { ktorClientFactory.getHttpClient("google") }
     private val logger = KotlinLogging.logger {}
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -32,7 +34,7 @@ class GoogleLlmClient(
 
     override suspend fun call(
         model: String,
-        systemPrompt: String?,
+        systemPrompt: String,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
         prompt: PromptConfig,
@@ -61,7 +63,7 @@ class GoogleLlmClient(
 
     override fun callWithStreaming(
         model: String,
-        systemPrompt: String?,
+        systemPrompt: String,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
         prompt: PromptConfig,
@@ -75,7 +77,7 @@ class GoogleLlmClient(
             val contents =
                 buildList {
                     // Gemini v1 does not support systemInstruction; include system prompt as the first user message
-                    systemPrompt?.takeUnless { it.isBlank() }?.let {
+                    systemPrompt.takeUnless { it.isBlank() }?.let {
                         add(GoogleContent(role = "user", parts = listOf(GooglePart(text = it))))
                     }
                     add(GoogleContent(role = "user", parts = listOf(GooglePart(text = userPrompt))))
@@ -90,32 +92,29 @@ class GoogleLlmClient(
                 }
             }
 
-            val responseFlow =
-                webClient
-                    .post()
-                    // Google Generative Language streaming endpoint (v1beta) with SSE
-                    .uri("/v1beta/models/$model:streamGenerateContent?alt=sse")
-                    .bodyValue(requestBody)
-                    .accept(MediaType.TEXT_EVENT_STREAM)
-                    .retrieve()
-                    .bodyToFlux(String::class.java)
-                    .asFlow()
+            val response: HttpResponse =
+                httpClient.post("/v1beta/models/$model:streamGenerateContent?alt=sse") {
+                    contentType(ContentType.Text.EventStream)
+                    setBody(requestBody)
+                }
 
             var totalPromptTokens = 0
             var totalCompletionTokens = 0
             var finishReason = "STOP"
 
-            responseFlow.collect { line ->
+            val channel: ByteReadChannel = response.bodyAsChannel()
+            while (!channel.isClosedForRead) {
+                val line = channel.readUTF8Line() ?: break
                 val raw = line.trim()
-                if (raw.isBlank()) return@collect
+                if (raw.isBlank()) continue
                 // Handle Server-Sent Events framing from Google streaming API
                 val payload =
                     when {
                         raw.startsWith("data:", ignoreCase = true) -> raw.substringAfter("data:").trim()
-                        raw.startsWith(":") || raw.startsWith("event:", ignoreCase = true) -> return@collect
+                        raw.startsWith(":") || raw.startsWith("event:", ignoreCase = true) -> continue
                         else -> raw
                     }
-                if (payload.isBlank() || payload == "[DONE]") return@collect
+                if (payload.isBlank() || payload == "[DONE]") continue
                 try {
                     val response = json.decodeFromString<GoogleStreamResponse>(payload)
 

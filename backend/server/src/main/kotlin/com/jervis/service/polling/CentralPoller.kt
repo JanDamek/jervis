@@ -1,8 +1,12 @@
 package com.jervis.service.polling
 
+import com.jervis.dto.PendingTaskStateEnum
+import com.jervis.dto.PendingTaskTypeEnum
+import com.jervis.dto.connection.ConnectionStateEnum
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.Connection
 import com.jervis.repository.ClientMongoRepository
+import com.jervis.service.background.PendingTaskService
 import com.jervis.service.connection.ConnectionService
 import com.jervis.service.polling.handler.PollingHandler
 import jakarta.annotation.PostConstruct
@@ -45,7 +49,7 @@ class CentralPoller(
     private val connectionService: ConnectionService,
     private val clientRepository: ClientMongoRepository,
     private val handlers: List<PollingHandler>,
-    private val pendingTaskService: com.jervis.service.background.PendingTaskService,
+    private val pendingTaskService: PendingTaskService,
 ) {
     private val logger = KotlinLogging.logger {}
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -75,11 +79,14 @@ class CentralPoller(
     }
 
     private suspend fun pollAllConnections() {
+        val startTime = Instant.now()
         val jobs = mutableListOf<Job>()
-        var count = 0
+        val connections = mutableListOf<Connection>()
+
+        logger.info { "=== Starting polling cycle ===" }
 
         connectionService.findAllValid().collect { connection ->
-            count++
+            connections.add(connection)
             val job =
                 scope.async {
                     try {
@@ -91,24 +98,34 @@ class CentralPoller(
             jobs.add(job)
         }
 
-        if (count == 0) {
-            logger.debug { "No enabled connections found, skipping poll cycle" }
+        if (connections.isEmpty()) {
+            logger.info { "No enabled connections found, skipping poll cycle" }
             return
         }
 
-        logger.debug { "Polling $count enabled connections" }
+        logger.info { "Found ${connections.size} enabled connection(s): ${connections.joinToString(", ") { "'${it.name}'" }}" }
 
         // Wait for all polling jobs to complete
         jobs.joinAll()
+
+        val duration = Duration.between(startTime, Instant.now())
+        logger.info { "=== Polling cycle completed in ${duration.toMillis()}ms ===" }
     }
 
     private suspend fun pollConnection(connection: Connection) {
+        val startTime = Instant.now()
         val now = Instant.now()
         val lastPoll = lastPollTimes[connection.id.toString()]
         val interval = getPollingInterval(connection)
 
+        logger.info { "  Checking connection '${connection.name}' (${connection::class.simpleName}, id=${connection.id})" }
+
         if (lastPoll != null && Duration.between(lastPoll, now) < interval) {
-            logger.trace { "Skipping ${connection.name}: polling interval not reached" }
+            val timeSinceLastPoll = Duration.between(lastPoll, now)
+            logger.info {
+                "  ⏭ Skipping '${connection.name}': interval not reached | " +
+                "Last poll: ${timeSinceLastPoll.toMinutes()}min ago, Interval: ${interval.toMinutes()}min"
+            }
             return
         }
 
@@ -116,7 +133,7 @@ class CentralPoller(
         val matchingHandlers = handlers.filter { it.canHandle(connection) }
 
         if (matchingHandlers.isEmpty()) {
-            logger.warn { "No handler found for connection type: ${connection::class.simpleName}" }
+            logger.warn { "  ⚠ No handler found for connection '${connection.name}' (type: ${connection::class.simpleName})" }
             return
         }
 
@@ -124,12 +141,14 @@ class CentralPoller(
         val clients = clientRepository.findByConnectionIdsContaining(connection.id).toList()
 
         if (clients.isEmpty()) {
-            logger.debug { "Connection ${connection.name} not used by any clients, skipping" }
+            logger.info { "  ⏭ Skipping '${connection.name}': no clients using this connection" }
             return
         }
 
+        val handlerNames = matchingHandlers.joinToString(", ") { it::class.simpleName ?: "Unknown" }
+        val clientNames = clients.joinToString(", ") { it.name }
         logger.info {
-            "Polling ${connection.name} (${connection::class.simpleName}) for ${clients.size} clients with ${matchingHandlers.size} handler(s)"
+            "▶ Polling '${connection.name}' (${connection::class.simpleName}) | Clients: [$clientNames] | Handlers: [$handlerNames]"
         }
 
         // Execute all matching handlers in parallel (e.g., Jira + Confluence for Atlassian)
@@ -159,9 +178,12 @@ class CentralPoller(
                 )
             }
 
+        val duration = Duration.between(startTime, Instant.now())
+        val statusIcon = if (totalResult.errors > 0) "✗" else "✓"
         logger.info {
-            "Polled ${connection.name}: discovered=${totalResult.itemsDiscovered}, " +
-                "created=${totalResult.itemsCreated}, skipped=${totalResult.itemsSkipped}, errors=${totalResult.errors}"
+            "$statusIcon Completed '${connection.name}' in ${duration.toMillis()}ms | " +
+                "Discovered: ${totalResult.itemsDiscovered}, Created: ${totalResult.itemsCreated}, " +
+                "Skipped: ${totalResult.itemsSkipped}, Errors: ${totalResult.errors}"
         }
 
         // Handle authentication errors - set connection to INVALID and create UserTask
@@ -174,8 +196,8 @@ class CentralPoller(
     }
 
     /**
-     * Handle authentication errors by setting connection to INVALID state and creating UserTask.
-     * Only called when authenticationError flag is true (not for temporary network errors).
+     * Handle authentication errors by setting connection to the INVALID state and creating UserTask.
+     * Only called when the authenticationError flag is true (not for temporary network errors).
      */
     private suspend fun handlePollingError(
         connection: Connection,
@@ -185,57 +207,56 @@ class CentralPoller(
         logger.warn { "Connection ${connection.name} encountered authentication error during polling" }
 
         // Set connection to INVALID state
-        val updatedConnection = when (connection) {
-            is Connection.HttpConnection -> connection.copy(state = com.jervis.entity.connection.ConnectionStateEnum.INVALID)
-            is Connection.ImapConnection -> connection.copy(state = com.jervis.entity.connection.ConnectionStateEnum.INVALID)
-            is Connection.Pop3Connection -> connection.copy(state = com.jervis.entity.connection.ConnectionStateEnum.INVALID)
-            is Connection.SmtpConnection -> connection.copy(state = com.jervis.entity.connection.ConnectionStateEnum.INVALID)
-            is Connection.OAuth2Connection -> connection.copy(state = com.jervis.entity.connection.ConnectionStateEnum.INVALID)
-        }
-        
-        connectionService.update(updatedConnection)
+        connection.state = ConnectionStateEnum.INVALID
+
+        connectionService.save(connection)
         logger.info { "Connection ${connection.name} (${connection.id}) set to INVALID state" }
 
         // Check if UserTask already exists for this connection
         val connectionSource = "connection://${connection.id.toHexString()}"
-        val clientId = clients.firstOrNull()?.id ?: run {
-            logger.warn { "No clients found for connection ${connection.name}, cannot create UserTask" }
-            return
-        }
+        val clientId =
+            clients.firstOrNull()?.id ?: run {
+                logger.warn { "No clients found for connection ${connection.name}, cannot create UserTask" }
+                return
+            }
 
         // Find existing CONNECTION_ERROR tasks for this client and connection
-        val existingTasks = pendingTaskService.findAllTasks(
-            taskType = com.jervis.dto.PendingTaskTypeEnum.CONNECTION_ERROR,
-            state = com.jervis.dto.PendingTaskStateEnum.READY_FOR_QUALIFICATION
-        ).toList()
+        val existingTasks =
+            pendingTaskService
+                .findAllTasks(
+                    taskType = PendingTaskTypeEnum.CONNECTION_ERROR,
+                    state = PendingTaskStateEnum.READY_FOR_QUALIFICATION,
+                ).toList()
 
-        val taskExists = existingTasks.any { task ->
-            task.clientId == clientId && task.content.contains(connectionSource)
-        }
+        val taskExists =
+            existingTasks.any { task ->
+                task.clientId == clientId && task.content.contains(connectionSource)
+            }
 
         if (!taskExists) {
             // Create UserTask for manual fix
-            val taskContent = buildString {
-                appendLine("Connection Polling Error")
-                appendLine()
-                appendLine("Connection: ${connection.name}")
-                appendLine("Type: ${connection::class.simpleName}")
-                appendLine("Source: $connectionSource")
-                appendLine()
-                appendLine("Status: Connection failed during polling with ${result.errors} error(s)")
-                appendLine()
-                appendLine("Action Required:")
-                appendLine("1. Check connection credentials and configuration")
-                appendLine("2. Verify network connectivity")
-                appendLine("3. Test connection manually")
-                appendLine("4. Update connection settings if needed")
-            }
+            val taskContent =
+                buildString {
+                    appendLine("Connection Polling Error")
+                    appendLine()
+                    appendLine("Connection: ${connection.name}")
+                    appendLine("Type: ${connection::class.simpleName}")
+                    appendLine("Source: $connectionSource")
+                    appendLine()
+                    appendLine("Status: Connection failed during polling with ${result.errors} error(s)")
+                    appendLine()
+                    appendLine("Action Required:")
+                    appendLine("1. Check connection credentials and configuration")
+                    appendLine("2. Verify network connectivity")
+                    appendLine("3. Test connection manually")
+                    appendLine("4. Update connection settings if needed")
+                }
 
             pendingTaskService.createTask(
-                taskType = com.jervis.dto.PendingTaskTypeEnum.CONNECTION_ERROR,
+                taskType = PendingTaskTypeEnum.CONNECTION_ERROR,
                 content = taskContent,
                 projectId = null,
-                clientId = clients.firstOrNull()?.id ?: return
+                clientId = clients.firstOrNull()?.id ?: return,
             )
 
             logger.info { "Created UserTask for INVALID connection: ${connection.name}" }

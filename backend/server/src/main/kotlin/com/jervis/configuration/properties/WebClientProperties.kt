@@ -8,7 +8,6 @@ data class WebClientProperties(
     val connectionPool: WebClientConnectionPool,
     val timeouts: WebClientTimeouts,
     val buffers: WebClientBuffers,
-    val apiVersions: ApiVersions,
 ) {
     data class WebClientConnectionPool(
         var maxConnections: Int,
@@ -27,9 +26,5 @@ data class WebClientProperties(
     data class WebClientBuffers(
         var defaultMaxInMemoryBytes: Int,
         var tikaMaxInMemoryBytes: Int,
-    )
-
-    data class ApiVersions(
-        var anthropicVersion: String,
     )
 }

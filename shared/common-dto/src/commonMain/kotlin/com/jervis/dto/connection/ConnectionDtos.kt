@@ -15,9 +15,11 @@ data class ConnectionResponseDto(
     val host: String? = null,
     val port: Int? = null,
     val username: String? = null,
-    // HTTP specific
-    val authType: String? = null,
-    val credentials: String? = null, // Plain text for dev-mode
+    // HTTP specific (typed)
+    val authType: String? = null, // NONE, BASIC, BEARER
+    val httpBasicUsername: String? = null,
+    val httpBasicPassword: String? = null,
+    val httpBearerToken: String? = null,
     val timeoutMs: Long? = null,
     // OAuth2 specific
     val authorizationUrl: String? = null,
@@ -46,8 +48,10 @@ data class ConnectionCreateRequestDto(
 
     // HTTP specific
     val baseUrl: String? = null,
-    val authType: String? = null,
-    val credentials: String? = null, // Plain text: "username:password" or "token"
+    val authType: String? = null, // NONE, BASIC, BEARER
+    val httpBasicUsername: String? = null,
+    val httpBasicPassword: String? = null,
+    val httpBearerToken: String? = null,
     val timeoutMs: Long? = null,
 
     // Email specific (IMAP/POP3/SMTP)
@@ -78,7 +82,10 @@ data class ConnectionUpdateRequestDto(
 
     // HTTP specific
     val baseUrl: String? = null,
-    val credentials: String? = null,
+    val authType: String? = null, // NONE, BASIC, BEARER
+    val httpBasicUsername: String? = null,
+    val httpBasicPassword: String? = null,
+    val httpBearerToken: String? = null,
     val timeoutMs: Long? = null,
 
     // Email specific (IMAP/POP3/SMTP)

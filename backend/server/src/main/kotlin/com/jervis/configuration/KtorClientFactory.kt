@@ -1,0 +1,232 @@
+package com.jervis.configuration
+
+import com.jervis.configuration.properties.EndpointProperties
+import com.jervis.configuration.properties.KtorClientProperties
+import com.jervis.configuration.properties.RetryProperties
+import io.ktor.client.*
+import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.*
+import io.ktor.client.plugins.contentnegotiation.*
+import io.ktor.client.plugins.logging.*
+import io.ktor.client.request.*
+import io.ktor.http.*
+import io.ktor.serialization.kotlinx.json.*
+import kotlinx.serialization.json.Json
+import mu.KotlinLogging
+import org.springframework.stereotype.Component
+import java.io.IOException
+import java.net.ConnectException
+
+private val logger = KotlinLogging.logger {}
+
+/**
+ * Factory for creating Ktor HttpClients for LLM provider communication and other HTTP services.
+ *
+ * Architecture:
+ * - Ktor-based (coroutines-first) for all LLM providers (OpenAI, Anthropic, Google, Ollama, LM Studio)
+ * - Ktor-based for web search (searxng)
+ * - WebClient (Spring WebFlux) only for external compute services with @HttpExchange (joern, tika, whisper)
+ *
+ * Features:
+ * - Automatic retry with exponential backoff for transient failures
+ * - Connection pooling and timeout management
+ * - Per-provider authentication headers
+ * - JSON serialization with kotlinx.serialization
+ */
+@Component
+class KtorClientFactory(
+    private val ktorClientProperties: KtorClientProperties,
+    private val retryProperties: RetryProperties,
+    private val endpoints: EndpointProperties,
+) {
+    /**
+     * Registry of configured Ktor HttpClients, initialized lazily on first access.
+     */
+    private val httpClients: Map<String, HttpClient> by lazy {
+        buildMap {
+            put("lmStudio", createHttpClient(endpoints.lmStudio.baseUrl))
+            put("ollama.primary", createHttpClient(endpoints.ollama.primary.baseUrl))
+            put("ollama.qualifier", createHttpClient(endpoints.ollama.qualifier.baseUrl))
+            put("ollama.embedding", createHttpClient(endpoints.ollama.embedding.baseUrl))
+            put(
+                "openai",
+                createHttpClientWithAuth(endpoints.openai.baseUrl, endpoints.openai.apiKey) { request, key ->
+                    request.header("Authorization", "Bearer $key")
+                },
+            )
+            put(
+                "anthropic",
+                createHttpClientWithAuth(endpoints.anthropic.baseUrl, endpoints.anthropic.apiKey) { request, key ->
+                    request.header("x-api-key", key)
+                    request.header("anthropic-version", ktorClientProperties.apiVersions.anthropicVersion)
+                },
+            )
+            put(
+                "google",
+                createHttpClientWithAuth(endpoints.google.baseUrl, endpoints.google.apiKey) { request, key ->
+                    request.header("x-goog-api-key", key)
+                },
+            )
+            put("searxng", createHttpClient(endpoints.searxng.baseUrl))
+        }
+    }
+
+    /**
+     * Get Ktor HttpClient by endpoint name.
+     * @param endpointName The endpoint name (e.g., "openai", "ollama.primary", "anthropic")
+     * @return Configured HttpClient
+     * @throws IllegalArgumentException if endpoint not found
+     */
+    fun getHttpClient(endpointName: String): HttpClient =
+        httpClients[endpointName]
+            ?: throw IllegalArgumentException("HttpClient not found for endpoint: $endpointName")
+
+    /**
+     * Close all managed HttpClients. Call on application shutdown.
+     */
+    fun closeAll() {
+        httpClients.values.forEach { it.close() }
+    }
+
+    private fun createHttpClient(baseUrl: String): HttpClient =
+        HttpClient(CIO) {
+            // Base URL
+            defaultRequest {
+                url(baseUrl.trimEnd('/'))
+                contentType(ContentType.Application.Json)
+                accept(ContentType.Application.Json)
+            }
+
+            // JSON serialization
+            install(ContentNegotiation) {
+                json(
+                    Json {
+                        ignoreUnknownKeys = true
+                        coerceInputValues = true
+                        isLenient = true
+                        prettyPrint = false
+                    },
+                )
+            }
+
+            // Timeouts
+            install(HttpTimeout) {
+                requestTimeoutMillis = ktorClientProperties.timeouts.requestTimeoutMillis
+                connectTimeoutMillis = ktorClientProperties.timeouts.connectTimeoutMillis.toLong()
+                socketTimeoutMillis = ktorClientProperties.timeouts.socketTimeoutMillis
+            }
+
+            // Connection pooling
+            engine {
+                maxConnectionsCount = ktorClientProperties.connectionPool.maxConnections
+                endpoint {
+                    maxConnectionsPerRoute = ktorClientProperties.connectionPool.maxConnectionsPerRoute
+                    connectAttempts = 1 // Retries handled by plugin below
+                    keepAliveTime = ktorClientProperties.connectionPool.keepAliveTimeMillis
+                    connectTimeout = ktorClientProperties.timeouts.connectTimeoutMillis.toLong()
+                }
+            }
+
+            // Logging (optional, for debugging)
+            if (ktorClientProperties.logging.enabled) {
+                install(Logging) {
+                    level = LogLevel.valueOf(ktorClientProperties.logging.level)
+                    logger =
+                        object : Logger {
+                            private val log = KotlinLogging.logger("ktor.client")
+
+                            override fun log(message: String) {
+                                log.debug { message }
+                            }
+                        }
+                }
+            }
+
+            // Retry logic with exponential backoff
+            install(HttpRequestRetry) {
+                maxRetries = retryProperties.ktor.maxAttempts
+                retryOnServerErrors(maxRetries = retryProperties.ktor.maxAttempts)
+                exponentialDelay(
+                    base = 2.0,
+                    maxDelayMs = retryProperties.ktor.maxBackoffMillis,
+                )
+            }
+
+            expectSuccess = false
+        }
+
+    private fun createHttpClientWithAuth(
+        baseUrl: String,
+        apiKey: String,
+        authHeadersConfig: (DefaultRequest.DefaultRequestBuilder, String) -> Unit,
+    ): HttpClient =
+        HttpClient(CIO) {
+            // Base URL and authentication
+            defaultRequest {
+                url(baseUrl.trimEnd('/'))
+                contentType(ContentType.Application.Json)
+                accept(ContentType.Application.Json)
+
+                if (apiKey.isNotBlank()) {
+                    authHeadersConfig(this, apiKey)
+                }
+            }
+
+            // JSON serialization
+            install(ContentNegotiation) {
+                json(
+                    Json {
+                        ignoreUnknownKeys = true
+                        coerceInputValues = true
+                        isLenient = true
+                        prettyPrint = false
+                    },
+                )
+            }
+
+            // Timeouts
+            install(HttpTimeout) {
+                requestTimeoutMillis = ktorClientProperties.timeouts.requestTimeoutMillis
+                connectTimeoutMillis = ktorClientProperties.timeouts.connectTimeoutMillis.toLong()
+                socketTimeoutMillis = ktorClientProperties.timeouts.socketTimeoutMillis
+            }
+
+            // Connection pooling
+            engine {
+                maxConnectionsCount = ktorClientProperties.connectionPool.maxConnections
+                endpoint {
+                    maxConnectionsPerRoute = ktorClientProperties.connectionPool.maxConnectionsPerRoute
+                    connectAttempts = 1
+                    keepAliveTime = ktorClientProperties.connectionPool.keepAliveTimeMillis
+                    connectTimeout = ktorClientProperties.timeouts.connectTimeoutMillis.toLong()
+                }
+            }
+
+            // Logging (optional)
+            if (ktorClientProperties.logging.enabled) {
+                install(Logging) {
+                    level = LogLevel.valueOf(ktorClientProperties.logging.level)
+                    logger =
+                        object : Logger {
+                            private val log = KotlinLogging.logger("ktor.client")
+
+                            override fun log(message: String) {
+                                log.debug { message }
+                            }
+                        }
+                }
+            }
+
+            // Retry logic
+            install(HttpRequestRetry) {
+                maxRetries = retryProperties.ktor.maxAttempts
+                retryOnServerErrors(maxRetries = retryProperties.ktor.maxAttempts)
+                exponentialDelay(
+                    base = 2.0,
+                    maxDelayMs = retryProperties.ktor.maxBackoffMillis,
+                )
+            }
+
+            expectSuccess = false
+        }
+}

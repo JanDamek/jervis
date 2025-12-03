@@ -12,6 +12,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.platform.LocalFocusManager
 import com.jervis.dto.ProjectDto
 import com.jervis.repository.JervisRepository
 import kotlinx.coroutines.launch
@@ -23,6 +31,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProjectsWindow(repository: JervisRepository) {
+    val focusManager = LocalFocusManager.current
     var projects by remember { mutableStateOf<List<ProjectDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -41,7 +50,12 @@ fun ProjectsWindow(repository: JervisRepository) {
             try {
                 projects = repository.projects.getAllProjects()
             } catch (e: Exception) {
-                errorMessage = "Failed to load projects: ${e.message}"
+            errorMessage = "Failed to load projects: ${e.message}"
+            repository.errorLogs.recordUiError(
+                message = errorMessage!!,
+                stackTrace = e.toString(),
+                causeType = e::class.simpleName
+            )
             } finally {
                 isLoading = false
             }
@@ -54,6 +68,12 @@ fun ProjectsWindow(repository: JervisRepository) {
     }
 
     Scaffold(
+        modifier = Modifier.onPreviewKeyEvent { e ->
+            if (e.type == KeyEventType.KeyDown && e.key == Key.Tab) {
+                focusManager.moveFocus(if (e.isShiftPressed) FocusDirection.Previous else FocusDirection.Next)
+                true
+            } else false
+        },
         topBar = {
             TopAppBar(
                 title = { Text("Project Management") },
@@ -137,12 +157,22 @@ fun ProjectsWindow(repository: JervisRepository) {
             onSave = { project ->
                 scope.launch {
                     try {
-                        repository.projects.saveProject(project)
+                        if (selectedProject == null) {
+                            repository.projects.saveProject(project)
+                        } else {
+                            repository.projects.updateProject(project)
+                        }
                         showCreateDialog = false
                         selectedProject = null
                         loadProjects()
                     } catch (e: Exception) {
-                        errorMessage = "Failed to save: ${e.message}"
+                        val msg = "Failed to save: ${e.message}"
+                        errorMessage = msg
+                        repository.errorLogs.recordUiError(
+                            message = msg,
+                            stackTrace = e.toString(),
+                            causeType = e::class.simpleName
+                        )
                     }
                 }
             }
@@ -165,7 +195,13 @@ fun ProjectsWindow(repository: JervisRepository) {
                                 showDeleteDialog = false
                                 loadProjects()
                             } catch (e: Exception) {
-                                errorMessage = "Failed to delete: ${e.message}"
+                                val msg = "Failed to delete: ${e.message}"
+                                errorMessage = msg
+                                repository.errorLogs.recordUiError(
+                                    message = msg,
+                                    stackTrace = e.toString(),
+                                    causeType = e::class.simpleName
+                                )
                                 showDeleteDialog = false
                             }
                         }

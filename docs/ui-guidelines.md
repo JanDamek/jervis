@@ -1,6 +1,6 @@
-# UI Guidelines - Delete Operations & Text Display
+# UI Guidelines
 
-This document defines the mandatory standards for implementing delete operations and text display across all UI screens in the Jervis application.
+This document defines mandatory standards for UI behaviors across Jervis. It includes delete operations, text display, notifications, secrets visibility, keyboard navigation, and connections management.
 
 ## Table of Contents
 - [Delete Button Standard](#delete-button-standard)
@@ -12,14 +12,20 @@ This document defines the mandatory standards for implementing delete operations
 
 ---
 
+## Global UI Policies
+
+- Secrets are visible: UI must display full values (passwords/tokens/keys) without masking. This app is not public.
+- Notifications: Use snackbars at the top-right corner of the window (non-modal). Prefer brief, actionable messages.
+- Tab behavior (Desktop): Tab moves focus (Next/Previous with Shift). It must NOT insert whitespace in text fields. Use onPreviewKeyEvent at the top layout.
+
+---
+
 ## Delete Button Standard
 
 ### Component to Use
 **ALWAYS** use: `com.jervis.ui.util.DeleteIconButton`
 
 ```kotlin
-import com.jervis.ui.util.DeleteIconButton
-
 DeleteIconButton(
     onClick = { showDeleteDialog = true }
 )
@@ -50,8 +56,6 @@ DeleteIconButton(
 **ALWAYS** use: `com.jervis.ui.util.CopyableTextCard` for displaying text content with copy functionality
 
 ```kotlin
-import com.jervis.ui.util.CopyableTextCard
-
 CopyableTextCard(
     title = "System Prompt",
     content = systemPromptText,
@@ -87,8 +91,6 @@ CopyableTextCard(
 **ALWAYS** use: `com.jervis.ui.util.ConfirmDialog`
 
 ```kotlin
-import com.jervis.ui.util.ConfirmDialog
-
 ConfirmDialog(
     visible = showDeleteDialog && itemToDelete != null,
     title = "Delete {ItemType}",
@@ -321,7 +323,7 @@ CopyableTextCard(
 // WRONG - Don't use header button
 Row(header) {
     Text("Items")
-    DeleteIconButton(onClick = { ... }, enabled = selectedItem != null)
+    DeleteIconButton(onClick = { /* ... */ }, enabled = selectedItem != null)
 }
 ```
 
@@ -331,7 +333,7 @@ Row(header) {
 ```kotlin
 // WRONG - Don't disable button
 DeleteIconButton(
-    onClick = { ... },
+    onClick = { /* ... */ },
     enabled = selectedItem != null
 )
 ```
@@ -341,7 +343,7 @@ DeleteIconButton(
 ### ❌ Don't: Custom Copy Implementation with Text
 ```kotlin
 // WRONG - Don't use TextButton with "Copy" text
-TextButton(onClick = { clipboard.setText(...) }) {
+TextButton(onClick = { /* clipboard.setText(...) */ }) {
     Text("Copy")
 }
 ```
@@ -353,8 +355,8 @@ TextButton(onClick = { clipboard.setText(...) }) {
 // WRONG - Don't build custom copy UI
 Row {
     Text(title)
-    IconButton(onClick = { clipboard.setText(...) }) {
-        Icon(...)
+    IconButton(onClick = { /* clipboard.setText(...) */ }) {
+        Icon(Icons.Default.ContentCopy, contentDescription = null)
     }
 }
 Text(content)
@@ -378,6 +380,45 @@ if (showDeleteDialog) {
 ```
 
 **Use instead**: `com.jervis.ui.util.ConfirmDialog`
+
+---
+
+## Connections Management (Settings)
+
+### Overview
+
+- Provide a dedicated Connections tab in Settings showing all connections.
+- For each connection, display: name, type, state (NEW/VALID/INVALID), and ownership label: "Client: …", "Project: …", or "Unattached".
+- Actions: Create, Edit, Test, Duplicate, Delete. Use snackbars (top-right) for feedback.
+
+### Ownership Rules
+
+- A connection can belong to only one owner at a time: either a Client or a Project.
+- To reuse a connection elsewhere, use Duplicate to create a copy and attach it to the other owner.
+
+### Client/Project Editors
+
+- Inside Client and Project edit dialogs:
+  - List all connections with owner labels.
+  - Allow attach/detach via checkbox when unattached or owned by the current entity.
+  - If owned elsewhere, show Duplicate to create a copy and auto-attach it.
+  - Provide Test and Edit actions inline;
+  - Provide Create Connection (quick-create dialog).
+
+### Authorization (HTTP)
+
+- Edit authorization via typed fields only (NONE/BASIC/BEARER). Do not use generic `credentials` fields.
+- BASIC: username + password; BEARER: token; NONE: no credentials.
+
+### Git Credentials & Overrides
+
+- Secrets are visible in UI; provide "Load from file" buttons for SSH and GPG keys (Desktop only).
+- Client-level Git settings are defaults. Project-level overrides take precedence when provided.
+
+### Keyboard & Notifications
+
+- Desktop: implement Tab focus traversal at the top layout of Settings.
+- Notifications: snackbars in top-right after create/update/delete/test.
 
 ---
 

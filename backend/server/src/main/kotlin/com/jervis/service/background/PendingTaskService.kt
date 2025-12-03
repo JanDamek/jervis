@@ -97,7 +97,7 @@ class PendingTaskService(
 
     /**
      * Append progress context to task content for interrupted task resumption.
-     * The task will resume with all previous progress included in content.
+     * The task will resume with all previous progress included in the content.
      */
     suspend fun appendProgressContext(
         taskId: ObjectId,
@@ -127,15 +127,8 @@ class PendingTaskService(
             findTasksByState(PendingTaskStateEnum.QUALIFYING),
         )
 
-    suspend fun tryClaimForQualification(taskId: ObjectId): PendingTaskDocument? {
-        val result =
-            runCatching { updateState(taskId, PendingTaskStateEnum.READY_FOR_QUALIFICATION, PendingTaskStateEnum.QUALIFYING) }
-                .getOrNull()
-        if (result != null) {
-            logger.debug { "TASK_CLAIMED_FOR_QUALIFICATION: id=$taskId" }
-        }
-        return result
-    }
+    suspend fun tryClaimForQualification(taskId: ObjectId): PendingTaskDocument =
+        updateState(taskId, PendingTaskStateEnum.READY_FOR_QUALIFICATION, PendingTaskStateEnum.QUALIFYING)
 
     fun findAllTasks(
         taskType: PendingTaskTypeEnum?,

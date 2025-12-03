@@ -49,6 +49,7 @@ import java.util.concurrent.atomic.AtomicReference
 class BackgroundEngine(
     private val llmLoadMonitor: LlmLoadMonitor,
     private val pendingTaskService: PendingTaskService,
+    private val taskQualificationService: TaskQualificationService,
     private val agentOrchestrator: AgentOrchestratorService,
     private val backgroundProperties: BackgroundProperties,
     private val errorNotificationsPublisher: ErrorNotificationsPublisher,
@@ -137,12 +138,7 @@ class BackgroundEngine(
         while (scope.isActive) {
             try {
                 logger.debug { "Qualification loop: starting processAllQualifications..." }
-
-                // Process all tasks in Flow with concurrency limit (e.g., 8 parallel)
-                // TODO: Re-enable after email refactoring
-                // taskQualificationService.processAllQualifications()
-
-                // Flow exhausted for this scan
+                taskQualificationService.processAllQualifications()
                 logger.info { "Qualification cycle complete - sleeping 30s..." }
                 delay(30_000)
             } catch (e: CancellationException) {
@@ -234,7 +230,11 @@ class BackgroundEngine(
                 logger.info { "GPU_EXECUTION_START: id=${task.id} correlationId=${task.correlationId} type=${task.type}" }
 
                 try {
-                    agentOrchestrator.handleBackgroundTask(task)
+                    agentOrchestrator.handleBackgroundTask(
+                        text = task.content,
+                        clientId = task.clientId.toHexString(),
+                        projectId = task.projectId?.toHexString(),
+                    )
                     pendingTaskService.deleteTask(task.id)
                     logger.info { "GPU_EXECUTION_SUCCESS: id=${task.id} correlationId=${task.correlationId}" }
 
@@ -243,8 +243,11 @@ class BackgroundEngine(
                     logger.info { "GPU_EXECUTION_INTERRUPTED: id=${task.id} correlationId=${task.correlationId}" }
 
                     try {
-                        val progressContext = agentOrchestrator.getLastPlanContext(task.correlationId)
-                        if (progressContext != null) {
+                        val progressContext = agentOrchestrator.getLastPlanContext(
+                            clientId = task.clientId.toHexString(),
+                            projectId = task.projectId?.toHexString(),
+                        )
+                        if (progressContext.isNotBlank()) {
                             pendingTaskService.appendProgressContext(task.id, progressContext)
                             logger.info { "Saved progress context for interrupted task ${task.id} (${progressContext.length} chars)" }
                         } else {

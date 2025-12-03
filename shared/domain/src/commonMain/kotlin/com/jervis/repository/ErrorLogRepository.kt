@@ -11,6 +11,30 @@ class ErrorLogRepository(
     private val errorLogService: IErrorLogService
 ) {
 
+    suspend fun recordUiError(
+        message: String,
+        stackTrace: String? = null,
+        causeType: String? = null,
+        clientId: String? = null,
+        projectId: String? = null,
+        correlationId: String? = null,
+    ) {
+        try {
+            errorLogService.add(
+                com.jervis.dto.error.ErrorLogCreateRequestDto(
+                    clientId = clientId,
+                    projectId = projectId,
+                    correlationId = correlationId,
+                    message = message,
+                    stackTrace = stackTrace,
+                    causeType = causeType,
+                ),
+            )
+        } catch (_: Throwable) {
+            // Never throw from UI logging – fail fast at origin, not here
+        }
+    }
+
     /**
      * List all error logs (global, no client filter)
      */
