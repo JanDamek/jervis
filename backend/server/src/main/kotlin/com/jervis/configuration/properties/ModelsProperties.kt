@@ -18,5 +18,6 @@ class ModelsProperties {
         var contextLength: Int? = null,
         var dimension: Int? = null,
         var numPredict: Int? = null,
+        var concurrency: Int? = null,
     )
 }

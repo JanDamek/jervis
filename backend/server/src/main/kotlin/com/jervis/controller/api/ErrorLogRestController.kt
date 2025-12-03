@@ -2,6 +2,7 @@ package com.jervis.controller.api
 
 import com.jervis.dto.error.ErrorLogDto
 import com.jervis.service.IErrorLogService
+import com.jervis.dto.error.ErrorLogCreateRequestDto
 import com.jervis.service.error.ErrorLogService
 import org.bson.types.ObjectId
 import org.springframework.web.bind.annotation.*
@@ -11,6 +12,19 @@ import org.springframework.web.bind.annotation.*
 class ErrorLogRestController(
     private val service: ErrorLogService,
 ) : IErrorLogService {
+    @PostMapping
+    override suspend fun add(@RequestBody request: ErrorLogCreateRequestDto): com.jervis.dto.error.ErrorLogDto {
+        val throwable = RuntimeException(request.message)
+        val saved = service.recordError(
+            throwable = throwable.apply {
+                if (!request.stackTrace.isNullOrBlank()) initCause(RuntimeException(request.stackTrace))
+            },
+            clientId = request.clientId?.let { org.bson.types.ObjectId(it) },
+            projectId = request.projectId?.let { org.bson.types.ObjectId(it) },
+            correlationId = request.correlationId,
+        )
+        return saved.toDto()
+    }
     @GetMapping
     override suspend fun list(
         @RequestParam("clientId") clientId: String,

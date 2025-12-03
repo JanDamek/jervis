@@ -1,7 +1,7 @@
 package com.jervis.service.gateway.clients.llm
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
-import com.jervis.configuration.WebClientFactory
+import com.jervis.configuration.KtorClientFactory
 import com.jervis.configuration.prompts.CreativityConfig
 import com.jervis.configuration.prompts.PromptConfig
 import com.jervis.configuration.prompts.PromptsConfiguration
@@ -10,22 +10,23 @@ import com.jervis.domain.gateway.StreamChunk
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.service.gateway.clients.ProviderClient
+import io.ktor.client.*
+import io.ktor.client.call.*
+import io.ktor.client.request.*
 import kotlinx.coroutines.flow.Flow
 import org.springframework.stereotype.Service
-import org.springframework.web.reactive.function.client.WebClient
-import org.springframework.web.reactive.function.client.awaitBody
 
 @Service
 class AnthropicClient(
-    private val webClientFactory: WebClientFactory,
+    private val ktorClientFactory: KtorClientFactory,
     private val promptsConfiguration: PromptsConfiguration,
 ) : ProviderClient {
-    private val webClient: WebClient by lazy { webClientFactory.getWebClient("anthropic") }
+    private val httpClient: HttpClient by lazy { ktorClientFactory.getHttpClient("anthropic") }
     override val provider: ModelProviderEnum = ModelProviderEnum.ANTHROPIC
 
     override suspend fun call(
         model: String,
-        systemPrompt: String?,
+        systemPrompt: String,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
         prompt: PromptConfig,
@@ -36,19 +37,16 @@ class AnthropicClient(
         val requestBody = buildRequestBody(model, messages, systemPrompt, creativityConfig, config)
 
         val response: AnthropicMessagesResponse =
-            webClient
-                .post()
-                .uri("/v1/messages")
-                .bodyValue(requestBody)
-                .retrieve()
-                .awaitBody()
+            httpClient.post("/v1/messages") {
+                setBody(requestBody)
+            }.body()
 
         return parseResponse(response, model)
     }
 
     override fun callWithStreaming(
         model: String,
-        systemPrompt: String?,
+        systemPrompt: String,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
         prompt: PromptConfig,

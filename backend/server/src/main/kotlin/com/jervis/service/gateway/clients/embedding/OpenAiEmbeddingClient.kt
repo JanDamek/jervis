@@ -1,19 +1,21 @@
 package com.jervis.service.gateway.clients.embedding
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
-import com.jervis.configuration.WebClientFactory
+import com.jervis.configuration.KtorClientFactory
 import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.service.gateway.clients.EmbeddingProviderClient
 import org.springframework.stereotype.Service
-import org.springframework.web.reactive.function.client.WebClientRequestException
-import org.springframework.web.reactive.function.client.WebClientResponseException
-import org.springframework.web.reactive.function.client.awaitBody
+import io.ktor.client.call.body
+import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.ResponseException
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 
 @Service
 class OpenAiEmbeddingClient(
-    private val webClientFactory: WebClientFactory,
+    private val ktorClientFactory: KtorClientFactory,
 ) : EmbeddingProviderClient {
-    private val client by lazy { webClientFactory.getWebClient("openai") }
+    private val client by lazy { ktorClientFactory.getHttpClient("openai") }
     override val provider = ModelProviderEnum.OPENAI
 
     override suspend fun call(
@@ -23,28 +25,24 @@ class OpenAiEmbeddingClient(
         val body = mapOf("model" to model, "input" to text)
 
         return try {
-            val response =
-                client
-                    .post()
-                    .uri("/embeddings")
-                    .bodyValue(body)
-                    .retrieve()
-                    .awaitBody<OpenAiEmbeddingResponse>()
+            val response = client.post("/embeddings") {
+                setBody(body)
+            }.body<OpenAiEmbeddingResponse>()
 
             response.data
                 .firstOrNull()
                 ?.embedding ?: emptyList()
         } catch (error: Exception) {
             throw when (error) {
-                is WebClientRequestException ->
+                is ClientRequestException ->
                     RuntimeException(
                         "Connection error to OpenAI: ${error.message}",
                         error,
                     )
 
-                is WebClientResponseException ->
+                is ResponseException ->
                     RuntimeException(
-                        "OpenAI API error: ${error.statusCode} - ${error.responseBodyAsString}",
+                        "OpenAI API error: ${error.response.status}",
                         error,
                     )
 

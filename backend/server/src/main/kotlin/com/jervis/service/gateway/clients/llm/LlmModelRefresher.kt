@@ -1,6 +1,6 @@
 package com.jervis.service.gateway.clients.llm
 
-import com.jervis.configuration.WebClientFactory
+import com.jervis.configuration.KtorClientFactory
 import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.configuration.properties.PreloadOllamaProperties
 import com.jervis.domain.model.ModelProviderEnum
@@ -13,7 +13,10 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
-import org.springframework.web.reactive.function.client.awaitBody
+import io.ktor.client.call.body
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import kotlinx.serialization.Serializable
 import java.time.Duration
 
 /**
@@ -23,7 +26,7 @@ import java.time.Duration
 @Component
 class LlmModelRefresher(
     private val models: ModelsProperties,
-    private val webClientFactory: WebClientFactory,
+    private val ktorClientFactory: KtorClientFactory,
     private val preloadProps: PreloadOllamaProperties,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -43,8 +46,8 @@ class LlmModelRefresher(
 
                 val clients =
                     listOf(
-                        "ollama.qualifier" to webClientFactory.getWebClient("ollama.qualifier"),
-                        "ollama.primary" to webClientFactory.getWebClient("ollama.primary"),
+                        "ollama.qualifier" to ktorClientFactory.getHttpClient("ollama.qualifier"),
+                        "ollama.primary" to ktorClientFactory.getHttpClient("ollama.primary"),
                     )
 
                 // Build list of models to refresh
@@ -85,19 +88,15 @@ class LlmModelRefresher(
                             val primaryClient = clients.first { it.first == "ollama.primary" }.second
                             for (model in primaryModels) {
                                 runCatching {
-                                    val warmupBody =
-                                        mapOf(
-                                            "model" to model,
-                                            "prompt" to "warmup",
-                                            "stream" to false,
-                                            "keep_alive" to llmKeepAlive,
-                                        )
-                                    primaryClient
-                                        .post()
-                                        .uri("/api/generate")
-                                        .bodyValue(warmupBody)
-                                        .retrieve()
-                                        .awaitBody<Map<String, Any>>()
+                                    val warmupBody = OllamaGenerateRequest(
+                                        model = model,
+                                        prompt = "warmup",
+                                        stream = false,
+                                        keep_alive = llmKeepAlive,
+                                    )
+                                    primaryClient.post("/api/generate") {
+                                        setBody(warmupBody)
+                                    }.body<OllamaGenerateResponse>()
                                     logger.info { "Refreshed keep-alive on ollama.primary for LLM model: $model ($llmKeepAlive)" }
                                 }.onFailure { e ->
                                     logger.warn(e) { "Failed to refresh keep-alive on ollama.primary for model: $model" }
@@ -110,19 +109,15 @@ class LlmModelRefresher(
                             val qualifierClient = clients.first { it.first == "ollama.qualifier" }.second
                             for (model in qualifierModels) {
                                 runCatching {
-                                    val warmupBody =
-                                        mapOf(
-                                            "model" to model,
-                                            "prompt" to "warmup",
-                                            "stream" to false,
-                                            "keep_alive" to llmKeepAlive,
-                                        )
-                                    qualifierClient
-                                        .post()
-                                        .uri("/api/generate")
-                                        .bodyValue(warmupBody)
-                                        .retrieve()
-                                        .awaitBody<Map<String, Any>>()
+                                    val warmupBody = OllamaGenerateRequest(
+                                        model = model,
+                                        prompt = "warmup",
+                                        stream = false,
+                                        keep_alive = llmKeepAlive,
+                                    )
+                                    qualifierClient.post("/api/generate") {
+                                        setBody(warmupBody)
+                                    }.body<OllamaGenerateResponse>()
                                     logger.info { "Refreshed keep-alive on ollama.qualifier for LLM model: $model ($llmKeepAlive)" }
                                 }.onFailure { e ->
                                     logger.warn(e) { "Failed to refresh keep-alive on ollama.qualifier for model: $model" }
@@ -153,4 +148,18 @@ class LlmModelRefresher(
             Duration.ofHours(1)
         }
     }
+
+    @Serializable
+    data class OllamaGenerateRequest(
+        val model: String,
+        val prompt: String,
+        val stream: Boolean,
+        val keep_alive: String,
+    )
+
+    @Serializable
+    data class OllamaGenerateResponse(
+        val model: String? = null,
+        val response: String? = null,
+    )
 }

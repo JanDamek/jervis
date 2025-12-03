@@ -10,6 +10,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.platform.LocalFocusManager
 import com.jervis.dto.connection.ConnectionCreateRequestDto
 import com.jervis.dto.connection.ConnectionResponseDto
 import com.jervis.dto.connection.ConnectionUpdateRequestDto
@@ -23,6 +31,8 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConnectionsWindow(repository: JervisRepository) {
+    val focusManager = LocalFocusManager.current
+    val snackbarHostState = remember { SnackbarHostState() }
     var connections by remember { mutableStateOf<List<ConnectionResponseDto>>(emptyList()) }
     var clients by remember { mutableStateOf<List<com.jervis.dto.ClientDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
@@ -46,6 +56,11 @@ fun ConnectionsWindow(repository: JervisRepository) {
                 clients = repository.clients.listClients()
             } catch (e: Exception) {
                 errorMessage = "Failed to load connections: ${e.message}"
+                repository.errorLogs.recordUiError(
+                    message = errorMessage!!,
+                    stackTrace = e.toString(),
+                    causeType = e::class.simpleName
+                )
             } finally {
                 isLoading = false
             }
@@ -58,6 +73,12 @@ fun ConnectionsWindow(repository: JervisRepository) {
     }
 
     Scaffold(
+        modifier = Modifier.onPreviewKeyEvent { e ->
+            if (e.type == KeyEventType.KeyDown && e.key == Key.Tab) {
+                focusManager.moveFocus(if (e.isShiftPressed) FocusDirection.Previous else FocusDirection.Next)
+                true
+            } else false
+        },
         topBar = {
             TopAppBar(
                 title = { Text("Connection Management") },
@@ -121,13 +142,21 @@ fun ConnectionsWindow(repository: JervisRepository) {
                                     scope.launch {
                                         try {
                                             val result = repository.connections.testConnection(connection.id)
-                                            testResult = if (result.success) {
-                                                "✓ ${result.message}"
+                                            val msg = if (result.success) {
+                                                "Connection tested: OK"
                                             } else {
-                                                "✗ ${result.message}"
+                                                val detail = result.message ?: "Unknown error"
+                                                "Connection test failed: " + detail
                                             }
+                                            snackbarHostState.showSnackbar(msg)
                                         } catch (e: Exception) {
-                                            testResult = "✗ Test failed: ${e.message}"
+                                            val msg = "Test failed: ${e.message}"
+                                            snackbarHostState.showSnackbar(msg)
+                                            repository.errorLogs.recordUiError(
+                                                message = msg,
+                                                stackTrace = e.toString(),
+                                                causeType = e::class.simpleName
+                                            )
                                         }
                                     }
                                 },
@@ -145,19 +174,10 @@ fun ConnectionsWindow(repository: JervisRepository) {
                 }
             }
 
-            // Show test result as snackbar
-            testResult?.let { result ->
-                Snackbar(
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
-                    action = {
-                        TextButton(onClick = { testResult = null }) {
-                            Text("OK")
-                        }
-                    }
-                ) {
-                    Text(result)
-                }
-            }
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+            )
         }
     }
 
@@ -171,8 +191,16 @@ fun ConnectionsWindow(repository: JervisRepository) {
                         repository.connections.createConnection(request)
                         showCreateDialog = false
                         loadConnections()
+                        snackbarHostState.showSnackbar("Connection created")
                     } catch (e: Exception) {
-                        errorMessage = "Failed to create: ${e.message}"
+                        val msg = "Failed to create: ${e.message}"
+                        errorMessage = msg
+                        snackbarHostState.showSnackbar("Create failed: ${e.message}")
+                        repository.errorLogs.recordUiError(
+                            message = msg,
+                            stackTrace = e.toString(),
+                            causeType = e::class.simpleName
+                        )
                     }
                 }
             }
@@ -194,8 +222,16 @@ fun ConnectionsWindow(repository: JervisRepository) {
                         showEditDialog = false
                         selectedConnection = null
                         loadConnections()
+                        snackbarHostState.showSnackbar("Connection saved")
                     } catch (e: Exception) {
-                        errorMessage = "Failed to update: ${e.message}"
+                        val msg = "Failed to update: ${e.message}"
+                        errorMessage = msg
+                        snackbarHostState.showSnackbar("Save failed: ${e.message}")
+                        repository.errorLogs.recordUiError(
+                            message = msg,
+                            stackTrace = e.toString(),
+                            causeType = e::class.simpleName
+                        )
                     }
                 }
             }
@@ -217,9 +253,17 @@ fun ConnectionsWindow(repository: JervisRepository) {
                                 connectionIdToDelete = null
                                 showDeleteDialog = false
                                 loadConnections()
+                                snackbarHostState.showSnackbar("Connection deleted")
                             } catch (e: Exception) {
-                                errorMessage = "Failed to delete: ${e.message}"
+                                val msg = "Failed to delete: ${e.message}"
+                                errorMessage = msg
                                 showDeleteDialog = false
+                                snackbarHostState.showSnackbar("Delete failed: ${e.message}")
+                                repository.errorLogs.recordUiError(
+                                    message = msg,
+                                    stackTrace = e.toString(),
+                                    causeType = e::class.simpleName
+                                )
                             }
                         }
                     },
@@ -341,7 +385,10 @@ private fun ConnectionEditDialog(
 
     // HTTP fields
     var baseUrl by remember { mutableStateOf(connection.baseUrl ?: "") }
-    var credentials by remember { mutableStateOf("") }
+    var authType by remember { mutableStateOf((connection.authType ?: "NONE").uppercase()) }
+    var httpBasicUsername by remember { mutableStateOf(connection.httpBasicUsername ?: "") }
+    var httpBasicPassword by remember { mutableStateOf(connection.httpBasicPassword ?: "") }
+    var httpBearerToken by remember { mutableStateOf(connection.httpBearerToken ?: "") }
 
     // Email fields
     var host by remember { mutableStateOf(connection.host ?: "") }
@@ -375,13 +422,21 @@ private fun ConnectionEditDialog(
                             label = { Text("Base URL") },
                             modifier = Modifier.fillMaxWidth()
                         )
-                        OutlinedTextField(
-                            value = credentials,
-                            onValueChange = { credentials = it },
-                            label = { Text("Credentials (optional, leave blank to keep)") },
-                            placeholder = { Text("email@example.com:api_token") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        Text("Auth Type", style = MaterialTheme.typography.labelMedium)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("NONE", "BASIC", "BEARER").forEach { type ->
+                                FilterChip(selected = authType == type, onClick = { authType = type }, label = { Text(type) })
+                            }
+                        }
+                        when (authType) {
+                            "BASIC" -> {
+                                OutlinedTextField(value = httpBasicUsername, onValueChange = { httpBasicUsername = it }, label = { Text("Username") }, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = httpBasicPassword, onValueChange = { httpBasicPassword = it }, label = { Text("Password") }, modifier = Modifier.fillMaxWidth())
+                            }
+                            "BEARER" -> {
+                                OutlinedTextField(value = httpBearerToken, onValueChange = { httpBearerToken = it }, label = { Text("Bearer Token") }, modifier = Modifier.fillMaxWidth())
+                            }
+                        }
                     }
                     "IMAP", "POP3", "SMTP" -> {
                         OutlinedTextField(
@@ -418,7 +473,10 @@ private fun ConnectionEditDialog(
                     val request = ConnectionUpdateRequestDto(
                         name = name,
                         baseUrl = if (connection.type == "HTTP" && baseUrl.isNotBlank()) baseUrl else null,
-                        credentials = if (connection.type == "HTTP" && credentials.isNotBlank()) credentials else null,
+                        authType = if (connection.type == "HTTP") authType else null,
+                        httpBasicUsername = if (connection.type == "HTTP" && authType == "BASIC") httpBasicUsername.ifBlank { null } else null,
+                        httpBasicPassword = if (connection.type == "HTTP" && authType == "BASIC") httpBasicPassword.ifBlank { null } else null,
+                        httpBearerToken = if (connection.type == "HTTP" && authType == "BEARER") httpBearerToken.ifBlank { null } else null,
                         host = if (connection.type != "HTTP" && host.isNotBlank()) host else null,
                         port = if (connection.type != "HTTP" && port.isNotBlank()) port.toIntOrNull() else null,
                         username = if (connection.type != "HTTP" && username.isNotBlank()) username else null,
@@ -450,7 +508,9 @@ private fun ConnectionCreateDialog(
     // HTTP fields
     var baseUrl by remember { mutableStateOf("") }
     var authType by remember { mutableStateOf("NONE") }
-    var credentials by remember { mutableStateOf("") }
+    var httpBasicUsername by remember { mutableStateOf("") }
+    var httpBasicPassword by remember { mutableStateOf("") }
+    var httpBearerToken by remember { mutableStateOf("") }
 
     // Email fields
     var host by remember { mutableStateOf("") }
@@ -496,13 +556,21 @@ private fun ConnectionCreateDialog(
                             placeholder = { Text("https://example.com") },
                             modifier = Modifier.fillMaxWidth()
                         )
-                        OutlinedTextField(
-                            value = credentials,
-                            onValueChange = { credentials = it },
-                            label = { Text("Credentials (email:token)") },
-                            placeholder = { Text("email@example.com:api_token") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        Text("Auth Type", style = MaterialTheme.typography.labelMedium)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("NONE", "BASIC", "BEARER").forEach { type ->
+                                FilterChip(selected = authType == type, onClick = { authType = type }, label = { Text(type) })
+                            }
+                        }
+                        when (authType) {
+                            "BASIC" -> {
+                                OutlinedTextField(value = httpBasicUsername, onValueChange = { httpBasicUsername = it }, label = { Text("Username") }, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = httpBasicPassword, onValueChange = { httpBasicPassword = it }, label = { Text("Password") }, modifier = Modifier.fillMaxWidth())
+                            }
+                            "BEARER" -> {
+                                OutlinedTextField(value = httpBearerToken, onValueChange = { httpBearerToken = it }, label = { Text("Bearer Token") }, modifier = Modifier.fillMaxWidth())
+                            }
+                        }
                     }
                     "IMAP", "POP3", "SMTP" -> {
                         OutlinedTextField(
@@ -543,7 +611,9 @@ private fun ConnectionCreateDialog(
                         name = name,
                         baseUrl = if (connectionType == "HTTP") baseUrl else null,
                         authType = if (connectionType == "HTTP") authType else null,
-                        credentials = if (connectionType == "HTTP") credentials.ifBlank { null } else null,
+                        httpBasicUsername = if (connectionType == "HTTP" && authType == "BASIC") httpBasicUsername.ifBlank { null } else null,
+                        httpBasicPassword = if (connectionType == "HTTP" && authType == "BASIC") httpBasicPassword.ifBlank { null } else null,
+                        httpBearerToken = if (connectionType == "HTTP" && authType == "BEARER") httpBearerToken.ifBlank { null } else null,
                         host = if (connectionType != "HTTP") host else null,
                         port = if (connectionType != "HTTP") port.toIntOrNull() else null,
                         username = if (connectionType != "HTTP") username else null,

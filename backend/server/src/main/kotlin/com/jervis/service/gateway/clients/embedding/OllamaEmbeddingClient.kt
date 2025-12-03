@@ -1,24 +1,25 @@
 package com.jervis.service.gateway.clients.embedding
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
-import com.jervis.configuration.WebClientFactory
+import com.jervis.configuration.KtorClientFactory
 import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.configuration.properties.OllamaProperties
 import com.jervis.service.gateway.clients.EmbeddingProviderClient
 import org.springframework.stereotype.Service
-import org.springframework.web.reactive.function.client.WebClientRequestException
-import org.springframework.web.reactive.function.client.WebClientResponseException
-import org.springframework.web.reactive.function.client.awaitBody
-import org.springframework.web.reactive.function.client.WebClientResponseException.NotFound
+import io.ktor.client.call.body
+import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.ResponseException
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import mu.KotlinLogging
 
 @Service
 class OllamaEmbeddingClient(
-    private val webClientFactory: WebClientFactory,
+    private val ktorClientFactory: KtorClientFactory,
     private val ollamaProps: OllamaProperties,
 ) : EmbeddingProviderClient {
     // Embeddings are CPU-friendly and memory-bound; use the CPU (qualifier) Ollama endpoint
-    private val client by lazy { webClientFactory.getWebClient("ollama.qualifier") }
+    private val client by lazy { ktorClientFactory.getHttpClient("ollama.qualifier") }
     override val provider = ModelProviderEnum.OLLAMA
     private val logger = KotlinLogging.logger {}
     private val defaultKeepAlive: String get() = ollamaProps.keepAlive.default
@@ -38,26 +39,22 @@ class OllamaEmbeddingClient(
         ).filterValues { it != null }
 
         return try {
-            val response =
-                client
-                    .post()
-                    .uri("/api/embeddings")
-                    .bodyValue(body)
-                    .retrieve()
-                    .awaitBody<OllamaEmbeddingResponse>()
+            val response = client.post("/api/embeddings") {
+                setBody(body)
+            }.body<OllamaEmbeddingResponse>()
 
             response.embedding
         } catch (error: Exception) {
             throw when (error) {
-                is WebClientRequestException ->
+                is ClientRequestException ->
                     RuntimeException(
                         "Connection error to Ollama: ${error.message}",
                         error,
                     )
 
-                is WebClientResponseException ->
+                is ResponseException ->
                     RuntimeException(
-                        "Ollama API error: ${error.statusCode} - ${error.responseBodyAsString}",
+                        "Ollama API error: ${error.response.status}",
                         error,
                     )
 
@@ -69,23 +66,16 @@ class OllamaEmbeddingClient(
     private suspend fun ensureModelAvailable(model: String) {
         try {
             val showBody = mapOf("name" to model)
-            client
-                .post()
-                .uri("/api/show")
-                .bodyValue(showBody)
-                .retrieve()
-                .awaitBody<Map<String, Any>>()
+            client.post("/api/show") {
+                setBody(showBody)
+            }.body<Map<String, Any>>()
             logger.debug { "Ollama embedding model available: $model" }
-        } catch (e: WebClientResponseException) {
-            logger.info { "Embedding model '$model' not present (status=${e.statusCode}). Pulling before first use..." }
+        } catch (e: ResponseException) {
+            logger.info { "Embedding model '$model' not present (status=${e.response.status}). Pulling before first use..." }
             val body = mapOf("name" to model)
-            val resp =
-                client
-                    .post()
-                    .uri("/api/pull")
-                    .bodyValue(body)
-                    .retrieve()
-                    .awaitBody<Map<String, Any>>()
+            val resp = client.post("/api/pull") {
+                setBody(body)
+            }.body<Map<String, Any>>()
             logger.info { "Ollama pull for embedding model completed: $model -> $resp" }
         } catch (e: Exception) {
             logger.warn(e) { "Failed to ensure embedding model '$model' is available (attempted pull if needed)" }

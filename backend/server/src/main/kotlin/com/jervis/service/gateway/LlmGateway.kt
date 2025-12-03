@@ -32,7 +32,7 @@ class LlmGateway(
     private val logger = KotlinLogging.logger {}
 
     /**
-     * Main entry point for LLM calls with strict JSON validation.
+     * The main entry point for LLM calls with strict JSON validation.
      * Uses enhanced prompt building and eliminates all fallback mechanisms.
      * Returns both think content and parsed JSON result.
      */
@@ -51,25 +51,21 @@ class LlmGateway(
             buildMap {
                 putAll(mappingValue)
 
-                // Add J.E.R.V.I.S. identity and core principles
                 put("assistantIdentity", "J.E.R.V.I.S.")
                 put(
                     "assistantRole",
                     """
                     You are J.E.R.V.I.S. - Just Enough Resources Very Intelligent System.
-
                     CORE PRINCIPLES:
                     1. UNDERSTAND before ACT - Never execute without understanding context
                     2. CONTEXT is KING - Every action must respect existing patterns and architecture
                     3. GUIDE, don't FORCE - Suggest options with trade-offs, explain reasoning
                     4. PRESERVE CONTINUITY - Maintain architectural consistency
                     5. MINIMAL INTERVENTION - Do the least necessary, explain why
-
                     You are NOT just a code generator. You are a SYSTEM ADVISOR who understands the complete picture.
                     """.trimIndent(),
                 )
 
-                // Inject essential temporal context for all LLM calls
                 val now = LocalDateTime.now()
                 put("currentDate", now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")))
                 put("tomorrowDate", now.plusDays(1).format(DateTimeFormatter.ofPattern("yyyy-MM-dd")))
@@ -108,7 +104,6 @@ class LlmGateway(
 
         check(candidates.isNotEmpty()) { "No LLM candidates configured for $type" }
 
-        // Check if context exceeds maximum available model limit
         val maxTokenLimit = candidates.mapNotNull { it.contextLength }.maxOrNull() ?: 16000
 
         if (estimatedTokens > maxTokenLimit) {
@@ -117,8 +112,8 @@ class LlmGateway(
                     "${it.provider}:${it.model} (${it.contextLength ?: "unknown"} tokens)"
                 }
             logger.error {
-                "Context size ($estimatedTokens tokens) exceeds maximum available model capacity ($maxTokenLimit tokens) for type: $type. " +
-                    "Available candidates: $candidateDetails. " +
+                "Context size ($estimatedTokens tokens) exceeds maximum available model capacity " +
+                    "($maxTokenLimit tokens) for type: $type. Available candidates: $candidateDetails. " +
                     "Context must be reduced or a larger model must be configured."
             }
             throw IllegalStateException(
@@ -127,12 +122,9 @@ class LlmGateway(
             )
         }
 
-        // Try candidates sequentially with smart failover
-        // If context overflow detected, skip to next larger model automatically
         for ((index, candidate) in candidates.withIndex()) {
             val candidateContextLimit = candidate.contextLength ?: 16000
 
-            // Skip candidates that can't handle the estimated tokens
             if (estimatedTokens > candidateContextLimit) {
                 logger.info {
                     "Skipping ${candidate.provider}:${candidate.model} - estimated tokens ($estimatedTokens) exceed model capacity ($candidateContextLimit)"
@@ -183,7 +175,7 @@ class LlmGateway(
                         "Context overflow detected for ${candidate.provider}:${candidate.model}. " +
                             "Attempting failover to larger model if available."
                     }
-                    // Continue to next candidate (should be larger model)
+                    // Continue to the next candidate (should be a larger model)
                     if (index == candidates.size - 1) {
                         throw IllegalStateException(
                             "Context overflow on final candidate ${candidate.provider}:${candidate.model}. " +
@@ -196,7 +188,7 @@ class LlmGateway(
 
                 logger.error { "LLM call failed for provider=${candidate.provider} model=${candidate.model}: ${e.message}" }
 
-                // Continue to next candidate on any error
+                // Continue to the next candidate on any error
                 if (index == candidates.size - 1) {
                     throw IllegalStateException("All LLM candidates failed for $type. Last error: ${e.message}", e)
                 }

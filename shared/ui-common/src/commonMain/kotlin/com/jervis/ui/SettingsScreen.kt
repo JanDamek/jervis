@@ -1,6 +1,7 @@
 package com.jervis.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,6 +11,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
 import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.GitConfigDto
@@ -21,7 +30,9 @@ import com.jervis.domain.git.GitProviderEnum
 import com.jervis.domain.git.GitAuthTypeEnum
 import com.jervis.domain.language.LanguageEnum
 import com.jervis.repository.JervisRepository
+// (imports above already include connection DTOs)
 import kotlinx.coroutines.launch
+import com.jervis.ui.util.pickTextFileContent
 
 /**
  * Settings Screen - Configuration for runtime values
@@ -39,13 +50,20 @@ fun SettingsScreen(
     repository: JervisRepository,
     onBack: () -> Unit
 ) {
+    val focusManager = LocalFocusManager.current
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Clients", "Projects")
+    val tabs = listOf("Clients", "Projects", "Connections")
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
+            .onPreviewKeyEvent { e ->
+                if (e.type == KeyEventType.KeyDown && e.key == Key.Tab) {
+                    focusManager.moveFocus(if (e.isShiftPressed) FocusDirection.Previous else FocusDirection.Next)
+                    true
+                } else false
+            }
     ) {
         // Header
         Row(
@@ -78,6 +96,7 @@ fun SettingsScreen(
         when (selectedTab) {
             0 -> ClientsTabContent(repository)
             1 -> ProjectsTabContent(repository)
+            2 -> ConnectionsTabContent(repository)
         }
     }
 }
@@ -91,6 +110,7 @@ private fun ClientsTabContent(repository: JervisRepository) {
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var showCreateDialog by remember { mutableStateOf(false) }
+    // no separate create connection dialog here
     var selectedClient by remember { mutableStateOf<ClientDto?>(null) }
     var showEditDialog by remember { mutableStateOf(false) }
 
@@ -104,6 +124,11 @@ private fun ClientsTabContent(repository: JervisRepository) {
                 projects = repository.projects.getAllProjects()
             } catch (e: Exception) {
                 error = "Failed to load clients: ${e.message}"
+                repository.errorLogs.recordUiError(
+                    message = error!!,
+                    stackTrace = e.toString(),
+                    causeType = e::class.simpleName
+                )
             } finally {
                 loading = false
             }
@@ -152,6 +177,108 @@ private fun ClientsTabContent(repository: JervisRepository) {
                         )
                     }
                 }
+
+                Spacer(Modifier.height(16.dp))
+
+                // Inline overview of all connections (visibility in Settings window)
+                ConnectionsOverviewPanel(
+                    connections = connections,
+                    clients = clients,
+                    projects = projects,
+                    onCreateConnection = { req ->
+                        scope.launch {
+                            try {
+                                repository.connections.createConnection(req)
+                                connections = repository.connections.listConnections()
+                            } catch (e: Exception) {
+                                error = "Failed to create connection: ${e.message}"
+                                repository.errorLogs.recordUiError(
+                                    message = error!!,
+                                    stackTrace = e.toString(),
+                                    causeType = e::class.simpleName
+                                )
+                            }
+                        }
+                    },
+                    onTestConnection = { id ->
+                        scope.launch {
+                            try {
+                                val result = repository.connections.testConnection(id)
+                                if (result.success) {
+                                    repository.connections.updateConnection(
+                                        id,
+                                        com.jervis.dto.connection.ConnectionUpdateRequestDto(
+                                            state = com.jervis.dto.connection.ConnectionStateEnum.VALID
+                                        )
+                                    )
+                                    connections = repository.connections.listConnections()
+                                }
+                            } catch (e: Exception) {
+                                error = "Failed to test connection: ${e.message}"
+                                repository.errorLogs.recordUiError(
+                                    message = error!!,
+                                    stackTrace = e.toString(),
+                                    causeType = e::class.simpleName
+                                )
+                            }
+                        }
+                    },
+                    onEditConnection = { id, updateReq, onResult ->
+                        scope.launch {
+                            try {
+                                repository.connections.updateConnection(id, updateReq)
+                                connections = repository.connections.listConnections()
+                                onResult(true, null)
+                            } catch (e: Exception) {
+                                error = "Failed to update connection: ${e.message}"
+                                repository.errorLogs.recordUiError(
+                                    message = error!!,
+                                    stackTrace = e.toString(),
+                                    causeType = e::class.simpleName
+                                )
+                                onResult(false, e.message)
+                            }
+                        }
+                    },
+                    onDuplicate = { conn ->
+                        scope.launch {
+                            try {
+                                val req = com.jervis.dto.connection.ConnectionCreateRequestDto(
+                                    type = conn.type,
+                                    name = conn.name + " (copy)",
+                                    state = com.jervis.dto.connection.ConnectionStateEnum.NEW,
+                                    baseUrl = conn.baseUrl,
+                                    authType = conn.authType,
+                                    httpBasicUsername = conn.httpBasicUsername,
+                                    httpBasicPassword = conn.httpBasicPassword,
+                                    httpBearerToken = conn.httpBearerToken,
+                                    timeoutMs = conn.timeoutMs,
+                                    host = conn.host,
+                                    port = conn.port,
+                                    username = conn.username,
+                                    password = conn.password,
+                                    useSsl = conn.useSsl,
+                                    useTls = conn.useTls,
+                                    authorizationUrl = conn.authorizationUrl,
+                                    tokenUrl = conn.tokenUrl,
+                                    clientId = conn.clientId,
+                                    clientSecret = conn.clientSecret,
+                                    redirectUri = conn.redirectUri,
+                                    scope = conn.scope,
+                                )
+                                repository.connections.createConnection(req)
+                                connections = repository.connections.listConnections()
+                            } catch (e: Exception) {
+                                error = "Failed to duplicate connection: ${e.message}"
+                                repository.errorLogs.recordUiError(
+                                    message = error!!,
+                                    stackTrace = e.toString(),
+                                    causeType = e::class.simpleName
+                                )
+                            }
+                        }
+                    }
+                )
             }
         }
     }
@@ -160,7 +287,7 @@ private fun ClientsTabContent(repository: JervisRepository) {
         ClientCreateDialog(
             connections = connections,
             onDismiss = { showCreateDialog = false },
-            onCreate = { name, connectionId ->
+            onCreate = { name, connectionId, onResult ->
                 scope.launch {
                     try {
                         val newClient = ClientDto(
@@ -170,8 +297,15 @@ private fun ClientsTabContent(repository: JervisRepository) {
                         repository.clients.createClient(newClient)
                         showCreateDialog = false
                         loadClients()
+                        onResult(true, null)
                     } catch (e: Exception) {
                         error = "Failed to create client: ${e.message}"
+                        repository.errorLogs.recordUiError(
+                            message = error!!,
+                            stackTrace = e.toString(),
+                            causeType = e::class.simpleName
+                        )
+                        onResult(false, e.message)
                     }
                 }
             }
@@ -184,6 +318,64 @@ private fun ClientsTabContent(repository: JervisRepository) {
             connections = connections,
             clients = clients,
             projects = projects,
+            onCreateConnection = { req, onCreated ->
+                scope.launch {
+                    try {
+                        val created = repository.connections.createConnection(req)
+                        onCreated(created.id)
+                        connections = repository.connections.listConnections()
+                    } catch (e: Exception) {
+                        error = "Failed to create connection: ${e.message}"
+                        repository.errorLogs.recordUiError(
+                            message = error!!,
+                            stackTrace = e.toString(),
+                            causeType = e::class.simpleName
+                        )
+                    }
+                }
+            },
+            onTestConnection = { id, onResult ->
+                scope.launch {
+                    try {
+                        val result = repository.connections.testConnection(id)
+                        if (result.success) {
+                            repository.connections.updateConnection(
+                                id,
+                                com.jervis.dto.connection.ConnectionUpdateRequestDto(
+                                    state = com.jervis.dto.connection.ConnectionStateEnum.VALID
+                                )
+                            )
+                            connections = repository.connections.listConnections()
+                        }
+                        onResult(result.success)
+                    } catch (e: Exception) {
+                        error = "Failed to test connection: ${e.message}"
+                        repository.errorLogs.recordUiError(
+                            message = error!!,
+                            stackTrace = e.toString(),
+                            causeType = e::class.simpleName
+                        )
+                        onResult(false)
+                    }
+                }
+            },
+            onUpdateConnection = { id, req, onResult ->
+                scope.launch {
+                    try {
+                        repository.connections.updateConnection(id, req)
+                        connections = repository.connections.listConnections()
+                        onResult(true, null)
+                    } catch (e: Exception) {
+                        error = "Failed to update connection: ${e.message}"
+                        repository.errorLogs.recordUiError(
+                            message = error!!,
+                            stackTrace = e.toString(),
+                            causeType = e::class.simpleName
+                        )
+                        onResult(false, e.message)
+                    }
+                }
+            },
             onDuplicate = { conn, onDuplicated ->
                 scope.launch {
                     try {
@@ -193,7 +385,9 @@ private fun ClientsTabContent(repository: JervisRepository) {
                             state = ConnectionStateEnum.NEW,
                             baseUrl = conn.baseUrl,
                             authType = conn.authType,
-                            credentials = conn.credentials,
+                            httpBasicUsername = conn.httpBasicUsername,
+                            httpBasicPassword = conn.httpBasicPassword,
+                            httpBearerToken = conn.httpBearerToken,
                             timeoutMs = conn.timeoutMs,
                             host = conn.host,
                             port = conn.port,
@@ -214,6 +408,11 @@ private fun ClientsTabContent(repository: JervisRepository) {
                         connections = repository.connections.listConnections()
                     } catch (e: Exception) {
                         error = "Failed to duplicate connection: ${e.message}"
+                        repository.errorLogs.recordUiError(
+                            message = error!!,
+                            stackTrace = e.toString(),
+                            causeType = e::class.simpleName
+                        )
                     }
                 }
             },
@@ -230,6 +429,11 @@ private fun ClientsTabContent(repository: JervisRepository) {
                         loadClients()
                     } catch (e: Exception) {
                         error = "Failed to update client: ${e.message}"
+                        repository.errorLogs.recordUiError(
+                            message = error!!,
+                            stackTrace = e.toString(),
+                            causeType = e::class.simpleName
+                        )
                     }
                 }
             }
@@ -290,6 +494,11 @@ private fun ProjectsTabContent(repository: JervisRepository) {
                 connections = repository.connections.listConnections()
             } catch (e: Exception) {
                 error = "Failed to load projects: ${e.message}"
+                repository.errorLogs.recordUiError(
+                    message = error!!,
+                    stackTrace = e.toString(),
+                    causeType = e::class.simpleName
+                )
             } finally {
                 loading = false
             }
@@ -347,7 +556,7 @@ private fun ProjectsTabContent(repository: JervisRepository) {
         ProjectCreateDialog(
             clients = clients,
             onDismiss = { showCreateDialog = false },
-            onCreate = { name, clientId ->
+            onCreate = { name, clientId, onResult ->
                 scope.launch {
                     try {
                         val newProject = ProjectDto(
@@ -357,8 +566,15 @@ private fun ProjectsTabContent(repository: JervisRepository) {
                         repository.projects.saveProject(newProject)
                         showCreateDialog = false
                         loadProjects()
+                        onResult(true, null)
                     } catch (e: Exception) {
                         error = "Failed to create project: ${e.message}"
+                        repository.errorLogs.recordUiError(
+                            message = error!!,
+                            stackTrace = e.toString(),
+                            causeType = e::class.simpleName
+                        )
+                        onResult(false, e.message)
                     }
                 }
             }
@@ -371,6 +587,64 @@ private fun ProjectsTabContent(repository: JervisRepository) {
             clients = clients,
             connections = connections,
             allProjects = projects,
+            onCreateConnection = { req, onCreated ->
+                scope.launch {
+                    try {
+                        val created = repository.connections.createConnection(req)
+                        onCreated(created.id)
+                        connections = repository.connections.listConnections()
+                    } catch (e: Exception) {
+                        error = "Failed to create connection: ${e.message}"
+                        repository.errorLogs.recordUiError(
+                            message = error!!,
+                            stackTrace = e.toString(),
+                            causeType = e::class.simpleName
+                        )
+                    }
+                }
+            },
+            onTestConnection = { id, onResult ->
+                scope.launch {
+                    try {
+                        val result = repository.connections.testConnection(id)
+                        if (result.success) {
+                            repository.connections.updateConnection(
+                                id,
+                                com.jervis.dto.connection.ConnectionUpdateRequestDto(
+                                    state = com.jervis.dto.connection.ConnectionStateEnum.VALID
+                                )
+                            )
+                            connections = repository.connections.listConnections()
+                        }
+                        onResult(result.success)
+                    } catch (e: Exception) {
+                        error = "Failed to test connection: ${e.message}"
+                        repository.errorLogs.recordUiError(
+                            message = error!!,
+                            stackTrace = e.toString(),
+                            causeType = e::class.simpleName
+                        )
+                        onResult(false)
+                    }
+                }
+            },
+            onUpdateConnection = { id, req, onResult ->
+                scope.launch {
+                    try {
+                        repository.connections.updateConnection(id, req)
+                        connections = repository.connections.listConnections()
+                        onResult(true, null)
+                    } catch (e: Exception) {
+                        error = "Failed to update connection: ${e.message}"
+                        repository.errorLogs.recordUiError(
+                            message = error!!,
+                            stackTrace = e.toString(),
+                            causeType = e::class.simpleName
+                        )
+                        onResult(false, e.message)
+                    }
+                }
+            },
             onDuplicate = { conn, onDuplicated ->
                 scope.launch {
                     try {
@@ -380,7 +654,9 @@ private fun ProjectsTabContent(repository: JervisRepository) {
                             state = ConnectionStateEnum.NEW,
                             baseUrl = conn.baseUrl,
                             authType = conn.authType,
-                            credentials = conn.credentials,
+                            httpBasicUsername = conn.httpBasicUsername,
+                            httpBasicPassword = conn.httpBasicPassword,
+                            httpBearerToken = conn.httpBearerToken,
                             timeoutMs = conn.timeoutMs,
                             host = conn.host,
                             port = conn.port,
@@ -400,6 +676,11 @@ private fun ProjectsTabContent(repository: JervisRepository) {
                         connections = repository.connections.listConnections()
                     } catch (e: Exception) {
                         error = "Failed to duplicate connection: ${e.message}"
+                        repository.errorLogs.recordUiError(
+                            message = error!!,
+                            stackTrace = e.toString(),
+                            causeType = e::class.simpleName
+                        )
                     }
                 }
             },
@@ -410,12 +691,17 @@ private fun ProjectsTabContent(repository: JervisRepository) {
             onUpdate = { updatedProject: ProjectDto ->
                 scope.launch {
                     try {
-                        repository.projects.saveProject(updatedProject)
+                        repository.projects.updateProject(updatedProject)
                         showEditDialog = false
                         selectedProject = null
                         loadProjects()
                     } catch (e: Exception) {
                         error = "Failed to update project: ${e.message}"
+                        repository.errorLogs.recordUiError(
+                            message = error!!,
+                            stackTrace = e.toString(),
+                            causeType = e::class.simpleName
+                        )
                     }
                 }
             }
@@ -462,14 +748,16 @@ private fun ProjectCard(project: ProjectDto, clients: List<ClientDto>, onClick: 
 private fun ClientCreateDialog(
     connections: List<ConnectionResponseDto>,
     onDismiss: () -> Unit,
-    onCreate: (name: String, connectionId: String?) -> Unit
+    onCreate: (name: String, connectionId: String?, onResult: (Boolean, String?) -> Unit) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var selectedConnectionId by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf(false) }
+    var isSaving by remember { mutableStateOf(false) }
+    var errorText by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isSaving) onDismiss() },
         title = { Text("Create Client") },
         text = {
             Column(
@@ -480,7 +768,8 @@ private fun ClientCreateDialog(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Client Name") },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isSaving
                 )
 
                 Text("Connection (optional):", style = MaterialTheme.typography.labelMedium)
@@ -494,7 +783,7 @@ private fun ClientCreateDialog(
                 } else {
                     ExposedDropdownMenuBox(
                         expanded = expanded,
-                        onExpandedChange = { expanded = it }
+                        onExpandedChange = { if (!isSaving) expanded = it }
                     ) {
                         OutlinedTextField(
                             value = connections.firstOrNull { it.id == selectedConnectionId }?.name ?: "None",
@@ -502,7 +791,8 @@ private fun ClientCreateDialog(
                             readOnly = true,
                             label = { Text("Select Connection") },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                            modifier = Modifier.fillMaxWidth().menuAnchor()
+                            modifier = Modifier.fillMaxWidth().menuAnchor(),
+                            enabled = !isSaving
                         )
                         ExposedDropdownMenu(
                             expanded = expanded,
@@ -527,18 +817,35 @@ private fun ClientCreateDialog(
                         }
                     }
                 }
+
+                if (isSaving) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Text("Saving…")
+                    }
+                }
+                if (errorText != null) {
+                    Text(errorText!!, color = MaterialTheme.colorScheme.error)
+                }
             }
         },
         confirmButton = {
             Button(
-                onClick = { onCreate(name, selectedConnectionId) },
-                enabled = name.isNotBlank()
-            ) {
-                Text("Create")
-            }
+                onClick = {
+                    isSaving = true
+                    errorText = null
+                    onCreate(name, selectedConnectionId) { ok, err ->
+                        if (!ok) {
+                            isSaving = false
+                            errorText = err ?: "Failed to save"
+                        }
+                    }
+                },
+                enabled = name.isNotBlank() && !isSaving
+            ) { Text("Save") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = onDismiss, enabled = !isSaving) {
                 Text("Cancel")
             }
         }
@@ -550,14 +857,16 @@ private fun ClientCreateDialog(
 private fun ProjectCreateDialog(
     clients: List<ClientDto>,
     onDismiss: () -> Unit,
-    onCreate: (name: String, clientId: String) -> Unit
+    onCreate: (name: String, clientId: String, onResult: (Boolean, String?) -> Unit) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var selectedClientId by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf(false) }
+    var isSaving by remember { mutableStateOf(false) }
+    var errorText by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isSaving) onDismiss() },
         title = { Text("Create Project") },
         text = {
             Column(
@@ -568,7 +877,8 @@ private fun ProjectCreateDialog(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Project Name") },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isSaving
                 )
 
                 Text("Client:", style = MaterialTheme.typography.labelMedium)
@@ -582,7 +892,7 @@ private fun ProjectCreateDialog(
                 } else {
                     ExposedDropdownMenuBox(
                         expanded = expanded,
-                        onExpandedChange = { expanded = it }
+                        onExpandedChange = { if (!isSaving) expanded = it }
                     ) {
                         OutlinedTextField(
                             value = clients.firstOrNull { it.id == selectedClientId }?.name ?: "Select client",
@@ -590,7 +900,8 @@ private fun ProjectCreateDialog(
                             readOnly = true,
                             label = { Text("Client") },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                            modifier = Modifier.fillMaxWidth().menuAnchor()
+                            modifier = Modifier.fillMaxWidth().menuAnchor(),
+                            enabled = !isSaving
                         )
                         ExposedDropdownMenu(
                             expanded = expanded,
@@ -608,20 +919,38 @@ private fun ProjectCreateDialog(
                         }
                     }
                 }
+                if (isSaving) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Text("Saving…")
+                    }
+                }
+                if (errorText != null) {
+                    Text(errorText!!, color = MaterialTheme.colorScheme.error)
+                }
             }
         },
         confirmButton = {
             Button(
-                onClick = { 
-                    selectedClientId?.let { onCreate(name, it) }
+                onClick = {
+                    selectedClientId?.let {
+                        isSaving = true
+                        errorText = null
+                        onCreate(name, it) { ok, err ->
+                            if (!ok) {
+                                isSaving = false
+                                errorText = err ?: "Failed to save"
+                            }
+                        }
+                    }
                 },
-                enabled = name.isNotBlank() && selectedClientId != null
+                enabled = name.isNotBlank() && selectedClientId != null && !isSaving
             ) {
                 Text("Create")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = onDismiss, enabled = !isSaving) {
                 Text("Cancel")
             }
         }
@@ -636,12 +965,16 @@ private fun ClientEditDialog(
     connections: List<ConnectionResponseDto>,
     clients: List<ClientDto>,
     projects: List<ProjectDto>,
+    onCreateConnection: ((ConnectionCreateRequestDto, (String) -> Unit) -> Unit)? = null,
+    onTestConnection: ((String, (Boolean) -> Unit) -> Unit)? = null,
+    onUpdateConnection: ((String, com.jervis.dto.connection.ConnectionUpdateRequestDto, (Boolean, String?) -> Unit) -> Unit)? = null,
     onDuplicate: (conn: ConnectionResponseDto, onDuplicated: (newId: String) -> Unit) -> Unit,
     onDismiss: () -> Unit,
     onUpdate: (ClientDto) -> Unit
 ) {
     var name by remember { mutableStateOf(client.name) }
-    var selectedConnectionIds by remember { mutableStateOf(client.connectionIds.toMutableSet()) }
+    // Use immutable Set and always assign a new instance to trigger recomposition
+    var selectedConnectionIds by remember { mutableStateOf(client.connectionIds.toSet()) }
     var gitProvider by remember { mutableStateOf<GitProviderEnum?>(client.gitProvider) }
     var gitAuthType by remember { mutableStateOf<GitAuthTypeEnum?>(client.gitAuthType) }
     var gitUserName by remember { mutableStateOf(client.gitConfig?.gitUserName ?: "") }
@@ -670,6 +1003,8 @@ private fun ClientEditDialog(
     var authExpanded by remember { mutableStateOf(false) }
     var langExpanded by remember { mutableStateOf(false) }
     var projectExpanded by remember { mutableStateOf(false) }
+
+    var showCreateConnectionDialog by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -746,17 +1081,63 @@ private fun ClientEditDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // Git credentials – dev mode: plaintext visible
                 Text("Git Credentials (plaintext):", style = MaterialTheme.typography.labelMedium)
-                OutlinedTextField(value = sshPrivateKey, onValueChange = { sshPrivateKey = it }, label = { Text("SSH Private Key") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = sshPublicKey, onValueChange = { sshPublicKey = it }, label = { Text("SSH Public Key") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = sshPassphrase, onValueChange = { sshPassphrase = it }, label = { Text("SSH Passphrase") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = httpsToken, onValueChange = { httpsToken = it }, label = { Text("HTTPS Token") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = httpsUsername, onValueChange = { httpsUsername = it }, label = { Text("HTTPS Username") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = httpsPassword, onValueChange = { httpsPassword = it }, label = { Text("HTTPS Password") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = gpgPrivateKey, onValueChange = { gpgPrivateKey = it }, label = { Text("GPG Private Key") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = gpgPublicKey, onValueChange = { gpgPublicKey = it }, label = { Text("GPG Public Key") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = gpgPassphrase, onValueChange = { gpgPassphrase = it }, label = { Text("GPG Passphrase") }, modifier = Modifier.fillMaxWidth())
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = sshPrivateKey,
+                        onValueChange = { sshPrivateKey = it },
+                        label = { Text("SSH Private Key") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { pickTextFileContent("Load SSH Private Key")?.let { sshPrivateKey = it } }) { Text("Load from file") }
+                    }
+
+                    OutlinedTextField(
+                        value = sshPublicKey,
+                        onValueChange = { sshPublicKey = it },
+                        label = { Text("SSH Public Key") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { pickTextFileContent("Load SSH Public Key")?.let { sshPublicKey = it } }) { Text("Load from file") }
+                    }
+
+                    OutlinedTextField(
+                        value = sshPassphrase,
+                        onValueChange = { sshPassphrase = it },
+                        label = { Text("SSH Passphrase") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Divider()
+
+                    OutlinedTextField(value = httpsToken, onValueChange = { httpsToken = it }, label = { Text("HTTPS Token") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = httpsUsername, onValueChange = { httpsUsername = it }, label = { Text("HTTPS Username") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = httpsPassword, onValueChange = { httpsPassword = it }, label = { Text("HTTPS Password") }, modifier = Modifier.fillMaxWidth())
+
+                    Divider()
+
+                    OutlinedTextField(
+                        value = gpgPrivateKey,
+                        onValueChange = { gpgPrivateKey = it },
+                        label = { Text("GPG Private Key") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { pickTextFileContent("Load GPG Private Key")?.let { gpgPrivateKey = it } }) { Text("Load from file") }
+                    }
+                    OutlinedTextField(
+                        value = gpgPublicKey,
+                        onValueChange = { gpgPublicKey = it },
+                        label = { Text("GPG Public Key") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { pickTextFileContent("Load GPG Public Key")?.let { gpgPublicKey = it } }) { Text("Load from file") }
+                    }
+                    OutlinedTextField(value = gpgPassphrase, onValueChange = { gpgPassphrase = it }, label = { Text("GPG Passphrase") }, modifier = Modifier.fillMaxWidth())
+                }
 
                 // Language and last selected project
                 ExposedDropdownMenuBox(expanded = langExpanded, onExpandedChange = { langExpanded = it }) {
@@ -793,7 +1174,16 @@ private fun ClientEditDialog(
                     }
                 }
 
-                Text("Connections:", style = MaterialTheme.typography.labelMedium)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Connections:", style = MaterialTheme.typography.labelMedium)
+                    if (onCreateConnection != null) {
+                        TextButton(onClick = { showCreateConnectionDialog = true }) { Text("Create Connection") }
+                    }
+                }
 
                 if (connections.isEmpty()) {
                     Text(
@@ -833,6 +1223,11 @@ private fun ClientEditDialog(
                                     ) {
                                         Column(Modifier.weight(1f)) {
                                             Text("${conn.name} (${conn.type})", style = MaterialTheme.typography.bodyMedium)
+                                            Text(
+                                                text = "State: ${conn.state}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
                                             val subtitle = buildString {
                                                 when (conn.type.uppercase()) {
                                                     "HTTP" -> append(conn.baseUrl ?: "")
@@ -856,19 +1251,48 @@ private fun ClientEditDialog(
 
                                         if (ownerLabel == null || ownedByThisClient) {
                                             val checked = selectedConnectionIds.contains(conn.id)
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Row(
+                                                modifier = Modifier.clickable {
+                                                    selectedConnectionIds = if (checked) selectedConnectionIds - conn.id else selectedConnectionIds + conn.id
+                                                },
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
                                                 Checkbox(
                                                     checked = checked,
                                                     onCheckedChange = { isChecked ->
-                                                        if (isChecked) selectedConnectionIds.add(conn.id) else selectedConnectionIds.remove(conn.id)
+                                                        selectedConnectionIds = if (isChecked) selectedConnectionIds + conn.id else selectedConnectionIds - conn.id
                                                     }
                                                 )
                                                 Text(if (checked) "Attached" else "Attach")
+                                                if (onTestConnection != null) {
+                                                    TextButton(onClick = {
+                                                        onTestConnection.invoke(conn.id) { ok ->
+                                                            // no local state handling required; repository refresh happens at caller
+                                                        }
+                                                    }) { Text("Test") }
+                                                }
+                                                if (onUpdateConnection != null) {
+                                                    var showEdit by remember { mutableStateOf(false) }
+                                                    TextButton(onClick = { showEdit = true }) { Text("Edit") }
+                                                    if (showEdit) {
+                                                        ConnectionEditDialog(
+                                                            connection = conn,
+                                                            onDismiss = { showEdit = false },
+                                                            onSave = { req, onResult ->
+                                                                onUpdateConnection?.invoke(conn.id, req) { ok, err ->
+                                                                    if (ok) showEdit = false
+                                                                    onResult(ok, err)
+                                                                }
+                                                            }
+                                                        )
+                                                    }
+                                                }
                                             }
                                         } else if (!ownedByThisClient) {
                                             Button(onClick = {
                                                 onDuplicate(conn) { newId ->
-                                                    selectedConnectionIds.add(newId)
+                                                    selectedConnectionIds = selectedConnectionIds + newId
                                                 }
                                             }) {
                                                 Text("Duplicate")
@@ -883,6 +1307,18 @@ private fun ClientEditDialog(
                         "Hint: A connection can belong to only one Client or Project. If it’s owned elsewhere, use Duplicate.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                if (showCreateConnectionDialog && onCreateConnection != null) {
+                    ConnectionQuickCreateDialog(
+                        onDismiss = { showCreateConnectionDialog = false },
+                        onCreate = { req ->
+                            onCreateConnection.invoke(req) { newId ->
+                                selectedConnectionIds = selectedConnectionIds + newId
+                                showCreateConnectionDialog = false
+                            }
+                        }
                     )
                 }
             }
@@ -944,11 +1380,488 @@ private fun ClientEditDialog(
 }
 
 @Composable
+private fun ConnectionsOverviewPanel(
+    connections: List<ConnectionResponseDto>,
+    clients: List<ClientDto>,
+    projects: List<ProjectDto>,
+    onCreateConnection: (ConnectionCreateRequestDto) -> Unit,
+    onTestConnection: (String) -> Unit,
+    onEditConnection: (String, com.jervis.dto.connection.ConnectionUpdateRequestDto, (Boolean, String?) -> Unit) -> Unit,
+    onDuplicate: (ConnectionResponseDto) -> Unit,
+) {
+    var showCreate by remember { mutableStateOf(false) }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("All Connections", style = MaterialTheme.typography.titleMedium)
+            TextButton(onClick = { showCreate = true }) { Text("Create Connection") }
+        }
+
+        if (connections.isEmpty()) {
+            Text(
+                "No connections yet",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(connections) { conn ->
+                    val ownerLabel: String? = when {
+                        clients.any { it.connectionIds.contains(conn.id) } -> {
+                            val c = clients.first { it.connectionIds.contains(conn.id) }
+                            "Client: ${c.name}"
+                        }
+                        projects.any { it.connectionIds.contains(conn.id) } -> {
+                            val p = projects.first { it.connectionIds.contains(conn.id) }
+                            "Project: ${p.name}"
+                        }
+                        else -> null
+                    }
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("${conn.name} (${conn.type})", style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        text = "State: ${conn.state}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    val subtitle = buildString {
+                                        when (conn.type.uppercase()) {
+                                            "HTTP" -> append(conn.baseUrl ?: "")
+                                            "IMAP", "POP3", "SMTP" -> append(listOfNotNull(conn.host, conn.username).joinToString(" · "))
+                                            "OAUTH2" -> append(listOfNotNull(conn.authorizationUrl, conn.clientId).joinToString(" · "))
+                                        }
+                                    }
+                                    if (subtitle.isNotBlank()) {
+                                        Text(
+                                            subtitle,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Text(
+                                        ownerLabel ?: "Unattached",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    var showEdit by remember { mutableStateOf(false) }
+                                    TextButton(onClick = { showEdit = true }) { Text("Edit") }
+                                    if (showEdit) {
+                                        ConnectionEditDialog(
+                                            connection = conn,
+                                            onDismiss = { showEdit = false },
+                                            onSave = { updateReq, onResult ->
+                                                onEditConnection(conn.id, updateReq) { ok, err ->
+                                                    if (ok) showEdit = false
+                                                    onResult(ok, err)
+                                                }
+                                            }
+                                        )
+                                    }
+                                    TextButton(onClick = { onTestConnection(conn.id) }) { Text("Test") }
+                                    OutlinedButton(onClick = { onDuplicate(conn) }) { Text("Duplicate") }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (showCreate) {
+            ConnectionQuickCreateDialog(
+                onDismiss = { showCreate = false },
+                onCreate = { req ->
+                    onCreateConnection(req)
+                    showCreate = false
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ConnectionEditDialog(
+    connection: ConnectionResponseDto,
+    onDismiss: () -> Unit,
+    onSave: (com.jervis.dto.connection.ConnectionUpdateRequestDto, (Boolean, String?) -> Unit) -> Unit,
+) {
+    var name by remember { mutableStateOf(connection.name) }
+    var baseUrl by remember { mutableStateOf(connection.baseUrl ?: "") }
+    var authType by remember { mutableStateOf((connection.authType ?: "NONE").uppercase()) }
+    var httpBasicUsername by remember { mutableStateOf(connection.httpBasicUsername ?: "") }
+    var httpBasicPassword by remember { mutableStateOf(connection.httpBasicPassword ?: "") }
+    var httpBearerToken by remember { mutableStateOf(connection.httpBearerToken ?: "") }
+    var timeoutMs by remember { mutableStateOf((connection.timeoutMs ?: 30000).toString()) }
+    var host by remember { mutableStateOf(connection.host ?: "") }
+    var port by remember { mutableStateOf((connection.port ?: 0).toString()) }
+    var username by remember { mutableStateOf(connection.username ?: "") }
+    var password by remember { mutableStateOf(connection.password ?: "") }
+    var useSsl by remember { mutableStateOf(connection.useSsl ?: false) }
+    var useTls by remember { mutableStateOf(connection.useTls ?: false) }
+    var clientSecret by remember { mutableStateOf(connection.clientSecret ?: "") }
+    var isSaving by remember { mutableStateOf(false) }
+    var errorText by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = { if (!isSaving) onDismiss() },
+        title = { Text("Edit Connection (${connection.type})") },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth(), enabled = !isSaving)
+                when (connection.type.uppercase()) {
+                    "HTTP" -> {
+                        OutlinedTextField(value = baseUrl, onValueChange = { baseUrl = it }, label = { Text("Base URL") }, modifier = Modifier.fillMaxWidth(), enabled = !isSaving)
+                        // Auth selector
+                        Text("Auth Type", style = MaterialTheme.typography.labelMedium)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("NONE", "BASIC", "BEARER").forEach { type ->
+                                FilterChip(selected = authType == type, onClick = { if (!isSaving) authType = type }, label = { Text(type) })
+                            }
+                        }
+                        when (authType) {
+                            "BASIC" -> {
+                                OutlinedTextField(value = httpBasicUsername, onValueChange = { httpBasicUsername = it }, label = { Text("Username") }, modifier = Modifier.fillMaxWidth(), enabled = !isSaving)
+                                OutlinedTextField(value = httpBasicPassword, onValueChange = { httpBasicPassword = it }, label = { Text("Password") }, modifier = Modifier.fillMaxWidth(), enabled = !isSaving)
+                            }
+                            "BEARER" -> {
+                                OutlinedTextField(value = httpBearerToken, onValueChange = { httpBearerToken = it }, label = { Text("Bearer Token") }, modifier = Modifier.fillMaxWidth(), enabled = !isSaving)
+                            }
+                        }
+                        OutlinedTextField(value = timeoutMs, onValueChange = { timeoutMs = it }, label = { Text("Timeout (ms)") }, modifier = Modifier.fillMaxWidth(), enabled = !isSaving)
+                    }
+                    "IMAP", "POP3" -> {
+                        OutlinedTextField(value = host, onValueChange = { host = it }, label = { Text("Host") }, modifier = Modifier.fillMaxWidth(), enabled = !isSaving)
+                        OutlinedTextField(value = port, onValueChange = { port = it }, label = { Text("Port") }, modifier = Modifier.fillMaxWidth(), enabled = !isSaving)
+                        OutlinedTextField(value = username, onValueChange = { username = it }, label = { Text("Username") }, modifier = Modifier.fillMaxWidth(), enabled = !isSaving)
+                        OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Password") }, modifier = Modifier.fillMaxWidth(), enabled = !isSaving)
+                        Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = useSsl, onCheckedChange = { if (!isSaving) useSsl = it }); Text("Use SSL") }
+                    }
+                    "SMTP" -> {
+                        OutlinedTextField(value = host, onValueChange = { host = it }, label = { Text("Host") }, modifier = Modifier.fillMaxWidth(), enabled = !isSaving)
+                        OutlinedTextField(value = port, onValueChange = { port = it }, label = { Text("Port") }, modifier = Modifier.fillMaxWidth(), enabled = !isSaving)
+                        OutlinedTextField(value = username, onValueChange = { username = it }, label = { Text("Username") }, modifier = Modifier.fillMaxWidth(), enabled = !isSaving)
+                        OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Password") }, modifier = Modifier.fillMaxWidth(), enabled = !isSaving)
+                        Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = useTls, onCheckedChange = { if (!isSaving) useTls = it }); Text("Use TLS") }
+                    }
+                    "OAUTH2" -> {
+                        OutlinedTextField(value = clientSecret, onValueChange = { clientSecret = it }, label = { Text("Client Secret") }, modifier = Modifier.fillMaxWidth(), enabled = !isSaving)
+                    }
+                }
+
+                if (isSaving) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Text("Saving…")
+                    }
+                }
+                if (errorText != null) {
+                    Text(errorText!!, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val req = com.jervis.dto.connection.ConnectionUpdateRequestDto(
+                    name = name,
+                    baseUrl = if (connection.type.uppercase() == "HTTP") baseUrl else null,
+                    authType = if (connection.type.uppercase() == "HTTP") authType else null,
+                    httpBasicUsername = if (connection.type.uppercase() == "HTTP" && authType == "BASIC") httpBasicUsername.ifBlank { null } else null,
+                    httpBasicPassword = if (connection.type.uppercase() == "HTTP" && authType == "BASIC") httpBasicPassword.ifBlank { null } else null,
+                    httpBearerToken = if (connection.type.uppercase() == "HTTP" && authType == "BEARER") httpBearerToken.ifBlank { null } else null,
+                    timeoutMs = if (connection.type.uppercase() == "HTTP") timeoutMs.toLongOrNull() else null,
+                    host = if (connection.type.uppercase() != "HTTP" && connection.type.uppercase() != "OAUTH2") host else null,
+                    port = if (connection.type.uppercase() != "HTTP" && connection.type.uppercase() != "OAUTH2") port.toIntOrNull() else null,
+                    username = if (connection.type.uppercase() != "HTTP" && connection.type.uppercase() != "OAUTH2") username else null,
+                    password = if (connection.type.uppercase() != "HTTP" && connection.type.uppercase() != "OAUTH2") password.ifBlank { null } else null,
+                    clientSecret = if (connection.type.uppercase() == "OAUTH2") clientSecret.ifBlank { null } else null,
+                )
+                isSaving = true
+                errorText = null
+                onSave(req) { ok, err ->
+                    if (!ok) {
+                        isSaving = false
+                        errorText = err ?: "Failed to save"
+                    }
+                }
+            }, enabled = name.isNotBlank() && !isSaving) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !isSaving) { Text("Cancel") } }
+    )
+}
+
+@Composable
+private fun ConnectionsTabContent(repository: JervisRepository) {
+    val scope = rememberCoroutineScope()
+    var connections by remember { mutableStateOf<List<ConnectionResponseDto>>(emptyList()) }
+    var clients by remember { mutableStateOf<List<ClientDto>>(emptyList()) }
+    var projects by remember { mutableStateOf<List<ProjectDto>>(emptyList()) }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    fun refreshAll() {
+        scope.launch {
+            loading = true
+            error = null
+            try {
+                connections = repository.connections.listConnections()
+                clients = repository.clients.listClients()
+                projects = repository.projects.getAllProjects()
+            } catch (e: Exception) {
+                error = "Failed to load connections: ${e.message}"
+                repository.errorLogs.recordUiError(
+                    message = error!!,
+                    stackTrace = e.toString(),
+                    causeType = e::class.simpleName
+                )
+            } finally {
+                loading = false
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) { refreshAll() }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Connections", style = MaterialTheme.typography.titleMedium)
+            Button(onClick = { refreshAll() }) { Text("Refresh") }
+        }
+        Spacer(Modifier.height(8.dp))
+        when {
+            loading -> CircularProgressIndicator()
+            error != null -> Text(error!!, color = MaterialTheme.colorScheme.error)
+            else -> ConnectionsOverviewPanel(
+                connections = connections,
+                clients = clients,
+                projects = projects,
+                onCreateConnection = { req ->
+                    scope.launch {
+                        try {
+                            repository.connections.createConnection(req)
+                            refreshAll()
+                        } catch (e: Exception) {
+                            error = "Failed to create connection: ${e.message}"
+                            repository.errorLogs.recordUiError(
+                                message = error!!,
+                                stackTrace = e.toString(),
+                                causeType = e::class.simpleName
+                            )
+                        }
+                    }
+                },
+                onTestConnection = { id ->
+                    scope.launch {
+                        try {
+                            val res = repository.connections.testConnection(id)
+                            if (res.success) {
+                                repository.connections.updateConnection(id, com.jervis.dto.connection.ConnectionUpdateRequestDto(state = com.jervis.dto.connection.ConnectionStateEnum.VALID))
+                            }
+                            refreshAll()
+                        } catch (e: Exception) {
+                            error = "Failed to test connection: ${e.message}"
+                            repository.errorLogs.recordUiError(
+                                message = error!!,
+                                stackTrace = e.toString(),
+                                causeType = e::class.simpleName
+                            )
+                        }
+                    }
+                },
+                onEditConnection = { id, updateReq, onResult ->
+                    scope.launch {
+                        try {
+                            repository.connections.updateConnection(id, updateReq)
+                            refreshAll()
+                            onResult(true, null)
+                        } catch (e: Exception) {
+                            error = "Failed to update connection: ${e.message}"
+                            repository.errorLogs.recordUiError(
+                                message = error!!,
+                                stackTrace = e.toString(),
+                                causeType = e::class.simpleName
+                            )
+                            onResult(false, e.message)
+                        }
+                    }
+                },
+                onDuplicate = { conn ->
+                    scope.launch {
+                        try {
+                            val req = ConnectionCreateRequestDto(
+                                type = conn.type,
+                                name = conn.name + " (copy)",
+                                state = ConnectionStateEnum.NEW,
+                                baseUrl = conn.baseUrl,
+                                authType = conn.authType,
+                                httpBasicUsername = conn.httpBasicUsername,
+                                httpBasicPassword = conn.httpBasicPassword,
+                                httpBearerToken = conn.httpBearerToken,
+                                timeoutMs = conn.timeoutMs,
+                                host = conn.host,
+                                port = conn.port,
+                                username = conn.username,
+                                password = conn.password,
+                                useSsl = conn.useSsl,
+                                useTls = conn.useTls,
+                                authorizationUrl = conn.authorizationUrl,
+                                tokenUrl = conn.tokenUrl,
+                                clientId = conn.clientId,
+                                clientSecret = conn.clientSecret,
+                                redirectUri = conn.redirectUri,
+                                scope = conn.scope,
+                            )
+                            repository.connections.createConnection(req)
+                            refreshAll()
+                        } catch (e: Exception) {
+                            error = "Failed to duplicate connection: ${e.message}"
+                            repository.errorLogs.recordUiError(
+                                message = error!!,
+                                stackTrace = e.toString(),
+                                causeType = e::class.simpleName
+                            )
+                        }
+                    }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ConnectionQuickCreateDialog(
+    onDismiss: () -> Unit,
+    onCreate: (ConnectionCreateRequestDto) -> Unit,
+) {
+    var connectionType by remember { mutableStateOf("HTTP") }
+    var name by remember { mutableStateOf("") }
+    var baseUrl by remember { mutableStateOf("") }
+    var authType by remember { mutableStateOf("NONE") }
+    var httpBasicUsername by remember { mutableStateOf("") }
+    var httpBasicPassword by remember { mutableStateOf("") }
+    var httpBearerToken by remember { mutableStateOf("") }
+    var host by remember { mutableStateOf("") }
+    var port by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var useSsl by remember { mutableStateOf(true) }
+    var useTls by remember { mutableStateOf(true) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Create Connection") },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Connection Type:", style = MaterialTheme.typography.labelMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("HTTP", "IMAP", "POP3", "SMTP", "OAUTH2").forEach { type ->
+                        FilterChip(selected = connectionType == type, onClick = { connectionType = type }, label = { Text(type) })
+                    }
+                }
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth())
+
+                when (connectionType) {
+                    "HTTP" -> {
+                        OutlinedTextField(value = baseUrl, onValueChange = { baseUrl = it }, label = { Text("Base URL") }, modifier = Modifier.fillMaxWidth())
+                        Text("Auth Type", style = MaterialTheme.typography.labelMedium)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("NONE", "BASIC", "BEARER").forEach { type ->
+                                FilterChip(selected = authType == type, onClick = { authType = type }, label = { Text(type) })
+                            }
+                        }
+                        when (authType) {
+                            "BASIC" -> {
+                                OutlinedTextField(value = httpBasicUsername, onValueChange = { httpBasicUsername = it }, label = { Text("Username") }, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = httpBasicPassword, onValueChange = { httpBasicPassword = it }, label = { Text("Password") }, modifier = Modifier.fillMaxWidth())
+                            }
+                            "BEARER" -> {
+                                OutlinedTextField(value = httpBearerToken, onValueChange = { httpBearerToken = it }, label = { Text("Bearer Token") }, modifier = Modifier.fillMaxWidth())
+                            }
+                        }
+                    }
+                    "IMAP", "POP3" -> {
+                        OutlinedTextField(value = host, onValueChange = { host = it }, label = { Text("Host") }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = port, onValueChange = { port = it }, label = { Text("Port") }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = username, onValueChange = { username = it }, label = { Text("Username") }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Password") }, modifier = Modifier.fillMaxWidth())
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = useSsl, onCheckedChange = { useSsl = it })
+                            Text("Use SSL")
+                        }
+                    }
+                    "SMTP" -> {
+                        OutlinedTextField(value = host, onValueChange = { host = it }, label = { Text("Host") }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = port, onValueChange = { port = it }, label = { Text("Port") }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = username, onValueChange = { username = it }, label = { Text("Username") }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Password") }, modifier = Modifier.fillMaxWidth())
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = useTls, onCheckedChange = { useTls = it })
+                            Text("Use TLS")
+                        }
+                    }
+                    "OAUTH2" -> {
+                        // Minimal seed – advanced fields can be added later if needed
+                        OutlinedTextField(value = baseUrl, onValueChange = { baseUrl = it }, label = { Text("Auth Server Base URL (optional)") }, modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val req = ConnectionCreateRequestDto(
+                    type = connectionType,
+                    name = name,
+                    baseUrl = if (connectionType == "HTTP") baseUrl else null,
+                    authType = if (connectionType == "HTTP") authType else null,
+                    httpBasicUsername = if (connectionType == "HTTP" && authType == "BASIC") httpBasicUsername.ifBlank { null } else null,
+                    httpBasicPassword = if (connectionType == "HTTP" && authType == "BASIC") httpBasicPassword.ifBlank { null } else null,
+                    httpBearerToken = if (connectionType == "HTTP" && authType == "BEARER") httpBearerToken.ifBlank { null } else null,
+                    host = if (connectionType != "HTTP" && connectionType != "OAUTH2") host else null,
+                    port = if (connectionType != "HTTP" && connectionType != "OAUTH2") port.toIntOrNull() else null,
+                    username = if (connectionType != "HTTP" && connectionType != "OAUTH2") username else null,
+                    password = if (connectionType != "HTTP" && connectionType != "OAUTH2") password.ifBlank { null } else null,
+                    useSsl = if (connectionType == "IMAP" || connectionType == "POP3") useSsl else null,
+                    useTls = if (connectionType == "SMTP") useTls else null,
+                )
+                onCreate(req)
+            }, enabled = name.isNotBlank() && (
+                (connectionType == "HTTP" && baseUrl.isNotBlank()) ||
+                (connectionType == "IMAP" || connectionType == "POP3" || connectionType == "SMTP") && host.isNotBlank() && port.isNotBlank() && username.isNotBlank()
+            )) { Text("Create") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
 private fun ProjectEditDialog(
     project: ProjectDto,
     clients: List<ClientDto>,
     connections: List<ConnectionResponseDto>,
     allProjects: List<ProjectDto>,
+    onCreateConnection: ((ConnectionCreateRequestDto, (String) -> Unit) -> Unit)? = null,
+    onTestConnection: ((String, (Boolean) -> Unit) -> Unit)? = null,
+    onUpdateConnection: ((String, com.jervis.dto.connection.ConnectionUpdateRequestDto, (Boolean, String?) -> Unit) -> Unit)? = null,
     onDuplicate: (conn: ConnectionResponseDto, onDuplicated: (newId: String) -> Unit) -> Unit,
     onDismiss: () -> Unit,
     onUpdate: (ProjectDto) -> Unit
@@ -956,7 +1869,9 @@ private fun ProjectEditDialog(
     var name by remember { mutableStateOf(project.name ?: "") }
     var selectedClientId by remember { mutableStateOf(project.clientId) }
     var clientExpanded by remember { mutableStateOf(false) }
-    var selectedConnectionIds by remember { mutableStateOf(project.connectionIds.toMutableSet()) }
+    // Use immutable Set and always assign a new instance to trigger recomposition on change
+    var selectedConnectionIds by remember { mutableStateOf(project.connectionIds.toSet()) }
+    var showCreateConnectionDialog by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1012,7 +1927,16 @@ private fun ProjectEditDialog(
                     }
                 }
 
-                Text("Connections:", style = MaterialTheme.typography.labelMedium)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Connections:", style = MaterialTheme.typography.labelMedium)
+                    if (onCreateConnection != null) {
+                        TextButton(onClick = { showCreateConnectionDialog = true }) { Text("Create Connection") }
+                    }
+                }
                 if (connections.isEmpty()) {
                     Text(
                         "No connections available",
@@ -1074,19 +1998,81 @@ private fun ProjectEditDialog(
 
                                         if (ownerLabel == null || ownedByThisProject) {
                                             val checked = selectedConnectionIds.contains(conn.id)
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                            // Local states for visible test progress/result per connection row
+                                            var testInProgress by remember { mutableStateOf(false) }
+                                            var testResult by remember { mutableStateOf<Boolean?>(null) }
+
+                                            Row(
+                                                modifier = Modifier.clickable {
+                                                    selectedConnectionIds = if (checked) selectedConnectionIds - conn.id else selectedConnectionIds + conn.id
+                                                },
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
                                                 Checkbox(
                                                     checked = checked,
                                                     onCheckedChange = { isChecked ->
-                                                        if (isChecked) selectedConnectionIds.add(conn.id) else selectedConnectionIds.remove(conn.id)
+                                                        selectedConnectionIds = if (isChecked) selectedConnectionIds + conn.id else selectedConnectionIds - conn.id
                                                     }
                                                 )
                                                 Text(if (checked) "Attached" else "Attach")
+                                                if (onTestConnection != null) {
+                                                    TextButton(onClick = {
+                                                        testInProgress = true
+                                                        onTestConnection.invoke(conn.id) { ok ->
+                                                            testInProgress = false
+                                                            testResult = ok
+                                                        }
+                                                    }) { Text("Test") }
+                                                }
+                                                if (onUpdateConnection != null) {
+                                                    var showEdit by remember { mutableStateOf(false) }
+                                                    TextButton(onClick = { showEdit = true }) { Text("Edit") }
+                                                    if (showEdit) {
+                                                        ConnectionEditDialog(
+                                                            connection = conn,
+                                                            onDismiss = { showEdit = false },
+                                                            onSave = { updateReq, onResult ->
+                                                                onUpdateConnection.invoke(conn.id, updateReq) { ok, err ->
+                                                                    if (ok) showEdit = false
+                                                                    onResult(ok, err)
+                                                                }
+                                                            }
+                                                        )
+                                                    }
+                                                }
+                                            }
+
+                                            // Testing progress dialog
+                                            if (testInProgress) {
+                                                AlertDialog(
+                                                    onDismissRequest = {},
+                                                    title = { Text("Testing connection") },
+                                                    text = {
+                                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                                            CircularProgressIndicator()
+                                                            Text("Running test...")
+                                                        }
+                                                    },
+                                                    confirmButton = {}
+                                                )
+                                            }
+
+                                            // Testing result dialog
+                                            if (testResult != null) {
+                                                AlertDialog(
+                                                    onDismissRequest = { testResult = null },
+                                                    title = { Text(if (testResult == true) "Test passed" else "Test failed") },
+                                                    text = { Text(if (testResult == true) "Connection is valid." else "Connection test failed. Please check configuration and try again.") },
+                                                    confirmButton = {
+                                                        TextButton(onClick = { testResult = null }) { Text("OK") }
+                                                    }
+                                                )
                                             }
                                         } else if (!ownedByThisProject) {
                                             Button(onClick = {
                                                 onDuplicate(conn) { newId ->
-                                                    selectedConnectionIds.add(newId)
+                                                    selectedConnectionIds = selectedConnectionIds + newId
                                                 }
                                             }) { Text("Duplicate") }
                                         }
@@ -1094,6 +2080,17 @@ private fun ProjectEditDialog(
                                 }
                             }
                         }
+                    }
+                    if (showCreateConnectionDialog && onCreateConnection != null) {
+                        ConnectionQuickCreateDialog(
+                            onDismiss = { showCreateConnectionDialog = false },
+                            onCreate = { req ->
+                                onCreateConnection.invoke(req) { newId ->
+                                    selectedConnectionIds = selectedConnectionIds + newId
+                                    showCreateConnectionDialog = false
+                                }
+                            }
+                        )
                     }
                 }
             }

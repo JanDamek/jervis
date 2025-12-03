@@ -1,7 +1,6 @@
 package com.jervis.service.gateway.clients.embedding
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties
-import com.jervis.configuration.WebClientFactory
+import com.jervis.configuration.KtorClientFactory
 import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.configuration.properties.PreloadOllamaProperties
 import com.jervis.domain.model.ModelProviderEnum
@@ -17,7 +16,15 @@ import mu.KotlinLogging
 import org.springframework.boot.ApplicationArguments
 import org.springframework.boot.ApplicationRunner
 import org.springframework.stereotype.Component
-import org.springframework.web.reactive.function.client.awaitBody
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import io.ktor.client.call.body
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.readUTF8Line
+import kotlinx.serialization.Serializable
 
 /**
  * Preloads embedding models to the CPU (qualifier) Ollama instance at application startup.
@@ -26,7 +33,7 @@ import org.springframework.web.reactive.function.client.awaitBody
 @Component
 class EmbeddingModelPreloader(
     private val models: ModelsProperties,
-    private val webClientFactory: WebClientFactory,
+    private val ktorClientFactory: KtorClientFactory,
     private val preloadProps: PreloadOllamaProperties,
 ) : ApplicationRunner {
     private val logger = KotlinLogging.logger {}
@@ -51,7 +58,7 @@ class EmbeddingModelPreloader(
                     return@launch
                 }
 
-                val client = webClientFactory.getWebClient("ollama.embedding")
+                val client = ktorClientFactory.getHttpClient("ollama.embedding")
 
                 val concurrency = preloadProps.embed.concurrency.coerceAtLeast(1)
                 logger.info { "EmbeddingModelPreloader: parallel pull on embedding endpoint with concurrency=$concurrency for ${candidates.size} model(s)" }
@@ -66,34 +73,24 @@ class EmbeddingModelPreloader(
                                 val model = detail.model
                                 val expectedDim = detail.dimension
                                 logger.info { "Preloading Ollama embedding model on CPU instance: $model" }
-                                val body = mapOf(
-                                    "name" to model,
-                                    "stream" to false
-                                )
-                                val response =
-                                    client
-                                        .post()
-                                        .uri("/api/pull")
-                                        .bodyValue(body)
-                                        .retrieve()
-                                        .awaitBody<OllamaPullResponse>()
-                                logger.info { "Ollama pull completed for $model: $response" }
+                                val body = OllamaPullRequest(name = model)
+                                val response: HttpResponse = client.post("/api/pull") {
+                                    setBody(body)
+                                }
+                                val status = readPullResponse(response)
+                                logger.info { "Ollama pull completed for $model: $status" }
                                 pulled += 1
 
                                 // Warm-up embeddings to load into memory and set keep-alive
                                 try {
-                                    val warmupBody = mapOf(
-                                        "model" to model,
-                                        "input" to "warmup",
-                                        "keep_alive" to preloadProps.embed.keepAlive,
+                                    val warmupBody = OllamaEmbeddingRequest(
+                                        model = model,
+                                        input = "warmup",
+                                        keep_alive = preloadProps.embed.keepAlive,
                                     )
-                                    val warmupResp =
-                                        client
-                                            .post()
-                                            .uri("/api/embeddings")
-                                            .bodyValue(warmupBody)
-                                            .retrieve()
-                                            .awaitBody<OllamaEmbeddingWarmupResponse>()
+                                    val warmupResp = client.post("/api/embeddings") {
+                                        setBody(warmupBody)
+                                    }.body<OllamaEmbeddingWarmupResponse>()
                                     val detectedDim = warmupResp.dimension()
                                     if (detectedDim != null) {
                                         if (expectedDim != null && expectedDim != detectedDim) {
@@ -124,13 +121,46 @@ class EmbeddingModelPreloader(
         }
     }
 
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    data class OllamaPullResponse(
-        val status: String? = null,
-        val success: Boolean? = null,
+    /**
+     * Reads Ollama /api/pull NDJSON streaming response.
+     * Returns the final status message.
+     */
+    private suspend fun readPullResponse(response: HttpResponse): String {
+        val channel: ByteReadChannel = response.bodyAsChannel()
+        var lastStatus = "unknown"
+        val mapper = jacksonObjectMapper()
+
+        while (!channel.isClosedForRead) {
+            val line = channel.readUTF8Line() ?: break
+            if (line.isNotBlank()) {
+                try {
+                    val jsonNode = mapper.readTree(line)
+                    val status = jsonNode.get("status")?.asText()
+                    if (status != null) {
+                        lastStatus = status
+                    }
+                } catch (e: Exception) {
+                    logger.warn(e) { "Failed to parse pull response line: $line" }
+                }
+            }
+        }
+        return lastStatus
+    }
+
+    @Serializable
+    data class OllamaPullRequest(
+        val name: String,
+        val stream: Boolean = false,
     )
 
-    @JsonIgnoreProperties(ignoreUnknown = true)
+    @Serializable
+    data class OllamaEmbeddingRequest(
+        val model: String,
+        val input: String,
+        val keep_alive: String,
+    )
+
+    @Serializable
     data class OllamaEmbeddingWarmupResponse(
         val embedding: List<Double>? = null,
         val embeddings: List<List<Double>>? = null,

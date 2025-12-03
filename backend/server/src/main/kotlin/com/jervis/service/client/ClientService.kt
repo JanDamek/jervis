@@ -72,6 +72,9 @@ class ClientService(
                 gitConfig = mergedGitConfig,
                 description = client.description,
                 defaultLanguageEnum = client.defaultLanguageEnum,
+                // Persist navigation and attachments coming from UI
+                lastSelectedProjectId = client.lastSelectedProjectId,
+                connectionIds = client.connectionIds,
             )
 
         val updated = clientRepository.save(merged)

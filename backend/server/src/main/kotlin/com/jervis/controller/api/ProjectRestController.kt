@@ -19,6 +19,16 @@ class ProjectRestController(
     override suspend fun saveProject(@RequestBody project: ProjectDto): ProjectDto = 
         projectService.saveProject(project.toDocument())
 
+    @PutMapping("/{id}")
+    override suspend fun updateProject(
+        @PathVariable id: String,
+        @RequestBody project: ProjectDto,
+    ): ProjectDto {
+        // Enforce path ID as source of truth
+        val bodyWithId = if (project.id == id) project else project.copy(id = id)
+        return projectService.saveProject(bodyWithId.toDocument())
+    }
+
     @DeleteMapping
     override suspend fun deleteProject(@RequestBody project: ProjectDto) {
         projectService.deleteProject(project)

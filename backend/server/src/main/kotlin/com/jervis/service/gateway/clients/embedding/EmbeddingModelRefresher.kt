@@ -1,6 +1,6 @@
 package com.jervis.service.gateway.clients.embedding
 
-import com.jervis.configuration.WebClientFactory
+import com.jervis.configuration.KtorClientFactory
 import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.configuration.properties.PreloadOllamaProperties
 import com.jervis.domain.model.ModelProviderEnum
@@ -11,7 +11,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import org.springframework.web.reactive.function.client.awaitBody
+import io.ktor.client.call.body
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
 import java.time.Duration
@@ -23,7 +26,7 @@ import java.time.Duration
 @Component
 class EmbeddingModelRefresher(
     private val models: ModelsProperties,
-    private val webClientFactory: WebClientFactory,
+    private val ktorClientFactory: KtorClientFactory,
     private val preloadProps: PreloadOllamaProperties,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -44,7 +47,7 @@ class EmbeddingModelRefresher(
                 "ollama.qualifier",
                 "ollama.primary",
             ).mapNotNull { name ->
-                runCatching { name to webClientFactory.getWebClient(name) }.getOrNull()
+                runCatching { name to ktorClientFactory.getHttpClient(name) }.getOrNull()
             }
 
             // Build list of unique embedding models on OLLAMA
@@ -68,24 +71,18 @@ class EmbeddingModelRefresher(
                     // Simple sequential refresh to avoid overloading local instance (suffices for hourly keep_alive)
                     for (model in modelsToRefresh) {
                         runCatching {
-                            val warmupBody = mapOf(
-                                "model" to model,
-                                // use the same warmup token as preloader to make server do actual compute
-                                "input" to "warmup",
-                                // some Ollama versions use 'prompt' instead of 'input' for embeddings
-                                "prompt" to "warmup",
-                                // some Ollama versions accept both top-level and options.keep_alive
-                                "keep_alive" to embedKeepAlive,
-                                "options" to mapOf("keep_alive" to embedKeepAlive),
+                            val warmupBody = OllamaEmbeddingRefreshRequest(
+                                model = model,
+                                input = "warmup",
+                                prompt = "warmup",
+                                keep_alive = embedKeepAlive,
+                                options = OllamaEmbeddingOptions(keep_alive = embedKeepAlive),
                             )
                             clients.forEach { (name, client) ->
                                 runCatching {
-                                    client
-                                        .post()
-                                        .uri("/api/embeddings")
-                                        .bodyValue(warmupBody)
-                                        .retrieve()
-                                        .awaitBody<OllamaEmbeddingWarmupResponse>()
+                                    client.post("/api/embeddings") {
+                                        setBody(warmupBody)
+                                    }.body<OllamaEmbeddingWarmupResponse>()
                                     logger.info { "Refreshed keep-alive on $name for embedding model: $model ($embedKeepAlive)" }
                                 }.onFailure { e ->
                                     logger.warn(e) { "Failed to refresh keep-alive on $name for model: $model" }
@@ -119,7 +116,22 @@ class EmbeddingModelRefresher(
             Duration.ofHours(1)
         }
     }
-    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
+
+    @Serializable
+    data class OllamaEmbeddingRefreshRequest(
+        val model: String,
+        val input: String,
+        val prompt: String,
+        val keep_alive: String,
+        val options: OllamaEmbeddingOptions,
+    )
+
+    @Serializable
+    data class OllamaEmbeddingOptions(
+        val keep_alive: String,
+    )
+
+    @Serializable
     data class OllamaEmbeddingWarmupResponse(
         val embedding: List<Double>? = null,
         val embeddings: List<List<Double>>? = null,

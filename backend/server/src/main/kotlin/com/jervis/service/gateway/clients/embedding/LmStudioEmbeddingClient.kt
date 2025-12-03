@@ -1,19 +1,21 @@
 package com.jervis.service.gateway.clients.embedding
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
-import com.jervis.configuration.WebClientFactory
+import com.jervis.configuration.KtorClientFactory
 import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.service.gateway.clients.EmbeddingProviderClient
 import org.springframework.stereotype.Service
-import org.springframework.web.reactive.function.client.WebClientRequestException
-import org.springframework.web.reactive.function.client.WebClientResponseException
-import org.springframework.web.reactive.function.client.awaitBody
+import io.ktor.client.call.body
+import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.ResponseException
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 
 @Service
 class LmStudioEmbeddingClient(
-    private val webClientFactory: WebClientFactory,
+    private val ktorClientFactory: KtorClientFactory,
 ) : EmbeddingProviderClient {
-    private val client by lazy { webClientFactory.getWebClient("lmStudio") }
+    private val client by lazy { ktorClientFactory.getHttpClient("lmStudio") }
     override val provider = ModelProviderEnum.LM_STUDIO
 
     override suspend fun call(
@@ -23,28 +25,24 @@ class LmStudioEmbeddingClient(
         val body = mapOf("model" to model, "input" to text)
 
         return try {
-            val response =
-                client
-                    .post()
-                    .uri("/v1/embeddings")
-                    .bodyValue(body)
-                    .retrieve()
-                    .awaitBody<LmStudioEmbeddingResponse>()
+            val response = client.post("/v1/embeddings") {
+                setBody(body)
+            }.body<LmStudioEmbeddingResponse>()
 
             response.data
                 .firstOrNull()
                 ?.embedding ?: emptyList()
         } catch (error: Exception) {
             throw when (error) {
-                is WebClientRequestException ->
+                is ClientRequestException ->
                     RuntimeException(
                         "Connection error to LM Studio: ${error.message}",
                         error,
                     )
 
-                is WebClientResponseException ->
+                is ResponseException ->
                     RuntimeException(
-                        "LM Studio API error: ${error.statusCode} - ${error.responseBodyAsString}",
+                        "LM Studio API error: ${error.response.status}",
                         error,
                     )
 

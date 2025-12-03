@@ -12,7 +12,7 @@ interface ProviderClient {
 
     suspend fun call(
         model: String,
-        systemPrompt: String?,
+        systemPrompt: String,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
         prompt: PromptConfig,
@@ -25,7 +25,7 @@ interface ProviderClient {
      */
     fun callWithStreaming(
         model: String,
-        systemPrompt: String?,
+        systemPrompt: String,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
         prompt: PromptConfig,

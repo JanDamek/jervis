@@ -2,35 +2,37 @@ package com.jervis.service.gateway.clients.llm
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.jervis.configuration.KtorClientFactory
 import com.jervis.configuration.prompts.CreativityConfig
 import com.jervis.configuration.prompts.PromptConfig
 import com.jervis.configuration.prompts.PromptsConfiguration
 import com.jervis.configuration.properties.ModelsProperties
+import com.jervis.configuration.properties.OllamaProperties
 import com.jervis.domain.gateway.StreamChunk
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.service.gateway.clients.ProviderClient
+import io.ktor.client.*
+import io.ktor.client.call.*
+import io.ktor.client.plugins.*
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import io.ktor.http.*
+import io.ktor.utils.io.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.reactive.asFlow
 import mu.KotlinLogging
-import com.jervis.configuration.WebClientFactory
-import com.jervis.configuration.properties.OllamaProperties
-import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
-import org.springframework.web.reactive.function.client.WebClient
-import org.springframework.web.reactive.function.client.awaitBody
-import org.springframework.web.reactive.function.client.WebClientResponseException
 import java.util.concurrent.ConcurrentHashMap
 
 @Service
 class OllamaClient(
-    private val webClientFactory: WebClientFactory,
+    private val ktorClientFactory: KtorClientFactory,
     private val promptsConfiguration: PromptsConfiguration,
     private val ollamaProps: OllamaProperties,
 ) : ProviderClient {
-    private val primaryWebClient: WebClient by lazy { webClientFactory.getWebClient("ollama.primary") }
-    private val qualifierWebClient: WebClient by lazy { webClientFactory.getWebClient("ollama.qualifier") }
+    private val primaryHttpClient: HttpClient by lazy { ktorClientFactory.getHttpClient("ollama.primary") }
+    private val qualifierHttpClient: HttpClient by lazy { ktorClientFactory.getHttpClient("ollama.qualifier") }
     private val logger = KotlinLogging.logger {}
     private val defaultKeepAlive: String get() = ollamaProps.keepAlive.default
 
@@ -39,32 +41,32 @@ class OllamaClient(
     override val provider: ModelProviderEnum = ModelProviderEnum.OLLAMA
 
     /**
-     * Select appropriate WebClient based on ModelType from prompt config.
+     * Select appropriate HttpClient based on ModelType from prompt config.
      * QUALIFIER type uses separate endpoint (CPU server), others use primary (GPU server).
      */
-    private fun selectWebClient(prompt: PromptConfig): WebClient =
+    private fun selectHttpClient(prompt: PromptConfig): HttpClient =
         when (prompt.modelParams.modelType) {
-            com.jervis.domain.model.ModelTypeEnum.QUALIFIER -> qualifierWebClient
-            else -> primaryWebClient
+            com.jervis.domain.model.ModelTypeEnum.QUALIFIER -> qualifierHttpClient
+            else -> primaryHttpClient
         }
 
     override suspend fun call(
         model: String,
-        systemPrompt: String?,
+        systemPrompt: String,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
         prompt: PromptConfig,
         estimatedTokens: Int,
     ): LlmResponse {
-        val webClient = selectWebClient(prompt)
-        return callWithWebClient(webClient, model, systemPrompt, userPrompt, config, prompt, estimatedTokens)
+        val httpClient = selectHttpClient(prompt)
+        return callWithHttpClient(httpClient, model, systemPrompt, userPrompt, config, prompt, estimatedTokens)
     }
 
     /**
-     * Internal implementation with explicit WebClient for reuse by OllamaQualifierClient
+     * Internal implementation with explicit HttpClient for reuse by OllamaQualifierClient
      */
-    suspend fun callWithWebClient(
-        webClient: WebClient,
+    suspend fun callWithHttpClient(
+        httpClient: HttpClient,
         model: String,
         systemPrompt: String?,
         userPrompt: String,
@@ -75,7 +77,7 @@ class OllamaClient(
         val responseBuilder = StringBuilder()
         var finalMetadata: Map<String, Any> = emptyMap()
 
-        callWithStreamingWebClient(webClient, model, systemPrompt, userPrompt, config, prompt, estimatedTokens)
+        callWithStreamingHttpClient(httpClient, model, systemPrompt, userPrompt, config, prompt, estimatedTokens)
             .collect { chunk ->
                 responseBuilder.append(chunk.content)
                 if (chunk.isComplete) {
@@ -95,22 +97,22 @@ class OllamaClient(
 
     override fun callWithStreaming(
         model: String,
-        systemPrompt: String?,
+        systemPrompt: String,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
         prompt: PromptConfig,
         estimatedTokens: Int,
         debugSessionId: String?,
     ): Flow<StreamChunk> {
-        val webClient = selectWebClient(prompt)
-        return callWithStreamingWebClient(webClient, model, systemPrompt, userPrompt, config, prompt, estimatedTokens)
+        val httpClient = selectHttpClient(prompt)
+        return callWithStreamingHttpClient(httpClient, model, systemPrompt, userPrompt, config, prompt, estimatedTokens)
     }
 
     /**
-     * Internal implementation with explicit WebClient for reuse by OllamaQualifierClient
+     * Internal implementation with explicit HttpClient for reuse by OllamaQualifierClient
      */
-    fun callWithStreamingWebClient(
-        webClient: WebClient,
+    fun callWithStreamingHttpClient(
+        httpClient: HttpClient,
         model: String,
         systemPrompt: String?,
         userPrompt: String,
@@ -120,22 +122,18 @@ class OllamaClient(
     ): Flow<StreamChunk> =
         flow {
             // Ensure model is available (pulled); waits for pull if missing
-            ensureModelAvailable(webClient, model)
+            ensureModelAvailable(httpClient, model)
 
             val creativityConfig = getCreativityConfig(prompt)
             val options = buildOptions(creativityConfig, config, estimatedTokens)
             val keepAlive: String? = defaultKeepAlive.takeUnless { it.isBlank() }
             val requestBody = buildRequestBody(model, userPrompt, systemPrompt, options, keepAlive)
 
-            val responseFlow =
-                webClient
-                    .post()
-                    .uri("/api/generate")
-                    .bodyValue(requestBody)
-                    .accept(MediaType.TEXT_EVENT_STREAM)
-                    .retrieve()
-                    .bodyToFlux(String::class.java)
-                    .asFlow()
+            val response: HttpResponse =
+                httpClient.post("/api/generate") {
+                    contentType(ContentType.Text.EventStream)
+                    setBody(requestBody)
+                }
 
             val responseBuilder = StringBuilder()
             var totalPromptTokens = 0
@@ -143,7 +141,9 @@ class OllamaClient(
             var finalModel = model
             var finishReason = "stop"
 
-            responseFlow.collect { line ->
+            val channel: ByteReadChannel = response.bodyAsChannel()
+            while (!channel.isClosedForRead) {
+                val line = channel.readUTF8Line() ?: break
                 if (line.isNotBlank()) {
                     try {
                         val mapper = jacksonObjectMapper()
@@ -189,39 +189,39 @@ class OllamaClient(
             }
         }
 
-    private suspend fun ensureModelAvailable(webClient: WebClient, model: String) {
+    private suspend fun ensureModelAvailable(
+        httpClient: HttpClient,
+        model: String,
+    ) {
         if (ensuredModels.contains(model)) return
         try {
             val showBody = mapOf("name" to model)
-            webClient
-                .post()
-                .uri("/api/show")
-                .bodyValue(showBody)
-                .retrieve()
-                .awaitBody<Map<String, Any>>()
+            httpClient.post("/api/show") {
+                setBody(showBody)
+            }.body<Map<String, Any>>()
             logger.debug { "Ollama model available: $model" }
             ensuredModels.add(model)
-        } catch (e: WebClientResponseException) {
-            logger.info { "Model '$model' not present on Ollama (status=${e.statusCode}). Pulling before first use..." }
-            pullModelBlocking(webClient, model)
+        } catch (e: ResponseException) {
+            logger.info { "Model '$model' not present on Ollama (status=${e.response.status}). Pulling before first use..." }
+            pullModelBlocking(httpClient, model)
             ensuredModels.add(model)
         } catch (e: Exception) {
             // If unknown error during show, attempt pull once
             logger.warn(e) { "Checking model '$model' failed, attempting pull..." }
-            pullModelBlocking(webClient, model)
+            pullModelBlocking(httpClient, model)
             ensuredModels.add(model)
         }
     }
 
-    private suspend fun pullModelBlocking(webClient: WebClient, model: String) {
+    private suspend fun pullModelBlocking(
+        httpClient: HttpClient,
+        model: String,
+    ) {
         val body = mapOf("name" to model)
         val resp =
-            webClient
-                .post()
-                .uri("/api/pull")
-                .bodyValue(body)
-                .retrieve()
-                .awaitBody<Map<String, Any>>()
+            httpClient.post("/api/pull") {
+                setBody(body)
+            }.body<Map<String, Any>>()
         logger.info { "Ollama pull completed for $model before first use: $resp" }
     }
 

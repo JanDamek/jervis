@@ -16,6 +16,12 @@ interface IProjectService {
     @POST("api/projects")
     suspend fun saveProject(@Body project: ProjectDto): ProjectDto
 
+    @PUT("api/projects/{id}")
+    suspend fun updateProject(
+        @Path id: String,
+        @Body project: ProjectDto,
+    ): ProjectDto
+
     @DELETE("api/projects")
     suspend fun deleteProject(@Body project: ProjectDto)
 

@@ -12,9 +12,14 @@ Tento dokument je jediný zdroj pravdy (SSOT) pro architekturu, programovací pr
 - Jazyk v kódu, komentářích a logách: výhradně angličtina. Inline komentáře „co“ nepíšeme; „proč“ patří do KDoc.
 
 ### Development mód – pravidla pro rychlý vývoj (platí do odvolání)
-- Žádné deprecations ani kompatibilitní vrstvy: změny datových typů jsou povoleny (breaking changes). Cílem je udržet kód čistý a přímočarý.
-- UI neschovává žádné hodnoty: hesla, tokeny, klíče a jiné „secrets“ jsou v UI vždy viditelné (žádné maskování). Tato aplikace není veřejná.
-- DocumentDB (Mongo): nic nešifrujeme; vše ukládáme v „plain text“. Toto je vědomé rozhodnutí pro privátní dev instanci.
+- **Žádné deprecations, žádné kompatibilitní vrstvy:** Deprecated kód je zakázán. Veškeré změny se ROVNOU refactorují. Breaking changes jsou povoleny. Cílem je udržet kód čistý a přímočarý bez legacy vrstev.
+- **Policy: No Deprecated Code**
+  - NIKDY nevytvářej `@Deprecated` anotace
+  - NIKDY nenechávej starý kód „pro kompatibilitu"
+  - Pokud je třeba změna, refactoruj CELÝ kód včetně všech míst použití
+  - Deprecated funkcionality se OKAMŽITĚ mažou a nahrazují novým řešením
+- UI neschovává žádné hodnoty: hesla, tokeny, klíče a jiné „secrets" jsou v UI vždy viditelné (žádné maskování). Tato aplikace není veřejná.
+- DocumentDB (Mongo): nic nešifrujeme; vše ukládáme v „plain text". Toto je vědomé rozhodnutí pro privátní dev instanci.
 
 ### Shared UI pro Desktop i Mobile (iPhone)
 - Všechny obrazovky mají společný zdroj pravdy v `shared/ui-common` (Compose Multiplatform). Desktop i mobil (zejména iPhone) používají stejné composables.
@@ -30,10 +35,508 @@ Tento dokument je jediný zdroj pravdy (SSOT) pro architekturu, programovací pr
 - Mezi klienty a serverem výhradně `@HttpExchange` rozhraní v `shared:common‑api` jako `I***Service`. Serverové controllery je implementují.
 - `backend:common-services` obsahuje jen interní REST kontrakty pro service‑*** → server; není dostupné v UI/common modulech.
 
+### 3.1) HTTP klienti – pravidla pro volání externích služeb
+
+**SSOT: Používej VŽDY Ktor HttpClient, WebClient POUZE pro `@HttpExchange` služby**
+
+#### A) Ktor HttpClient – dvě kategorie:
+
+**1. KtorClientFactory (bez rate limitu) – interní služby + LLM API s vlastním rate limitem**
+   - **Použití:**
+     - **Interní služby na lokální síti:** Ollama, LM Studio, searxng
+     - **Externí LLM API s vlastním rate limitem:** OpenAI, Anthropic, Google (mají built-in rate limiting na jejich straně)
+   - **Factory:** `KtorClientFactory` v `com.jervis.configuration`
+   - **Konfigurace:**
+     - `ktor.*` v `application.yml` (connection-pool, timeouts, api-versions, logging)
+     - `retry.ktor.*` – exponenciální backoff pro transientní chyby
+   - **Charakteristika:**
+     - **ŽÁDNÝ client-side rate limiting** (interní služby na 192.168.x.x, 10.x.x.x, localhost NEBO API s vlastním rate limitem)
+     - Retry pouze pro connection errors (ne timeout)
+     - Coroutines-first, connection pooling, JSON serialization (kotlinx.serialization)
+     - Per-provider API verze a auth headers (např. `anthropic-version`, `x-api-key`, `Authorization: Bearer`)
+   - **Příklad použití:**
+     ```kotlin
+     @Service
+     class OllamaClient(private val ktorClientFactory: KtorClientFactory) {
+         private val httpClient by lazy { ktorClientFactory.getHttpClient("ollama.primary") }
+         suspend fun call(...) = httpClient.post("/api/generate") { setBody(...) }.body<Response>()
+     }
+     ```
+
+**2. Global HttpClient bean (s rate limitem) – integrace třetích stran (Atlassian a podobné)**
+   - **Použití:** Integrace třetích stran s dynamickými doménami: Atlassian/Jira/Confluence, link scraper
+   - **Bean:** `HttpClient` v `HttpClientConfiguration` (Spring @Bean, singleton)
+   - **Konfigurace:**
+     - `domain-rate-limit.*` v `application.yml` – adaptive 3-phase rate limiting per domain
+     - Automatic rate limiting plugin (`RateLimitingPlugin` + `DomainRateLimiterService`)
+   - **Charakteristika:**
+     - **AUTOMATICKÝ rate limiting per domain** (např. `*.atlassian.net`, detekce podle URL domény)
+     - Interní IP adresy (192.168.x.x, 10.x.x.x, localhost) jsou exempt z rate limitu
+     - Adaptive 3-phase strategy: fast burst → normal → sustained (sdílený bucket per domain)
+     - Authorization header injection plugin (Connection + HttpCredentials) – pro dynamické credentials
+     - Content negotiation, request logging
+   - **Kdy použít:** Služby, kde NELZE předem znát doménu (user-specified URLs) a potřebuješ rate limiting per domain
+   - **Příklad použití:**
+     ```kotlin
+     @Service
+     class AtlassianApiClient(private val httpClient: HttpClient) {
+         suspend fun searchIssues(...) = httpClient.getWithConnection(
+             url = "${connection.baseUrl}/rest/api/3/search", // baseUrl může být cokoliv (*.atlassian.net)
+             connection = connection,
+             credentials = credentials
+         ).body<SearchResponse>()
+     }
+     ```
+
+#### B) WebClient (Spring WebFlux) – POUZE pro `@HttpExchange`
+
+**Použití:** Externí compute služby s `@HttpExchange` rozhraními: joern, tika, whisper
+   - **Factory:** `WebClientFactory` v `com.jervis.configuration`
+   - **Konfigurace:**
+     - `connections.*` v `application.yml` (connection-pool, timeouts, buffers)
+     - `retry.webclient.*` – exponenciální backoff
+   - **Charakteristika:**
+     - Spring WebFlux reactive approach (Reactor)
+     - POUZE pro služby používající `@HttpExchange` deklarativní HTTP kontrakty
+     - Custom buffer sizes (např. 64 MB pro Tiku)
+   - **Důvod existence:** Kompatibilita s `@HttpExchange` pattern (deklarativní REST klienty)
+   - **Příklad použití:**
+     ```kotlin
+     @HttpExchange(url = "/parse", method = "POST")
+     interface ITikaClient {
+         suspend fun process(request: TikaProcessRequest): TikaProcessResponse
+     }
+     ```
+
+#### C) Pravidla pro výběr HTTP klienta:
+
+1. **Interní služby na lokální síti** (Ollama, LM Studio, searxng) → `KtorClientFactory` (bez rate limitu)
+2. **Externí LLM API s vlastním rate limitem** (OpenAI, Anthropic, Google) → `KtorClientFactory` (bez rate limitu)
+3. **Integrace třetích stran s dynamickými doménami** (Atlassian/Jira/Confluence, link scraper) → Global `HttpClient` bean (s rate limitem)
+4. **Externí compute služby s `@HttpExchange`** (joern, tika, whisper) → `WebClientFactory`
+5. **Nové služby:** VŽDY Ktor (buď KtorClientFactory nebo global HttpClient bean podle potřeby rate limitu), NIKDY WebClient (kromě `@HttpExchange`)
+6. **Koog agenti:** Preferují Ktor jako connection client (coroutines-first)
+
+**Rozhodovací strom:**
+- Je to `@HttpExchange` služba? → WebClientFactory
+- Je to interní služba (192.168.x.x, localhost) nebo LLM API s vlastním rate limitem? → KtorClientFactory
+- Je to integrace s dynamickou doménou (user-specified URL) a potřebuješ rate limiting? → Global HttpClient bean
+- Nová služba bez `@HttpExchange`? → KtorClientFactory (default)
+
+#### D) Migrace WebClientFactory → KtorClientFactory (provedeno 2025-12-02):
+
+**1. Migrace LLM klientů:**
+- ✅ `OllamaClient`, `AnthropicClient`, `GoogleLlmClient`, `OpenAiClient`, `LmStudioClient` → `KtorClientFactory`
+- ✅ `OllamaQualifierClient` → používá Koog (nepřímá migrace přes KoogQualifierAgent)
+
+**2. Migrace Embedding klientů:**
+- ✅ `OllamaEmbeddingClient` (qualifier) → `KtorClientFactory`
+- ✅ `OllamaEmbeddingCpuClient` (embedding) → `KtorClientFactory`
+- ✅ `LmStudioEmbeddingClient` → `KtorClientFactory`
+- ✅ `OpenAiEmbeddingClient` → `KtorClientFactory`
+
+**3. Migrace Model Preloaders & Refreshers:**
+- ✅ `LlmModelPreloader` (ollama.primary, ollama.qualifier) → `KtorClientFactory`
+- ✅ `LlmModelRefresher` (keep-alive) → `KtorClientFactory`
+- ✅ `EmbeddingModelPreloader` (ollama.embedding) → `KtorClientFactory`
+- ✅ `EmbeddingModelRefresher` (keep-alive) → `KtorClientFactory`
+
+**4. Migrace Web search & Tools:**
+- ✅ `ContentSearchWebTool` (searxng) → `KtorClientFactory`
+- ✅ `DocumentFromWebTool` (searxng) → `KtorClientFactory`
+- ✅ `KoogQualifierTools` (searxng) → `KtorClientFactory`
+- ✅ `KoogQualifierGraphRagTools` (searxng) → `KtorClientFactory`
+- ✅ `KoogQualifierAgent` → `KtorClientFactory`
+
+**5. Co ZŮSTALO na WebClient (správně):**
+- ✅ `InternalHttpClientsConfig` pro `ITikaClient`, `IJoernClient`, `IWhisperClient` (HttpExchange services)
+
+**6. Co bylo ODSTRANĚNO:**
+- ❌ `RateLimitedHttpClientFactory` (deprecated, nepoužíváno)
+
+**Technické detaily migrace:**
+- **Import changes:**
+  - `com.jervis.configuration.WebClientFactory` → `com.jervis.configuration.KtorClientFactory`
+  - `org.springframework.web.reactive.function.client.WebClient` → `io.ktor.client.HttpClient`
+  - `org.springframework.web.reactive.function.client.awaitBody` → `io.ktor.client.call.body`
+- **Constructor injection:**
+  - `webClientFactory: WebClientFactory` → `ktorClientFactory: KtorClientFactory`
+- **Client initialization:**
+  - `webClientFactory.getWebClient("endpoint")` → `ktorClientFactory.getHttpClient("endpoint")`
+- **HTTP API calls:**
+  - WebClient: `.post().uri("/path").bodyValue(body).retrieve().awaitBody<Type>()`
+  - Ktor: `.post("/path") { setBody(body) }.body<Type>()`
+- **Streaming:**
+  - WebClient: `.bodyToFlux(String::class.java).asFlow()`
+  - Ktor: `response.bodyAsChannel()` + `readUTF8Line()`
+- **NDJSON (Newline Delimited JSON) streaming:**
+  - Ollama `/api/pull` endpoint vrací streaming NDJSON (Content-Type: `application/x-ndjson`)
+  - **NELZE** použít `.body<Type>()` - způsobí `NoTransformationFoundException`
+  - **Správný způsob:** Čti line-by-line pomocí `bodyAsChannel()` + `readUTF8Line()`
+  - Příklad:
+    ```kotlin
+    val response: HttpResponse = httpClient.post("/api/pull") { setBody(body) }
+    val channel: ByteReadChannel = response.bodyAsChannel()
+    val mapper = jacksonObjectMapper()
+    while (!channel.isClosedForRead) {
+        val line = channel.readUTF8Line() ?: break
+        if (line.isNotBlank()) {
+            val jsonNode = mapper.readTree(line)
+            val status = jsonNode.get("status")?.asText()
+            // Process each JSON line...
+        }
+    }
+    ```
+  - Použito v: `LlmModelPreloader.readPullResponse()`, `EmbeddingModelPreloader.readPullResponse()`
+- **Error handling:**
+  - `WebClientResponseException` → `ResponseException` (io.ktor.client.plugins)
+  - `WebClientRequestException` → `ClientRequestException` (io.ktor.client.plugins)
+
+**Konečný stav:**
+- **KtorClientFactory:** 18 služeb (LLM clients, embedding clients, preloaders, refreshers, tools, agents)
+- **WebClientFactory:** 3 služby (tika, joern, whisper - pouze HttpExchange)
+- **Global HttpClient bean:** 1 použití (AtlassianApiClient s rate limitem)
+
+**Configuration properties změny:**
+- `connections.api-versions` → ODSTRANĚNO (přesunuto do `ktor.api-versions`)
+- `ktor.*` konfigurace přidána pro KtorClientFactory
+- `retry.ktor.*` konfigurace přidána pro Ktor retry policy
+
+**Serialization best practice (2025-12-02):**
+- **Problem:** Ollama API requesty obsahovaly heterogenní mapy (např. `mapOf("name" to "model", "stream" to false)`)
+- **Error:** `IllegalStateException: Serializing collections of different element types is not yet supported`
+- **Solution:** Definovat @Serializable data classes pro každý request type
+  - Příklad: `@Serializable data class OllamaPullRequest(val name: String, val stream: Boolean = false)`
+  - Response types také jako @Serializable data classes s nullable fields
+- **Benefit:**
+  - Dodržuje guidelines preference pro `kotlinx.serialization`
+  - Type-safe API calls
+  - Jasně definovaná struktura requestů a responses
+  - IDE autocomplete a compile-time checks
+- **Implementováno v:** `LlmModelPreloader`, `EmbeddingModelPreloader`, `LlmModelRefresher`, `EmbeddingModelRefresher`
+- **Závěr:** VŽDY používat @Serializable data classes pro HTTP requesty, NIKDY `Map<String, Any>` s mixed types
+
+## 3.2) Koog – Qualifier (první agent v pipeline)
+
+- Qualifier běží PŘED orchestrátorem v CPU smyčce: `BackgroundEngine.runQualificationLoop()`.
+- Vstupy:
+  - systemPrompt = „goal“ ze `prompts.yaml` dle `PendingTaskTypeEnum.promptType` (EMAIL_QUALIFIER, LINK_QUALIFIER, QUALIFIER)
+  - userPrompt = `PendingTaskDocument.content` (případně proměnné jako `currentDate`, `clientId`, `projectId`, `correlationId`)
+- Směrování modelu: provider `OLLAMA_QUALIFIER` (CPU endpoint) definovaný v `models-config.yaml` → `OllamaQualifierClient` → `KoogQualifierAgent`. ŽÁDNÉ fallbacky mimo Koog.
+- Endpointy: z `EndpointProperties.endpoints.ollama.qualifier.baseUrl`. Fail‑fast na prázdnou hodnotu.
+- JSON‑only výstup: parser `JsonParser` odstraní případné <think> a vyparsuje pouze finální JSON do DTO (`GenericQualifierOut`, `LinkQualifierOut`).
+- Povolené nástroje v kvalifikátoru (volitelné, pouze dle potřeby):
+  - `ragSearch`, `ragIndex` (KnowledgeService)
+  - `graphUpsertNode`, `graphLink` (GraphDBService)
+  - `webSearch` (Searxng)
+  Vždy předávej `CLIENT_ID` a pokud existuje `PROJECT_ID` přesně tak, jak jsou v proměnných promptu.
+
+### 3.2.1) Backpressure & konkurence kvalifikace
+
+- Zpracování tisíců tasků běží přes Kotlin Flow:
+  - `findTasksForQualification()` → `.buffer(N)` → `.flatMapMerge(concurrency=N)` → per‑task `processOne()`
+  - N = `ProviderCapabilitiesService.providers[OLLAMA_QUALIFIER].maxConcurrentRequests`
+- Dvouúrovňové limity:
+  - per‑provider: `ProviderConcurrencyManager`
+  - per‑model (volitelné, pokud `concurrency` v `models-config.yaml`): `ModelConcurrencyManager`
+- Žádné `toList()` ani Java‑style batching. Každý task má vlastní chybovou izolaci a logy.
+- Časové limity/reties: spoléháme na Ktor timeouts a retry politiku; timeouty se NEretryují.
+
+### 3.2.2) Prompts – kvalifikátor
+
+Prompty v `prompts.yaml` sekcích `EMAIL_QUALIFIER`, `LINK_QUALIFIER`, `QUALIFIER` obsahují:
+- deterministická pravidla pro `discard`/`delegate`
+- „TOOLS YOU CAN USE“ s přesnými názvy a parametry
+- „IDENTITY“ blok s `CLIENT_ID`, `PROJECT_ID`, `CORRELATION_ID`
+- jasný JSON kontrakt (Return JSON only: {...})
+
+## 3.3) Koog – Main Agent (KoogWorkflowAgent)
+
+**KoogWorkflowAgent** je hlavní produkční AI agent JERVIS postavený na Koog framework, určený pro komplexní workflow a dlouhodobou práci.
+
+**Koog Framework dokumentace:** Kompletní reference knihoven Koog 0.5.3 je v `docs/koog-libraries.md`. Obsahuje popisy core libraries, built-in tools, prompt executors, a usage patterns.
+
+### 3.3.1) Architektura
+
+- **Lokace:** `com.jervis.koog.KoogWorkflowAgent`
+- **Framework:** Koog AIAgent with custom strategy graph
+- **Model routing:** Ollama (přes `simpleOllamaAIExecutor()`)
+- **Max iterations:** 8 (configurable via `AIAgentConfig`)
+- **Tools:** Centrální `ToolRegistry` s všemi dostupnými Koog Tools
+
+### 3.3.2) Strategy Graph
+
+Agent používá multi-node strategy:
+1. **nodePreEnrich** – před konverzací načte RAG + Graph context
+2. **nodeSendInput** – pošle enriched input do LLM
+3. **nodeExecuteTool** – vykoná tool call
+4. **nodeSendToolResult** – pošle výsledek tool callu zpět do LLM
+5. **nodeFinish** – ukončí s assistant response v target language
+
+### 3.3.3) Dostupné Tools – Koog Built-in + JERVIS Custom (2025-12-02)
+
+**Architektura:** Používáme Koog built-in tools kde existují + JERVIS custom tools pro specifickou funkcionalitu.
+
+**1. Koog Built-in File System Tools** (`ai.koog.agents.ext.tool.file`):
+- ✅ `ListDirectoryTool(JVMFileSystemProvider.ReadOnly)` – list directory contents
+- ✅ `ReadFileTool(JVMFileSystemProvider.ReadOnly)` – read file content
+- ✅ `EditFileTool(JVMFileSystemProvider.ReadWrite)` – edit files with patch/replace
+- ✅ `WriteFileTool(JVMFileSystemProvider.ReadWrite)` – write/create new files
+- **Provider:** `JVMFileSystemProvider.ReadOnly` or `.ReadWrite`
+- **Source:** `agents-ext-jvm-0.5.3.jar`
+
+**2. Koog Built-in Shell Tools** (`ai.koog.agents.ext.tool.shell`):
+- ✅ `ExecuteShellCommandTool(executor, confirmationHandler)` – execute shell commands
+- **Executor:** `JvmShellCommandExecutor()`
+- **Confirmation:** `PrintShellCommandConfirmationHandler()` or custom
+- **Source:** `agents-ext-jvm-0.5.3.jar`
+
+**3. JERVIS MemoryTools** (`com.jervis.koog.tools.MemoryTools`):
+- ✅ `memoryWrite(actionType, content, reason, context, result, entityType, entityKey, tags)` – permanent memory with audit trail
+- ✅ `memoryRead(limit, projectId, correlationId)` – read last N memories
+- ✅ `memorySearch(searchMode, query, entityType, days, limit)` – multi-dimensional search
+- **Persistence:** MongoDB `agent_memory` collection, NEVER deleted
+- **Audit trail:** WHY (reason), WHAT (content), WHEN (timestamp), RESULT, CONTEXT
+- **Parameters:** `plan: Plan`, `memoryService: AgentMemoryService`
+
+**4. JERVIS RagTools** (`com.jervis.koog.tools.RagTools`):
+- ✅ `ragSearch(query, maxResult, minScore)` – knowledge base search (Weaviate)
+- ✅ `ragIndex(content)` – store text in knowledge base as MEMORY
+- **Storage:** Weaviate per-client collections (`{clientSlug}_rag_text`, `{clientSlug}_rag_code`)
+- **Parameters:** `plan: Plan`, `mcpRegistry: McpToolRegistry`
+
+**5. JERVIS GraphTools** (`com.jervis.koog.tools.GraphTools`):
+- ✅ `getRelatedNodes(nodeKey, direction, edgeTypes, limit)` – traverse graph relationships
+- ✅ `getNode(nodeKey)` – get specific node
+- ✅ `upsertNode(nodeKey, nodeType, properties)` – create/update nodes
+- ✅ `createLink(fromKey, toKey, edgeType, properties)` – create relationships
+- **Storage:** ArangoDB per-client Knowledge Graph
+- **Parameters:** `plan: Plan`, `graphService: GraphDBService`
+
+**6. JERVIS TaskTools** (`com.jervis.koog.tools.TaskTools`):
+- ✅ `scheduleTask(content, scheduledDateTime, taskName, cronExpression, action, taskId)` – system task scheduling
+- ✅ `createUserTask(title, description, priority, dueDate, sourceType, sourceUri, metadata)` – user-facing tasks
+- ✅ `userDialog(question, proposedAnswer)` – interactive dialog
+- **Parameters:** `plan: Plan`, `mcpRegistry: McpToolRegistry`
+
+### 3.3.4) Long-Term Memory Provider (implementováno 2025-12-02)
+
+**Architektura dlouhodobé paměti agenta:**
+
+Agent podporuje dlouhodobou persistentní paměť s těmito vlastnostmi:
+- **Nic se nemaže** – všechny záznamy jsou permanent (no deletion policy)
+- **Audit trail** – každá změna obsahuje:
+  - důvod úpravy (why) - `reason` field
+  - kontext (client, project, correlation) - `clientId`, `projectId`, `correlationId`
+  - vstupní zadání - `context` field
+  - výsledek operace - `result` field
+  - souvislosti s jinými úkoly/commity/branches - `relatedTo[]`, `entityType`, `entityKey`
+- **Vyhledávání** – podle tématu, data, projektu, entity, „why" kontextu
+- **Storage:** MongoDB (`agent_memory` kolekce)
+
+**Datový model (`AgentMemoryDocument`):**
+```kotlin
+@Document(collection = "agent_memory")
+data class AgentMemoryDocument(
+    @Id val id: ObjectId,
+
+    // Isolation & Context
+    @Indexed val clientId: String,              // per-client izolace
+    @Indexed val projectId: String? = null,     // per-project izolace (optional)
+    @Indexed val correlationId: String? = null, // workflow/session tracking
+    @Indexed val timestamp: Instant,            // kdy vznikl záznam
+
+    // Core Memory Content
+    @Indexed val actionType: String,            // FILE_EDIT, TASK_CREATE, DECISION, ANALYSIS, SHELL_EXEC, ...
+    val content: String,                        // CO agent udělal nebo se naučil (main content)
+    val reason: String,                         // PROČ to udělal (audit trail - "why")
+    val context: String? = null,                // V JAKÉM kontextu (user request, previous steps)
+    val result: String? = null,                 // Výsledek operace (success/error details)
+
+    // Entity Tracking
+    val entityType: String? = null,             // FILE, CLASS, METHOD, TASK, COMMIT, BRANCH, ...
+    @Indexed val entityKey: String? = null,     // file path, task ID, commit hash, ...
+    val relatedTo: List<String> = emptyList(),  // odkazy na jiné memory ID nebo entity
+
+    // Search & Metadata
+    @Indexed val tags: List<String>,            // tagy pro vyhledávání
+    val embedding: List<Double>? = null,        // optional: pro sémantické vyhledávání
+    val metadata: Map<String, String>,          // volná metadata
+)
+```
+
+**Repository methods (`AgentMemoryRepository`):**
+- `findByClientIdOrderByTimestampDesc` – základní read (poslední N záznámů)
+- `findByClientIdAndProjectIdOrderByTimestampDesc` – per-project záznamy
+- `findByClientIdAndCorrelationIdOrderByTimestamp` – celá session/workflow
+- `findByClientIdAndActionTypeOrderByTimestampDesc` – podle typu akce
+- `findByClientIdAndEntityTypeAndEntityKeyOrderByTimestampDesc` – podle entity
+- `findByClientIdAndTagsInOrderByTimestampDesc` – podle tagů
+- `searchByText` – full-text search (vyžaduje MongoDB text index)
+- `findByClientIdAndTimestampBetweenOrderByTimestampDesc` – časový rozsah
+
+**Service API (`AgentMemoryService`):**
+- `write(memory: AgentMemoryDocument)` – uložení nové paměti
+- `read(clientId, limit)` – poslední N záznámů
+- `readByProject(clientId, projectId, limit)` – per-project
+- `readByCorrelation(clientId, correlationId)` – celá session
+- `searchByActionType(clientId, actionType, limit)` – filtr podle typu
+- `searchByEntity(clientId, entityType, entityKey, limit)` – entity tracking
+- `searchByTags(clientId, tags, limit)` – podle tagů
+- `searchByText(clientId, query, limit)` – full-text search
+- `searchByTimeRange(clientId, from, to, limit)` – časové okno
+- `searchLastDays(clientId, days, limit)` – posledních X dní
+- `getStats(clientId)` – statistiky (total, last7Days, last30Days, byActionType, byEntityType)
+
+**Příklad použití z agenta:**
+```kotlin
+// Uložení memory po úspěšné editaci souboru
+val memory = AgentMemoryDocument(
+    clientId = plan.clientDocument.id.toHexString(),
+    projectId = plan.projectDocument?.id?.toHexString(),
+    correlationId = plan.correlationId,
+    actionType = "FILE_EDIT",
+    content = "Refactored UserService.kt - extracted validation logic into ValidatorService",
+    reason = "User requested code organization improvement. UserService had 450 lines with mixed concerns.",
+    context = "User input: 'Please refactor UserService - it's too big'",
+    result = "SUCCESS: Created ValidatorService.kt. All 127 tests pass.",
+    entityType = "FILE",
+    entityKey = "src/main/kotlin/com/example/service/UserService.kt",
+    tags = listOf("refactoring", "validation", "user-service"),
+)
+memoryService.write(memory)
+```
+
+**Integrace s KoogBridgeTools:**
+- Tools `memoryWrite`, `memoryRead`, `memorySearch` jsou exponovány do Koog ToolRegistry
+- Automatické nastavení `clientId`, `projectId`, `correlationId` z `plan` contextu
+- Failure semantics: všechny memory operace throwují `IllegalStateException` při selhání (Koog treats as tool error)
+
+**Indexy (doporučené):**
+```javascript
+// MongoDB shell commands
+db.agent_memory.createIndex({ clientId: 1, timestamp: -1 })
+db.agent_memory.createIndex({ clientId: 1, projectId: 1, timestamp: -1 })
+db.agent_memory.createIndex({ clientId: 1, correlationId: 1, timestamp: 1 })
+db.agent_memory.createIndex({ clientId: 1, actionType: 1, timestamp: -1 })
+db.agent_memory.createIndex({ clientId: 1, entityType: 1, entityKey: 1, timestamp: -1 })
+db.agent_memory.createIndex({ clientId: 1, tags: 1, timestamp: -1 })
+db.agent_memory.createIndex({ clientId: 1, timestamp: 1 })
+
+// Full-text search index (pro searchByText)
+db.agent_memory.createIndex({ content: "text", reason: "text", context: "text" })
+```
+
+**Reference dokumentace:**
+- Example JSON: `docs/agent-memory-example.json` – ukázka kompletního memory záznamu s audit trail
+- Implementation: `backend/server/src/main/kotlin/com/jervis/service/agent/AgentMemoryService.kt`
+- Repository: `backend/server/src/main/kotlin/com/jervis/repository/AgentMemoryRepository.kt`
+- Entity: `backend/server/src/main/kotlin/com/jervis/domain/agent/AgentMemoryDocument.kt`
+- Tools: `backend/server/src/main/kotlin/com/jervis/koog/tools/MemoryTools.kt`
+
+### 3.3.5) Tool Registry Pattern – Direct Koog Integration
+
+Centrální `ToolRegistry` v `KoogWorkflowAgent.create()` s přímými Koog ToolSet implementacemi:
+
+```kotlin
+val toolRegistry = ToolRegistry {
+    // File System Tools
+    tools(
+        FileSystemTools(
+            allowedPaths = listOf(System.getProperty("user.home")),
+        )
+    )
+
+    // Shell Tools
+    tools(
+        ShellTools(
+            workingDirectory = System.getProperty("user.home"),
+            allowedPaths = listOf(System.getProperty("user.home")),
+        )
+    )
+
+    // Long-Term Memory Tools
+    tools(
+        MemoryTools(
+            plan = plan,
+            memoryService = memoryService,
+        )
+    )
+
+    // RAG Tools
+    tools(
+        RagTools(
+            plan = plan,
+            mcpRegistry = mcpRegistry,
+        )
+    )
+
+    // Task Management Tools
+    tools(
+        TaskTools(
+            plan = plan,
+            mcpRegistry = mcpRegistry,
+        )
+    )
+
+    // System Utilities
+    tools(SystemTools())
+}
+```
+
+**Implementace (2025-12-02):**
+- **6 samostatných ToolSet tříd** – každý s jasně definovanou odpovědností
+- **Žádný bridge layer** – přímá integrace s Koog framework
+- **Celkem 17 tools:**
+  - FileSystemTools: 3 (listDirectory, readFile, editFile)
+  - ShellTools: 1 (executeShell)
+  - MemoryTools: 3 (memoryWrite, memoryRead, memorySearch)
+  - RagTools: 2 (ragSearch, ragIndex)
+  - TaskTools: 3 (scheduleTask, createUserTask, userDialog)
+  - SystemTools: 5 (jsonParse, jsonStringify, getCurrentDateTime, calculateDateTime)
+
+**Lokace souborů:**
+- `backend/server/src/main/kotlin/com/jervis/koog/tools/FileSystemTools.kt`
+- `backend/server/src/main/kotlin/com/jervis/koog/tools/ShellTools.kt`
+- `backend/server/src/main/kotlin/com/jervis/koog/tools/MemoryTools.kt`
+- `backend/server/src/main/kotlin/com/jervis/koog/tools/RagTools.kt`
+- `backend/server/src/main/kotlin/com/jervis/koog/tools/TaskTools.kt`
+- `backend/server/src/main/kotlin/com/jervis/koog/tools/SystemTools.kt`
+
+**Pravidla:**
+- ToolRegistry se vytváří JEDNOU v `create()` metodě
+- NESMÍ se vytvářet ad-hoc v různých částech aplikace
+- Všechny tools jsou připraveny na multiklientní režim (client/project isolation)
+- Každý ToolSet je `@LLMDescription` anotovaný pro LLM consumption
+- Failure semantics: všechny tools throwují `IllegalStateException` při selhání (Koog treats as tool error)
+- Tool results jsou vždy `String` (Koog očekává textovou odpověď)
+- **ŽÁDNÝ KoogBridgeTools** – pouze přímé Koog ToolSet implementace
+
+### 3.3.6) Pre-Enrichment Context
+
+Před každým během agent automaticky načte:
+- **RAG context:** Top 15 relevantních chunks (min score 0.55)
+- **Graph context:** Related nodes (limit 20) z GraphDB
+- **Target language:** Z `plan.originalLanguage`
+
+Tento context se předá do LLM jako prefix před user input.
+
+## 3.4) Bezpečnostní hlavičky klienta (nutné pro Desktop/Mobile)
+
+- Serverový `SecurityHeaderFilter` VYŽADUJE hlavičku `X-Jervis-Client` se sdíleným tokenem. Chybějící/špatná hodnota → spojení bez odpovědi (prevence skenování portů).
+- Klient (Desktop/Mobile) MUSÍ posílat:
+  - `X-Jervis-Client: <token>` (viz `application.yml → jervis.security.client-token` a `shared/common-api/SecurityConstants`)
+  - `X-Jervis-Platform: Desktop|Android|iOS`
+- Desktop implementace: `NetworkModule.createHttpClient()` nastavuje hlavičky v `defaultRequest { ... }`.
+
 ## 4) Vrstvy (sjednoceno dle aktuálního kódu)
 - Controller: pracuje s DTO; mapuje `DTO ↔ Entity` (případně přes mapper); volá Service. Controller nikdy nevrací Entity do UI.
-- Service: pracuje s MongoDB Entity (Documents) a business pravidly; volá Repository. Domain typy lze použít pomocně (čisté výpočty), ale Service není povinně „domain‑only“.
+- Service: pracuje s MongoDB Entity (Documents) a business pravidly; volá Repository. Domain typy lze použít pomocně (čisté výpočty), ale Service není povinně „domain‑only".
 - Repository: pouze Entity ↔ DB.
+  - **IMPORTANT:** Všechny repository MUSÍ používat `CoroutineCrudRepository` (non-blocking s Kotlin coroutines).
+  - **ZAKÁZÁNO:** `MongoRepository` (blocking) se NEPOUŽÍVÁ. Vždy `CoroutineCrudRepository`.
+  - Příklad: `interface AgentMemoryRepository : CoroutineCrudRepository<AgentMemoryDocument, ObjectId>`
+  - Repository metody vrací `Flow<T>` pro streamy nebo `suspend fun` pro jednotlivé hodnoty.
 - Zakázané vztahy: Controller → Repository, Service → DTO, Controller vrací Entity.
 
 ## 5) Programovací pravidla (Kotlin/Spring)
@@ -50,6 +553,14 @@ Tento dokument je jediný zdroj pravdy (SSOT) pro architekturu, programovací pr
 - Properties třídy mapuj na YAML strom logicky (prefixy). Příklad: `preload.ollama.*`, `ollama.keep-alive.default`.
 - Definuj vlastní `@Qualifier` anotace pro rozlišení beanů (např. `@OllamaPrimary`, `@OllamaQualifier`) místo string klíčů.
 
+### 6.1) Koog & Ollama – výběr endpointu/modelu
+
+- Koog agenti NEčtou model z `prompts.yaml`. Efektivní model a endpoint se nastavují přímo v exekutoru / nebo přes provider‑kandidáty `models-config.yaml`.
+- Pro JERVIS platí:
+  - `OLLAMA` → GPU `endpoints.ollama.primary`
+  - `OLLAMA_QUALIFIER` → CPU `endpoints.ollama.qualifier`
+- Žádné feature‑flag fallbacky. Chybějící endpoint → fail‑fast při startu.
+
 ## 7) Struktura balíčků a přístupnost
 - Jeden veřejný boundary interface na okraji celku; vnitřek označ `_internal` a udržuj package‑private (nesvádět k neplánovanému použití).
 - Interface nepoužívej „za každou cenu“. Pokud není potřeba více implementací, stačí `class`.
@@ -62,6 +573,18 @@ Tento dokument je jediný zdroj pravdy (SSOT) pro architekturu, programovací pr
   - Akce/util: `JRunTextButton`, `ConfirmDialog`, `RefreshIconButton`/`DeleteIconButton`/`EditIconButton`, `CopyableTextCard`
 - Nahrazuj přímý `TopAppBar` → `JTopBar`. Stavové UI sjednoť na výše uvedené view‑state komponenty. 
 - Fail‑fast v UI: chyby zobrazuj, neukrývej. Spacing přes sdílené konstanty (JervisSpacing). Desktop je primární platforma; mobil je port.
+
+### 8.1) UI notifikace a navigace
+
+- Notifikace: používáme nenásilné snackbary v pravém horním rohu (Desktop). Vzor: `SnackbarHostState` + `SnackbarHost` zarovnaný `Alignment.TopEnd` v obsahu okna.
+- Klávesa Tab: na Desktopu slouží pro přesun focusu (Next/Previous), nesmí vkládat tabulátory do textu. Přidat `onPreviewKeyEvent` na nejvyšší layout.
+
+### 8.2) Connections – UI pravidla
+
+- Přehled a správa připojení je dostupná v Settings (tab „Connections“) a v editacích Client/Project.
+- Vlastnictví je exkluzivní: connection je přiděleno buď klientovi, nebo projektu. Pro re‑use použij „Duplicate“.
+- Editace autorizace je typovaná (HTTP: NONE/BASIC/BEARER) – žádné generické `credentials` stringy.
+- UI zobrazuje všechny hodnoty včetně „secrets“ (dev aplikace, žádné maskování).
 
 ## 9) RAG a indexace
 - Postup: načti → diff proti Mongo `contentHash` → nové části → chunking (`TextChunkingService`) → Weaviate upsert.

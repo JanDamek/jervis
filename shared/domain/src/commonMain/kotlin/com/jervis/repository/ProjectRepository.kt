@@ -35,6 +35,15 @@ class ProjectRepository(
     }
 
     /**
+     * Update existing project via PUT /api/projects/{id}
+     * Uses the project's id as path parameter and sends full body for update.
+     */
+    suspend fun updateProject(project: ProjectDto): ProjectDto {
+        require(project.id.isNotBlank()) { "Project id must be provided for update" }
+        return projectService.updateProject(project.id, project)
+    }
+
+    /**
      * Delete project
      */
     suspend fun deleteProject(project: ProjectDto) {

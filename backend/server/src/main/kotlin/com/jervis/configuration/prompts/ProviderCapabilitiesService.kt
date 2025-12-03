@@ -43,7 +43,7 @@ class ProviderCapabilitiesService {
     /**
      * Get capabilities for specific provider.
      */
-    fun getProviderCapabilities(provider: ModelProviderEnum): ProviderCapabilities? =
+    fun getProviderCapabilities(provider: ModelProviderEnum): ProviderCapabilities =
         providers[provider]?.let { config ->
             ProviderCapabilities(
                 provider = provider,
@@ -51,5 +51,5 @@ class ProviderCapabilitiesService {
                 maxConcurrentRequests = config.maxConcurrentRequests,
                 executionMode = config.executionMode,
             )
-        }
+        } ?: error("Provider configuration not found for $provider")
 }

@@ -35,19 +35,7 @@ actual fun createPlatformHttpClient(): HttpClient {
             pingIntervalMillis = 20_000
             maxFrameSize = Long.MAX_VALUE
         }
-        // Add security headers for all requests
-        defaultRequest {
-            headers.append(SecurityConstants.CLIENT_HEADER, SecurityConstants.CLIENT_TOKEN)
-            headers.append(SecurityConstants.PLATFORM_HEADER, SecurityConstants.PLATFORM_DESKTOP)
-            try {
-                val localIp = getLocalIpAddress()
-                if (localIp != null) {
-                    headers.append(SecurityConstants.CLIENT_IP_HEADER, localIp)
-                }
-            } catch (e: Exception) {
-                // Ignore - IP is optional
-            }
-        }
+        // Security headers for WebSocket are added explicitly in DebugWebSocketClient.
     }
 }
 

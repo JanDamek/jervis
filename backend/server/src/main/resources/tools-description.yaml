@@ -11,37 +11,9 @@ tools:
     plannerDescription: "Search knowledge base (semantic embeddings)"
     description: "Search embeddings across all indexed content. Automatically searches in parallel. Parameters: query (string), filters (optional: sourceType, dateRange, keywords)"
 
-  # ═══════════════════════════════════════════════════════════════════
-  # CODE ANALYSIS & MODIFICATION TOOLS
-  # ═══════════════════════════════════════════════════════════════════
-
-  CODE_ANALYZE_TOOL:
-    plannerDescription: "Analyze code using Joern CPG (call graphs, vulnerabilities, data flow)"
-    description: "Execute code analysis queries on project's CPG (Code Property Graph). Use for: call graph analysis, security vulnerability detection (SQL injection, XSS), data flow analysis. Returns JSON results directly (NO LLM). Requires project indexed first. Parameters: query (Joern query string), language (optional: kotlin/java/etc for faster analysis)"
-
-  CODE_MODIFY_TOOL:
-    plannerDescription: "Generate code changes, patches, or new files"
-    description: "Generate and apply code changes. Use for: implementing features, refactoring, adding methods/classes, fixing bugs. Parameters: instructions (what to change), filePath (target file), context (relevant code/analysis from previous steps)"
-
-  PROJECT_EXPLORE_STRUCTURE_TOOL:
-    plannerDescription: "List repository directory tree"
-    description: "List repository directory tree. Quick filesystem map for choosing next steps. Parameters: path (optional), depth (optional), includeHidden (optional). Ignores .git, target, node_modules, .idea"
-
   SOURCE_FETCH_ORIGINAL_TOOL:
     plannerDescription: "Fetch complete original content (email, attachment, file)"
     description: "Fetch complete original content. Use ONLY when RAG chunks insufficient. Supports: email://accountId/messageId, email://accountId/messageId/attachment/N, file://path. Most content already in RAG - use sparingly. Parameters: uri (reference string)"
-
-  # ═══════════════════════════════════════════════════════════════════
-  # SYSTEM & COMMAND TOOLS
-  # ═══════════════════════════════════════════════════════════════════
-
-  SYSTEM_EXECUTE_COMMAND_TOOL:
-    plannerDescription: "Execute shell commands (build, test, filesystem, package managers)"
-    description: "Execute system/development commands. Use for: build/test/lint tasks, FS operations, data processing, services. Git actions prefer GIT tool unless explicitly requested as shell. Parameters: command (exact command string), timeout (optional, for long-running)"
-
-  PROJECT_GIT_SYNC_TOOL:
-    plannerDescription: "Synchronize Git repository (clone/pull)"
-    description: "Synchronize project Git repository. Use for: manual refresh, recovery from failed sync, forced update. Performs git clone (if not exists) or git pull (if exists). Parameters: projectId (optional if context set), action (sync/clone/update/pull, default: sync), validateAccess (boolean, default: false)"
 
   # ═══════════════════════════════════════════════════════════════════
   # COMMUNICATION TOOLS
@@ -64,32 +36,8 @@ tools:
     description: "Send Slack messages. Use for: updates, alerts, team notifications. Supports mentions, threads, blocks. Parameters: action='send_message', target_type (channel|user|dm), target, message, thread_ts (optional), mentions (optional), blocks (optional)"
 
   # ═══════════════════════════════════════════════════════════════════
-  # WEB & DOCUMENT TOOLS
-  # ═══════════════════════════════════════════════════════════════════
-
-  CONTENT_SEARCH_WEB_TOOL:
-    plannerDescription: "Search web using Searxng or open specific URLs"
-    description: "Web search using Searxng. Use for: research topics/technologies, find docs/tutorials, access web pages, gather current info not in knowledge base, search error solutions. Parameters: plain text query OR JSON with SearchRequest (query, action, url, engines, categories, maxResults)"
-
-  DOCUMENT_FROM_WEB_TOOL:
-    plannerDescription: "Extract text content and links from web pages"
-    description: "Extract text from web pages. Use for: open/extract web page content, parse HTML/extract readable text, retrieve docs/articles, extract links for navigation, clean/format web content. Parameters: plain URL OR JSON with PageOpenRequest (url, maxContentLength, includeLinks). Extracts title, clean text, removes scripts/styles"
-
-  DOCUMENT_EXTRACT_TEXT_TOOL:
-    plannerDescription: "Extract text from documents (PDF, DOCX, XLSX, etc) using Tika"
-    description: "Extract text from documents using Apache Tika. Use for: extract text from PDF/DOCX/XLSX/PPTX, convert to plain text, extract metadata, process downloaded docs. Supports PDF, DOCX, XLSX, PPTX, HTML, RTF, TXT, MD. Parameters: file path (absolute/relative), 'no metadata'/'text only' to exclude metadata, 'max: [number]' to limit length"
-
-  # ═══════════════════════════════════════════════════════════════════
   # GRAPH & AGENTS
   # ═══════════════════════════════════════════════════════════════════
-
-  GRAPH_UPSERT_NODE_TOOL:
-    plannerDescription: "Upsert a node in the per-client Knowledge Graph (Arango)"
-    description: "Create or update a graph node. Parameters (JSON): { 'entityType': 'entity|document|class|method|...', 'key': 'stable key e.g. entity::module::Name', 'props': { ... arbitrary string map ... }, 'ragChunks': ['weaviate://class/id', ...] }. Returns JSON with ok, key, created, warnings."
-
-  GRAPH_UPSERT_EDGE_TOOL:
-    plannerDescription: "Upsert an edge between two graph nodes"
-    description: "Create or update an edge. Parameters (JSON): { 'edgeType': 'mentions|defines|implements|...', 'fromKey': 'node key', 'toKey': 'node key', 'props': { ... } }. Returns JSON with ok, edgeType, fromKey, toKey, created, warnings."
 
   KOOG_AGENT_TOOL:
     plannerDescription: "Plan-and-route Koog agent (produces deterministic plan of tool calls)"
@@ -102,10 +50,6 @@ tools:
   TASK_CREATE_USER_TASK_TOOL:
     plannerDescription: "Create action item for user (reply email, review, decision, meeting)"
     description: "Create user action item (NOT background task). Use when user must: reply email, review document, make decision, attend meeting. Required JSON: { \"title\": \"title\", \"description\": \"details\", \"priority\": \"LOW|MEDIUM|HIGH|URGENT\", \"dueDate\": \"ISO-8601\", \"sourceType\": \"EMAIL|MEETING|AGENT_SUGGESTION|MANUAL\", \"sourceUri\": \"email://accountId/messageId\", \"metadata\": { \"threadId\": \"<hex>\" } }. Metadata threadId enables auto-resolve when conversation answered"
-
-  TASK_QUERY_USER_TASKS_TOOL:
-    plannerDescription: "Query user's action items (today, this week, active)"
-    description: "Query user action items. Answer questions like 'What do I need to do today?' or 'What's on my plate?'. Optional JSON: { \"scope\": \"today|active|range\", \"daysAhead\": 7, \"startDate\": \"ISO-8601\", \"endDate\": \"ISO-8601\" }. Returns tasks grouped by due date with priority, status, source"
 
   REQUIREMENT_CREATE_USER_TOOL:
     plannerDescription: "Create user requirement/wish to track"
@@ -127,10 +71,6 @@ tools:
     plannerDescription: "Schedule future tasks (emails, calls, reminders, maintenance)"
     description: "Schedule/cancel scheduled tasks (communication, meetings, maintenance, business). Task will be dispatched to agent 10min before scheduled time. Supports natural language times (now, today, tomorrow, in X hours/days) and cron expressions. Parameters: content (full task description), scheduledDateTime, taskName, cronExpression (optional, for recurring), taskId (for cancel), correlationId (optional)"
 
-  SYSTEM_MANAGE_LINK_SAFETY_TOOL:
-    plannerDescription: "Manage banned/allowed URL patterns for link safety"
-    description: "Manage URL pattern safety. Use when discovering problematic URLs (calendar declines, unsubscribes, confirmations) or false positives. Actions: add (new UNSAFE regex), disable (turn off pattern causing false positives), enable (re-enable), list (show all), test (check URL). IMPORTANT: Prevents meetings being cancelled by calendar links! Parameters: action, pattern, description, exampleUrl, patternId, testUrl, listOnlyEnabled"
-
   SYSTEM_INDEX_LINK_TOOL:
     plannerDescription: "Index verified safe link into RAG"
     description: "Index safe link into RAG. Use AFTER determining link is safe (docs, articles, product pages). SKIPS safety checks - only use after manual verification. Parameters: url (required), reason (why safe), sourceType (optional, defaults to URL)"
@@ -142,11 +82,3 @@ tools:
   CREATE_PENDING_TASK_TOOL:
     plannerDescription: "Create background analysis task for bugs/anomalies"
     description: "Create pending task for background analysis. Use when discovering anomalies, bugs, issues requiring focused investigation. PARAMETRIC tool (NO LLM) - provide plain text description. Parameters: description (plain text)"
-
-  CONSOLIDATE_STEPS_TOOL:
-    plannerDescription: "Consolidate completed steps into summary"
-    description: "Consolidate range of completed plan steps into single summary. Use when many completed steps need context management. PARAMETRIC tool (NO LLM). JSON format: {\"stepRangeFrom\": <int, 0-based>, \"stepRangeTo\": <int, 0-based>, \"summaryText\": <string, brief summary>}. Merges multiple steps for context reduction"
-
-  SYSTEM_QUALIFIER_RULES_MANAGE_TOOL:
-    plannerDescription: "Manage qualifier rules for task pre-filtering"
-    description: "Manage qualifier rules controlling task pre-filtering before GPU analysis. Operations: add, list, listAll, delete, update. Qualifier Types: EMAIL_PROCESSING, JIRA_PROCESSING, LINK_QUALIFIER, etc. Rules written in natural language, auto-injected into qualifier prompts. Parameters: operation, taskType, ruleText, ruleId, includeDisabled"
