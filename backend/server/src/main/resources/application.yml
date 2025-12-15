@@ -222,11 +222,8 @@ endpoints:
   whisper:
     baseUrl: ${WHISPER_BASE_URL:http://192.168.100.117:8083/}
   atlassian:
-    #    baseUrl: ${ATLASSIAN_BASE_URL:http://192.168.100.117:8084/}
-    baseUrl: ${ATLASSIAN_BASE_URL:http://localhost:8084/}
+    baseUrl: ${ATLASSIAN_BASE_URL:http://192.168.100.117:8084/}
   aider:
-    #    baseUrl: ${AIDER_BASE_URL:http://192.168.100.117:3100/}
-    baseUrl: ${AIDER_BASE_URL:http://localhost:3100/}
+    baseUrl: ${AIDER_BASE_URL:http://192.168.100.117:3100/}
   coding:
-    #    baseUrl: ${CODING_BASE_URL:http://192.168.100.117:3200/}
-    baseUrl: ${CODING_BASE_URL:http://localhost:3200/}
+    baseUrl: ${CODING_BASE_URL:http://192.168.100.117:3200/}
