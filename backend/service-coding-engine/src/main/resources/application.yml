@@ -3,14 +3,14 @@ spring:
     name: jervis-coding-engine
 
 server:
-  port: ${SERVER_PORT:8080}
+  port: ${SERVER_PORT:3200}
 
 coding-engine:
   data-root-dir: ${DATA_ROOT_DIR:/opt/jervis/data}
-  docker-host: ${DOCKER_HOST:tcp://localhost:2375}
+  docker-host: ${DOCKER_HOST:tcp://worker3:2375}
   sandbox-image: ${SANDBOX_IMAGE:ghcr.io/all-hands-ai/runtime:0.9-nikolaik}
   max-iterations: ${MAX_ITERATIONS:10}
-  ollama-base-url: ${OLLAMA_BASE_URL:http://host.docker.internal:11434}
+  ollama-base-url: ${OLLAMA_BASE_URL:http://192.168.100.117:11434}
 
 logging:
   level:
