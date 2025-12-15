@@ -1,22 +1,11 @@
 package com.jervis.service.gateway.clients.llm
 
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.jervis.configuration.KtorClientFactory
 import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.configuration.properties.PreloadOllamaProperties
 import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.domain.model.ModelTypeEnum
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
-import mu.KotlinLogging
-import org.springframework.boot.ApplicationArguments
-import org.springframework.boot.ApplicationRunner
-import org.springframework.stereotype.Component
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import io.ktor.client.call.body
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -24,7 +13,16 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.readUTF8Line
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
+import mu.KotlinLogging
+import org.springframework.boot.ApplicationArguments
+import org.springframework.boot.ApplicationRunner
+import org.springframework.stereotype.Component
 
 /**
  * Preloads LLM models to Ollama instances at application startup.
@@ -44,11 +42,10 @@ class LlmModelPreloader(
     private val ktorClientFactory: KtorClientFactory,
     private val preloadProps: PreloadOllamaProperties,
 ) : ApplicationRunner {
-
     private val logger = KotlinLogging.logger {}
     private val scope = CoroutineScope(Dispatchers.IO)
 
-    override fun run(args: ApplicationArguments?) {
+    override fun run(args: ApplicationArguments) {
         scope.launch {
             try {
                 // Consider all model types except embeddings (handled by EmbeddingModelPreloader)
@@ -61,24 +58,18 @@ class LlmModelPreloader(
                         .flatMap { type -> models.models[type].orEmpty().asSequence() }
                         .filter { it.model.isNotBlank() }
 
-                // Models that should be present on the GPU Ollama (primary)
+                // Only warm the Workflow agent model on the GPU Ollama (primary)
+                // We intentionally ignore all other OLLAMA models to save VRAM and startup time.
                 val primaryModels: Set<String> =
-                    allCandidates
-                        .filter { it.provider == ModelProviderEnum.OLLAMA }
-                        .map { it.model }
-                        .toSet()
+                    setOf(
+                        "qwen3-coder-tool:30b",
+                    )
 
-                // CPU Ollama (qualifier) – pouze modely pro kvalifikátor (OLLAMA_QUALIFIER)
                 val qualifierModels: Set<String> =
                     allCandidates
                         .filter { it.provider == ModelProviderEnum.OLLAMA_QUALIFIER }
                         .map { it.model }
                         .toSet()
-
-                if (primaryModels.isEmpty() && qualifierModels.isEmpty()) {
-                    logger.info { "No OLLAMA LLM models configured to preload." }
-                    return@launch
-                }
 
                 // Pull on GPU (primary) Ollama in parallel (bounded)
                 var gpuPulled = 0
@@ -86,79 +77,83 @@ class LlmModelPreloader(
                 var cpuPulled = 0
                 var cpuWarmed = 0
 
-                if (primaryModels.isNotEmpty()) {
-                    val primaryClient = ktorClientFactory.getHttpClient("ollama.primary")
-                    val concurrency = preloadProps.gpu.concurrency.coerceAtLeast(1)
-                    logger.info { "LlmModelPreloader: parallel pull on GPU with concurrency=$concurrency for ${primaryModels.size} model(s)" }
-                    val semaphore = Semaphore(concurrency)
-                    val tasks = primaryModels.map { model ->
+                val primaryClient = ktorClientFactory.getHttpClient("ollama.primary")
+                @Suppress("ktlint:standard:max-line-length")
+                logger.info {
+                    "LlmModelPreloader: warming only Workflow model on GPU with -> ${primaryModels.joinToString()}"
+                }
+                val tasks =
+                    primaryModels.map { model ->
                         scope.async {
-                            semaphore.withPermit {
-                                try {
-                                    logger.info { "Preloading Ollama LLM model on GPU instance: $model" }
-                                    val body = OllamaPullRequest(name = model)
-                                    val response: HttpResponse = primaryClient.post("/api/pull") {
+                            try {
+                                logger.info { "Preloading Ollama LLM model on GPU instance: $model" }
+                                val body = OllamaPullRequest(name = model)
+                                val response: HttpResponse =
+                                    primaryClient.post("/api/pull") {
                                         setBody(body)
                                     }
-                                    val status = readPullResponse(response)
-                                    logger.info { "Ollama pull (GPU) completed for $model: $status" }
-                                    gpuPulled += 1
+                                val status = readPullResponse(response)
+                                logger.info { "Ollama pull (GPU) completed for $model: $status" }
+                                gpuPulled += 1
 
-                                    // Warm-up model in memory with keep_alive
-                                    try {
-                                        val warmupBody = OllamaGenerateRequest(
+                                // Warm-up model in memory with keep_alive
+                                try {
+                                    val warmupBody =
+                                        OllamaGenerateRequest(
                                             model = model,
                                             prompt = "warmup",
                                             stream = false,
                                             keep_alive = preloadProps.llm.keepAlive,
                                         )
-                                        primaryClient.post("/api/generate") {
+                                    primaryClient
+                                        .post("/api/generate") {
                                             setBody(warmupBody)
                                         }.body<OllamaGenerateResponse>()
-                                        logger.info { "LLM model warmed and kept alive (${preloadProps.llm.keepAlive}) on GPU: $model" }
-                                        gpuWarmed += 1
-                                    } catch (e: Exception) {
-                                        logger.warn(e) { "Failed to warm LLM model '$model' on GPU instance" }
-                                    }
+                                    logger.info { "LLM model warmed and kept alive (${preloadProps.llm.keepAlive}) on GPU: $model" }
+                                    gpuWarmed += 1
                                 } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to pull Ollama model '$model' on GPU instance" }
+                                    logger.warn(e) { "Failed to warm LLM model '$model' on GPU instance" }
                                 }
+                            } catch (e: Exception) {
+                                logger.warn(e) { "Failed to pull Ollama model '$model' on GPU instance" }
                             }
                         }
                     }
-                    tasks.awaitAll()
-                }
+                tasks.awaitAll()
 
                 // Pull on CPU (qualifier) Ollama in parallel (bounded) – only OLLAMA_QUALIFIER models
                 if (qualifierModels.isNotEmpty()) {
                     val qualifierClient = ktorClientFactory.getHttpClient("ollama.qualifier")
-                    val concurrency = preloadProps.cpu.concurrency.coerceAtLeast(1)
-                    logger.info { "LlmModelPreloader: parallel pull on CPU with concurrency=$concurrency for ${qualifierModels.size} model(s)" }
-                    val semaphore = Semaphore(concurrency)
-                    val tasks = qualifierModels.map { model ->
-                        scope.async {
-                            semaphore.withPermit {
+                    logger.info {
+                        "LlmModelPreloader: parallel pull on CPU for ${qualifierModels.size} model(s)"
+                    }
+                    val tasks =
+                        qualifierModels.map { model ->
+                            scope.async {
                                 try {
                                     logger.info { "Preloading Ollama LLM model on CPU instance: $model" }
                                     val body = OllamaPullRequest(name = model)
-                                    val response: HttpResponse = qualifierClient.post("/api/pull") {
-                                        setBody(body)
-                                    }
+                                    val response: HttpResponse =
+                                        qualifierClient.post("/api/pull") {
+                                            setBody(body)
+                                        }
                                     val status = readPullResponse(response)
                                     logger.info { "Ollama pull (CPU) completed for $model: $status" }
                                     cpuPulled += 1
 
                                     // Warm-up model in memory with keep_alive
                                     try {
-                                        val warmupBody = OllamaGenerateRequest(
-                                            model = model,
-                                            prompt = "warmup",
-                                            stream = false,
-                                            keep_alive = preloadProps.llm.keepAlive,
-                                        )
-                                        qualifierClient.post("/api/generate") {
-                                            setBody(warmupBody)
-                                        }.body<OllamaGenerateResponse>()
+                                        val warmupBody =
+                                            OllamaGenerateRequest(
+                                                model = model,
+                                                prompt = "warmup",
+                                                stream = false,
+                                                keep_alive = preloadProps.llm.keepAlive,
+                                            )
+                                        qualifierClient
+                                            .post("/api/generate") {
+                                                setBody(warmupBody)
+                                            }.body<OllamaGenerateResponse>()
                                         logger.info { "LLM model warmed and kept alive (${preloadProps.llm.keepAlive}) on CPU: $model" }
                                         cpuWarmed += 1
                                     } catch (e: Exception) {
@@ -169,11 +164,12 @@ class LlmModelPreloader(
                                 }
                             }
                         }
-                    }
                     tasks.awaitAll()
                 }
 
-                logger.info { "LlmModelPreloader finished: GPU pulled=$gpuPulled, GPU warmed=$gpuWarmed; CPU pulled=$cpuPulled, CPU warmed=$cpuWarmed; totalGPU=${primaryModels.size}, totalCPU=${qualifierModels.size}" }
+                logger.info {
+                    "LlmModelPreloader finished: GPU pulled=$gpuPulled, GPU warmed=$gpuWarmed; CPU pulled=$cpuPulled, CPU warmed=$cpuWarmed; totalGPU=${primaryModels.size}, totalCPU=${qualifierModels.size}"
+                }
             } catch (e: Exception) {
                 logger.warn(e) { "LlmModelPreloader encountered an error (startup continues)" }
             }

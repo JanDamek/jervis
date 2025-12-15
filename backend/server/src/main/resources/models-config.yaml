@@ -7,7 +7,7 @@ providers:
   OLLAMA_QUALIFIER:
     endpoint: ollama.qualifier
     executionMode: NONBLOCKING
-    maxConcurrentRequests: 4
+    maxConcurrentRequests: 1
 
   OLLAMA_EMBEDDING:
     endpoint: ollama.embedding
@@ -35,77 +35,12 @@ providers:
     maxConcurrentRequests: 25
 
 models:
-  EMBEDDING_TEXT:
+  EMBEDDING:
     - provider: OLLAMA_EMBEDDING
-      model: bge-m3
-      context-length: 4096
-      dimension: 1024
+      model: qwen3-embedding:8b
+      context-length: 32 768
+      dimension: 4096
       concurrency: 50
-
-  EMBEDDING_CODE:
-    - provider: OLLAMA_EMBEDDING
-      model: bge-m3
-      context-length: 4096
-      dimension: 1024
-      concurrency: 50
-
-  PLANNER:
-    - provider: OLLAMA
-      model: qwen3:30b
-      contextLength: 32768
-    - provider: GOOGLE
-      model: gemini-2.5-pro
-      contextLength: 1048576
-
-  GENERIC_TEXT_MODEL:
-    - provider: OLLAMA
-      model: qwen3:30b
-      contextLength: 32768
-    - provider: GOOGLE
-      model: gemini-2.5-pro
-      contextLength: 1048576
-
-  HEAVY_TEXT_MODEL:
-    - provider: OLLAMA
-      model: qwen3:30b
-      contextLength: 32768
-    - provider: GOOGLE
-      model: gemini-2.5-pro
-      contextLength: 1048576
-
-  GENERIC_CODE_MODEL:
-    - provider: OLLAMA
-      model: qwen3-coder:30b
-      contextLength: 32768
-    - provider: GOOGLE
-      model: gemini-2.5-pro
-      contextLength: 1048576
-
-  HEAVY_CODE_MODEL:
-    - provider: OLLAMA
-      model: qwen3-coder:30b
-      contextLength: 32768
-    - provider: GOOGLE
-      model: gemini-2.5-pro
-      contextLength: 1048576
-
-  QUALIFIER:
-    - provider: OLLAMA_QUALIFIER
-      model: qwen2.5:1.5b-instruct-q4_K_M
-      contextLength: 32768
-      numPredict: 128
-
-  QUALIFIER_PENDING_TASKS:
-    - provider: OLLAMA_QUALIFIER
-      model: qwen2.5:3b-instruct-q4_K_M
-      contextLength: 32768
-      numPredict: 128
-
-  QUALIFIER_EMAIL_EVENTS:
-    - provider: OLLAMA_QUALIFIER
-      model: qwen2.5:3b-instruct-q4_K_M
-      contextLength: 32768
-      numPredict: 128
 
 endpoints:
   openai:
@@ -126,11 +61,3 @@ endpoints:
       baseUrl: ${OLLAMA_EMBEDDING_BASE_URL:http://192.168.100.117:11436/}
   lmStudio:
     baseUrl: ${LMSTUDIO_BASE_URL:http://192.168.101.249:1234/}
-  searxng:
-    baseUrl: ${SEARXNG_BASE_URL:http://192.168.100.117:30053/}
-  joern:
-    baseUrl: ${JOERN_BASE_URL:http://192.168.100.117:8082/}
-  tika:
-    baseUrl: ${TIKA_BASE_URL:http://192.168.100.117:8081/}
-  whisper:
-    baseUrl: ${WHISPER_BASE_URL:http://192.168.100.117:8083/}

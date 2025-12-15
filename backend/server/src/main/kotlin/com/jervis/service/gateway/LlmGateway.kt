@@ -7,7 +7,7 @@ import com.jervis.service.gateway.processing.PromptBuilderService
 import com.jervis.service.gateway.processing.domain.ParsedResponse
 import com.jervis.service.gateway.selection.ModelCandidateSelector
 import com.jervis.service.prompts.PromptRepository
-import com.jervis.service.text.TokenEstimationService
+import com.jervis.service.token.TokenCountingService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
@@ -23,7 +23,7 @@ import java.time.format.DateTimeFormatter
 @Service
 class LlmGateway(
     private val promptRepository: PromptRepository,
-    private val tokenEstimationService: TokenEstimationService,
+    private val tokenCountingService: TokenCountingService,
     private val modelCandidateSelector: ModelCandidateSelector,
     private val promptBuilderService: PromptBuilderService,
     private val jsonParser: JsonParser,
@@ -93,7 +93,7 @@ class LlmGateway(
                 outputLanguage,
                 responseSchema,
             )
-        val estimatedTokens = tokenEstimationService.estimateTotalTokensNeeded(systemPrompt, finalUserPrompt)
+        val estimatedTokens = tokenCountingService.estimateTotalTokensNeeded(systemPrompt, finalUserPrompt)
 
         logger.debug { "Estimated tokens needed: $estimatedTokens for prompt type: $type" }
 

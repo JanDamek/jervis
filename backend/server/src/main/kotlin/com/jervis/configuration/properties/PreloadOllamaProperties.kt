@@ -8,15 +8,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties
  */
 @ConfigurationProperties(prefix = "preload.ollama")
 data class PreloadOllamaProperties(
-    val gpu: ConcurrencyProps,
-    val cpu: ConcurrencyProps,
     val llm: LlmProps,
     val embed: EmbedProps,
 ) {
-    data class ConcurrencyProps(
-        val concurrency: Int,
-    )
-
     data class LlmProps(
         val keepAlive: String,
         val refreshSafetyFactor: Double,

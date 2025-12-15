@@ -79,7 +79,8 @@ abstract class AbstractContinuousIndexer<A, I> {
         item: I,
         content: Any,
         result: IndexingResult,
-    ) {}
+    ) {
+    }
 
     /** Mark item as successfully indexed. */
     protected abstract suspend fun markAsIndexed(
@@ -99,7 +100,7 @@ abstract class AbstractContinuousIndexer<A, I> {
 
     /** Classify if error is communication-related (HTTP/IMAP/timeout...). */
     protected open fun isCommunicationError(t: Throwable): Boolean =
-        t.message?.contains("Connection", true) == true ||
+        t.message?.contains("ConnectionDocument", true) == true ||
             t.message?.contains("timeout", true) == true ||
             t.message?.contains("HTTP", true) == true ||
             t.message?.contains("IMAP", true) == true ||

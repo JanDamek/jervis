@@ -1,32 +1,30 @@
 package com.jervis.service.background
 
-import com.jervis.configuration.prompts.PromptTypeEnum
 import com.jervis.configuration.prompts.ProviderCapabilitiesService
-import com.jervis.configuration.properties.ModelsProperties
+import com.jervis.configuration.properties.KoogProperties
 import com.jervis.domain.model.ModelProviderEnum
-import com.jervis.domain.model.ModelTypeEnum
-import com.jervis.domain.plan.Plan
-import com.jervis.dto.PendingTaskStateEnum
+import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.entity.PendingTaskDocument
 import com.jervis.koog.qualifier.KoogQualifierAgent
-import com.jervis.service.client.ClientService
 import com.jervis.service.prompts.PromptRepository
+import com.jervis.service.text.TikaTextExtractionService
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flatMapMerge
 import kotlinx.coroutines.flow.flow
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import mu.KotlinLogging
-import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 
 /**
- * CPU-only qualification service.
- * Uses KoogQualifierAgent directly to qualify tasks.
- * Decides whether each task should be discarded or dispatched to GPU (main agent pipeline).
+ * CPU/GPU qualification service.
+ * Prepares robust prompts with One-Shot examples to force 14B models into Tool Use.
+ *
+ * SINGLETON GUARANTEE:
+ * - Only ONE instance of processAllQualifications() can run at a time
+ * - Uses atomic flag to prevent concurrent execution
+ * - This ensures qualifier agent runs exactly once per application instance
  */
 @Service
 class TaskQualificationService(
@@ -34,190 +32,99 @@ class TaskQualificationService(
     private val koogQualifierAgent: KoogQualifierAgent,
     private val providerCapabilitiesService: ProviderCapabilitiesService,
     private val promptRepository: PromptRepository,
-    private val modelsProperties: ModelsProperties,
-    private val clientService: ClientService,
+    private val tikaTextExtractionService: TikaTextExtractionService,
+    private val koogProperties: KoogProperties,
 ) {
     private val logger = KotlinLogging.logger {}
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
-    /**
-     * Backpressure-aware processing of tasks awaiting qualification.
-     *
-     * Design guidelines (please keep in sync with docs):
-     * - Kotlin first: use Flow + flatMapMerge for bounded concurrency; no Java-style list batching.
-     * - Backpressure: the operator-level concurrency is derived from provider capabilities (OLLAMA_QUALIFIER),
-     *   so thousands of tasks won't spawn thousands of coroutines; at most N will run concurrently.
-     * - Uses KoogQualifierAgent directly with Plan context.
-     */
+    // Atomic flag to ensure only one qualification cycle runs at a time
+    private val isQualificationRunning = java.util.concurrent.atomic.AtomicBoolean(false)
+
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun processAllQualifications() {
-        val capabilities = providerCapabilitiesService.getProviderCapabilities(ModelProviderEnum.OLLAMA_QUALIFIER)
-        val effectiveConcurrency = (capabilities.maxConcurrentRequests).coerceAtLeast(1)
-
-        pendingTaskService
-            .findTasksForQualification()
-            .buffer(effectiveConcurrency)
-            .flatMapMerge(concurrency = effectiveConcurrency) { task ->
-                flow {
-                    runCatching { processOne(task) }
-                        .onFailure { e ->
-                            logger.error(e) { "QUALIFICATION_ERROR: task=${task.id} type=${task.type} msg=${e.message}" }
-                        }
-                    emit(Unit)
-                }
-            }.catch { e ->
-                logger.error(e) { "Qualification stream failure: ${e.message}" }
-            }.collect()
-
-        logger.info { "Qualification: stream cycle complete" }
-    }
-
-    private suspend fun processOne(original: PendingTaskDocument) {
-        val task = pendingTaskService.tryClaimForQualification(original.id)
-
-        if (task.state != PendingTaskStateEnum.QUALIFYING) {
-            logger.debug { "QUALIFICATION_SKIP: id=${task.id} state=${task.state}" }
+        // SINGLETON GUARANTEE: Only one qualification cycle can run at a time
+        if (!isQualificationRunning.compareAndSet(false, true)) {
+            logger.warn {
+                "QUALIFICATION_SKIPPED: Another qualification cycle is already running. " +
+                "This prevents concurrent qualifier agent execution."
+            }
             return
         }
 
-        val promptType = task.type.promptType
+        try {
+            logger.debug { "QUALIFICATION_CYCLE_START: Acquired singleton lock" }
 
-        // Get client document for Plan
-        val clientDocument = clientService.getClientById(task.clientId)
-            ?: throw IllegalStateException("Client not found: ${task.clientId}")
+            val capabilities = providerCapabilitiesService.getProviderCapabilities(ModelProviderEnum.OLLAMA_QUALIFIER)
+            val effectiveConcurrency = (capabilities.maxConcurrentRequests).coerceAtLeast(1)
 
-        // Build Plan context for KoogQualifierAgent
-        val plan = Plan(
-            id = ObjectId(),
-            taskInstruction = task.content,
-            originalLanguage = "en",
-            englishInstruction = task.content,
-            clientDocument = clientDocument,
-            projectDocument = null,
-            correlationId = task.correlationId,
-            backgroundMode = true,
-        )
+            pendingTaskService
+                .findTasksForQualification()
+                .buffer(effectiveConcurrency)
+                .flatMapMerge(concurrency = effectiveConcurrency) { task ->
+                    flow {
+                        runCatching { processOne(task) }
+                            .onFailure { e ->
+                                val isRetriable = isRetriableError(e)
+                                logger.error(e) {
+                                    "QUALIFICATION_ERROR: task=${task.id} type=${task.type} retriable=$isRetriable msg=${e.message}"
+                                }
 
-        // Get system prompt from prompts.yaml
-        val systemPrompt = promptRepository.getPrompt(promptType).systemPrompt
+                                if (isRetriable) {
+                                    // Return to READY_FOR_QUALIFICATION for retry
+                                    pendingTaskService.returnToQueue(task.id, koogProperties.qualifierMaxRetries)
+                                } else {
+                                    // Non-retriable error - mark as ERROR
+                                    pendingTaskService.markAsError(task.id, e.message ?: "Unknown error")
+                                }
+                            }
+                        emit(Unit)
+                    }
+                }.catch { e ->
+                    logger.error(e) { "Qualification stream failure: ${e.message}" }
+                }.collect()
 
-        // Build user prompt with task content
-        val userPrompt = buildUserPrompt(task)
-
-        // Get model name from models configuration for OLLAMA_QUALIFIER
-        val qualifierModels = modelsProperties.models[ModelTypeEnum.QUALIFIER]
-            ?: throw IllegalStateException("No QUALIFIER configuration found")
-
-        val qualifierModel = qualifierModels.firstOrNull { it.provider == ModelProviderEnum.OLLAMA_QUALIFIER }
-            ?: throw IllegalStateException("No OLLAMA_QUALIFIER model found in QUALIFIER configuration")
-
-        val modelName = qualifierModel.model
-
-        // Call KoogQualifierAgent
-        val response = koogQualifierAgent.run(
-            plan = plan,
-            systemPrompt = systemPrompt,
-            userPrompt = userPrompt,
-            modelName = modelName,
-        )
-
-        // Parse response
-        when (promptType) {
-            PromptTypeEnum.LINK_QUALIFIER -> handleLinkQualifierResponse(task, response.answer)
-            else -> handleGenericQualifierResponse(task, response.answer)
+            logger.info { "QUALIFICATION_CYCLE_COMPLETE: Processing finished, releasing singleton lock" }
+        } finally {
+            // ALWAYS release the lock, even if exception occurs
+            isQualificationRunning.set(false)
         }
     }
 
-    private fun buildUserPrompt(task: PendingTaskDocument): String {
-        return buildString {
-            appendLine("Content:")
-            appendLine(task.content)
-            appendLine()
-            appendLine("ClientId: ${task.clientId.toHexString()}")
-            task.projectId?.let {
-                appendLine("ProjectId: ${it.toHexString()}")
+    private suspend fun processOne(original: PendingTaskDocument) {
+        if (original.type == PendingTaskTypeEnum.DATA_PROCESSING) {
+            logger.debug { "QUALIFICATION_SKIP: id=${original.id} type=${original.type} - data processing tasks bypass qualification" }
+            return
+        }
+        var task =
+            pendingTaskService.tryClaimForQualification(original.id) ?: run {
+                logger.debug { "QUALIFICATION_SKIP: id=${original.id} - task already claimed" }
+                return
             }
-            appendLine("CorrelationId: ${task.correlationId}")
-            appendLine()
-            appendLine("Decision (JSON): {\"discard\": true/false, \"reason\": \"...\"}")
+
+        task = tikaTextExtractionService.ensureCleanContent(task)
+
+        // Get extraction goal with schema and example
+        val extractionGoal = promptRepository.goals[original.type]
+        require(extractionGoal != null) { "No extraction goal found for: ${original.type}" }
+
+        val result = koogQualifierAgent.run(task = task)
+
+        logger.info {
+            "QUALIFICATION_RESULT: id=${task.id} type=${task.type} completed=${result.completed}"
         }
     }
 
-    private suspend fun handleGenericQualifierResponse(
-        task: PendingTaskDocument,
-        answer: String,
-    ) {
-        val out = runCatching {
-            // Try to parse JSON from the answer
-            val jsonStart = answer.indexOf('{')
-            val jsonEnd = answer.lastIndexOf('}')
-            if (jsonStart != -1 && jsonEnd != -1) {
-                val jsonStr = answer.substring(jsonStart, jsonEnd + 1)
-                json.decodeFromString<GenericQualifierOut>(jsonStr)
-            } else {
-                // Fallback: check if answer contains "discard" keyword
-                GenericQualifierOut(
-                    discard = answer.contains("discard", ignoreCase = true),
-                    reason = answer.take(200),
-                )
-            }
-        }.getOrElse {
-            logger.warn { "Failed to parse qualifier response, defaulting to DELEGATE: ${it.message}" }
-            GenericQualifierOut(discard = false, reason = "Parse error: ${it.message}")
-        }
-
-        if (out.discard) {
-            logger.info { "QUALIFICATION_DECISION: DISCARD id=${task.id} type=${task.type} reason='${out.reason ?: ""}'" }
-            pendingTaskService.deleteTask(task.id)
-        } else {
-            logger.info { "QUALIFICATION_DECISION: DELEGATE id=${task.id} type=${task.type} reason='${out.reason ?: ""}'" }
-            pendingTaskService.updateState(task.id, PendingTaskStateEnum.QUALIFYING, PendingTaskStateEnum.DISPATCHED_GPU)
-        }
+    private fun isRetriableError(e: Throwable): Boolean {
+        val message = e.message ?: return false
+        return message.contains("timeout", ignoreCase = true) ||
+            message.contains("timed out", ignoreCase = true) ||
+            message.contains("connection", ignoreCase = true) ||
+            message.contains("socket", ignoreCase = true) ||
+            message.contains("network", ignoreCase = true) ||
+            message.contains("doesn't match any condition on available edges", ignoreCase = true) ||
+            message.contains("stuck in node", ignoreCase = true) ||
+            e is java.net.SocketTimeoutException ||
+            e is java.net.SocketException ||
+            e is java.net.ConnectException
     }
-
-    private suspend fun handleLinkQualifierResponse(
-        task: PendingTaskDocument,
-        answer: String,
-    ) {
-        val out = runCatching {
-            val jsonStart = answer.indexOf('{')
-            val jsonEnd = answer.lastIndexOf('}')
-            if (jsonStart != -1 && jsonEnd != -1) {
-                val jsonStr = answer.substring(jsonStart, jsonEnd + 1)
-                json.decodeFromString<LinkQualifierOut>(jsonStr)
-            } else {
-                LinkQualifierOut(
-                    discard = answer.contains("discard", ignoreCase = true),
-                    reason = answer.take(200),
-                )
-            }
-        }.getOrElse {
-            logger.warn { "Failed to parse link qualifier response, defaulting to DELEGATE: ${it.message}" }
-            LinkQualifierOut(discard = false, reason = "Parse error: ${it.message}")
-        }
-
-        if (out.discard) {
-            logger.info {
-                "QUALIFICATION_DECISION: DISCARD_LINK id=${task.id} regex='${out.suggestedRegex ?: ""}' descr='${out.patternDescription ?: ""}'"
-            }
-            pendingTaskService.deleteTask(task.id)
-        } else {
-            logger.info { "QUALIFICATION_DECISION: DELEGATE_LINK id=${task.id} reason='${out.reason ?: ""}'" }
-            pendingTaskService.updateState(task.id, PendingTaskStateEnum.QUALIFYING, PendingTaskStateEnum.DISPATCHED_GPU)
-        }
-    }
-
-    @Serializable
-    data class GenericQualifierOut(
-        val discard: Boolean = false,
-        val reason: String? = null,
-    )
-
-    @Serializable
-    data class LinkQualifierOut(
-        val discard: Boolean = false,
-        val reason: String? = null,
-        val suggestedRegex: String? = null,
-        val patternDescription: String? = null,
-    )
 }

@@ -17,41 +17,35 @@ data class DomainRateLimitProperties(
      * Default: 10 req/sec
      */
     var maxRequestsPerSecond: Int = 10,
-
     /**
      * Default maximum requests per minute per domain.
      * Default: 100 req/min
      */
     var maxRequestsPerMinute: Int = 100,
-
     /**
      * Whether rate limiting is enabled by default.
      * Default: true
      */
     var rateLimitEnabled: Boolean = true,
-
     /**
      * TTL in seconds for unused domain rate limiters.
      * Limiters are cleaned up after this period of inactivity.
      * Default: 300 seconds (5 minutes)
      */
     var rateLimitTtlSeconds: Long = 300,
-
     /**
      * Request timeout in milliseconds.
      * Default: 30000ms (30 seconds)
      */
     var requestTimeoutMs: Long = 30000,
-
     /**
-     * Connection timeout in milliseconds.
+     * ConnectionDocument timeout in milliseconds.
      * Default: 10000ms (10 seconds)
      */
     var connectTimeoutMs: Long = 10000,
-
     /**
      * Socket timeout in milliseconds.
      * Default: 30000ms (30 seconds)
      */
-    var socketTimeoutMs: Long = 30000
+    var socketTimeoutMs: Long = 30000,
 )

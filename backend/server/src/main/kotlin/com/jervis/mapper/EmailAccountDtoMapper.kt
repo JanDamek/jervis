@@ -48,9 +48,9 @@ fun CreateOrUpdateEmailAccountRequestDto.toUpdateDomain(accountId: ObjectId): Up
 // Domain → DTO (for responses)
 fun EmailAccount.toDto(): EmailAccountDto =
     EmailAccountDto(
-        id = this.id.toHexString(),
-        clientId = this.clientId.toHexString(),
-        projectId = this.projectId?.toHexString(),
+        id = this.id.toString(),
+        clientId = this.clientId.toString(),
+        projectId = this.projectId?.toString(),
         provider = this.provider,
         displayName = this.displayName,
         description = this.description,

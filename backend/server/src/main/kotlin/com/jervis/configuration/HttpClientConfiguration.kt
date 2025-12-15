@@ -1,7 +1,7 @@
 package com.jervis.configuration
 
 import com.jervis.configuration.properties.DomainRateLimitProperties
-import com.jervis.entity.connection.Connection
+import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.entity.connection.HttpCredentials
 import com.jervis.service.http.RateLimitingPlugin
 import com.jervis.service.ratelimit.DomainRateLimiterService
@@ -48,15 +48,20 @@ class HttpClientConfiguration {
      * - Request/response logging (debug level)
      */
     @Bean
-    fun httpClient(rateLimiterService: DomainRateLimiterService, properties: DomainRateLimitProperties): HttpClient {
-        return HttpClient(CIO) {
+    fun httpClient(
+        rateLimiterService: DomainRateLimiterService,
+        properties: DomainRateLimitProperties,
+    ): HttpClient =
+        HttpClient(CIO) {
             // JSON serialization
             install(ContentNegotiation) {
-                json(Json {
-                    ignoreUnknownKeys = true
-                    prettyPrint = false
-                    isLenient = true
-                })
+                json(
+                    Json {
+                        ignoreUnknownKeys = true
+                        prettyPrint = false
+                        isLenient = true
+                    },
+                )
             }
 
             // Default timeout (can be overridden per request)
@@ -83,44 +88,46 @@ class HttpClientConfiguration {
                 header(HttpHeaders.UserAgent, "Jervis/1.0")
             }
         }
-    }
 
     /**
      * Rate limiting plugin - applies rate limits before each request.
      */
+
     /**
-     * Authorization plugin - injects auth headers from Connection.
+     * Authorization plugin - injects auth headers from ConnectionDocument.
      * Credentials must be provided via ConnectionCredentialsKey attribute.
      */
-    private fun createAuthPlugin() = createClientPlugin("AuthPlugin") {
-        onRequest { request, _ ->
-            val connection = request.attributes.getOrNull(ConnectionKey)
-            val credentials = request.attributes.getOrNull(ConnectionCredentialsKey)
+    private fun createAuthPlugin() =
+        createClientPlugin("AuthPlugin") {
+            onRequest { request, _ ->
+                val connection = request.attributes.getOrNull(ConnectionDocumentKey)
+                val credentials = request.attributes.getOrNull(ConnectionCredentialsKey)
 
-            if (connection is Connection.HttpConnection && credentials != null) {
-                when (credentials) {
-                    is HttpCredentials.Basic -> request.header(HttpHeaders.Authorization, credentials.toAuthHeader())
-                    is HttpCredentials.Bearer -> request.header(HttpHeaders.Authorization, credentials.toAuthHeader())
+                if (connection is ConnectionDocument.HttpConnectionDocument && credentials != null) {
+                    when (credentials) {
+                        is HttpCredentials.Basic -> request.header(HttpHeaders.Authorization, credentials.toAuthHeader())
+                        is HttpCredentials.Bearer -> request.header(HttpHeaders.Authorization, credentials.toAuthHeader())
+                    }
+                    logger.debug { "Added authentication header for ${connection.name}" }
                 }
-                logger.debug { "Added authentication header for ${connection.name}" }
             }
         }
-    }
 
     /**
      * Logging plugin - logs requests and responses at debug level.
      */
-    private fun createLoggingPlugin() = createClientPlugin("LoggingPlugin") {
-        onRequest { request, _ ->
-            logger.debug { "HTTP ${request.method.value} ${request.url}" }
+    private fun createLoggingPlugin() =
+        createClientPlugin("LoggingPlugin") {
+            onRequest { request, _ ->
+                logger.debug { "HTTP ${request.method.value} ${request.url}" }
+            }
         }
-    }
 }
 
 /**
- * Attribute key for passing Connection through request attributes.
+ * Attribute key for passing ConnectionDocument through request attributes.
  */
-val ConnectionKey = AttributeKey<Connection>("Connection")
+val ConnectionDocumentKey = AttributeKey<ConnectionDocument>("ConnectionDocument")
 
 /**
  * Attribute key for passing decrypted HttpCredentials through request attributes.

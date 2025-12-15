@@ -1,0 +1,32 @@
+spring:
+  application:
+    name: jervis-coding-engine
+
+server:
+  port: ${SERVER_PORT:8080}
+
+coding-engine:
+  data-root-dir: ${DATA_ROOT_DIR:/opt/jervis/data}
+  docker-host: ${DOCKER_HOST:tcp://localhost:2375}
+  sandbox-image: ${SANDBOX_IMAGE:ghcr.io/all-hands-ai/runtime:0.9-nikolaik}
+  max-iterations: ${MAX_ITERATIONS:10}
+  ollama-base-url: ${OLLAMA_BASE_URL:http://host.docker.internal:11434}
+
+logging:
+  level:
+    root: INFO
+    com.jervis: INFO
+    com.jervis.coding: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true

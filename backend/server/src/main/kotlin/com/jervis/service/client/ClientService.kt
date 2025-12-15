@@ -1,7 +1,10 @@
 package com.jervis.service.client
 
 import com.jervis.entity.ClientDocument
+import com.jervis.graphdb.GraphDBService
+import com.jervis.rag.internal.WeaviatePerClientProvisioner
 import com.jervis.repository.ClientMongoRepository
+import com.jervis.types.ClientId
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -10,6 +13,8 @@ import org.springframework.stereotype.Service
 @Service
 class ClientService(
     private val clientRepository: ClientMongoRepository,
+    private val graphDBService: GraphDBService,
+    private val weaviateProvisioner: WeaviatePerClientProvisioner,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -17,19 +22,51 @@ class ClientService(
         val document = ClientDocument(name = clientName)
         val saved = clientRepository.save(document)
         logger.info { "Created client ${saved.name}" }
+
+        // Initialize ArangoDB graph schema and Weaviate collections for new client
+        try {
+            val graphStatus = graphDBService.ensureSchema(saved.id)
+            weaviateProvisioner.ensureClientCollections(saved.id)
+
+            if (graphStatus.ok) {
+                logger.info { "Initialized graph schema for client ${saved.name}" }
+            } else {
+                logger.warn { "Graph schema initialization had warnings for ${saved.name}: ${graphStatus.warnings}" }
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to initialize graph/RAG for client ${saved.name}" }
+            // Continue - client is created, schema can be initialized later
+        }
+
         return saved
     }
 
     suspend fun create(client: ClientDocument): ClientDocument {
-        val newClient = client.copy(id = ObjectId.get())
+        val newClient = client.copy(id = ClientId(ObjectId.get()))
         val saved = clientRepository.save(newClient)
         logger.info { "Created client ${saved.name} with id ${saved.id}" }
+
+        // Initialize ArangoDB graph schema and Weaviate collections for new client
+        try {
+            val graphStatus = graphDBService.ensureSchema(saved.id)
+            weaviateProvisioner.ensureClientCollections(saved.id)
+
+            if (graphStatus.ok) {
+                logger.info { "Initialized graph schema for client ${saved.name}" }
+            } else {
+                logger.warn { "Graph schema initialization had warnings for ${saved.name}: ${graphStatus.warnings}" }
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to initialize graph/RAG for client ${saved.name}" }
+            // Continue - client is created, schema can be initialized later
+        }
+
         return saved
     }
 
     suspend fun update(client: ClientDocument): ClientDocument {
         val existing =
-            clientRepository.findById(client.id) ?: throw NoSuchElementException("Client not found: ${client.id}")
+            clientRepository.findById(client.id.value) ?: throw NoSuchElementException("Client not found: ${client.id}")
 
         val mergedGitConfig =
             when {
@@ -60,8 +97,13 @@ class ClientService(
                     )
                 }
 
-                client.gitConfig != null -> client.gitConfig
-                else -> existing.gitConfig
+                client.gitConfig != null -> {
+                    client.gitConfig
+                }
+
+                else -> {
+                    existing.gitConfig
+                }
             }
 
         val merged =
@@ -72,7 +114,6 @@ class ClientService(
                 gitConfig = mergedGitConfig,
                 description = client.description,
                 defaultLanguageEnum = client.defaultLanguageEnum,
-                // Persist navigation and attachments coming from UI
                 lastSelectedProjectId = client.lastSelectedProjectId,
                 connectionIds = client.connectionIds,
             )
@@ -82,13 +123,13 @@ class ClientService(
         return updated
     }
 
-    suspend fun delete(id: ObjectId) {
-        val existing = clientRepository.findById(id) ?: return
+    suspend fun delete(id: ClientId) {
+        val existing = clientRepository.findById(id.value) ?: return
         clientRepository.delete(existing)
         logger.info { "Deleted client ${existing.name}" }
     }
 
     suspend fun list(): List<ClientDocument> = clientRepository.findAll().toList()
 
-    suspend fun getClientById(id: ObjectId): ClientDocument? = clientRepository.findById(id)
+    suspend fun getClientById(id: ClientId): ClientDocument? = clientRepository.findById(id.value)
 }

@@ -113,21 +113,21 @@ class TikaDocumentProcessor(
         }
         checkedStream.reset()
 
-        // Use Apache Tika (with Tesseract OCR) for all formats, including images and PDFs
         return try {
             val metadata = Metadata()
             metadata["resourceName"] = fileName
 
-            val handler = BodyContentHandler(-1) // No limit on content length
+            val handler = LinkPreservingContentHandler()
 
-            // Use OCR-enabled ParseContext when configured
             val context = parseContext
             parser.parse(checkedStream, handler, metadata, context)
 
             val extractedText = handler.toString()
             val documentMetadata = extractMetadata(metadata, fileName, sourceLocation)
 
-            logger.debug { "Successfully processed document: $fileName, extracted ${extractedText.length} characters" }
+            logger.debug {
+                "Successfully processed document: $fileName, extracted ${extractedText.length} characters"
+            }
 
             DocumentProcessingResult(
                 plainText = extractedText,
@@ -219,9 +219,6 @@ class TikaDocumentProcessor(
         return pdf
     }
 
-    /**
-     * Extract metadata from Tika Metadata object
-     */
     private fun extractMetadata(
         tikaMetadata: Metadata,
         fileName: String,
@@ -296,4 +293,38 @@ class TikaDocumentProcessor(
         }
 
     private fun isPdfFile(fileName: String): Boolean = fileName.substringAfterLast('.', "").equals("pdf", ignoreCase = true)
+}
+
+/**
+ * Custom ContentHandler that preserves link URLs inline within the text.
+ * For <a href="URL">text</a>, outputs: "text (URL)"
+ */
+private class LinkPreservingContentHandler : BodyContentHandler(-1) {
+    private val currentLink = ThreadLocal<String?>()
+    
+    override fun startElement(
+        uri: String?,
+        localName: String?,
+        qName: String?,
+        atts: org.xml.sax.Attributes?
+    ) {
+        super.startElement(uri, localName, qName, atts)
+        if (localName == "a" && atts != null) {
+            val href = atts.getValue("href")
+            if (!href.isNullOrBlank()) {
+                currentLink.set(href)
+            }
+        }
+    }
+    
+    override fun endElement(uri: String?, localName: String?, qName: String?) {
+        if (localName == "a") {
+            val href = currentLink.get()
+            if (!href.isNullOrBlank()) {
+                characters(" ($href)".toCharArray(), 0, href.length + 3)
+                currentLink.remove()
+            }
+        }
+        super.endElement(uri, localName, qName)
+    }
 }

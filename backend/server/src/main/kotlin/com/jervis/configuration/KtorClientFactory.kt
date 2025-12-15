@@ -29,7 +29,7 @@ private val logger = KotlinLogging.logger {}
  *
  * Features:
  * - Automatic retry with exponential backoff for transient failures
- * - Connection pooling and timeout management
+ * - ConnectionDocument pooling and timeout management
  * - Per-provider authentication headers
  * - JSON serialization with kotlinx.serialization
  */
@@ -68,6 +68,10 @@ class KtorClientFactory(
                 },
             )
             put("searxng", createHttpClient(endpoints.searxng.baseUrl))
+            // Aider external coding service (GPU/CPU worker)
+            put("aider", createHttpClient(endpoints.aider.baseUrl))
+            // OpenHands agent API (self-hosted, K8s)
+            put("openhands", createHttpClient(endpoints.openhands.baseUrl))
         }
     }
 
@@ -116,7 +120,7 @@ class KtorClientFactory(
                 socketTimeoutMillis = ktorClientProperties.timeouts.socketTimeoutMillis
             }
 
-            // Connection pooling
+            // ConnectionDocument pooling
             engine {
                 maxConnectionsCount = ktorClientProperties.connectionPool.maxConnections
                 endpoint {
@@ -191,7 +195,7 @@ class KtorClientFactory(
                 socketTimeoutMillis = ktorClientProperties.timeouts.socketTimeoutMillis
             }
 
-            // Connection pooling
+            // ConnectionDocument pooling
             engine {
                 maxConnectionsCount = ktorClientProperties.connectionPool.maxConnections
                 endpoint {

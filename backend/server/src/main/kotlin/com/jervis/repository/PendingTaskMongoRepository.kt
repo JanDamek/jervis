@@ -29,4 +29,9 @@ interface PendingTaskMongoRepository : CoroutineCrudRepository<PendingTaskDocume
     suspend fun countByType(type: PendingTaskTypeEnum): Long
 
     suspend fun countByState(state: PendingTaskStateEnum): Long
+
+    /**
+     * Find existing task by correlationId for deduplication.
+     */
+    suspend fun findByCorrelationId(correlationId: String): PendingTaskDocument?
 }

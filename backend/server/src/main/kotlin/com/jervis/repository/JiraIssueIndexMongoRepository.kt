@@ -9,26 +9,26 @@ import org.springframework.stereotype.Repository
 
 @Repository
 interface JiraIssueIndexMongoRepository : CoroutineCrudRepository<JiraIssueIndexDocument, ObjectId> {
-    // Continuous indexing support - per connection
-    @Query("{ 'connectionId': ?0, 'state': ?1, 'archived': false }")
-    fun findByConnectionIdAndStateAndArchivedFalseOrderByUpdatedAtAsc(
+    // Continuous indexing support - per connection (ordered by jiraUpdatedAt DESC)
+    @Query(value = "{ 'connectionDocumentId': ?0, 'state': ?1 }", sort = "{ 'jiraUpdatedAt': -1 }")
+    fun findByConnectionDocumentIdAndStateOrderByJiraUpdatedAtDesc(
         connectionId: ObjectId,
         state: String,
     ): Flow<JiraIssueIndexDocument>
 
-    // Continuous indexing support - all connections (newest first)
-    @Query(value = "{ 'state': ?0, 'archived': false }", sort = "{ 'updatedAt': -1 }")
-    fun findByStateAndArchivedFalseOrderByUpdatedAtDesc(state: String): Flow<JiraIssueIndexDocument>
+    // Continuous indexing support - all connections (newest first by jiraUpdatedAt)
+    @Query(value = "{ 'state': ?0 }", sort = "{ 'jiraUpdatedAt': -1 }")
+    fun findByStateOrderByJiraUpdatedAtDesc(state: String): Flow<JiraIssueIndexDocument>
 
     // Global counts for UI overview
-    @Query(value = "{ 'archived': false, 'state': 'INDEXED' }", count = true)
+    @Query(value = "{ 'state': 'INDEXED' }", count = true)
     suspend fun countIndexedActive(): Long
 
-    @Query(value = "{ 'archived': false, 'state': 'NEW' }", count = true)
+    @Query(value = "{ 'state': 'NEW' }", count = true)
     suspend fun countNewActive(): Long
 
-    @Query("{ 'connectionId': ?0, 'issueKey': ?1 }")
-    suspend fun findByConnectionIdAndIssueKey(
+    @Query("{ 'connectionDocumentId': ?0, 'issueKey': ?1 }")
+    suspend fun findByConnectionDocumentIdAndIssueKey(
         connectionId: ObjectId,
         issueKey: String,
     ): JiraIssueIndexDocument?

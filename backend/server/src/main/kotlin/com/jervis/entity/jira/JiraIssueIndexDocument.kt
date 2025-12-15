@@ -1,117 +1,136 @@
 package com.jervis.entity.jira
 
+import com.jervis.types.ClientId
+import com.jervis.types.ConnectionId
+import com.jervis.types.ProjectId
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
+import org.springframework.data.annotation.TypeAlias
 import org.springframework.data.mongodb.core.index.CompoundIndex
 import org.springframework.data.mongodb.core.index.CompoundIndexes
-import org.springframework.data.mongodb.core.index.Indexed
 import org.springframework.data.mongodb.core.mapping.Document
 import java.time.Instant
 
 /**
- * Jira issue document with COMPLETE data for indexing.
+ * Jira issue index - tracking which issues have been processed.
  *
- * Architecture:
- * - CentralPoller fetches FULL issue data from API and saves here as NEW
- * - JiraContinuousIndexer reads from MongoDB (no API calls) and indexes to RAG
- * - MongoDB is staging area between API and RAG
+ * STATE MACHINE: NEW -> INDEXED (or FAILED)
  *
- * Note: connectionId refers to Connection.id (HttpConnection for Atlassian)
+ * STATES:
+ * - NEW: Full issue data from Jira API, ready for indexing
+ * - INDEXED: Minimal tracking record (data in RAG/Graph via sourceUrn)
+ * - FAILED: NEW state with error - full data kept for retry
+ *
+ * FLOW:
+ * 1. CentralPoller fetches → saves as NEW with full data
+ * 2. JiraContinuousIndexer creates PendingTask → converts to INDEXED (minimal)
+ * 3. KoogQualifierAgent stores to RAG/Graph with sourceUrn
+ * 4. Future lookups use sourceUrn to find original in Jira
+ *
+ * MONGODB STORAGE (single instance, no INDEXING state needed):
+ * - NEW/FAILED: Full document with description, comments, attachments
+ * - INDEXED: Minimal document - only id, connectionId, issueKey, state, jiraUpdatedAt
+ *
+ * BREAKING CHANGE - MIGRATION REQUIRED:
+ * Sealed class structure requires _class discriminator field in MongoDB.
+ * Old documents without _class will FAIL deserialization (fail-fast design).
+ *
+ * MIGRATION: Drop collection before starting server:
+ *   db.jira_issues.drop()
+ *
+ * All issues will be re-indexed from Jira on next polling cycle.
  */
 @Document(collection = "jira_issues")
 @CompoundIndexes(
-    CompoundIndex(name = "connection_issue_unique", def = "{'connectionId': 1, 'issueKey': 1}", unique = true),
-    CompoundIndex(name = "client_idx", def = "{'clientId': 1}"),
-    CompoundIndex(name = "connection_state_idx", def = "{'connectionId': 1, 'state': 1}"),
-    CompoundIndex(name = "state_updated_idx", def = "{'state': 1, 'updatedAt': -1}"),
+    CompoundIndex(name = "connection_state_idx", def = "{'connectionDocumentId': 1, 'state': 1}"),
+    CompoundIndex(name = "connection_issue_changelog_idx", def = "{'connectionDocumentId': 1, 'issueKey': 1, 'latestChangelogId': 1}", unique = true),
+    CompoundIndex(name = "client_state_idx", def = "{'clientId': 1, 'state': 1}"),
 )
-data class JiraIssueIndexDocument(
-    @Id
-    val id: ObjectId = ObjectId.get(),
+sealed class JiraIssueIndexDocument {
+    abstract val id: ObjectId
+    abstract val clientId: ClientId
+    abstract val connectionDocumentId: ConnectionId
+    abstract val issueKey: String
+    abstract val latestChangelogId: String?  // Unique ID from Jira changelog - nullable for backward compatibility
+    abstract val state: String
+    abstract val jiraUpdatedAt: Instant
 
-    /** Connection ID (Connection.HttpConnection) */
-    @Indexed
-    val connectionId: ObjectId,
+    /**
+     * NEW state - full issue data from Jira API, ready for indexing.
+     */
+    @TypeAlias("JiraNew")
+    data class New(
+        @Id override val id: ObjectId = ObjectId.get(),
+        override val clientId: ClientId,
+        val projectId: ProjectId? = null,
+        override val connectionDocumentId: ConnectionId,
+        override val issueKey: String,
+        override val latestChangelogId: String?,  // Nullable for backward compatibility
+        val projectKey: String?,  // Nullable - old documents may have null
+        val summary: String?,  // Nullable - old documents may have null
+        val description: String?,
+        val issueType: String?,  // Nullable - old documents may have null
+        val status: String?,  // Nullable - old documents may have null
+        val priority: String?,
+        val assignee: String?,
+        val reporter: String?,
+        val labels: List<String> = emptyList(),
+        val comments: List<JiraComment> = emptyList(),
+        val attachments: List<JiraAttachment> = emptyList(),
+        val linkedIssues: List<String> = emptyList(),
+        val createdAt: Instant?,  // Nullable - old documents may have null
+        override val jiraUpdatedAt: Instant,
+    ) : JiraIssueIndexDocument() {
+        override val state: String = "NEW"
+    }
 
-    /** Client ID */
-    @Indexed
-    val clientId: ObjectId,
+    /**
+     * INDEXED state - minimal tracking record, actual data in RAG/Graph.
+     * Only keeps essentials for deduplication and sourceUrn lookup.
+     */
+    @TypeAlias("JiraIndexed")
+    data class Indexed(
+        @Id override val id: ObjectId,
+        override val clientId: ClientId,
+        val projectId: ProjectId? = null,
+        override val connectionDocumentId: ConnectionId,
+        override val issueKey: String,
+        override val latestChangelogId: String?,  // Nullable for backward compatibility
+        override val jiraUpdatedAt: Instant,
+    ) : JiraIssueIndexDocument() {
+        override val state: String = "INDEXED"
+    }
 
-    /** Jira issue key (e.g., "PROJ-123") */
-    @Indexed
-    val issueKey: String,
-
-    /** Project key (e.g., "PROJ") */
-    val projectKey: String,
-
-    // === FULL CONTENT (fetched by CentralPoller) ===
-
-    /** Issue summary/title */
-    val summary: String,
-
-    /** Full description in markdown/text */
-    val description: String? = null,
-
-    /** Issue type (Bug, Task, Story, etc.) */
-    val issueType: String,
-
-    /** Current status (To Do, In Progress, Done, etc.) */
-    val status: String,
-
-    /** Priority (High, Medium, Low, etc.) */
-    val priority: String? = null,
-
-    /** Assignee account ID */
-    val assignee: String? = null,
-
-    /** Reporter account ID */
-    val reporter: String? = null,
-
-    /** Labels */
-    val labels: List<String> = emptyList(),
-
-    /** Comments (full text) */
-    val comments: List<JiraComment> = emptyList(),
-
-    /** Attachments metadata */
-    val attachments: List<JiraAttachment> = emptyList(),
-
-    /** Links to other issues */
-    val linkedIssues: List<String> = emptyList(),
-
-    /** When issue was created in Jira */
-    val createdAt: Instant,
-
-    /** When issue was last updated in Jira */
-    val jiraUpdatedAt: Instant,
-
-    // === STATE MANAGEMENT ===
-
-    /** Indexing state: NEW, INDEXING, INDEXED, FAILED */
-    @Indexed
-    val state: String = "NEW",
-
-    /** When document was created/updated in our DB */
-    @Indexed
-    val updatedAt: Instant = Instant.now(),
-
-    /** When issue was last indexed to RAG */
-    val lastIndexedAt: Instant? = null,
-
-    /** Is archived (deleted from Jira or manually archived) */
-    val archived: Boolean = false,
-
-    // === INDEXING STATS (updated by ContinuousIndexer) ===
-
-    /** Number of RAG chunks created */
-    val totalRagChunks: Int = 0,
-
-    /** Number of comments indexed */
-    val commentChunkCount: Int = 0,
-
-    /** Number of attachments indexed */
-    val attachmentCount: Int = 0,
-)
+    /**
+     * FAILED state - same as NEW but with error, full data kept for retry.
+     */
+    @TypeAlias("JiraFailed")
+    data class Failed(
+        @Id override val id: ObjectId,
+        override val clientId: ClientId,
+        val projectId: ProjectId? = null,
+        override val connectionDocumentId: ConnectionId,
+        override val issueKey: String,
+        override val latestChangelogId: String?,  // Nullable for backward compatibility
+        val projectKey: String?,  // Nullable - old documents may have null
+        val summary: String?,  // Nullable - old documents may have null
+        val description: String?,
+        val issueType: String?,  // Nullable - old documents may have null
+        val status: String?,  // Nullable - old documents may have null
+        val priority: String?,
+        val assignee: String?,
+        val reporter: String?,
+        val labels: List<String> = emptyList(),
+        val comments: List<JiraComment> = emptyList(),
+        val attachments: List<JiraAttachment> = emptyList(),
+        val linkedIssues: List<String> = emptyList(),
+        val createdAt: Instant?,  // Nullable - old documents may have null
+        override val jiraUpdatedAt: Instant,
+        val indexingError: String,
+    ) : JiraIssueIndexDocument() {
+        override val state: String = "FAILED"
+    }
+}
 
 /**
  * Jira comment (fetched by CentralPoller, stored in JiraIssueDocument).

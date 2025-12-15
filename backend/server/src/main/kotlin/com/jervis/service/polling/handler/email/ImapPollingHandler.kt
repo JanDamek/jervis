@@ -1,16 +1,19 @@
 package com.jervis.service.polling.handler.email
 
 import com.jervis.entity.ClientDocument
-import com.jervis.entity.connection.Connection
+import com.jervis.entity.connection.ConnectionDocument
+import com.jervis.entity.connection.PollingState
 import com.jervis.repository.EmailMessageIndexMongoRepository
+import com.jervis.service.connection.ConnectionService
 import com.jervis.service.polling.PollingResult
+import com.jervis.types.ProjectId
 import jakarta.mail.Folder
-import jakarta.mail.Message
 import jakarta.mail.Session
+import jakarta.mail.UIDFolder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Component
-import java.util.*
+import java.util.Properties
 
 /**
  * IMAP email polling handler.
@@ -26,92 +29,173 @@ import java.util.*
 @Component
 class ImapPollingHandler(
     repository: EmailMessageIndexMongoRepository,
+    private val connectionService: ConnectionService,
 ) : EmailPollingHandlerBase(repository) {
-
-    override fun canHandle(connection: Connection): Boolean {
-        return connection is Connection.ImapConnection
-    }
+    override fun canHandle(connectionDocument: ConnectionDocument): Boolean =
+        connectionDocument is ConnectionDocument.ImapConnectionDocument
 
     override fun getProtocolName(): String = "IMAP"
 
     override suspend fun pollClient(
-        connection: Connection,
+        connectionDocument: ConnectionDocument,
         client: ClientDocument,
+        projectId: ProjectId?,
     ): PollingResult {
-        if (connection !is Connection.ImapConnection) {
-            logger.warn { "Invalid connection type for IMAP polling" }
+        if (connectionDocument !is ConnectionDocument.ImapConnectionDocument) {
+            logger.warn { "Invalid connectionDocument type for IMAP polling" }
             return PollingResult(errors = 1)
         }
 
-        return pollImap(connection, client)
+        return pollImap(connectionDocument, client, projectId)
     }
 
     private suspend fun pollImap(
-        connection: Connection.ImapConnection,
+        connectionDocument: ConnectionDocument.ImapConnectionDocument,
         client: ClientDocument,
-    ): PollingResult = withContext(Dispatchers.IO) {
-        logger.debug { "Polling IMAP ${connection.name} for client ${client.name}" }
+        projectId: ProjectId?,
+    ): PollingResult =
+        withContext(Dispatchers.IO) {
+            logger.debug { "Polling IMAP ${connectionDocument.name} for client ${client.name}" }
 
-        // Connect to IMAP server
-        val properties = Properties().apply {
-            setProperty("mail.store.protocol", "imap")
-            setProperty("mail.imap.host", connection.host)
-            setProperty("mail.imap.port", connection.port.toString())
-            if (connection.useSsl) {
-                setProperty("mail.imap.ssl.enable", "true")
-                setProperty("mail.imap.ssl.trust", "*")
-            }
-            setProperty("mail.imap.connectiontimeout", "30000")
-            setProperty("mail.imap.timeout", "30000")
-        }
-
-        val session = Session.getInstance(properties)
-        val store = session.getStore("imap")
-
-        try {
-            store.connect(connection.host, connection.port, connection.username, connection.password)
-
-            val folder = store.getFolder(connection.folderName)
-            folder.open(Folder.READ_ONLY)
-
-            try {
-                val messageCount = folder.messageCount
-                logger.info { "IMAP folder ${connection.folderName} has $messageCount messages" }
-
-                // Fetch recent messages (last 50)
-                val start = (messageCount - 49).coerceAtLeast(1)
-                val end = messageCount
-
-                if (start > end) {
-                    logger.info { "No messages to poll" }
-                    return@withContext PollingResult()
+            // Connect to IMAP server
+            val properties =
+                Properties().apply {
+                    setProperty("mail.store.protocol", "imap")
+                    setProperty("mail.imap.host", connectionDocument.host)
+                    setProperty("mail.imap.port", connectionDocument.port.toString())
+                    if (connectionDocument.useSsl) {
+                        setProperty("mail.imap.ssl.enable", "true")
+                        setProperty("mail.imap.ssl.trust", "*")
+                    }
+                    setProperty("mail.imap.connectiontimeout", "30000")
+                    setProperty("mail.imap.timeout", "30000")
                 }
 
-                val messages = folder.getMessages(start, end)
-                logger.info { "Fetched ${messages.size} messages from IMAP" }
+            val session = Session.getInstance(properties)
+            val store = session.getStore("imap")
 
-                // Process messages using base class logic
-                val (created, skipped) = processMessages(
-                    messages = messages,
-                    connection = connection,
-                    client = client,
-                    getMessageUid = { message, _ ->
-                        val messageId = message.getHeader("Message-ID")?.firstOrNull()
-                        messageId ?: "imap-${connection.id}-${message.messageNumber}"
-                    },
-                    folderName = connection.folderName
+            try {
+                store.connect(
+                    connectionDocument.host,
+                    connectionDocument.port,
+                    connectionDocument.username,
+                    connectionDocument.password,
                 )
 
-                return@withContext PollingResult(
-                    itemsDiscovered = messages.size,
-                    itemsCreated = created,
-                    itemsSkipped = skipped
-                )
+                val folder = store.getFolder(connectionDocument.folderName)
+                folder.open(Folder.READ_ONLY)
+
+                try {
+                    val messageCount = folder.messageCount
+                    logger.debug { "IMAP folder ${connectionDocument.folderName} has $messageCount messages" }
+
+                    if (messageCount == 0) {
+                        logger.debug { "No messages in folder" }
+                        return@withContext PollingResult()
+                    }
+
+                    // Cast to UIDFolder to use UID operations
+                    val uidFolder = folder as? UIDFolder
+                    if (uidFolder == null) {
+                        logger.warn { "Folder does not support UIDs, falling back to message numbers" }
+                        return@withContext PollingResult(errors = 1)
+                    }
+
+                    // Load polling state from connectionDocument
+                    val lastFetchedUid = connectionDocument.pollingState?.lastFetchedUid ?: 0L
+
+                    logger.debug { "IMAP sync state: lastFetchedUid=$lastFetchedUid" }
+
+                    // Fetch only NEW messages since last sync
+                    val newMessages =
+                        if (lastFetchedUid == 0L) {
+                            // First sync - fetch all messages
+                            logger.debug { "First sync - fetching all $messageCount messages" }
+                            folder.getMessages(1, messageCount)
+                        } else {
+                            // Fetch messages with UID > lastFetchedUid
+                            // Note: Use MAXUID instead of LASTUID per JavaMail API documentation
+                            val fromUid = lastFetchedUid + 1
+                            val uids = uidFolder.getMessagesByUID(fromUid, UIDFolder.MAXUID)
+                            logger.debug { "Fetching ${uids.size} new messages (requested UID range: $fromUid-MAXUID)" }
+                            uids
+                        }
+
+                    if (newMessages.isEmpty()) {
+                        logger.debug { "No new messages to process" }
+                        return@withContext PollingResult()
+                    }
+
+                    logger.debug { "Processing ${newMessages.size} new messages" }
+
+                    // Collect all UIDs first (before processing)
+                    val allUids = newMessages.map { uidFolder.getUID(it) }
+
+                    logger.debug {
+                        "IMAP server returned UIDs: [${allUids.joinToString()}] (requested: ${lastFetchedUid + 1}-LASTUID)"
+                    }
+
+                    // Filter out messages with UID <= lastFetchedUid (IMAP server bug workaround)
+                    val filteredMessages = newMessages.filterIndexed { index, _ ->
+                        allUids[index] > lastFetchedUid
+                    }
+
+                    if (filteredMessages.isEmpty()) {
+                        logger.debug { "All fetched messages already processed (UIDs <= $lastFetchedUid), skipping" }
+                        return@withContext PollingResult()
+                    }
+
+                    val filteredUids = filteredMessages.map { uidFolder.getUID(it) }
+                    val maxUidFetched = filteredUids.maxOrNull() ?: lastFetchedUid
+
+                    logger.debug {
+                        "After filtering: ${filteredMessages.size} messages with UIDs: [${filteredUids.joinToString()}], " +
+                        "maxUidFetched=$maxUidFetched"
+                    }
+
+                    // Process messages using base class logic
+                    val (created, skipped) =
+                        processMessages(
+                            messages = filteredMessages.toTypedArray(),
+                            connectionDocument = connectionDocument,
+                            client = client,
+                            projectId = projectId,
+                            getMessageUid = { message, _ ->
+                                // Return UID as string for deduplication (stored as messageUid in DB)
+                                uidFolder.getUID(message).toString()
+                            },
+                            folderName = connectionDocument.folderName,
+                        )
+
+                    // Save polling state to connectionDocument
+                    // Always update if we processed messages (even if all skipped)
+                    if (filteredMessages.isNotEmpty() && maxUidFetched > lastFetchedUid) {
+                        val updatedConnection =
+                            connectionDocument.copy(
+                                pollingState =
+                                    PollingState.Imap(
+                                        lastFetchedUid = maxUidFetched,
+                                    ),
+                            )
+                        connectionService.save(updatedConnection)
+                        logger.debug { "Updated lastFetchedUid: $lastFetchedUid -> $maxUidFetched (processed: created=$created, skipped=$skipped)" }
+                    } else if (filteredMessages.isNotEmpty()) {
+                        logger.debug {
+                            "Skipped update: maxUidFetched=$maxUidFetched <= lastFetchedUid=$lastFetchedUid " +
+                                "(created=$created, skipped=$skipped)"
+                        }
+                    }
+
+                    return@withContext PollingResult(
+                        itemsDiscovered = filteredMessages.size,
+                        itemsCreated = created,
+                        itemsSkipped = skipped,
+                    )
+                } finally {
+                    folder.close(false)
+                }
             } finally {
-                folder.close(false)
+                store.close()
             }
-        } finally {
-            store.close()
         }
-    }
 }

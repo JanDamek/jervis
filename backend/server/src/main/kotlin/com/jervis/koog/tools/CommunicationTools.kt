@@ -3,7 +3,7 @@ package com.jervis.koog.tools
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
-import com.jervis.domain.plan.Plan
+import com.jervis.entity.PendingTaskDocument
 import mu.KotlinLogging
 
 /**
@@ -17,26 +17,26 @@ import mu.KotlinLogging
  */
 @LLMDescription("Communication tools: send emails, Slack messages, Teams messages")
 class CommunicationTools(
-    private val plan: Plan,
+    private val taskContext: PendingTaskDocument,
 ) : ToolSet {
     companion object {
         private val logger = KotlinLogging.logger {}
     }
 
     @Tool
-    @LLMDescription("""Send email to specified recipients.
+    @LLMDescription(
+        """Send email to specified recipients.
 NOTE: This is a mock implementation. To enable actual email sending, integrate with:
 - SMTP server configuration
 - SendGrid API
 - Amazon SES
-- Microsoft Graph API""")
-    fun sendEmail(
+- Microsoft Graph API""",
+    )
+    suspend fun sendEmail(
         @LLMDescription("Recipient email addresses (comma-separated)")
         to: String,
-
         @LLMDescription("Email subject")
         subject: String,
-
         @LLMDescription("Email body content")
         body: String,
     ): String {
@@ -69,12 +69,13 @@ NOTE: This is a mock implementation. To enable actual email sending, integrate w
     }
 
     @Tool
-    @LLMDescription("""Send message to Slack channel or user.
-NOTE: This is a mock implementation. To enable actual Slack messaging, integrate with Slack Web API.""")
-    fun sendSlack(
+    @LLMDescription(
+        """Send message to Slack channel or user.
+NOTE: This is a mock implementation. To enable actual Slack messaging, integrate with Slack Web API.""",
+    )
+    suspend fun sendSlack(
         @LLMDescription("Target channel (#channel-name) or user (@username)")
         target: String,
-
         @LLMDescription("Message content")
         message: String,
     ): String {
@@ -97,12 +98,13 @@ NOTE: This is a mock implementation. To enable actual Slack messaging, integrate
     }
 
     @Tool
-    @LLMDescription("""Send message to Microsoft Teams channel or user.
-NOTE: This is a mock implementation. To enable actual Teams messaging, integrate with Microsoft Graph API.""")
-    fun sendTeams(
+    @LLMDescription(
+        """Send message to Microsoft Teams channel or user.
+NOTE: This is a mock implementation. To enable actual Teams messaging, integrate with Microsoft Graph API.""",
+    )
+    suspend fun sendTeams(
         @LLMDescription("Target channel or user")
         target: String,
-
         @LLMDescription("Message content")
         message: String,
     ): String {

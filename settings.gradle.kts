@@ -23,40 +23,39 @@ dependencyResolutionManagement {
 
 rootProject.name = "jervis"
 
-// Shared modules (KMP) - common-dto as composite build for plugin isolation
 includeBuild("shared/common-dto") {
     dependencySubstitution {
         substitute(module("com.jervis:common-dto")).using(project(":"))
     }
 }
 
-// Shared modules - skip ui-common in Docker build (requires Compose plugin)
 if (System.getenv("DOCKER_BUILD") != "true") {
     include(
         ":shared:common-api",
         ":shared:domain",
-        ":shared:ui-common"
+        ":shared:ui-common",
     )
 } else {
     include(
         ":shared:common-api",
-        ":shared:domain"
+        ":shared:domain",
     )
 }
 
-// Backend modules (JVM-only)
 include(
     ":backend:common-services",
     ":backend:server",
     ":backend:service-tika",
     ":backend:service-joern",
-    ":backend:service-whisper"
+    ":backend:service-whisper",
+    ":backend:service-aider",
+    ":backend:service-coding-engine",
+    ":backend:service-atlassian",
 )
 
-// Application launchers - skip in Docker build
 if (System.getenv("DOCKER_BUILD") != "true") {
     include(
         ":apps:desktop",
-        ":apps:mobile"
+        ":apps:mobile",
     )
 }

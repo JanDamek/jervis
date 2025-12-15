@@ -10,288 +10,229 @@
 # ═══════════════════════════════════════════════════════════════════════
 
 pendingTaskGoals:
-  EMAIL_PROCESSING: |
-    Analyze email that passed pre-qualification. Determine actions.
+  DATA_PROCESSING:
+    schema: |
+      Data processing tasks are not processed by qualification agent.
+      These tasks bypass CPU and go directly to specialized handlers.
+    exampleInput: ""
+    exampleOutput: ""
+  USER_INPUT_PROCESSING:
+    schema: |
+      Process user-created task. Bypasses CPU - goes to GPU for complex reasoning.
+      Use storeKnowledge for results.
+    exampleInput: |
+      User: john@company.com
+      Request: "Analyze recent commits to authentication module and create summary"
+    exampleOutput: |
+      [
+        { "name": "searchKnowledge", "arguments": { "query": "authentication module commits", "alpha": 0.5, "maxResults": 20 } },
+        {
+          "name": "storeKnowledge",
+          "arguments": {
+            "content": "Authentication module commits summary: Added OAuth2 support, fixed JWT validation, improved error handling.",
+            "graphStructure": [
+              "analysis::auth_commits_2024 -[requested_by]-> user::john@company.com"
+            ]
+          }
+        },
+        { "name": "routeTask", "arguments": { "routing": "DONE", "contextSummary": "Analyzed authentication commits" } }
+      ]
 
-    LINKING STRATEGY (use knowledge_search to discover context):
-    - Search for mentioned Jira issues (by issue keys like PROJ-123, or topics)
-    - Search for related commits (by features/bugs discussed in email)
-    - Search for related Confluence docs (by topics, technical terms)
-    - Search for related user requirements (use requirement_query_user with keywords)
-    - Connect email to broader CLIENT/PROJECT context
+  LINK_PROCESSING:
+    schema: |
+      Extract link content. SAFETY FIRST - check unsafe patterns.
+      Use storeKnowledge for safe links.
+    exampleInput: |
+      URL: https://docs.example.com/api/authentication
+      Source: confluence::page456
+      Context: "See our authentication guide"
+    exampleOutput: |
+      [
+        {
+          "name": "storeKnowledge",
+          "arguments": {
+            "content": "Authentication API documentation. OAuth 2.0 flow with JWT tokens. Client credentials grant type supported.",
+            "graphStructure": [
+              "link::docs_auth_guide -[found_in]-> confluence::page456"
+            ]
+          }
+        },
+        { "name": "routeTask", "arguments": { "routing": "DONE", "contextSummary": "Indexed authentication guide" } }
+      ]
 
-    TASKS:
-    1. Apply LINKING STRATEGY - search RAG for all connections
-    2. Check user requirements match → requirement_query_user
-    3. Extract FUTURE events/deadlines → system_schedule_task
-    4. Identify action items → task_create_user
-    5. Store valuable info with discovered links → knowledge_store
+  EMAIL_PROCESSING:
+    schema: |
+      Extract People, Topics, Action Items from email communication.
+      Use storeKnowledge with content and simple graph triplets.
+      Format: "source -[relationship]-> target"
+    exampleInput: |
+      From: john@company.com
+      To: team@company.com
+      Subject: Budget Review Meeting
 
-    RULES:
-    - Email already in RAG (don't search again)
-    - ONLY schedule FUTURE events (current date: {currentDate})
-    - Old events → ignore
-    - When storing knowledge, include discovered relationships to code/Jira/docs
+      Please review the Q4 budget by Friday. We need everyone's approval before the board meeting.
+    exampleOutput: |
+      [
+        {
+          "name": "storeKnowledge",
+          "arguments": {
+            "content": "Please review the Q4 budget by Friday. We need everyone's approval before the board meeting.",
+            "graphStructure": [
+              "email::msg123 -[from]-> person::john@company.com",
+              "email::msg123 -[mentions]-> task::budget_review_q4"
+            ]
+          }
+        },
+        { "name": "routeTask", "arguments": { "routing": "DONE", "contextSummary": "Email from john about budget review" } }
+      ]
 
-    COMPLETION: Return empty plan [] if routine/spam.
+  JIRA_PROCESSING:
+    schema: |
+      Extract issue metadata, assignees, and relationships.
+      Use storeKnowledge with content and graph triplets.
+    exampleInput: |
+      Issue: PROJ-123
+      Summary: Fix login authentication bug
+      Assignee: alice@company.com
+      Reporter: bob@company.com
+      Status: In Progress
+      Priority: High
 
-  JIRA_PROCESSING: |
-    Analyze Jira issue assigned to you that passed pre-qualification.
+      Users cannot login after recent OAuth update. Need to fix token validation.
+    exampleOutput: |
+      [
+        {
+          "name": "storeKnowledge",
+          "arguments": {
+            "content": "Users cannot login after recent OAuth update. Need to fix token validation.",
+            "graphStructure": [
+              "jira::PROJ-123 -[assigned_to]-> person::alice@company.com",
+              "jira::PROJ-123 -[reported_by]-> person::bob@company.com"
+            ]
+          }
+        },
+        { "name": "routeTask", "arguments": { "routing": "DONE", "contextSummary": "Jira PROJ-123 login bug assigned to alice" } }
+      ]
 
-    LINKING STRATEGY (use knowledge_search to discover context):
-    - Search for mentioned classes/files/modules in code (by names in issue description)
-    - Search for related commits (by issue key in commit messages, or by changed files)
-    - Search for related emails (by issue key, stakeholders, or topics)
-    - Search for related Confluence docs (by feature name, component, or technical area)
-    - Search for related user requirements (topics matching issue)
-    - Connect issue to broader CLIENT/PROJECT context
+  CONFLUENCE_PROCESSING:
+    schema: |
+      Extract Knowledge: Rules, Concepts, Procedures. MICRO-CHUNKING - separate calls for each fact.
+      Focus on CONTENT. Each rule/concept = separate storeKnowledge call.
+    exampleInput: |
+      Page: Password Security Policy
+      Space: IT Policies
 
-    TASKS:
-    1. Apply LINKING STRATEGY - search RAG for all connections
-    2. Determine if response/action needed
-    3. Create user task if action required → task_create_user
-    4. Store important decisions with discovered links → knowledge_store
+      ## Password Requirements
+      All employees must update their passwords every 90 days. Passwords must contain at least one special character and be minimum 12 characters long.
 
-    COMPLETION: Return empty plan [] if informational only.
+      ## Multi-Factor Authentication
+      MFA is mandatory for all production system access.
+    exampleOutput: |
+      [
+        {
+          "name": "storeKnowledge",
+          "arguments": {
+            "content": "All employees must update their passwords every 90 days.",
+            "graphStructure": [
+              "rule::password_rotation -[defined_in]-> confluence::page123",
+              "rule::password_rotation -[category]-> security"
+            ]
+          }
+        },
+        {
+          "name": "storeKnowledge",
+          "arguments": {
+            "content": "Passwords must contain at least one special character and be minimum 12 characters long.",
+            "graphStructure": [
+              "rule::password_complexity -[defined_in]-> confluence::page123",
+              "rule::password_complexity -[category]-> security"
+            ]
+          }
+        },
+        {
+          "name": "storeKnowledge",
+          "arguments": {
+            "content": "MFA is mandatory for all production system access.",
+            "graphStructure": [
+              "rule::mfa_mandatory -[defined_in]-> confluence::page123",
+              "rule::mfa_mandatory -[category]-> security"
+            ]
+          }
+        },
+        { "name": "routeTask", "arguments": { "routing": "DONE", "contextSummary": "Extracted 3 security rules" } }
+      ]
 
-  AGENT_ANALYSIS: |
-    Agent-created task for deeper investigation. Agent discovered something requiring focused analysis.
-    Task bypassed pre-qualification - goes directly to GPU.
+  ANALYSIS_PROCESSING:
+    schema: |
+      Deep investigation. Bypasses CPU. DEPENDENCY DISCOVERY - exhaustive RAG search.
+      Use multiple storeKnowledge calls for findings.
+    exampleInput: |
+      Analysis: "Investigate authentication failures"
+      Context: OAuth token validation errors
+    exampleOutput: |
+      [
+        { "name": "searchKnowledge", "arguments": { "query": "OAuth token validation", "alpha": 0.5, "maxResults": 30 } },
+        {
+          "name": "storeKnowledge",
+          "arguments": {
+            "content": "Root cause: JWT token expiry not handled correctly in TokenValidator.java line 147. Missing refresh token logic.",
+            "graphStructure": [
+              "analysis::auth_failure_investigation -[identified_issue]-> file::TokenValidator.java"
+            ]
+          }
+        },
+        {
+          "name": "storeKnowledge",
+          "arguments": {
+            "content": "Recommendation: Implement automatic token refresh before expiry. Add retry logic with exponential backoff.",
+            "graphStructure": [
+              "rule::token_refresh_pattern -[category]-> authentication"
+            ]
+          }
+        },
+        { "name": "routeTask", "arguments": { "routing": "DONE", "contextSummary": "Identified root cause" } }
+      ]
 
-    DEPENDENCY DISCOVERY (comprehensive linking):
-    When analyzing, search RAG to discover ALL connections:
-    - Related code: classes, files, modules using similar patterns
-    - Related Jira: issues mentioning same components/features
-    - Related commits: changes to same areas
-    - Related emails: discussions about same topics
-    - Related docs: Confluence pages covering same areas
-    - Related requirements: user wishes matching discovered functionality
-    - Related scheduled tasks: planned work on same components
+  SCHEDULED_PROCESSING:
+    schema: |
+      Scheduled task. TIME CRITICAL - ~10 minutes lead time.
+      Use storeKnowledge for execution results.
+    exampleInput: |
+      Scheduled: 2024-01-15 14:00
+      Action: "Send status report email to client@example.com"
+    exampleOutput: |
+      [
+        { "name": "searchKnowledge", "arguments": { "query": "project status recent updates", "alpha": 0.5, "maxResults": 10 } },
+        {
+          "name": "storeKnowledge",
+          "arguments": {
+            "content": "Weekly status report sent: Sprint 23 completed, 15 tickets closed, authentication refactoring in progress.",
+            "graphStructure": [
+              "scheduled::weekly_status_2024_01_15 -[executed]-> action::email_status_report"
+            ]
+          }
+        },
+        { "name": "routeTask", "arguments": { "routing": "DONE", "contextSummary": "Status report sent" } }
+      ]
 
-    TASKS:
-    1. Execute requested analysis (instructions in task content)
-    2. Apply DEPENDENCY DISCOVERY - exhaustively search RAG for all connections
-    3. Identify rules/guidelines if discovered → store as RULEs with consistent naming
-    4. Create user tasks if user action needed → task_create_user
-    5. Store findings as memories → knowledge_store
-    6. If more investigation needed, create another AGENT_ANALYSIS pending task
-
-    COMPLETION: Return empty plan [] when investigation complete.
-
-  SCHEDULED_TASK: |
-    Task scheduled for specific time/date. Dispatched 10 minutes before scheduled time.
-    Task bypassed pre-qualification - goes directly to GPU.
-
-    TIME CONTEXT: This task has a deadline! Consider time constraints when planning.
-    - Task scheduled for specific time (in task content or metadata)
-    - You have ~10 minutes lead time to complete before deadline
-    - Prioritize time-sensitive actions (emails, calls, reminders, preparations)
-
-    TASKS:
-    1. Execute scheduled action (instructions in task content)
-    2. If communication task (email, call, meeting prep) → execute immediately
-    3. If reminder → create user task with original deadline
-    4. If maintenance/system task → execute and verify
-    5. Store execution results → knowledge_store
-    6. Create user task if user confirmation needed → task_create_user
-
-    EXAMPLES:
-    - "Send status report email to client" → execute now
-    - "Remind about meeting at 14:00" → create user task with 14:00 due time
-    - "Call John about contract" → create urgent user task
-    - "Run weekly database backup" → execute system command
-
-    COMPLETION: Return empty plan [] when scheduled action complete.
-
-  COMMIT_ANALYSIS: |
-    Analyze Git commit that passed pre-qualification.
-
-    LINKING STRATEGY:
-    - Search RAG for related Jira issues (by commit message keywords, issue keys)
-    - Search for related requirements or user tasks
-    - Connect commit to broader project context
-
-    RULES DISCOVERY (from commit message and changes):
-    - Look for: new patterns introduced, refactoring decisions, architecture changes
-    - Examples: "Migrated to new pattern", "Introduced sealed classes", "Changed naming convention"
-    - Patterns found → store as RULE via knowledge_store (agent decides consistent naming)
-
-    TASKS:
-    1. Identify bugs, gaps, requirement links
-    2. Use knowledge_search for file descriptions (don't read source directly)
-    3. Search RAG to link commit to: Jira issues, requirements, related commits
-    4. Identify new coding patterns/guidelines → store as RULEs
-    5. Store insights → knowledge_store as MEMORY
-    6. Create user tasks for issues → task_create_user
-
-    LIMIT: Only analyze files in THIS commit.
-    COMPLETION: Return empty plan [] if routine (formatting/docs).
-
-  FILE_STRUCTURE_ANALYSIS: |
-    Analyze source file and create Czech description for RAG.
-
-    RULES DISCOVERY (from code comments and patterns):
-    - Look for: coding guidelines in comments, naming patterns, architecture decisions
-    - Examples: "// Convention: all repos extend BaseRepository", "// Use sealed class for states"
-    - Guidelines found → store as RULE via knowledge_store (agent decides consistent naming)
-    - Agent picks searchable rule names (e.g., "repository_base_class", "state_sealed_class_pattern")
-
-    OUTPUT FORMAT:
-    ---
-    CLASS: <className>
-    PACKAGE: <packageName>
-    LANGUAGE: <language>
-
-    DESCRIPTION (in Czech):
-    - Purpose: What problem does this solve?
-    - Key methods: Important methods and roles
-    - Dependencies: Used classes
-    - Architecture role: Service/Entity/Controller/etc
-    - Guidelines discovered: <if any coding guidelines found in comments>
-    ---
-
-    Analysis auto-stored in RAG by FileDescriptionProcessor.
-    Guidelines stored separately as RULEs via knowledge_store.
-
-    SKIP: Return empty plan [] for test files, generated code, configs.
-
-  PROJECT_DESCRIPTION_UPDATE: |
-    Update project descriptions based on recent commits.
-
-    STRATEGY (<100 files):
-    1. Get file descriptions from RAG → knowledge_search(sourceType=FILE_DESCRIPTION)
-    2. Identify new modules/packages/technologies
-    3. Merge with existing descriptions
-
-    STRATEGY (1000+ files):
-    1. Get ALL class descriptions from RAG by package
-    2. Infer structure from aggregated descriptions
-    3. Generate complete descriptions
-
-    WARNING: Don't read source code! Use RAG descriptions only.
-
-  CONFLUENCE_PAGE_ANALYSIS: |
-    Analyze Confluence page that passed pre-qualification.
-
-    LINKING STRATEGY (use knowledge_search to connect everything):
-    1. Search for mentioned classes/files/modules in RAG
-    2. Search for related Jira issues by key or topic
-    3. Search for related commits by mentioned features/bugs
-    4. Search for related emails by stakeholders or topics
-
-    RULES DISCOVERY (identify coding guidelines and conventions):
-    - Look for: naming conventions, architecture patterns, code standards, deployment procedures
-    - Guidelines found → store as RULE via knowledge_store (agent decides consistent naming)
-    - Agent picks rule names that will be searchable later (e.g., "kotlin_naming_convention", "api_versioning_strategy")
-    - Examples: "Use sealed classes for state", "Repository naming: *MongoRepository", "API prefix /api/v1"
-
-    TASKS:
-    1. Classify page type (API docs, architecture, coding guidelines, meeting notes, requirements, troubleshooting, etc)
-    2. Extract key info (concepts, decisions, action items, dates, guidelines)
-    3. Search RAG to link page to: code (classes/files), Jira issues, commits, emails, other docs
-    4. Identify coding guidelines/conventions → store as RULEs with consistent naming
-    5. Extract action items → task_create_user
-    6. Store structured summary → knowledge_store as MEMORY
-
-    OUTPUT FORMAT for knowledge_store:
-    ---
-    PAGE_TYPE: <type>
-    MAIN_TOPIC: <topic>
-    KEY_CONCEPTS: [<list>]
-    RELATED_CODE: [<files/classes with relationship>]
-    RELATED_JIRA: [<issues with relevance>]
-    RELATED_COMMITS: [<commits with relevance>]
-    RELATED_EMAILS: [<emails with relevance>]
-    RELATED_DOCS: [<other Confluence pages>]
-    CODING_GUIDELINES: [<guidelines discovered, stored as separate RULEs>]
-    DECISIONS: [<technical decisions>]
-    ACTION_ITEMS: [<items, created as user tasks>]
-    PROJECT_CONTEXT: <Czech summary>
-    ---
-
-    COMPLETION: Return empty plan [] if trivial/empty.
-
-  LINK_REVIEW: |
-    Review link that failed automatic indexing.
-
-    TASKS:
-    1. Investigate link (access URL, check type, domain reputation)
-    2. Decide:
-       A) Add to safe patterns → ManageLinkSafetyTool
-       B) Index manually with special handling
-       C) Ignore/skip with documented reason
-    3. Create user task if manual decision needed → task_create_user
-    4. Document decision → knowledge_store
-
-    COMPLETION: Return empty plan [] if spam/irrelevant.
-
-  LINK_SAFETY_REVIEW: |
-    Review UNCERTAIN link and classify safety.
-
-    RAG SEARCH RULES (if you decide to use knowledge_search):
-    - DO NOT use entire task content as query
-    - Extract 2-3 keywords ONLY from URL/domain
-    - Examples of GOOD queries: "infotext.isrv.cz link", "atlas.cz unsubscribe", "hash parameter"
-    - Examples of BAD queries: entire task content, full URL with context, safety analysis text
-    - Most links can be decided WITHOUT RAG search - use RAG only if truly needed
-
-    DECISION (choose ONE):
-    A) INDEX AS SAFE: Docs, articles, product pages → system_index_link
-    B) ADD UNSAFE PATTERN: Action links (unsubscribe, confirm, tokens) → system_manage_link_safety with SPECIFIC regex
-    C) SKIP: Irrelevant, untrusted, expired → document reason
-
-    PATTERN RULES (option B):
-    - Be SPECIFIC: /\/unsubscribe/ or /action=(accept|decline)/
-    - NEVER broad: /confirm/ or /email/
-    - Focus on path/query patterns
-
-    PHILOSOPHY: When uncertain → UNSAFE (better skip than trigger action).
-
-    COMPLETION: Return empty plan [] if spam/irrelevant.
-
-  CONNECTION_ERROR: |
-    Analyze connection authentication error and help user fix the issue.
-    Connection has been set to INVALID state and requires manual intervention.
-
-    CONTEXT ANALYSIS (from task content):
-    - Connection name and type (HTTP, IMAP, POP3, SMTP, OAuth2)
-    - Connection source identifier (connection://<connectionId>)
-    - Error details (authentication failed, invalid credentials)
-    - Connection configuration (baseUrl/host, port, username)
-
-    INVESTIGATION STRATEGY:
-    1. Identify connection type and service (Atlassian, email server, OAuth provider)
-    2. Search RAG for:
-       - Previous successful authentications with this connection
-       - Related configuration changes in commits
-       - Documentation about this service/integration
-       - Similar connection errors and their resolutions
-    3. Check for common authentication issues:
-       - Expired API tokens/passwords
-       - Changed credentials on service side
-       - Network/firewall issues
-       - Service API changes or deprecations
-       - Rate limiting or temporary service outage
-
-    TASKS:
-    1. Search RAG for connection history → knowledge_search(sourceType=CONNECTION)
-    2. Identify root cause based on error pattern
-    3. Create user task with specific fix instructions → task_create_user
-       - Include: which credentials to check/update
-       - Include: where to find correct credentials
-       - Include: how to test connection after fix
-    4. Store investigation findings → knowledge_store as MEMORY
-    5. If service API changed, store as RULE → knowledge_store
-
-    USER TASK CONTENT should include:
-    - Clear diagnosis of the problem
-    - Step-by-step fix instructions
-    - Links to service admin panels (if known)
-    - How to verify fix worked
-
-    EXAMPLES:
-    - "Atlassian API token expired → Generate new token in Atlassian Settings → Update connection"
-    - "IMAP password changed → Check email provider settings → Update connection password"
-    - "OAuth2 client secret rotated → Get new secret from provider console → Update connection"
-
-    COMPLETION: Always create user task with fix instructions. Return plan with task_create_user.
+  FILE_PROCESSING:
+    schema: |
+      File metadata extraction. Use storeKnowledge.
+    exampleInput: |
+      File: src/auth/TokenValidator.java
+      Project: backend-api
+      Module: authentication
+    exampleOutput: |
+      [
+        {
+          "name": "storeKnowledge",
+          "arguments": {
+            "content": "TokenValidator.java: JWT token validation logic with expiry checking and signature verification.",
+            "graphStructure": [
+              "file::src/auth/TokenValidator.java -[belongs_to]-> project::backend-api",
+              "file::src/auth/TokenValidator.java -[part_of]-> module::authentication"
+            ]
+          }
+        },
+        { "name": "routeTask", "arguments": { "routing": "DONE", "contextSummary": "Indexed TokenValidator.java" } }
+      ]

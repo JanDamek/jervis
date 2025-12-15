@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-coding-engine
+  namespace: jervis-system
+  labels:
+    app: jervis-coding-engine
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jervis-coding-engine
+  template:
+    metadata:
+      labels:
+        app: jervis-coding-engine
+    spec:
+      volumes:
+        - name: shared-data
+          persistentVolumeClaim:
+            claimName: jervis-shared-data-pvc
+        - name: docker-graph-storage
+          emptyDir: {}
+
+      containers:
+        - name: app
+          image: jervis-coding-engine:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: SERVER_PORT
+              value: "8080"
+            - name: DATA_ROOT_DIR
+              value: "/opt/jervis/data"
+            - name: DOCKER_HOST
+              value: "tcp://localhost:2375"
+            - name: SANDBOX_IMAGE
+              value: "ghcr.io/all-hands-ai/runtime:0.9-nikolaik"
+            - name: MAX_ITERATIONS
+              value: "10"
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: anthropic-api-key
+                  optional: true
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: openai-api-key
+                  optional: true
+          volumeMounts:
+            - name: shared-data
+              mountPath: /opt/jervis/data
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "500m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
+        - name: dind
+          image: docker:27-dind
+          securityContext:
+            privileged: true
+          env:
+            - name: DOCKER_TLS_CERTDIR
+              value: ""
+          volumeMounts:
+            - name: shared-data
+              mountPath: /opt/jervis/data
+            - name: docker-graph-storage
+              mountPath: /var/lib/docker
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-coding-engine
+  namespace: jervis-system
+  labels:
+    app: jervis-coding-engine
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app: jervis-coding-engine

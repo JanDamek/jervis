@@ -26,6 +26,7 @@ dependencies {
     implementation(libs.kotlin.stdlib)
     implementation(libs.kotlin.reflect)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotlinx.coroutines.core)
 
     // Spring 6 HTTP interfaces annotations (@HttpExchange)
     implementation("org.springframework:spring-web")

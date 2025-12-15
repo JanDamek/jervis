@@ -1,14 +1,16 @@
 package com.jervis.service.polling
 
-import com.jervis.dto.PendingTaskStateEnum
-import com.jervis.dto.PendingTaskTypeEnum
+import com.jervis.configuration.properties.PollingProperties
 import com.jervis.dto.connection.ConnectionStateEnum
-import com.jervis.entity.ClientDocument
-import com.jervis.entity.connection.Connection
+import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.repository.ClientMongoRepository
-import com.jervis.service.background.PendingTaskService
+import com.jervis.repository.ProjectMongoRepository
 import com.jervis.service.connection.ConnectionService
+import com.jervis.service.polling.handler.PollingContext
 import com.jervis.service.polling.handler.PollingHandler
+import com.jervis.service.task.TaskPriorityEnum
+import com.jervis.service.task.TaskSourceType
+import com.jervis.service.task.UserTaskService
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,8 +50,10 @@ import java.time.Instant
 class CentralPoller(
     private val connectionService: ConnectionService,
     private val clientRepository: ClientMongoRepository,
+    private val projectRepository: ProjectMongoRepository,
     private val handlers: List<PollingHandler>,
-    private val pendingTaskService: PendingTaskService,
+    private val userTaskService: UserTaskService,
+    private val pollingProperties: PollingProperties,
 ) {
     private val logger = KotlinLogging.logger {}
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -59,12 +63,12 @@ class CentralPoller(
 
     @PostConstruct
     fun start() {
-        logger.info { "Starting CentralPoller..." }
+        logger.debug { "Starting CentralPoller..." }
 
         scope.launch {
             // Initial delay to let application fully start
             delay(10_000)
-            logger.info { "CentralPoller initial delay complete, beginning polling loop" }
+            logger.debug { "CentralPoller initial delay complete, beginning polling loop" }
 
             while (isActive) {
                 try {
@@ -81,12 +85,12 @@ class CentralPoller(
     private suspend fun pollAllConnections() {
         val startTime = Instant.now()
         val jobs = mutableListOf<Job>()
-        val connections = mutableListOf<Connection>()
+        val connectionDocuments = mutableListOf<ConnectionDocument>()
 
-        logger.info { "=== Starting polling cycle ===" }
+        logger.debug { "=== Starting polling cycle ===" }
 
         connectionService.findAllValid().collect { connection ->
-            connections.add(connection)
+            connectionDocuments.add(connection)
             val job =
                 scope.async {
                     try {
@@ -98,57 +102,79 @@ class CentralPoller(
             jobs.add(job)
         }
 
-        if (connections.isEmpty()) {
-            logger.info { "No enabled connections found, skipping poll cycle" }
+        if (connectionDocuments.isEmpty()) {
+            logger.debug { "No enabled connections found, skipping poll cycle" }
             return
         }
 
-        logger.info { "Found ${connections.size} enabled connection(s): ${connections.joinToString(", ") { "'${it.name}'" }}" }
+        logger.debug {
+            "Found ${connectionDocuments.size} enabled connection(s): ${connectionDocuments.joinToString(
+                ", ",
+            ) { "'${it.name}'" }}"
+        }
 
         // Wait for all polling jobs to complete
         jobs.joinAll()
 
         val duration = Duration.between(startTime, Instant.now())
-        logger.info { "=== Polling cycle completed in ${duration.toMillis()}ms ===" }
+        logger.debug { "=== Polling cycle completed in ${duration.toMillis()}ms ===" }
     }
 
-    private suspend fun pollConnection(connection: Connection) {
+    private suspend fun pollConnection(connectionDocument: ConnectionDocument) {
         val startTime = Instant.now()
         val now = Instant.now()
-        val lastPoll = lastPollTimes[connection.id.toString()]
-        val interval = getPollingInterval(connection)
+        val lastPoll = lastPollTimes[connectionDocument.id.toString()]
+        val interval = getPollingInterval(connectionDocument)
 
-        logger.info { "  Checking connection '${connection.name}' (${connection::class.simpleName}, id=${connection.id})" }
+        logger.debug {
+            "  Checking connectionDocument '${connectionDocument.name}' (${connectionDocument::class.simpleName}, id=${connectionDocument.id})"
+        }
 
         if (lastPoll != null && Duration.between(lastPoll, now) < interval) {
             val timeSinceLastPoll = Duration.between(lastPoll, now)
-            logger.info {
-                "  ⏭ Skipping '${connection.name}': interval not reached | " +
-                "Last poll: ${timeSinceLastPoll.toMinutes()}min ago, Interval: ${interval.toMinutes()}min"
+            logger.debug {
+                "Skipping '${connectionDocument.name}': interval not reached | " +
+                    "Last poll: ${timeSinceLastPoll.toMinutes()}min ago, Interval: ${interval.toMinutes()}min"
             }
             return
         }
 
-        // Find ALL handlers for this connection type (e.g., Atlassian → Jira + Confluence)
-        val matchingHandlers = handlers.filter { it.canHandle(connection) }
+        // Find ALL handlers for this connectionDocument type (e.g., Atlassian → Jira + Confluence)
+        val matchingHandlers = handlers.filter { it.canHandle(connectionDocument) }
 
         if (matchingHandlers.isEmpty()) {
-            logger.warn { "  ⚠ No handler found for connection '${connection.name}' (type: ${connection::class.simpleName})" }
+            logger.warn {
+                "No handler found for connectionDocument '${connectionDocument.name}' (type: ${connectionDocument::class.simpleName})"
+            }
             return
         }
 
-        // Find all clients/projects using this connection - use Flow.toList() for processing
-        val clients = clientRepository.findByConnectionIdsContaining(connection.id).toList()
+        // Find all clients/projects using this connectionDocument
+        val clients = clientRepository.findByConnectionIdsContaining(connectionDocument.id).toList()
+        val projects = projectRepository.findByConnectionIdsContaining(connectionDocument.id).toList()
 
-        if (clients.isEmpty()) {
-            logger.info { "  ⏭ Skipping '${connection.name}': no clients using this connection" }
+        if (clients.isEmpty() && projects.isEmpty()) {
+            logger.debug {
+                "Skipping '${connectionDocument.name}' (id=${connectionDocument.id}): " +
+                    "no clients or projects using this connectionDocument"
+            }
             return
         }
+
+        // Create polling context
+        val context = PollingContext(clients = clients, projects = projects)
 
         val handlerNames = matchingHandlers.joinToString(", ") { it::class.simpleName ?: "Unknown" }
         val clientNames = clients.joinToString(", ") { it.name }
-        logger.info {
-            "▶ Polling '${connection.name}' (${connection::class.simpleName}) | Clients: [$clientNames] | Handlers: [$handlerNames]"
+        val projectNames = projects.joinToString(", ") { it.name }
+        val scope =
+            if (projects.isNotEmpty()) {
+                "Clients: [$clientNames] | Projects: [$projectNames]"
+            } else {
+                "Clients: [$clientNames]"
+            }
+        logger.debug {
+            "Polling '${connectionDocument.name}' (${connectionDocument::class.simpleName}) | $scope | Handlers: [$handlerNames]"
         }
 
         // Execute all matching handlers in parallel (e.g., Jira + Confluence for Atlassian)
@@ -158,9 +184,11 @@ class CentralPoller(
                     .map { handler ->
                         async {
                             try {
-                                handler.poll(connection, clients)
+                                handler.poll(connectionDocument, context)
                             } catch (e: Exception) {
-                                logger.error(e) { "Error in handler ${handler::class.simpleName} for connection ${connection.name}" }
+                                logger.error(
+                                    e,
+                                ) { "Error in handler ${handler::class.simpleName} for connectionDocument ${connectionDocument.name}" }
                                 PollingResult(errors = 1)
                             }
                         }
@@ -180,103 +208,91 @@ class CentralPoller(
 
         val duration = Duration.between(startTime, Instant.now())
         val statusIcon = if (totalResult.errors > 0) "✗" else "✓"
-        logger.info {
-            "$statusIcon Completed '${connection.name}' in ${duration.toMillis()}ms | " +
+        logger.debug {
+            "$statusIcon Completed '${connectionDocument.name}' in ${duration.toMillis()}ms | " +
                 "Discovered: ${totalResult.itemsDiscovered}, Created: ${totalResult.itemsCreated}, " +
                 "Skipped: ${totalResult.itemsSkipped}, Errors: ${totalResult.errors}"
         }
 
-        // Handle authentication errors - set connection to INVALID and create UserTask
+        // Handle authentication errors - set connectionDocument to INVALID and create UserTask for manual fix
         if (totalResult.authenticationError) {
-            handlePollingError(connection, clients, totalResult)
+            handlePollingError(connectionDocument, context, totalResult)
         }
 
         // Update last poll time
-        lastPollTimes[connection.id.toString()] = now
+        lastPollTimes[connectionDocument.id.toString()] = now
     }
 
     /**
-     * Handle authentication errors by setting connection to the INVALID state and creating UserTask.
+     * Handle authentication errors by setting connectionDocument to the INVALID state and creating PendingTask.
      * Only called when the authenticationError flag is true (not for temporary network errors).
      */
     private suspend fun handlePollingError(
-        connection: Connection,
-        clients: List<ClientDocument>,
+        connectionDocument: ConnectionDocument,
+        context: PollingContext,
         result: PollingResult,
     ) {
-        logger.warn { "Connection ${connection.name} encountered authentication error during polling" }
+        logger.warn { "ConnectionDocument ${connectionDocument.name} encountered authentication error during polling" }
 
-        // Set connection to INVALID state
-        connection.state = ConnectionStateEnum.INVALID
+        // Set connectionDocument to INVALID state using copy
+        val invalidConnection = when (connectionDocument) {
+            is ConnectionDocument.HttpConnectionDocument -> connectionDocument.copy(state = ConnectionStateEnum.INVALID)
+            is ConnectionDocument.ImapConnectionDocument -> connectionDocument.copy(state = ConnectionStateEnum.INVALID)
+            is ConnectionDocument.Pop3ConnectionDocument -> connectionDocument.copy(state = ConnectionStateEnum.INVALID)
+            is ConnectionDocument.SmtpConnectionDocument -> connectionDocument.copy(state = ConnectionStateEnum.INVALID)
+            is ConnectionDocument.OAuth2ConnectionDocument -> connectionDocument.copy(state = ConnectionStateEnum.INVALID)
+        }
 
-        connectionService.save(connection)
-        logger.info { "Connection ${connection.name} (${connection.id}) set to INVALID state" }
+        connectionService.save(invalidConnection)
+        logger.debug { "ConnectionDocument ${connectionDocument.name} (${connectionDocument.id}) set to INVALID state" }
 
-        // Check if UserTask already exists for this connection
-        val connectionSource = "connection://${connection.id.toHexString()}"
+        // Check if UserTask already exists for this connectionDocument
         val clientId =
-            clients.firstOrNull()?.id ?: run {
-                logger.warn { "No clients found for connection ${connection.name}, cannot create UserTask" }
-                return
-            }
-
-        // Find existing CONNECTION_ERROR tasks for this client and connection
-        val existingTasks =
-            pendingTaskService
-                .findAllTasks(
-                    taskType = PendingTaskTypeEnum.CONNECTION_ERROR,
-                    state = PendingTaskStateEnum.READY_FOR_QUALIFICATION,
-                ).toList()
-
-        val taskExists =
-            existingTasks.any { task ->
-                task.clientId == clientId && task.content.contains(connectionSource)
-            }
-
-        if (!taskExists) {
-            // Create UserTask for manual fix
-            val taskContent =
-                buildString {
-                    appendLine("Connection Polling Error")
-                    appendLine()
-                    appendLine("Connection: ${connection.name}")
-                    appendLine("Type: ${connection::class.simpleName}")
-                    appendLine("Source: $connectionSource")
-                    appendLine()
-                    appendLine("Status: Connection failed during polling with ${result.errors} error(s)")
-                    appendLine()
-                    appendLine("Action Required:")
-                    appendLine("1. Check connection credentials and configuration")
-                    appendLine("2. Verify network connectivity")
-                    appendLine("3. Test connection manually")
-                    appendLine("4. Update connection settings if needed")
+            context.clients.firstOrNull()?.id
+                ?: context.projects.firstOrNull()?.clientId
+                ?: run {
+                    logger.warn { "No clients found for connectionDocument ${connectionDocument.name}, cannot create UserTask" }
+                    return
                 }
 
-            pendingTaskService.createTask(
-                taskType = PendingTaskTypeEnum.CONNECTION_ERROR,
-                content = taskContent,
-                projectId = null,
-                clientId = clients.firstOrNull()?.id ?: return,
-            )
+        val correlationId = "connectionDocument-error-${connectionDocument.id}"
 
-            logger.info { "Created UserTask for INVALID connection: ${connection.name}" }
-        } else {
-            logger.debug { "UserTask already exists for connection ${connection.name}, skipping creation" }
-        }
+        // Create UserTask for manual fix - UserTaskService handles duplicates
+        val taskDescription =
+            buildString {
+                appendLine("ConnectionDocument: ${connectionDocument.name}")
+                appendLine("Type: ${connectionDocument::class.simpleName}")
+                appendLine()
+                appendLine("Status: ConnectionDocument failed during polling with ${result.errors} error(s)")
+                appendLine()
+                appendLine("Action Required:")
+                appendLine("1. Check connectionDocument credentials and configuration")
+                appendLine("2. Verify network connectivity")
+                appendLine("3. Test connectionDocument manually")
+                appendLine("4. Update connectionDocument settings if needed")
+            }
+
+        userTaskService.createTask(
+            title = "Fix ConnectionDocument: ${connectionDocument.name}",
+            description = taskDescription,
+            priority = TaskPriorityEnum.HIGH,
+            dueDate = null,
+            projectId = null,
+            clientId = clientId,
+            sourceType = TaskSourceType.CONNECTION_ERROR,
+            correlationId = correlationId,
+        )
+
+        logger.debug { "Created UserTask for INVALID connectionDocument: ${connectionDocument.name}" }
     }
 
-    private fun getPollingInterval(connection: Connection): Duration =
-        when (connection) {
-            is Connection.HttpConnection -> Duration.ofMinutes(5)
-
-            is Connection.ImapConnection -> Duration.ofMinutes(1)
-
-            is Connection.Pop3Connection -> Duration.ofMinutes(2)
-
-            is Connection.SmtpConnection -> Duration.ofHours(1)
-
-            // SMTP usually for sending, not polling
-            is Connection.OAuth2Connection -> Duration.ofMinutes(5)
+    private fun getPollingInterval(connectionDocument: ConnectionDocument): Duration =
+        when (connectionDocument) {
+            is ConnectionDocument.HttpConnectionDocument -> pollingProperties.http
+            is ConnectionDocument.ImapConnectionDocument -> pollingProperties.imap
+            is ConnectionDocument.Pop3ConnectionDocument -> pollingProperties.pop3
+            is ConnectionDocument.SmtpConnectionDocument -> Duration.ofDays(365) // SMTP is for sending only, effectively disable polling
+            is ConnectionDocument.OAuth2ConnectionDocument -> pollingProperties.oauth2
         }
 }
 

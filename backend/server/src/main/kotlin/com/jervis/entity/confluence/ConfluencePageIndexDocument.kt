@@ -1,114 +1,130 @@
 package com.jervis.entity.confluence
 
+import com.jervis.types.ClientId
+import com.jervis.types.ConnectionId
+import com.jervis.types.ProjectId
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
+import org.springframework.data.annotation.TypeAlias
 import org.springframework.data.mongodb.core.index.CompoundIndex
 import org.springframework.data.mongodb.core.index.CompoundIndexes
-import org.springframework.data.mongodb.core.index.Indexed
 import org.springframework.data.mongodb.core.mapping.Document
 import java.time.Instant
 
 /**
- * Confluence page document with COMPLETE data for indexing.
+ * Confluence page index - tracking which pages have been processed.
  *
- * Architecture:
- * - CentralPoller fetches FULL page data from API and saves here as NEW
- * - ConfluenceContinuousIndexer reads from MongoDB (no API calls) and indexes to RAG
- * - MongoDB is staging area between API and RAG
+ * STATE MACHINE: NEW -> INDEXED (or FAILED)
  *
- * Note: connectionId refers to Connection.id (HttpConnection for Atlassian)
+ * STATES:
+ * - NEW: Full page data from Confluence API, ready for indexing
+ * - INDEXED: Minimal tracking record (data in RAG/Graph via sourceUrn)
+ * - FAILED: NEW state with error - full data kept for retry
+ *
+ * FLOW:
+ * 1. CentralPoller fetches → saves as NEW with full data
+ * 2. ConfluenceContinuousIndexer creates PendingTask → converts to INDEXED (minimal)
+ * 3. KoogQualifierAgent stores to RAG/Graph with sourceUrn
+ * 4. Future lookups use sourceUrn to find original in Confluence
+ *
+ * MONGODB STORAGE (single instance, no INDEXING state needed):
+ * - NEW/FAILED: Full document with content, comments, attachments
+ * - INDEXED: Minimal document - only id, connectionDocumentId, pageId, state, confluenceUpdatedAt
+ *
+ * BREAKING CHANGE - MIGRATION REQUIRED:
+ * Sealed class structure requires _class discriminator field in MongoDB.
+ * Old documents without _class will FAIL deserialization (fail-fast design).
+ *
+ * MIGRATION: Drop collection before starting server:
+ *   db.confluence_pages.drop()
+ *
+ * All pages will be re-indexed from Confluence on next polling cycle.
  */
 @Document(collection = "confluence_pages")
 @CompoundIndexes(
-    CompoundIndex(name = "connection_page_unique", def = "{'connectionId': 1, 'pageId': 1}", unique = true),
-    CompoundIndex(name = "client_idx", def = "{'clientId': 1}"),
-    CompoundIndex(name = "connection_state_idx", def = "{'connectionId': 1, 'state': 1}"),
-    CompoundIndex(name = "state_updated_idx", def = "{'state': 1, 'updatedAt': -1}"),
+    CompoundIndex(name = "connection_state_idx", def = "{'connectionDocumentId': 1, 'state': 1}"),
+    CompoundIndex(name = "connection_page_idx", def = "{'connectionDocumentId': 1, 'pageId': 1}", unique = true),
+    CompoundIndex(name = "client_state_idx", def = "{'clientId': 1, 'state': 1}"),
 )
-data class ConfluencePageIndexDocument(
-    @Id
-    val id: ObjectId = ObjectId.get(),
+sealed class ConfluencePageIndexDocument {
+    abstract val id: ObjectId
+    abstract val clientId: ClientId
+    abstract val connectionDocumentId: ConnectionId
+    abstract val pageId: String
+    abstract val state: String
+    abstract val confluenceUpdatedAt: Instant
 
-    /** Connection ID (Connection.HttpConnection) */
-    @Indexed
-    val connectionId: ObjectId,
+    /**
+     * NEW state - full page data from Confluence API, ready for indexing.
+     */
+    @TypeAlias("ConfluenceNew")
+    data class New(
+        @Id override val id: ObjectId = ObjectId.get(),
+        override val clientId: ClientId,
+        val projectId: ProjectId? = null,
+        override val connectionDocumentId: ConnectionId,
+        override val pageId: String,
+        val spaceKey: String,
+        val title: String,
+        val content: String?,
+        val parentPageId: String?,
+        val pageType: String = "page",
+        val status: String = "current",
+        val creator: String?,
+        val lastModifier: String?,
+        val labels: List<String> = emptyList(),
+        val comments: List<ConfluenceComment> = emptyList(),
+        val attachments: List<ConfluenceAttachment> = emptyList(),
+        val createdAt: Instant,
+        override val confluenceUpdatedAt: Instant,
+    ) : ConfluencePageIndexDocument() {
+        override val state: String = "NEW"
+    }
 
-    /** Client ID */
-    @Indexed
-    val clientId: ObjectId,
+    /**
+     * INDEXED state - minimal tracking record, actual data in RAG/Graph.
+     * Only keeps essentials for deduplication and sourceUrn lookup.
+     */
+    @TypeAlias("ConfluenceIndexed")
+    data class Indexed(
+        @Id override val id: ObjectId,
+        override val clientId: ClientId,
+        val projectId: ProjectId? = null,
+        override val connectionDocumentId: ConnectionId,
+        override val pageId: String,
+        override val confluenceUpdatedAt: Instant,
+    ) : ConfluencePageIndexDocument() {
+        override val state: String = "INDEXED"
+    }
 
-    /** Confluence page ID (e.g., "123456789") */
-    @Indexed
-    val pageId: String,
-
-    /** Space key (e.g., "PROJ") */
-    val spaceKey: String,
-
-    // === FULL CONTENT (fetched by CentralPoller) ===
-
-    /** Page title */
-    val title: String,
-
-    /** Full content in storage format (HTML/wiki markup) */
-    val content: String? = null,
-
-    /** Parent page ID (if this is a child page) */
-    val parentPageId: String? = null,
-
-    /** Page type (page, blogpost, etc.) */
-    val pageType: String = "page",
-
-    /** Page status (current, archived, deleted) */
-    val status: String = "current",
-
-    /** Creator account ID */
-    val creator: String? = null,
-
-    /** Last modifier account ID */
-    val lastModifier: String? = null,
-
-    /** Labels/tags */
-    val labels: List<String> = emptyList(),
-
-    /** Comments (full text) */
-    val comments: List<ConfluenceComment> = emptyList(),
-
-    /** Attachments metadata */
-    val attachments: List<ConfluenceAttachment> = emptyList(),
-
-    /** When page was created in Confluence */
-    val createdAt: Instant,
-
-    /** When page was last updated in Confluence */
-    val confluenceUpdatedAt: Instant,
-
-    // === STATE MANAGEMENT ===
-
-    /** Indexing state: NEW, INDEXING, INDEXED, FAILED */
-    @Indexed
-    val state: String = "NEW",
-
-    /** When document was created/updated in our DB */
-    @Indexed
-    val updatedAt: Instant = Instant.now(),
-
-    /** When page was last indexed to RAG */
-    val lastIndexedAt: Instant? = null,
-
-    /** Is archived (deleted from Confluence or manually archived) */
-    val archived: Boolean = false,
-
-    // === INDEXING STATS (updated by ContinuousIndexer) ===
-
-    /** Number of RAG chunks created */
-    val totalRagChunks: Int = 0,
-
-    /** Number of comments indexed */
-    val commentChunkCount: Int = 0,
-
-    /** Number of attachments indexed */
-    val attachmentCount: Int = 0,
-)
+    /**
+     * FAILED state - same as NEW but with error, full data kept for retry.
+     */
+    @TypeAlias("ConfluenceFailed")
+    data class Failed(
+        @Id override val id: ObjectId,
+        override val clientId: ClientId,
+        val projectId: ProjectId? = null,
+        override val connectionDocumentId: ConnectionId,
+        override val pageId: String,
+        val spaceKey: String,
+        val title: String,
+        val content: String?,
+        val parentPageId: String?,
+        val pageType: String,
+        val status: String,
+        val creator: String?,
+        val lastModifier: String?,
+        val labels: List<String>,
+        val comments: List<ConfluenceComment>,
+        val attachments: List<ConfluenceAttachment>,
+        val createdAt: Instant,
+        override val confluenceUpdatedAt: Instant,
+        val indexingError: String,
+    ) : ConfluencePageIndexDocument() {
+        override val state: String = "FAILED"
+    }
+}
 
 /**
  * Confluence comment (fetched by CentralPoller, stored in ConfluencePageIndexDocument).

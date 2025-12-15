@@ -1,8 +1,10 @@
 # UI Guidelines
 
-This document defines mandatory standards for UI behaviors across Jervis. It includes delete operations, text display, notifications, secrets visibility, keyboard navigation, and connections management.
+This document defines mandatory standards for UI behaviors across Jervis. It includes delete operations, text display,
+notifications, secrets visibility, keyboard navigation, and connections management.
 
 ## Table of Contents
+
 - [Delete Button Standard](#delete-button-standard)
 - [CopyableTextCard Standard](#copyabletextcard-standard)
 - [Confirmation Dialog Standard](#confirmation-dialog-standard)
@@ -16,13 +18,15 @@ This document defines mandatory standards for UI behaviors across Jervis. It inc
 
 - Secrets are visible: UI must display full values (passwords/tokens/keys) without masking. This app is not public.
 - Notifications: Use snackbars at the top-right corner of the window (non-modal). Prefer brief, actionable messages.
-- Tab behavior (Desktop): Tab moves focus (Next/Previous with Shift). It must NOT insert whitespace in text fields. Use onPreviewKeyEvent at the top layout.
+- Tab behavior (Desktop): Tab moves focus (Next/Previous with Shift). It must NOT insert whitespace in text fields. Use
+  onPreviewKeyEvent at the top layout.
 
 ---
 
 ## Delete Button Standard
 
 ### Component to Use
+
 **ALWAYS** use: `com.jervis.ui.util.DeleteIconButton`
 
 ```kotlin
@@ -32,6 +36,7 @@ DeleteIconButton(
 ```
 
 ### Placement Rules
+
 1. **Location**: Place delete button **at the end of each row** in the list/table
 2. **No header button**: Do NOT place delete button in list/table header
 3. **Visual**: Use the standardized icon button (trash can emoji 🗑️)
@@ -39,11 +44,13 @@ DeleteIconButton(
 5. **Always enabled**: No enabled/disabled state - button is always clickable
 
 ### When to Use
+
 - Deleting entities (tasks, logs, schedules, etc.)
 - Removing items from lists
 - Canceling scheduled operations
 
 ### Action Naming
+
 - **Primary action name**: "Delete" (not "Cancel", "Revoke", "Remove", "Discard")
 - **Exception**: Only use different terminology if domain-specific (e.g., financial "Void", legal "Revoke")
 - **Button label**: No text label (icon-only button)
@@ -53,6 +60,7 @@ DeleteIconButton(
 ## CopyableTextCard Standard
 
 ### Component to Use
+
 **ALWAYS** use: `com.jervis.ui.util.CopyableTextCard` for displaying text content with copy functionality
 
 ```kotlin
@@ -66,6 +74,7 @@ CopyableTextCard(
 ```
 
 ### Features
+
 1. **Copy Icon**: 📋 emoji in top-right corner (NO text label like "Copy")
 2. **Selectable Text**: Content is automatically selectable for manual copying
 3. **Consistent Layout**: Title at top, content below
@@ -73,12 +82,14 @@ CopyableTextCard(
 5. **Monospace Option**: Set `useMonospace = true` for code/technical content
 
 ### When to Use
+
 - Displaying prompts (system, user)
 - Showing API responses
 - Technical content that users might want to copy
 - Any text content where copy functionality is useful
 
 ### Do NOT Use
+
 - TextButton with "Copy" text label
 - Custom copy implementations
 - Manual clipboard management without the template
@@ -88,6 +99,7 @@ CopyableTextCard(
 ## Confirmation Dialog Standard
 
 ### Component to Use
+
 **ALWAYS** use: `com.jervis.ui.util.ConfirmDialog`
 
 ```kotlin
@@ -104,32 +116,38 @@ ConfirmDialog(
 ### Dialog Configuration
 
 #### Title Format
+
 ```
 "Delete {ItemType}"
 ```
+
 Examples:
+
 - "Delete User Task"
 - "Delete Error Log"
 - "Delete Scheduled Task"
 - "Delete Pending Task"
 
 #### Message Format
+
 ```
 "Are you sure you want to delete this {item}? This action cannot be undone."
 ```
 
 #### Button Configuration
+
 - **Confirm button text**: "Delete"
 - **Confirm button color**: Error color scheme (red)
 - **Dismiss button text**: "Cancel"
 - **Dismiss button style**: Outlined
 
 ### When Dialog Appears
+
 - Dialog shows when: `showDeleteDialog = true AND itemToDelete != null`
 - Dialog dismisses when:
-  - User clicks "Cancel"
-  - User clicks outside dialog (onDismissRequest)
-  - After successful delete operation
+    - User clicks "Cancel"
+    - User clicks outside dialog (onDismissRequest)
+    - After successful delete operation
 
 ---
 
@@ -275,7 +293,9 @@ fun ContentDisplayScreen() {
 ## Examples
 
 ### Correct Implementation
+
 ✅ **UserTasksScreen**
+
 ```kotlin
 // Per-row delete button
 Row {
@@ -303,6 +323,7 @@ com.jervis.ui.util.ConfirmDialog(
 ```
 
 ✅ **DebugWindow with CopyableTextCard**
+
 ```kotlin
 // System Prompt with copy icon
 CopyableTextCard(
@@ -319,6 +340,7 @@ CopyableTextCard(
 ## Anti-Patterns
 
 ### ❌ Don't: Delete Button in Header
+
 ```kotlin
 // WRONG - Don't use header button
 Row(header) {
@@ -330,6 +352,7 @@ Row(header) {
 **Use instead**: Per-row delete button at the end of each row
 
 ### ❌ Don't: Use enabled/disabled State
+
 ```kotlin
 // WRONG - Don't disable button
 DeleteIconButton(
@@ -341,6 +364,7 @@ DeleteIconButton(
 **Use instead**: Always-enabled button that shows confirmation dialog
 
 ### ❌ Don't: Custom Copy Implementation with Text
+
 ```kotlin
 // WRONG - Don't use TextButton with "Copy" text
 TextButton(onClick = { /* clipboard.setText(...) */ }) {
@@ -351,6 +375,7 @@ TextButton(onClick = { /* clipboard.setText(...) */ }) {
 **Use instead**: `CopyableTextCard` with 📋 icon
 
 ### ❌ Don't: Manual Copy UI
+
 ```kotlin
 // WRONG - Don't build custom copy UI
 Row {
@@ -365,6 +390,7 @@ Text(content)
 **Use instead**: `CopyableTextCard` template
 
 ### ❌ Don't: Use Custom AlertDialog
+
 ```kotlin
 // WRONG - Don't create custom AlertDialog
 if (showDeleteDialog) {
@@ -388,22 +414,23 @@ if (showDeleteDialog) {
 ### Overview
 
 - Provide a dedicated Connections tab in Settings showing all connections.
-- For each connection, display: name, type, state (NEW/VALID/INVALID), and ownership label: "Client: …", "Project: …", or "Unattached".
+- For each connectionDocument, display: name, type, state (NEW/VALID/INVALID), and ownership label: "Client: …", "
+  Project: …", or "Unattached".
 - Actions: Create, Edit, Test, Duplicate, Delete. Use snackbars (top-right) for feedback.
 
 ### Ownership Rules
 
-- A connection can belong to only one owner at a time: either a Client or a Project.
-- To reuse a connection elsewhere, use Duplicate to create a copy and attach it to the other owner.
+- A connectionDocument can belong to only one owner at a time: either a Client or a Project.
+- To reuse a connectionDocument elsewhere, use Duplicate to create a copy and attach it to the other owner.
 
 ### Client/Project Editors
 
 - Inside Client and Project edit dialogs:
-  - List all connections with owner labels.
-  - Allow attach/detach via checkbox when unattached or owned by the current entity.
-  - If owned elsewhere, show Duplicate to create a copy and auto-attach it.
-  - Provide Test and Edit actions inline;
-  - Provide Create Connection (quick-create dialog).
+    - List all connections with owner labels.
+    - Allow attach/detach via checkbox when unattached or owned by the current entity.
+    - If owned elsewhere, show Duplicate to create a copy and auto-attach it.
+    - Provide Test and Edit actions inline;
+    - Provide Create Connection (quick-create dialog).
 
 ### Authorization (HTTP)
 
@@ -450,6 +477,7 @@ When displaying text content with copy functionality:
 ## Summary
 
 ### Key Principles
+
 1. **Consistency**: All delete operations and text display use the same components
 2. **Safety**: Always require confirmation before deletion
 3. **Clarity**: Use clear, descriptive language ("Delete", not abbreviations)
@@ -457,11 +485,13 @@ When displaying text content with copy functionality:
 5. **No Text Labels**: Icons only (🗑️ for delete, 📋 for copy)
 
 ### Required Components
+
 - `com.jervis.ui.util.DeleteIconButton` - For all delete buttons (per-row)
 - `com.jervis.ui.util.ConfirmDialog` - For all delete confirmations
 - `com.jervis.ui.util.CopyableTextCard` - For all text content with copy functionality
 
 ### Mandatory Pattern
+
 1. Per-row delete button at end of each row
 2. Always enabled (no selection state)
 3. Confirmation dialog before deletion

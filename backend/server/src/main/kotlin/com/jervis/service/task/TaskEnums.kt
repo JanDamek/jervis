@@ -30,4 +30,5 @@ enum class TaskSourceType {
     KNOWLEDGE_APPROVAL,
     GIT_COMMIT,
     AUTHORIZATION,
+    CONNECTION_ERROR,
 }

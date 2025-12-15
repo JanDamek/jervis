@@ -1,8 +1,8 @@
 package com.jervis.service.http
 
 import com.jervis.configuration.ConnectionCredentialsKey
-import com.jervis.configuration.ConnectionKey
-import com.jervis.entity.connection.Connection
+import com.jervis.configuration.ConnectionDocumentKey
+import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.entity.connection.HttpCredentials
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.timeout
@@ -16,119 +16,119 @@ import io.ktor.client.request.put
 import io.ktor.client.statement.HttpResponse
 
 /**
- * Execute GET request with Connection.
+ * Execute GET request with ConnectionDocument.
  *
  * @param url Full URL (can include query parameters)
- * @param connection Connection.HttpConnection with auth and rate limit config
+ * @param connectionDocument ConnectionDocument.HttpConnectionDocument with auth and rate limit config
  * @param credentials Decrypted HttpCredentials (obtained via ConnectionService)
  * @param block Additional request configuration
  */
 suspend fun HttpClient.getWithConnection(
     url: String,
-    connection: Connection.HttpConnection,
+    connectionDocument: ConnectionDocument.HttpConnectionDocument,
     credentials: HttpCredentials? = null,
     block: HttpRequestBuilder.() -> Unit = {},
 ): HttpResponse =
     get(url) {
-        attributes.put(ConnectionKey, connection)
+        attributes.put(ConnectionDocumentKey, connectionDocument)
         credentials?.let { attributes.put(ConnectionCredentialsKey, it) }
         timeout {
-            requestTimeoutMillis = connection.timeoutMs
+            requestTimeoutMillis = connectionDocument.timeoutMs
         }
         block()
     }
 
 /**
- * Execute POST request with Connection.
+ * Execute POST request with ConnectionDocument.
  *
  * @param url Full URL
- * @param connection Connection.HttpConnection with auth and rate limit config
+ * @param connectionDocument ConnectionDocument.HttpConnectionDocument with auth and rate limit config
  * @param credentials Decrypted HttpCredentials (obtained via ConnectionService)
  * @param block Additional request configuration (use setBody for request body)
  */
 suspend fun HttpClient.postWithConnection(
     url: String,
-    connection: Connection.HttpConnection,
+    connectionDocument: ConnectionDocument.HttpConnectionDocument,
     credentials: HttpCredentials? = null,
     block: HttpRequestBuilder.() -> Unit = {},
 ): HttpResponse =
     post(url) {
-        attributes.put(ConnectionKey, connection)
+        attributes.put(ConnectionDocumentKey, connectionDocument)
         credentials?.let { attributes.put(ConnectionCredentialsKey, it) }
         timeout {
-            requestTimeoutMillis = connection.timeoutMs
+            requestTimeoutMillis = connectionDocument.timeoutMs
         }
         block()
     }
 
 /**
- * Execute PUT request with Connection.
+ * Execute PUT request with ConnectionDocument.
  */
 suspend fun HttpClient.putWithConnection(
     url: String,
-    connection: Connection.HttpConnection,
+    connectionDocument: ConnectionDocument.HttpConnectionDocument,
     credentials: HttpCredentials? = null,
     block: HttpRequestBuilder.() -> Unit = {},
 ): HttpResponse =
     put(url) {
-        attributes.put(ConnectionKey, connection)
+        attributes.put(ConnectionDocumentKey, connectionDocument)
         credentials?.let { attributes.put(ConnectionCredentialsKey, it) }
         timeout {
-            requestTimeoutMillis = connection.timeoutMs
+            requestTimeoutMillis = connectionDocument.timeoutMs
         }
         block()
     }
 
 /**
- * Execute DELETE request with Connection.
+ * Execute DELETE request with ConnectionDocument.
  */
 suspend fun HttpClient.deleteWithConnection(
     url: String,
-    connection: Connection.HttpConnection,
+    connectionDocument: ConnectionDocument.HttpConnectionDocument,
     credentials: HttpCredentials? = null,
     block: HttpRequestBuilder.() -> Unit = {},
 ): HttpResponse =
     delete(url) {
-        attributes.put(ConnectionKey, connection)
+        attributes.put(ConnectionDocumentKey, connectionDocument)
         credentials?.let { attributes.put(ConnectionCredentialsKey, it) }
         timeout {
-            requestTimeoutMillis = connection.timeoutMs
+            requestTimeoutMillis = connectionDocument.timeoutMs
         }
         block()
     }
 
 /**
- * Execute PATCH request with Connection.
+ * Execute PATCH request with ConnectionDocument.
  */
 suspend fun HttpClient.patchWithConnection(
     url: String,
-    connection: Connection.HttpConnection,
+    connectionDocument: ConnectionDocument.HttpConnectionDocument,
     credentials: HttpCredentials? = null,
     block: HttpRequestBuilder.() -> Unit = {},
 ): HttpResponse =
     patch(url) {
-        attributes.put(ConnectionKey, connection)
+        attributes.put(ConnectionDocumentKey, connectionDocument)
         credentials?.let { attributes.put(ConnectionCredentialsKey, it) }
         timeout {
-            requestTimeoutMillis = connection.timeoutMs
+            requestTimeoutMillis = connectionDocument.timeoutMs
         }
         block()
     }
 
 /**
- * Execute HEAD request with Connection.
+ * Execute HEAD request with ConnectionDocument.
  */
 suspend fun HttpClient.headWithConnection(
     url: String,
-    connection: Connection.HttpConnection,
+    connectionDocument: ConnectionDocument.HttpConnectionDocument,
     credentials: HttpCredentials? = null,
     block: HttpRequestBuilder.() -> Unit = {},
 ): HttpResponse =
     head(url) {
-        attributes.put(ConnectionKey, connection)
+        attributes.put(ConnectionDocumentKey, connectionDocument)
         credentials?.let { attributes.put(ConnectionCredentialsKey, it) }
         timeout {
-            requestTimeoutMillis = connection.timeoutMs
+            requestTimeoutMillis = connectionDocument.timeoutMs
         }
         block()
     }

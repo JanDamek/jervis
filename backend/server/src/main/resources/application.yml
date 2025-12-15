@@ -2,15 +2,14 @@
 logging:
   level:
     root: INFO
-    com.arangodb.internal.serde.SerdeUtils: ERROR
+    com.arangodb.internal.serde.SerdeUtils: INFO
     com.jervis: INFO
     com.jervis.service: INFO
-    # Enable verbose logging for Koog framework and our Koog integration
-    ai.koog: DEBUG
-    com.jervis.koog: DEBUG
-    org.springframework.web: INFO
-    org.springframework.web.reactive.socket: INFO
-    org.springframework.web.reactive.handler: INFO
+    ai.koog: INFO
+    com.jervis.koog: INFO
+    org.springframework.web: WARN
+    org.springframework.web.reactive.socket: WARN
+    org.springframework.web.reactive.handler: WARN
     org.springframework.data.mongodb.core.convert.QueryMapper: WARN
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
@@ -23,15 +22,16 @@ logging:
       max-file-size: 10MB
 
 spring:
+  mongodb:
+    host: 192.168.100.117
+    port: 27017
+    database: jervis
+    # Uncomment and set these for production with authentication
+    username: root
+    password: REDACTED_MONGODB_PASSWORD
+    authentication-database: admin
   data:
     mongodb:
-      host: 192.168.100.117
-      port: 27017
-      database: jervis
-      # Uncomment and set these for production with authentication
-      username: root
-      password: REDACTED_MONGODB_PASSWORD
-      authentication-database: admin
       auto-index-creation: false  # Disabled - indexes managed by MongoIndexInitializer
 
 # Vector database configuration
@@ -85,8 +85,18 @@ arango:
 
 jervis:
   background:
-    enabled: true
     wait-on-error: 30s
+    wait-interval: 30s
+    wait-on-startup: 1m
+  koog:
+    max-iterations: 900
+  polling:
+    # Polling intervals for different connection types
+    http: 5m    # Jira, Confluence, etc.
+    imap: 5m    # IMAP email
+    pop3: 5m    # POP3 email
+    oauth2: 5m  # OAuth2 connections
+    # Note: SMTP is for sending only, not used for polling
   security:
     # Unique client token for mobile apps - acts as port scanning protection
     # Any request without this header is considered an attack attempt and gets no response
@@ -167,37 +177,10 @@ retry:
 data:
   root-dir: ${DATA_ROOT_DIR}
 
-# Audio processing configuration
-audio:
-  monitoring:
-    default-git-check-interval-minutes: 15
-    supported-formats:
-      - wav
-      - mp3
-      - m4a
-      - flac
-      - ogg
-      - opus
-      - webm
-
-# Text chunking configuration
-text:
-  chunking:
-    max-tokens: 3072  # Optimized for BGE-M3 (8192 context) - larger chunks preserve more context
-    overlap-percentage: 12  # Reduced overlap as chunks are now larger (saves storage & improves diversity)
-    chars-per-token: 3.5  # More accurate for Czech/multilingual text (Czech averages ~3.2-3.8 chars/token)
-
 # Link indexing configuration
 link:
   indexing:
     skip-if-indexed-within: 30d
-
-# Git synchronization configuration
-git:
-  sync:
-    # Interval for checking and syncing Git repositories (in milliseconds)
-    polling-interval-ms: 300000 # 5 minutes
-    initial-delay-ms: 60000 # 1 minute after startup
 
 # Ollama preload and keep-alive configuration (fail-fast: all values must be provided)
 preload:
@@ -214,6 +197,36 @@ preload:
       keep-alive: 1h
       refresh-safety-factor: 0.9
 
-ollama:
-  keep-alive:
-    default: 1h
+coding-tools:
+  aider:
+    default-provider: ollama
+    default-model: qwen3-coder-tool:30b
+    paid-provider: anthropic
+    paid-model: claude-3-5-sonnet-20241022
+  openhands:
+    default-provider: ollama
+    default-model: qqwen3-coder-tool:30b
+    paid-provider: anthropic
+    paid-model: claude-3-5-sonnet-20241022
+    ollama-base-url: http://192.168.100.117:11434
+
+endpoints:
+  searxng:
+    baseUrl: ${SEARXNG_BASE_URL:http://192.168.100.117:30053/}
+  openhands:
+    baseUrl: ${OPENHANDS_BASE_URL:http://192.168.100.117:3000/}
+  joern:
+    baseUrl: ${JOERN_BASE_URL:http://192.168.100.117:8082/}
+  tika:
+    baseUrl: ${TIKA_BASE_URL:http://192.168.100.117:8081/}
+  whisper:
+    baseUrl: ${WHISPER_BASE_URL:http://192.168.100.117:8083/}
+  atlassian:
+    #    baseUrl: ${ATLASSIAN_BASE_URL:http://192.168.100.117:8084/}
+    baseUrl: ${ATLASSIAN_BASE_URL:http://localhost:8084/}
+  aider:
+    #    baseUrl: ${AIDER_BASE_URL:http://192.168.100.117:3100/}
+    baseUrl: ${AIDER_BASE_URL:http://localhost:3100/}
+  coding:
+    #    baseUrl: ${CODING_BASE_URL:http://192.168.100.117:3200/}
+    baseUrl: ${CODING_BASE_URL:http://localhost:3200/}

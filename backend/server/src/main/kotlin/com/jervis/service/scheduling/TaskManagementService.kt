@@ -2,6 +2,9 @@ package com.jervis.service.scheduling
 
 import com.jervis.entity.ScheduledTaskDocument
 import com.jervis.repository.ScheduledTaskMongoRepository
+import com.jervis.types.ClientId
+import com.jervis.types.ProjectId
+import com.jervis.types.SourceUrn
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -25,8 +28,8 @@ class TaskManagementService(
      * Schedule a new task
      */
     suspend fun scheduleTask(
-        clientId: ObjectId,
-        projectId: ObjectId?,
+        clientId: ClientId,
+        projectId: ProjectId?,
         content: String,
         taskName: String,
         scheduledAt: Instant,
@@ -42,7 +45,8 @@ class TaskManagementService(
                     taskName = taskName,
                     scheduledAt = scheduledAt,
                     cronExpression = cronExpression,
-                    correlationId = correlationId,
+                    correlationId = correlationId ?: ObjectId().toString(),
+                    sourceUrn = SourceUrn.scheduled(taskName),
                 )
 
             val savedTask = scheduledTaskRepository.save(task)

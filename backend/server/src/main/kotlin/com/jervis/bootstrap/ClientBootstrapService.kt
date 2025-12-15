@@ -1,11 +1,8 @@
 package com.jervis.bootstrap
 
-import com.jervis.entity.ClientReadyStatusDocument
 import com.jervis.graphdb.GraphDBService
-import com.jervis.rag._internal.WeaviatePerClientProvisioner
+import com.jervis.rag.internal.WeaviatePerClientProvisioner
 import com.jervis.repository.ClientMongoRepository
-import com.jervis.repository.ClientReadyStatusRepository
-import com.jervis.util.ClientSlugger
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.runBlocking
@@ -27,7 +24,6 @@ class ClientBootstrapService(
     private val clientRepository: ClientMongoRepository,
     private val graphDBService: GraphDBService,
     private val weaviateProvisioner: WeaviatePerClientProvisioner,
-    private val statusRepository: ClientReadyStatusRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -41,41 +37,26 @@ class ClientBootstrapService(
         logger.info { "Starting per-client bootstrap (Arango + Weaviate)..." }
         val failures = mutableListOf<String>()
 
-        clientRepository.findAll()
+        clientRepository
+            .findAll()
             .onEach { client ->
-                val clientKey = client.id.toHexString()
                 try {
-                    val graphStatus = graphDBService.ensureSchema(clientKey)
+                    val graphStatus = graphDBService.ensureSchema(client.id)
                     weaviateProvisioner.ensureClientCollections(client.id)
 
                     val arangoOk = graphStatus.ok
                     val weaviateOk = true
 
-                    statusRepository.save(
-                        ClientReadyStatusDocument(
-                            clientId = client.id,
-                            clientSlug = clientKey,
-                            arangoOk = arangoOk,
-                            weaviateOk = weaviateOk,
-                            arangoDetails = graphStatus.warnings.joinToString().ifBlank { null },
-                            weaviateDetails = null,
-                            createdCollections = graphStatus.createdCollections,
-                            createdIndexes = graphStatus.createdIndexes,
-                            createdGraph = graphStatus.createdGraph,
-                        ),
-                    )
-
                     if (!arangoOk || !weaviateOk) {
-                        failures += "${client.name} ($clientKey)"
+                        failures += "${client.name} "
                     } else {
-                        logger.info { "Client '$clientKey' provisioning OK" }
+                        logger.info { "Client '${client.name}' provisioning OK" }
                     }
                 } catch (e: Exception) {
-                    failures += "${client.name} ($clientKey): ${e.message}"
-                    logger.error(e) { "Client provisioning failed for $clientKey" }
+                    failures += "${client.name} (${client.name}): ${e.message}"
+                    logger.error(e) { "Client provisioning failed for ${client.name}" }
                 }
-            }
-            .collect()
+            }.collect()
 
         if (failures.isNotEmpty()) {
             val message = "Per-client bootstrap failed for: ${failures.joinToString()}"
@@ -85,6 +66,4 @@ class ClientBootstrapService(
 
         logger.info { "Per-client bootstrap finished successfully" }
     }
-
-    // Slug generation centralized in ClientSlugger
 }

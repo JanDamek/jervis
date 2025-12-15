@@ -1,108 +1,72 @@
 package com.jervis.service.agent.coordinator
 
-import com.jervis.domain.plan.Plan
+import com.jervis.dto.ChatRequestContext
 import com.jervis.dto.ChatResponse
-import com.jervis.repository.ClientMongoRepository
-import com.jervis.repository.ProjectMongoRepository
+import com.jervis.dto.PendingTaskTypeEnum
+import com.jervis.entity.PendingTaskDocument
+import com.jervis.service.text.CzechKeyboardNormalizer
+import com.jervis.types.SourceUrn
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 
 /**
- * AgentOrchestratorService - simplified orchestrator that runs KoogWorkflowService.
+ * AgentOrchestratorService - a simplified orchestrator that runs KoogWorkflowService.
  *
  * This replaces the old complex planner/executor architecture with direct Koog agent execution.
- * No more MCP tools, no more multi-phase planning - just straight Koog workflow.
+ * No more MCP tools, no more multiphase planning - just straight Koog workflow.
  */
 @Service
 class AgentOrchestratorService(
     private val koogWorkflowService: KoogWorkflowService,
-    private val clientRepository: ClientMongoRepository,
-    private val projectRepository: ProjectMongoRepository,
+    private val czechKeyboardNormalizer: CzechKeyboardNormalizer,
 ) {
     private val logger = KotlinLogging.logger {}
 
     /**
-     * Handle incoming chat request by creating a Plan and running Koog workflow.
+     * Handle incoming chat request by creating a TaskContext and running Koog workflow.
      * This is the main entry point used by controllers.
      */
     suspend fun handle(
         text: String,
-        ctx: com.jervis.dto.ChatRequestContext,
-        background: Boolean = false,
+        ctx: ChatRequestContext,
     ): ChatResponse {
-        logger.info { "AGENT_HANDLE_START: text='${text.take(100)}' clientId=${ctx.clientId} projectId=${ctx.projectId}" }
+        val normalizedText = czechKeyboardNormalizer.convertIfMistyped(text)
+        if (normalizedText != text) {
+            logger.info { "AGENT_INPUT_NORMALIZED: original='${text.take(100)}' normalized='${normalizedText.take(100)}'" }
+        }
+        logger.info { "AGENT_HANDLE_START: text='${normalizedText.take(100)}' clientId=${ctx.clientId} projectId=${ctx.projectId}" }
 
-        // Create Plan
-        val clientDoc = clientRepository.findById(ObjectId(ctx.clientId))
-            ?: throw IllegalArgumentException("Client not found: ${ctx.clientId}")
-
-        val projectDoc = ctx.projectId?.let { projectRepository.findById(ObjectId(it)) }
-
-        val plan = Plan(
-            id = ObjectId(),
-            taskInstruction = text,
-            originalLanguage = "EN", // Default to English for now
-            englishInstruction = text,
-            initialRagQueries = listOf(text),
-            clientDocument = clientDoc,
-            projectDocument = projectDoc,
-            backgroundMode = background,
-            correlationId = ObjectId().toHexString(), // Generate new correlation ID
-        )
+        val taskContext =
+            PendingTaskDocument(
+                type = PendingTaskTypeEnum.USER_INPUT_PROCESSING,
+                content = normalizedText,
+                projectId = ctx.projectId,
+                clientId = ctx.clientId,
+                correlationId = ObjectId().toString(),
+                sourceUrn = SourceUrn.chat(ctx.clientId),
+            )
 
         // Run Koog workflow
-        val response = run(plan, text)
+        val response = run(taskContext, normalizedText)
 
-        logger.info { "AGENT_HANDLE_COMPLETE: correlationId=${plan.correlationId}" }
+        logger.info { "AGENT_HANDLE_COMPLETE: correlationId=${taskContext.correlationId}" }
         return response
     }
 
     /**
-     * Run agent workflow for the given plan and user input.
-     * Simply delegates to KoogWorkflowService which runs the Koog agent.
+     * Run agent workflow for the given taskContext and user input.
+     * Simply delegates to KoogWorkflowService, which runs the Koog agent.
      */
-    suspend fun run(plan: Plan, userInput: String): ChatResponse {
-        logger.info { "AGENT_ORCHESTRATOR_START: planId=${plan.id} correlationId=${plan.correlationId}" }
-
-        val response = koogWorkflowService.run(plan, userInput)
-
-        logger.info { "AGENT_ORCHESTRATOR_COMPLETE: planId=${plan.id} correlationId=${plan.correlationId}" }
-        return response
-    }
-
-    /**
-     * Handle background task execution.
-     * Used by BackgroundEngine to process pending tasks.
-     */
-    suspend fun handleBackgroundTask(
-        text: String,
-        clientId: String,
-        projectId: String?,
+    suspend fun run(
+        task: PendingTaskDocument,
+        userInput: String,
     ): ChatResponse {
-        val clientDoc = clientRepository.findById(ObjectId(clientId))
-            ?: throw IllegalArgumentException("Client not found: $clientId")
+        logger.info { "AGENT_ORCHESTRATOR_START: correlationId=${task.correlationId}" }
 
-        val projectDoc = projectId?.let { projectRepository.findById(ObjectId(it)) }
+        val response = koogWorkflowService.run(task, userInput)
 
-        val plan = Plan(
-            id = ObjectId(),
-            taskInstruction = text,
-            originalLanguage = "EN",
-            englishInstruction = text,
-            initialRagQueries = listOf(text),
-            clientDocument = clientDoc,
-            projectDocument = projectDoc,
-            backgroundMode = true,
-            correlationId = ObjectId().toHexString(),
-        )
-
-        return run(plan, text)
+        logger.info { "AGENT_ORCHESTRATOR_COMPLETE: correlationId=${task.correlationId}" }
+        return response
     }
-
-    /**
-     * Compatibility method for BackgroundEngine that needs last plan context.
-     * Since we don't maintain plan history anymore, we return an empty string.
-     */
-    fun getLastPlanContext(clientId: String, projectId: String?): String = ""
 }

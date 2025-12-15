@@ -44,6 +44,45 @@ class PromptBuilderService {
     ): String = applyMappingValues(prompt.systemPrompt, mappingValues)
 
     /**
+     * Render arbitrary template string with placeholders using provided mapping values.
+     * Placeholders syntax: {placeholder}
+     * - Fail-fast: throws IllegalStateException if any placeholder in template is missing in mapping.
+     * - No escaping/quoting is performed. The template is responsible for quotes around string values.
+     */
+    fun render(
+        template: String,
+        mappingValues: Map<String, String>,
+    ): String = applyMappingValues(template, mappingValues)
+
+    /**
+     * Render template using values taken from a data object (converted to Map) merged with extra mapping.
+     * - Object properties are converted to strings using toString(); null becomes literal "null".
+     * - extraMapping overrides object-derived values when keys overlap.
+     * - Fail-fast when the template contains a placeholder without a provided value.
+     * - The template must control quoting: put quotes in the template when you expect a JSON string.
+     */
+    fun renderFromObject(
+        template: String,
+        data: Any,
+        extraMapping: Map<String, String> = emptyMap(),
+    ): String {
+        val baseMap: Map<String, String> = objectToStringMap(data)
+        val merged = baseMap + extraMapping
+        return applyMappingValues(template, merged)
+    }
+
+    private fun objectToStringMap(data: Any): Map<String, String> {
+        return try {
+            @Suppress("UNCHECKED_CAST")
+            val raw: Map<String, Any?> =
+                prettyObjectMapper.convertValue(data, Map::class.java) as Map<String, Any?>
+            raw.mapValues { (_, v) -> v?.toString() ?: "null" }
+        } catch (e: Exception) {
+            throw IllegalArgumentException("Cannot convert object to mapping for templating: ${data::class.simpleName}", e)
+        }
+    }
+
+    /**
      * Applies mapping value replacements to the prompt template.
      * Validates placeholders BEFORE replacement to avoid false positives from content.
      */

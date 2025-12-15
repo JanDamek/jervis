@@ -2,13 +2,104 @@
 
 ## Přehled
 
-Knowledge Graph (ArangoDB) slouží jako centrální úložiště strukturovaných vztahů mezi všemi entitami v systému. Každý klient má izolovaný graf (`jervis_client_{clientId}`), což zajišťuje multi-tenancy.
+Knowledge Graph (ArangoDB) slouží jako centrální úložiště strukturovaných vztahů mezi všemi entitami v systému. Každý klient má izolovaný graf, což zajišťuje multi-tenancy.
 
 **Integrace s RAG (Knowledge Base):**
 - Každý vrchol má volitelné `ragChunks: List<String>` - seznam chunk IDs z Weaviate
 - Každá hrana může mít textový `description` property, který se ukládá do RAG
 - Semantické vyhledávání v RAG najde chunky → z chunk metadat získáme graph nodeKey/edgeKey
 - Graph poskytuje strukturovanou navigaci, RAG poskytuje sémantické hledání
+
+## ArangoDB Schéma - "Two-Collection" přístup
+
+### Multi-tenancy architektura
+
+Pro každého klienta Jervis vytváří **3 ArangoDB objekty**:
+
+1. **`c{clientId}_nodes`** - Document Collection
+   - Jeden velký koš pro všechny typy vrcholů (Users, Jira tickets, soubory, commits, Confluence pages...)
+   - Heterogenní graf = maximální flexibilita pro AI agenta
+   - Každý dokument má atribut **`type`** pro rozlišení entity
+
+2. **`c{clientId}_edges`** - Edge Collection
+   - Všechny hrany mezi vrcholy
+   - Atribut **`edgeType`** určuje typ vztahu
+
+3. **`c{clientId}_graph`** - Named Graph
+   - ArangoDB Named Graph pro optimalizované traversal queries
+   - Definice: `c{clientId}_nodes` → `c{clientId}_edges` → `c{clientId}_nodes`
+   - Umožňuje použití AQL syntaxe: `FOR v IN 1..3 ANY startNode GRAPH 'c123_graph'`
+
+### Struktura dokumentu v `c{clientId}_nodes`
+
+```json
+{
+  "_key": "jira::JERV-123",
+  "type": "jira_issue",           // POVINNÝ atribut - diskriminátor typu
+  "ragChunks": ["chunk_uuid_1"],  // volitelný - chunk IDs z Weaviate
+  // ... libovolné properties specifické pro daný typ
+  "summary": "Fix login bug",
+  "status": "In Progress"
+}
+```
+
+**Důležité:**
+- Atribut `type` je **indexován** (Persistent Index) pro rychlé filtrování
+- Bez indexu by dotazy typu `FILTER doc.type == 'jira_issue'` musely procházet miliony záznamů
+- Doporučené hodnoty: `user`, `jira_issue`, `commit`, `file`, `confluence_page`, `email`, atd.
+
+### Struktura edge dokumentu v `c{clientId}_edges`
+
+```json
+{
+  "_key": "mentions::jira::JERV-123->file::Service.kt",
+  "edgeType": "mentions",         // POVINNÝ atribut - typ hrany
+  "_from": "c123_nodes/jira::JERV-123",
+  "_to": "c123_nodes/file::Service.kt"
+}
+```
+
+### Výhody "Two-Collection" přístupu
+
+✅ **Flexibilita:** AI agent může vytvořit nové typy entit bez změny schématu databáze
+✅ **Jednoduchost:** Žádné složité kombinace edge definitions mezi 50 různými kolekcemi
+✅ **Multi-tenancy:** Nový klient = 3 objekty (2 kolekce + 1 graph), hotovo
+✅ **AQL Traversal:** Named Graph umožňuje efektivní graph queries
+
+### Inicializace schématu
+
+Schema se vytváří automaticky při volání `GraphDBService.ensureSchema(clientId)`:
+
+1. Vytvoří kolekci `c{clientId}_nodes` (pokud neexistuje)
+2. Vytvoří Persistent Index na `type`
+3. Vytvoří kolekci `c{clientId}_edges` jako Edge Collection
+4. Vytvoří Persistent Index na `edgeType`
+5. Vytvoří Named Graph `c{clientId}_graph` s edge definition: `nodes → edges → nodes`
+
+### AQL Dotazy
+
+**Příklad 1: Najdi všechny Jira tickets přiřazené uživateli:**
+
+```aql
+FOR user IN c123_nodes
+  FILTER user.type == 'user' AND user.email == 'jan@example.com'
+
+  FOR ticket IN 1..1 INBOUND user._id GRAPH 'c123_graph'
+    FILTER ticket.type == 'jira_issue'
+    RETURN ticket
+```
+
+**Příklad 2: Najdi všechny soubory změněné v posledním týdnu:**
+
+```aql
+FOR commit IN c123_nodes
+  FILTER commit.type == 'commit'
+    AND commit.timestamp > DATE_SUBTRACT(DATE_NOW(), 7, 'day')
+
+  FOR file, edge IN 1..1 OUTBOUND commit._id GRAPH 'c123_graph'
+    FILTER file.type == 'file' AND edge.edgeType == 'modifies'
+    RETURN DISTINCT file
+```
 
 ## Typy vrcholů (Nodes)
 
@@ -17,7 +108,7 @@ Knowledge Graph (ArangoDB) slouží jako centrální úložiště strukturovaný
 ```kotlin
 // Soubor
 nodeKey: "file::src/main/kotlin/com/jervis/Service.kt"
-entityType: "file"
+type: "file"
 props: {
     path: String,              // relativní cesta v projektu
     extension: String,         // kt, java, py, ...
@@ -30,7 +121,7 @@ ragChunks: ["chunk_uuid_1", "chunk_uuid_2"]  // obsah souboru rozdělený na chu
 
 // Package/Module
 nodeKey: "package::com.jervis.service"
-entityType: "package"
+type: "package"
 props: {
     name: String,
     description: String?,
@@ -38,7 +129,7 @@ props: {
 
 // Class
 nodeKey: "class::com.jervis.service.UserService"
-entityType: "class"
+type: "class"
 props: {
     name: String,
     qualifiedName: String,
@@ -51,7 +142,7 @@ ragChunks: ["chunk_uuid_class_doc"]
 
 // Method/Function
 nodeKey: "method::com.jervis.service.UserService.createUser"
-entityType: "method"
+type: "method"
 props: {
     name: String,
     signature: String,         // "createUser(name: String, email: String): User"
@@ -65,7 +156,7 @@ ragChunks: ["chunk_uuid_method_impl"]
 
 // Variable/Field
 nodeKey: "field::com.jervis.service.UserService.userRepository"
-entityType: "field"
+type: "field"
 props: {
     name: String,
     type: String,
@@ -79,7 +170,7 @@ props: {
 ```kotlin
 // Git Commit
 nodeKey: "commit::{commitHash}"
-entityType: "commit"
+type: "commit"
 props: {
     hash: String,
     shortHash: String,         // prvních 7 znaků
@@ -96,7 +187,7 @@ ragChunks: ["chunk_commit_msg", "chunk_commit_diff"]
 
 // Git Branch
 nodeKey: "branch::{branchName}"
-entityType: "branch"
+type: "branch"
 props: {
     name: String,
     isDefault: Boolean,
@@ -106,7 +197,7 @@ props: {
 
 // Pull Request / Merge Request
 nodeKey: "pr::{prNumber}"
-entityType: "pull_request"
+type: "pull_request"
 props: {
     number: Int,
     title: String,
@@ -125,7 +216,7 @@ ragChunks: ["chunk_pr_description", "chunk_pr_review"]
 ```kotlin
 // Jira Ticket
 nodeKey: "jira::{projectKey}-{issueNumber}"  // např. "jira::JERV-123"
-entityType: "jira_issue"
+type: "jira_issue"
 props: {
     key: String,              // JERV-123
     summary: String,
@@ -145,7 +236,7 @@ ragChunks: ["chunk_jira_desc", "chunk_jira_comments"]
 
 // Jira Comment
 nodeKey: "jira_comment::{issueKey}-{commentId}"
-entityType: "jira_comment"
+type: "jira_comment"
 props: {
     author: String,
     body: String,
@@ -156,7 +247,7 @@ ragChunks: ["chunk_comment_content"]
 
 // Jira Sprint
 nodeKey: "sprint::{sprintId}"
-entityType: "sprint"
+type: "sprint"
 props: {
     name: String,
     state: String,            // future, active, closed
@@ -171,7 +262,7 @@ props: {
 ```kotlin
 // Confluence Page
 nodeKey: "confluence::{spaceKey}::{pageId}"
-entityType: "confluence_page"
+type: "confluence_page"
 props: {
     title: String,
     spaceKey: String,
@@ -188,7 +279,7 @@ ragChunks: ["chunk_page_1", "chunk_page_2", ...]
 
 // Confluence Attachment
 nodeKey: "confluence_attachment::{attachmentId}"
-entityType: "confluence_attachment"
+type: "confluence_attachment"
 props: {
     title: String,
     mediaType: String,
@@ -202,7 +293,7 @@ props: {
 ```kotlin
 // Email
 nodeKey: "email::{messageId}"
-entityType: "email"
+type: "email"
 props: {
     subject: String,
     from: String,
@@ -217,7 +308,7 @@ ragChunks: ["chunk_email_body"]
 
 // Email Thread
 nodeKey: "email_thread::{threadId}"
-entityType: "email_thread"
+type: "email_thread"
 props: {
     subject: String,
     participants: List<String>,
@@ -228,7 +319,7 @@ props: {
 
 // Slack Message
 nodeKey: "slack::{channelId}::{messageTs}"
-entityType: "slack_message"
+type: "slack_message"
 props: {
     channelId: String,
     channelName: String,
@@ -243,7 +334,7 @@ ragChunks: ["chunk_slack_msg"]
 
 // Teams Message
 nodeKey: "teams::{channelId}::{messageId}"
-entityType: "teams_message"
+type: "teams_message"
 props: {
     channelId: String,
     channelName: String,
@@ -260,7 +351,7 @@ ragChunks: ["chunk_teams_msg"]
 ```kotlin
 // Meeting
 nodeKey: "meeting::{meetingId}"
-entityType: "meeting"
+type: "meeting"
 props: {
     title: String,
     startTime: Instant,
@@ -279,7 +370,7 @@ ragChunks: ["chunk_meeting_notes", "chunk_meeting_transcript"]
 ```kotlin
 // User
 nodeKey: "user::{email}"
-entityType: "user"
+type: "user"
 props: {
     email: String,
     name: String,
@@ -291,7 +382,7 @@ props: {
 
 // Team
 nodeKey: "team::{teamId}"
-entityType: "team"
+type: "team"
 props: {
     name: String,
     description: String?,
@@ -306,7 +397,7 @@ props: {
 
 // Joern Method Node
 nodeKey: "joern::method::{fullName}"
-entityType: "joern_method"
+type: "joern_method"
 props: {
     name: String,
     fullName: String,
@@ -319,7 +410,7 @@ props: {
 
 // Joern Call Site
 nodeKey: "joern::call::{methodFullName}::{lineNumber}"
-entityType: "joern_call"
+type: "joern_call"
 props: {
     methodFullName: String,
     name: String,              // název volané metody
@@ -329,7 +420,7 @@ props: {
 
 // Joern Parameter
 nodeKey: "joern::param::{methodFullName}::{name}"
-entityType: "joern_param"
+type: "joern_param"
 props: {
     name: String,
     typeFullName: String,
@@ -338,7 +429,7 @@ props: {
 
 // Joern Local Variable
 nodeKey: "joern::local::{methodFullName}::{name}"
-entityType: "joern_local"
+type: "joern_local"
 props: {
     name: String,
     typeFullName: String,
@@ -494,7 +585,7 @@ Každý vrchol/hrana má:
 ```kotlin
 data class GraphNode(
     val key: String,
-    val entityType: String,
+    val type: String,
     val props: Map<String, Any?>,
     val ragChunks: List<String> = emptyList(),  // UUIDs Weaviate chunks
 )
@@ -510,7 +601,7 @@ data class GraphNode(
      "metadata": {
        "source": "graph",
        "graphNodeKey": "file::src/main/Service.kt",
-       "entityType": "file",
+       "type": "file",
        "clientId": "...",
        "projectId": "...",
        "timestamp": "..."
@@ -553,7 +644,7 @@ fun semanticSearch(
     query: String,
 
     @LLMDescription("Optional entity type filter (file, class, jira_issue, commit, etc.)")
-    entityType: String = "",
+    type: String = "",
 
     @LLMDescription("Maximum results")
     limit: Int = 10,

@@ -4,30 +4,50 @@ import com.jervis.dto.PendingTaskStateEnum
 import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.entity.PendingTaskDocument
 import com.jervis.repository.PendingTaskMongoRepository
-import com.jervis.service.task.TaskSourceType
+import com.jervis.service.debug.DebugService
+import com.jervis.service.task.UserTaskService
+import com.jervis.types.ClientId
+import com.jervis.types.ProjectId
+import com.jervis.types.SourceUrn
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.reactor.awaitSingleOrNull
 import mu.KotlinLogging
 import org.bson.types.ObjectId
+import org.springframework.data.mongodb.core.ReactiveMongoTemplate
+import org.springframework.data.mongodb.core.query.Criteria
+import org.springframework.data.mongodb.core.query.Query
+import org.springframework.data.mongodb.core.query.Update
 import org.springframework.stereotype.Service
-import java.util.UUID
+import java.time.Instant
 
 @Service
 class PendingTaskService(
     private val pendingTaskRepository: PendingTaskMongoRepository,
-    private val userTaskService: com.jervis.service.task.UserTaskService,
-    private val debugService: com.jervis.service.debug.DebugService,
+    private val userTaskService: UserTaskService,
+    private val debugService: DebugService,
+    private val mongoTemplate: ReactiveMongoTemplate,
 ) {
     private val logger = KotlinLogging.logger {}
 
     suspend fun createTask(
         taskType: PendingTaskTypeEnum,
         content: String,
-        projectId: ObjectId? = null,
-        clientId: ObjectId,
-        correlationId: String? = null,
+        clientId: ClientId,
+        correlationId: String,
+        sourceUrn: SourceUrn,
+        projectId: ProjectId? = null,
+        state: PendingTaskStateEnum = PendingTaskStateEnum.READY_FOR_QUALIFICATION,
+        attachments: List<com.jervis.entity.AttachmentMetadata> = emptyList(),
     ): PendingTaskDocument {
         require(content.isNotBlank()) { "PendingTask content must be provided and non-blank" }
+
+        // Check if task with same correlationId already exists (deduplication)
+        val existing = pendingTaskRepository.findByCorrelationId(correlationId)
+        if (existing != null) {
+            logger.debug { "Task with correlationId=$correlationId already exists (id=${existing.id}), skipping creation" }
+            return existing
+        }
 
         val task =
             PendingTaskDocument(
@@ -35,24 +55,26 @@ class PendingTaskService(
                 content = content,
                 projectId = projectId,
                 clientId = clientId,
-                state = PendingTaskStateEnum.READY_FOR_QUALIFICATION,
-                correlationId = correlationId ?: UUID.randomUUID().toString(),
+                state = state,
+                correlationId = correlationId,
+                sourceUrn = sourceUrn,
+                attachments = attachments,
             )
 
         val saved = pendingTaskRepository.save(task)
 
         logger.info {
-            "TASK_CREATED: id=${saved.id} correlationId=${saved.correlationId} type=${taskType.name} state=${task.state} clientId=${clientId.toHexString()} projectId=${projectId?.toHexString() ?: "none"} contentLength=${content.length}"
+            "TASK_CREATED: id=${saved.id} correlationId=${saved.correlationId} type=${taskType.name} state=${task.state} clientId=$clientId projectId=${projectId?.toString() ?: "none"} contentLength=${content.length}"
         }
 
         // Publish debug event
         debugService.taskCreated(
             correlationId = saved.correlationId,
-            taskId = saved.id.toHexString(),
+            taskId = saved.id.toString(),
             taskType = taskType.name,
             state = task.state.name,
-            clientId = clientId.toHexString(),
-            projectId = projectId?.toHexString(),
+            clientId = clientId.toString(),
+            projectId = projectId?.toString(),
             contentLength = content.length,
         )
 
@@ -86,7 +108,7 @@ class PendingTaskService(
         // Publish debug event
         debugService.taskStateTransition(
             correlationId = saved.correlationId,
-            taskId = taskId.toHexString(),
+            taskId = taskId.toString(),
             fromState = expected.name,
             toState = next.name,
             taskType = task.type,
@@ -96,39 +118,159 @@ class PendingTaskService(
     }
 
     /**
-     * Append progress context to task content for interrupted task resumption.
-     * The task will resume with all previous progress included in the content.
+     * Mark task as ERROR with error message, without requiring expected state.
+     * This is used for fatal errors where we need to ensure task is marked as failed.
      */
-    suspend fun appendProgressContext(
+    suspend fun markAsError(
         taskId: ObjectId,
-        progressContext: String,
-    ) {
+        errorMessage: String,
+    ): PendingTaskDocument {
         val task = pendingTaskRepository.findById(taskId) ?: error("Task not found: $taskId")
+        val previousState = task.state
+        val updated = task.copy(state = PendingTaskStateEnum.ERROR, errorMessage = errorMessage)
+        val saved = pendingTaskRepository.save(updated)
+        logger.error {
+            "TASK_MARKED_AS_ERROR: id=$taskId correlationId=${saved.correlationId} previousState=$previousState error='${errorMessage.take(200)}'"
+        }
 
-        val updatedContent = task.content + progressContext
+        // Publish debug event
+        debugService.taskStateTransition(
+            correlationId = saved.correlationId,
+            taskId = taskId.toString(),
+            fromState = previousState.name,
+            toState = PendingTaskStateEnum.ERROR.name,
+            taskType = task.type,
+        )
 
-        val updated = task.copy(content = updatedContent)
+        return saved
+    }
+
+    /**
+     * Return task from QUALIFYING back to READY_FOR_QUALIFICATION for retry.
+     * Used when qualification fails with retriable error (timeout, connection).
+     * Increments retry counter.
+     */
+    suspend fun returnToQueue(
+        taskId: ObjectId,
+        maxRetries: Int,
+    ) {
+        val task = pendingTaskRepository.findById(taskId) ?: run {
+            logger.warn { "Cannot return task to queue - not found: $taskId" }
+            return
+        }
+
+        if (task.state != PendingTaskStateEnum.QUALIFYING) {
+            logger.warn {
+                "Cannot return task to queue - expected QUALIFYING but was ${task.state}: $taskId"
+            }
+            return
+        }
+
+        val newRetryCount = task.qualificationRetries + 1
+
+        if (newRetryCount >= maxRetries) {
+            logger.warn {
+                "TASK_MAX_RETRIES_REACHED: id=$taskId correlationId=${task.correlationId} " +
+                    "retries=$newRetryCount maxRetries=$maxRetries - marking as ERROR"
+            }
+            markAsError(taskId, "Max qualification retries reached ($maxRetries)")
+            return
+        }
+
+        val updated =
+            task.copy(
+                state = PendingTaskStateEnum.READY_FOR_QUALIFICATION,
+                qualificationRetries = newRetryCount,
+                createdAt = Instant.now(), // Move to end of queue
+            )
         pendingTaskRepository.save(updated)
 
         logger.info {
-            "TASK_PROGRESS_APPENDED: id=$taskId added ${progressContext.length} chars, " +
-                "total content now ${updatedContent.length} chars"
+            "TASK_RETURNED_TO_QUEUE: id=$taskId correlationId=${task.correlationId} " +
+                "from=QUALIFYING to=READY_FOR_QUALIFICATION retry=$newRetryCount/$maxRetries " +
+                "(moved to end of queue)"
+        }
+
+        debugService.taskStateTransition(
+            correlationId = task.correlationId,
+            taskId = taskId.toString(),
+            fromState = PendingTaskStateEnum.QUALIFYING.name,
+            toState = PendingTaskStateEnum.READY_FOR_QUALIFICATION.name,
+            taskType = task.type,
+        )
+    }
+
+    /**
+     * Update task content (used for cleaning HTML/XML through Tika).
+     */
+    suspend fun updateTaskContent(
+        taskId: ObjectId,
+        newContent: String,
+    ) {
+        val task = pendingTaskRepository.findById(taskId) ?: error("Task not found: $taskId")
+        val updated = task.copy(content = newContent)
+        pendingTaskRepository.save(updated)
+
+        logger.info {
+            "TASK_CONTENT_UPDATED: id=$taskId from=${task.content.length} to=${newContent.length} chars"
         }
     }
 
     /**
      * Return all tasks that should be considered for qualification now:
      * - READY_FOR_QUALIFICATION: need to be claimed
-     * - QUALIFYING: tasks that might have been claimed previously (e.g., before restart) and should continue
+     *
+     * Note: QUALIFYING tasks are NOT included - they are already being processed.
+     * This prevents multiple concurrent processing of the same task.
      */
     fun findTasksForQualification(): Flow<PendingTaskDocument> =
-        merge(
-            findTasksByState(PendingTaskStateEnum.READY_FOR_QUALIFICATION),
-            findTasksByState(PendingTaskStateEnum.QUALIFYING),
+        findTasksByState(PendingTaskStateEnum.READY_FOR_QUALIFICATION)
+
+    /**
+     * Atomically claim a task for qualification using MongoDB findAndModify.
+     * This ensures that only ONE worker can claim a specific task, even in concurrent scenarios.
+     *
+     * SINGLETON GUARANTEE (Level 4 - per-task atomicity):
+     * - Uses MongoDB findAndModify with state check (READY_FOR_QUALIFICATION -> QUALIFYING)
+     * - Atomic operation ensures only one thread/process can claim the task
+     * - If task is already claimed (not READY_FOR_QUALIFICATION), returns null
+     * - This works even across multiple application instances (distributed lock)
+     *
+     * Returns: Updated task with QUALIFYING state if successfully claimed, null if already claimed
+     */
+    suspend fun tryClaimForQualification(taskId: ObjectId): PendingTaskDocument? {
+        val query =
+            Query(
+                Criteria
+                    .where("_id")
+                    .`is`(taskId)
+                    .and("state")
+                    .`is`(PendingTaskStateEnum.READY_FOR_QUALIFICATION),
+            )
+        val update = Update().set("state", PendingTaskStateEnum.QUALIFYING)
+
+        val updatedTask =
+            mongoTemplate
+                .findAndModify(query, update, PendingTaskDocument::class.java)
+                .awaitSingleOrNull()
+                ?: return null
+
+        // Successfully claimed - log transition
+        logger.info {
+            "TASK_STATE_TRANSITION: id=$taskId correlationId=${updatedTask.correlationId} " +
+                "from=READY_FOR_QUALIFICATION to=QUALIFYING type=${updatedTask.type} (ATOMICALLY CLAIMED)"
+        }
+
+        debugService.taskStateTransition(
+            correlationId = updatedTask.correlationId,
+            taskId = taskId.toString(),
+            fromState = PendingTaskStateEnum.READY_FOR_QUALIFICATION.name,
+            toState = PendingTaskStateEnum.QUALIFYING.name,
+            taskType = updatedTask.type,
         )
 
-    suspend fun tryClaimForQualification(taskId: ObjectId): PendingTaskDocument =
-        updateState(taskId, PendingTaskStateEnum.READY_FOR_QUALIFICATION, PendingTaskStateEnum.QUALIFYING)
+        return updatedTask
+    }
 
     fun findAllTasks(
         taskType: PendingTaskTypeEnum?,
@@ -136,10 +278,24 @@ class PendingTaskService(
     ): Flow<PendingTaskDocument> {
         val tasks =
             when {
-                taskType != null && state != null -> pendingTaskRepository.findByTypeAndStateOrderByCreatedAtAsc(taskType, state)
-                taskType != null -> pendingTaskRepository.findByTypeOrderByCreatedAtAsc(taskType)
-                state != null -> pendingTaskRepository.findByStateOrderByCreatedAtAsc(state)
-                else -> pendingTaskRepository.findAllByOrderByCreatedAtAsc()
+                taskType != null && state != null -> {
+                    pendingTaskRepository.findByTypeAndStateOrderByCreatedAtAsc(
+                        taskType,
+                        state,
+                    )
+                }
+
+                taskType != null -> {
+                    pendingTaskRepository.findByTypeOrderByCreatedAtAsc(taskType)
+                }
+
+                state != null -> {
+                    pendingTaskRepository.findByStateOrderByCreatedAtAsc(state)
+                }
+
+                else -> {
+                    pendingTaskRepository.findAllByOrderByCreatedAtAsc()
+                }
             }
         return tasks
     }
@@ -154,34 +310,4 @@ class PendingTaskService(
             state != null -> pendingTaskRepository.countByState(state)
             else -> pendingTaskRepository.count()
         }
-
-    suspend fun failAndEscalateToUserTask(
-        task: PendingTaskDocument,
-        reason: String,
-        error: Throwable? = null,
-    ): ObjectId {
-        val title = "Background task failed: ${task.type}"
-        val description =
-            buildString {
-                appendLine("Pending task ${task.id} failed in state ${task.state}")
-                appendLine("Reason: $reason")
-                error?.message?.let { appendLine("Error: $it") }
-                appendLine()
-                appendLine("Task Content:")
-                appendLine(task.content)
-            }
-        val userTask =
-            userTaskService.createTask(
-                title = title,
-                description = description,
-                projectId = task.projectId,
-                clientId = task.clientId,
-                sourceType = TaskSourceType.AGENT_SUGGESTION,
-                correlationId = task.correlationId,
-            )
-        logger.info { "TASK_FAILED_ESCALATED: pending=${task.id} -> userTask=${userTask.id} reason=$reason" }
-        // Delete pending task after escalation
-        pendingTaskRepository.deleteById(task.id)
-        return userTask.id
-    }
 }
