@@ -5,11 +5,11 @@ import com.jervis.entity.UserTaskDocument
 import com.jervis.service.notification.domain.PlanStatusChangeEvent
 import com.jervis.service.notification.domain.StepCompletionEvent
 import com.jervis.service.websocket.WebSocketSessionManager
+import com.jervis.types.ClientId
+import com.jervis.types.ProjectId
 import kotlinx.serialization.json.Json
-import org.bson.types.ObjectId
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
-import com.jervis.dto.events.AgentResponseEventDto as AgentResponseEventDtoD
 import com.jervis.dto.events.PlanStatusChangeEventDto as PlanStatusChangeEventDtoD
 import com.jervis.dto.events.StepCompletionEventDto as StepCompletionEventDtoD
 import com.jervis.dto.events.UserDialogCloseEventDto as UserDialogCloseEventDtoD
@@ -27,9 +27,9 @@ class NotificationsPublisher(
     fun onStepCompleted(event: StepCompletionEvent) {
         val dto =
             StepCompletionEventDtoD(
-                contextId = event.contextId.toHexString(),
-                planId = event.planId.toHexString(),
-                stepId = event.stepId.toHexString(),
+                contextId = event.contextId.toString(),
+                planId = event.planId.toString(),
+                stepId = event.stepId.toString(),
                 stepName = event.stepName,
                 stepStatus = event.stepStatus.name,
                 timestamp = event.timestamp.toString(),
@@ -41,8 +41,8 @@ class NotificationsPublisher(
     fun onPlanStatusChange(event: PlanStatusChangeEvent) {
         val dto =
             PlanStatusChangeEventDtoD(
-                contextId = event.contextId.toHexString(),
-                planId = event.planId.toHexString(),
+                contextId = event.contextId.toString(),
+                planId = event.planId.toString(),
                 planStatus = event.planStatusEnum.name,
                 timestamp = event.timestamp.toString(),
             )
@@ -50,14 +50,14 @@ class NotificationsPublisher(
     }
 
     fun publishUserTaskCreated(
-        clientId: ObjectId,
+        clientId: ClientId,
         task: UserTaskDocument,
         timestamp: String,
     ) {
         val dto =
             UserTaskCreatedEventDtoD(
-                clientId = clientId.toHexString(),
-                taskId = task.id.toHexString(),
+                clientId = clientId.toString(),
+                taskId = task.id.toString(),
                 title = task.title,
                 timestamp = timestamp,
             )
@@ -65,31 +65,15 @@ class NotificationsPublisher(
     }
 
     fun publishUserTaskCancelled(
-        clientId: ObjectId,
+        clientId: ClientId,
         task: UserTaskDocument,
         timestamp: String,
     ) {
         val dto =
             UserTaskCancelledEventDtoD(
-                clientId = clientId.toHexString(),
-                taskId = task.id.toHexString(),
+                clientId = clientId.toString(),
+                taskId = task.id.toString(),
                 title = task.title,
-                timestamp = timestamp,
-            )
-        sessionManager.broadcastToChannel(json.encodeToString(dto), WebSocketChannelTypeEnum.NOTIFICATIONS)
-    }
-
-    fun publishAgentResponseCompleted(
-        contextId: ObjectId,
-        message: String,
-        timestamp: String,
-    ) {
-        val dto =
-            AgentResponseEventDtoD(
-                wsSessionId = "BROADCAST",
-                contextId = contextId.toHexString(),
-                message = message,
-                status = "COMPLETED",
                 timestamp = timestamp,
             )
         sessionManager.broadcastToChannel(json.encodeToString(dto), WebSocketChannelTypeEnum.NOTIFICATIONS)
@@ -98,8 +82,8 @@ class NotificationsPublisher(
     fun publishUserDialogRequest(
         dialogId: String,
         correlationId: String,
-        clientId: ObjectId,
-        projectId: ObjectId?,
+        clientId: ClientId,
+        projectId: ProjectId?,
         question: String,
         proposedAnswer: String?,
         timestamp: String,
@@ -108,8 +92,8 @@ class NotificationsPublisher(
             UserDialogRequestEventDtoD(
                 dialogId = dialogId,
                 correlationId = correlationId,
-                clientId = clientId.toHexString(),
-                projectId = projectId?.toHexString(),
+                clientId = clientId.toString(),
+                projectId = projectId?.toString(),
                 question = question,
                 proposedAnswer = proposedAnswer,
                 timestamp = timestamp,

@@ -91,7 +91,7 @@ class SecurityHeaderFilter(
                 append("Method: ${request.method}\n")
                 append("URI: ${request.uri}\n")
                 append("Headers:\n")
-                request.headers.forEach { (name, values) ->
+                request.headers.forEach { name, values ->
                     append("  $name: ${values.joinToString(", ")}\n")
                 }
                 append("Provided Token: ${providedToken ?: "<missing>"}\n")

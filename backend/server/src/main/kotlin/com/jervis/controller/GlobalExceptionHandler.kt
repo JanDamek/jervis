@@ -1,7 +1,6 @@
 package com.jervis.controller
 
 import com.jervis.service.error.ErrorLogService
-import kotlinx.coroutines.runBlocking
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.http.HttpStatus
@@ -24,10 +23,8 @@ class GlobalExceptionHandler(
     )
 
     @ExceptionHandler(Throwable::class)
-    fun handleAny(throwable: Throwable): ResponseEntity<ErrorResponse> {
-        runBlocking {
-            errorLogService.recordError(throwable)
-        }
+    suspend fun handleAny(throwable: Throwable): ResponseEntity<ErrorResponse> {
+        errorLogService.recordError(throwable)
         val status = HttpStatus.INTERNAL_SERVER_ERROR
         val body = ErrorResponse(status.value(), status.reasonPhrase, throwable.message)
         logger.error(throwable) { "Unhandled exception captured and published" }

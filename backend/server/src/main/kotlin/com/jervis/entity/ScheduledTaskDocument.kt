@@ -1,5 +1,8 @@
 package com.jervis.entity
 
+import com.jervis.types.ClientId
+import com.jervis.types.ProjectId
+import com.jervis.types.SourceUrn
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.Indexed
@@ -20,13 +23,14 @@ data class ScheduledTaskDocument(
     @Id
     val id: ObjectId = ObjectId.get(),
     @Indexed
-    val clientId: ObjectId,
+    val clientId: ClientId,
     @Indexed
-    val projectId: ObjectId?,
+    val projectId: ProjectId?,
     val content: String,
     val taskName: String,
     @Indexed
     val scheduledAt: Instant,
     val cronExpression: String? = null,
-    val correlationId: String? = null,
+    val correlationId: String,
+    val sourceUrn: SourceUrn,
 )

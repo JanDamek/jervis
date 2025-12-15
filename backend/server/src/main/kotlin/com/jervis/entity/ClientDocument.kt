@@ -4,11 +4,12 @@ import com.jervis.domain.git.GitAuthTypeEnum
 import com.jervis.domain.git.GitConfig
 import com.jervis.domain.git.GitProviderEnum
 import com.jervis.domain.language.LanguageEnum
+import com.jervis.types.ClientId
+import com.jervis.types.ProjectId
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.Indexed
 import org.springframework.data.mongodb.core.mapping.Document
-import java.time.Instant
 
 /**
  * Client entity representing an organization or team.
@@ -22,7 +23,7 @@ import java.time.Instant
 @Document(collection = "clients")
 data class ClientDocument(
     @Id
-    val id: ObjectId = ObjectId.get(),
+    val id: ClientId = ClientId(ObjectId.get()),
     @Indexed(unique = true)
     val name: String,
     val gitProvider: GitProviderEnum? = null,
@@ -32,6 +33,6 @@ data class ClientDocument(
     val confluenceSpaceKey: String? = null,
     val confluenceRootPageId: String? = null,
     val defaultLanguageEnum: LanguageEnum = LanguageEnum.getDefault(),
-    val lastSelectedProjectId: ObjectId? = null,
+    val lastSelectedProjectId: ProjectId? = null,
     val connectionIds: List<ObjectId> = emptyList(),
 )

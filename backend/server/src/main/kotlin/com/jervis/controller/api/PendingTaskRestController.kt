@@ -39,16 +39,16 @@ class PendingTaskRestController(
     ): List<PendingTaskDto> {
         val taskTypeEnum = taskType?.let { runCatching { PendingTaskTypeEnum.valueOf(it) }.getOrNull() }
         val stateEnum = state?.let { runCatching { PendingTaskStateEnum.valueOf(it) }.getOrNull() }
-        
+
         return pendingTaskService
             .findAllTasks(taskTypeEnum, stateEnum)
             .map { task ->
                 PendingTaskDto(
-                    id = task.id.toHexString(),
+                    id = task.id.toString(),
                     taskType = task.type.name,
                     content = task.content,
-                    projectId = task.projectId?.toHexString(),
-                    clientId = task.clientId.toHexString(),
+                    projectId = task.projectId?.toString(),
+                    clientId = task.clientId.toString(),
                     createdAt = fmt.format(task.createdAt),
                     state = task.state.name,
                 )

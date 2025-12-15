@@ -1,10 +1,11 @@
 package com.jervis.service.email
 
-import com.jervis.dto.PendingTaskStateEnum
 import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.entity.email.EmailMessageIndexDocument
 import com.jervis.repository.EmailMessageIndexMongoRepository
 import com.jervis.service.background.PendingTaskService
+import com.jervis.service.text.TikaTextExtractionService
+import com.jervis.types.SourceUrn
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -15,31 +16,30 @@ import kotlinx.coroutines.launch
 import mu.KotlinLogging
 import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Service
-import java.time.Instant
 
 private val logger = KotlinLogging.logger {}
 
 /**
  * Continuous indexer for email messages.
  *
- * NEW ARCHITECTURE (Graph-Based Routing):
+ * ARCHITECTURE (Graph-Based Routing):
  * - CentralPoller fetches FULL email data from IMAP/POP3 → stores in MongoDB as NEW
  * - This indexer reads NEW documents from MongoDB (NO email server calls)
- * - Creates DATA_PROCESSING PendingTask instead of auto-indexing
- * - Task goes to KoogQualifierAgent (CPU) for structuring:
- *   - Chunks large emails with overlap
- *   - Creates Graph nodes (email metadata)
- *   - Creates RAG chunks (searchable content)
- *   - Links Graph ↔ RAG bi-directionally
- * - After qualification: task marked DONE or READY_FOR_GPU
+ * - Creates PendingTask for KoogQualifierAgent
+ * - Converts to INDEXED (minimal tracking record)
+ * - Email content now lives in RAG/Graph, accessible via sourceUrn
  *
- * Pure ETL: MongoDB → PendingTask → Qualifier → Graph + RAG
+ * DATA LIFECYCLE (single instance, no locking needed):
+ * - NEW: Full data (textBody, htmlBody, attachments, metadata)
+ * - INDEXED: Minimal (id, clientId, connectionDocumentId, messageUid, messageId, receivedDate)
+ * - FAILED: Same as NEW + error field (for retry)
  */
 @Service
 @Order(11) // Start after JiraContinuousIndexer
 class EmailContinuousIndexer(
     private val repository: EmailMessageIndexMongoRepository,
     private val pendingTaskService: PendingTaskService,
+    private val tikaTextExtractionService: TikaTextExtractionService,
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
@@ -58,12 +58,15 @@ class EmailContinuousIndexer(
     }
 
     private suspend fun indexContinuously() {
-        // Continuous flow of NEW emails from MongoDB
         continuousNewEmails().collect { doc ->
+            if (doc !is EmailMessageIndexDocument.New) {
+                logger.warn { "Skipping non-NEW email: ${doc.id} (state=${doc.state})" }
+                return@collect
+            }
             try {
                 indexEmail(doc)
             } catch (e: Exception) {
-                logger.error(e) { "Failed to index email ${doc.subject}" }
+                logger.error(e) { "Failed to index email ${doc.messageUid}" }
                 markAsFailed(doc, "Indexing error: ${e.message}")
             }
         }
@@ -90,13 +93,18 @@ class EmailContinuousIndexer(
         }
 
     private suspend fun indexEmail(doc: EmailMessageIndexDocument) {
+        require(doc is EmailMessageIndexDocument.New) { "Can only index NEW emails, got: ${doc.state}" }
         logger.debug { "Processing email: ${doc.subject}" }
 
-        // Mark as INDEXING to prevent concurrent processing
-        markAsIndexing(doc)
-
         try {
-            // Build email content for task
+            // Get email body and clean it through Tika (removes HTML/XML formatting)
+            val rawEmailBody = doc.textBody ?: doc.htmlBody ?: ""
+            val emailBody =
+                tikaTextExtractionService.extractPlainText(
+                    content = rawEmailBody,
+                    fileName = "email-${doc.id}.html",
+                )
+
             val emailContent =
                 buildString {
                     append("# Email: ${doc.subject}\n\n")
@@ -112,77 +120,104 @@ class EmailContinuousIndexer(
                     append("**Message-ID:** ${doc.messageId ?: "none"}\n")
                     append("\n---\n\n")
 
-                    // Prefer text body, fallback to HTML
-                    val body = doc.textBody ?: doc.htmlBody
-                    if (!body.isNullOrBlank()) {
-                        append(body)
+                    if (emailBody.isNotBlank()) {
+                        append("## Email Body\n\n")
+                        append(emailBody)
+                        append("\n\n")
                     }
 
                     if (doc.attachments.isNotEmpty()) {
-                        append("\n\n## Attachments\n")
+                        append("## Email Attachments\n\n")
                         doc.attachments.forEach { att ->
                             append("- ${att.filename} (${att.contentType}, ${att.size} bytes)\n")
                         }
+                        append("\n")
                     }
 
-                    // Add metadata for qualifier
-                    append("\n\n## Document Metadata\n")
-                    append("- **Source:** Email (${doc.folder})\n")
-                    append("- **Document ID:** email:${doc.id.toHexString()}\n")
-                    append("- **Connection ID:** ${doc.connectionId.toHexString()}\n")
+                    append("## Source Metadata\n")
+                    append("- **Source Type:** Email\n")
+                    append("- **Email ID:** ${doc.id}\n")
+                    append("- **Message-ID:** ${doc.messageId ?: "none"}\n")
+                    append("- **Subject:** ${doc.subject}\n")
+                    append("- **From:** ${doc.from}\n")
+                    append("- **To:** ${doc.to.joinToString(", ")}\n")
+                    if (doc.cc.isNotEmpty()) {
+                        append("- **Cc:** ${doc.cc.joinToString(", ")}\n")
+                    }
+                    append("- **Sent Date:** ${doc.sentDate}\n")
+                    append("- **Received Date:** ${doc.receivedDate}\n")
+                    append("- **Folder:** ${doc.folder}\n")
+                    append("- **ConnectionDocument ID:** ${doc.connectionId}\n")
+                    append("- **Client ID:** ${doc.clientId}\n")
                 }
 
-            // Create DATA_PROCESSING task instead of auto-indexing
             pendingTaskService.createTask(
-                taskType = PendingTaskTypeEnum.DATA_PROCESSING,
+                taskType = PendingTaskTypeEnum.EMAIL_PROCESSING,
                 content = emailContent,
-                projectId = null,
                 clientId = doc.clientId,
-                correlationId = "email:${doc.id.toHexString()}",
+                correlationId = "email:${doc.id}",
+                sourceUrn =
+                    SourceUrn.email(
+                        connectionId = doc.connectionId,
+                        messageId = doc.messageId ?: doc.id.toHexString(),
+                        subject = doc.subject,
+                    ),
+                projectId = doc.projectId,
             )
 
-            // Mark as task created (reusing INDEXED state for now)
-            markAsIndexed(doc, 0)
-            logger.info { "Created DATA_PROCESSING task for email: ${doc.subject}" }
+            markAsIndexed(doc)
+            logger.info { "Created EMAIL_PROCESSING task for email: ${doc.subject}" }
         } catch (e: Exception) {
             logger.error(e) { "Failed to create task for email ${doc.subject}" }
             markAsFailed(doc, "Task creation failed: ${e.message}")
         }
     }
 
-    private suspend fun markAsIndexing(doc: EmailMessageIndexDocument) {
-        val updated =
-            doc.copy(
-                state = "INDEXING",
-                updatedAt = Instant.now(),
-            )
-        repository.save(updated)
-        logger.debug { "Marked email as INDEXING: ${doc.subject}" }
-    }
+    private suspend fun markAsIndexed(doc: EmailMessageIndexDocument.New) {
+        // Convert to minimal INDEXED state - only tracking data, no content
+        // For sealed classes: delete old document + insert new (MongoDB doesn't support changing _class in update)
+        repository.deleteById(doc.id)
 
-    private suspend fun markAsIndexed(
-        doc: EmailMessageIndexDocument,
-        chunkCount: Int,
-    ) {
         val updated =
-            doc.copy(
-                state = "INDEXED",
-                indexedAt = Instant.now(),
-                updatedAt = Instant.now(),
+            EmailMessageIndexDocument.Indexed(
+                id = doc.id,
+                clientId = doc.clientId,
+                projectId = doc.projectId,
+                connectionId = doc.connectionId,
+                messageUid = doc.messageUid,
+                messageId = doc.messageId,
+                receivedDate = doc.receivedDate,
             )
         repository.save(updated)
-        logger.debug { "Marked email as INDEXED: ${doc.subject} ($chunkCount chunks)" }
+        logger.debug { "Marked email as INDEXED (minimal tracking): ${doc.messageUid}" }
     }
 
     private suspend fun markAsFailed(
-        doc: EmailMessageIndexDocument,
+        doc: EmailMessageIndexDocument.New,
         error: String,
     ) {
+        // For sealed classes: delete old document + insert new (MongoDB doesn't support changing _class in update)
+        repository.deleteById(doc.id)
+
         val updated =
-            doc.copy(
-                state = "FAILED",
+            EmailMessageIndexDocument.Failed(
+                id = doc.id,
+                clientId = doc.clientId,
+                projectId = doc.projectId,
+                connectionId = doc.connectionId,
+                messageUid = doc.messageUid,
+                messageId = doc.messageId,
+                subject = doc.subject,
+                from = doc.from,
+                to = doc.to,
+                cc = doc.cc,
+                sentDate = doc.sentDate,
+                receivedDate = doc.receivedDate,
+                textBody = doc.textBody,
+                htmlBody = doc.htmlBody,
+                attachments = doc.attachments,
+                folder = doc.folder,
                 indexingError = error,
-                updatedAt = Instant.now(),
             )
         repository.save(updated)
         logger.warn { "Marked email as FAILED: ${doc.subject}" }

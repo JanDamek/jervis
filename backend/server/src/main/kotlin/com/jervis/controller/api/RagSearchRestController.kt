@@ -3,12 +3,16 @@ package com.jervis.controller.api
 import com.jervis.dto.rag.RagSearchItemDto
 import com.jervis.dto.rag.RagSearchRequestDto
 import com.jervis.dto.rag.RagSearchResponseDto
-import com.jervis.rag.EmbeddingType
 import com.jervis.rag.KnowledgeService
 import com.jervis.rag.SearchRequest
 import com.jervis.service.IRagSearchService
+import com.jervis.types.ClientId
+import com.jervis.types.ProjectId
 import org.bson.types.ObjectId
-import org.springframework.web.bind.annotation.*
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RestController
 
 @RestController
 @RequestMapping("/api/rag")
@@ -22,18 +26,16 @@ class RagSearchRestController(
         val searchRequest =
             SearchRequest(
                 query = request.searchText,
-                clientId = ObjectId(request.clientId),
-                projectId = request.projectId?.let { ObjectId(it) },
-                maxResults = request.maxChunks ?: 20,
-                minScore = request.minSimilarityThreshold ?: 0.15,
-                embeddingType = EmbeddingType.TEXT,
-                knowledgeTypes = null, // Search all types
+                clientId = ClientId(ObjectId(request.clientId)),
+                projectId = request.projectId?.let { ProjectId(ObjectId(it)) },
+                maxResults = request.maxChunks,
+                minScore = request.minSimilarityThreshold,
             )
 
         val searchResult = knowledgeService.search(searchRequest)
 
         // Parse the text result back into items for backward compatibility
-        // In new system, we return plain text, but old API expects structured items
+        // In a new system, we return plain text, but the old API expects structured items
         val items =
             listOf(
                 RagSearchItemDto(

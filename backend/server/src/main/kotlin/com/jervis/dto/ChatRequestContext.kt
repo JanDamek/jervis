@@ -1,5 +1,8 @@
 package com.jervis.dto
 
+import com.jervis.types.ClientId
+import com.jervis.types.ProjectId
+
 /**
  * Provides the context for a user's chat request.
  *
@@ -10,7 +13,6 @@ package com.jervis.dto
  * When quick is true, routing prefers models marked as quick.
  */
 data class ChatRequestContext(
-    val clientId: String,
-    val projectId: String,
-    val quick: Boolean = false,
+    val clientId: ClientId,
+    val projectId: ProjectId? = null,
 )

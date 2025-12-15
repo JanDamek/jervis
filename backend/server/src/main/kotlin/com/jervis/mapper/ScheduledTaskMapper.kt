@@ -7,9 +7,9 @@ import java.time.Instant
 
 fun ScheduledTaskDocument.toDto(): ScheduledTaskDto =
     ScheduledTaskDto(
-        id = this.id.toHexString(),
-        clientId = this.clientId.toHexString(),
-        projectId = this.projectId?.toHexString(),
+        id = this.id.toString(),
+        clientId = this.clientId.toString(),
+        projectId = this.projectId?.toString(),
         content = this.content,
         taskName = this.taskName,
         scheduledAt = this.scheduledAt.toEpochMilli(),

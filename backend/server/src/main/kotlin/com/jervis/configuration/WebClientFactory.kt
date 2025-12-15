@@ -20,7 +20,7 @@ import java.time.Duration
  * Factory for creating WebClients for external compute services that use HttpExchange.
  *
  * Architecture:
- * - WebClient (Spring WebFlux) ONLY for external compute services with @HttpExchange: joern, tika, whisper
+ * - WebClient (Spring WebFlux) ONLY for external compute services with @HttpExchange: joern, tika, whisper, atlassian, aider, coding
  * - These services use @HttpExchange interfaces for declarative HTTP clients
  * - For LLM providers (OpenAI, Anthropic, Google, Ollama, LM Studio) and other HTTP services (searxng), use KtorClientFactory
  *
@@ -41,13 +41,25 @@ class WebClientFactory(
         buildMap {
             put("tika", createWebClient(endpoints.tika.baseUrl, webClientProperties.buffers.tikaMaxInMemoryBytes))
             put("joern", createWebClient(endpoints.joern.baseUrl, webClientProperties.buffers.defaultMaxInMemoryBytes))
-            put("whisper", createWebClient(endpoints.whisper.baseUrl, webClientProperties.buffers.defaultMaxInMemoryBytes))
+            put(
+                "whisper",
+                createWebClient(endpoints.whisper.baseUrl, webClientProperties.buffers.defaultMaxInMemoryBytes),
+            )
+            put(
+                "atlassian",
+                createWebClient(endpoints.atlassian.baseUrl, webClientProperties.buffers.defaultMaxInMemoryBytes),
+            )
+            put("aider", createWebClient(endpoints.aider.baseUrl, webClientProperties.buffers.defaultMaxInMemoryBytes))
+            put(
+                "coding",
+                createWebClient(endpoints.coding.baseUrl, webClientProperties.buffers.defaultMaxInMemoryBytes),
+            )
         }
     }
 
     /**
      * Get WebClient by endpoint name (external compute services with @HttpExchange only).
-     * @param endpointName The endpoint name ("tika", "joern", "whisper")
+     * @param endpointName The endpoint name ("tika", "joern", "whisper", "atlassian", "aider", "coding")
      * @return Configured WebClient
      * @throws IllegalArgumentException if endpoint not found
      */
@@ -121,10 +133,12 @@ class WebClientFactory(
                         // Retry only on transient connection errors
                         throwable is ConnectException ||
                             (throwable is IOException && !isTimeout) ||
-                            throwable.message?.contains("Connection prematurely closed", ignoreCase = true) == true ||
-                            throwable.message?.contains("Connection reset", ignoreCase = true) == true
+                            throwable.message?.contains(
+                                "ConnectionDocument prematurely closed",
+                                ignoreCase = true,
+                            ) == true ||
+                            throwable.message?.contains("ConnectionDocument reset", ignoreCase = true) == true
                     },
             )
         }
-
 }

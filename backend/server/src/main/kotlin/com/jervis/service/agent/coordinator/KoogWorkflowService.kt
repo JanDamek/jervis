@@ -1,10 +1,10 @@
 package com.jervis.service.agent.coordinator
 
-import com.jervis.domain.plan.Plan
 import com.jervis.dto.ChatResponse
+import com.jervis.entity.PendingTaskDocument
 import com.jervis.graphdb.GraphDBService
 import com.jervis.koog.KoogWorkflowAgent
-import com.jervis.service.agent.finalizer.Finalizer
+import com.jervis.service.text.TikaTextExtractionService
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
@@ -12,33 +12,34 @@ import org.springframework.stereotype.Service
  * KoogWorkflowService – runs the Koog complex workflow agent in parallel to AgentOrchestratorService.
  *
  * Pipeline:
- *  - Pre‑processing happens inside KoogWorkflowAgent (RAG + Graph enrichment)
+ *  - Pre‑processing happens inside KoogWorkflowAgent (RAG and Graph enrichment)
  *  - Koog agent executes tools via KoogBridgeTools
- *  - Finalizer translates final answer into the original input language and produces ChatResponse
+ *  - Finalizer translates the final answer into the original input language and produces ChatResponse
  */
 @Service
 class KoogWorkflowService(
     private val graphDBService: GraphDBService,
-    private val finalizer: Finalizer,
     private val koogWorkflowAgent: KoogWorkflowAgent,
+    private val tikaTextExtractionService: TikaTextExtractionService,
 ) {
     private val logger = KotlinLogging.logger {}
 
     /**
      * Run Koog workflow with user input and return a finalized ChatResponse
-     * translated to the plan.originalLanguage.
+     * translated to the task.originalLanguage.
      */
-    suspend fun run(plan: Plan, userInput: String): ChatResponse {
-        logger.info { "KOOG_WORKFLOW_START: planId=${'$'}{plan.id} correlationId=${'$'}{plan.correlationId}" }
+    suspend fun run(
+        task: PendingTaskDocument,
+        userInput: String,
+    ): ChatResponse {
+        logger.info { "KOOG_WORKFLOW_START: correlationId=${task.correlationId}" }
 
-        val output: String = koogWorkflowAgent.run(plan, graphDBService, userInput)
+        // Safety check: if content still has many HTML tags, clean it through Tika
+        val cleanedTask = tikaTextExtractionService.ensureCleanContent(task)
 
-        // Save raw Koog output to plan and use the standard Finalizer that handles
-        // translation to the original input language and response formatting.
-        plan.finalAnswer = output
+        val output: String = koogWorkflowAgent.run(cleanedTask, graphDBService, userInput)
 
-        val response = finalizer.finalize(plan)
-        logger.info { "KOOG_WORKFLOW_COMPLETE: planId=${'$'}{plan.id} correlationId=${'$'}{plan.correlationId}" }
-        return response
+        logger.info { "KOOG_WORKFLOW_COMPLETE: correlationId=${task.correlationId}" }
+        return ChatResponse(output)
     }
 }

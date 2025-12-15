@@ -3,23 +3,19 @@ package com.jervis.koog.tools
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
-import com.jervis.domain.plan.Plan
-import com.jervis.rag.DocumentToStore
-import com.jervis.rag.EmbeddingType
+import com.jervis.entity.PendingTaskDocument
+import com.jervis.rag.HybridSearchRequest
 import com.jervis.rag.KnowledgeService
-import com.jervis.rag.KnowledgeType
-import com.jervis.rag.SearchRequest
-import com.jervis.rag.StoreRequest
-import kotlinx.coroutines.runBlocking
+import com.jervis.rag.StoreChunkRequest
 import mu.KotlinLogging
 
 /**
  * RAG (Retrieval-Augmented Generation) tools for knowledge management.
- * Native Koog implementation - no MCP dependencies.
+ * Atomic chunking architecture - agent extracts context, service embeds and stores.
  */
-@LLMDescription("Search and store knowledge in RAG (embeddings, semantic search)")
+@LLMDescription("Atomic RAG storage and hybrid search (BM25 + Vector)")
 class RagTools(
-    private val plan: Plan,
+    private val task: PendingTaskDocument,
     private val knowledgeService: KnowledgeService,
 ) : ToolSet {
     companion object {
@@ -27,75 +23,98 @@ class RagTools(
     }
 
     @Tool
-    @LLMDescription("""Search knowledge base using semantic embeddings.
-Searches across all indexed content: docs, code, emails, meetings, memories.
-Returns raw deduplicated chunks without LLM synthesis.""")
-    fun searchKnowledge(
-        @LLMDescription("Search query text")
-        query: String,
+    @LLMDescription(
+        """ATOMIC chunk storage - YOU extract the entity context, service only embeds and stores.
+This is the NEW recommended way for structured data extraction (Confluence, Email, Jira).
 
-        @LLMDescription("Maximum number of results to return (default: 25)")
-        maxResults: Int = 25,
+WORKFLOW (Agent-driven chunking):
+1. YOU identify the main entity in the input text (e.g., Confluence page, Email message)
+2. YOU extract the exact text snippet that defines this entity
+3. YOU construct the nodeKey pattern from the schema (e.g., "confluence::<pageId>")
+4. Call this tool with the extracted chunk
+5. Get back chunkId for graph linking
 
-        @LLMDescription("Minimum similarity score 0.0-1.0 (default: 0.65)")
-        minScore: Double = 0.65,
+This enables Hybrid Search (BM25 + Vector) - keyword matching + semantic similarity.
 
-        @LLMDescription("Filter by knowledge types: DOCUMENT, MEMORY, RULE, CODE, etc.")
-        knowledgeTypes: Set<KnowledgeType>? = null,
-    ): String = runBlocking {
-        logger.info { "KNOWLEDGE_SEARCH: query='$query', maxResults=$maxResults, minScore=$minScore" }
-
-        val searchRequest = SearchRequest(
-            query = query,
-            clientId = plan.clientDocument.id,
-            projectId = plan.projectDocument?.id,
-            maxResults = maxResults,
-            minScore = minScore,
-            embeddingType = EmbeddingType.TEXT,
-            knowledgeTypes = knowledgeTypes,
-        )
-
-        val result = knowledgeService.search(searchRequest)
-        logger.info { "KNOWLEDGE_SEARCH_COMPLETE: Found results" }
-
-        result.text
-    }
-
-    @Tool
-    @LLMDescription("""Store content as MEMORY in knowledge base.
-Memories are contextual facts stored directly without approval.
-Use for: meeting notes, client preferences, environment details, learned context.""")
-    fun storeMemory(
-        @LLMDescription("Content to store as memory")
+Parameters:
+- documentId: Same as nodeKey pattern (e.g., "confluence::33095749")
+- content: The EXACT text snippet you extracted (NOT the full input)
+- nodeKey: Graph node key for cross-reference (MUST match documentId)
+- entityTypes: Entity types present (e.g., ["confluence", "page", "space"])
+- graphRefs: Related graph nodes (e.g., ["space::MySpace"])
+""",
+    )
+    suspend fun storeChunk(
+        @LLMDescription("Extracted entity context - the exact text defining this entity")
         content: String,
-    ): String = runBlocking {
-        logger.info { "KNOWLEDGE_STORE: Storing MEMORY (${content.length} chars)" }
-
+        @LLMDescription("Graph node key (MUST match documentId)")
+        nodeKey: String,
+        @LLMDescription("Related graph node keys (e.g., ['space::MySpace'])")
+        graphRefs: List<String> = emptyList(),
+    ): String {
         val trimmed = content.trim()
         if (trimmed.isBlank()) {
             throw IllegalArgumentException("Content cannot be blank")
         }
 
-        val documentToStore = DocumentToStore(
-            documentId = "memory:${plan.correlationId}:${System.currentTimeMillis()}",
-            content = trimmed,
-            clientId = plan.clientDocument.id,
-            projectId = plan.projectDocument?.id,
-            type = KnowledgeType.MEMORY,
-            embeddingType = EmbeddingType.TEXT,
-            title = null,
-            location = null,
-            relatedDocs = emptyList(),
-        )
-
-        val result = knowledgeService.store(StoreRequest(listOf(documentToStore)))
-        val stored = result.documents.firstOrNull()
-            ?: throw IllegalStateException("Store operation returned no documents")
-
-        buildString {
-            appendLine("Successfully stored MEMORY")
-            appendLine("  Document ID: ${stored.documentId}")
-            appendLine("  Total Chunks: ${stored.totalChunks}")
+        logger.info {
+            "ATOMIC_STORE_CHUNK: nodeKey='$nodeKey', size=${trimmed.length}"
         }
+
+        val chunkRequest =
+            StoreChunkRequest(
+                content = trimmed,
+                clientId = task.clientId,
+                projectId = task.projectId,
+                sourceUrn = task.sourceUrn,
+                graphRefs = graphRefs,
+            )
+
+        val chunkId = knowledgeService.storeChunk(chunkRequest)
+
+        return buildString {
+            appendLine("Successfully stored CHUNK")
+            appendLine("  Chunk ID: $chunkId")
+            appendLine("  Node Key: $nodeKey")
+            appendLine("  Size: ${trimmed.length} chars")
+        }
+    }
+
+    @Tool
+    @LLMDescription(
+        """Hybrid search combining BM25 (keyword) + Vector (semantic) similarity.
+Use this to check for existing entities before creating duplicates.
+
+The alpha parameter controls the search balance:
+- alpha=0.0: Pure BM25 (exact keyword matching) - best for finding specific IDs/codes
+- alpha=0.5: Balanced hybrid (default) - combines keywords + meaning
+- alpha=1.0: Pure vector (semantic similarity) - best for concept matching
+
+Example: Before creating "confluence::123", search with alpha=0.3 to find exact page ID matches.
+""",
+    )
+    suspend fun searchHybrid(
+        @LLMDescription("Search query text")
+        query: String,
+        @LLMDescription("Balance: 0.0=BM25 only, 0.5=hybrid, 1.0=vector only (default: 0.5)")
+        alpha: Float = 0.5f,
+        @LLMDescription("Maximum results (default: 10)")
+        maxResults: Int = 10,
+    ): String {
+        logger.info { "HYBRID_SEARCH: query='$query', alpha=$alpha, maxResults=$maxResults" }
+
+        val searchRequest =
+            HybridSearchRequest(
+                query = query,
+                clientId = task.clientId,
+                projectId = task.projectId,
+                maxResults = maxResults,
+                alpha = alpha,
+            )
+
+        val result = knowledgeService.searchHybrid(searchRequest)
+        logger.info { "HYBRID_SEARCH_COMPLETE" }
+
+        return result.text
     }
 }

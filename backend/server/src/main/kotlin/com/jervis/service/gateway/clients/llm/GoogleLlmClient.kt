@@ -1,19 +1,21 @@
 package com.jervis.service.gateway.clients.llm
 
 import com.jervis.configuration.KtorClientFactory
-import com.jervis.configuration.prompts.CreativityConfig
 import com.jervis.configuration.prompts.PromptConfig
-import com.jervis.configuration.prompts.PromptsConfiguration
 import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.domain.gateway.StreamChunk
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.service.gateway.clients.ProviderClient
-import io.ktor.client.*
-import io.ktor.client.request.*
-import io.ktor.client.statement.*
-import io.ktor.http.*
-import io.ktor.utils.io.*
+import io.ktor.client.HttpClient
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.Serializable
@@ -24,7 +26,6 @@ import org.springframework.stereotype.Service
 @Service
 class GoogleLlmClient(
     private val ktorClientFactory: KtorClientFactory,
-    private val promptsConfiguration: PromptsConfiguration,
 ) : ProviderClient {
     private val httpClient: HttpClient by lazy { ktorClientFactory.getHttpClient("google") }
     private val logger = KotlinLogging.logger {}
@@ -73,7 +74,6 @@ class GoogleLlmClient(
         flow {
             logger.debug { "GOOGLE_LLM: Streaming call model=$model, tokens=$estimatedTokens" }
 
-            val creativityConfig = getCreativityConfig(prompt)
             val contents =
                 buildList {
                     // Gemini v1 does not support systemInstruction; include system prompt as the first user message
@@ -82,7 +82,7 @@ class GoogleLlmClient(
                     }
                     add(GoogleContent(role = "user", parts = listOf(GooglePart(text = userPrompt))))
                 }
-            val requestBody = buildRequestBody(contents, creativityConfig, config)
+            val requestBody = buildRequestBody(contents, config)
 
             // Safe debug: log shape only, not actual content
             runCatching {
@@ -167,13 +167,12 @@ class GoogleLlmClient(
 
     private fun buildRequestBody(
         contents: List<GoogleContent>,
-        creativityConfig: CreativityConfig,
         config: ModelsProperties.ModelDetail,
     ): GoogleRequest {
         val generationConfig =
             GoogleGenerationConfig(
-                temperature = creativityConfig.temperature,
-                topP = creativityConfig.topP,
+                temperature = 0.7,
+                topP = 0.3,
                 maxOutputTokens = config.numPredict,
             )
 
@@ -182,10 +181,6 @@ class GoogleLlmClient(
             generationConfig = generationConfig,
         )
     }
-
-    private fun getCreativityConfig(prompt: PromptConfig): CreativityConfig =
-        promptsConfiguration.creativityLevels[prompt.modelParams.creativityLevel]
-            ?: throw IllegalStateException("No creativity level configuration found for ${prompt.modelParams.creativityLevel}")
 
     @Serializable
     data class GoogleRequest(

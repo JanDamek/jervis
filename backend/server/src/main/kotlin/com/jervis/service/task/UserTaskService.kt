@@ -1,15 +1,16 @@
 package com.jervis.service.task
 
+import com.jervis.entity.PendingTaskDocument
 import com.jervis.entity.UserTaskDocument
 import com.jervis.repository.UserTaskMongoRepository
 import com.jervis.service.notification.NotificationsPublisher
+import com.jervis.types.ClientId
+import com.jervis.types.ProjectId
 import kotlinx.coroutines.flow.Flow
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
 
 @Service
 class UserTaskService(
@@ -23,8 +24,8 @@ class UserTaskService(
         description: String? = null,
         priority: TaskPriorityEnum = TaskPriorityEnum.MEDIUM,
         dueDate: Instant? = null,
-        projectId: ObjectId? = null,
-        clientId: ObjectId,
+        projectId: ProjectId? = null,
+        clientId: ClientId,
         sourceType: TaskSourceType,
         correlationId: String,
     ): UserTaskDocument {
@@ -65,37 +66,10 @@ class UserTaskService(
 
     suspend fun getTaskById(taskId: ObjectId): UserTaskDocument? = userTaskRepository.findById(taskId)
 
-    fun findActiveTasksByClient(clientId: ObjectId): Flow<UserTaskDocument> =
+    fun findActiveTasksByClient(clientId: ClientId): Flow<UserTaskDocument> =
         userTaskRepository
             .findActiveTasksByClientIdAndStatusIn(
                 clientId = clientId,
-                statuses = listOf(TaskStatusEnum.TODO, TaskStatusEnum.IN_PROGRESS),
-            )
-
-    fun findTasksForToday(clientId: ObjectId): Flow<UserTaskDocument> {
-        val today = LocalDate.now()
-        val startOfDay = today.atStartOfDay(ZoneId.systemDefault()).toInstant()
-        val endOfDay = today.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant()
-
-        return userTaskRepository
-            .findAllByClientIdAndDueDateBetweenAndStatusInOrderByDueDateAsc(
-                clientId = clientId,
-                startDate = startOfDay,
-                endDate = endOfDay,
-                statuses = listOf(TaskStatusEnum.TODO, TaskStatusEnum.IN_PROGRESS),
-            )
-    }
-
-    fun findTasksByDateRange(
-        clientId: ObjectId,
-        startDate: Instant,
-        endDate: Instant,
-    ): Flow<UserTaskDocument> =
-        userTaskRepository
-            .findAllByClientIdAndDueDateBetweenAndStatusInOrderByDueDateAsc(
-                clientId = clientId,
-                startDate = startDate,
-                endDate = endDate,
                 statuses = listOf(TaskStatusEnum.TODO, TaskStatusEnum.IN_PROGRESS),
             )
 
@@ -112,5 +86,31 @@ class UserTaskService(
         )
 
         return existing
+    }
+
+    suspend fun failAndEscalateToUserTask(
+        task: PendingTaskDocument,
+        reason: String,
+        error: Throwable? = null,
+    ) {
+        val title = "Background task failed: ${task.type}"
+        val description =
+            buildString {
+                appendLine("Pending task ${task.id} failed in state ${task.state}")
+                appendLine("Reason: $reason")
+                error?.message?.let { appendLine("Error: $it") }
+                appendLine()
+                appendLine("Task Content:")
+                appendLine(task.content)
+            }
+        createTask(
+            title = title,
+            description = description,
+            projectId = task.projectId,
+            clientId = task.clientId,
+            sourceType = TaskSourceType.AGENT_SUGGESTION,
+            correlationId = task.correlationId,
+        )
+        logger.info { "TASK_FAILED_ESCALATED:  reason=$reason" }
     }
 }

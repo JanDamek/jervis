@@ -5,15 +5,15 @@ import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.configuration.properties.PreloadOllamaProperties
 import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.domain.model.ModelTypeEnum
+import io.ktor.client.call.body
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import io.ktor.client.call.body
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
@@ -35,70 +35,68 @@ class EmbeddingModelRefresher(
 
     init {
         // Start background refresher
-        job = scope.launch {
-            val embedKeepAlive = preloadProps.embed.keepAlive
-            val refreshSafetyFactor = preloadProps.embed.refreshSafetyFactor
-            val keepAliveDuration = parseKeepAlive(embedKeepAlive)
-            val delayMillis = (keepAliveDuration.toMillis() * refreshSafetyFactor).toLong().coerceAtLeast(30_000L)
+        job =
+            scope.launch {
+                val embedKeepAlive = preloadProps.embed.keepAlive
+                val refreshSafetyFactor = preloadProps.embed.refreshSafetyFactor
+                val keepAliveDuration = parseKeepAlive(embedKeepAlive)
+                val delayMillis = (keepAliveDuration.toMillis() * refreshSafetyFactor).toLong().coerceAtLeast(30_000L)
 
-            logger.info { "EmbeddingModelRefresher started: keepAlive=$embedKeepAlive, refresh every=${Duration.ofMillis(delayMillis)}" }
-
-            val clients = listOf(
-                "ollama.qualifier",
-                "ollama.primary",
-            ).mapNotNull { name ->
-                runCatching { name to ktorClientFactory.getHttpClient(name) }.getOrNull()
-            }
-
-            // Build list of unique embedding models on OLLAMA
-            val modelsToRefresh: List<String> =
-                sequenceOf(ModelTypeEnum.EMBEDDING_TEXT, ModelTypeEnum.EMBEDDING_CODE)
-                    .flatMap { type -> models.models[type].orEmpty().asSequence() }
-                    .filter { it.provider == ModelProviderEnum.OLLAMA && it.model.isNotBlank() }
-                    .map { it.model }
-                    .distinct()
-                    .toList()
-
-            if (modelsToRefresh.isEmpty()) {
-                logger.info { "EmbeddingModelRefresher: no models to refresh (OLLAMA)." }
-                return@launch
-            }
-
-            while (isActive) {
-                try {
-                    logger.info { "EmbeddingModelRefresher: refreshing keep-alive for ${modelsToRefresh.size} embedding model(s)" }
-
-                    // Simple sequential refresh to avoid overloading local instance (suffices for hourly keep_alive)
-                    for (model in modelsToRefresh) {
-                        runCatching {
-                            val warmupBody = OllamaEmbeddingRefreshRequest(
-                                model = model,
-                                input = "warmup",
-                                prompt = "warmup",
-                                keep_alive = embedKeepAlive,
-                                options = OllamaEmbeddingOptions(keep_alive = embedKeepAlive),
-                            )
-                            clients.forEach { (name, client) ->
-                                runCatching {
-                                    client.post("/api/embeddings") {
-                                        setBody(warmupBody)
-                                    }.body<OllamaEmbeddingWarmupResponse>()
-                                    logger.info { "Refreshed keep-alive on $name for embedding model: $model ($embedKeepAlive)" }
-                                }.onFailure { e ->
-                                    logger.warn(e) { "Failed to refresh keep-alive on $name for model: $model" }
-                                }
-                            }
-                        }.onFailure { e ->
-                            logger.warn(e) { "Failed to refresh keep-alive for model: $model" }
-                        }
-                    }
-                } catch (e: Exception) {
-                    logger.warn(e) { "EmbeddingModelRefresher cycle failed" }
+                logger.info {
+                    "EmbeddingModelRefresher started: keepAlive=$embedKeepAlive, refresh every=${
+                        Duration.ofMillis(
+                            delayMillis,
+                        )
+                    }"
                 }
 
-                delay(delayMillis)
+                val embeddingClient = ktorClientFactory.getHttpClient("ollama.embedding")
+
+                // Build list of unique embedding models on OLLAMA_EMBEDDING
+                val modelsToRefresh: List<String> =
+                    sequenceOf(ModelTypeEnum.EMBEDDING)
+                        .flatMap { type -> models.models[type].orEmpty().asSequence() }
+                        .filter { it.provider == ModelProviderEnum.OLLAMA_EMBEDDING && it.model.isNotBlank() }
+                        .map { it.model }
+                        .distinct()
+                        .toList()
+
+                if (modelsToRefresh.isEmpty()) {
+                    logger.info { "EmbeddingModelRefresher: no models to refresh (OLLAMA_EMBEDDING)." }
+                    return@launch
+                }
+
+                while (isActive) {
+                    try {
+                        logger.info { "EmbeddingModelRefresher: refreshing keep-alive for ${modelsToRefresh.size} embedding model(s)" }
+
+                        // Simple sequential refresh to avoid overloading local instance (suffices for hourly keep_alive)
+                        for (model in modelsToRefresh) {
+                            runCatching {
+                                val warmupBody =
+                                    OllamaEmbeddingRefreshRequest(
+                                        model = model,
+                                        input = "warmup",
+                                        prompt = "warmup",
+                                        keep_alive = embedKeepAlive,
+                                        options = OllamaEmbeddingOptions(keep_alive = embedKeepAlive),
+                                    )
+                                embeddingClient
+                                    .post("/api/embeddings") {
+                                        setBody(warmupBody)
+                                    }.body<OllamaEmbeddingWarmupResponse>()
+                                logger.info { "Refreshed keep-alive on ollama.embedding for embedding model: $model ($embedKeepAlive)" }
+                            }.onFailure { e ->
+                                logger.warn(e) { "Failed to refresh keep-alive on ollama.embedding for model: $model" }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        logger.warn(e) { "EmbeddingModelRefresher cycle failed" }
+                    }
+
+                    delay(delayMillis)
+                }
             }
-        }
     }
 
     private fun parseKeepAlive(expr: String): Duration {

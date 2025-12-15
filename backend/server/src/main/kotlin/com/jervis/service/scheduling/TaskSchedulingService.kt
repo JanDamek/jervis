@@ -2,6 +2,8 @@ package com.jervis.service.scheduling
 
 import com.jervis.entity.ScheduledTaskDocument
 import com.jervis.repository.ScheduledTaskMongoRepository
+import com.jervis.types.ClientId
+import com.jervis.types.ProjectId
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -25,8 +27,8 @@ class TaskSchedulingService(
      * Schedule a new task
      */
     suspend fun scheduleTask(
-        clientId: ObjectId,
-        projectId: ObjectId?,
+        clientId: ClientId,
+        projectId: ProjectId?,
         content: String,
         taskName: String,
         scheduledAt: Instant,

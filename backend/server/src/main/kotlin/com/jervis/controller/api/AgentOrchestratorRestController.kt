@@ -9,7 +9,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.springframework.http.HttpStatus
-import org.springframework.web.bind.annotation.*
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.ResponseStatus
+import org.springframework.web.bind.annotation.RestController
 
 @RestController
 @RequestMapping("/api/agent")
@@ -18,9 +22,11 @@ class AgentOrchestratorRestController(
 ) : IAgentOrchestratorService {
     @PostMapping("/handle")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    override suspend fun handle(@RequestBody request: ChatRequestDto) {
+    override suspend fun handle(
+        @RequestBody request: ChatRequestDto,
+    ) {
         CoroutineScope(Dispatchers.Default).launch {
-            agentOrchestratorService.handle(request.text, request.context.toDomain(), background = false)
+            agentOrchestratorService.handle(request.text, request.context.toDomain())
         }
     }
 
@@ -28,12 +34,14 @@ class AgentOrchestratorRestController(
      * Synchronous chat endpoint that returns the final agent answer for Main Window chat UX.
      */
     @PostMapping("/chat")
-    override suspend fun chat(@RequestBody request: ChatRequestDto): ChatResponseDto {
-        val response = agentOrchestratorService.handle(
-            text = request.text,
-            ctx = request.context.toDomain(),
-            background = false,
-        )
+    override suspend fun chat(
+        @RequestBody request: ChatRequestDto,
+    ): ChatResponseDto {
+        val response =
+            agentOrchestratorService.handle(
+                text = request.text,
+                ctx = request.context.toDomain(),
+            )
         return ChatResponseDto(message = response.message)
     }
 }

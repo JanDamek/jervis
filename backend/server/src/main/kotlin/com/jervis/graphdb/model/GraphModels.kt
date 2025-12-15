@@ -3,7 +3,6 @@ package com.jervis.graphdb.model
 data class GraphNode(
     val key: String,
     val entityType: String,
-    val props: Map<String, Any?> = emptyMap(),
     val ragChunks: List<String> = emptyList(),
 )
 
@@ -11,7 +10,6 @@ data class GraphEdge(
     val edgeType: String,
     val fromKey: String,
     val toKey: String,
-    val props: Map<String, Any?> = emptyMap(),
 )
 
 enum class Direction { INBOUND, OUTBOUND, ANY }
@@ -35,11 +33,6 @@ data class GraphEdgeResult(
     val toKey: String,
     val created: Boolean,
     val warnings: List<String> = emptyList(),
-)
-
-data class GraphHealth(
-    val ok: Boolean,
-    val details: String? = null,
 )
 
 data class GraphSchemaStatus(

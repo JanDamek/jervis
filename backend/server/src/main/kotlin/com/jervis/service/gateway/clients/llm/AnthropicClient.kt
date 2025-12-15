@@ -2,24 +2,22 @@ package com.jervis.service.gateway.clients.llm
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.jervis.configuration.KtorClientFactory
-import com.jervis.configuration.prompts.CreativityConfig
 import com.jervis.configuration.prompts.PromptConfig
-import com.jervis.configuration.prompts.PromptsConfiguration
 import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.domain.gateway.StreamChunk
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.service.gateway.clients.ProviderClient
-import io.ktor.client.*
-import io.ktor.client.call.*
-import io.ktor.client.request.*
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import kotlinx.coroutines.flow.Flow
 import org.springframework.stereotype.Service
 
 @Service
 class AnthropicClient(
     private val ktorClientFactory: KtorClientFactory,
-    private val promptsConfiguration: PromptsConfiguration,
 ) : ProviderClient {
     private val httpClient: HttpClient by lazy { ktorClientFactory.getHttpClient("anthropic") }
     override val provider: ModelProviderEnum = ModelProviderEnum.ANTHROPIC
@@ -32,14 +30,14 @@ class AnthropicClient(
         prompt: PromptConfig,
         estimatedTokens: Int,
     ): LlmResponse {
-        val creativityConfig = getCreativityConfig(prompt)
         val messages = buildMessages(userPrompt)
-        val requestBody = buildRequestBody(model, messages, systemPrompt, creativityConfig, config)
+        val requestBody = buildRequestBody(model, messages, systemPrompt, config)
 
         val response: AnthropicMessagesResponse =
-            httpClient.post("/v1/messages") {
-                setBody(requestBody)
-            }.body()
+            httpClient
+                .post("/v1/messages") {
+                    setBody(requestBody)
+                }.body()
 
         return parseResponse(response, model)
     }
@@ -80,15 +78,13 @@ class AnthropicClient(
         model: String,
         messages: List<Map<String, Any>>,
         systemPrompt: String?,
-        creativityConfig: CreativityConfig,
         config: ModelsProperties.ModelDetail,
     ): Map<String, Any> {
         val baseBody =
             mapOf(
                 "model" to model,
                 "messages" to messages,
-                "max_tokens" to (config.numPredict ?: 4096), // Maximum tokens for response (output only)
-                "temperature" to creativityConfig.temperature,
+                "max_tokens" to (config.numPredict ?: 4096),
             )
 
         val systemField =
@@ -121,10 +117,6 @@ class AnthropicClient(
             finishReason = response.stop_reason ?: "stop",
         )
     }
-
-    private fun getCreativityConfig(prompt: PromptConfig) =
-        promptsConfiguration.creativityLevels[prompt.modelParams.creativityLevel]
-            ?: throw IllegalStateException("No creativity level configuration found for ${prompt.modelParams.creativityLevel}")
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     data class AnthropicMessagesResponse(

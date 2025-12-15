@@ -1,15 +1,31 @@
 package com.jervis.rag
 
-import org.bson.types.ObjectId
+import com.jervis.types.ClientId
+import com.jervis.types.ProjectId
+import com.jervis.types.SourceUrn
 
 data class SearchRequest(
     val query: String,
-    val clientId: ObjectId,
-    val projectId: ObjectId? = null,
+    val clientId: ClientId,
+    val projectId: ProjectId? = null,
     val maxResults: Int = 20,
     val minScore: Double = 0.15,
-    val embeddingType: EmbeddingType = EmbeddingType.TEXT,
-    val knowledgeTypes: Set<KnowledgeType>? = null,
+)
+
+/**
+ * Hybrid search request combining BM25 (keyword) and Vector (semantic) search.
+ *
+ * @param alpha Balance between BM25 and vector:
+ *   - 0.0 = pure BM25 (keyword matching)
+ *   - 1.0 = pure vector (semantic similarity)
+ *   - 0.5 = balanced hybrid
+ */
+data class HybridSearchRequest(
+    val query: String,
+    val clientId: ClientId,
+    val projectId: ProjectId? = null,
+    val maxResults: Int = 20,
+    val alpha: Float = 0.5f,
 )
 
 @JvmInline
@@ -17,55 +33,14 @@ value class SearchResult(
     val text: String,
 )
 
-@JvmInline
-value class DocumentResult(
-    val text: String,
-)
-
-data class StoreRequest(
-    val documents: List<DocumentToStore>,
-)
-
-data class DocumentToStore(
-    val documentId: String,
+/**
+ * Atomic chunk storage request.
+ * Agent extracts chunk and provides all metadata - service only embeds and stores.
+ */
+data class StoreChunkRequest(
+    val clientId: ClientId,
+    val projectId: ProjectId? = null,
     val content: String,
-    val clientId: ObjectId,
-    val type: KnowledgeType,
-    val embeddingType: EmbeddingType = EmbeddingType.TEXT,
-    val severity: KnowledgeSeverity? = null,
-    val title: String? = null,
-    val location: String? = null, // sourcePath
-    val relatedDocs: List<String> = emptyList(),
-    val projectId: ObjectId? = null,
-    // New metadata for per-client RAG collections
-    val graphRefs: List<String> = emptyList(),
-    val entityTypes: List<String> = emptyList(),
+    val sourceUrn: SourceUrn,
+    val graphRefs: List<String>,
 )
-
-data class StoreResult(
-    val documents: List<StoredDocument>,
-)
-
-data class StoredDocument(
-    val documentId: String,
-    val chunkIds: List<String>,
-    val totalChunks: Int,
-)
-
-enum class KnowledgeType {
-    CODE,
-    RULE,
-    MEMORY,
-    DOCUMENT,
-}
-
-enum class KnowledgeSeverity {
-    MUST,
-    SHOULD,
-    INFO,
-}
-
-enum class EmbeddingType {
-    TEXT,
-    CODE,
-}

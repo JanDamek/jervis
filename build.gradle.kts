@@ -26,6 +26,13 @@ tasks.register("buildAll") {
     description = "Build all modules (backend + desktop + mobile)"
 
     dependsOn(
+        ":backend:common-services:build",
+        ":backend:service-tika:build",
+        ":backend:service-joern:build",
+        ":backend:service-whisper:build",
+        ":backend:service-aider:build",
+        ":backend:service-coding-engine:build",
+        ":backend:service-atlassian:build",
         ":backend:server:build",
         ":apps:desktop:build",
         ":apps:mobile:build"

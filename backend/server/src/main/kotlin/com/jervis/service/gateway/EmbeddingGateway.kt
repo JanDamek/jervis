@@ -17,19 +17,16 @@ class EmbeddingGateway(
         private val logger = KotlinLogging.logger {}
     }
 
-    suspend fun callEmbedding(
-        type: ModelTypeEnum,
-        text: String,
-    ): List<Float> {
+    suspend fun callEmbedding(text: String): List<Float> {
         // Use candidates strictly in the order defined in models properties (no implicit prioritization)
-        val candidates = modelsProperties.models[type].orEmpty()
-        check(candidates.isNotEmpty()) { "No embedding model candidates configured for $type" }
+        val candidates = modelsProperties.models[ModelTypeEnum.EMBEDDING].orEmpty()
+        check(candidates.isNotEmpty()) { "No embedding model candidates configured" }
 
         // Universal text sanitization for all embedding providers
         val sanitizedText = sanitizeTextForEmbedding(text.trim())
 
         // Debug logging for embedding request details
-        logger.debug { "Embedding Request - type=$type, text length=${sanitizedText.length}" }
+        logger.debug { "Embedding Request - text length=${sanitizedText.length}" }
 
         var lastError: Throwable? = null
 
@@ -42,7 +39,7 @@ class EmbeddingGateway(
                 logger.warn(t) { "Embedding candidate $index ($provider:${candidate.model}) failed, trying next if available" }
             }
         }
-        throw IllegalStateException("All embedding candidates failed for $type", lastError)
+        throw IllegalStateException("All embedding candidates failed.", lastError)
     }
 
     private suspend fun executeWithControls(

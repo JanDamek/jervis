@@ -1,22 +1,21 @@
 package com.jervis.service.gateway.clients.llm
 
 import com.jervis.configuration.KtorClientFactory
-import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.configuration.properties.PreloadOllamaProperties
-import com.jervis.domain.model.ModelProviderEnum
-import com.jervis.domain.model.ModelTypeEnum
+import com.jervis.koog.KoogWorkflowAgent.Companion.MODEL_WORKFLOW_NAME
+import com.jervis.koog.qualifier.KoogQualifierAgent.Companion.MODEL_QUALIFIER_NAME
+import io.ktor.client.call.body
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
-import io.ktor.client.call.body
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import kotlinx.serialization.Serializable
 import java.time.Duration
 
 /**
@@ -25,7 +24,6 @@ import java.time.Duration
  */
 @Component
 class LlmModelRefresher(
-    private val models: ModelsProperties,
     private val ktorClientFactory: KtorClientFactory,
     private val preloadProps: PreloadOllamaProperties,
 ) {
@@ -42,7 +40,13 @@ class LlmModelRefresher(
                 val keepAliveDuration = parseKeepAlive(llmKeepAlive)
                 val delayMillis = (keepAliveDuration.toMillis() * refreshSafetyFactor).toLong().coerceAtLeast(30_000L)
 
-                logger.info { "LlmModelRefresher started: keepAlive=$llmKeepAlive, refresh every=${Duration.ofMillis(delayMillis)}" }
+                logger.info {
+                    "LlmModelRefresher started: keepAlive=$llmKeepAlive, refresh every=${
+                        Duration.ofMillis(
+                            delayMillis,
+                        )
+                    }"
+                }
 
                 val clients =
                     listOf(
@@ -50,78 +54,55 @@ class LlmModelRefresher(
                         "ollama.primary" to ktorClientFactory.getHttpClient("ollama.primary"),
                     )
 
-                // Build list of models to refresh
-                // Consider all model types except embeddings (handled by EmbeddingModelRefresher)
-                val nonEmbeddingTypes = ModelTypeEnum.entries.filterNot { it.name.startsWith("EMBEDDING") }
+                val primaryModels: Set<String> = setOf(MODEL_WORKFLOW_NAME)
 
-                // Models on GPU (primary)
-                val primaryModels: Set<String> =
-                    nonEmbeddingTypes
-                        .asSequence()
-                        .flatMap { type -> models.models[type].orEmpty().asSequence() }
-                        .filter { it.provider == ModelProviderEnum.OLLAMA && it.model.isNotBlank() }
-                        .map { it.model }
-                        .toSet()
-
-                // Models on CPU (qualifier)
-                val qualifierModels: Set<String> =
-                    nonEmbeddingTypes
-                        .asSequence()
-                        .flatMap { type -> models.models[type].orEmpty().asSequence() }
-                        .filter { it.provider == ModelProviderEnum.OLLAMA_QUALIFIER && it.model.isNotBlank() }
-                        .map { it.model }
-                        .toSet()
-
-                if (primaryModels.isEmpty() && qualifierModels.isEmpty()) {
-                    logger.info { "LlmModelRefresher: no models to refresh (OLLAMA)." }
-                    return@launch
-                }
+                val qualifierModels: Set<String> = setOf(MODEL_QUALIFIER_NAME)
 
                 while (isActive) {
                     try {
                         logger.info {
-                            "LlmModelRefresher: refreshing keep-alive for ${primaryModels.size + qualifierModels.size} LLM model(s)"
+                            "LlmModelRefresher: refreshing keep-alive | primary(models)=${primaryModels.joinToString()} | qualifier(count)=${qualifierModels.size}"
                         }
 
                         // Refresh GPU (primary) models
-                        if (primaryModels.isNotEmpty()) {
-                            val primaryClient = clients.first { it.first == "ollama.primary" }.second
-                            for (model in primaryModels) {
-                                runCatching {
-                                    val warmupBody = OllamaGenerateRequest(
+                        val primaryClient = clients.first { it.first == "ollama.primary" }.second
+                        for (model in primaryModels) {
+                            runCatching {
+                                val warmupBody =
+                                    OllamaGenerateRequest(
                                         model = model,
                                         prompt = "warmup",
                                         stream = false,
                                         keep_alive = llmKeepAlive,
                                     )
-                                    primaryClient.post("/api/generate") {
+                                primaryClient
+                                    .post("/api/generate") {
                                         setBody(warmupBody)
                                     }.body<OllamaGenerateResponse>()
-                                    logger.info { "Refreshed keep-alive on ollama.primary for LLM model: $model ($llmKeepAlive)" }
-                                }.onFailure { e ->
-                                    logger.warn(e) { "Failed to refresh keep-alive on ollama.primary for model: $model" }
-                                }
+                                logger.info { "Refreshed keep-alive on ollama.primary for LLM model: $model ($llmKeepAlive)" }
+                            }.onFailure { e ->
+                                logger.warn(e) { "Failed to refresh keep-alive on ollama.primary for model: $model" }
                             }
                         }
 
                         // Refresh CPU (qualifier) models
-                        if (qualifierModels.isNotEmpty()) {
-                            val qualifierClient = clients.first { it.first == "ollama.qualifier" }.second
-                            for (model in qualifierModels) {
-                                runCatching {
-                                    val warmupBody = OllamaGenerateRequest(
+                        val qualifierClient = clients.first { it.first == "ollama.qualifier" }.second
+                        for (model in qualifierModels) {
+                            runCatching {
+                                val warmupBody =
+                                    OllamaGenerateRequest(
                                         model = model,
                                         prompt = "warmup",
                                         stream = false,
                                         keep_alive = llmKeepAlive,
                                     )
-                                    qualifierClient.post("/api/generate") {
+                                qualifierClient
+                                    .post("/api/generate") {
                                         setBody(warmupBody)
                                     }.body<OllamaGenerateResponse>()
-                                    logger.info { "Refreshed keep-alive on ollama.qualifier for LLM model: $model ($llmKeepAlive)" }
-                                }.onFailure { e ->
-                                    logger.warn(e) { "Failed to refresh keep-alive on ollama.qualifier for model: $model" }
-                                }
+                                logger.info { "Refreshed keep-alive on ollama.qualifier for LLM model: $model ($llmKeepAlive)" }
+                            }.onFailure { e ->
+                                logger.warn(e) { "Failed to refresh keep-alive on ollama.qualifier for model: $model" }
                             }
                         }
                     } catch (e: Exception) {

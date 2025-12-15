@@ -180,12 +180,12 @@ class GitRemoteClient {
 
         // Retryable errors - network/temporary issues
         return message.contains("kex_exchange_identification", ignoreCase = true) ||
-            message.contains("Connection closed", ignoreCase = true) ||
+            message.contains("ConnectionDocument closed", ignoreCase = true) ||
             message.contains("banner exchange", ignoreCase = true) ||
             message.contains("Operation timed out", ignoreCase = true) ||
-            message.contains("Connection timed out", ignoreCase = true) ||
-            message.contains("Connection refused", ignoreCase = true) ||
-            message.contains("Connection reset", ignoreCase = true)
+            message.contains("ConnectionDocument timed out", ignoreCase = true) ||
+            message.contains("ConnectionDocument refused", ignoreCase = true) ||
+            message.contains("ConnectionDocument reset", ignoreCase = true)
     }
 
     /**

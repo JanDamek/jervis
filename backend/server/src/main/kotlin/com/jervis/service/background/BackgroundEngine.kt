@@ -9,6 +9,7 @@ import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.debug.DebugService
 import com.jervis.service.notification.ErrorNotificationsPublisher
 import com.jervis.service.scheduling.TaskManagementService
+import com.jervis.service.task.UserTaskService
 import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
 import kotlinx.coroutines.CancellationException
@@ -21,6 +22,7 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.time.delay
 import kotlinx.coroutines.withTimeout
 import mu.KotlinLogging
 import org.springframework.core.annotation.Order
@@ -36,30 +38,28 @@ import java.util.concurrent.atomic.AtomicReference
  * Background cognitive engine that processes PendingTasks.
  *
  * NEW ARCHITECTURE (Graph-Based Routing):
- * - Processes DATA_PROCESSING tasks through Qualifier (CPU) and Workflow (GPU)
  * - Qualifier structures data → routes to DONE or READY_FOR_GPU
  * - GPU tasks processed only during idle time (no user requests)
  * - Preemption: User requests immediately interrupt background tasks
  *
  * THREE INDEPENDENT LOOPS:
  * 1. Qualification loop (CPU) - runs continuously, checks DB every 30s
- *    - Processes DATA_PROCESSING tasks through KoogQualifierAgent
  *    - Creates Graph nodes and RAG chunks with chunking for large documents
  *    - Routes tasks: DONE (simple) or READY_FOR_GPU (complex)
  *
  * 2. Execution loop (GPU) - processes qualified tasks during idle GPU time
  *    - Only runs when no active user requests (checked via LlmLoadMonitor)
- *    - Processes READY_FOR_GPU tasks through KoogWorkflowAgent
+ *    - Process READY_FOR_GPU tasks through KoogWorkflowAgent
  *    - Loads TaskMemory context from Qualifier for efficient execution
  *    - Preemption: Interrupted immediately when user request arrives
  *
- * 3. Scheduler loop - dispatches scheduled tasks 10 minutes before scheduled time
+ * 3. Scheduler loop - dispatches scheduled tasks 10 minutes before the scheduled time
  *
  * PREEMPTION LOGIC:
  * - LlmLoadMonitor tracks active foreground (user) requests
  * - When user request starts: registerRequestStart() → interruptNow()
  * - interruptNow() cancels currently running background task
- * - Background tasks resume only after idle threshold (30s with no activity)
+ * - Background tasks resume only after an idle threshold (30s with no activity)
  * - This ensures user requests ALWAYS get priority over background tasks
  *
  * STARTUP ORDER:
@@ -78,6 +78,7 @@ class BackgroundEngine(
     private val debugService: DebugService,
     private val scheduledTaskRepository: ScheduledTaskMongoRepository,
     private val taskManagementService: TaskManagementService,
+    private val userTaskService: UserTaskService,
 ) {
     private val logger = KotlinLogging.logger {}
     private val supervisor = SupervisorJob()
@@ -90,14 +91,26 @@ class BackgroundEngine(
     private val maxRetryDelay = 300_000L
     private val schedulerAdvanceMinutes = 10L
 
+    // Atomic flag to ensure @PostConstruct is called only once
+    private val isInitialized = java.util.concurrent.atomic.AtomicBoolean(false)
+
     @PostConstruct
     fun start() {
+        // SINGLETON GUARANTEE: Prevent multiple initialization (defensive)
+        if (!isInitialized.compareAndSet(false, true)) {
+            logger.error {
+                "BackgroundEngine.start() called multiple times! This should never happen. " +
+                "Ignoring duplicate initialization to prevent multiple qualifier agent instances."
+            }
+            return
+        }
+
         logger.info { "BackgroundEngine starting - initializing three independent loops..." }
 
         qualificationJob =
             scope.launch {
                 try {
-                    logger.info { "Qualification loop STARTED (CPU, independent)" }
+                    logger.info { "Qualification loop STARTED (CPU, independent) - SINGLETON GUARANTEED" }
                     runQualificationLoop()
                 } catch (e: Exception) {
                     logger.error(e) { "Qualification loop FAILED to start!" }
@@ -124,7 +137,7 @@ class BackgroundEngine(
                 }
             }
 
-        logger.info { "BackgroundEngine initialization complete - all three loops launched" }
+        logger.info { "BackgroundEngine initialization complete - all three loops launched with singleton guarantee" }
     }
 
     @PreDestroy
@@ -153,22 +166,35 @@ class BackgroundEngine(
      * Qualification loop - runs continuously on CPU, independent of the GPU state.
      * Processes the entire Flow of tasks needing qualification using concurrency limit.
      * Simple: load Flow, process all with semaphore, wait the 30s if nothing, repeat.
+     *
+     * SINGLETON GUARANTEE:
+     * - This method is called ONLY ONCE from @PostConstruct start()
+     * - BackgroundEngine is a @Service singleton managed by Spring
+     * - isInitialized flag prevents duplicate start() calls (defensive)
+     * - processAllQualifications() has its own singleton lock (isQualificationRunning)
+     * - Each task uses tryClaimForQualification() atomic operation
+     *
+     * RESULT: Only ONE qualifier agent instance runs per application instance, guaranteed at 3 levels:
+     * 1. Spring @Service singleton
+     * 2. BackgroundEngine.isInitialized flag
+     * 3. TaskQualificationService.isQualificationRunning flag
      */
     private suspend fun runQualificationLoop() {
-        logger.info { "Qualification loop entering main loop..." }
+        logger.info { "Qualification loop entering main loop (SINGLETON GUARANTEED at 3 levels)..." }
 
         while (scope.isActive) {
+            delay(backgroundProperties.waitOnStartup)
             try {
                 logger.debug { "Qualification loop: starting processAllQualifications..." }
                 taskQualificationService.processAllQualifications()
                 logger.info { "Qualification cycle complete - sleeping 30s..." }
-                delay(30_000)
+                delay(backgroundProperties.waitInterval)
             } catch (e: CancellationException) {
                 logger.info { "Qualification loop cancelled" }
                 throw e
             } catch (e: Exception) {
-                val waitMs = backgroundProperties.waitOnError.toMillis()
-                logger.error(e) { "ERROR in qualification loop - will retry in ${waitMs / 1000}s (configured)" }
+                val waitMs = backgroundProperties.waitOnError
+                logger.error(e) { "ERROR in qualification loop - will retry in waitMs (configured)" }
                 delay(waitMs)
             }
         }
@@ -217,13 +243,14 @@ class BackgroundEngine(
 
                         debugService.gpuTaskPickup(
                             correlationId = task.correlationId,
-                            taskId = task.id.toHexString(),
+                            taskId = task.id.toString(),
                             taskType = task.type,
                             state = task.state,
                         )
 
                         executeTask(task)
                         logger.info { "GPU_TASK_FINISHED: id=${task.id} correlationId=${task.correlationId}" }
+                        // Task finished - immediately check for next task without delay
                     } else {
                         logger.debug { "No qualified tasks found, sleeping 30s..." }
                         delay(30_000)
@@ -231,9 +258,9 @@ class BackgroundEngine(
                 } else {
                     logger.debug {
                         "GPU not idle yet (activeRequests=$activeRequests, idle=${idleDuration.seconds}" +
-                            "s < 30s), waiting 10s..."
+                            "s < 30s), waiting 1s..."
                     }
-                    delay(10_000)
+                    delay(1_000)
                 }
             } catch (e: CancellationException) {
                 logger.info { "Execution loop cancelled" }
@@ -252,45 +279,25 @@ class BackgroundEngine(
                 logger.info { "GPU_EXECUTION_START: id=${task.id} correlationId=${task.correlationId} type=${task.type}" }
 
                 try {
-                    agentOrchestrator.handleBackgroundTask(
-                        text = task.content,
-                        clientId = task.clientId.toHexString(),
-                        projectId = task.projectId?.toHexString(),
-                    )
+                    agentOrchestrator.run(task, "")
                     pendingTaskService.deleteTask(task.id)
                     logger.info { "GPU_EXECUTION_SUCCESS: id=${task.id} correlationId=${task.correlationId}" }
 
                     consecutiveFailures = 0
                 } catch (_: CancellationException) {
                     logger.info { "GPU_EXECUTION_INTERRUPTED: id=${task.id} correlationId=${task.correlationId}" }
-
-                    try {
-                        val progressContext = agentOrchestrator.getLastPlanContext(
-                            clientId = task.clientId.toHexString(),
-                            projectId = task.projectId?.toHexString(),
-                        )
-                        if (progressContext.isNotBlank()) {
-                            pendingTaskService.appendProgressContext(task.id, progressContext)
-                            logger.info { "Saved progress context for interrupted task ${task.id} (${progressContext.length} chars)" }
-                        } else {
-                            logger.debug { "No progress context to save for interrupted task ${task.id}" }
-                        }
-                    } catch (saveError: Exception) {
-                        logger.error(saveError) { "Failed to save progress context for task ${task.id}" }
-                    }
                 } catch (e: Exception) {
                     val errorType =
                         when {
-                            e.message?.contains("Connection prematurely closed") == true -> "LLM_CONNECTION_FAILED"
+                            e.message?.contains("ConnectionDocument prematurely closed") == true -> "LLM_CONNECTION_FAILED"
                             e.message?.contains("LLM call failed") == true -> "LLM_UNAVAILABLE"
                             e.message?.contains("timeout", ignoreCase = true) == true -> "LLM_TIMEOUT"
-                            e.message?.contains("Connection refused") == true -> "LLM_UNREACHABLE"
+                            e.message?.contains("ConnectionDocument refused") == true -> "LLM_UNREACHABLE"
                             e is java.net.SocketException -> "NETWORK_ERROR"
                             e is java.net.SocketTimeoutException -> "NETWORK_TIMEOUT"
                             else -> "TASK_EXECUTION_ERROR"
                         }
 
-                    // Only increment consecutive failures for communication errors
                     val isCommunicationError =
                         errorType in
                             setOf(
@@ -305,7 +312,6 @@ class BackgroundEngine(
                     if (isCommunicationError) {
                         consecutiveFailures++
                     } else {
-                        // Non-communication errors don't affect backoff (logic errors, data issues, etc.)
                         logger.warn { "Non-communication error detected, not incrementing failure counter" }
                     }
 
@@ -313,7 +319,7 @@ class BackgroundEngine(
                         if (isCommunicationError) {
                             minOf(30_000L * consecutiveFailures, maxRetryDelay)
                         } else {
-                            0L // No delay for logic errors - continue immediately
+                            0L
                         }
 
                     logger.error(e) {
@@ -328,12 +334,25 @@ class BackgroundEngine(
                             errorNotificationsPublisher.publishError(
                                 message = errorMessage,
                                 stackTrace = e.stackTraceToString(),
-                                correlationId = task.id.toHexString(),
+                                correlationId = task.id.toString(),
                             )
                             logger.info { "Published LLM error to notifications for task ${task.id}" }
                             pendingTaskService.deleteTask(task.id)
                         } else {
-                            pendingTaskService.failAndEscalateToUserTask(task, reason = errorType, error = e)
+                            userTaskService.failAndEscalateToUserTask(task, reason = errorType, error = e)
+                            val possibleState =
+                                setOf(
+                                    PendingTaskStateEnum.QUALIFYING,
+                                    PendingTaskStateEnum.DISPATCHED_GPU,
+                                    PendingTaskStateEnum.READY_FOR_GPU,
+                                )
+                            possibleState.forEach { state ->
+                                pendingTaskService.updateState(
+                                    task.id,
+                                    state,
+                                    PendingTaskStateEnum.ERROR,
+                                )
+                            }
                         }
                     } catch (esc: Exception) {
                         logger.error(esc) { "Failed to handle task error for ${task.id}" }
@@ -382,17 +401,20 @@ class BackgroundEngine(
                     upcomingTasks.forEach { task ->
                         try {
                             pendingTaskService.createTask(
-                                taskType = PendingTaskTypeEnum.SCHEDULED_TASK,
+                                taskType = PendingTaskTypeEnum.SCHEDULED_PROCESSING,
                                 content = task.content,
                                 clientId = task.clientId,
                                 projectId = task.projectId,
-                                correlationId = task.correlationId ?: task.id.toHexString(),
+                                correlationId = task.correlationId,
+                                state = PendingTaskStateEnum.READY_FOR_GPU,
+                                sourceUrn = task.sourceUrn,
                             )
 
                             if (task.cronExpression != null) {
                                 try {
                                     val cron = CronExpression.parse(task.cronExpression)
-                                    val nextOccurrence = cron.next(ZonedDateTime.ofInstant(task.scheduledAt, ZoneId.systemDefault()))
+                                    val nextOccurrence =
+                                        cron.next(ZonedDateTime.ofInstant(task.scheduledAt, ZoneId.systemDefault()))
 
                                     if (nextOccurrence != null) {
                                         taskManagementService.updateScheduledTime(task.id, nextOccurrence.toInstant())

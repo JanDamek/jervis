@@ -3,20 +3,22 @@ package com.jervis.service.gateway.clients.llm
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.jervis.configuration.KtorClientFactory
-import com.jervis.configuration.prompts.CreativityConfig
 import com.jervis.configuration.prompts.PromptConfig
-import com.jervis.configuration.prompts.PromptsConfiguration
 import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.domain.gateway.StreamChunk
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.service.gateway.clients.ProviderClient
-import io.ktor.client.*
-import io.ktor.client.call.*
-import io.ktor.client.request.*
-import io.ktor.client.statement.*
-import io.ktor.http.*
-import io.ktor.utils.io.*
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.springframework.stereotype.Service
@@ -24,7 +26,6 @@ import org.springframework.stereotype.Service
 @Service
 class OpenAiClient(
     private val ktorClientFactory: KtorClientFactory,
-    private val promptsConfiguration: PromptsConfiguration,
 ) : ProviderClient {
     private val httpClient: HttpClient by lazy { ktorClientFactory.getHttpClient("openai") }
     override val provider: ModelProviderEnum = ModelProviderEnum.OPENAI
@@ -37,14 +38,14 @@ class OpenAiClient(
         prompt: PromptConfig,
         estimatedTokens: Int,
     ): LlmResponse {
-        val creativityConfig = getCreativityConfig(prompt)
         val messages = buildMessagesList(systemPrompt, userPrompt)
-        val requestBody = buildRequestBody(model, messages, creativityConfig, config)
+        val requestBody = buildRequestBody(model, messages, config)
 
         val response: OpenAiStyleResponse =
-            httpClient.post("/chat/completions") {
-                setBody(requestBody)
-            }.body()
+            httpClient
+                .post("/chat/completions") {
+                    setBody(requestBody)
+                }.body()
 
         return parseResponse(response, model)
     }
@@ -59,9 +60,8 @@ class OpenAiClient(
         debugSessionId: String?,
     ): Flow<StreamChunk> =
         flow {
-            val creativityConfig = getCreativityConfig(prompt)
             val messages = buildMessagesList(systemPrompt, userPrompt)
-            val requestBody = buildStreamingRequestBody(model, messages, creativityConfig, config)
+            val requestBody = buildStreamingRequestBody(model, messages, config)
 
             val response: HttpResponse =
                 httpClient.post("/chat/completions") {
@@ -129,7 +129,7 @@ class OpenAiClient(
                                 finishReason = chunkFinishReason
                             }
                         }
-                    } catch (e: Exception) {
+                    } catch (_: Exception) {
                         // Log error but continue streaming
                     }
                 }
@@ -154,18 +154,14 @@ class OpenAiClient(
     private fun buildRequestBody(
         model: String,
         messages: List<Map<String, Any>>,
-        creativityConfig: CreativityConfig,
         config: ModelsProperties.ModelDetail,
     ): Map<String, Any> {
         val baseBody =
             mapOf(
                 "model" to model,
                 "messages" to messages,
-                "temperature" to creativityConfig.temperature,
-                "top_p" to creativityConfig.topP,
             )
 
-        // max_tokens: Maximum tokens for response (output only)
         return config.numPredict
             ?.let { baseBody + ("max_tokens" to it) }
             ?: baseBody
@@ -192,16 +188,11 @@ class OpenAiClient(
     private fun buildStreamingRequestBody(
         model: String,
         messages: List<Map<String, Any>>,
-        creativityConfig: CreativityConfig,
         config: ModelsProperties.ModelDetail,
     ): Map<String, Any> {
-        val baseBody = buildRequestBody(model, messages, creativityConfig, config)
+        val baseBody = buildRequestBody(model, messages, config)
         return baseBody + mapOf("stream" to true)
     }
-
-    private fun getCreativityConfig(prompt: PromptConfig) =
-        promptsConfiguration.creativityLevels[prompt.modelParams.creativityLevel]
-            ?: throw IllegalStateException("No creativity level configuration found for ${prompt.modelParams.creativityLevel}")
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     data class OpenAiStyleResponse(

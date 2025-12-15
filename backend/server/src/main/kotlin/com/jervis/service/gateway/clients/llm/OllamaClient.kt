@@ -1,24 +1,25 @@
 package com.jervis.service.gateway.clients.llm
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.jervis.configuration.KtorClientFactory
-import com.jervis.configuration.prompts.CreativityConfig
 import com.jervis.configuration.prompts.PromptConfig
-import com.jervis.configuration.prompts.PromptsConfiguration
 import com.jervis.configuration.properties.ModelsProperties
-import com.jervis.configuration.properties.OllamaProperties
 import com.jervis.domain.gateway.StreamChunk
 import com.jervis.domain.llm.LlmResponse
 import com.jervis.domain.model.ModelProviderEnum
+import com.jervis.domain.model.ModelTypeEnum
 import com.jervis.service.gateway.clients.ProviderClient
-import io.ktor.client.*
-import io.ktor.client.call.*
-import io.ktor.client.plugins.*
-import io.ktor.client.request.*
-import io.ktor.client.statement.*
-import io.ktor.http.*
-import io.ktor.utils.io.*
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.plugins.ResponseException
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import mu.KotlinLogging
@@ -28,13 +29,10 @@ import java.util.concurrent.ConcurrentHashMap
 @Service
 class OllamaClient(
     private val ktorClientFactory: KtorClientFactory,
-    private val promptsConfiguration: PromptsConfiguration,
-    private val ollamaProps: OllamaProperties,
 ) : ProviderClient {
     private val primaryHttpClient: HttpClient by lazy { ktorClientFactory.getHttpClient("ollama.primary") }
     private val qualifierHttpClient: HttpClient by lazy { ktorClientFactory.getHttpClient("ollama.qualifier") }
     private val logger = KotlinLogging.logger {}
-    private val defaultKeepAlive: String get() = ollamaProps.keepAlive.default
 
     private val ensuredModels: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
@@ -46,7 +44,7 @@ class OllamaClient(
      */
     private fun selectHttpClient(prompt: PromptConfig): HttpClient =
         when (prompt.modelParams.modelType) {
-            com.jervis.domain.model.ModelTypeEnum.QUALIFIER -> qualifierHttpClient
+            ModelTypeEnum.QUALIFIER -> qualifierHttpClient
             else -> primaryHttpClient
         }
 
@@ -59,7 +57,7 @@ class OllamaClient(
         estimatedTokens: Int,
     ): LlmResponse {
         val httpClient = selectHttpClient(prompt)
-        return callWithHttpClient(httpClient, model, systemPrompt, userPrompt, config, prompt, estimatedTokens)
+        return callWithHttpClient(httpClient, model, systemPrompt, userPrompt, config, estimatedTokens)
     }
 
     /**
@@ -71,13 +69,12 @@ class OllamaClient(
         systemPrompt: String?,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
-        prompt: PromptConfig,
         estimatedTokens: Int,
     ): LlmResponse {
         val responseBuilder = StringBuilder()
         var finalMetadata: Map<String, Any> = emptyMap()
 
-        callWithStreamingHttpClient(httpClient, model, systemPrompt, userPrompt, config, prompt, estimatedTokens)
+        callWithStreamingHttpClient(httpClient, model, systemPrompt, userPrompt, config, estimatedTokens)
             .collect { chunk ->
                 responseBuilder.append(chunk.content)
                 if (chunk.isComplete) {
@@ -105,7 +102,7 @@ class OllamaClient(
         debugSessionId: String?,
     ): Flow<StreamChunk> {
         val httpClient = selectHttpClient(prompt)
-        return callWithStreamingHttpClient(httpClient, model, systemPrompt, userPrompt, config, prompt, estimatedTokens)
+        return callWithStreamingHttpClient(httpClient, model, systemPrompt, userPrompt, config, estimatedTokens)
     }
 
     /**
@@ -117,17 +114,13 @@ class OllamaClient(
         systemPrompt: String?,
         userPrompt: String,
         config: ModelsProperties.ModelDetail,
-        prompt: PromptConfig,
         estimatedTokens: Int,
     ): Flow<StreamChunk> =
         flow {
-            // Ensure model is available (pulled); waits for pull if missing
             ensureModelAvailable(httpClient, model)
 
-            val creativityConfig = getCreativityConfig(prompt)
-            val options = buildOptions(creativityConfig, config, estimatedTokens)
-            val keepAlive: String? = defaultKeepAlive.takeUnless { it.isBlank() }
-            val requestBody = buildRequestBody(model, userPrompt, systemPrompt, options, keepAlive)
+            val options = buildOptions(config, estimatedTokens)
+            val requestBody = buildRequestBody(model, userPrompt, systemPrompt, options)
 
             val response: HttpResponse =
                 httpClient.post("/api/generate") {
@@ -136,10 +129,10 @@ class OllamaClient(
                 }
 
             val responseBuilder = StringBuilder()
-            var totalPromptTokens = 0
-            var totalCompletionTokens = 0
-            var finalModel = model
-            var finishReason = "stop"
+            var totalPromptTokens: Int
+            var totalCompletionTokens: Int
+            var finalModel: String
+            var finishReason: String
 
             val channel: ByteReadChannel = response.bodyAsChannel()
             while (!channel.isClosedForRead) {
@@ -196,9 +189,10 @@ class OllamaClient(
         if (ensuredModels.contains(model)) return
         try {
             val showBody = mapOf("name" to model)
-            httpClient.post("/api/show") {
-                setBody(showBody)
-            }.body<Map<String, Any>>()
+            httpClient
+                .post("/api/show") {
+                    setBody(showBody)
+                }.body<Map<String, Any>>()
             logger.debug { "Ollama model available: $model" }
             ensuredModels.add(model)
         } catch (e: ResponseException) {
@@ -219,30 +213,17 @@ class OllamaClient(
     ) {
         val body = mapOf("name" to model)
         val resp =
-            httpClient.post("/api/pull") {
-                setBody(body)
-            }.body<Map<String, Any>>()
+            httpClient
+                .post("/api/pull") {
+                    setBody(body)
+                }.body<Map<String, Any>>()
         logger.info { "Ollama pull completed for $model before first use: $resp" }
     }
 
     private fun buildOptions(
-        creativityConfig: CreativityConfig,
         config: ModelsProperties.ModelDetail,
         estimatedTokens: Int,
     ): Map<String, Any> {
-        val temperatureOption =
-            creativityConfig.temperature
-                .takeIf { it > 0.0 }
-                ?.let { mapOf("temperature" to it) }
-                ?: emptyMap()
-
-        val topPOption =
-            creativityConfig.topP
-                .takeIf { it in 0.0..1.0 }
-                ?.let { mapOf("top_p" to it) }
-                ?: emptyMap()
-
-        // num_predict: Maximum tokens for response (from configuration, default 4096)
         val numPredict = config.numPredict ?: 4096
         val maxTokensOption = mapOf("num_predict" to numPredict)
 
@@ -262,7 +243,7 @@ class OllamaClient(
 
         val contextLengthOption = mapOf("num_ctx" to finalNumCtx)
 
-        return temperatureOption + topPOption + maxTokensOption + contextLengthOption
+        return maxTokensOption + contextLengthOption
     }
 
     private fun buildRequestBody(
@@ -270,7 +251,6 @@ class OllamaClient(
         userPrompt: String,
         systemPrompt: String?,
         options: Map<String, Any>,
-        keepAlive: String?,
     ): Map<String, Any> {
         val baseBody =
             mapOf(
@@ -291,41 +271,6 @@ class OllamaClient(
                 ?.let { mapOf("options" to it) }
                 ?: emptyMap()
 
-        val keepAliveField =
-            keepAlive
-                ?.takeUnless { it.isBlank() }
-                ?.let { mapOf("keep_alive" to it) }
-                ?: emptyMap()
-
-        return baseBody + systemField + optionsField + keepAliveField
+        return baseBody + systemField + optionsField
     }
-
-    private fun parseResponse(
-        response: OllamaGenerateResponse,
-        fallbackModel: String,
-    ): LlmResponse =
-        LlmResponse(
-            answer = response.response,
-            model = response.model ?: fallbackModel,
-            promptTokens = response.prompt_eval_count ?: 0,
-            completionTokens = response.eval_count ?: 0,
-            totalTokens = calculateTotalTokens(response),
-            finishReason = response.done_reason ?: "stop",
-        )
-
-    private fun calculateTotalTokens(response: OllamaGenerateResponse): Int = (response.prompt_eval_count ?: 0) + (response.eval_count ?: 0)
-
-    private fun getCreativityConfig(prompt: PromptConfig) =
-        promptsConfiguration.creativityLevels[prompt.modelParams.creativityLevel]
-            ?: throw IllegalStateException("No creativity level configuration found for ${prompt.modelParams.creativityLevel}")
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    data class OllamaGenerateResponse(
-        val model: String? = null,
-        val response: String = "",
-        val done_reason: String? = null,
-        val prompt_eval_count: Int? = null,
-        val eval_count: Int? = null,
-        val created_at: String? = null,
-    )
 }

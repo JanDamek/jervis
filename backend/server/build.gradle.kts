@@ -102,12 +102,13 @@ dependencies {
     // LangChain4j for text chunking
     implementation(libs.langchain4j)
 
+    // JTokkit for token counting
+    implementation(libs.jtokkit)
+
     // Bucket4j for rate limiting
     implementation("com.bucket4j:bucket4j-core:8.10.1")
 
-    // JetBrains Koog – complex workflow agents (official framework)
-    // Pinned to 0.5.3 as requested
-    implementation("ai.koog:koog-agents:0.5.3")
+    implementation(libs.koog.agents)
 }
 
 kotlin {

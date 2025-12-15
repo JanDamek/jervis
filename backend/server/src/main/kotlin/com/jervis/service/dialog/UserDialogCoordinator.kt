@@ -1,12 +1,13 @@
 package com.jervis.service.dialog
 
 import com.jervis.service.notification.NotificationsPublisher
+import com.jervis.types.ClientId
+import com.jervis.types.ProjectId
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import mu.KotlinLogging
-import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 import java.time.Instant
 import java.util.UUID
@@ -34,14 +35,14 @@ class UserDialogCoordinator(
     private data class ActiveDialog(
         val dialogId: String,
         val correlationId: String,
-        val clientId: ObjectId,
-        val projectId: ObjectId?,
+        val clientId: ClientId,
+        val projectId: ProjectId?,
         val result: CompletableDeferred<DialogResult>,
     )
 
     suspend fun requestDialog(
-        clientId: ObjectId,
-        projectId: ObjectId?,
+        clientId: ClientId,
+        projectId: ProjectId?,
         correlationId: String,
         question: String,
         proposedAnswer: String?,

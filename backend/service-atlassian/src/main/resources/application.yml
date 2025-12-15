@@ -1,0 +1,20 @@
+server:
+  port: 8084
+  compression:
+    enabled: true
+    mime-types: application/json,application/*+json
+    min-response-size: 1024
+
+spring:
+  codec:
+    max-in-memory-size: 64MB
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health"
+  endpoint:
+    health:
+      probes:
+        enabled: true

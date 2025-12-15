@@ -4,8 +4,16 @@ import com.jervis.dto.ScheduledTaskDto
 import com.jervis.mapper.toDto
 import com.jervis.service.ITaskSchedulingService
 import com.jervis.service.scheduling.TaskSchedulingService
+import com.jervis.types.ClientId
+import com.jervis.types.ProjectId
 import org.bson.types.ObjectId
-import org.springframework.web.bind.annotation.*
+import org.springframework.web.bind.annotation.DeleteMapping
+import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.bind.annotation.RestController
 import java.time.Instant
 
 @RestController
@@ -24,8 +32,8 @@ class TaskSchedulingRestController(
     ): ScheduledTaskDto =
         taskSchedulingService
             .scheduleTask(
-                clientId = ObjectId(clientId),
-                projectId = projectId?.let { ObjectId(it) },
+                clientId = ClientId(ObjectId(clientId)),
+                projectId = projectId?.let { ProjectId(ObjectId(it)) },
                 content = content,
                 taskName = taskName,
                 scheduledAt = Instant.now(),

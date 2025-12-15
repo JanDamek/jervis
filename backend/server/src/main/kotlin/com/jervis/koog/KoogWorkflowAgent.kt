@@ -4,33 +4,53 @@ import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.dsl.builder.forwardTo
 import ai.koog.agents.core.dsl.builder.strategy
-import ai.koog.agents.core.dsl.extension.*
+import ai.koog.agents.core.dsl.extension.nodeExecuteTool
+import ai.koog.agents.core.dsl.extension.nodeLLMCompressHistory
+import ai.koog.agents.core.dsl.extension.nodeLLMRequest
+import ai.koog.agents.core.dsl.extension.nodeLLMSendToolResult
+import ai.koog.agents.core.dsl.extension.onAssistantMessage
+import ai.koog.agents.core.dsl.extension.onToolCall
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.core.tools.reflect.tools
-import ai.koog.prompt.dsl.Prompt
-import ai.koog.prompt.llm.LLModel
-import ai.koog.prompt.llm.LLMProvider
-import com.jervis.domain.plan.Plan
-import com.jervis.graphdb.GraphDBService
-import com.jervis.graphdb.model.Direction
-import ai.koog.agents.ext.tool.file.*
+import ai.koog.agents.ext.tool.file.EditFileTool
+import ai.koog.agents.ext.tool.file.ListDirectoryTool
+import ai.koog.agents.ext.tool.file.ReadFileTool
+import ai.koog.agents.ext.tool.file.WriteFileTool
 import ai.koog.agents.ext.tool.shell.ExecuteShellCommandTool
 import ai.koog.agents.ext.tool.shell.JvmShellCommandExecutor
 import ai.koog.agents.ext.tool.shell.PrintShellCommandConfirmationHandler
+import ai.koog.prompt.dsl.Prompt
+import ai.koog.prompt.llm.LLMCapability
+import ai.koog.prompt.llm.LLMProvider
+import ai.koog.prompt.llm.LLModel
 import ai.koog.rag.base.files.JVMFileSystemProvider
-import com.jervis.koog.tools.*
-import com.jervis.rag.EmbeddingType
+import com.jervis.configuration.properties.KoogProperties
+import com.jervis.entity.PendingTaskDocument
+import com.jervis.graphdb.GraphDBService
+import com.jervis.graphdb.model.Direction
+import com.jervis.koog.tools.AiderCodingTool
+import com.jervis.koog.tools.CommunicationTools
+import com.jervis.koog.tools.GraphTools
+import com.jervis.koog.tools.OpenHandsCodingTool
+import com.jervis.koog.tools.RagTools
+import com.jervis.koog.tools.TaskTools
 import com.jervis.rag.KnowledgeService
 import com.jervis.rag.SearchRequest
-import com.jervis.service.agent.AgentMemoryService
 import com.jervis.service.background.PendingTaskService
-import com.jervis.service.dialog.UserDialogCoordinator
-import com.jervis.service.link.LinkIndexingService
+import com.jervis.service.coding.AiderCodingEngine
+import com.jervis.service.coding.ModelSelectionService
+import com.jervis.service.coding.OpenHandsCodingEngine
+import com.jervis.service.link.IndexedLinkService
+import com.jervis.service.link.LinkContentService
 import com.jervis.service.scheduling.TaskManagementService
 import com.jervis.service.task.UserTaskService
-import kotlinx.coroutines.runBlocking
+import com.jervis.service.token.TokenCountingService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * KoogWorkflowAgent - modular multi-subgraph architecture for JERVIS workflows.
@@ -58,30 +78,39 @@ import org.springframework.stereotype.Service
  */
 @Service
 class KoogWorkflowAgent(
-    private val memoryService: AgentMemoryService,
     private val knowledgeService: KnowledgeService,
     private val taskManagementService: TaskManagementService,
     private val userTaskService: UserTaskService,
-    private val userDialogCoordinator: UserDialogCoordinator,
-    private val linkIndexingService: LinkIndexingService,
-    private val pendingTaskService: PendingTaskService,
     private val promptExecutorFactory: KoogPromptExecutorFactory,
-    private val taskMemoryService: com.jervis.service.agent.TaskMemoryService,
+    private val koogProperties: KoogProperties,
+    private val aiderCodingEngine: AiderCodingEngine,
+    private val openHandsCodingEngine: OpenHandsCodingEngine,
+    private val modelSelectionService: ModelSelectionService,
+    private val pendingTaskService: PendingTaskService,
+    private val linkContentService: LinkContentService,
+    private val indexedLinkService: IndexedLinkService,
+    private val smartModelSelector: SmartModelSelector,
+    private val tokenCountingService: TokenCountingService,
 ) {
     private val logger = KotlinLogging.logger {}
+    private val activeAgents = ConcurrentHashMap<String, String>()
+
+    private val supervisor = SupervisorJob()
+    private val scope = CoroutineScope(Dispatchers.IO + supervisor)
+
+    fun isProviderInUse(providerName: String): Boolean = activeAgents.containsValue(providerName)
+
     data class EnrichmentContext(
         val ragContext: String,
         val graphContext: String,
-        val targetLanguage: String,
+        val originalLanguage: String,
     )
 
-    fun create(
-        plan: Plan,
+    suspend fun create(
+        task: PendingTaskDocument,
         graph: GraphDBService,
-        providerName: String = "OLLAMA",
-        modelName: String = "qwen3:30b",
     ): AIAgent<String, String> {
-        val promptExecutor = promptExecutorFactory.createExecutor(providerName)
+        val promptExecutor = promptExecutorFactory.getExecutor("OLLAMA")
 
         val agentStrategy =
             strategy("JERVIS modular workflow") {
@@ -89,60 +118,58 @@ class KoogWorkflowAgent(
                 // PARALLEL ENRICHMENT - RAG + Graph simultaneously
                 // =================================================================
                 val nodeParallelEnrich by node<String, EnrichmentContext> { input ->
-                    val ragResult = runBlocking {
+                    val ragResult =
                         try {
-                            val query = plan.initialRagQueries.firstOrNull()?.take(500) ?: input.take(500)
-                            val searchRequest = SearchRequest(
-                                query = query,
-                                clientId = plan.clientDocument.id,
-                                projectId = plan.projectDocument?.id,
-                                maxResults = 15,
-                                minScore = 0.55,
-                                embeddingType = EmbeddingType.TEXT,
-                                knowledgeTypes = null,
-                            )
+                            val query = input.take(500)
+                            val searchRequest =
+                                SearchRequest(
+                                    query = query,
+                                    clientId = task.clientId,
+                                    projectId = task.projectId,
+                                    maxResults = 15,
+                                    minScore = 0.55,
+                                )
                             knowledgeService.search(searchRequest).text
                         } catch (_: Exception) {
                             ""
                         }
-                    }
 
-                    val graphResult = runBlocking {
+                    val graphResult =
                         try {
-                            val clientKey = "client::${plan.clientDocument.id.toHexString()}"
-                            val projectKey = plan.projectDocument?.id?.toHexString()?.let { "project::$it" }
-                            val key = projectKey ?: clientKey
-                            val nodes = graph.getRelated(
-                                clientId = plan.clientDocument.id.toHexString(),
-                                nodeKey = key,
-                                edgeTypes = emptyList(),
-                                direction = Direction.ANY,
-                                limit = 20,
-                            )
-                            if (nodes.isEmpty()) "" else buildString {
-                                appendLine("Graph related nodes (summary):")
-                                nodes.take(20).forEach { n ->
-                                    val title = (n.props["title"] ?: n.props["name"])?.toString()
-                                    append("- ").append(n.key)
-                                    title?.let { append(" :: ").append(it) }
-                                    appendLine()
+                            val projectKey = "project::${task.projectId ?: "none"}"
+                            val nodes =
+                                graph.getRelated(
+                                    clientId = task.clientId,
+                                    nodeKey = projectKey,
+                                    edgeTypes = emptyList(),
+                                    direction = Direction.ANY,
+                                    limit = 20,
+                                )
+                            if (nodes.isEmpty()) {
+                                ""
+                            } else {
+                                buildString {
+                                    appendLine("Graph related nodes (summary):")
+                                    nodes.take(20).forEach { n ->
+                                        append("- ").append(n.key)
+                                        appendLine()
+                                    }
                                 }
                             }
                         } catch (_: Exception) {
                             ""
                         }
-                    }
 
                     EnrichmentContext(
                         ragContext = ragResult,
                         graphContext = graphResult,
-                        targetLanguage = plan.originalLanguage.ifBlank { "EN" },
+                        originalLanguage = "EN", // TODO detect original languahge in prompt
                     )
                 }
 
                 val nodePrepareInput by node<EnrichmentContext, String> { ctx ->
                     buildString {
-                        appendLine("TARGET_LANGUAGE: ${ctx.targetLanguage}")
+                        appendLine("TARGET_LANGUAGE: ${ctx.originalLanguage}")
                         if (ctx.ragContext.isNotBlank()) {
                             appendLine("\n[RAG]\n${ctx.ragContext}")
                         }
@@ -153,10 +180,6 @@ class KoogWorkflowAgent(
                     }.trim()
                 }
 
-                // =================================================================
-                // RESEARCH SUBGRAPH - Information gathering
-                // Tools: RAG search, Graph query, Memory read, File read, Directory list
-                // =================================================================
                 val researchSubgraph by subgraph<String, String>(
                     name = "research",
                 ) {
@@ -170,21 +193,21 @@ class KoogWorkflowAgent(
                     edge((nodeSendInput forwardTo nodeExecuteTool).onToolCall { true })
 
                     // Compress history if too large
-                    edge((nodeExecuteTool forwardTo nodeCompressHistory)
-                        .onCondition { llm.readSession { prompt.messages.size > 50 } })
+                    edge(
+                        (nodeExecuteTool forwardTo nodeCompressHistory)
+                            .onCondition { llm.readSession { prompt.messages.size > 50 } },
+                    )
                     edge(nodeCompressHistory forwardTo nodeSendToolResult)
 
-                    edge((nodeExecuteTool forwardTo nodeSendToolResult)
-                        .onCondition { llm.readSession { prompt.messages.size <= 50 } })
+                    edge(
+                        (nodeExecuteTool forwardTo nodeSendToolResult)
+                            .onCondition { llm.readSession { prompt.messages.size <= 50 } },
+                    )
 
                     edge((nodeSendToolResult forwardTo nodeFinish).onAssistantMessage { true })
                     edge((nodeSendToolResult forwardTo nodeExecuteTool).onToolCall { true })
                 }
 
-                // =================================================================
-                // ANALYSIS SUBGRAPH - Decision making
-                // Tools: RAG search, Graph operations, Memory operations
-                // =================================================================
                 val analysisSubgraph by subgraph<String, String>(
                     name = "analysis",
                 ) {
@@ -197,21 +220,21 @@ class KoogWorkflowAgent(
                     edge((nodeSendInput forwardTo nodeFinish).onAssistantMessage { true })
                     edge((nodeSendInput forwardTo nodeExecuteTool).onToolCall { true })
 
-                    edge((nodeExecuteTool forwardTo nodeCompressHistory)
-                        .onCondition { llm.readSession { prompt.messages.size > 50 } })
+                    edge(
+                        (nodeExecuteTool forwardTo nodeCompressHistory)
+                            .onCondition { llm.readSession { prompt.messages.size > 50 } },
+                    )
                     edge(nodeCompressHistory forwardTo nodeSendToolResult)
 
-                    edge((nodeExecuteTool forwardTo nodeSendToolResult)
-                        .onCondition { llm.readSession { prompt.messages.size <= 50 } })
+                    edge(
+                        (nodeExecuteTool forwardTo nodeSendToolResult)
+                            .onCondition { llm.readSession { prompt.messages.size <= 50 } },
+                    )
 
                     edge((nodeSendToolResult forwardTo nodeFinish).onAssistantMessage { true })
                     edge((nodeSendToolResult forwardTo nodeExecuteTool).onToolCall { true })
                 }
 
-                // =================================================================
-                // EXECUTION SUBGRAPH - Action execution
-                // Tools: File write/edit, Shell commands, Task management, Communication
-                // =================================================================
                 val executionSubgraph by subgraph<String, String>(
                     name = "execution",
                 ) {
@@ -225,21 +248,21 @@ class KoogWorkflowAgent(
                     edge((nodeSendInput forwardTo nodeExecuteTool).onToolCall { true })
 
                     // More aggressive compression for execution (large outputs)
-                    edge((nodeExecuteTool forwardTo nodeCompressHistory)
-                        .onCondition { llm.readSession { prompt.messages.size > 30 } })
+                    edge(
+                        (nodeExecuteTool forwardTo nodeCompressHistory)
+                            .onCondition { llm.readSession { prompt.messages.size > 30 } },
+                    )
                     edge(nodeCompressHistory forwardTo nodeSendToolResult)
 
-                    edge((nodeExecuteTool forwardTo nodeSendToolResult)
-                        .onCondition { llm.readSession { prompt.messages.size <= 30 } })
+                    edge(
+                        (nodeExecuteTool forwardTo nodeSendToolResult)
+                            .onCondition { llm.readSession { prompt.messages.size <= 30 } },
+                    )
 
                     edge((nodeSendToolResult forwardTo nodeFinish).onAssistantMessage { true })
                     edge((nodeSendToolResult forwardTo nodeExecuteTool).onToolCall { true })
                 }
 
-                // =================================================================
-                // STORAGE SUBGRAPH - Persist results
-                // Tools: RAG store, Graph upsert, Memory write
-                // =================================================================
                 val storageSubgraph by subgraph<String, String>(
                     name = "storage",
                 ) {
@@ -255,20 +278,38 @@ class KoogWorkflowAgent(
                     edge((nodeSendToolResult forwardTo nodeExecuteTool).onToolCall { true })
                 }
 
-                // =================================================================
-                // MAIN FLOW - Enrichment -> Subgraphs -> Finish
-                // =================================================================
                 edge(nodeStart forwardTo nodeParallelEnrich)
                 edge(nodeParallelEnrich forwardTo nodePrepareInput)
 
-                // Route to appropriate subgraph based on input
-                // Default: go through all subgraphs in sequence for complex tasks
                 edge((nodePrepareInput forwardTo researchSubgraph).transformed { it })
                 edge((researchSubgraph forwardTo analysisSubgraph).transformed { it })
                 edge((analysisSubgraph forwardTo executionSubgraph).transformed { it })
                 edge((executionSubgraph forwardTo storageSubgraph).transformed { it })
                 edge((storageSubgraph forwardTo nodeFinish).transformed { it })
             }
+
+        // Dynamic model selection based on task content length
+        // SmartModelSelector uses exact BPE token counting (jtokkit)
+        // Workflow agent generates analysis, code, and actions - needs more output than input
+        // Formula: output ≈ 2x input (analysis + actions can be verbose)
+        val inputTokens = tokenCountingService.countTokens(task.content)
+        val dynamicOutputReserve = (inputTokens * 2).toInt().coerceAtLeast(4000)
+
+        val dynamicModel =
+            smartModelSelector.selectModel(
+                baseModelName = MODEL_WORKFLOW_NAME, // Base: qwen3-coder-tool:30b
+                inputContent = task.content,
+                outputReserve = dynamicOutputReserve, // Dynamic: 2x input tokens
+            )
+
+        logger.info {
+            "KoogWorkflowAgent | Dynamic model selected: ${dynamicModel.id} | " +
+                "contextLength=${dynamicModel.contextLength} | " +
+                "taskContentLength=${task.content.length} | " +
+                "inputTokens=$inputTokens | " +
+                "outputReserve=$dynamicOutputReserve | " +
+                "baseModel=$MODEL_WORKFLOW_NAME"
+        }
 
         val agentConfig =
             AIAgentConfig(
@@ -293,49 +334,77 @@ class KoogWorkflowAgent(
                             - Tasks: Schedule tasks, create user tasks, dialogs
                             - Communication: Email, Slack, Teams (mock for now)
                             - System: Index links, create background analysis tasks
+                            - Coding Tools: Aider (local surgical edits) and OpenHands (heavy isolated sandbox)
+
+                            CODING TOOLS - MODEL SELECTION:
+                            You have access to coding tools (Aider, OpenHands) that run on fast local models (Qwen) by default.
+
+                            WHEN TO USE PAID MODEL (set model='paid'):
+                            - Architecturally complex tasks requiring deep design knowledge
+                            - Security-critical code that needs thorough analysis
+                            - Large-scale refactoring across multiple modules
+                            - Complex business logic or algorithms
+                            - Production-critical changes
+
+                            WHEN TO USE DEFAULT (leave model empty):
+                            - Standard CRUD operations
+                            - Writing tests
+                            - Bug fixes
+                            - Getters/setters, DTOs, mappers
+                            - Simple refactoring
+                            - Documentation updates
 
                             GUIDELINES:
                             - Store important findings as MEMORY for future reference
                             - Create user tasks for items requiring human action
                             - Always respond in TARGET_LANGUAGE from context
                             - Be concise and actionable
+                            - For code changes: prefer Aider for small, file-scoped fixes/refactors when target files are known;
+                              use OpenHands for large tasks, running/debugging apps, or installing dependencies (K8s sandbox).
+                            - If Aider returns a jobId (async mode), poll progress using checkAiderStatus(jobId).
                             """.trimIndent(),
                         )
                     },
-                model = LLModel(LLMProvider.Ollama, modelName, emptyList(), 128000),
-                maxAgentIterations = 20,
+                model = dynamicModel, // Dynamic model from SmartModelSelector
+                maxAgentIterations = koogProperties.maxIterations,
             )
 
         val toolRegistry =
             ToolRegistry {
-                // File operations (read-only + write)
                 tools(
                     listOf(
                         ListDirectoryTool(JVMFileSystemProvider.ReadOnly),
                         ReadFileTool(JVMFileSystemProvider.ReadOnly),
                         EditFileTool(JVMFileSystemProvider.ReadWrite),
                         WriteFileTool(JVMFileSystemProvider.ReadWrite),
-                    )
+                    ),
                 )
 
-                // Shell execution
                 tools(
                     listOf(
                         ExecuteShellCommandTool(
                             JvmShellCommandExecutor(),
                             PrintShellCommandConfirmationHandler(),
-                        )
-                    )
+                        ),
+                    ),
                 )
 
-                // JERVIS native tools (ToolSets)
-                tools(TaskMemoryTool(plan, taskMemoryService)) // NEW: Load context from Qualifier
-                tools(RagTools(plan, knowledgeService))
-                tools(GraphTools(plan, graph))
-                tools(MemoryTools(plan, memoryService))
-                tools(TaskTools(plan, taskManagementService, userTaskService, userDialogCoordinator))
-                tools(SystemTools(plan, linkIndexingService, pendingTaskService))
-                tools(CommunicationTools(plan))
+                tools(RagTools(task, knowledgeService))
+                tools(GraphTools(task, graph))
+                tools(
+                    TaskTools(
+                        task = task,
+                        taskManagementService = taskManagementService,
+                        userTaskService = userTaskService,
+                        pendingTaskService = pendingTaskService,
+                        linkContentService = linkContentService,
+                        indexedLinkService = indexedLinkService,
+                        coroutineScope = scope,
+                    ),
+                )
+                tools(CommunicationTools(task))
+                tools(AiderCodingTool(task, aiderCodingEngine, modelSelectionService))
+                tools(OpenHandsCodingTool(task, openHandsCodingEngine, modelSelectionService))
             }
 
         return AIAgent(
@@ -347,33 +416,31 @@ class KoogWorkflowAgent(
     }
 
     suspend fun run(
-        plan: Plan,
+        task: PendingTaskDocument,
         graph: GraphDBService,
         userInput: String,
-        providerName: String = "OLLAMA",
-        modelName: String = "qwen3:30b",
     ): String {
         val startTime = System.currentTimeMillis()
+        val provider = "OLLAMA" // This agent always uses the main OLLAMA provider
 
         logger.info {
             "🟢 KOOG_WORKFLOW_START | " +
-            "correlationId=${plan.correlationId} | " +
-            "model=$modelName | " +
-            "provider=$providerName | " +
-            "clientId=${plan.clientDocument.id.toHexString()} | " +
-            "projectId=${plan.projectDocument?.id?.toHexString() ?: "none"} | " +
-            "userInputLength=${userInput.length}"
+                "correlationId=${task.correlationId} | " +
+                "clientId=${task.clientId} | " +
+                "projectId=${task.projectId ?: "none"} | " +
+                "userInputLength=${userInput.length}"
         }
 
+        activeAgents[task.correlationId] = provider
         try {
-            val agent: AIAgent<String, String> = create(plan, graph, providerName, modelName)
+            val agent: AIAgent<String, String> = create(task, graph)
 
             logger.info {
                 "🔧 KOOG_WORKFLOW_AGENT_CREATED | " +
-                "correlationId=${plan.correlationId} | " +
-                "maxIterations=20 | " +
-                "tools=[TaskMemory,RAG,Graph,Memory,Task,System,Communication,File,Shell] | " +
-                "subgraphs=[Research,Analysis,Execution,Storage]"
+                    "correlationId=${task.correlationId} | " +
+                    "maxIterations=${koogProperties.maxIterations} | " +
+                    "tools=[TaskMemory,RAG,Graph,Memory,Task,System,Communication,File,Shell] | " +
+                    "subgraphs=[Research,Analysis,Execution,Storage]"
             }
 
             val output: String = agent.run(userInput)
@@ -381,9 +448,9 @@ class KoogWorkflowAgent(
 
             logger.info {
                 "✅ KOOG_WORKFLOW_SUCCESS | " +
-                "correlationId=${plan.correlationId} | " +
-                "duration=${duration}ms | " +
-                "outputLength=${output.length}"
+                    "correlationId=${task.correlationId} | " +
+                    "duration=${duration}ms | " +
+                    "outputLength=${output.length}"
             }
 
             return output
@@ -391,11 +458,17 @@ class KoogWorkflowAgent(
             val duration = System.currentTimeMillis() - startTime
             logger.error(e) {
                 "❌ KOOG_WORKFLOW_FAILED | " +
-                "correlationId=${plan.correlationId} | " +
-                "duration=${duration}ms | " +
-                "error=${e.message}"
+                    "correlationId=${task.correlationId} | " +
+                    "duration=${duration}ms | " +
+                    "error=${e.message}"
             }
             throw e
+        } finally {
+            activeAgents.remove(task.correlationId)
         }
+    }
+
+    companion object {
+        const val MODEL_WORKFLOW_NAME = "qwen3-coder-tool:30b"
     }
 }
