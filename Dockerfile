@@ -3,7 +3,7 @@
 # - Evaluates Gradle task to deterministically get Joern version
 # - This layer only changes when Gradle configuration changes
 # ============================================
-FROM gradle:9.1.0-jdk21-corretto AS joern-version
+FROM gradle:9.2.1-jdk21-jammy AS joern-version
 
 WORKDIR /app
 
@@ -34,7 +34,7 @@ RUN export DOCKER_BUILD=true && \
 # Stage: Download and install Joern (rebuilds only if version changes)
 # - Uses Alpine and streams ZIP directly into bsdtar to reduce disk usage
 # ============================================
-FROM alpine:3.20 AS joern-install
+FROM alpine:3.23 AS joern-install
 
 COPY --from=joern-version /joern-version.txt /joern-version.txt
 
@@ -52,7 +52,7 @@ RUN apk add --no-cache \
 # ============================================
 # Stage: Build the application (always part of image creation)
 # ============================================
-FROM gradle:9.1.0-jdk21-corretto AS builder
+FROM gradle:9.2.1-jdk21-jammy AS builder
 
 WORKDIR /app
 
@@ -230,8 +230,12 @@ ENTRYPOINT ["sh", "-c", "mkdir -p ${DATA_ROOT_DIR} && java ${JAVA_OPTS} -Ddata.r
 FROM eclipse-temurin:21-jre-jammy AS openhands-base
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    python3 python3-pip python3-venv \
+    software-properties-common \
     git curl ca-certificates gnupg \
+    && add-apt-repository ppa:deadsnakes/ppa -y \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+    python3.12 python3.12-venv python3.12-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN install -m 0755 -d /etc/apt/keyrings && \
@@ -246,7 +250,7 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
     rm -rf /var/lib/apt/lists/*
 
 ENV VIRTUAL_ENV=/opt/venv
-RUN python3 -m venv $VIRTUAL_ENV
+RUN python3.12 -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir openhands-ai
@@ -316,8 +320,8 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Install MongoDB Shell (mongosh) for database migrations
-RUN wget -qO- https://www.mongodb.org/static/pgp/server-7.0.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg && \
-    echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list && \
+RUN wget -qO- https://www.mongodb.org/static/pgp/server-8.0.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-8.0.gpg && \
+    echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list && \
     apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends mongodb-mongosh && \
     rm -rf /var/lib/apt/lists/*
