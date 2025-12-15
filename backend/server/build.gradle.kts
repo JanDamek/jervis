@@ -44,6 +44,7 @@ dependencies {
     implementation(libs.kotlin.reflect)
 
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotlinx.datetime)
 
     // Ktor HTTP client for integrations
     implementation(libs.ktor.client.core)

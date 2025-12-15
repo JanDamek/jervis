@@ -3,7 +3,7 @@ spring:
     name: jervis-aider
 
 server:
-  port: ${SERVER_PORT:8084}
+  port: ${SERVER_PORT:3100}
 
 aider:
   data-root-dir: ${DATA_ROOT_DIR:/opt/jervis/data}
