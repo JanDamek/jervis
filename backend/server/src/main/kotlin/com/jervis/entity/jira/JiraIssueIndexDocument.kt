@@ -35,42 +35,46 @@ import java.time.Instant
  * Sealed class structure requires _class discriminator field in MongoDB.
  * Old documents without _class will FAIL deserialization (fail-fast design).
  *
- * MIGRATION: Drop collection before starting server:
+ * MIGRATION: Drop a collection before starting the server:
  *   db.jira_issues.drop()
  *
- * All issues will be re-indexed from Jira on next polling cycle.
+ * All issues will be re-indexed from Jira in the next polling cycle.
  */
 @Document(collection = "jira_issues")
 @CompoundIndexes(
     CompoundIndex(name = "connection_state_idx", def = "{'connectionDocumentId': 1, 'state': 1}"),
-    CompoundIndex(name = "connection_issue_changelog_idx", def = "{'connectionDocumentId': 1, 'issueKey': 1, 'latestChangelogId': 1}", unique = true),
+    CompoundIndex(
+        name = "connection_issue_changelog_idx",
+        def = "{'connectionDocumentId': 1, 'issueKey': 1, 'latestChangelogId': 1}",
+        unique = true,
+    ),
     CompoundIndex(name = "client_state_idx", def = "{'clientId': 1, 'state': 1}"),
 )
 sealed class JiraIssueIndexDocument {
     abstract val id: ObjectId
-    abstract val clientId: ClientId
     abstract val connectionDocumentId: ConnectionId
     abstract val issueKey: String
-    abstract val latestChangelogId: String?  // Unique ID from Jira changelog - nullable for backward compatibility
+    abstract val latestChangelogId: String
     abstract val state: String
     abstract val jiraUpdatedAt: Instant
 
     /**
-     * NEW state - full issue data from Jira API, ready for indexing.
+     * NEW state-full issue data from Jira API, ready for indexing.
      */
     @TypeAlias("JiraNew")
     data class New(
-        @Id override val id: ObjectId = ObjectId.get(),
-        override val clientId: ClientId,
+        @Id
+        override val id: ObjectId = ObjectId(),
+        val clientId: ClientId,
         val projectId: ProjectId? = null,
         override val connectionDocumentId: ConnectionId,
         override val issueKey: String,
-        override val latestChangelogId: String?,  // Nullable for backward compatibility
-        val projectKey: String?,  // Nullable - old documents may have null
-        val summary: String?,  // Nullable - old documents may have null
+        override val latestChangelogId: String, // Nullable for backward compatibility
+        val projectKey: String?, // Nullable - old documents may have null
+        val summary: String?, // Nullable - old documents may have null
         val description: String?,
-        val issueType: String?,  // Nullable - old documents may have null
-        val status: String?,  // Nullable - old documents may have null
+        val issueType: String?, // Nullable - old documents may have null
+        val status: String?, // Nullable - old documents may have null
         val priority: String?,
         val assignee: String?,
         val reporter: String?,
@@ -78,7 +82,7 @@ sealed class JiraIssueIndexDocument {
         val comments: List<JiraComment> = emptyList(),
         val attachments: List<JiraAttachment> = emptyList(),
         val linkedIssues: List<String> = emptyList(),
-        val createdAt: Instant?,  // Nullable - old documents may have null
+        val createdAt: Instant?, // Nullable - old documents may have null
         override val jiraUpdatedAt: Instant,
     ) : JiraIssueIndexDocument() {
         override val state: String = "NEW"
@@ -90,12 +94,13 @@ sealed class JiraIssueIndexDocument {
      */
     @TypeAlias("JiraIndexed")
     data class Indexed(
-        @Id override val id: ObjectId,
-        override val clientId: ClientId,
+        @Id
+        override val id: ObjectId,
+        val clientId: ClientId,
         val projectId: ProjectId? = null,
         override val connectionDocumentId: ConnectionId,
         override val issueKey: String,
-        override val latestChangelogId: String?,  // Nullable for backward compatibility
+        override val latestChangelogId: String, // Nullable for backward compatibility
         override val jiraUpdatedAt: Instant,
     ) : JiraIssueIndexDocument() {
         override val state: String = "INDEXED"
@@ -106,17 +111,18 @@ sealed class JiraIssueIndexDocument {
      */
     @TypeAlias("JiraFailed")
     data class Failed(
-        @Id override val id: ObjectId,
-        override val clientId: ClientId,
+        @Id
+        override val id: ObjectId,
+        val clientId: ClientId,
         val projectId: ProjectId? = null,
         override val connectionDocumentId: ConnectionId,
         override val issueKey: String,
-        override val latestChangelogId: String?,  // Nullable for backward compatibility
-        val projectKey: String?,  // Nullable - old documents may have null
-        val summary: String?,  // Nullable - old documents may have null
+        override val latestChangelogId: String, // Nullable for backward compatibility
+        val projectKey: String?, // Nullable - old documents may have null
+        val summary: String?, // Nullable - old documents may have null
         val description: String?,
-        val issueType: String?,  // Nullable - old documents may have null
-        val status: String?,  // Nullable - old documents may have null
+        val issueType: String?, // Nullable - old documents may have null
+        val status: String?, // Nullable - old documents may have null
         val priority: String?,
         val assignee: String?,
         val reporter: String?,
@@ -124,7 +130,7 @@ sealed class JiraIssueIndexDocument {
         val comments: List<JiraComment> = emptyList(),
         val attachments: List<JiraAttachment> = emptyList(),
         val linkedIssues: List<String> = emptyList(),
-        val createdAt: Instant?,  // Nullable - old documents may have null
+        val createdAt: Instant?, // Nullable - old documents may have null
         override val jiraUpdatedAt: Instant,
         val indexingError: String,
     ) : JiraIssueIndexDocument() {

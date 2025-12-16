@@ -9,12 +9,8 @@ import com.jervis.entity.connection.HttpCredentials
 import com.jervis.repository.ConfluencePageIndexMongoRepository
 import com.jervis.service.connection.ConnectionService
 import com.jervis.types.ClientId
-import mu.KotlinLogging
-import org.bson.types.ObjectId
 import org.springframework.stereotype.Component
 import java.time.Instant
-
-private val logger = KotlinLogging.logger {}
 
 /**
  * Confluence page polling handler.
@@ -32,7 +28,7 @@ class ConfluencePollingHandler(
     private val repository: ConfluencePageIndexMongoRepository,
     private val atlassianClient: IAtlassianClient,
     connectionService: ConnectionService,
-) : DocumentationPollingHandlerBase<ConfluencePageIndexDocument, ConfluencePageIndexMongoRepository>(
+) : DocumentationPollingHandlerBase<ConfluencePageIndexDocument>(
         connectionService = connectionService,
     ) {
     override fun canHandle(connectionDocument: ConnectionDocument): Boolean =
@@ -55,49 +51,36 @@ class ConfluencePollingHandler(
         startAt: Int,
     ): List<ConfluencePageIndexDocument> {
         try {
-            logger.debug {
-                "Fetching Confluence pages: baseUrl=${connectionDocument.baseUrl} spaceKey=$spaceKey maxResults=$maxResults startAt=$startAt"
-            }
-
-            // Prepare auth info
             val authInfo =
                 when (credentials) {
                     is HttpCredentials.Basic -> AuthInfo("BASIC", credentials.username, credentials.password, null)
                     is HttpCredentials.Bearer -> AuthInfo("BEARER", null, null, credentials.token)
                 }
-            val authType = authInfo.authType
-            val username = authInfo.username
-            val password = authInfo.password
-            val bearerToken = authInfo.bearerToken
 
-            // Call service-atlassian API with pagination support
-            // Date formatting to CQL is handled by AtlassianApiClient
             val searchRequest =
                 ConfluenceSearchRequest(
                     baseUrl = connectionDocument.baseUrl,
-                    authType = authType,
-                    basicUsername = username,
-                    basicPassword = password,
-                    bearerToken = bearerToken,
+                    authType = authInfo.authType,
+                    basicUsername = authInfo.username,
+                    basicPassword = authInfo.password,
+                    bearerToken = authInfo.bearerToken,
                     spaceKey = spaceKey,
                     cql = null,
-                    lastModifiedSince = lastSeenUpdatedAt, // Instant type - no conversion needed
+                    lastModifiedSince = lastSeenUpdatedAt,
                     maxResults = maxResults,
                     startAt = startAt,
                 )
 
-            val response = atlassianClient.searchConfluencePages("connection-${connectionDocument.id}", searchRequest)
+            val response = atlassianClient.searchConfluencePages(searchRequest)
 
-            logger.info { "Fetched ${response.pages.size} Confluence pages (total=${response.total})" }
-
-            // Convert to ConfluencePageIndexDocument.New
             return response.pages.map { page ->
                 ConfluencePageIndexDocument.New(
                     clientId = clientId,
-                    connectionDocumentId = com.jervis.types.ConnectionId(connectionDocument.id),
+                    connectionDocumentId = connectionDocument.id,
                     pageId = page.id,
+                    versionNumber = page.version?.number ?: -1,
                     title = page.title,
-                    spaceKey = page.spaceKey ?: "",
+                    spaceKey = page.spaceKey,
                     pageType = "page",
                     status = "current",
                     content = null,
@@ -121,7 +104,7 @@ class ConfluencePollingHandler(
         if (isoString != null) {
             try {
                 Instant.parse(isoString)
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 Instant.now()
             }
         } else {
@@ -135,30 +118,23 @@ class ConfluencePollingHandler(
         val bearerToken: String?,
     )
 
-    override fun getPageId(page: ConfluencePageIndexDocument): String = page.pageId
-
     override fun getPageUpdatedAt(page: ConfluencePageIndexDocument): Instant = page.confluenceUpdatedAt
 
     override suspend fun findExisting(
-        connectionId: ObjectId,
-        pageId: String,
-    ): ConfluencePageIndexDocument? = repository.findByConnectionDocumentIdAndPageId(connectionId, pageId)
-
-    override fun getExistingUpdatedAt(existing: ConfluencePageIndexDocument): Instant = existing.confluenceUpdatedAt
-
-    override fun updateExisting(
-        existing: ConfluencePageIndexDocument,
-        newData: ConfluencePageIndexDocument,
-    ): ConfluencePageIndexDocument {
-        // Both existing and newData should be .New instances
-        require(newData is ConfluencePageIndexDocument.New) { "newData must be ConfluencePageIndexDocument.New" }
-        return newData.copy(
-            id = existing.id,
-            // Keep .New state to trigger re-indexing
+        connectionId: com.jervis.types.ConnectionId,
+        page: ConfluencePageIndexDocument,
+    ): ConfluencePageIndexDocument? =
+        repository.findByConnectionDocumentIdAndPageIdAndVersionNumber(
+            connectionId = connectionId.value,
+            pageId = page.pageId,
+            versionNumber = page.versionNumber,
         )
-    }
 
     override suspend fun savePage(page: ConfluencePageIndexDocument) {
-        repository.save(page)
+        try {
+            repository.save(page)
+        } catch (_: org.springframework.dao.DuplicateKeyException) {
+            logger.debug { "Page ${page.pageId} version ${page.versionNumber} already exists, skipping" }
+        }
     }
 }

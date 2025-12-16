@@ -7,9 +7,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import mu.KotlinLogging
 import org.bson.types.ObjectId
-import org.springframework.data.mongodb.core.ReactiveMongoTemplate
-import org.springframework.data.mongodb.core.query.Criteria
-import org.springframework.data.mongodb.core.query.Query
 import org.springframework.stereotype.Service
 import java.time.Instant
 
@@ -29,7 +26,6 @@ private val logger = KotlinLogging.logger {}
 @Service
 class JiraStateManager(
     private val repository: JiraIssueIndexMongoRepository,
-    private val mongoTemplate: ReactiveMongoTemplate,
 ) {
     companion object {
         private const val POLL_DELAY_MS = 30_000L // 30 seconds when no NEW issues
@@ -99,25 +95,18 @@ class JiraStateManager(
      * This is the content cleanup step - removes full description, comments, attachments.
      */
     suspend fun markAsIndexed(issue: JiraIssueIndexDocument.New) {
+        repository.deleteById(issue.id)
 
-        // Delete old NEW document
-        val deleteQuery = Query.query(Criteria.where("_id").`is`(issue.id))
-        mongoTemplate.remove(deleteQuery, JiraIssueIndexDocument::class.java).block()
-
-        // Insert minimal INDEXED document
-        val indexed =
-            JiraIssueIndexDocument.Indexed(
-                id = issue.id,
-                clientId = issue.clientId,
-                projectId = issue.projectId,
-                connectionDocumentId = issue.connectionDocumentId,
-                issueKey = issue.issueKey,
-                latestChangelogId = issue.latestChangelogId,
-                jiraUpdatedAt = issue.jiraUpdatedAt,
-            )
+        val indexed = JiraIssueIndexDocument.Indexed(
+            id = ObjectId(),
+            clientId = issue.clientId,
+            projectId = issue.projectId,
+            connectionDocumentId = issue.connectionDocumentId,
+            issueKey = issue.issueKey,
+            latestChangelogId = issue.latestChangelogId,
+            jiraUpdatedAt = issue.jiraUpdatedAt,
+        )
         repository.save(indexed)
-
-        logger.info { "Marked Jira issue ${issue.issueKey} as INDEXED (content cleaned)" }
     }
 
     /**
@@ -128,17 +117,12 @@ class JiraStateManager(
         issue: JiraIssueIndexDocument,
         reason: String,
     ) {
-        // Convert NEW to FAILED, keeping all data
         when (issue) {
             is JiraIssueIndexDocument.New -> {
-                // Delete old NEW document
-                val deleteQuery = Query.query(Criteria.where("_id").`is`(issue.id))
-                mongoTemplate.remove(deleteQuery, JiraIssueIndexDocument::class.java).block()
+                repository.deleteById(issue.id)
 
-                // Insert FAILED document with full data
-                val failed =
-                    JiraIssueIndexDocument.Failed(
-                        id = issue.id,
+                val failed = JiraIssueIndexDocument.Failed(
+                        id = ObjectId(),
                         clientId = issue.clientId,
                         projectId = issue.projectId,
                         connectionDocumentId = issue.connectionDocumentId,
@@ -161,20 +145,11 @@ class JiraStateManager(
                         indexingError = reason,
                     )
                 repository.save(failed)
-                logger.warn { "Marked Jira issue ${issue.issueKey} as FAILED: $reason" }
             }
 
             is JiraIssueIndexDocument.Failed -> {
-                // Already FAILED, just update error message
-                val deleteQuery = Query.query(Criteria.where("_id").`is`(issue.id))
-                mongoTemplate.remove(deleteQuery, JiraIssueIndexDocument::class.java).block()
-
-                val updated =
-                    issue.copy(
-                        indexingError = "${ issue.indexingError}; $reason",
-                    )
-                repository.save(updated)
-                logger.warn { "Updated FAILED Jira issue ${issue.issueKey}: $reason" }
+                repository.deleteById(issue.id)
+                repository.save(issue.copy(id = ObjectId(), indexingError = "${issue.indexingError}; $reason"))
             }
 
             is JiraIssueIndexDocument.Indexed -> {
@@ -187,14 +162,10 @@ class JiraStateManager(
      * Reset FAILED issue back to NEW for retry.
      */
     suspend fun resetFailedToNew(issue: JiraIssueIndexDocument.Failed) {
-        // Delete old FAILED document
-        val deleteQuery = Query.query(Criteria.where("_id").`is`(issue.id))
-        mongoTemplate.remove(deleteQuery, JiraIssueIndexDocument::class.java).block()
+        repository.deleteById(issue.id)
 
-        // Insert NEW document with full data
-        val newDoc =
-            JiraIssueIndexDocument.New(
-                id = issue.id,
+        val newDoc = JiraIssueIndexDocument.New(
+                id = ObjectId(),
                 clientId = issue.clientId,
                 projectId = issue.projectId,
                 connectionDocumentId = issue.connectionDocumentId,

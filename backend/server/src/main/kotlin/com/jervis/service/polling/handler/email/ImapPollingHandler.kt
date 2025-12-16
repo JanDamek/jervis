@@ -74,7 +74,7 @@ class ImapPollingHandler(
             val session = Session.getInstance(properties)
             val store = session.getStore("imap")
 
-            try {
+            store.use { store ->
                 store.connect(
                     connectionDocument.host,
                     connectionDocument.port,
@@ -136,9 +136,10 @@ class ImapPollingHandler(
                     }
 
                     // Filter out messages with UID <= lastFetchedUid (IMAP server bug workaround)
-                    val filteredMessages = newMessages.filterIndexed { index, _ ->
-                        allUids[index] > lastFetchedUid
-                    }
+                    val filteredMessages =
+                        newMessages.filterIndexed { index, _ ->
+                            allUids[index] > lastFetchedUid
+                        }
 
                     if (filteredMessages.isEmpty()) {
                         logger.debug { "All fetched messages already processed (UIDs <= $lastFetchedUid), skipping" }
@@ -150,7 +151,7 @@ class ImapPollingHandler(
 
                     logger.debug {
                         "After filtering: ${filteredMessages.size} messages with UIDs: [${filteredUids.joinToString()}], " +
-                        "maxUidFetched=$maxUidFetched"
+                            "maxUidFetched=$maxUidFetched"
                     }
 
                     // Process messages using base class logic
@@ -178,7 +179,9 @@ class ImapPollingHandler(
                                     ),
                             )
                         connectionService.save(updatedConnection)
-                        logger.debug { "Updated lastFetchedUid: $lastFetchedUid -> $maxUidFetched (processed: created=$created, skipped=$skipped)" }
+                        logger.debug {
+                            "Updated lastFetchedUid: $lastFetchedUid -> $maxUidFetched (processed: created=$created, skipped=$skipped)"
+                        }
                     } else if (filteredMessages.isNotEmpty()) {
                         logger.debug {
                             "Skipped update: maxUidFetched=$maxUidFetched <= lastFetchedUid=$lastFetchedUid " +
@@ -194,8 +197,6 @@ class ImapPollingHandler(
                 } finally {
                     folder.close(false)
                 }
-            } finally {
-                store.close()
             }
         }
 }

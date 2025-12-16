@@ -1,6 +1,7 @@
 package com.jervis.repository
 
 import com.jervis.entity.jira.JiraIssueIndexDocument
+import com.jervis.types.ConnectionId
 import kotlinx.coroutines.flow.Flow
 import org.bson.types.ObjectId
 import org.springframework.data.mongodb.repository.Query
@@ -27,9 +28,9 @@ interface JiraIssueIndexMongoRepository : CoroutineCrudRepository<JiraIssueIndex
     @Query(value = "{ 'state': 'NEW' }", count = true)
     suspend fun countNewActive(): Long
 
-    @Query("{ 'connectionDocumentId': ?0, 'issueKey': ?1 }")
-    suspend fun findByConnectionDocumentIdAndIssueKey(
-        connectionId: ObjectId,
+    suspend fun findByConnectionDocumentIdAndIssueKeyAndLatestChangelogId(
+        connectionDocumentId: ConnectionId,
         issueKey: String,
+        latestChangelogId: String?,
     ): JiraIssueIndexDocument?
 }

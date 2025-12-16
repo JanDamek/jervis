@@ -22,10 +22,6 @@ data class AttachmentMetadata(
     val storagePath: String,
     /** Attachment type classification */
     val type: AttachmentType,
-    /** Image dimensions for token estimation (null for non-images) */
-    val widthPixels: Int? = null,
-    /** Image dimensions for token estimation (null for non-images) */
-    val heightPixels: Int? = null,
     /** Vision analysis result (populated by Qualifier Agent) */
     var visionAnalysis: VisionAnalysisResult? = null,
 )
@@ -69,7 +65,7 @@ data class VisionAnalysisResult(
 )
 
 /**
- * Check if attachment should be processed with vision model.
+ * Check if attachment should be processed with a vision model.
  */
 fun AttachmentMetadata.shouldProcessWithVision(): Boolean =
     when (type) {
@@ -86,7 +82,7 @@ fun AttachmentMetadata.shouldProcessWithVision(): Boolean =
     }
 
 /**
- * Helper to classify attachment type based on MIME type.
+ * Helper to classify an attachment type based on a MIME type.
  */
 fun classifyAttachmentType(
     mimeType: String,

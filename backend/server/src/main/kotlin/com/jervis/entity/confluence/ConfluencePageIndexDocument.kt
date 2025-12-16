@@ -35,23 +35,24 @@ import java.time.Instant
  * Sealed class structure requires _class discriminator field in MongoDB.
  * Old documents without _class will FAIL deserialization (fail-fast design).
  *
- * MIGRATION: Drop collection before starting server:
+ * MIGRATION: Drop a collection before starting the server:
  *   db.confluence_pages.drop()
  *
- * All pages will be re-indexed from Confluence on next polling cycle.
+ * All pages will be re-indexed from Confluence in the next polling cycle.
  */
 @Document(collection = "confluence_pages")
 @CompoundIndexes(
-    CompoundIndex(name = "connection_state_idx", def = "{'connectionDocumentId': 1, 'state': 1}"),
-    CompoundIndex(name = "connection_page_idx", def = "{'connectionDocumentId': 1, 'pageId': 1}", unique = true),
-    CompoundIndex(name = "client_state_idx", def = "{'clientId': 1, 'state': 1}"),
+    CompoundIndex(
+        name = "connection_page_version_idx",
+        def = "{'connectionDocumentId': 1, 'pageId': 1, 'versionNumber': 1}",
+        unique = true,
+    ),
 )
 sealed class ConfluencePageIndexDocument {
     abstract val id: ObjectId
-    abstract val clientId: ClientId
     abstract val connectionDocumentId: ConnectionId
     abstract val pageId: String
-    abstract val state: String
+    abstract val versionNumber: Int
     abstract val confluenceUpdatedAt: Instant
 
     /**
@@ -59,27 +60,27 @@ sealed class ConfluencePageIndexDocument {
      */
     @TypeAlias("ConfluenceNew")
     data class New(
-        @Id override val id: ObjectId = ObjectId.get(),
-        override val clientId: ClientId,
+        @Id
+        override val id: ObjectId = ObjectId(),
+        val clientId: ClientId,
         val projectId: ProjectId? = null,
+        override val confluenceUpdatedAt: Instant,
         override val connectionDocumentId: ConnectionId,
         override val pageId: String,
-        val spaceKey: String,
-        val title: String,
+        override val versionNumber: Int,
+        val spaceKey: String?,
+        val title: String?,
         val content: String?,
         val parentPageId: String?,
-        val pageType: String = "page",
-        val status: String = "current",
+        val pageType: String?,
+        val status: String?,
         val creator: String?,
         val lastModifier: String?,
-        val labels: List<String> = emptyList(),
-        val comments: List<ConfluenceComment> = emptyList(),
-        val attachments: List<ConfluenceAttachment> = emptyList(),
-        val createdAt: Instant,
-        override val confluenceUpdatedAt: Instant,
-    ) : ConfluencePageIndexDocument() {
-        override val state: String = "NEW"
-    }
+        val labels: List<String>? = emptyList(),
+        val comments: List<ConfluenceComment>? = emptyList(),
+        val attachments: List<ConfluenceAttachment>? = emptyList(),
+        val createdAt: Instant?,
+    ) : ConfluencePageIndexDocument()
 
     /**
      * INDEXED state - minimal tracking record, actual data in RAG/Graph.
@@ -88,14 +89,13 @@ sealed class ConfluencePageIndexDocument {
     @TypeAlias("ConfluenceIndexed")
     data class Indexed(
         @Id override val id: ObjectId,
-        override val clientId: ClientId,
+        val clientId: ClientId,
         val projectId: ProjectId? = null,
-        override val connectionDocumentId: ConnectionId,
-        override val pageId: String,
+        override var connectionDocumentId: ConnectionId,
+        override var pageId: String,
+        override var versionNumber: Int,
         override val confluenceUpdatedAt: Instant,
-    ) : ConfluencePageIndexDocument() {
-        override val state: String = "INDEXED"
-    }
+    ) : ConfluencePageIndexDocument()
 
     /**
      * FAILED state - same as NEW but with error, full data kept for retry.
@@ -103,11 +103,13 @@ sealed class ConfluencePageIndexDocument {
     @TypeAlias("ConfluenceFailed")
     data class Failed(
         @Id override val id: ObjectId,
-        override val clientId: ClientId,
+        val clientId: ClientId,
         val projectId: ProjectId? = null,
+        override val confluenceUpdatedAt: Instant,
         override val connectionDocumentId: ConnectionId,
         override val pageId: String,
-        val spaceKey: String,
+        override val versionNumber: Int,
+        val spaceKey: String?,
         val title: String,
         val content: String?,
         val parentPageId: String?,
@@ -119,11 +121,8 @@ sealed class ConfluencePageIndexDocument {
         val comments: List<ConfluenceComment>,
         val attachments: List<ConfluenceAttachment>,
         val createdAt: Instant,
-        override val confluenceUpdatedAt: Instant,
         val indexingError: String,
-    ) : ConfluencePageIndexDocument() {
-        override val state: String = "FAILED"
-    }
+    ) : ConfluencePageIndexDocument()
 }
 
 /**

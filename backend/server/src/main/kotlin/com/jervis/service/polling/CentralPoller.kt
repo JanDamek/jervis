@@ -108,9 +108,11 @@ class CentralPoller(
         }
 
         logger.debug {
-            "Found ${connectionDocuments.size} enabled connection(s): ${connectionDocuments.joinToString(
-                ", ",
-            ) { "'${it.name}'" }}"
+            "Found ${connectionDocuments.size} enabled connection(s): ${
+                connectionDocuments.joinToString(
+                    ", ",
+                ) { "'${it.name}'" }
+            }"
         }
 
         // Wait for all polling jobs to complete
@@ -235,13 +237,14 @@ class CentralPoller(
         logger.warn { "ConnectionDocument ${connectionDocument.name} encountered authentication error during polling" }
 
         // Set connectionDocument to INVALID state using copy
-        val invalidConnection = when (connectionDocument) {
-            is ConnectionDocument.HttpConnectionDocument -> connectionDocument.copy(state = ConnectionStateEnum.INVALID)
-            is ConnectionDocument.ImapConnectionDocument -> connectionDocument.copy(state = ConnectionStateEnum.INVALID)
-            is ConnectionDocument.Pop3ConnectionDocument -> connectionDocument.copy(state = ConnectionStateEnum.INVALID)
-            is ConnectionDocument.SmtpConnectionDocument -> connectionDocument.copy(state = ConnectionStateEnum.INVALID)
-            is ConnectionDocument.OAuth2ConnectionDocument -> connectionDocument.copy(state = ConnectionStateEnum.INVALID)
-        }
+        val invalidConnection =
+            when (connectionDocument) {
+                is ConnectionDocument.HttpConnectionDocument -> connectionDocument.copy(state = ConnectionStateEnum.INVALID)
+                is ConnectionDocument.ImapConnectionDocument -> connectionDocument.copy(state = ConnectionStateEnum.INVALID)
+                is ConnectionDocument.Pop3ConnectionDocument -> connectionDocument.copy(state = ConnectionStateEnum.INVALID)
+                is ConnectionDocument.SmtpConnectionDocument -> connectionDocument.copy(state = ConnectionStateEnum.INVALID)
+                is ConnectionDocument.OAuth2ConnectionDocument -> connectionDocument.copy(state = ConnectionStateEnum.INVALID)
+            }
 
         connectionService.save(invalidConnection)
         logger.debug { "ConnectionDocument ${connectionDocument.name} (${connectionDocument.id}) set to INVALID state" }
@@ -289,9 +292,14 @@ class CentralPoller(
     private fun getPollingInterval(connectionDocument: ConnectionDocument): Duration =
         when (connectionDocument) {
             is ConnectionDocument.HttpConnectionDocument -> pollingProperties.http
+
             is ConnectionDocument.ImapConnectionDocument -> pollingProperties.imap
+
             is ConnectionDocument.Pop3ConnectionDocument -> pollingProperties.pop3
-            is ConnectionDocument.SmtpConnectionDocument -> Duration.ofDays(365) // SMTP is for sending only, effectively disable polling
+
+            is ConnectionDocument.SmtpConnectionDocument -> Duration.ofDays(365)
+
+            // SMTP is for sending only, effectively disable polling
             is ConnectionDocument.OAuth2ConnectionDocument -> pollingProperties.oauth2
         }
 }

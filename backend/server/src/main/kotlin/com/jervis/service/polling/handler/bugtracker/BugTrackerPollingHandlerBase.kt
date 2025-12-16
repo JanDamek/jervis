@@ -9,8 +9,8 @@ import com.jervis.service.polling.PollingResult
 import com.jervis.service.polling.handler.PollingContext
 import com.jervis.service.polling.handler.PollingHandler
 import com.jervis.types.ClientId
+import com.jervis.types.ConnectionId
 import mu.KotlinLogging
-import org.bson.types.ObjectId
 import java.time.Instant
 
 /**
@@ -28,7 +28,7 @@ import java.time.Instant
  * - Issue data transformation to common format
  * - Repository-specific operations
  */
-abstract class BugTrackerPollingHandlerBase<TIssue : Any, TRepository : Any>(
+abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
     protected val connectionService: ConnectionService,
 ) : PollingHandler {
     protected val logger = KotlinLogging.logger {}
@@ -37,28 +37,19 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any, TRepository : Any>(
         connectionDocument: ConnectionDocument,
         context: PollingContext,
     ): PollingResult {
-        // Convert to old signature for backwards compat
-        return poll(connectionDocument, context.clients)
-    }
-
-    @Deprecated("Use PollingContext version")
-    suspend fun poll(
-        connectionDocument: ConnectionDocument,
-        clients: List<ClientDocument>,
-    ): PollingResult {
         if (connectionDocument !is ConnectionDocument.HttpConnectionDocument || connectionDocument.credentials == null) {
             logger.warn { "  → ${getSystemName()} handler: Invalid connectionDocument or credentials" }
             return PollingResult(errors = 1)
         }
 
-        logger.info { "  → ${getSystemName()} handler polling ${clients.size} client(s)" }
+        logger.info { "  → ${getSystemName()} handler polling ${context.clients.size} client(s)" }
 
         var totalDiscovered = 0
         var totalCreated = 0
         var totalSkipped = 0
         var totalErrors = 0
 
-        for (client in clients) {
+        for (client in context.clients) {
             try {
                 logger.debug { "    Polling ${getSystemName()} for client: ${client.name}" }
                 val result = pollClientIssues(connectionDocument, client)
@@ -108,32 +99,15 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any, TRepository : Any>(
 
         logger.debug { "Polling ${getSystemName()} for client ${client.name} with query: $query" }
 
-        // Fetch FULL issue data from API (system-specific)
-        // INITIAL SYNC (lastSeenUpdatedAt == null): Pagination to fetch ALL issues
-        // INCREMENTAL SYNC: Single call for changes only (no pagination needed)
-        val isInitialSync = state?.lastSeenUpdatedAt == null
         val fullIssues =
-            if (isInitialSync) {
-                // INITIAL SYNC: Fetch ALL issues with pagination
-                logger.info { "Initial sync for ${getSystemName()} client ${client.name} - fetching all issues with pagination" }
-                fetchAllIssuesWithPagination(
-                    connectionDocument = connectionDocument,
-                    credentials = credentials,
-                    clientId = client.id,
-                    query = query,
-                    batchSize = 100,
-                )
-            } else {
-                // INCREMENTAL SYNC: Fetch only changes (no pagination, max 1000 changes per poll)
-                fetchFullIssues(
-                    connectionDocument = connectionDocument,
-                    credentials = credentials,
-                    clientId = client.id,
-                    query = query,
-                    lastSeenUpdatedAt = state.lastSeenUpdatedAt,
-                    maxResults = 1000,
-                )
-            }
+            fetchFullIssues(
+                connectionDocument = connectionDocument,
+                credentials = credentials,
+                clientId = client.id,
+                query = query,
+                lastSeenUpdatedAt = state?.lastSeenUpdatedAt,
+                maxResults = 1000,
+            )
 
         logger.info { "Discovered ${fullIssues.size} ${getSystemName()} issues for client ${client.name}" }
 
@@ -141,58 +115,23 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any, TRepository : Any>(
         var skipped = 0
 
         for (fullIssue in fullIssues) {
-            val issueId = getIssueId(fullIssue)
-            val issueUpdatedAt = getIssueUpdatedAt(fullIssue)
-
-            // Check if already exists
-            val existing = findExisting(connectionDocument.id, issueId)
-
-            if (existing != null && getExistingUpdatedAt(existing) >= issueUpdatedAt) {
-                // No changes since last poll
+            val existing = findExisting(connectionDocument.id, fullIssue)
+            if (existing != null) {
                 skipped++
                 continue
             }
 
-            if (existing != null) {
-                // Update existing document with new data, reset to NEW state
-                val updated = updateExisting(existing, fullIssue)
-                saveIssue(updated)
-                created++
-                logger.debug { "Updated issue $issueId (changed since last poll)" }
-            } else {
-                // New issue - double-check before save (race condition protection)
-                val doubleCheck = findExisting(connectionDocument.id, issueId)
-                if (doubleCheck != null) {
-                    logger.debug { "Issue $issueId appeared during processing, skipping duplicate save" }
-                    skipped++
-                } else {
-                    saveIssue(fullIssue)
-                    created++
-                    logger.debug { "Created new issue $issueId" }
-                }
-            }
+            saveIssue(fullIssue)
+            created++
         }
 
         logger.info { "${getSystemName()} polling for ${client.name}: created/updated=$created, skipped=$skipped" }
 
-        // Persist latest seen updatedAt to connectionDocument for incremental polling next time
-        val latestUpdated = fullIssues.maxOfOrNull { getIssueUpdatedAt(it) }
-        if (latestUpdated != null) {
-            val maxUpdated =
-                if (state != null) {
-                    maxOf(state.lastSeenUpdatedAt, latestUpdated)
-                } else {
-                    latestUpdated
-                }
-
-            val updatedPollingStates = connectionDocument.pollingStates.toMutableMap()
-            updatedPollingStates[getToolName()] =
-                PollingState.Http(
-                    lastSeenUpdatedAt = maxUpdated,
-                )
-
-            val updatedConnection = connectionDocument.copy(pollingStates = updatedPollingStates)
-            connectionService.save(updatedConnection)
+        fullIssues.maxOfOrNull { getIssueUpdatedAt(it) }?.let { latestUpdated ->
+            val maxUpdated = state?.lastSeenUpdatedAt?.let { maxOf(it, latestUpdated) } ?: latestUpdated
+            val updatedPollingStates =
+                connectionDocument.pollingStates + (getToolName() to PollingState.Http(maxUpdated))
+            connectionService.save(connectionDocument.copy(pollingStates = updatedPollingStates))
         }
 
         return PollingResult(
@@ -200,75 +139,6 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any, TRepository : Any>(
             itemsCreated = created,
             itemsSkipped = skipped,
         )
-    }
-
-    /**
-     * Fetch ALL issues with pagination (for initial sync).
-     * Calls fetchFullIssues multiple times with startAt offset.
-     * Deduplicates by issue ID to prevent duplicate key errors.
-     */
-    private suspend fun fetchAllIssuesWithPagination(
-        connectionDocument: ConnectionDocument.HttpConnectionDocument,
-        credentials: HttpCredentials,
-        clientId: ClientId,
-        query: String,
-        batchSize: Int,
-    ): List<TIssue> {
-        val seenIssueIds = mutableSetOf<String>()
-        val allIssues = mutableListOf<TIssue>()
-        var startAt = 0
-
-        while (true) {
-            logger.debug { "Fetching batch: startAt=$startAt, batchSize=$batchSize" }
-
-            val batch =
-                fetchFullIssues(
-                    connectionDocument = connectionDocument,
-                    credentials = credentials,
-                    clientId = clientId,
-                    query = query,
-                    lastSeenUpdatedAt = null,
-                    maxResults = batchSize,
-                    startAt = startAt,
-                )
-
-            if (batch.isEmpty()) {
-                logger.debug { "No more issues to fetch (empty batch)" }
-                break
-            }
-
-            // Deduplicate within pagination (some APIs may return overlapping results)
-            val uniqueBatch = batch.filter { issue ->
-                val issueId = getIssueId(issue)
-                if (seenIssueIds.contains(issueId)) {
-                    logger.debug { "Skipping duplicate issue $issueId in pagination batch" }
-                    false
-                } else {
-                    seenIssueIds.add(issueId)
-                    true
-                }
-            }
-
-            allIssues.addAll(uniqueBatch)
-            logger.info { "Fetched batch of ${batch.size} issues (${uniqueBatch.size} unique, total so far: ${allIssues.size})" }
-
-            // Check if we're done (heuristic: if batch < batchSize, we're at the end)
-            if (batch.size < batchSize) {
-                logger.info { "Last batch was smaller than batchSize, pagination complete" }
-                break
-            }
-
-            startAt += batch.size
-
-            // Safety: max 100 batches (10,000 issues with batchSize=100)
-            if (startAt >= 10000) {
-                logger.warn { "Reached safety limit of 10,000 issues, stopping pagination" }
-                break
-            }
-        }
-
-        logger.info { "Pagination complete: fetched ${allIssues.size} total unique issues" }
-        return allIssues
     }
 
     /**
@@ -308,38 +178,24 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any, TRepository : Any>(
     ): List<TIssue>
 
     /**
-     * Get unique issue identifier (issue key, ID, etc.)
-     */
-    protected abstract fun getIssueId(issue: TIssue): String
-
-    /**
      * Get issue updated timestamp
      */
     protected abstract fun getIssueUpdatedAt(issue: TIssue): Instant
 
     /**
-     * Find existing issue in repository
+     * Find existing issue in repository by full unique key.
+     * For Jira: must use (connectionId, issueKey, latestChangelogId)
+     * because each changelog entry is a separate record.
      */
     protected abstract suspend fun findExisting(
-        connectionId: ObjectId,
-        issueId: String,
+        connectionId: ConnectionId,
+        issue: TIssue,
     ): TIssue?
 
     /**
-     * Get updated timestamp from existing issue
-     */
-    protected abstract fun getExistingUpdatedAt(existing: TIssue): Instant
-
-    /**
-     * Update existing issue with new data (reset state to NEW)
-     */
-    protected abstract fun updateExisting(
-        existing: TIssue,
-        newData: TIssue,
-    ): TIssue
-
-    /**
-     * Save issue to repository
+     * Save issue to repository.
+     * Each changelog entry is saved as a separate record.
+     * If same changelogId already exists, MongoDB unique index will prevent duplicate.
      */
     protected abstract suspend fun saveIssue(issue: TIssue)
 }

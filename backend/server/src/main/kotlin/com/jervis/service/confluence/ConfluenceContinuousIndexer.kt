@@ -87,7 +87,7 @@ class ConfluenceContinuousIndexer(
     private suspend fun indexPage(doc: ConfluencePageIndexDocument) {
         // Only process NEW documents (type-safe check)
         if (doc !is ConfluencePageIndexDocument.New) {
-            logger.warn { "Received non-NEW document for indexing: ${doc.pageId} (state=${doc.state})" }
+            logger.warn { "Received non-NEW document for indexing: ${doc.pageId}" }
             return
         }
 
@@ -107,7 +107,7 @@ class ConfluenceContinuousIndexer(
 
             // Clean comments through Tika as well
             val cleanComments =
-                doc.comments.map { comment ->
+                doc.comments?.map { comment ->
                     comment.copy(
                         body =
                             tikaTextExtractionService.extractPlainText(
@@ -140,12 +140,12 @@ class ConfluenceContinuousIndexer(
                         append("\n\n")
                     }
 
-                    if (doc.labels.isNotEmpty()) {
+                    if (doc.labels?.isNotEmpty() == true) {
                         append("**Labels:** ${doc.labels.joinToString(", ")}\n\n")
                     }
 
                     // Add comments
-                    if (cleanComments.isNotEmpty()) {
+                    if (cleanComments?.isNotEmpty() == true) {
                         append("## Comments\n\n")
                         cleanComments.forEachIndexed { index, comment ->
                             append("### Comment ${index + 1} by ${comment.author}\n")
@@ -156,7 +156,7 @@ class ConfluenceContinuousIndexer(
                     }
 
                     // Add attachments list
-                    if (doc.attachments.isNotEmpty()) {
+                    if (doc.attachments?.isNotEmpty() == true) {
                         append("## Attachments\n")
                         doc.attachments.forEach { att ->
                             append("- ${att.filename} (${att.mimeType}, ${att.size} bytes)\n")
@@ -174,8 +174,8 @@ class ConfluenceContinuousIndexer(
                     if (doc.parentPageId != null) {
                         append("- **Parent Page ID:** ${doc.parentPageId}\n")
                     }
-                    append("- **Comment Count:** ${doc.comments.size}\n")
-                    append("- **Attachment Count:** ${doc.attachments.size}\n")
+                    append("- **Comment Count:** ${doc.comments?.size}\n")
+                    append("- **Attachment Count:** ${doc.attachments?.size}\n")
                 }
 
             // Process attachments for vision analysis
@@ -227,58 +227,56 @@ class ConfluenceContinuousIndexer(
      * Download and store Confluence attachments for vision analysis.
      * Only downloads image attachments (vision model input).
      */
-    private suspend fun processAttachments(
-        doc: ConfluencePageIndexDocument.New,
-    ): List<com.jervis.entity.AttachmentMetadata> {
+    private suspend fun processAttachments(doc: ConfluencePageIndexDocument.New): List<com.jervis.entity.AttachmentMetadata> {
         val attachmentMetadataList = mutableListOf<com.jervis.entity.AttachmentMetadata>()
 
         // Filter attachments that should be processed with vision
         val visualAttachments =
-            doc.attachments.filter { att ->
+            doc.attachments?.filter { att ->
                 val type = com.jervis.entity.classifyAttachmentType(att.mimeType)
                 type == com.jervis.entity.AttachmentType.IMAGE ||
                     type == com.jervis.entity.AttachmentType.PDF_SCANNED
             }
 
-        if (visualAttachments.isEmpty()) {
+        if (visualAttachments?.isEmpty() == true) {
             return emptyList()
         }
 
-        logger.debug { "Processing ${visualAttachments.size} visual attachments for ${doc.pageId}" }
+        logger.debug { "Processing ${visualAttachments?.size} visual attachments for ${doc.pageId}" }
 
         // FAIL-FAST: If any attachment download/storage fails, exception propagates
         // This marks the entire Confluence page as FAILED for retry
-        for (att in visualAttachments) {
-            // Download attachment from Confluence via service-atlassian (rate-limited)
-            val binaryData = downloadAttachment(att.downloadUrl, doc)
+        if (visualAttachments != null) {
+            for (att in visualAttachments) {
+                // Download attachment from Confluence via service-atlassian (rate-limited)
+                val binaryData = downloadAttachment(att.downloadUrl, doc)
 
-            // Get image dimensions for token estimation (if image)
-            val (width, height) = extractImageDimensions(binaryData, att.mimeType)
+                // Get image dimensions for token estimation (if image)
+                val (_, _) = extractImageDimensions(binaryData, att.mimeType)
 
-            // Store in DirectoryStructureService
-            val storagePath =
-                directoryStructureService.storeAttachment(
-                    clientId = doc.clientId,
-                    filename = att.filename,
-                    binaryData = binaryData,
-                )
+                // Store in DirectoryStructureService
+                val storagePath =
+                    directoryStructureService.storeAttachment(
+                        clientId = doc.clientId,
+                        filename = att.filename,
+                        binaryData = binaryData,
+                    )
 
-            // Create metadata
-            val metadata =
-                com.jervis.entity.AttachmentMetadata(
-                    id = att.id,
-                    filename = att.filename,
-                    mimeType = att.mimeType,
-                    sizeBytes = att.size,
-                    storagePath = storagePath,
-                    type = com.jervis.entity.classifyAttachmentType(att.mimeType),
-                    widthPixels = width,
-                    heightPixels = height,
-                    visionAnalysis = null, // Populated later by Qualifier
-                )
+                // Create metadata
+                val metadata =
+                    com.jervis.entity.AttachmentMetadata(
+                        id = att.id,
+                        filename = att.filename,
+                        mimeType = att.mimeType,
+                        sizeBytes = att.size,
+                        storagePath = storagePath,
+                        type = com.jervis.entity.classifyAttachmentType(att.mimeType),
+                        visionAnalysis = null, // Populated later by Qualifier
+                    )
 
-            attachmentMetadataList.add(metadata)
-            logger.debug { "Stored attachment: ${att.filename} (${att.mimeType}, ${att.size} bytes) → $storagePath" }
+                attachmentMetadataList.add(metadata)
+                logger.debug { "Stored attachment: ${att.filename} (${att.mimeType}, ${att.size} bytes) → $storagePath" }
+            }
         }
 
         return attachmentMetadataList
@@ -293,30 +291,33 @@ class ConfluenceContinuousIndexer(
         doc: ConfluencePageIndexDocument.New,
     ): ByteArray {
         // Load connection to get auth credentials
-        val connection = connectionService.findById(doc.connectionDocumentId.value)
-            ?: throw IllegalStateException("Connection not found: ${doc.connectionDocumentId}")
+        val connection =
+            connectionService.findById(doc.connectionDocumentId.value)
+                ?: throw IllegalStateException("Connection not found: ${doc.connectionDocumentId}")
 
         if (connection !is com.jervis.entity.connection.ConnectionDocument.HttpConnectionDocument) {
             throw IllegalStateException("Connection is not HTTP: ${connection::class.simpleName}")
         }
 
         // Build request with auth credentials
-        val request = com.jervis.common.dto.atlassian.JiraAttachmentDownloadRequest(
-            baseUrl = connection.baseUrl,
-            authType = when (connection.credentials) {
-                is com.jervis.entity.connection.HttpCredentials.Basic -> "BASIC"
-                is com.jervis.entity.connection.HttpCredentials.Bearer -> "BEARER"
-                null -> "NONE"
-            },
-            basicUsername = (connection.credentials as? com.jervis.entity.connection.HttpCredentials.Basic)?.username,
-            basicPassword = (connection.credentials as? com.jervis.entity.connection.HttpCredentials.Basic)?.password,
-            bearerToken = (connection.credentials as? com.jervis.entity.connection.HttpCredentials.Bearer)?.token,
-            attachmentUrl = attachmentUrl,
-        )
+        val request =
+            com.jervis.common.dto.atlassian.JiraAttachmentDownloadRequest(
+                baseUrl = connection.baseUrl,
+                authType =
+                    when (connection.credentials) {
+                        is com.jervis.entity.connection.HttpCredentials.Basic -> "BASIC"
+                        is com.jervis.entity.connection.HttpCredentials.Bearer -> "BEARER"
+                        null -> "NONE"
+                    },
+                basicUsername = (connection.credentials as? com.jervis.entity.connection.HttpCredentials.Basic)?.username,
+                basicPassword = (connection.credentials as? com.jervis.entity.connection.HttpCredentials.Basic)?.password,
+                bearerToken = (connection.credentials as? com.jervis.entity.connection.HttpCredentials.Bearer)?.token,
+                attachmentUrl = attachmentUrl,
+            )
 
         // Download via service-atlassian (rate-limited)
         return atlassianClient.downloadJiraAttachment(
-            connection = "", // Not used by service-atlassian
+            // Not used by service-atlassian
             request = request,
         )
     }

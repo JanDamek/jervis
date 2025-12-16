@@ -1,6 +1,5 @@
 package com.jervis.common.client
 
-import com.jervis.common.dto.atlassian.AtlassianConnection
 import com.jervis.common.dto.atlassian.AtlassianMyselfRequest
 import com.jervis.common.dto.atlassian.AtlassianUserDto
 import com.jervis.common.dto.atlassian.ConfluencePageRequest
@@ -13,7 +12,6 @@ import com.jervis.common.dto.atlassian.JiraIssueResponse
 import com.jervis.common.dto.atlassian.JiraSearchRequest
 import com.jervis.common.dto.atlassian.JiraSearchResponse
 import org.springframework.web.bind.annotation.RequestBody
-import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.service.annotation.HttpExchange
 import org.springframework.web.service.annotation.PostExchange
 
@@ -35,7 +33,6 @@ interface IAtlassianClient {
      */
     @PostExchange("/myself")
     suspend fun getMyself(
-        @RequestHeader("X-Atlassian-Connection") connection: String,
         @RequestBody request: AtlassianMyselfRequest,
     ): AtlassianUserDto
 
@@ -45,7 +42,6 @@ interface IAtlassianClient {
      */
     @PostExchange("/jira/search")
     suspend fun searchJiraIssues(
-        @RequestHeader("X-Atlassian-Connection") connection: String,
         @RequestBody request: JiraSearchRequest,
     ): JiraSearchResponse
 
@@ -55,7 +51,6 @@ interface IAtlassianClient {
      */
     @PostExchange("/jira/issue")
     suspend fun getJiraIssue(
-        @RequestHeader("X-Atlassian-Connection") connection: String,
         @RequestBody request: JiraIssueRequest,
     ): JiraIssueResponse
 
@@ -65,7 +60,6 @@ interface IAtlassianClient {
      */
     @PostExchange("/confluence/search")
     suspend fun searchConfluencePages(
-        @RequestHeader("X-Atlassian-Connection") connection: String,
         @RequestBody request: ConfluenceSearchRequest,
     ): ConfluenceSearchResponse
 
@@ -75,7 +69,6 @@ interface IAtlassianClient {
      */
     @PostExchange("/confluence/page")
     suspend fun getConfluencePage(
-        @RequestHeader("X-Atlassian-Connection") connection: String,
         @RequestBody request: ConfluencePageRequest,
     ): ConfluencePageResponse
 
@@ -86,7 +79,6 @@ interface IAtlassianClient {
      */
     @PostExchange("/jira/attachment/download")
     suspend fun downloadJiraAttachment(
-        @RequestHeader("X-Atlassian-Connection") connection: String,
         @RequestBody request: JiraAttachmentDownloadRequest,
     ): ByteArray
 }

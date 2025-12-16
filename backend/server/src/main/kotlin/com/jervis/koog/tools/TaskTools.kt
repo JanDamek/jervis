@@ -7,6 +7,7 @@ import com.jervis.domain.task.TaskRoutingDecision
 import com.jervis.dto.PendingTaskStateEnum
 import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.entity.PendingTaskDocument
+import com.jervis.koog.qualifier.types.RouteTaskResult
 import com.jervis.service.background.PendingTaskService
 import com.jervis.service.link.IndexedLinkService
 import com.jervis.service.link.LinkContentService
@@ -37,7 +38,6 @@ class TaskTools(
     private val linkContentService: LinkContentService,
     private val indexedLinkService: IndexedLinkService,
     private val coroutineScope: CoroutineScope,
-    private val onRoutingCaptured: ((String) -> Unit)? = null,
 ) : ToolSet {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -57,23 +57,28 @@ class TaskTools(
     suspend fun routeTask(
         @LLMDescription("The final routing decision for the task: `DONE` or `LIFT_UP`.")
         routing: String,
-    ): String {
+    ): RouteTaskResult {
         val routingUpper = routing.uppercase().trim()
 
         if (routingUpper !in setOf("DONE", "LIFT_UP")) {
-            throw IllegalArgumentException("Invalid routing: $routing. Use DONE or LIFT_UP")
+            return RouteTaskResult(
+                routing = routingUpper,
+                success = false,
+                message = "Invalid routing: $routing. Use DONE or LIFT_UP"
+            )
         }
 
         logger.info { "TASK_ROUTING: decision=$routingUpper for task ${task.id}" }
-
-        // Capture routing if callback provided (for Phase 1)
-        onRoutingCaptured?.invoke(routingUpper)
 
         val decision =
             when (routingUpper) {
                 "DONE" -> TaskRoutingDecision.DONE
                 "LIFT_UP" -> TaskRoutingDecision.READY_FOR_GPU
-                else -> throw IllegalArgumentException("Invalid routing: $routing")
+                else -> return RouteTaskResult(
+                    routing = routingUpper,
+                    success = false,
+                    message = "Invalid routing: $routing"
+                )
             }
 
         if (decision == TaskRoutingDecision.READY_FOR_GPU) {
@@ -86,7 +91,11 @@ class TaskTools(
             pendingTaskService.deleteTask(task.id)
         }
 
-        return "✓ Task routing decision made: $routingUpper. The task is now finalized."
+        return RouteTaskResult(
+            routing = routingUpper,
+            success = true,
+            message = "Task routing decision made: $routingUpper. The task is now finalized."
+        )
     }
 
     @Tool
