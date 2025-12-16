@@ -1,7 +1,7 @@
 package com.jervis.entity.connection
 
 import com.jervis.dto.connection.ConnectionStateEnum
-import org.bson.types.ObjectId
+import com.jervis.types.ConnectionId
 import org.springframework.data.annotation.Id
 import org.springframework.data.annotation.TypeAlias
 import org.springframework.data.mongodb.core.index.CompoundIndex
@@ -33,7 +33,7 @@ import java.time.Instant
     CompoundIndex(name = "state_idx", def = "{'state': 1}"),
 )
 sealed class ConnectionDocument {
-    abstract val id: ObjectId
+    abstract val id: ConnectionId
     abstract val name: String
     abstract var state: ConnectionStateEnum
     abstract val rateLimitConfig: RateLimitConfig
@@ -48,7 +48,7 @@ sealed class ConnectionDocument {
      */
     @TypeAlias("HttpConnectionDocument")
     data class HttpConnectionDocument(
-        @Id override val id: ObjectId = ObjectId.get(),
+        @Id override val id: ConnectionId = ConnectionId.generate(),
         override val name: String,
         val baseUrl: String,
         val credentials: HttpCredentials? = null,
@@ -65,7 +65,7 @@ sealed class ConnectionDocument {
      */
     @TypeAlias("ImapConnectionDocument")
     data class ImapConnectionDocument(
-        @Id override val id: ObjectId = ObjectId.get(),
+        @Id override val id: ConnectionId = ConnectionId.generate(),
         override val name: String,
         val host: String,
         val port: Int = 993,
@@ -85,7 +85,7 @@ sealed class ConnectionDocument {
      */
     @TypeAlias("Pop3ConnectionDocument")
     data class Pop3ConnectionDocument(
-        @Id override val id: ObjectId = ObjectId.get(),
+        @Id override val id: ConnectionId = ConnectionId.generate(),
         override val name: String,
         val host: String,
         val port: Int = 995,
@@ -104,7 +104,7 @@ sealed class ConnectionDocument {
      */
     @TypeAlias("SmtpConnectionDocument")
     data class SmtpConnectionDocument(
-        @Id override val id: ObjectId = ObjectId.get(),
+        @Id override val id: ConnectionId = ConnectionId.generate(),
         override val name: String,
         val host: String,
         val port: Int = 587,
@@ -122,7 +122,7 @@ sealed class ConnectionDocument {
      */
     @TypeAlias("OAuth2ConnectionDocument")
     data class OAuth2ConnectionDocument(
-        @Id override val id: ObjectId = ObjectId.get(),
+        @Id override val id: ConnectionId = ConnectionId.generate(),
         override val name: String,
         val authorizationUrl: String,
         val tokenUrl: String,

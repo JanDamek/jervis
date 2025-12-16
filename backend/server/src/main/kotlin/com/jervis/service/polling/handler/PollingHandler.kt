@@ -4,8 +4,6 @@ import com.jervis.entity.ClientDocument
 import com.jervis.entity.ProjectDocument
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.service.polling.PollingResult
-import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
 
 /**
  * Context for polling - contains clients and projects using a connection.
@@ -19,18 +17,7 @@ import com.jervis.types.ProjectId
 data class PollingContext(
     val clients: List<ClientDocument>,
     val projects: List<ProjectDocument>,
-) {
-    /**
-     * Get all client IDs (both direct and via projects).
-     */
-    fun getAllClientIds(): List<ClientId> = (clients.map { it.id } + projects.map { it.clientId }).distinct()
-
-    /**
-     * Get project ID for a specific client (if connection is project-level).
-     * Returns null if connection is client-level (all projects inherit).
-     */
-    fun getProjectId(clientId: ClientId): ProjectId? = projects.firstOrNull { it.clientId == clientId }?.id
-}
+)
 
 /**
  * Interface for type-specific polling handlers.

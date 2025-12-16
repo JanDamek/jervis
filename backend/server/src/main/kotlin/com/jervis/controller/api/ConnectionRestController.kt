@@ -6,7 +6,6 @@ import com.jervis.common.dto.atlassian.AtlassianConnection
 import com.jervis.common.dto.atlassian.AtlassianMyselfRequest
 import com.jervis.dto.connection.ConnectionCreateRequestDto
 import com.jervis.dto.connection.ConnectionResponseDto
-import com.jervis.dto.connection.ConnectionStateEnum
 import com.jervis.dto.connection.ConnectionTestResultDto
 import com.jervis.dto.connection.ConnectionUpdateRequestDto
 import com.jervis.entity.connection.ConnectionDocument
@@ -315,7 +314,6 @@ class ConnectionRestController(
                 val atlConn = connectionDocument.toAtlassianConnection()
                 val myself =
                     atlassianClient.getMyself(
-                        atlConn.toHeaderValue(),
                         connectionDocument.toAtlassianMyselfRequest(),
                     )
                 ConnectionTestResultDto(

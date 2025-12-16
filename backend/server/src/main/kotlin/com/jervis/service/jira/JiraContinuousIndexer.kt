@@ -214,9 +214,7 @@ class JiraContinuousIndexer(
      * Download and store Jira attachments for vision analysis.
      * Only downloads image attachments (vision model input).
      */
-    private suspend fun processAttachments(
-        doc: JiraIssueIndexDocument.New,
-    ): List<com.jervis.entity.AttachmentMetadata> {
+    private suspend fun processAttachments(doc: JiraIssueIndexDocument.New): List<com.jervis.entity.AttachmentMetadata> {
         val attachmentMetadataList = mutableListOf<com.jervis.entity.AttachmentMetadata>()
 
         // Filter attachments that should be processed with vision
@@ -259,8 +257,6 @@ class JiraContinuousIndexer(
                     sizeBytes = att.size,
                     storagePath = storagePath,
                     type = com.jervis.entity.classifyAttachmentType(att.mimeType),
-                    widthPixels = width,
-                    heightPixels = height,
                     visionAnalysis = null, // Populated later by Qualifier
                 )
 
@@ -280,30 +276,33 @@ class JiraContinuousIndexer(
         doc: JiraIssueIndexDocument.New,
     ): ByteArray {
         // Load connection to get auth credentials
-        val connection = connectionService.findById(doc.connectionDocumentId.value)
-            ?: throw IllegalStateException("Connection not found: ${doc.connectionDocumentId}")
+        val connection =
+            connectionService.findById(doc.connectionDocumentId.value)
+                ?: throw IllegalStateException("Connection not found: ${doc.connectionDocumentId}")
 
         if (connection !is com.jervis.entity.connection.ConnectionDocument.HttpConnectionDocument) {
             throw IllegalStateException("Connection is not HTTP: ${connection::class.simpleName}")
         }
 
         // Build request with auth credentials
-        val request = com.jervis.common.dto.atlassian.JiraAttachmentDownloadRequest(
-            baseUrl = connection.baseUrl,
-            authType = when (connection.credentials) {
-                is com.jervis.entity.connection.HttpCredentials.Basic -> "BASIC"
-                is com.jervis.entity.connection.HttpCredentials.Bearer -> "BEARER"
-                null -> "NONE"
-            },
-            basicUsername = (connection.credentials as? com.jervis.entity.connection.HttpCredentials.Basic)?.username,
-            basicPassword = (connection.credentials as? com.jervis.entity.connection.HttpCredentials.Basic)?.password,
-            bearerToken = (connection.credentials as? com.jervis.entity.connection.HttpCredentials.Bearer)?.token,
-            attachmentUrl = attachmentUrl,
-        )
+        val request =
+            com.jervis.common.dto.atlassian.JiraAttachmentDownloadRequest(
+                baseUrl = connection.baseUrl,
+                authType =
+                    when (connection.credentials) {
+                        is com.jervis.entity.connection.HttpCredentials.Basic -> "BASIC"
+                        is com.jervis.entity.connection.HttpCredentials.Bearer -> "BEARER"
+                        null -> "NONE"
+                    },
+                basicUsername = (connection.credentials as? com.jervis.entity.connection.HttpCredentials.Basic)?.username,
+                basicPassword = (connection.credentials as? com.jervis.entity.connection.HttpCredentials.Basic)?.password,
+                bearerToken = (connection.credentials as? com.jervis.entity.connection.HttpCredentials.Bearer)?.token,
+                attachmentUrl = attachmentUrl,
+            )
 
         // Download via service-atlassian (rate-limited)
         return atlassianClient.downloadJiraAttachment(
-            connection = "", // Not used by service-atlassian
+            // Not used by service-atlassian
             request = request,
         )
     }

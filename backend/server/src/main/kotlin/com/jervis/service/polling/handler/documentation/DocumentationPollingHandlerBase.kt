@@ -9,8 +9,8 @@ import com.jervis.service.polling.PollingResult
 import com.jervis.service.polling.handler.PollingContext
 import com.jervis.service.polling.handler.PollingHandler
 import com.jervis.types.ClientId
+import com.jervis.types.ConnectionId
 import mu.KotlinLogging
-import org.bson.types.ObjectId
 import java.time.Instant
 
 /**
@@ -29,7 +29,7 @@ import java.time.Instant
  * - Page data transformation to common format
  * - Repository-specific operations
  */
-abstract class DocumentationPollingHandlerBase<TPage : Any, TRepository : Any>(
+abstract class DocumentationPollingHandlerBase<TPage : Any>(
     protected val connectionService: ConnectionService,
 ) : PollingHandler {
     protected val logger = KotlinLogging.logger {}
@@ -38,28 +38,19 @@ abstract class DocumentationPollingHandlerBase<TPage : Any, TRepository : Any>(
         connectionDocument: ConnectionDocument,
         context: PollingContext,
     ): PollingResult {
-        // Convert to old signature for backwards compat
-        return poll(connectionDocument, context.clients)
-    }
-
-    @Deprecated("Use PollingContext version")
-    suspend fun poll(
-        connectionDocument: ConnectionDocument,
-        clients: List<ClientDocument>,
-    ): PollingResult {
         if (connectionDocument !is ConnectionDocument.HttpConnectionDocument || connectionDocument.credentials == null) {
             logger.warn { "  → ${getSystemName()} handler: Invalid connectionDocument or credentials" }
             return PollingResult(errors = 1)
         }
 
-        logger.info { "  → ${getSystemName()} handler polling ${clients.size} client(s)" }
+        logger.info { "  → ${getSystemName()} handler polling ${context.clients.size} client(s)" }
 
         var totalDiscovered = 0
         var totalCreated = 0
         var totalSkipped = 0
         var totalErrors = 0
 
-        for (client in clients) {
+        for (client in context.clients) {
             try {
                 logger.debug { "    Polling ${getSystemName()} for client: ${client.name}" }
                 val result = pollClientPages(connectionDocument, client)
@@ -109,32 +100,15 @@ abstract class DocumentationPollingHandlerBase<TPage : Any, TRepository : Any>(
 
         logger.debug { "Polling ${getSystemName()} for client ${client.name}, space: $spaceKey" }
 
-        // Fetch FULL page data from API (system-specific)
-        // INITIAL SYNC (lastSeenUpdatedAt == null): Pagination to fetch ALL pages
-        // INCREMENTAL SYNC: Single call for changes only (no pagination needed)
-        val isInitialSync = state?.lastSeenUpdatedAt == null
         val fullPages =
-            if (isInitialSync) {
-                // INITIAL SYNC: Fetch ALL pages with pagination
-                logger.info { "Initial sync for ${getSystemName()} client ${client.name} - fetching all pages with pagination" }
-                fetchAllPagesWithPagination(
-                    connectionDocument = connectionDocument,
-                    credentials = credentials,
-                    clientId = client.id,
-                    spaceKey = spaceKey,
-                    batchSize = 100,
-                )
-            } else {
-                // INCREMENTAL SYNC: Fetch only changes (no pagination, max 1000 changes per poll)
-                fetchFullPages(
-                    connectionDocument = connectionDocument,
-                    credentials = credentials,
-                    clientId = client.id,
-                    spaceKey = spaceKey,
-                    lastSeenUpdatedAt = state.lastSeenUpdatedAt,
-                    maxResults = 1000,
-                )
-            }
+            fetchFullPages(
+                connectionDocument = connectionDocument,
+                credentials = credentials,
+                clientId = client.id,
+                spaceKey = spaceKey,
+                lastSeenUpdatedAt = state?.lastSeenUpdatedAt,
+                maxResults = 1000,
+            )
 
         logger.info { "Discovered ${fullPages.size} ${getSystemName()} pages for client ${client.name}" }
 
@@ -142,58 +116,28 @@ abstract class DocumentationPollingHandlerBase<TPage : Any, TRepository : Any>(
         var skipped = 0
 
         for (fullPage in fullPages) {
-            val pageId = getPageId(fullPage)
-            val pageUpdatedAt = getPageUpdatedAt(fullPage)
-
-            // Check if already exists
-            val existing = findExisting(connectionDocument.id, pageId)
-
-            if (existing != null && getExistingUpdatedAt(existing) >= pageUpdatedAt) {
-                // No changes since last poll
+            val existing = findExisting(connectionDocument.id, fullPage)
+            if (existing != null) {
                 skipped++
                 continue
             }
 
-            if (existing != null) {
-                // Update existing document with new data, reset to NEW state
-                val updated = updateExisting(existing, fullPage)
-                savePage(updated)
-                created++
-                logger.debug { "Updated page $pageId (changed since last poll)" }
+            val doubleCheck = findExisting(connectionDocument.id, fullPage)
+            if (doubleCheck != null) {
+                skipped++
             } else {
-                // New page - double-check before save (race condition protection)
-                val doubleCheck = findExisting(connectionDocument.id, pageId)
-                if (doubleCheck != null) {
-                    logger.debug { "Page $pageId appeared during processing, skipping duplicate save" }
-                    skipped++
-                } else {
-                    savePage(fullPage)
-                    created++
-                    logger.debug { "Created new page $pageId" }
-                }
+                savePage(fullPage)
+                created++
             }
         }
 
         logger.info { "${getSystemName()} polling for ${client.name}: created/updated=$created, skipped=$skipped" }
 
-        // Persist latest seen updatedAt to connectionDocument for incremental polling next time
-        val latestUpdated = fullPages.maxOfOrNull { getPageUpdatedAt(it) }
-        if (latestUpdated != null) {
-            val maxUpdated =
-                if (state != null) {
-                    maxOf(state.lastSeenUpdatedAt, latestUpdated)
-                } else {
-                    latestUpdated
-                }
-
-            val updatedPollingStates = connectionDocument.pollingStates.toMutableMap()
-            updatedPollingStates[getToolName()] =
-                PollingState.Http(
-                    lastSeenUpdatedAt = maxUpdated,
-                )
-
-            val updatedConnection = connectionDocument.copy(pollingStates = updatedPollingStates)
-            connectionService.save(updatedConnection)
+        fullPages.maxOfOrNull { getPageUpdatedAt(it) }?.let { latestUpdated ->
+            val maxUpdated = state?.lastSeenUpdatedAt?.let { maxOf(it, latestUpdated) } ?: latestUpdated
+            val updatedPollingStates =
+                connectionDocument.pollingStates + (getToolName() to PollingState.Http(maxUpdated))
+            connectionService.save(connectionDocument.copy(pollingStates = updatedPollingStates))
         }
 
         return PollingResult(
@@ -201,75 +145,6 @@ abstract class DocumentationPollingHandlerBase<TPage : Any, TRepository : Any>(
             itemsCreated = created,
             itemsSkipped = skipped,
         )
-    }
-
-    /**
-     * Fetch ALL pages with pagination (for initial sync).
-     * Calls fetchFullPages multiple times with startAt offset.
-     * Deduplicates by page ID to prevent duplicate key errors.
-     */
-    private suspend fun fetchAllPagesWithPagination(
-        connectionDocument: ConnectionDocument.HttpConnectionDocument,
-        credentials: HttpCredentials,
-        clientId: ClientId,
-        spaceKey: String?,
-        batchSize: Int,
-    ): List<TPage> {
-        val seenPageIds = mutableSetOf<String>()
-        val allPages = mutableListOf<TPage>()
-        var startAt = 0
-
-        while (true) {
-            logger.debug { "Fetching batch: startAt=$startAt, batchSize=$batchSize" }
-
-            val batch =
-                fetchFullPages(
-                    connectionDocument = connectionDocument,
-                    credentials = credentials,
-                    clientId = clientId,
-                    spaceKey = spaceKey,
-                    lastSeenUpdatedAt = null,
-                    maxResults = batchSize,
-                    startAt = startAt,
-                )
-
-            if (batch.isEmpty()) {
-                logger.debug { "No more pages to fetch (empty batch)" }
-                break
-            }
-
-            // Deduplicate within pagination (some APIs may return overlapping results)
-            val uniqueBatch = batch.filter { page ->
-                val pageId = getPageId(page)
-                if (seenPageIds.contains(pageId)) {
-                    logger.debug { "Skipping duplicate page $pageId in pagination batch" }
-                    false
-                } else {
-                    seenPageIds.add(pageId)
-                    true
-                }
-            }
-
-            allPages.addAll(uniqueBatch)
-            logger.info { "Fetched batch of ${batch.size} pages (${uniqueBatch.size} unique, total so far: ${allPages.size})" }
-
-            // Check if we're done (heuristic: if batch < batchSize, we're at the end)
-            if (batch.size < batchSize) {
-                logger.info { "Last batch was smaller than batchSize, pagination complete" }
-                break
-            }
-
-            startAt += batch.size
-
-            // Safety: max 100 batches (10,000 pages with batchSize=100)
-            if (startAt >= 10000) {
-                logger.warn { "Reached safety limit of 10,000 pages, stopping pagination" }
-                break
-            }
-        }
-
-        logger.info { "Pagination complete: fetched ${allPages.size} total unique pages" }
-        return allPages
     }
 
     /**
@@ -305,38 +180,24 @@ abstract class DocumentationPollingHandlerBase<TPage : Any, TRepository : Any>(
     ): List<TPage>
 
     /**
-     * Get unique page identifier (page ID, slug, etc.)
-     */
-    protected abstract fun getPageId(page: TPage): String
-
-    /**
      * Get page updated timestamp
      */
     protected abstract fun getPageUpdatedAt(page: TPage): Instant
 
     /**
-     * Find existing page in repository
+     * Find existing page in repository by full unique key.
+     * For Confluence: must use (connectionId, pageId, versionNumber)
+     * because each page version is a separate record.
      */
     protected abstract suspend fun findExisting(
-        connectionId: ObjectId,
-        pageId: String,
+        connectionId: ConnectionId,
+        page: TPage,
     ): TPage?
 
     /**
-     * Get updated timestamp from existing page
-     */
-    protected abstract fun getExistingUpdatedAt(existing: TPage): Instant
-
-    /**
-     * Update existing page with new data (reset state to NEW)
-     */
-    protected abstract fun updateExisting(
-        existing: TPage,
-        newData: TPage,
-    ): TPage
-
-    /**
-     * Save page to repository
+     * Save page to repository.
+     * Each page version is saved as a separate record.
+     * If same version already exists, MongoDB unique index will prevent duplicate.
      */
     protected abstract suspend fun savePage(page: TPage)
 }

@@ -23,7 +23,7 @@ import org.springframework.data.mongodb.core.mapping.Document
 @Document(collection = "clients")
 data class ClientDocument(
     @Id
-    val id: ClientId = ClientId(ObjectId.get()),
+    val id: ClientId = ClientId.generate(),
     @Indexed(unique = true)
     val name: String,
     val gitProvider: GitProviderEnum? = null,

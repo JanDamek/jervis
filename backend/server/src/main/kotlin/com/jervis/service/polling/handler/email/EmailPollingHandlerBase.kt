@@ -15,7 +15,6 @@ import jakarta.mail.Message
 import jakarta.mail.Multipart
 import jakarta.mail.Part
 import mu.KotlinLogging
-import org.bson.types.ObjectId
 import java.time.Instant
 
 /**
@@ -124,7 +123,7 @@ abstract class EmailPollingHandlerBase(
                 val messageId = message.getHeader("Message-ID")?.firstOrNull()
 
                 // Check if already exists
-                val existing = repository.findByConnectionIdAndMessageUid(ConnectionId(connectionDocument.id), uid)
+                val existing = repository.findByConnectionIdAndMessageUid(connectionDocument.id, uid)
                 if (existing != null) {
                     skipped++
                     continue
@@ -132,7 +131,7 @@ abstract class EmailPollingHandlerBase(
 
                 // Parse and save message
                 val document =
-                    parseMessage(message, uid, messageId, client.id, projectId, ConnectionId(connectionDocument.id), folderName)
+                    parseMessage(message, uid, messageId, client.id, projectId, connectionDocument.id, folderName)
                 repository.save(document)
                 created++
                 logger.debug { "Created email message: ${document.subject}" }
