@@ -15,7 +15,7 @@ data class ConnectionResponseDto(
     val host: String? = null,
     val port: Int? = null,
     val username: String? = null,
-    // HTTP specific (typed)
+    // HTTP-specific (typed)
     val authType: String? = null, // NONE, BASIC, BEARER
     val httpBasicUsername: String? = null,
     val httpBasicPassword: String? = null,
@@ -24,7 +24,6 @@ data class ConnectionResponseDto(
     // OAuth2 specific
     val authorizationUrl: String? = null,
     val tokenUrl: String? = null,
-    val clientId: String? = null,
     val clientSecret: String? = null, // Plain text for dev-mode
     val redirectUri: String? = null,
     val scope: String? = null,
@@ -33,8 +32,6 @@ data class ConnectionResponseDto(
     val useSsl: Boolean? = null,
     val useTls: Boolean? = null,
     val hasCredentials: Boolean = false,
-    val createdAtMs: Long,  // Epoch millis
-    val updatedAtMs: Long,  // Epoch millis
 )
 
 /**
@@ -45,7 +42,6 @@ data class ConnectionCreateRequestDto(
     val type: String, // HTTP, IMAP, POP3, SMTP, OAUTH2
     val name: String,
     val state: ConnectionStateEnum = ConnectionStateEnum.NEW,
-
     // HTTP specific
     val baseUrl: String? = null,
     val authType: String? = null, // NONE, BASIC, BEARER
@@ -53,19 +49,16 @@ data class ConnectionCreateRequestDto(
     val httpBasicPassword: String? = null,
     val httpBearerToken: String? = null,
     val timeoutMs: Long? = null,
-
-    // Email specific (IMAP/POP3/SMTP)
+    // Email-specific (IMAP/POP3/SMTP)
     val host: String? = null,
     val port: Int? = null,
     val username: String? = null,
     val password: String? = null, // Plain text
     val useSsl: Boolean? = null,
     val useTls: Boolean? = null,
-
     // OAuth2 specific
     val authorizationUrl: String? = null,
     val tokenUrl: String? = null,
-    val clientId: String? = null,
     val clientSecret: String? = null, // Plain text
     val redirectUri: String? = null,
     val scope: String? = null,
@@ -79,7 +72,6 @@ data class ConnectionCreateRequestDto(
 data class ConnectionUpdateRequestDto(
     val name: String? = null,
     val state: ConnectionStateEnum? = null,
-
     // HTTP specific
     val baseUrl: String? = null,
     val authType: String? = null, // NONE, BASIC, BEARER
@@ -87,13 +79,11 @@ data class ConnectionUpdateRequestDto(
     val httpBasicPassword: String? = null,
     val httpBearerToken: String? = null,
     val timeoutMs: Long? = null,
-
-    // Email specific (IMAP/POP3/SMTP)
+    // Email-specific (IMAP/POP3/SMTP)
     val host: String? = null,
     val port: Int? = null,
     val username: String? = null,
     val password: String? = null,
-
     // OAuth2 specific
     val clientSecret: String? = null,
 )

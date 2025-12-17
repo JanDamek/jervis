@@ -2,8 +2,8 @@ package com.jervis.service.polling.handler.documentation
 
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.ConnectionDocument
-import com.jervis.entity.connection.HttpCredentials
-import com.jervis.entity.connection.PollingState
+import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
+import com.jervis.entity.connection.ConnectionDocument.PollingState
 import com.jervis.service.connection.ConnectionService
 import com.jervis.service.polling.PollingResult
 import com.jervis.service.polling.handler.PollingContext
@@ -38,7 +38,7 @@ abstract class DocumentationPollingHandlerBase<TPage : Any>(
         connectionDocument: ConnectionDocument,
         context: PollingContext,
     ): PollingResult {
-        if (connectionDocument !is ConnectionDocument.HttpConnectionDocument || connectionDocument.credentials == null) {
+        if (connectionDocument.connectionType != ConnectionDocument.ConnectionTypeEnum.HTTP || connectionDocument.credentials == null) {
             logger.warn { "  → ${getSystemName()} handler: Invalid connectionDocument or credentials" }
             return PollingResult(errors = 1)
         }
@@ -88,7 +88,7 @@ abstract class DocumentationPollingHandlerBase<TPage : Any>(
      * Poll pages for a single client.
      */
     private suspend fun pollClientPages(
-        connectionDocument: ConnectionDocument.HttpConnectionDocument,
+        connectionDocument: ConnectionDocument,
         client: ClientDocument,
     ): PollingResult {
         val credentials =
@@ -116,19 +116,13 @@ abstract class DocumentationPollingHandlerBase<TPage : Any>(
         var skipped = 0
 
         for (fullPage in fullPages) {
-            val existing = findExisting(connectionDocument.id, fullPage)
-            if (existing != null) {
+            if (findExisting(connectionDocument.id, fullPage)) {
                 skipped++
                 continue
             }
 
-            val doubleCheck = findExisting(connectionDocument.id, fullPage)
-            if (doubleCheck != null) {
-                skipped++
-            } else {
-                savePage(fullPage)
-                created++
-            }
+            savePage(fullPage)
+            created++
         }
 
         logger.info { "${getSystemName()} polling for ${client.name}: created/updated=$created, skipped=$skipped" }
@@ -136,7 +130,7 @@ abstract class DocumentationPollingHandlerBase<TPage : Any>(
         fullPages.maxOfOrNull { getPageUpdatedAt(it) }?.let { latestUpdated ->
             val maxUpdated = state?.lastSeenUpdatedAt?.let { maxOf(it, latestUpdated) } ?: latestUpdated
             val updatedPollingStates =
-                connectionDocument.pollingStates + (getToolName() to PollingState.Http(maxUpdated))
+                connectionDocument.pollingStates + (getToolName() to PollingState(lastSeenUpdatedAt = maxUpdated))
             connectionService.save(connectionDocument.copy(pollingStates = updatedPollingStates))
         }
 
@@ -170,7 +164,7 @@ abstract class DocumentationPollingHandlerBase<TPage : Any>(
      * @param startAt Pagination offset (default 0). Used during initial sync pagination.
      */
     protected abstract suspend fun fetchFullPages(
-        connectionDocument: ConnectionDocument.HttpConnectionDocument,
+        connectionDocument: ConnectionDocument,
         credentials: HttpCredentials,
         clientId: ClientId,
         spaceKey: String?,
@@ -192,7 +186,7 @@ abstract class DocumentationPollingHandlerBase<TPage : Any>(
     protected abstract suspend fun findExisting(
         connectionId: ConnectionId,
         page: TPage,
-    ): TPage?
+    ): Boolean
 
     /**
      * Save page to repository.

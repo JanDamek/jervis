@@ -308,7 +308,6 @@ private fun ClientsTabContent(repository: JervisRepository) {
                                         useTls = conn.useTls,
                                         authorizationUrl = conn.authorizationUrl,
                                         tokenUrl = conn.tokenUrl,
-                                        clientId = conn.clientId,
                                         clientSecret = conn.clientSecret,
                                         redirectUri = conn.redirectUri,
                                         scope = conn.scope,
@@ -446,7 +445,6 @@ private fun ClientsTabContent(repository: JervisRepository) {
                                 useTls = conn.useTls,
                                 authorizationUrl = conn.authorizationUrl,
                                 tokenUrl = conn.tokenUrl,
-                                clientId = conn.clientId,
                                 clientSecret = conn.clientSecret,
                                 redirectUri = conn.redirectUri,
                                 scope = conn.scope,
@@ -729,7 +727,6 @@ private fun ProjectsTabContent(repository: JervisRepository) {
                                 useTls = conn.useTls,
                                 authorizationUrl = conn.authorizationUrl,
                                 tokenUrl = conn.tokenUrl,
-                                clientId = conn.clientId,
                                 clientSecret = conn.clientSecret,
                                 redirectUri = conn.redirectUri,
                                 scope = conn.scope,
@@ -1448,7 +1445,6 @@ private fun ClientEditDialog(
                                                             append(
                                                                 listOfNotNull(
                                                                     conn.authorizationUrl,
-                                                                    conn.clientId,
                                                                 ).joinToString(" · "),
                                                             )
                                                         }
@@ -1564,7 +1560,16 @@ private fun ClientEditDialog(
                             .lines()
                             .mapNotNull { line ->
                                 val idx = line.indexOf('=')
-                                if (idx <= 0) null else (line.substring(0, idx).trim() to line.substring(idx + 1).trim())
+                                if (idx <= 0) {
+                                    null
+                                } else {
+                                    (
+                                        line.substring(0, idx).trim() to
+                                            line
+                                                .substring(idx + 1)
+                                                .trim()
+                                    )
+                                }
                             }.toMap()
 
                     val updated =
@@ -1702,7 +1707,6 @@ private fun ConnectionsOverviewPanel(
                                                     append(
                                                         listOfNotNull(
                                                             conn.authorizationUrl,
-                                                            conn.clientId,
                                                         ).joinToString(" · "),
                                                     )
                                                 }
@@ -2157,7 +2161,6 @@ private fun ConnectionsTabContent(repository: JervisRepository) {
                                         useTls = conn.useTls,
                                         authorizationUrl = conn.authorizationUrl,
                                         tokenUrl = conn.tokenUrl,
-                                        clientId = conn.clientId,
                                         clientSecret = conn.clientSecret,
                                         redirectUri = conn.redirectUri,
                                         scope = conn.scope,
@@ -2548,7 +2551,6 @@ private fun ProjectEditDialog(
                                                             append(
                                                                 listOfNotNull(
                                                                     conn.authorizationUrl,
-                                                                    conn.clientId,
                                                                 ).joinToString(" · "),
                                                             )
                                                         }

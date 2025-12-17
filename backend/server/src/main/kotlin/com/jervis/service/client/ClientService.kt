@@ -131,5 +131,9 @@ class ClientService(
 
     suspend fun list(): List<ClientDocument> = clientRepository.findAll().toList()
 
-    suspend fun getClientById(id: ClientId): ClientDocument? = clientRepository.findById(id)
+    suspend fun getClientById(id: ClientId): ClientDocument = clientRepository.findById(id) ?: throw ClientNotFoundException(id)
 }
+
+class ClientNotFoundException(
+    clientId: ClientId,
+) : Exception("Client not found: $clientId")

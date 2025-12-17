@@ -5,10 +5,11 @@ import com.jervis.common.dto.atlassian.ConfluenceSearchRequest
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.confluence.ConfluencePageIndexDocument
 import com.jervis.entity.connection.ConnectionDocument
-import com.jervis.entity.connection.HttpCredentials
+import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
 import com.jervis.repository.ConfluencePageIndexMongoRepository
 import com.jervis.service.connection.ConnectionService
 import com.jervis.types.ClientId
+import com.jervis.types.ConnectionId
 import org.springframework.stereotype.Component
 import java.time.Instant
 
@@ -32,8 +33,8 @@ class ConfluencePollingHandler(
         connectionService = connectionService,
     ) {
     override fun canHandle(connectionDocument: ConnectionDocument): Boolean =
-        connectionDocument is ConnectionDocument.HttpConnectionDocument &&
-            connectionDocument.baseUrl.contains("atlassian.net")
+        connectionDocument.connectionType == ConnectionDocument.ConnectionTypeEnum.HTTP &&
+            connectionDocument.baseUrl?.contains("atlassian.net") == true
 
     override fun getSystemName(): String = "Confluence"
 
@@ -42,7 +43,7 @@ class ConfluencePollingHandler(
     override fun getSpaceKey(client: ClientDocument): String? = client.confluenceSpaceKey
 
     override suspend fun fetchFullPages(
-        connectionDocument: ConnectionDocument.HttpConnectionDocument,
+        connectionDocument: ConnectionDocument,
         credentials: HttpCredentials,
         clientId: ClientId,
         spaceKey: String?,
@@ -74,24 +75,16 @@ class ConfluencePollingHandler(
             val response = atlassianClient.searchConfluencePages(searchRequest)
 
             return response.pages.map { page ->
-                ConfluencePageIndexDocument.New(
+                ConfluencePageIndexDocument(
+                    id = org.bson.types.ObjectId(),
                     clientId = clientId,
                     connectionDocumentId = connectionDocument.id,
                     pageId = page.id,
                     versionNumber = page.version?.number ?: -1,
                     title = page.title,
-                    spaceKey = page.spaceKey,
-                    pageType = "page",
-                    status = "current",
-                    content = null,
-                    creator = page.version?.by?.displayName,
-                    lastModifier = page.version?.by?.displayName,
-                    labels = emptyList(),
-                    parentPageId = null,
-                    createdAt = parseInstant(page.version?.`when`),
                     confluenceUpdatedAt = parseInstant(page.lastModified),
-                    comments = emptyList(),
-                    attachments = emptyList(),
+                    indexingError = null,
+                    status = com.jervis.domain.PollingStatusEnum.NEW,
                 )
             }
         } catch (e: Exception) {
@@ -121,11 +114,11 @@ class ConfluencePollingHandler(
     override fun getPageUpdatedAt(page: ConfluencePageIndexDocument): Instant = page.confluenceUpdatedAt
 
     override suspend fun findExisting(
-        connectionId: com.jervis.types.ConnectionId,
+        connectionId: ConnectionId,
         page: ConfluencePageIndexDocument,
-    ): ConfluencePageIndexDocument? =
-        repository.findByConnectionDocumentIdAndPageIdAndVersionNumber(
-            connectionId = connectionId.value,
+    ): Boolean =
+        repository.existsByConnectionDocumentIdAndPageIdAndVersionNumber(
+            connectionId = connectionId,
             pageId = page.pageId,
             versionNumber = page.versionNumber,
         )

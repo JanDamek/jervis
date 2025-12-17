@@ -38,7 +38,9 @@ class TaskQualificationService(
     private val logger = KotlinLogging.logger {}
 
     // Atomic flag to ensure only one qualification cycle runs at a time
-    private val isQualificationRunning = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val isQualificationRunning =
+        java.util.concurrent.atomic
+            .AtomicBoolean(false)
 
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun processAllQualifications() {
@@ -46,7 +48,7 @@ class TaskQualificationService(
         if (!isQualificationRunning.compareAndSet(false, true)) {
             logger.warn {
                 "QUALIFICATION_SKIPPED: Another qualification cycle is already running. " +
-                "This prevents concurrent qualifier agent execution."
+                    "This prevents concurrent qualifier agent execution."
             }
             return
         }
@@ -95,15 +97,12 @@ class TaskQualificationService(
             logger.debug { "QUALIFICATION_SKIP: id=${original.id} type=${original.type} - data processing tasks bypass qualification" }
             return
         }
-        var task =
+        val task =
             pendingTaskService.tryClaimForQualification(original.id) ?: run {
                 logger.debug { "QUALIFICATION_SKIP: id=${original.id} - task already claimed" }
                 return
             }
 
-        task = tikaTextExtractionService.ensureCleanContent(task)
-
-        // Get extraction goal with schema and example
         val extractionGoal = promptRepository.goals[original.type]
         require(extractionGoal != null) { "No extraction goal found for: ${original.type}" }
 

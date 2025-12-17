@@ -1,6 +1,8 @@
 package com.jervis.repository
 
+import com.jervis.domain.PollingStatusEnum
 import com.jervis.entity.confluence.ConfluencePageIndexDocument
+import com.jervis.types.ConnectionId
 import kotlinx.coroutines.flow.Flow
 import org.bson.types.ObjectId
 import org.springframework.data.repository.kotlin.CoroutineCrudRepository
@@ -8,17 +10,11 @@ import org.springframework.stereotype.Repository
 
 @Repository
 interface ConfluencePageIndexMongoRepository : CoroutineCrudRepository<ConfluencePageIndexDocument, ObjectId> {
-    suspend fun findByConnectionDocumentIdAndPageIdAndVersionNumber(
-        connectionId: ObjectId,
+    suspend fun existsByConnectionDocumentIdAndPageIdAndVersionNumber(
+        connectionId: ConnectionId,
         pageId: String,
-        versionNumber: Int,
-    ): ConfluencePageIndexDocument?
-}
+        versionNumber: Int?,
+    ): Boolean
 
-@Repository
-interface ConfluencePageIndexNewMongoRepository : CoroutineCrudRepository<ConfluencePageIndexDocument.New, ObjectId> {
-    fun findAllByOrderByConfluenceUpdatedAtDesc(): Flow<ConfluencePageIndexDocument.New>
+    fun findAllByStatusOrderByConfluenceUpdatedAtDesc(status: PollingStatusEnum = PollingStatusEnum.NEW): Flow<ConfluencePageIndexDocument>
 }
-
-@Repository
-interface ConfluencePageIndexIndexMongoRepository : CoroutineCrudRepository<ConfluencePageIndexDocument.Indexed, ObjectId>

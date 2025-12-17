@@ -2,18 +2,20 @@ package com.jervis.configuration
 
 import com.jervis.configuration.properties.DomainRateLimitProperties
 import com.jervis.entity.connection.ConnectionDocument
-import com.jervis.entity.connection.HttpCredentials
+import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
 import com.jervis.service.http.RateLimitingPlugin
 import com.jervis.service.ratelimit.DomainRateLimiterService
-import io.ktor.client.*
-import io.ktor.client.engine.cio.*
-import io.ktor.client.plugins.*
-import io.ktor.client.plugins.api.*
-import io.ktor.client.plugins.contentnegotiation.*
-import io.ktor.client.request.*
-import io.ktor.http.*
-import io.ktor.serialization.kotlinx.json.*
-import io.ktor.util.*
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.api.createClientPlugin
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.request.header
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.serialization.kotlinx.json.json
+import io.ktor.util.AttributeKey
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.springframework.context.annotation.Bean
@@ -90,10 +92,6 @@ class HttpClientConfiguration {
         }
 
     /**
-     * Rate limiting plugin - applies rate limits before each request.
-     */
-
-    /**
      * Authorization plugin - injects auth headers from ConnectionDocument.
      * Credentials must be provided via ConnectionCredentialsKey attribute.
      */
@@ -103,10 +101,21 @@ class HttpClientConfiguration {
                 val connection = request.attributes.getOrNull(ConnectionDocumentKey)
                 val credentials = request.attributes.getOrNull(ConnectionCredentialsKey)
 
-                if (connection is ConnectionDocument.HttpConnectionDocument && credentials != null) {
+                if (connection?.connectionType == ConnectionDocument.ConnectionTypeEnum.HTTP && credentials != null) {
                     when (credentials) {
-                        is HttpCredentials.Basic -> request.header(HttpHeaders.Authorization, credentials.toAuthHeader())
-                        is HttpCredentials.Bearer -> request.header(HttpHeaders.Authorization, credentials.toAuthHeader())
+                        is HttpCredentials.Basic -> {
+                            request.header(
+                                HttpHeaders.Authorization,
+                                credentials.toAuthHeader(),
+                            )
+                        }
+
+                        is HttpCredentials.Bearer -> {
+                            request.header(
+                                HttpHeaders.Authorization,
+                                credentials.toAuthHeader(),
+                            )
+                        }
                     }
                     logger.debug { "Added authentication header for ${connection.name}" }
                 }

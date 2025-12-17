@@ -2,6 +2,7 @@ package com.jervis.common.client
 
 import com.jervis.common.dto.atlassian.AtlassianMyselfRequest
 import com.jervis.common.dto.atlassian.AtlassianUserDto
+import com.jervis.common.dto.atlassian.ConfluenceAttachmentDownloadRequest
 import com.jervis.common.dto.atlassian.ConfluencePageRequest
 import com.jervis.common.dto.atlassian.ConfluencePageResponse
 import com.jervis.common.dto.atlassian.ConfluenceSearchRequest
@@ -75,10 +76,20 @@ interface IAtlassianClient {
     /**
      * Download Jira attachment binary data
      * Used by indexers for vision augmentation (images, PDFs)
-     * Returns raw binary data (ByteArray)
+     * Returns raw binary data (ByteArray), or null if download fails
      */
     @PostExchange("/jira/attachment/download")
     suspend fun downloadJiraAttachment(
         @RequestBody request: JiraAttachmentDownloadRequest,
-    ): ByteArray
+    ): ByteArray?
+
+    /**
+     * Download Confluence attachment binary data
+     * Used by indexers for vision augmentation (images, PDFs)
+     * Returns raw binary data (ByteArray), or null if download fails
+     */
+    @PostExchange("/confluence/attachment/download")
+    suspend fun downloadConfluenceAttachment(
+        @RequestBody request: ConfluenceAttachmentDownloadRequest,
+    ): ByteArray?
 }

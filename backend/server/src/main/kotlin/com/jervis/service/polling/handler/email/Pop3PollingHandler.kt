@@ -2,7 +2,6 @@ package com.jervis.service.polling.handler.email
 
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.ConnectionDocument
-import com.jervis.entity.connection.PollingState
 import com.jervis.repository.EmailMessageIndexMongoRepository
 import com.jervis.service.connection.ConnectionService
 import com.jervis.service.polling.PollingResult
@@ -31,7 +30,7 @@ class Pop3PollingHandler(
     private val connectionService: ConnectionService,
 ) : EmailPollingHandlerBase(repository) {
     override fun canHandle(connectionDocument: ConnectionDocument): Boolean =
-        connectionDocument is ConnectionDocument.Pop3ConnectionDocument
+        connectionDocument.connectionType == ConnectionDocument.ConnectionTypeEnum.POP3
 
     override fun getProtocolName(): String = "POP3"
 
@@ -39,44 +38,48 @@ class Pop3PollingHandler(
         connectionDocument: ConnectionDocument,
         client: ClientDocument,
         projectId: ProjectId?,
-    ): PollingResult {
-        if (connectionDocument !is ConnectionDocument.Pop3ConnectionDocument) {
-            logger.warn { "Invalid connectionDocument type for POP3 polling" }
-            return PollingResult(errors = 1)
-        }
-
-        return pollPop3(connectionDocument, client, projectId)
-    }
-
-    private suspend fun pollPop3(
-        connectionDocument: ConnectionDocument.Pop3ConnectionDocument,
-        client: ClientDocument,
-        projectId: ProjectId?,
     ): PollingResult =
         withContext(Dispatchers.IO) {
             logger.debug { "Polling POP3 ${connectionDocument.name} for client ${client.name}" }
 
             // Connect to POP3 server
+            // Determine protocol: pop3s (SSL) vs pop3 (plain/STARTTLS)
+            val protocol = if (connectionDocument.useSsl) "pop3s" else "pop3"
+            val protocolPrefix = if (connectionDocument.useSsl) "mail.pop3s" else "mail.pop3"
+
             val properties =
                 Properties().apply {
-                    setProperty("mail.store.protocol", "pop3")
-                    setProperty("mail.pop3.host", connectionDocument.host)
-                    setProperty("mail.pop3.port", connectionDocument.port.toString())
+                    setProperty("mail.store.protocol", protocol)
+                    setProperty("$protocolPrefix.host", connectionDocument.host ?: "")
+                    setProperty("$protocolPrefix.port", connectionDocument.port.toString())
+
                     if (connectionDocument.useSsl) {
-                        setProperty("mail.pop3.ssl.enable", "true")
-                        setProperty("mail.pop3.ssl.trust", "*")
+                        // pop3s protocol (direct SSL)
+                        setProperty("$protocolPrefix.ssl.enable", "true")
+                        setProperty("$protocolPrefix.ssl.trust", "*")
+                        setProperty("$protocolPrefix.ssl.protocols", "TLSv1.2 TLSv1.3")
+                        setProperty("$protocolPrefix.ssl.checkserveridentity", "false")
+                    } else if (connectionDocument.useTls == true) {
+                        // pop3 protocol with STARTTLS
+                        setProperty("$protocolPrefix.starttls.enable", "true")
+                        setProperty("$protocolPrefix.starttls.required", "true")
+                        setProperty("$protocolPrefix.ssl.protocols", "TLSv1.2 TLSv1.3")
                     }
-                    setProperty("mail.pop3.connectiontimeout", "30000")
-                    setProperty("mail.pop3.timeout", "30000")
+
+                    setProperty("$protocolPrefix.connectiontimeout", connectionDocument.timeoutMs.toString())
+                    setProperty("$protocolPrefix.timeout", connectionDocument.timeoutMs.toString())
+
+                    // Debug SSL issues
+                    setProperty("mail.debug", "true")
+                    setProperty("mail.debug.auth", "true")
                 }
 
             val session = Session.getInstance(properties)
-            val store = session.getStore("pop3")
+            val store = session.getStore(protocol)
 
             try {
                 store.connect(
                     connectionDocument.host,
-                    connectionDocument.port,
                     connectionDocument.username,
                     connectionDocument.password,
                 )
@@ -94,7 +97,8 @@ class Pop3PollingHandler(
                     }
 
                     // Load polling state from connectionDocument
-                    val lastFetchedNumber = connectionDocument.pollingState?.lastFetchedMessageNumber ?: 0
+                    val pollingState = connectionDocument.pollingStates[connectionDocument.connectionType.name]
+                    val lastFetchedNumber = pollingState?.lastFetchedMessageNumber ?: 0
 
                     logger.debug { "POP3 sync state: lastFetchedMessageNumber=$lastFetchedNumber, currentCount=$messageCount" }
 
@@ -130,15 +134,18 @@ class Pop3PollingHandler(
 
                     // Save polling state to connectionDocument (use max number from ALL fetched messages)
                     if (maxNumberFetched > lastFetchedNumber) {
-                        val updatedConnection =
-                            connectionDocument.copy(
-                                pollingState =
-                                    PollingState.Pop3(
-                                        lastFetchedMessageNumber = maxNumberFetched,
-                                    ),
-                            )
+                        val updatedStates =
+                            connectionDocument.pollingStates.toMutableMap().apply {
+                                val state = this[connectionDocument.connectionType.name] ?: ConnectionDocument.PollingState()
+                                state.lastFetchedMessageNumber = maxNumberFetched
+                                this[connectionDocument.connectionType.name] = state
+                            }
+
+                        val updatedConnection = connectionDocument.copy(pollingStates = updatedStates)
                         connectionService.save(updatedConnection)
-                        logger.info { "Updated lastFetchedMessageNumber: $lastFetchedNumber -> $maxNumberFetched (processed: created=$created, skipped=$skipped)" }
+                        logger.info {
+                            "Updated lastFetchedMessageNumber: $lastFetchedNumber -> $maxNumberFetched (processed: created=$created, skipped=$skipped)"
+                        }
                     }
 
                     return@withContext PollingResult(

@@ -1,10 +1,10 @@
 package com.jervis.repository
 
+import com.jervis.domain.PollingStatusEnum
 import com.jervis.entity.email.EmailMessageIndexDocument
 import com.jervis.types.ConnectionId
 import kotlinx.coroutines.flow.Flow
 import org.bson.types.ObjectId
-import org.springframework.data.mongodb.repository.Query
 import org.springframework.data.repository.kotlin.CoroutineCrudRepository
 import org.springframework.stereotype.Repository
 
@@ -21,16 +21,14 @@ interface EmailMessageIndexMongoRepository : CoroutineCrudRepository<EmailMessag
      * Find message by connection and UID (for duplicate detection).
      * Works with sealed classes because connectionId and messageUid are in all subclasses.
      */
-    @Query("{ 'connectionId': ?0, 'messageUid': ?1 }")
-    suspend fun findByConnectionIdAndMessageUid(
+    suspend fun existsByConnectionIdAndMessageUid(
         connectionId: ConnectionId,
         messageUid: String,
-    ): EmailMessageIndexDocument?
+    ): Boolean
 
     /**
      * Find all messages by state, ordered by received date.
      * Uses explicit query because 'state' is abstract property in sealed class.
      */
-    @Query(value = "{ 'state': ?0 }", sort = "{ 'receivedDate': 1 }")
-    fun findByStateOrderByReceivedDateAsc(state: String): Flow<EmailMessageIndexDocument>
+    fun findByStateOrderByReceivedDateAsc(state: PollingStatusEnum): Flow<EmailMessageIndexDocument>
 }

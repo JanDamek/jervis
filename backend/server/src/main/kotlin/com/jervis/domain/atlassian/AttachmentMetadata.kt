@@ -1,7 +1,8 @@
-package com.jervis.entity
+package com.jervis.domain.atlassian
 
 import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
+import java.time.Instant
 
 /**
  * Attachment metadata for vision analysis.
@@ -61,7 +62,7 @@ data class VisionAnalysisResult(
     val confidence: Double,
     /** Analysis timestamp */
     @Contextual
-    val analyzedAt: java.time.Instant,
+    val analyzedAt: Instant,
 )
 
 /**

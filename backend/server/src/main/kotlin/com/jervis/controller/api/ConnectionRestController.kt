@@ -1,33 +1,30 @@
 package com.jervis.controller.api
 
 import com.jervis.common.client.IAtlassianClient
-import com.jervis.common.dto.atlassian.AtlassianAuth
-import com.jervis.common.dto.atlassian.AtlassianConnection
 import com.jervis.common.dto.atlassian.AtlassianMyselfRequest
 import com.jervis.dto.connection.ConnectionCreateRequestDto
 import com.jervis.dto.connection.ConnectionResponseDto
 import com.jervis.dto.connection.ConnectionTestResultDto
 import com.jervis.dto.connection.ConnectionUpdateRequestDto
 import com.jervis.entity.connection.ConnectionDocument
-import com.jervis.entity.connection.HttpCredentials
-import com.jervis.entity.connection.RateLimitConfig
+import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
 import com.jervis.service.IConnectionService
 import com.jervis.service.connection.ConnectionService
+import com.jervis.types.ConnectionId
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
+import jakarta.mail.Authenticator
+import jakarta.mail.Folder
+import jakarta.mail.PasswordAuthentication
+import jakarta.mail.Session
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonObject
 import mu.KotlinLogging
-import org.bson.types.ObjectId
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -36,6 +33,7 @@ import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
+import java.util.Properties
 
 /**
  * REST controller for managing connections.
@@ -55,17 +53,10 @@ class ConnectionRestController(
     @GetMapping
     override suspend fun getAllConnections(): List<ConnectionResponseDto> = connectionService.findAll().map { it.toDto() }.toList()
 
-    override suspend fun getConnectionById(id: String): ConnectionResponseDto? = connectionService.findById(ObjectId(id))?.toDto()
-
     @GetMapping("/{id}")
-    suspend fun getConnection(
-        @PathVariable id: String,
-    ): ConnectionResponseDto {
-        val connectionDocument =
-            connectionService.findById(ObjectId(id))
-                ?: throw IllegalArgumentException("ConnectionDocument not found: $id")
-        return connectionDocument.toDto()
-    }
+    override suspend fun getConnectionById(
+        @PathVariable("id") id: String,
+    ): ConnectionResponseDto? = connectionService.findById(ConnectionId.fromString(id))?.toDto()
 
     @PostMapping
     override suspend fun createConnection(
@@ -74,7 +65,7 @@ class ConnectionRestController(
         val connectionDocument: ConnectionDocument =
             when (request.type.uppercase()) {
                 "HTTP" -> {
-                    ConnectionDocument.HttpConnectionDocument(
+                    ConnectionDocument(
                         name = request.name,
                         baseUrl = request.baseUrl ?: error("baseUrl required for HTTP connection"),
                         credentials =
@@ -85,58 +76,57 @@ class ConnectionRestController(
                                 bearer = request.httpBearerToken,
                             ),
                         timeoutMs = request.timeoutMs ?: 30000,
-                        rateLimitConfig = RateLimitConfig(maxRequestsPerSecond = 10, maxRequestsPerMinute = 100),
+                        connectionType = ConnectionDocument.ConnectionTypeEnum.HTTP,
                     )
                 }
 
                 "IMAP" -> {
-                    ConnectionDocument.ImapConnectionDocument(
+                    ConnectionDocument(
                         name = request.name,
                         host = request.host ?: error("host required for IMAP connection"),
                         port = request.port ?: 993,
                         username = request.username ?: error("username required for IMAP connection"),
                         password = request.password ?: error("password required for IMAP connection"),
                         useSsl = request.useSsl ?: true,
-                        rateLimitConfig = RateLimitConfig(maxRequestsPerSecond = 10, maxRequestsPerMinute = 100),
+                        connectionType = ConnectionDocument.ConnectionTypeEnum.IMAP,
                     )
                 }
 
                 "POP3" -> {
-                    ConnectionDocument.Pop3ConnectionDocument(
+                    ConnectionDocument(
                         name = request.name,
                         host = request.host ?: error("host required for POP3 connection"),
                         port = request.port ?: 995,
                         username = request.username ?: error("username required for POP3 connection"),
                         password = request.password ?: error("password required for POP3 connection"),
                         useSsl = request.useSsl ?: true,
-                        rateLimitConfig = RateLimitConfig(maxRequestsPerSecond = 10, maxRequestsPerMinute = 100),
+                        connectionType = ConnectionDocument.ConnectionTypeEnum.POP3,
                     )
                 }
 
                 "SMTP" -> {
-                    ConnectionDocument.SmtpConnectionDocument(
+                    ConnectionDocument(
                         name = request.name,
                         host = request.host ?: error("host required for SMTP connection"),
                         port = request.port ?: 587,
                         username = request.username ?: error("username required for SMTP connection"),
                         password = request.password ?: error("password required for SMTP connection"),
                         useTls = request.useTls ?: true,
-                        rateLimitConfig = RateLimitConfig(maxRequestsPerSecond = 10, maxRequestsPerMinute = 100),
+                        connectionType = ConnectionDocument.ConnectionTypeEnum.SMTP,
                     )
                 }
 
                 "OAUTH2" -> {
-                    ConnectionDocument.OAuth2ConnectionDocument(
+                    ConnectionDocument(
                         name = request.name,
                         authorizationUrl =
                             request.authorizationUrl
                                 ?: error("authorizationUrl required for OAuth2 connection"),
                         tokenUrl = request.tokenUrl ?: error("tokenUrl required for OAuth2 connection"),
-                        clientId = request.clientId ?: error("clientId required for OAuth2 connection"),
                         clientSecret = request.clientSecret ?: error("clientSecret required for OAuth2 connection"),
                         scopes = listOfNotNull(request.scope),
                         redirectUri = request.redirectUri ?: error("redirectUri required for OAuth2 connection"),
-                        rateLimitConfig = RateLimitConfig(maxRequestsPerSecond = 10, maxRequestsPerMinute = 100),
+                        connectionType = ConnectionDocument.ConnectionTypeEnum.OAUTH2,
                     )
                 }
 
@@ -155,13 +145,14 @@ class ConnectionRestController(
         @PathVariable id: String,
         @RequestBody request: ConnectionUpdateRequestDto,
     ): ConnectionResponseDto {
+        logger.info { "Updating connection: $id" }
         val existing =
-            connectionService.findById(ObjectId(id))
+            connectionService.findById(ConnectionId.fromString(id))
                 ?: throw IllegalArgumentException("ConnectionDocument not found: $id")
 
         val updated: ConnectionDocument =
-            when (existing) {
-                is ConnectionDocument.HttpConnectionDocument -> {
+            when (existing.connectionType) {
+                ConnectionDocument.ConnectionTypeEnum.HTTP -> {
                     val updatedCreds =
                         when {
                             // If explicit authType provided, derive from typed fields
@@ -207,7 +198,7 @@ class ConnectionRestController(
                     )
                 }
 
-                is ConnectionDocument.ImapConnectionDocument -> {
+                ConnectionDocument.ConnectionTypeEnum.IMAP -> {
                     existing.copy(
                         name = request.name ?: existing.name,
                         host = request.host ?: existing.host,
@@ -218,7 +209,7 @@ class ConnectionRestController(
                     )
                 }
 
-                is ConnectionDocument.Pop3ConnectionDocument -> {
+                ConnectionDocument.ConnectionTypeEnum.POP3 -> {
                     existing.copy(
                         name = request.name ?: existing.name,
                         host = request.host ?: existing.host,
@@ -229,7 +220,7 @@ class ConnectionRestController(
                     )
                 }
 
-                is ConnectionDocument.SmtpConnectionDocument -> {
+                ConnectionDocument.ConnectionTypeEnum.SMTP -> {
                     existing.copy(
                         name = request.name ?: existing.name,
                         host = request.host ?: existing.host,
@@ -240,7 +231,7 @@ class ConnectionRestController(
                     )
                 }
 
-                is ConnectionDocument.OAuth2ConnectionDocument -> {
+                ConnectionDocument.ConnectionTypeEnum.OAUTH2 -> {
                     existing.copy(
                         name = request.name ?: existing.name,
                         clientSecret = request.clientSecret ?: existing.clientSecret,
@@ -258,7 +249,7 @@ class ConnectionRestController(
     override suspend fun deleteConnection(
         @PathVariable id: String,
     ) {
-        connectionService.delete(ObjectId(id))
+        connectionService.delete(ConnectionId.fromString(id))
         logger.info { "Deleted connection: $id" }
     }
 
@@ -267,29 +258,29 @@ class ConnectionRestController(
         @PathVariable id: String,
     ): ConnectionTestResultDto {
         val connectionDocument =
-            connectionService.findById(ObjectId(id))
+            connectionService.findById(ConnectionId.fromString(id))
                 ?: throw IllegalArgumentException("ConnectionDocument not found: $id")
 
         return try {
             // Test connection based on type
-            when (connectionDocument) {
-                is ConnectionDocument.HttpConnectionDocument -> {
+            when (connectionDocument.connectionType) {
+                ConnectionDocument.ConnectionTypeEnum.HTTP -> {
                     testHttpConnection(connectionDocument)
                 }
 
-                is ConnectionDocument.ImapConnectionDocument -> {
+                ConnectionDocument.ConnectionTypeEnum.IMAP -> {
                     testImapConnection(connectionDocument)
                 }
 
-                is ConnectionDocument.Pop3ConnectionDocument -> {
+                ConnectionDocument.ConnectionTypeEnum.POP3 -> {
                     testPop3Connection(connectionDocument)
                 }
 
-                is ConnectionDocument.SmtpConnectionDocument -> {
+                ConnectionDocument.ConnectionTypeEnum.SMTP -> {
                     testSmtpConnection(connectionDocument)
                 }
 
-                is ConnectionDocument.OAuth2ConnectionDocument -> {
+                ConnectionDocument.ConnectionTypeEnum.OAUTH2 -> {
                     ConnectionTestResultDto(
                         success = true,
                         message = "OAuth2 test not yet implemented",
@@ -305,13 +296,12 @@ class ConnectionRestController(
         }
     }
 
-    private suspend fun testHttpConnection(connectionDocument: ConnectionDocument.HttpConnectionDocument): ConnectionTestResultDto =
+    private suspend fun testHttpConnection(connectionDocument: ConnectionDocument): ConnectionTestResultDto =
         try {
             val credentials = connectionDocument.credentials
 
             // Test Atlassian connectionDocument (if it's Atlassian URL)
-            if (connectionDocument.baseUrl.contains("atlassian.net")) {
-                val atlConn = connectionDocument.toAtlassianConnection()
+            if (connectionDocument.baseUrl.contains("atlassian.net") == true) {
                 val myself =
                     atlassianClient.getMyself(
                         connectionDocument.toAtlassianMyselfRequest(),
@@ -329,15 +319,17 @@ class ConnectionRestController(
             } else {
                 // Generic HTTP test - just try to connect
                 val response =
-                    httpClient.get(connectionDocument.baseUrl) {
-                        credentials?.let { creds ->
-                            when (creds) {
-                                is HttpCredentials.Basic -> {
-                                    header(HttpHeaders.Authorization, creds.toAuthHeader())
-                                }
+                    connectionDocument.baseUrl.let {
+                        httpClient.get(it) {
+                            credentials?.let { creds ->
+                                when (creds) {
+                                    is HttpCredentials.Basic -> {
+                                        header(HttpHeaders.Authorization, creds.toAuthHeader())
+                                    }
 
-                                is HttpCredentials.Bearer -> {
-                                    header(HttpHeaders.Authorization, creds.toAuthHeader())
+                                    is HttpCredentials.Bearer -> {
+                                        header(HttpHeaders.Authorization, creds.toAuthHeader())
+                                    }
                                 }
                             }
                         }
@@ -355,7 +347,7 @@ class ConnectionRestController(
                         mapOf(
                             "status" to response.status.toString(),
                             "url" to connectionDocument.baseUrl,
-                        ),
+                        ) as Map<String, String>?,
                 )
             }
         } catch (e: Exception) {
@@ -371,49 +363,7 @@ class ConnectionRestController(
             )
         }
 
-    private fun ConnectionDocument.HttpConnectionDocument.toAtlassianConnection(): AtlassianConnection =
-        AtlassianConnection(
-            baseUrl = this.baseUrl,
-            auth =
-                when (val creds = this.credentials) {
-                    is HttpCredentials.Basic -> AtlassianAuth.Basic(creds.username, creds.password)
-                    is HttpCredentials.Bearer -> AtlassianAuth.Bearer(creds.token)
-                    null -> AtlassianAuth.None
-                },
-            timeoutMs = this.timeoutMs,
-        )
-
-    private fun AtlassianConnection.toHeaderValue(): String {
-        val json =
-            buildJsonObject {
-                put("baseUrl", baseUrl)
-                put("timeoutMs", timeoutMs)
-                putJsonObject("auth") {
-                    when (val a = auth) {
-                        is AtlassianAuth.None -> {
-                            put("type", "NONE")
-                        }
-
-                        is AtlassianAuth.Basic -> {
-                            put("type", "BASIC")
-                            put("username", a.username)
-                            put("password", a.password)
-                        }
-
-                        is AtlassianAuth.Bearer -> {
-                            put("type", "BEARER")
-                            put("token", a.token)
-                        }
-                    }
-                }
-            }
-        val str = Json.encodeToString(JsonObject.serializer(), json)
-        return java.util.Base64
-            .getEncoder()
-            .encodeToString(str.toByteArray())
-    }
-
-    private fun ConnectionDocument.HttpConnectionDocument.toAtlassianMyselfRequest(): AtlassianMyselfRequest =
+    private fun ConnectionDocument.toAtlassianMyselfRequest(): AtlassianMyselfRequest =
         when (val creds = this.credentials) {
             is HttpCredentials.Basic -> {
                 AtlassianMyselfRequest(
@@ -440,11 +390,11 @@ class ConnectionRestController(
             }
         }
 
-    private suspend fun testImapConnection(connectionDocument: ConnectionDocument.ImapConnectionDocument): ConnectionTestResultDto =
-        withContext(kotlinx.coroutines.Dispatchers.IO) {
+    private suspend fun testImapConnection(connectionDocument: ConnectionDocument): ConnectionTestResultDto =
+        withContext(Dispatchers.IO) {
             try {
                 val properties =
-                    java.util.Properties().apply {
+                    Properties().apply {
                         setProperty("mail.store.protocol", "imap")
                         setProperty("mail.imap.host", connectionDocument.host)
                         setProperty("mail.imap.port", connectionDocument.port.toString())
@@ -456,7 +406,7 @@ class ConnectionRestController(
                         setProperty("mail.imap.timeout", "10000")
                     }
 
-                val session = jakarta.mail.Session.getInstance(properties)
+                val session = Session.getInstance(properties)
                 val store = session.getStore("imap")
 
                 store.connect(
@@ -467,7 +417,7 @@ class ConnectionRestController(
                 )
 
                 val folder = store.getFolder(connectionDocument.folderName)
-                folder.open(jakarta.mail.Folder.READ_ONLY)
+                folder.open(Folder.READ_ONLY)
                 val messageCount = folder.messageCount
 
                 folder.close(false)
@@ -483,7 +433,7 @@ class ConnectionRestController(
                             "username" to connectionDocument.username,
                             "folder" to connectionDocument.folderName,
                             "messageCount" to messageCount.toString(),
-                        ),
+                        ) as Map<String, String>?,
                 )
             } catch (e: Exception) {
                 logger.error(e) { "IMAP connectionDocument test failed for ${connectionDocument.name}" }
@@ -496,16 +446,16 @@ class ConnectionRestController(
                             "errorType" to e::class.simpleName!!,
                             "host" to connectionDocument.host,
                             "port" to connectionDocument.port.toString(),
-                        ),
+                        ) as Map<String, String>?,
                 )
             }
         }
 
-    private suspend fun testPop3Connection(connectionDocument: ConnectionDocument.Pop3ConnectionDocument): ConnectionTestResultDto =
-        withContext(kotlinx.coroutines.Dispatchers.IO) {
+    private suspend fun testPop3Connection(connectionDocument: ConnectionDocument): ConnectionTestResultDto =
+        withContext(Dispatchers.IO) {
             try {
                 val properties =
-                    java.util.Properties().apply {
+                    Properties().apply {
                         setProperty("mail.store.protocol", "pop3")
                         setProperty("mail.pop3.host", connectionDocument.host)
                         setProperty("mail.pop3.port", connectionDocument.port.toString())
@@ -517,7 +467,7 @@ class ConnectionRestController(
                         setProperty("mail.pop3.timeout", "10000")
                     }
 
-                val session = jakarta.mail.Session.getInstance(properties)
+                val session = Session.getInstance(properties)
                 val store = session.getStore("pop3")
 
                 store.connect(
@@ -528,7 +478,7 @@ class ConnectionRestController(
                 )
 
                 val folder = store.getFolder("INBOX")
-                folder.open(jakarta.mail.Folder.READ_ONLY)
+                folder.open(Folder.READ_ONLY)
                 val messageCount = folder.messageCount
 
                 folder.close(false)
@@ -543,7 +493,7 @@ class ConnectionRestController(
                             "port" to connectionDocument.port.toString(),
                             "username" to connectionDocument.username,
                             "messageCount" to messageCount.toString(),
-                        ),
+                        ) as Map<String, String>?,
                 )
             } catch (e: Exception) {
                 logger.error(e) { "POP3 connectionDocument test failed for ${connectionDocument.name}" }
@@ -556,20 +506,20 @@ class ConnectionRestController(
                             "errorType" to e::class.simpleName!!,
                             "host" to connectionDocument.host,
                             "port" to connectionDocument.port.toString(),
-                        ),
+                        ) as Map<String, String>?,
                 )
             }
         }
 
-    private suspend fun testSmtpConnection(connectionDocument: ConnectionDocument.SmtpConnectionDocument): ConnectionTestResultDto =
-        withContext(kotlinx.coroutines.Dispatchers.IO) {
+    private suspend fun testSmtpConnection(connectionDocument: ConnectionDocument): ConnectionTestResultDto =
+        withContext(Dispatchers.IO) {
             try {
                 val properties =
-                    java.util.Properties().apply {
+                    Properties().apply {
                         setProperty("mail.smtp.host", connectionDocument.host)
                         setProperty("mail.smtp.port", connectionDocument.port.toString())
                         setProperty("mail.smtp.auth", "true")
-                        if (connectionDocument.useTls) {
+                        if (connectionDocument.useTls == true) {
                             setProperty("mail.smtp.starttls.enable", "true")
                             setProperty("mail.smtp.ssl.trust", "*")
                         }
@@ -578,11 +528,11 @@ class ConnectionRestController(
                     }
 
                 val session =
-                    jakarta.mail.Session.getInstance(
+                    Session.getInstance(
                         properties,
-                        object : jakarta.mail.Authenticator() {
-                            override fun getPasswordAuthentication(): jakarta.mail.PasswordAuthentication =
-                                jakarta.mail.PasswordAuthentication(
+                        object : Authenticator() {
+                            override fun getPasswordAuthentication(): PasswordAuthentication =
+                                PasswordAuthentication(
                                     connectionDocument.username,
                                     connectionDocument.password,
                                 )
@@ -607,7 +557,7 @@ class ConnectionRestController(
                             "port" to connectionDocument.port.toString(),
                             "username" to connectionDocument.username,
                             "tls" to connectionDocument.useTls.toString(),
-                        ),
+                        ) as Map<String, String>?,
                 )
             } catch (e: Exception) {
                 logger.error(e) { "SMTP connectionDocument test failed for ${connectionDocument.name}" }
@@ -620,7 +570,7 @@ class ConnectionRestController(
                             "errorType" to e::class.simpleName!!,
                             "host" to connectionDocument.host,
                             "port" to connectionDocument.port.toString(),
-                        ),
+                        ) as Map<String, String>?,
                 )
             }
         }
@@ -630,8 +580,8 @@ class ConnectionRestController(
  * Extension to convert ConnectionDocument to DTO.
  */
 private fun ConnectionDocument.toDto(): ConnectionResponseDto =
-    when (this) {
-        is ConnectionDocument.HttpConnectionDocument -> {
+    when (this.connectionType) {
+        ConnectionDocument.ConnectionTypeEnum.HTTP -> {
             ConnectionResponseDto(
                 id = id.toString(),
                 type = "HTTP",
@@ -649,12 +599,10 @@ private fun ConnectionDocument.toDto(): ConnectionResponseDto =
                 httpBearerToken = (credentials as? HttpCredentials.Bearer)?.token,
                 timeoutMs = timeoutMs,
                 hasCredentials = credentials != null,
-                createdAtMs = 0L,
-                updatedAtMs = 0L,
             )
         }
 
-        is ConnectionDocument.ImapConnectionDocument -> {
+        ConnectionDocument.ConnectionTypeEnum.IMAP -> {
             ConnectionResponseDto(
                 id = id.toString(),
                 type = "IMAP",
@@ -666,12 +614,10 @@ private fun ConnectionDocument.toDto(): ConnectionResponseDto =
                 password = password,
                 useSsl = useSsl,
                 hasCredentials = true,
-                createdAtMs = 0L,
-                updatedAtMs = 0L,
             )
         }
 
-        is ConnectionDocument.Pop3ConnectionDocument -> {
+        ConnectionDocument.ConnectionTypeEnum.POP3 -> {
             ConnectionResponseDto(
                 id = id.toString(),
                 type = "POP3",
@@ -683,12 +629,10 @@ private fun ConnectionDocument.toDto(): ConnectionResponseDto =
                 password = password,
                 useSsl = useSsl,
                 hasCredentials = true,
-                createdAtMs = 0L,
-                updatedAtMs = 0L,
             )
         }
 
-        is ConnectionDocument.SmtpConnectionDocument -> {
+        ConnectionDocument.ConnectionTypeEnum.SMTP -> {
             ConnectionResponseDto(
                 id = id.toString(),
                 type = "SMTP",
@@ -700,12 +644,10 @@ private fun ConnectionDocument.toDto(): ConnectionResponseDto =
                 password = password,
                 useTls = useTls,
                 hasCredentials = true,
-                createdAtMs = 0L,
-                updatedAtMs = 0L,
             )
         }
 
-        is ConnectionDocument.OAuth2ConnectionDocument -> {
+        ConnectionDocument.ConnectionTypeEnum.OAUTH2 -> {
             ConnectionResponseDto(
                 id = id.toString(),
                 type = "OAUTH2",
@@ -713,13 +655,10 @@ private fun ConnectionDocument.toDto(): ConnectionResponseDto =
                 state = state,
                 authorizationUrl = authorizationUrl,
                 tokenUrl = tokenUrl,
-                clientId = clientId,
                 clientSecret = clientSecret,
                 redirectUri = redirectUri,
                 scope = scopes.joinToString(" "),
                 hasCredentials = true,
-                createdAtMs = 0L,
-                updatedAtMs = 0L,
             )
         }
     }

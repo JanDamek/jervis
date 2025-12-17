@@ -1,21 +1,47 @@
 package com.jervis.di
 
-import com.jervis.service.*
 import com.jervis.api.SecurityConstants
+import com.jervis.service.IAgentOrchestratorService
+import com.jervis.service.IClientProjectLinkService
+import com.jervis.service.IClientService
+import com.jervis.service.IConnectionService
+import com.jervis.service.IErrorLogService
+import com.jervis.service.IGitConfigurationService
+import com.jervis.service.IPendingTaskService
+import com.jervis.service.IProjectService
+import com.jervis.service.IRagSearchService
+import com.jervis.service.ITaskSchedulingService
+import com.jervis.service.IUserTaskService
+import com.jervis.service.createIAgentOrchestratorService
+import com.jervis.service.createIClientProjectLinkService
+import com.jervis.service.createIClientService
+import com.jervis.service.createIConnectionService
+import com.jervis.service.createIErrorLogService
+import com.jervis.service.createIGitConfigurationService
+import com.jervis.service.createIPendingTaskService
+import com.jervis.service.createIProjectService
+import com.jervis.service.createIRagSearchService
+import com.jervis.service.createITaskSchedulingService
+import com.jervis.service.createIUserTaskService
 import de.jensklingenberg.ktorfit.Ktorfit
-import io.ktor.client.*
+import io.ktor.client.HttpClient
+import io.ktor.client.HttpClientConfig
 import io.ktor.client.call.body
-import io.ktor.client.plugins.*
-import io.ktor.client.plugins.contentnegotiation.*
-import io.ktor.client.plugins.logging.*
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.plugins.logging.DEFAULT
+import io.ktor.client.plugins.logging.LogLevel
+import io.ktor.client.plugins.logging.Logger
+import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.put
-import io.ktor.client.request.header
 import io.ktor.client.request.setBody
-import io.ktor.http.*
-import io.ktor.serialization.kotlinx.json.*
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
 /**
@@ -91,7 +117,6 @@ object NetworkModule {
             agentOrchestratorService = ktorfit.createIAgentOrchestratorService(),
             errorLogService = ktorfit.createIErrorLogService(),
             gitConfigurationService = ktorfit.createIGitConfigurationService(),
-            indexingStatusService = ktorfit.createIIndexingStatusService(),
             pendingTaskService = ktorfit.createIPendingTaskService(),
             connectionService = ktorfit.createIConnectionService(),
         )
@@ -109,7 +134,6 @@ object NetworkModule {
         val agentOrchestratorService: IAgentOrchestratorService,
         val errorLogService: IErrorLogService,
         val gitConfigurationService: IGitConfigurationService,
-        val indexingStatusService: IIndexingStatusService,
         val pendingTaskService: IPendingTaskService,
         val connectionService: IConnectionService,
     )

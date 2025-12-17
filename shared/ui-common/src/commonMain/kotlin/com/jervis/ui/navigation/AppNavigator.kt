@@ -16,16 +16,15 @@ sealed class Screen {
 
     // Tasks & Scheduling
     object UserTasks : Screen()
+
     object Scheduler : Screen()
+
     object PendingTasks : Screen()
 
     // Search & Logs
     object RagSearch : Screen()
-    object ErrorLogs : Screen()
 
-    // Indexing status overview and details
-    object IndexingStatus : Screen()
-    data class IndexingToolDetail(val toolKey: String) : Screen()
+    object ErrorLogs : Screen()
 
     // Debug console (WebSocket)
     object DebugConsole : Screen()

@@ -1,6 +1,6 @@
 package com.jervis.koog.qualifier.types
 
-import com.jervis.entity.AttachmentMetadata
+import com.jervis.domain.atlassian.AttachmentMetadata
 import kotlinx.serialization.Serializable
 
 /**
@@ -110,15 +110,26 @@ data class LogSummarization(
  * Unified extraction result - one of the type-specific extractions.
  */
 sealed class ExtractionResult {
-    data class Email(val data: EmailExtraction) : ExtractionResult()
+    data class Email(
+        val data: EmailExtraction,
+    ) : ExtractionResult()
 
-    data class Jira(val data: JiraExtraction) : ExtractionResult()
+    data class Jira(
+        val data: JiraExtraction,
+    ) : ExtractionResult()
 
-    data class Confluence(val data: ConfluenceExtraction) : ExtractionResult()
+    data class Confluence(
+        val data: ConfluenceExtraction,
+    ) : ExtractionResult()
 
-    data class Log(val data: LogSummarization) : ExtractionResult()
+    data class Log(
+        val data: LogSummarization,
+    ) : ExtractionResult()
 
-    data class Generic(val chunks: List<String>, val baseInfo: String) : ExtractionResult()
+    data class Generic(
+        val chunks: List<String>,
+        val baseInfo: String,
+    ) : ExtractionResult()
 }
 
 /**

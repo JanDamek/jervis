@@ -2,8 +2,6 @@ package com.jervis.service.text
 
 import com.jervis.common.client.ITikaClient
 import com.jervis.common.dto.TikaProcessRequest
-import com.jervis.entity.PendingTaskDocument
-import com.jervis.service.background.PendingTaskService
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
@@ -22,7 +20,6 @@ import org.springframework.stereotype.Service
 @Service
 class TikaTextExtractionService(
     private val tikaClient: ITikaClient,
-    private val pendingTaskService: PendingTaskService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -86,57 +83,6 @@ class TikaTextExtractionService(
     }
 
     /**
-     * Extract plain text from binary data (downloaded files, PDFs, images, etc.).
-     *
-     * Used for processing downloaded content where format is unknown.
-     *
-     * @param data Binary data (PDF, HTML, Word doc, image, etc.)
-     * @param fileName Filename for Tika to detect format
-     * @return Clean plain text, or empty string on failure
-     */
-    suspend fun extractPlainTextFromBytes(
-        data: ByteArray,
-        fileName: String,
-    ): String {
-        if (data.isEmpty()) {
-            return ""
-        }
-
-        logger.debug { "Processing binary data (${data.size} bytes) as $fileName through Tika" }
-
-        return try {
-            val request =
-                TikaProcessRequest(
-                    source =
-                        TikaProcessRequest.Source.FileBytes(
-                            fileName = fileName,
-                            dataBase64 =
-                                java.util.Base64
-                                    .getEncoder()
-                                    .encodeToString(data),
-                        ),
-                    includeMetadata = false,
-                )
-
-            val result = tikaClient.process(request)
-
-            if (result.success) {
-                val plainText = result.plainText.trim()
-                logger.info {
-                    "Tika extraction from bytes successful: ${data.size} bytes → ${plainText.length} chars"
-                }
-                plainText
-            } else {
-                logger.warn { "Tika extraction from bytes failed: ${result.errorMessage}" }
-                ""
-            }
-        } catch (e: Exception) {
-            logger.error(e) { "Tika service error for binary data, returning empty" }
-            ""
-        }
-    }
-
-    /**
      * Heuristic to detect if content contains HTML/XML tags.
      *
      * Checks for:
@@ -182,62 +128,5 @@ class TikaTextExtractionService(
         }
 
         return false
-    }
-
-    /**
-     * Ensures task content is clean from excessive HTML/XML tags.
-     *
-     * If content contains more than 5 HTML tags, processes it through Tika
-     * and updates the task in database with cleaned content.
-     *
-     * This is a safety net for cases where continuous indexers missed cleaning.
-     */
-    suspend fun ensureCleanContent(task: PendingTaskDocument): PendingTaskDocument {
-        val htmlTagCount = countHtmlTags(task.content)
-
-        if (htmlTagCount <= 5) {
-            return task
-        }
-
-        logger.warn {
-            "CONTENT_NEEDS_CLEANING: taskId=${task.id} htmlTags=$htmlTagCount - processing through Tika"
-        }
-
-        val cleanedContent =
-            extractPlainText(
-                content = task.content,
-                fileName = "task-${task.id}.html",
-            )
-
-        val cleanedTask = task.copy(content = cleanedContent)
-
-        // Update task in database with cleaned content
-        pendingTaskService.updateTaskContent(task.id, cleanedContent)
-
-        logger.info {
-            "CONTENT_CLEANED: taskId=${task.id} before=${task.content.length} after=${cleanedContent.length} " +
-                "reduction=${((1.0 - cleanedContent.length.toDouble() / task.content.length) * 100).toInt()}%"
-        }
-
-        return cleanedTask
-    }
-
-    /**
-     * Counts HTML/XML tags in content.
-     * Simple heuristic: count occurrences of < followed by letter or /
-     */
-    private fun countHtmlTags(content: String): Int {
-        var count = 0
-        var i = 0
-        while (i < content.length - 1) {
-            if (content[i] == '<') {
-                val next = content[i + 1]
-                if (next.isLetter() || next == '/') {
-                    count++
-                }
-            }
-            i++
-        }
-        return count
     }
 }
