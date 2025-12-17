@@ -20,9 +20,6 @@ import ai.koog.agents.ext.tool.shell.ExecuteShellCommandTool
 import ai.koog.agents.ext.tool.shell.JvmShellCommandExecutor
 import ai.koog.agents.ext.tool.shell.PrintShellCommandConfirmationHandler
 import ai.koog.prompt.dsl.Prompt
-import ai.koog.prompt.llm.LLMCapability
-import ai.koog.prompt.llm.LLMProvider
-import ai.koog.prompt.llm.LLModel
 import ai.koog.rag.base.files.JVMFileSystemProvider
 import com.jervis.configuration.properties.KoogProperties
 import com.jervis.entity.PendingTaskDocument
@@ -91,6 +88,7 @@ class KoogWorkflowAgent(
     private val indexedLinkService: IndexedLinkService,
     private val smartModelSelector: SmartModelSelector,
     private val tokenCountingService: TokenCountingService,
+    private val graphDBService: GraphDBService,
 ) {
     private val logger = KotlinLogging.logger {}
     private val activeAgents = ConcurrentHashMap<String, String>()
@@ -106,10 +104,7 @@ class KoogWorkflowAgent(
         val originalLanguage: String,
     )
 
-    suspend fun create(
-        task: PendingTaskDocument,
-        graph: GraphDBService,
-    ): AIAgent<String, String> {
+    suspend fun create(task: PendingTaskDocument): AIAgent<String, String> {
         val promptExecutor = promptExecutorFactory.getExecutor("OLLAMA")
 
         val agentStrategy =
@@ -138,7 +133,7 @@ class KoogWorkflowAgent(
                         try {
                             val projectKey = "project::${task.projectId ?: "none"}"
                             val nodes =
-                                graph.getRelated(
+                                graphDBService.getRelated(
                                     clientId = task.clientId,
                                     nodeKey = projectKey,
                                     edgeTypes = emptyList(),
@@ -390,7 +385,7 @@ class KoogWorkflowAgent(
                 )
 
                 tools(RagTools(task, knowledgeService))
-                tools(GraphTools(task, graph))
+                tools(GraphTools(task, graphDBService))
                 tools(
                     TaskTools(
                         task = task,
@@ -417,7 +412,6 @@ class KoogWorkflowAgent(
 
     suspend fun run(
         task: PendingTaskDocument,
-        graph: GraphDBService,
         userInput: String,
     ): String {
         val startTime = System.currentTimeMillis()
@@ -433,7 +427,7 @@ class KoogWorkflowAgent(
 
         activeAgents[task.correlationId] = provider
         try {
-            val agent: AIAgent<String, String> = create(task, graph)
+            val agent: AIAgent<String, String> = create(task)
 
             logger.info {
                 "🔧 KOOG_WORKFLOW_AGENT_CREATED | " +

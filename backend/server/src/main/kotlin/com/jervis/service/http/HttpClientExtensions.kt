@@ -3,7 +3,7 @@ package com.jervis.service.http
 import com.jervis.configuration.ConnectionCredentialsKey
 import com.jervis.configuration.ConnectionDocumentKey
 import com.jervis.entity.connection.ConnectionDocument
-import com.jervis.entity.connection.HttpCredentials
+import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.HttpRequestBuilder
@@ -25,7 +25,7 @@ import io.ktor.client.statement.HttpResponse
  */
 suspend fun HttpClient.getWithConnection(
     url: String,
-    connectionDocument: ConnectionDocument.HttpConnectionDocument,
+    connectionDocument: ConnectionDocument,
     credentials: HttpCredentials? = null,
     block: HttpRequestBuilder.() -> Unit = {},
 ): HttpResponse =
@@ -48,7 +48,7 @@ suspend fun HttpClient.getWithConnection(
  */
 suspend fun HttpClient.postWithConnection(
     url: String,
-    connectionDocument: ConnectionDocument.HttpConnectionDocument,
+    connectionDocument: ConnectionDocument,
     credentials: HttpCredentials? = null,
     block: HttpRequestBuilder.() -> Unit = {},
 ): HttpResponse =
@@ -66,7 +66,7 @@ suspend fun HttpClient.postWithConnection(
  */
 suspend fun HttpClient.putWithConnection(
     url: String,
-    connectionDocument: ConnectionDocument.HttpConnectionDocument,
+    connectionDocument: ConnectionDocument,
     credentials: HttpCredentials? = null,
     block: HttpRequestBuilder.() -> Unit = {},
 ): HttpResponse =
@@ -84,7 +84,7 @@ suspend fun HttpClient.putWithConnection(
  */
 suspend fun HttpClient.deleteWithConnection(
     url: String,
-    connectionDocument: ConnectionDocument.HttpConnectionDocument,
+    connectionDocument: ConnectionDocument,
     credentials: HttpCredentials? = null,
     block: HttpRequestBuilder.() -> Unit = {},
 ): HttpResponse =
@@ -102,7 +102,7 @@ suspend fun HttpClient.deleteWithConnection(
  */
 suspend fun HttpClient.patchWithConnection(
     url: String,
-    connectionDocument: ConnectionDocument.HttpConnectionDocument,
+    connectionDocument: ConnectionDocument,
     credentials: HttpCredentials? = null,
     block: HttpRequestBuilder.() -> Unit = {},
 ): HttpResponse =
@@ -120,7 +120,7 @@ suspend fun HttpClient.patchWithConnection(
  */
 suspend fun HttpClient.headWithConnection(
     url: String,
-    connectionDocument: ConnectionDocument.HttpConnectionDocument,
+    connectionDocument: ConnectionDocument,
     credentials: HttpCredentials? = null,
     block: HttpRequestBuilder.() -> Unit = {},
 ): HttpResponse =

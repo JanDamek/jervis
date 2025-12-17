@@ -1,12 +1,21 @@
 package com.jervis.desktop
 
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.jervis.di.NetworkModule
 import com.jervis.di.createJervisServices
 import com.jervis.dto.events.DebugEventDto
 import com.jervis.dto.events.ErrorNotificationEventDto
 import com.jervis.repository.JervisRepository
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Connection state for the desktop application
@@ -14,15 +23,22 @@ import kotlinx.coroutines.*
  */
 sealed class ConnectionStatus {
     data object Connecting : ConnectionStatus()
+
     data object Connected : ConnectionStatus()
-    data class Disconnected(val error: String) : ConnectionStatus()
+
+    data class Disconnected(
+        val error: String,
+    ) : ConnectionStatus()
+
     data object Offline : ConnectionStatus()
 }
 
 /**
  * Manages connection to Jervis server with automatic retry
  */
-class ConnectionManager(private val serverBaseUrl: String) : com.jervis.ui.DebugEventsProvider {
+class ConnectionManager(
+    private val serverBaseUrl: String,
+) : com.jervis.ui.DebugEventsProvider {
     var status by mutableStateOf<ConnectionStatus>(ConnectionStatus.Connecting)
         private set
 
@@ -60,19 +76,19 @@ class ConnectionManager(private val serverBaseUrl: String) : com.jervis.ui.Debug
                 services = createJervisServices(serverBaseUrl)
 
                 // Create repository
-                repository = JervisRepository(
-                    clientService = services!!.clientService,
-                    projectService = services!!.projectService,
-                    userTaskService = services!!.userTaskService,
-                    ragSearchService = services!!.ragSearchService,
-                    taskSchedulingService = services!!.taskSchedulingService,
-                    agentOrchestratorService = services!!.agentOrchestratorService,
-                    errorLogService = services!!.errorLogService,
-                    gitConfigurationService = services!!.gitConfigurationService,
-                    indexingStatusService = services!!.indexingStatusService,
-                    pendingTaskService = services!!.pendingTaskService,
-                    connectionService = services!!.connectionService,
-                )
+                repository =
+                    JervisRepository(
+                        clientService = services!!.clientService,
+                        projectService = services!!.projectService,
+                        userTaskService = services!!.userTaskService,
+                        ragSearchService = services!!.ragSearchService,
+                        taskSchedulingService = services!!.taskSchedulingService,
+                        agentOrchestratorService = services!!.agentOrchestratorService,
+                        errorLogService = services!!.errorLogService,
+                        gitConfigurationService = services!!.gitConfigurationService,
+                        pendingTaskService = services!!.pendingTaskService,
+                        connectionService = services!!.connectionService,
+                    )
 
                 // Try a simple test call to verify connectivity
                 try {
@@ -90,7 +106,6 @@ class ConnectionManager(private val serverBaseUrl: String) : com.jervis.ui.Debug
                 } catch (e: Exception) {
                     status = ConnectionStatus.Disconnected("Server not responding: ${e.message}")
                 }
-
             } catch (e: Exception) {
                 status = ConnectionStatus.Disconnected("Failed to initialize: ${e.message}")
             }

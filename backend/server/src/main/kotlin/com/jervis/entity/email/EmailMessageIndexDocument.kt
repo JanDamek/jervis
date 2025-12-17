@@ -1,11 +1,10 @@
 package com.jervis.entity.email
 
+import com.jervis.domain.PollingStatusEnum
 import com.jervis.types.ClientId
 import com.jervis.types.ConnectionId
 import com.jervis.types.ProjectId
 import org.bson.types.ObjectId
-import org.springframework.data.annotation.Id
-import org.springframework.data.annotation.TypeAlias
 import org.springframework.data.mongodb.core.index.CompoundIndex
 import org.springframework.data.mongodb.core.index.CompoundIndexes
 import org.springframework.data.mongodb.core.mapping.Document
@@ -46,87 +45,29 @@ import java.time.Instant
     CompoundIndex(name = "connection_uid_idx", def = "{'connectionId': 1, 'messageUid': 1}", unique = true),
     CompoundIndex(name = "client_state_idx", def = "{'clientId': 1, 'state': 1}"),
 )
-sealed class EmailMessageIndexDocument {
-    abstract val id: ObjectId
-    abstract val clientId: ClientId
-    abstract val connectionId: ConnectionId
-    abstract val messageUid: String
-    abstract val messageId: String?
-    abstract val state: String
-    abstract val receivedDate: Instant
-
-    /**
-     * NEW state - full email data from IMAP/POP3, ready for indexing.
-     */
-    @TypeAlias("EmailNew")
-    data class New(
-        @Id override val id: ObjectId = ObjectId.get(),
-        override val clientId: ClientId,
-        val projectId: ProjectId? = null,
-        override val connectionId: ConnectionId,
-        override val messageUid: String,
-        override val messageId: String?,
-        val subject: String,
-        val from: String,
-        val to: List<String> = emptyList(),
-        val cc: List<String> = emptyList(),
-        val sentDate: Instant?,
-        override val receivedDate: Instant,
-        val textBody: String?,
-        val htmlBody: String?,
-        val attachments: List<EmailAttachment> = emptyList(),
-        val folder: String = "INBOX",
-    ) : EmailMessageIndexDocument() {
-        override val state: String = "NEW"
-    }
-
-    /**
-     * INDEXED state - minimal tracking record, actual data in RAG/Graph.
-     * Only keeps essentials for deduplication and sourceUrn lookup.
-     */
-    @TypeAlias("EmailIndexed")
-    data class Indexed(
-        @Id override val id: ObjectId,
-        override val clientId: ClientId,
-        val projectId: ProjectId? = null,
-        override val connectionId: ConnectionId,
-        override val messageUid: String,
-        override val messageId: String?,
-        override val receivedDate: Instant,
-    ) : EmailMessageIndexDocument() {
-        override val state: String = "INDEXED"
-    }
-
-    /**
-     * FAILED state - same as NEW but with error, full data kept for retry.
-     */
-    @TypeAlias("EmailFailed")
-    data class Failed(
-        @Id override val id: ObjectId,
-        override val clientId: ClientId,
-        val projectId: ProjectId? = null,
-        override val connectionId: ConnectionId,
-        override val messageUid: String,
-        override val messageId: String?,
-        val subject: String,
-        val from: String,
-        val to: List<String>,
-        val cc: List<String>,
-        val sentDate: Instant?,
-        override val receivedDate: Instant,
-        val textBody: String?,
-        val htmlBody: String?,
-        val attachments: List<EmailAttachment>,
-        val folder: String,
-        val indexingError: String,
-    ) : EmailMessageIndexDocument() {
-        override val state: String = "FAILED"
-    }
-}
+data class EmailMessageIndexDocument(
+    val id: ObjectId = ObjectId.get(),
+    val connectionId: ConnectionId,
+    val clientId: ClientId,
+    val projectId: ProjectId? = null,
+    val messageUid: String,
+    val messageId: String,
+    val state: PollingStatusEnum = PollingStatusEnum.NEW,
+    val receivedDate: Instant,
+    val subject: String? = null,
+    val from: String? = null,
+    val to: List<String> = emptyList(),
+    val cc: List<String> = emptyList(),
+    val sentDate: Instant? = null,
+    val textBody: String? = null,
+    val htmlBody: String? = null,
+    val attachments: List<EmailAttachment> = emptyList(),
+    val folder: String = "INBOX",
+    val indexingError: String? = null,
+)
 
 /**
  * Email attachment metadata.
- * Content NOT stored - downloaded on-demand for indexing.
  */
 data class EmailAttachment(
     val filename: String,

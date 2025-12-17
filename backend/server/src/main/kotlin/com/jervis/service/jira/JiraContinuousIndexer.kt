@@ -1,12 +1,20 @@
 package com.jervis.service.jira
 
+import com.jervis.common.dto.atlassian.JiraAttachmentDownloadRequest
+import com.jervis.common.dto.atlassian.JiraIssueRequest
+import com.jervis.domain.atlassian.AttachmentMetadata
 import com.jervis.dto.PendingTaskTypeEnum
+import com.jervis.entity.connection.ConnectionDocument
+import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
+import com.jervis.entity.connection.basicPassword
+import com.jervis.entity.connection.basicUsername
+import com.jervis.entity.connection.bearerToken
+import com.jervis.entity.connection.toAuthType
 import com.jervis.entity.jira.JiraIssueIndexDocument
 import com.jervis.service.background.PendingTaskService
-import com.jervis.service.indexing.status.IndexingStatusRegistry
 import com.jervis.service.jira.state.JiraStateManager
-import com.jervis.service.text.TikaTextExtractionService
 import com.jervis.types.SourceUrn
+import com.jervis.util.toAttachmentType
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,20 +29,24 @@ private val logger = KotlinLogging.logger {}
 /**
  * Continuous indexer for Jira issues.
  *
- * NEW ARCHITECTURE (Graph-Based Routing):
- * - CentralPoller fetches FULL data from API → stores in MongoDB as NEW
- * - This indexer reads NEW documents from MongoDB (NO API CALLS)
+ * NEW ARCHITECTURE (Two-Phase Indexing):
+ * - CentralPoller fetches MINIMAL data for change detection → stores in MongoDB as NEW
+ * - This indexer:
+ *   1. Reads NEW documents from MongoDB
+ *   2. Fetches COMPLETE issue details from Jira API (getJiraIssue)
+ *   3. Creates JIRA_PROCESSING PendingTask with full content
+ * - KoogQualifierAgent (CPU) handles ALL structuring
+ *
+ * ETL Flow: MongoDB (NEW minimal) → API (full details) → JIRA_PROCESSING Task → KoogQualifierAgent → Graph + RAG
  */
 @Service
 @Order(10) // Start after WeaviateSchemaInitializer
 class JiraContinuousIndexer(
     private val stateManager: JiraStateManager,
     private val pendingTaskService: PendingTaskService,
-    private val indexingRegistry: IndexingStatusRegistry,
-    private val tikaTextExtractionService: TikaTextExtractionService,
-    private val directoryStructureService: com.jervis.service.storage.DirectoryStructureService,
     private val connectionService: com.jervis.service.connection.ConnectionService,
     private val atlassianClient: com.jervis.common.client.IAtlassianClient,
+    private val directoryStructureService: com.jervis.service.storage.DirectoryStructureService,
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
@@ -43,23 +55,8 @@ class JiraContinuousIndexer(
     fun start() {
         logger.info { "Starting JiraContinuousIndexer (MongoDB → Weaviate)..." }
         scope.launch {
-            kotlin.runCatching {
-                indexingRegistry.start(
-                    com.jervis.service.indexing.status.IndexingStatusRegistry.ToolStateEnum.JIRA,
-                    displayName = "Atlassian (Jira)",
-                    message = "Starting continuous Jira indexing from MongoDB",
-                )
-            }
             runCatching { indexContinuously() }
                 .onFailure { e -> logger.error(e) { "Continuous indexer crashed" } }
-                .also {
-                    kotlin.runCatching {
-                        indexingRegistry.finish(
-                            com.jervis.service.indexing.status.IndexingStatusRegistry.ToolStateEnum.JIRA,
-                            message = "Jira indexer stopped",
-                        )
-                    }
-                }
         }
     }
 
@@ -76,101 +73,145 @@ class JiraContinuousIndexer(
     }
 
     private suspend fun indexIssue(doc: JiraIssueIndexDocument) {
-        // Only process NEW documents (type-safe check)
-        if (doc !is JiraIssueIndexDocument.New) {
-            logger.warn { "Received non-NEW document for indexing: ${doc.issueKey} (state=${doc.state})" }
+        if (doc.status != com.jervis.domain.PollingStatusEnum.NEW) {
+            logger.warn { "Received non-NEW document for indexing: ${doc.issueKey} (state=${doc.status})" }
             return
         }
 
         logger.debug { "Processing Jira issue ${doc.issueKey} (${doc.summary})" }
 
         try {
-            // Clean Jira description through Tika (removes HTML/Jira markup)
-            val cleanDescription =
-                if (!doc.description.isNullOrBlank()) {
-                    tikaTextExtractionService.extractPlainText(
-                        content = doc.description,
-                        fileName = "jira-${doc.issueKey}.html",
-                    )
-                } else {
-                    ""
-                }
+            // Fetch complete issue details from Jira API
+            val connection = connectionService.findById(doc.connectionId)
+            require(connection?.connectionType == ConnectionDocument.ConnectionTypeEnum.HTTP) {
+                "Connection ${doc.connectionId} is not an HTTP connection"
+            }
 
-            // Clean comments through Tika as well
-            val cleanComments =
-                doc.comments.map { comment ->
-                    comment.copy(
-                        body =
-                            tikaTextExtractionService.extractPlainText(
-                                content = comment.body,
-                                fileName = "jira-comment.html",
-                            ),
-                    )
-                }
+            val credentials = connection.credentials
+            require(credentials is HttpCredentials) {
+                "Connection ${doc.connectionId} does not have HTTP credentials"
+            }
 
-            // Build Jira issue content for task
+            val issueRequest =
+                JiraIssueRequest(
+                    baseUrl = connection.baseUrl,
+                    authType =
+                        when (credentials) {
+                            is HttpCredentials.Basic -> "BASIC"
+                            is HttpCredentials.Bearer -> "BEARER"
+                        },
+                    basicUsername =
+                        when (credentials) {
+                            is HttpCredentials.Basic -> credentials.username
+                            else -> null
+                        },
+                    basicPassword =
+                        when (credentials) {
+                            is HttpCredentials.Basic -> credentials.password
+                            else -> null
+                        },
+                    bearerToken =
+                        when (credentials) {
+                            is HttpCredentials.Bearer -> credentials.token
+                            else -> null
+                        },
+                    issueKey = doc.issueKey,
+                )
+
+            val issueDetails = atlassianClient.getJiraIssue(issueRequest)
+
+            val descriptionText = issueDetails.renderedDescription ?: ""
             val issueContent =
                 buildString {
-                    append("# ${doc.issueKey}: ${doc.summary}\n\n")
-                    append("**Type:** ${doc.issueType}\n")
-                    append("**Status:** ${doc.status}\n")
-                    append("**Priority:** ${doc.priority ?: "N/A"}\n")
-                    if (!doc.assignee.isNullOrBlank()) {
-                        append("**Assignee:** ${doc.assignee}\n")
+                    append("# ${doc.issueKey}: ${issueDetails.fields.summary ?: doc.summary}\n\n")
+
+                    if (issueDetails.fields.status != null) {
+                        append("**Status:** ${issueDetails.fields.status!!.name}\n")
                     }
-                    if (!doc.reporter.isNullOrBlank()) {
-                        append("**Reporter:** ${doc.reporter}\n")
+                    if (issueDetails.fields.priority != null) {
+                        append("**Priority:** ${issueDetails.fields.priority!!.name}\n")
                     }
-                    append("**Created:** ${doc.createdAt}\n")
-                    append("**Updated:** ${doc.jiraUpdatedAt}\n")
+                    if (issueDetails.fields.assignee != null) {
+                        append("**Assignee:** ${issueDetails.fields.assignee!!.displayName}\n")
+                    }
+                    if (issueDetails.fields.reporter != null) {
+                        append("**Reporter:** ${issueDetails.fields.reporter!!.displayName}\n")
+                    }
+                    if (issueDetails.fields.created != null) {
+                        append("**Created:** ${issueDetails.fields.created}\n")
+                    }
+                    if (issueDetails.fields.updated != null) {
+                        append("**Updated:** ${issueDetails.fields.updated}\n")
+                    }
                     append("\n")
 
-                    if (cleanDescription.isNotBlank()) {
+                    if (descriptionText.isNotBlank()) {
                         append("## Description\n\n")
-                        append(cleanDescription)
+                        append(descriptionText)
                         append("\n\n")
-                    }
-
-                    if (doc.labels.isNotEmpty()) {
-                        append("**Labels:** ${doc.labels.joinToString(", ")}\n\n")
-                    }
-
-                    // Add comments
-                    if (cleanComments.isNotEmpty()) {
-                        append("## Comments\n\n")
-                        cleanComments.forEachIndexed { index, comment ->
-                            append("### Comment ${index + 1} by ${comment.author}\n")
-                            append("**Created:** ${comment.created}\n\n")
-                            append(comment.body)
-                            append("\n\n")
-                        }
-                    }
-
-                    // Add attachments list
-                    if (doc.attachments.isNotEmpty()) {
-                        append("## Attachments\n")
-                        doc.attachments.forEach { att ->
-                            append("- ${att.filename} (${att.mimeType}, ${att.size} bytes)\n")
-                        }
-                        append("\n")
                     }
 
                     // Add metadata for qualifier
                     append("## Document Metadata\n")
                     append("- **Source:** Jira Issue\n")
                     append("- **Document ID:** jira:${doc.issueKey}\n")
-                    append("- **Connection ID:** ${doc.connectionDocumentId}\n")
+                    append("- **Connection ID:** ${doc.connectionId}\n")
                     append("- **Issue Key:** ${doc.issueKey}\n")
-                    append("- **Comment Count:** ${doc.comments.size}\n")
-                    append("- **Attachment Count:** ${doc.attachments.size}\n")
                 }
 
-            // Process attachments for vision analysis
-            val attachmentMetadata = processAttachments(doc)
+            val attachmentMetadata: List<AttachmentMetadata> =
+                issueDetails.fields.attachments
+                    ?.mapNotNull { attachment ->
+                        runCatching {
+                            val downloadUrl =
+                                attachment.content
+                                    ?.takeIf { it.isNotBlank() }
+                                    ?: return@runCatching null.also {
+                                        logger.warn { "Jira attachment ${attachment.id} has no download URL, skipping" }
+                                    }
 
-            if (attachmentMetadata.isNotEmpty()) {
-                logger.info { "Processed ${attachmentMetadata.size} attachments for vision analysis: ${doc.issueKey}" }
-            }
+                            val request =
+                                JiraAttachmentDownloadRequest(
+                                    baseUrl = connection.baseUrl,
+                                    authType = credentials.toAuthType(),
+                                    basicUsername = credentials.basicUsername(),
+                                    basicPassword = credentials.basicPassword(),
+                                    bearerToken = credentials.bearerToken(),
+                                    attachmentUrl = downloadUrl,
+                                )
+
+                            val binaryData =
+                                atlassianClient
+                                    .downloadJiraAttachment(request)
+                                    ?.takeIf { it.isNotEmpty() }
+                                    ?: return@runCatching null.also {
+                                        logger.warn { "Failed to download Jira attachment ${attachment.id}, skipping" }
+                                    }
+
+                            val storagePath =
+                                directoryStructureService.storeAttachment(
+                                    clientId = doc.clientId,
+                                    filename = attachment.filename,
+                                    binaryData = binaryData,
+                                )
+
+                            AttachmentMetadata(
+                                id = attachment.id,
+                                filename = attachment.filename,
+                                mimeType = attachment.mimeType ?: "application/octet-stream",
+                                sizeBytes = attachment.size ?: binaryData.size.toLong(),
+                                storagePath = storagePath,
+                                type = attachment.mimeType.toAttachmentType(),
+                                visionAnalysis = null,
+                            )
+                        }.getOrElse { e ->
+                            logger.error(e) {
+                                "Failed to download/store Jira attachment ${attachment.id}: ${e.message}"
+                            }
+                            null
+                        }
+                    }
+                    ?: emptyList()
 
             // Create JIRA_PROCESSING task with attachments
             pendingTaskService.createTask(
@@ -181,7 +222,7 @@ class JiraContinuousIndexer(
                 correlationId = "jira:${doc.issueKey}",
                 sourceUrn =
                     SourceUrn.jira(
-                        connectionId = doc.connectionDocumentId.value,
+                        connectionId = doc.connectionId.value,
                         issueKey = doc.issueKey,
                     ),
                 attachments = attachmentMetadata,
@@ -190,146 +231,10 @@ class JiraContinuousIndexer(
             // Convert to INDEXED state - delete full content, keep minimal tracking
             stateManager.markAsIndexed(doc)
 
-            // Report progress
-            kotlin.runCatching {
-                indexingRegistry.ensureTool(
-                    com.jervis.service.indexing.status.IndexingStatusRegistry.ToolStateEnum.JIRA,
-                    displayName = "Atlassian (Jira)",
-                )
-                indexingRegistry.progress(
-                    com.jervis.service.indexing.status.IndexingStatusRegistry.ToolStateEnum.JIRA,
-                    processedInc = 1,
-                    message = "Created task for ${doc.issueKey}",
-                )
-            }
-
             logger.info { "Created JIRA_PROCESSING task for Jira issue: ${doc.issueKey}" }
         } catch (e: Exception) {
             logger.error(e) { "Failed to create task for Jira issue ${doc.issueKey}" }
             stateManager.markAsFailed(doc, "Task creation failed: ${e.message}")
-        }
-    }
-
-    /**
-     * Download and store Jira attachments for vision analysis.
-     * Only downloads image attachments (vision model input).
-     */
-    private suspend fun processAttachments(doc: JiraIssueIndexDocument.New): List<com.jervis.entity.AttachmentMetadata> {
-        val attachmentMetadataList = mutableListOf<com.jervis.entity.AttachmentMetadata>()
-
-        // Filter attachments that should be processed with vision
-        val visualAttachments =
-            doc.attachments.filter { att ->
-                val type = com.jervis.entity.classifyAttachmentType(att.mimeType)
-                type == com.jervis.entity.AttachmentType.IMAGE ||
-                    type == com.jervis.entity.AttachmentType.PDF_SCANNED
-            }
-
-        if (visualAttachments.isEmpty()) {
-            return emptyList()
-        }
-
-        logger.debug { "Processing ${visualAttachments.size} visual attachments for ${doc.issueKey}" }
-
-        // FAIL-FAST: If any attachment download/storage fails, exception propagates
-        // This marks the entire Jira issue as FAILED for retry
-        for (att in visualAttachments) {
-            // Download attachment from Jira via service-atlassian (rate-limited)
-            val binaryData = downloadAttachment(att.downloadUrl, doc)
-
-            // Get image dimensions for token estimation (if image)
-            val (width, height) = extractImageDimensions(binaryData, att.mimeType)
-
-            // Store in DirectoryStructureService
-            val storagePath =
-                directoryStructureService.storeAttachment(
-                    clientId = doc.clientId,
-                    filename = att.filename,
-                    binaryData = binaryData,
-                )
-
-            // Create metadata
-            val metadata =
-                com.jervis.entity.AttachmentMetadata(
-                    id = att.id,
-                    filename = att.filename,
-                    mimeType = att.mimeType,
-                    sizeBytes = att.size,
-                    storagePath = storagePath,
-                    type = com.jervis.entity.classifyAttachmentType(att.mimeType),
-                    visionAnalysis = null, // Populated later by Qualifier
-                )
-
-            attachmentMetadataList.add(metadata)
-            logger.debug { "Stored attachment: ${att.filename} (${att.mimeType}, ${att.size} bytes) → $storagePath" }
-        }
-
-        return attachmentMetadataList
-    }
-
-    /**
-     * Download attachment binary data from Jira URL via service-atlassian.
-     * Uses rate-limited API client to respect Atlassian rate limits.
-     */
-    private suspend fun downloadAttachment(
-        attachmentUrl: String,
-        doc: JiraIssueIndexDocument.New,
-    ): ByteArray {
-        // Load connection to get auth credentials
-        val connection =
-            connectionService.findById(doc.connectionDocumentId.value)
-                ?: throw IllegalStateException("Connection not found: ${doc.connectionDocumentId}")
-
-        if (connection !is com.jervis.entity.connection.ConnectionDocument.HttpConnectionDocument) {
-            throw IllegalStateException("Connection is not HTTP: ${connection::class.simpleName}")
-        }
-
-        // Build request with auth credentials
-        val request =
-            com.jervis.common.dto.atlassian.JiraAttachmentDownloadRequest(
-                baseUrl = connection.baseUrl,
-                authType =
-                    when (connection.credentials) {
-                        is com.jervis.entity.connection.HttpCredentials.Basic -> "BASIC"
-                        is com.jervis.entity.connection.HttpCredentials.Bearer -> "BEARER"
-                        null -> "NONE"
-                    },
-                basicUsername = (connection.credentials as? com.jervis.entity.connection.HttpCredentials.Basic)?.username,
-                basicPassword = (connection.credentials as? com.jervis.entity.connection.HttpCredentials.Basic)?.password,
-                bearerToken = (connection.credentials as? com.jervis.entity.connection.HttpCredentials.Bearer)?.token,
-                attachmentUrl = attachmentUrl,
-            )
-
-        // Download via service-atlassian (rate-limited)
-        return atlassianClient.downloadJiraAttachment(
-            // Not used by service-atlassian
-            request = request,
-        )
-    }
-
-    /**
-     * Extract image dimensions from binary data.
-     * Returns (width, height) or (null, null) if not an image.
-     */
-    private fun extractImageDimensions(
-        binaryData: ByteArray,
-        mimeType: String,
-    ): Pair<Int?, Int?> {
-        if (!mimeType.startsWith("image/")) {
-            return Pair(null, null)
-        }
-
-        return try {
-            val inputStream = java.io.ByteArrayInputStream(binaryData)
-            val image = javax.imageio.ImageIO.read(inputStream)
-            if (image != null) {
-                Pair(image.width, image.height)
-            } else {
-                Pair(null, null)
-            }
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to extract image dimensions: ${e.message}" }
-            Pair(null, null)
         }
     }
 }

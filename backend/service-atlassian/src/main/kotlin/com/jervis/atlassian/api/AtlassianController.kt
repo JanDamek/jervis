@@ -4,6 +4,7 @@ import com.jervis.atlassian.service.AtlassianApiClient
 import com.jervis.common.client.IAtlassianClient
 import com.jervis.common.dto.atlassian.AtlassianMyselfRequest
 import com.jervis.common.dto.atlassian.AtlassianUserDto
+import com.jervis.common.dto.atlassian.ConfluenceAttachmentDownloadRequest
 import com.jervis.common.dto.atlassian.ConfluencePageRequest
 import com.jervis.common.dto.atlassian.ConfluencePageResponse
 import com.jervis.common.dto.atlassian.ConfluenceSearchRequest
@@ -59,8 +60,15 @@ class AtlassianController(
 
     override suspend fun downloadJiraAttachment(
         @RequestBody request: JiraAttachmentDownloadRequest,
-    ): ByteArray =
+    ): ByteArray? =
         withContext(Dispatchers.IO) {
             atlassianApiClient.downloadJiraAttachment(request)
+        }
+
+    override suspend fun downloadConfluenceAttachment(
+        @RequestBody request: ConfluenceAttachmentDownloadRequest,
+    ): ByteArray? =
+        withContext(Dispatchers.IO) {
+            atlassianApiClient.downloadConfluenceAttachment(request)
         }
 }

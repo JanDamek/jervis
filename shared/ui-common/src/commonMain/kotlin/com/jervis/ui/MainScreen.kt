@@ -1,20 +1,55 @@
 package com.jervis.ui
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ui.ChatMessage
-import com.jervis.ui.util.rememberClipboardManager
 import com.jervis.ui.design.JTopBar
+import com.jervis.ui.util.rememberClipboardManager
 
 /**
  * Main screen for Jervis Mobile - inspired by Desktop MainWindow
@@ -54,7 +89,7 @@ fun MainScreen(
                     }
                     DropdownMenu(
                         expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
+                        onDismissRequest = { showMenu = false },
                     ) {
                         // Configuration (mirrors Desktop: Settings window)
                         DropdownMenuItem(
@@ -62,7 +97,7 @@ fun MainScreen(
                             onClick = {
                                 showMenu = false
                                 onNavigate(com.jervis.ui.navigation.Screen.Settings)
-                            }
+                            },
                         )
                         // Connections menu removed – connection management is handled inside Settings → Client/Project edit
                         HorizontalDivider()
@@ -73,21 +108,21 @@ fun MainScreen(
                             onClick = {
                                 showMenu = false
                                 onNavigate(com.jervis.ui.navigation.Screen.UserTasks)
-                            }
+                            },
                         )
                         DropdownMenuItem(
                             text = { Text("Pending Tasks") },
                             onClick = {
                                 showMenu = false
                                 onNavigate(com.jervis.ui.navigation.Screen.PendingTasks)
-                            }
+                            },
                         )
                         DropdownMenuItem(
                             text = { Text("Scheduler") },
                             onClick = {
                                 showMenu = false
                                 onNavigate(com.jervis.ui.navigation.Screen.Scheduler)
-                            }
+                            },
                         )
                         HorizontalDivider()
 
@@ -97,21 +132,14 @@ fun MainScreen(
                             onClick = {
                                 showMenu = false
                                 onNavigate(com.jervis.ui.navigation.Screen.RagSearch)
-                            }
+                            },
                         )
                         DropdownMenuItem(
                             text = { Text("Error Logs") },
                             onClick = {
                                 showMenu = false
                                 onNavigate(com.jervis.ui.navigation.Screen.ErrorLogs)
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Indexing Status") },
-                            onClick = {
-                                showMenu = false
-                                onNavigate(com.jervis.ui.navigation.Screen.IndexingStatus)
-                            }
+                            },
                         )
                         HorizontalDivider()
 
@@ -121,7 +149,7 @@ fun MainScreen(
                             onClick = {
                                 showMenu = false
                                 onNavigate(com.jervis.ui.navigation.Screen.DebugConsole)
-                            }
+                            },
                         )
                     }
                 },

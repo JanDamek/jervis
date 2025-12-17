@@ -120,11 +120,11 @@ abstract class EmailPollingHandlerBase(
             try {
                 // Get unique identifier (protocol-specific)
                 val uid = getMessageUid(message, index)
-                val messageId = message.getHeader("Message-ID")?.firstOrNull()
+                val messageId = message.getHeader("Message-ID")?.firstOrNull() ?: "noneMsgID"
 
                 // Check if already exists
-                val existing = repository.findByConnectionIdAndMessageUid(connectionDocument.id, uid)
-                if (existing != null) {
+                val existing = repository.existsByConnectionIdAndMessageUid(connectionDocument.id, uid)
+                if (existing) {
                     skipped++
                     continue
                 }
@@ -150,12 +150,12 @@ abstract class EmailPollingHandlerBase(
     protected fun parseMessage(
         message: Message,
         uid: String,
-        messageId: String?,
+        messageId: String,
         clientId: ClientId,
         projectId: ProjectId?,
         connectionId: ConnectionId,
         folderName: String,
-    ): EmailMessageIndexDocument.New {
+    ): EmailMessageIndexDocument {
         val subject = message.subject ?: "(No Subject)"
         val from = message.from?.firstOrNull()?.toString() ?: "unknown"
         val to = message.allRecipients?.map { it.toString() } ?: emptyList()
@@ -176,7 +176,7 @@ abstract class EmailPollingHandlerBase(
                 )
             }
 
-        return EmailMessageIndexDocument.New(
+        return EmailMessageIndexDocument(
             clientId = clientId,
             projectId = projectId,
             connectionId = connectionId,

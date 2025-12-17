@@ -2,16 +2,20 @@ package com.jervis.service.polling.handler.bugtracker
 
 import com.jervis.common.client.IAtlassianClient
 import com.jervis.common.dto.atlassian.JiraSearchRequest
+import com.jervis.domain.PollingStatusEnum
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.ConnectionDocument
-import com.jervis.entity.connection.HttpCredentials
+import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
 import com.jervis.entity.jira.JiraIssueIndexDocument
 import com.jervis.repository.JiraIssueIndexMongoRepository
+import com.jervis.service.client.ClientService
 import com.jervis.service.connection.ConnectionService
 import com.jervis.types.ClientId
 import com.jervis.types.ConnectionId
-import kotlinx.serialization.json.JsonPrimitive
+import com.jervis.types.ProjectId
 import mu.KotlinLogging
+import org.bson.types.ObjectId
+import org.springframework.dao.DuplicateKeyException
 import org.springframework.stereotype.Component
 import java.time.Instant
 import java.time.ZoneOffset
@@ -34,21 +38,23 @@ private val logger = KotlinLogging.logger {}
 class JiraPollingHandler(
     private val repository: JiraIssueIndexMongoRepository,
     private val atlassianClient: IAtlassianClient,
+    clientService: ClientService,
     connectionService: ConnectionService,
 ) : BugTrackerPollingHandlerBase<JiraIssueIndexDocument>(
         connectionService = connectionService,
+        clientService = clientService,
     ) {
     override fun canHandle(connectionDocument: ConnectionDocument): Boolean =
-        connectionDocument is ConnectionDocument.HttpConnectionDocument &&
-            connectionDocument.baseUrl.contains("atlassian.net")
+        connectionDocument.connectionType == ConnectionDocument.ConnectionTypeEnum.HTTP &&
+            connectionDocument.baseUrl?.contains("atlassian.net") == true
 
     override fun getSystemName(): String = "Jira"
 
     override fun getToolName(): String = "JIRA"
 
     override fun buildQuery(
-        client: ClientDocument,
-        connectionDocument: ConnectionDocument.HttpConnectionDocument,
+        client: ClientDocument?,
+        connectionDocument: ConnectionDocument,
         lastSeenUpdatedAt: Instant?,
     ): String =
         lastSeenUpdatedAt?.let {
@@ -57,13 +63,12 @@ class JiraPollingHandler(
         } ?: "status NOT IN (Closed, Done, Resolved)"
 
     override suspend fun fetchFullIssues(
-        connectionDocument: ConnectionDocument.HttpConnectionDocument,
+        connectionDocument: ConnectionDocument,
         credentials: HttpCredentials,
         clientId: ClientId,
+        projectId: ProjectId?,
         query: String,
         lastSeenUpdatedAt: Instant?,
-        maxResults: Int,
-        startAt: Int,
     ): List<JiraIssueIndexDocument> {
         try {
             val authInfo =
@@ -80,49 +85,33 @@ class JiraPollingHandler(
                     basicPassword = authInfo.password,
                     bearerToken = authInfo.bearerToken,
                     jql = query,
-                    maxResults = maxResults,
-                    startAt = startAt,
                 )
 
             val response = atlassianClient.searchJiraIssues(searchRequest)
 
             return response.issues.map { issue ->
                 val fields = issue.fields
-                val projectKey = issue.key.substringBefore("-")
-
                 val syntheticChangelogId = "${issue.id}-${fields.updated ?: ""}"
 
-                JiraIssueIndexDocument.New(
-                    clientId = clientId,
-                    connectionDocumentId = connectionDocument.id,
-                    issueKey = issue.key,
-                    latestChangelogId = syntheticChangelogId,
-                    projectKey = projectKey,
-                    summary = fields.summary ?: "",
-                    description = extractDescription(fields.description),
-                    issueType = "Task",
-                    status = fields.status?.name ?: "Unknown",
-                    priority = fields.priority?.name ?: "Medium",
-                    assignee = fields.assignee?.displayName,
-                    reporter = fields.reporter?.displayName,
-                    labels = emptyList(),
-                    createdAt = parseInstant(fields.created),
-                    jiraUpdatedAt = parseInstant(fields.updated),
-                    comments = emptyList(),
-                    attachments = emptyList(),
-                )
+                val jiraIssueIndexDocument =
+                    JiraIssueIndexDocument(
+                        id = ObjectId.get(),
+                        clientId = clientId,
+                        connectionId = connectionDocument.id,
+                        issueKey = issue.key,
+                        latestChangelogId = syntheticChangelogId,
+                        summary = fields.summary ?: "",
+                        status = PollingStatusEnum.NEW,
+                        jiraUpdatedAt = parseInstant(fields.updated),
+                        projectId = projectId,
+                    )
+                jiraIssueIndexDocument
             }
         } catch (e: Exception) {
             logger.error(e) { "Failed to fetch Jira issues from ${connectionDocument.baseUrl}: ${e.message}" }
             return emptyList()
         }
     }
-
-    private fun extractDescription(description: kotlinx.serialization.json.JsonElement?): String =
-        when (description) {
-            is JsonPrimitive -> description.content
-            else -> description?.toString() ?: ""
-        }
 
     private fun parseInstant(isoString: String?): Instant =
         if (isoString != null) {
@@ -147,9 +136,9 @@ class JiraPollingHandler(
     override suspend fun findExisting(
         connectionId: ConnectionId,
         issue: JiraIssueIndexDocument,
-    ): JiraIssueIndexDocument? =
-        repository.findByConnectionDocumentIdAndIssueKeyAndLatestChangelogId(
-            connectionDocumentId = connectionId,
+    ): Boolean =
+        repository.existsByConnectionIdAndIssueKeyAndLatestChangelogId(
+            connectionId = connectionId,
             issueKey = issue.issueKey,
             latestChangelogId = issue.latestChangelogId,
         )
@@ -157,7 +146,7 @@ class JiraPollingHandler(
     override suspend fun saveIssue(issue: JiraIssueIndexDocument) {
         try {
             repository.save(issue)
-        } catch (_: org.springframework.dao.DuplicateKeyException) {
+        } catch (_: DuplicateKeyException) {
             logger.debug { "Issue ${issue.issueKey} with changelog ${issue.latestChangelogId} already exists, skipping" }
         }
     }

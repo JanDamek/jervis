@@ -1,6 +1,6 @@
 package com.jervis.service.http
 
-import com.jervis.entity.connection.RateLimitConfig
+import com.jervis.entity.connection.ConnectionDocument.RateLimitConfig
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -30,7 +30,7 @@ class DomainRateLimiter(
 ) {
     private val domainStates = ConcurrentHashMap<String, DomainRateLimitState>()
     private val mutex = Mutex()
-    
+
     companion object {
         private const val ttlSeconds = 300L // 5 minutes
     }

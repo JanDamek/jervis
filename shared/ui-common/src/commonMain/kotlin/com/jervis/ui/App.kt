@@ -3,7 +3,12 @@ package com.jervis.ui
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.navigation.AppNavigator
@@ -53,69 +58,82 @@ fun App(
         val currentScreen by appNavigator.currentScreen.collectAsState()
 
         when (val screen = currentScreen) {
-            Screen.Main -> MainScreen(
-                clients = clients,
-                projects = projects,
-                selectedClientId = selectedClientId,
-                selectedProjectId = selectedProjectId,
-                chatMessages = chatMessages,
-                inputText = inputText,
-                isLoading = isLoading,
-                onClientSelected = viewModel::selectClient,
-                onProjectSelected = viewModel::selectProject,
-                onInputChanged = viewModel::updateInputText,
-                onSendClick = viewModel::sendMessage,
-                onNavigate = { screen ->
-                    // Desktop has separate debug window, mobile uses navigation
-                    if (screen == Screen.DebugConsole && onOpenDebugWindow != null) {
-                        onOpenDebugWindow()
-                    } else {
-                        appNavigator.navigateTo(screen)
-                    }
-                },
-                modifier = modifier,
-            )
-            Screen.Settings -> SettingsScreen(
-                repository = repository,
-                onBack = { appNavigator.navigateTo(Screen.Main) }
-            )
-            Screen.UserTasks -> UserTasksScreen(
-                repository = repository,
-                onBack = { appNavigator.navigateTo(Screen.Main) }
-            )
-            Screen.PendingTasks -> PendingTasksScreen(
-                repository = repository,
-                onBack = { appNavigator.navigateTo(Screen.Main) }
-            )
-            Screen.ErrorLogs -> ErrorLogsScreen(
-                repository = repository,
-                onBack = { appNavigator.navigateTo(Screen.Main) }
-            )
-            Screen.IndexingStatus -> IndexingStatusScreen(
-                repository = repository,
-                onBack = { appNavigator.navigateTo(Screen.Main) },
-                onOpenDetail = { toolKey -> appNavigator.navigateTo(Screen.IndexingToolDetail(toolKey)) }
-            )
-            is Screen.IndexingToolDetail -> IndexingStatusDetailScreen(
-                repository = repository,
-                toolKey = screen.toolKey,
-                onBack = { appNavigator.navigateTo(Screen.IndexingStatus) }
-            )
-            Screen.RagSearch -> RagSearchScreen(
-                repository = repository,
-                onBack = { appNavigator.navigateTo(Screen.Main) }
-            )
-            Screen.Scheduler -> SchedulerScreen(
-                repository = repository,
-                onBack = { appNavigator.navigateTo(Screen.Main) }
-            )
+            Screen.Main -> {
+                MainScreen(
+                    clients = clients,
+                    projects = projects,
+                    selectedClientId = selectedClientId,
+                    selectedProjectId = selectedProjectId,
+                    chatMessages = chatMessages,
+                    inputText = inputText,
+                    isLoading = isLoading,
+                    onClientSelected = viewModel::selectClient,
+                    onProjectSelected = viewModel::selectProject,
+                    onInputChanged = viewModel::updateInputText,
+                    onSendClick = viewModel::sendMessage,
+                    onNavigate = { screen ->
+                        // Desktop has separate debug window, mobile uses navigation
+                        if (screen == Screen.DebugConsole && onOpenDebugWindow != null) {
+                            onOpenDebugWindow()
+                        } else {
+                            appNavigator.navigateTo(screen)
+                        }
+                    },
+                    modifier = modifier,
+                )
+            }
+
+            Screen.Settings -> {
+                SettingsScreen(
+                    repository = repository,
+                    onBack = { appNavigator.navigateTo(Screen.Main) },
+                )
+            }
+
+            Screen.UserTasks -> {
+                UserTasksScreen(
+                    repository = repository,
+                    onBack = { appNavigator.navigateTo(Screen.Main) },
+                )
+            }
+
+            Screen.PendingTasks -> {
+                PendingTasksScreen(
+                    repository = repository,
+                    onBack = { appNavigator.navigateTo(Screen.Main) },
+                )
+            }
+
+            Screen.ErrorLogs -> {
+                ErrorLogsScreen(
+                    repository = repository,
+                    onBack = { appNavigator.navigateTo(Screen.Main) },
+                )
+            }
+
+            Screen.RagSearch -> {
+                RagSearchScreen(
+                    repository = repository,
+                    onBack = { appNavigator.navigateTo(Screen.Main) },
+                )
+            }
+
+            Screen.Scheduler -> {
+                SchedulerScreen(
+                    repository = repository,
+                    onBack = { appNavigator.navigateTo(Screen.Main) },
+                )
+            }
+
             // Connections screen removed – connections are managed within Settings under Client/Project edit
             Screen.DebugConsole -> {
                 val provider = LocalDebugEventsProvider.current
-                requireNotNull(provider) { "DebugEventsProvider is not available. Provide it via LocalDebugEventsProvider at the app root." }
+                requireNotNull(
+                    provider,
+                ) { "DebugEventsProvider is not available. Provide it via LocalDebugEventsProvider at the app root." }
                 DebugWindow(
                     eventsProvider = provider,
-                    onBack = { appNavigator.navigateTo(Screen.Main) }
+                    onBack = { appNavigator.navigateTo(Screen.Main) },
                 )
             }
         }

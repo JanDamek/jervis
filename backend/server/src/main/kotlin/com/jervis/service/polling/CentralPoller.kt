@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.time.Duration
@@ -60,6 +61,9 @@ class CentralPoller(
 
     // Track last poll time per connection
     private val lastPollTimes = mutableMapOf<String, Instant>()
+
+    // Mutex per connection to prevent parallel polling of the same connection
+    private val connectionLocks = mutableMapOf<String, Mutex>()
 
     @PostConstruct
     fun start() {
@@ -123,25 +127,42 @@ class CentralPoller(
     }
 
     private suspend fun pollConnection(connectionDocument: ConnectionDocument) {
-        val startTime = Instant.now()
-        val now = Instant.now()
-        val lastPoll = lastPollTimes[connectionDocument.id.toString()]
-        val interval = getPollingInterval(connectionDocument)
+        val connectionId = connectionDocument.id.toString()
 
-        logger.debug {
-            "  Checking connectionDocument '${connectionDocument.name}' (${connectionDocument::class.simpleName}, id=${connectionDocument.id})"
-        }
+        // Get or create mutex for this connection
+        val mutex =
+            synchronized(connectionLocks) {
+                connectionLocks.getOrPut(connectionId) { Mutex() }
+            }
 
-        if (lastPoll != null && Duration.between(lastPoll, now) < interval) {
-            val timeSinceLastPoll = Duration.between(lastPoll, now)
+        // Try to acquire lock, skip if already polling
+        if (!mutex.tryLock()) {
             logger.debug {
-                "Skipping '${connectionDocument.name}': interval not reached | " +
-                    "Last poll: ${timeSinceLastPoll.toMinutes()}min ago, Interval: ${interval.toMinutes()}min"
+                "Skipping '${connectionDocument.name}' (${connectionDocument.id}): already polling in another coroutine"
             }
             return
         }
 
-        // Find ALL handlers for this connectionDocument type (e.g., Atlassian → Jira + Confluence)
+        try {
+            val startTime = Instant.now()
+            val now = Instant.now()
+            val lastPoll = lastPollTimes[connectionId]
+            val interval = getPollingInterval(connectionDocument)
+
+            logger.debug {
+                "  Checking connectionDocument '${connectionDocument.name}' (${connectionDocument::class.simpleName}, id=${connectionDocument.id})"
+            }
+
+            if (lastPoll != null && Duration.between(lastPoll, now) < interval) {
+                val timeSinceLastPoll = Duration.between(lastPoll, now)
+                logger.debug {
+                    "Skipping '${connectionDocument.name}': interval not reached | " +
+                        "Last poll: ${timeSinceLastPoll.toMinutes()}min ago, Interval: ${interval.toMinutes()}min"
+                }
+                return
+            }
+
+            // Find ALL handlers for this connectionDocument type (e.g., Atlassian → Jira + Confluence)
         val matchingHandlers = handlers.filter { it.canHandle(connectionDocument) }
 
         if (matchingHandlers.isEmpty()) {
@@ -221,8 +242,11 @@ class CentralPoller(
             handlePollingError(connectionDocument, context, totalResult)
         }
 
-        // Update last poll time
-        lastPollTimes[connectionDocument.id.toString()] = now
+            // Update last poll time
+            lastPollTimes[connectionId] = now
+        } finally {
+            mutex.unlock()
+        }
     }
 
     /**
@@ -237,14 +261,7 @@ class CentralPoller(
         logger.warn { "ConnectionDocument ${connectionDocument.name} encountered authentication error during polling" }
 
         // Set connectionDocument to INVALID state using copy
-        val invalidConnection =
-            when (connectionDocument) {
-                is ConnectionDocument.HttpConnectionDocument -> connectionDocument.copy(state = ConnectionStateEnum.INVALID)
-                is ConnectionDocument.ImapConnectionDocument -> connectionDocument.copy(state = ConnectionStateEnum.INVALID)
-                is ConnectionDocument.Pop3ConnectionDocument -> connectionDocument.copy(state = ConnectionStateEnum.INVALID)
-                is ConnectionDocument.SmtpConnectionDocument -> connectionDocument.copy(state = ConnectionStateEnum.INVALID)
-                is ConnectionDocument.OAuth2ConnectionDocument -> connectionDocument.copy(state = ConnectionStateEnum.INVALID)
-            }
+        val invalidConnection = connectionDocument.copy(state = ConnectionStateEnum.INVALID)
 
         connectionService.save(invalidConnection)
         logger.debug { "ConnectionDocument ${connectionDocument.name} (${connectionDocument.id}) set to INVALID state" }
@@ -290,17 +307,12 @@ class CentralPoller(
     }
 
     private fun getPollingInterval(connectionDocument: ConnectionDocument): Duration =
-        when (connectionDocument) {
-            is ConnectionDocument.HttpConnectionDocument -> pollingProperties.http
-
-            is ConnectionDocument.ImapConnectionDocument -> pollingProperties.imap
-
-            is ConnectionDocument.Pop3ConnectionDocument -> pollingProperties.pop3
-
-            is ConnectionDocument.SmtpConnectionDocument -> Duration.ofDays(365)
-
-            // SMTP is for sending only, effectively disable polling
-            is ConnectionDocument.OAuth2ConnectionDocument -> pollingProperties.oauth2
+        when (connectionDocument.connectionType) {
+            ConnectionDocument.ConnectionTypeEnum.HTTP -> pollingProperties.http
+            ConnectionDocument.ConnectionTypeEnum.IMAP -> pollingProperties.imap
+            ConnectionDocument.ConnectionTypeEnum.POP3 -> pollingProperties.pop3
+            ConnectionDocument.ConnectionTypeEnum.SMTP -> Duration.ofDays(365) // SMTP is for sending only
+            ConnectionDocument.ConnectionTypeEnum.OAUTH2 -> pollingProperties.oauth2
         }
 }
 

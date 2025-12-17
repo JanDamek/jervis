@@ -1,21 +1,18 @@
 package com.jervis.service.confluence.state
 
+import com.jervis.domain.PollingStatusEnum
 import com.jervis.entity.confluence.ConfluencePageIndexDocument
-import com.jervis.repository.ConfluencePageIndexIndexMongoRepository
 import com.jervis.repository.ConfluencePageIndexMongoRepository
-import com.jervis.repository.ConfluencePageIndexNewMongoRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import mu.KotlinLogging
-import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
-import java.time.Instant
 
 private val logger = KotlinLogging.logger {}
 
 /**
- * Manages Confluence page indexing state transitions with sealed class pattern.
+ * Manages Confluence page indexing state transitions with a sealed class pattern.
  *
  * State transitions:
  * - NEW → INDEXED (success, delete full content)
@@ -28,8 +25,6 @@ private val logger = KotlinLogging.logger {}
 @Service
 class ConfluenceStateManager(
     private val repository: ConfluencePageIndexMongoRepository,
-    private val repositoryNew: ConfluencePageIndexNewMongoRepository,
-    private val repositoryIndexed: ConfluencePageIndexIndexMongoRepository,
 ) {
     companion object {
         private const val POLL_DELAY_MS = 30_000L // 30 seconds when no NEW pages
@@ -44,7 +39,7 @@ class ConfluenceStateManager(
         flow {
             while (true) {
                 val pages =
-                    repositoryNew.findAllByOrderByConfluenceUpdatedAtDesc()
+                    repository.findAllByStatusOrderByConfluenceUpdatedAtDesc()
 
                 var emittedAny = false
                 pages.collect { page ->
@@ -67,68 +62,18 @@ class ConfluenceStateManager(
      *
      * This is the content cleanup step - removes full content, comments, attachments.
      */
-    suspend fun markAsIndexed(page: ConfluencePageIndexDocument.New) {
-        repositoryNew.deleteById(page.id)
-
-        val indexed =
-            ConfluencePageIndexDocument.Indexed(
-                id = ObjectId(),
-                clientId = page.clientId,
-                projectId = page.projectId,
-                connectionDocumentId = page.connectionDocumentId,
-                pageId = page.pageId,
-                versionNumber = page.versionNumber,
-                confluenceUpdatedAt = page.confluenceUpdatedAt,
-            )
-        repositoryIndexed.save(indexed)
+    suspend fun markAsIndexed(page: ConfluencePageIndexDocument) {
+        repository.save(page.copy(status = PollingStatusEnum.INDEXED))
     }
 
     /**
-     * Mark page as FAILED with error message.
+     * Mark the page as FAILED with an error message.
      * Keeps full content for retry.
      */
     suspend fun markAsFailed(
         page: ConfluencePageIndexDocument,
         reason: String,
     ) {
-        when (page) {
-            is ConfluencePageIndexDocument.New -> {
-                repositoryNew.deleteById(page.id)
-
-                val failed =
-                    ConfluencePageIndexDocument.Failed(
-                        id = ObjectId(),
-                        clientId = page.clientId,
-                        projectId = page.projectId,
-                        connectionDocumentId = page.connectionDocumentId,
-                        pageId = page.pageId,
-                        versionNumber = page.versionNumber,
-                        spaceKey = page.spaceKey,
-                        title = page.title ?: "",
-                        content = page.content,
-                        parentPageId = page.parentPageId,
-                        pageType = page.pageType ?: "",
-                        status = page.status ?: "",
-                        creator = page.creator,
-                        lastModifier = page.lastModifier,
-                        labels = page.labels ?: emptyList(),
-                        comments = page.comments ?: emptyList(),
-                        attachments = page.attachments ?: emptyList(),
-                        createdAt = page.createdAt ?: Instant.now(),
-                        confluenceUpdatedAt = page.confluenceUpdatedAt,
-                        indexingError = reason,
-                    )
-                repository.save(failed)
-            }
-
-            is ConfluencePageIndexDocument.Failed -> {
-                repository.deleteById(page.id)
-                repository.save(page.copy(id = ObjectId(), indexingError = "${page.indexingError}; $reason"))
-            }
-
-            is ConfluencePageIndexDocument.Indexed -> {
-                logger.error { "Cannot mark INDEXED page as FAILED: ${page.pageId}" }
-            }
-        }
+        repository.save(page.copy(status = PollingStatusEnum.FAILED, indexingError = reason))
     }
 }

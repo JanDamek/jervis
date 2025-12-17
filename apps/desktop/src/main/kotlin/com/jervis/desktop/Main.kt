@@ -1,18 +1,45 @@
 package com.jervis.desktop
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.*
-import com.jervis.desktop.ui.*
+import androidx.compose.ui.window.DialogWindow
+import androidx.compose.ui.window.MenuBar
+import androidx.compose.ui.window.Tray
+import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberWindowState
+import com.jervis.desktop.ui.MainContent
 import java.awt.Dimension
 
 /**
@@ -73,10 +100,6 @@ fun main() =
                     showMainWindow = true
                     navigator.navigateTo(com.jervis.ui.navigation.Screen.ErrorLogs)
                 })
-                Item("Indexing Status", onClick = {
-                    showMainWindow = true
-                    navigator.navigateTo(com.jervis.ui.navigation.Screen.IndexingStatus)
-                })
                 Separator()
                 Item("RAG Search", onClick = {
                     showMainWindow = true
@@ -115,16 +138,22 @@ fun main() =
                     Menu("View") {
                         Item("Home", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.Main) })
                         Separator()
-                        Item("User Tasks", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.UserTasks) })
-                        Item("Error Logs", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.ErrorLogs) })
+                        Item(
+                            "User Tasks",
+                            onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.UserTasks) },
+                        )
+                        Item(
+                            "Error Logs",
+                            onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.ErrorLogs) },
+                        )
                         Separator()
-                        Item("RAG Search", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.RagSearch) })
+                        Item(
+                            "RAG Search",
+                            onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.RagSearch) },
+                        )
                         Item("Scheduler", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.Scheduler) })
                         Separator()
                         Item("Debug Console", onClick = { showDebug = true })
-                    }
-                    Menu("Indexing") {
-                        Item("Indexing Status", onClick = { navigator.navigateTo(com.jervis.ui.navigation.Screen.IndexingStatus) })
                     }
                     Menu("Help") {
                         Item("About") {
@@ -156,7 +185,6 @@ fun main() =
                 com.jervis.ui.DebugWindow(eventsProvider = connectionManager)
             }
         }
-
 
         // Error notification popup - show immediately when new error arrives
         if (lastError != null && lastError.timestamp != dismissedErrorId) {
@@ -334,6 +362,7 @@ fun ConnectionStatusScreen(
                     Text("Connecting to server...", style = MaterialTheme.typography.headlineSmall)
                     Text(serverUrl, style = MaterialTheme.typography.bodyMedium)
                 }
+
                 is ConnectionStatus.Disconnected -> {
                     Text("⚠️", style = MaterialTheme.typography.displayLarge)
                     Spacer(modifier = Modifier.height(16.dp))
@@ -350,9 +379,11 @@ fun ConnectionStatusScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     Text("Retrying automatically...", style = MaterialTheme.typography.bodySmall)
                 }
+
                 is ConnectionStatus.Connected -> {
                     Text("Connected", style = MaterialTheme.typography.headlineSmall)
                 }
+
                 is ConnectionStatus.Offline -> {
                     Text("Offline", style = MaterialTheme.typography.headlineSmall)
                 }

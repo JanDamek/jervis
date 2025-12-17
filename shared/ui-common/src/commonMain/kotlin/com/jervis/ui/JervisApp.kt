@@ -1,6 +1,8 @@
 package com.jervis.ui
 
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import com.jervis.di.createJervisServices
 import com.jervis.repository.JervisRepository
 
@@ -24,21 +26,21 @@ fun JervisApp(
     val services = remember { createJervisServices(serverBaseUrl) }
 
     // Create repository
-    val repository = remember {
-        JervisRepository(
-            clientService = services.clientService,
-            projectService = services.projectService,
-            userTaskService = services.userTaskService,
-            ragSearchService = services.ragSearchService,
-            taskSchedulingService = services.taskSchedulingService,
-            agentOrchestratorService = services.agentOrchestratorService,
-            errorLogService = services.errorLogService,
-            gitConfigurationService = services.gitConfigurationService,
-            indexingStatusService = services.indexingStatusService,
-            pendingTaskService = services.pendingTaskService,
-            connectionService = services.connectionService,
-        )
-    }
+    val repository =
+        remember {
+            JervisRepository(
+                clientService = services.clientService,
+                projectService = services.projectService,
+                userTaskService = services.userTaskService,
+                ragSearchService = services.ragSearchService,
+                taskSchedulingService = services.taskSchedulingService,
+                agentOrchestratorService = services.agentOrchestratorService,
+                errorLogService = services.errorLogService,
+                gitConfigurationService = services.gitConfigurationService,
+                pendingTaskService = services.pendingTaskService,
+                connectionService = services.connectionService,
+            )
+        }
 
     // Provide debug events provider via CompositionLocal (if provided by platform)
     CompositionLocalProvider(LocalDebugEventsProvider provides debugEventsProvider) {

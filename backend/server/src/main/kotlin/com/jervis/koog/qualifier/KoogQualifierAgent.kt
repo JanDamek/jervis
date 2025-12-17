@@ -18,14 +18,23 @@ import ai.koog.agents.features.eventHandler.feature.EventHandler
 import ai.koog.prompt.dsl.Prompt
 import ai.koog.prompt.structure.StructuredResponse
 import com.jervis.configuration.properties.KoogProperties
+import com.jervis.domain.atlassian.shouldProcessWithVision
 import com.jervis.dto.PendingTaskStateEnum
 import com.jervis.entity.PendingTaskDocument
-import com.jervis.entity.shouldProcessWithVision
 import com.jervis.graphdb.GraphDBService
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.OllamaProviderSelector
 import com.jervis.koog.SmartModelSelector
-import com.jervis.koog.qualifier.types.*
+import com.jervis.koog.qualifier.types.ConfluenceExtractionOutput
+import com.jervis.koog.qualifier.types.ContentType
+import com.jervis.koog.qualifier.types.ContentTypeContext
+import com.jervis.koog.qualifier.types.ContentTypeDetection
+import com.jervis.koog.qualifier.types.EmailExtractionOutput
+import com.jervis.koog.qualifier.types.GenericChunkingOutput
+import com.jervis.koog.qualifier.types.IndexingContext
+import com.jervis.koog.qualifier.types.JiraExtractionOutput
+import com.jervis.koog.qualifier.types.LogSummarizationOutput
+import com.jervis.koog.qualifier.types.VisionContext
 import com.jervis.koog.tools.ContentClassificationTools
 import com.jervis.koog.tools.GraphRagTools
 import com.jervis.koog.tools.TaskTools
@@ -345,8 +354,17 @@ class KoogQualifierAgent(
                         listOf(
                             LogSummarizationOutput(
                                 summary = "Application crashed due to NullPointerException in UserService",
-                                keyEvents = listOf("ERROR at 10:23:45 - NullPointerException", "Service restarted at 10:25:00"),
-                                criticalDetails = listOf("UserService.java:42", "user_id=12345", "response_time=5000ms"),
+                                keyEvents =
+                                    listOf(
+                                        "ERROR at 10:23:45 - NullPointerException",
+                                        "Service restarted at 10:25:00",
+                                    ),
+                                criticalDetails =
+                                    listOf(
+                                        "UserService.java:42",
+                                        "user_id=12345",
+                                        "response_time=5000ms",
+                                    ),
                             ),
                         ),
                 )

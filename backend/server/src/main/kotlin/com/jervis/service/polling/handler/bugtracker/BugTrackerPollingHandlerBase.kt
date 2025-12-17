@@ -1,15 +1,18 @@
 package com.jervis.service.polling.handler.bugtracker
 
 import com.jervis.entity.ClientDocument
+import com.jervis.entity.ProjectDocument
 import com.jervis.entity.connection.ConnectionDocument
-import com.jervis.entity.connection.HttpCredentials
-import com.jervis.entity.connection.PollingState
+import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
+import com.jervis.entity.connection.ConnectionDocument.PollingState
+import com.jervis.service.client.ClientService
 import com.jervis.service.connection.ConnectionService
 import com.jervis.service.polling.PollingResult
 import com.jervis.service.polling.handler.PollingContext
 import com.jervis.service.polling.handler.PollingHandler
 import com.jervis.types.ClientId
 import com.jervis.types.ConnectionId
+import com.jervis.types.ProjectId
 import mu.KotlinLogging
 import java.time.Instant
 
@@ -30,6 +33,7 @@ import java.time.Instant
  */
 abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
     protected val connectionService: ConnectionService,
+    protected val clientService: ClientService,
 ) : PollingHandler {
     protected val logger = KotlinLogging.logger {}
 
@@ -37,7 +41,7 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
         connectionDocument: ConnectionDocument,
         context: PollingContext,
     ): PollingResult {
-        if (connectionDocument !is ConnectionDocument.HttpConnectionDocument || connectionDocument.credentials == null) {
+        if (connectionDocument.connectionType != ConnectionDocument.ConnectionTypeEnum.HTTP || connectionDocument.credentials == null) {
             logger.warn { "  → ${getSystemName()} handler: Invalid connectionDocument or credentials" }
             return PollingResult(errors = 1)
         }
@@ -49,10 +53,13 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
         var totalSkipped = 0
         var totalErrors = 0
 
-        for (client in context.clients) {
+        suspend fun pollClientIssuesAsync(
+            client: ClientDocument,
+            project: ProjectDocument?,
+        ) {
             try {
                 logger.debug { "    Polling ${getSystemName()} for client: ${client.name}" }
-                val result = pollClientIssues(connectionDocument, client)
+                val result = pollClientIssues(connectionDocument, client, project)
                 totalDiscovered += result.itemsDiscovered
                 totalCreated += result.itemsCreated
                 totalSkipped += result.itemsSkipped
@@ -68,6 +75,13 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
                 logger.error(e) { "    Error polling ${getSystemName()} for client ${client.name}" }
                 totalErrors++
             }
+        }
+
+        for (client in context.clients) {
+            pollClientIssuesAsync(client, null)
+        }
+        for (project in context.projects) {
+            pollClientIssuesAsync(clientService.getClientById(project.clientId), project)
         }
 
         logger.info {
@@ -87,8 +101,9 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
      * Poll issues for a single client.
      */
     private suspend fun pollClientIssues(
-        connectionDocument: ConnectionDocument.HttpConnectionDocument,
+        connectionDocument: ConnectionDocument,
         client: ClientDocument,
+        project: ProjectDocument?,
     ): PollingResult {
         val credentials =
             requireNotNull(connectionDocument.credentials) { "HTTP credentials required for ${getSystemName()} polling" }
@@ -104,9 +119,9 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
                 connectionDocument = connectionDocument,
                 credentials = credentials,
                 clientId = client.id,
+                projectId = project?.id,
                 query = query,
                 lastSeenUpdatedAt = state?.lastSeenUpdatedAt,
-                maxResults = 1000,
             )
 
         logger.info { "Discovered ${fullIssues.size} ${getSystemName()} issues for client ${client.name}" }
@@ -115,8 +130,7 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
         var skipped = 0
 
         for (fullIssue in fullIssues) {
-            val existing = findExisting(connectionDocument.id, fullIssue)
-            if (existing != null) {
+            if (findExisting(connectionDocument.id, fullIssue)) {
                 skipped++
                 continue
             }
@@ -130,7 +144,7 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
         fullIssues.maxOfOrNull { getIssueUpdatedAt(it) }?.let { latestUpdated ->
             val maxUpdated = state?.lastSeenUpdatedAt?.let { maxOf(it, latestUpdated) } ?: latestUpdated
             val updatedPollingStates =
-                connectionDocument.pollingStates + (getToolName() to PollingState.Http(maxUpdated))
+                connectionDocument.pollingStates + (getToolName() to PollingState(lastSeenUpdatedAt = maxUpdated))
             connectionService.save(connectionDocument.copy(pollingStates = updatedPollingStates))
         }
 
@@ -155,8 +169,8 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
      * Build query for fetching issues (JQL for Jira, YouTrack query, etc.)
      */
     protected abstract fun buildQuery(
-        client: ClientDocument,
-        connectionDocument: ConnectionDocument.HttpConnectionDocument,
+        client: ClientDocument?,
+        connectionDocument: ConnectionDocument,
         lastSeenUpdatedAt: Instant?,
     ): String
 
@@ -165,16 +179,14 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
      *
      * @param lastSeenUpdatedAt Last seen update timestamp for incremental polling.
      *                          null = first sync (fetch all open issues)
-     * @param startAt Pagination offset (default 0). Used during initial sync pagination.
      */
     protected abstract suspend fun fetchFullIssues(
-        connectionDocument: ConnectionDocument.HttpConnectionDocument,
+        connectionDocument: ConnectionDocument,
         credentials: HttpCredentials,
         clientId: ClientId,
+        projectId: ProjectId?,
         query: String,
         lastSeenUpdatedAt: Instant?,
-        maxResults: Int,
-        startAt: Int = 0,
     ): List<TIssue>
 
     /**
@@ -190,7 +202,7 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
     protected abstract suspend fun findExisting(
         connectionId: ConnectionId,
         issue: TIssue,
-    ): TIssue?
+    ): Boolean
 
     /**
      * Save issue to repository.

@@ -1,5 +1,6 @@
 package com.jervis.entity
 
+import com.jervis.domain.atlassian.AttachmentMetadata
 import com.jervis.dto.PendingTaskStateEnum
 import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.types.ClientId
@@ -47,7 +48,6 @@ data class PendingTaskDocument(
     val sourceUrn: SourceUrn,
     val errorMessage: String? = null,
     val qualificationRetries: Int = 0,
-
     /** Attachments for vision analysis (lazy loaded by Qualifier Agent) */
     val attachments: List<AttachmentMetadata> = emptyList(),
 )

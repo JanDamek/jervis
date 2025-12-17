@@ -1,5 +1,6 @@
 package com.jervis.service.email
 
+import com.jervis.domain.PollingStatusEnum
 import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.entity.email.EmailMessageIndexDocument
 import com.jervis.repository.EmailMessageIndexMongoRepository
@@ -59,7 +60,7 @@ class EmailContinuousIndexer(
 
     private suspend fun indexContinuously() {
         continuousNewEmails().collect { doc ->
-            if (doc !is EmailMessageIndexDocument.New) {
+            if (doc.state != PollingStatusEnum.NEW) {
                 logger.warn { "Skipping non-NEW email: ${doc.id} (state=${doc.state})" }
                 return@collect
             }
@@ -75,7 +76,7 @@ class EmailContinuousIndexer(
     private fun continuousNewEmails() =
         flow {
             while (true) {
-                val emails = repository.findByStateOrderByReceivedDateAsc("NEW")
+                val emails = repository.findByStateOrderByReceivedDateAsc(PollingStatusEnum.NEW)
 
                 var emittedAny = false
                 emails.collect { email ->
@@ -93,7 +94,7 @@ class EmailContinuousIndexer(
         }
 
     private suspend fun indexEmail(doc: EmailMessageIndexDocument) {
-        require(doc is EmailMessageIndexDocument.New) { "Can only index NEW emails, got: ${doc.state}" }
+        require(doc.state == PollingStatusEnum.NEW) { "Can only index NEW emails, got: ${doc.state}" }
         logger.debug { "Processing email: ${doc.subject}" }
 
         try {
@@ -117,7 +118,7 @@ class EmailContinuousIndexer(
                     }
                     append("**Date:** ${doc.sentDate ?: doc.receivedDate}\n")
                     append("**Folder:** ${doc.folder}\n")
-                    append("**Message-ID:** ${doc.messageId ?: "none"}\n")
+                    append("**Message-ID:** ${doc.messageId}\n")
                     append("\n---\n\n")
 
                     if (emailBody.isNotBlank()) {
@@ -137,7 +138,7 @@ class EmailContinuousIndexer(
                     append("## Source Metadata\n")
                     append("- **Source Type:** Email\n")
                     append("- **Email ID:** ${doc.id}\n")
-                    append("- **Message-ID:** ${doc.messageId ?: "none"}\n")
+                    append("- **Message-ID:** ${doc.messageId}\n")
                     append("- **Subject:** ${doc.subject}\n")
                     append("- **From:** ${doc.from}\n")
                     append("- **To:** ${doc.to.joinToString(", ")}\n")
@@ -159,8 +160,8 @@ class EmailContinuousIndexer(
                 sourceUrn =
                     SourceUrn.email(
                         connectionId = doc.connectionId,
-                        messageId = doc.messageId ?: doc.id.toHexString(),
-                        subject = doc.subject,
+                        messageId = doc.messageId,
+                        subject = doc.subject ?: "",
                     ),
                 projectId = doc.projectId,
             )
@@ -173,13 +174,9 @@ class EmailContinuousIndexer(
         }
     }
 
-    private suspend fun markAsIndexed(doc: EmailMessageIndexDocument.New) {
-        // Convert to minimal INDEXED state - only tracking data, no content
-        // For sealed classes: delete old document + insert new (MongoDB doesn't support changing _class in update)
-        repository.deleteById(doc.id)
-
+    private suspend fun markAsIndexed(doc: EmailMessageIndexDocument) {
         val updated =
-            EmailMessageIndexDocument.Indexed(
+            EmailMessageIndexDocument(
                 id = doc.id,
                 clientId = doc.clientId,
                 projectId = doc.projectId,
@@ -187,36 +184,19 @@ class EmailContinuousIndexer(
                 messageUid = doc.messageUid,
                 messageId = doc.messageId,
                 receivedDate = doc.receivedDate,
+                state = PollingStatusEnum.INDEXED,
             )
         repository.save(updated)
         logger.debug { "Marked email as INDEXED (minimal tracking): ${doc.messageUid}" }
     }
 
     private suspend fun markAsFailed(
-        doc: EmailMessageIndexDocument.New,
+        doc: EmailMessageIndexDocument,
         error: String,
     ) {
-        // For sealed classes: delete old document + insert new (MongoDB doesn't support changing _class in update)
-        repository.deleteById(doc.id)
-
         val updated =
-            EmailMessageIndexDocument.Failed(
-                id = doc.id,
-                clientId = doc.clientId,
-                projectId = doc.projectId,
-                connectionId = doc.connectionId,
-                messageUid = doc.messageUid,
-                messageId = doc.messageId,
-                subject = doc.subject,
-                from = doc.from,
-                to = doc.to,
-                cc = doc.cc,
-                sentDate = doc.sentDate,
-                receivedDate = doc.receivedDate,
-                textBody = doc.textBody,
-                htmlBody = doc.htmlBody,
-                attachments = doc.attachments,
-                folder = doc.folder,
+            doc.copy(
+                state = PollingStatusEnum.FAILED,
                 indexingError = error,
             )
         repository.save(updated)

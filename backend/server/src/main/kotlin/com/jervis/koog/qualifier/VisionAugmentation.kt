@@ -3,9 +3,9 @@ package com.jervis.koog.qualifier
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.markdown.markdown
-import com.jervis.entity.AttachmentMetadata
-import com.jervis.entity.VisionAnalysisResult
-import com.jervis.entity.shouldProcessWithVision
+import com.jervis.domain.atlassian.AttachmentMetadata
+import com.jervis.domain.atlassian.VisionAnalysisResult
+import com.jervis.domain.atlassian.shouldProcessWithVision
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.OllamaProviderSelector
 import com.jervis.koog.qualifier.types.ContentType
@@ -15,6 +15,7 @@ import kotlinx.io.files.Path
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.nio.file.Files
+import java.time.Instant
 import kotlin.io.path.writeBytes
 
 private val json = Json { ignoreUnknownKeys = true }
@@ -65,61 +66,61 @@ data class TypeSpecificVisionResult(
  * @return VisionContext with general and type-specific vision analysis
  */
 suspend fun runTwoStageVision(
-        executorFactory: KoogPromptExecutorFactory,
-        providerSelector: OllamaProviderSelector,
-        model: LLModel,
-        originalText: String,
-        attachments: List<AttachmentMetadata>,
-        contentType: ContentType?,
-        directoryStructureService: DirectoryStructureService,
-    ): VisionContext {
-        val visual = attachments.filter { it.shouldProcessWithVision() }
-        if (visual.isEmpty()) {
-            return VisionContext(
-                originalText = originalText,
-                generalVisionSummary = null,
-                typeSpecificVisionDetails = null,
-                attachments = attachments,
-            )
-        }
+    executorFactory: KoogPromptExecutorFactory,
+    providerSelector: OllamaProviderSelector,
+    model: LLModel,
+    originalText: String,
+    attachments: List<AttachmentMetadata>,
+    contentType: ContentType?,
+    directoryStructureService: DirectoryStructureService,
+): VisionContext {
+    val visual = attachments.filter { it.shouldProcessWithVision() }
+    if (visual.isEmpty()) {
+        return VisionContext(
+            originalText = originalText,
+            generalVisionSummary = null,
+            typeSpecificVisionDetails = null,
+            attachments = attachments,
+        )
+    }
 
-        // Prepare temp files for image attachments only (Koog attachments DSL requirement)
-        val tmpFiles: List<Pair<AttachmentMetadata, java.nio.file.Path>> =
-            visual
-                .filter { it.mimeType.startsWith("image/") }
-                .map { att ->
-                    val bytes = directoryStructureService.readAttachment(att.storagePath)
-                    val suffix =
-                        when {
-                            att.mimeType.contains("png") -> ".png"
-                            att.mimeType.contains("jpeg") || att.mimeType.contains("jpg") -> ".jpg"
-                            att.mimeType.contains("webp") -> ".webp"
-                            else -> ".png"
-                        }
-                    val tmp = Files.createTempFile("koog-vision-${att.id}-", suffix)
-                    tmp.writeBytes(bytes)
-                    att to tmp
-                }
+    // Prepare temp files for image attachments only (Koog attachments DSL requirement)
+    val tmpFiles: List<Pair<AttachmentMetadata, java.nio.file.Path>> =
+        visual
+            .filter { it.mimeType.startsWith("image/") }
+            .map { att ->
+                val bytes = directoryStructureService.readAttachment(att.storagePath)
+                val suffix =
+                    when {
+                        att.mimeType.contains("png") -> ".png"
+                        att.mimeType.contains("jpeg") || att.mimeType.contains("jpg") -> ".jpg"
+                        att.mimeType.contains("webp") -> ".webp"
+                        else -> ".png"
+                    }
+                val tmp = Files.createTempFile("koog-vision-${att.id}-", suffix)
+                tmp.writeBytes(bytes)
+                att to tmp
+            }
 
-        if (tmpFiles.isEmpty()) {
-            return VisionContext(
-                originalText = originalText,
-                generalVisionSummary = null,
-                typeSpecificVisionDetails = null,
-                attachments = attachments,
-            )
-        }
+    if (tmpFiles.isEmpty()) {
+        return VisionContext(
+            originalText = originalText,
+            generalVisionSummary = null,
+            typeSpecificVisionDetails = null,
+            attachments = attachments,
+        )
+    }
 
-        try {
-            val executor = executorFactory.getExecutor(providerSelector.getProvider())
+    try {
+        val executor = executorFactory.getExecutor(providerSelector.getProvider())
 
-            // ===================================================================
-            // STAGE 1: General description - what's in the image
-            // ===================================================================
-            val stage1Prompt =
-                prompt("vision-stage1-general") {
-                    system(
-                        """
+        // ===================================================================
+        // STAGE 1: General description - what's in the image
+        // ===================================================================
+        val stage1Prompt =
+            prompt("vision-stage1-general") {
+                system(
+                    """
 You are a Vision Analysis AI - Stage 1: General Description.
 Analyze images and describe what you see in general terms.
 
@@ -135,49 +136,49 @@ Rules:
 - Include visible text, UI elements, chart types
 - Be concise but complete
 - One item per attachment
-                        """.trimIndent(),
-                    )
+                    """.trimIndent(),
+                )
 
-                    user {
-                        markdown {
-                            +"Analyze these images and provide general descriptions:"
+                user {
+                    markdown {
+                        +"Analyze these images and provide general descriptions:"
+                        br()
+                        tmpFiles.forEach { (att, _) ->
+                            +" - ${att.id} (${att.filename})"
                             br()
-                            tmpFiles.forEach { (att, _) ->
-                                +" - ${att.id} (${att.filename})"
-                                br()
-                            }
                         }
+                    }
 
-                        tmpFiles.forEach { (_, tmpPath) ->
-                            image(Path(tmpPath.toString()))
-                        }
+                    tmpFiles.forEach { (_, tmpPath) ->
+                        image(Path(tmpPath.toString()))
                     }
                 }
+            }
 
-            val stage1Responses = executor.execute(stage1Prompt, model)
-            val stage1Raw = stage1Responses.firstOrNull()?.content ?: ""
-            val stage1Result = json.decodeFromString(GeneralVisionResult.serializer(), stage1Raw)
+        val stage1Responses = executor.execute(stage1Prompt, model)
+        val stage1Raw = stage1Responses.firstOrNull()?.content ?: ""
+        val stage1Result = json.decodeFromString(GeneralVisionResult.serializer(), stage1Raw)
 
-            val generalSummary =
-                buildString {
-                    append("## 🔍 Visual Content (General)\n\n")
-                    stage1Result.items.forEach { item ->
-                        val att = visual.find { it.id == item.attachmentId }
-                        append("### ${att?.filename ?: item.attachmentId}\n")
-                        append(item.generalDescription)
-                        append("\n\n")
-                    }
-                }.trim()
+        val generalSummary =
+            buildString {
+                append("## 🔍 Visual Content (General)\n\n")
+                stage1Result.items.forEach { item ->
+                    val att = visual.find { it.id == item.attachmentId }
+                    append("### ${att?.filename ?: item.attachmentId}\n")
+                    append(item.generalDescription)
+                    append("\n\n")
+                }
+            }.trim()
 
-            // ===================================================================
-            // STAGE 2: Type-specific details (only if contentType is known)
-            // ===================================================================
-            val typeSpecificDetails =
-                if (contentType != null) {
-                    val stage2Prompt =
-                        prompt("vision-stage2-specific") {
-                            system(
-                                """
+        // ===================================================================
+        // STAGE 2: Type-specific details (only if contentType is known)
+        // ===================================================================
+        val typeSpecificDetails =
+            if (contentType != null) {
+                val stage2Prompt =
+                    prompt("vision-stage2-specific") {
+                        system(
+                            """
 You are a Vision Analysis AI - Stage 2: Type-Specific Extraction.
 Extract specific details based on content type: $contentType
 
@@ -192,87 +193,88 @@ Extraction rules for $contentType:
 ${getTypeSpecificExtractionRules(contentType)}
 
 One item per attachment with specific extracted data.
-                                """.trimIndent(),
-                            )
+                            """.trimIndent(),
+                        )
 
-                            user {
-                                markdown {
-                                    +"Extract type-specific details from these images:"
+                        user {
+                            markdown {
+                                +"Extract type-specific details from these images:"
+                                br()
+                                tmpFiles.forEach { (att, _) ->
+                                    +" - ${att.id} (${att.filename})"
                                     br()
-                                    tmpFiles.forEach { (att, _) ->
-                                        +" - ${att.id} (${att.filename})"
-                                        br()
-                                    }
-                                }
-
-                                tmpFiles.forEach { (_, tmpPath) ->
-                                    image(Path(tmpPath.toString()))
                                 }
                             }
+
+                            tmpFiles.forEach { (_, tmpPath) ->
+                                image(Path(tmpPath.toString()))
+                            }
                         }
-
-                    val stage2Responses = executor.execute(stage2Prompt, model)
-                    val stage2Raw = stage2Responses.firstOrNull()?.content ?: ""
-                    val stage2Result = json.decodeFromString(TypeSpecificVisionResult.serializer(), stage2Raw)
-
-                    buildString {
-                        append("## 🎯 Type-Specific Details ($contentType)\n\n")
-                        stage2Result.items.forEach { item ->
-                            val att = visual.find { it.id == item.attachmentId }
-                            append("### ${att?.filename ?: item.attachmentId}\n")
-                            append(item.specificDetails)
-                            append("\n\n")
-                        }
-                    }.trim()
-                } else {
-                    null
-                }
-
-            // Update attachments with vision analysis results
-            val updatedAttachments =
-                attachments.map { att ->
-                    val stage1Item = stage1Result.items.find { it.attachmentId == att.id }
-                    if (stage1Item != null) {
-                        att.copy(
-                            visionAnalysis =
-                                VisionAnalysisResult(
-                                    model = model.id,
-                                    description = stage1Item.generalDescription,
-                                    confidence = 0.0,
-                                    analyzedAt = java.time.Instant.now(),
-                                ),
-                        )
-                    } else {
-                        att
                     }
-                }
 
-            return VisionContext(
-                originalText = originalText,
-                generalVisionSummary = generalSummary,
-                typeSpecificVisionDetails = typeSpecificDetails,
-                attachments = updatedAttachments,
-            )
-        } finally {
-            // Cleanup temp files
-            tmpFiles.forEach { (_, pth) -> runCatching { Files.deleteIfExists(pth) } }
-        }
+                val stage2Responses = executor.execute(stage2Prompt, model)
+                val stage2Raw = stage2Responses.firstOrNull()?.content ?: ""
+                val stage2Result = json.decodeFromString(TypeSpecificVisionResult.serializer(), stage2Raw)
+
+                buildString {
+                    append("## 🎯 Type-Specific Details ($contentType)\n\n")
+                    stage2Result.items.forEach { item ->
+                        val att = visual.find { it.id == item.attachmentId }
+                        append("### ${att?.filename ?: item.attachmentId}\n")
+                        append(item.specificDetails)
+                        append("\n\n")
+                    }
+                }.trim()
+            } else {
+                null
+            }
+
+        // Update attachments with vision analysis results
+        val updatedAttachments =
+            attachments.map { att ->
+                val stage1Item = stage1Result.items.find { it.attachmentId == att.id }
+                if (stage1Item != null) {
+                    att.copy(
+                        visionAnalysis =
+                            VisionAnalysisResult(
+                                model = model.id,
+                                description = stage1Item.generalDescription,
+                                confidence = 0.0,
+                                analyzedAt = Instant.now(),
+                            ),
+                    )
+                } else {
+                    att
+                }
+            }
+
+        return VisionContext(
+            originalText = originalText,
+            generalVisionSummary = generalSummary,
+            typeSpecificVisionDetails = typeSpecificDetails,
+            attachments = updatedAttachments,
+        )
+    } finally {
+        // Cleanup temp files
+        tmpFiles.forEach { (_, pth) -> runCatching { Files.deleteIfExists(pth) } }
     }
+}
 
 /**
  * Get type-specific extraction rules for Stage 2 vision analysis.
  */
 private fun getTypeSpecificExtractionRules(contentType: ContentType): String =
     when (contentType) {
-        ContentType.EMAIL ->
+        ContentType.EMAIL -> {
             """
             - Extract email addresses (sender, recipients)
             - Extract subject line if visible
             - Identify attachment file names
             - Note any visible dates/timestamps
             """.trimIndent()
+        }
 
-        ContentType.JIRA ->
+        ContentType.JIRA -> {
             """
             - Extract JIRA keys (e.g., SDB-2080, PROJ-123)
             - Extract status (Open, In Progress, Done, etc.)
@@ -281,8 +283,9 @@ private fun getTypeSpecificExtractionRules(contentType: ContentType): String =
             - Note error messages, stack traces in screenshots
             - Identify UI elements (buttons, forms, dialogs)
             """.trimIndent()
+        }
 
-        ContentType.CONFLUENCE ->
+        ContentType.CONFLUENCE -> {
             """
             - Extract page title if visible
             - Extract author name
@@ -290,8 +293,9 @@ private fun getTypeSpecificExtractionRules(contentType: ContentType): String =
             - Note section headings
             - Extract any code snippets visible
             """.trimIndent()
+        }
 
-        ContentType.LOG ->
+        ContentType.LOG -> {
             """
             - Extract ERROR, WARN, FATAL messages
             - Extract timestamps
@@ -299,12 +303,14 @@ private fun getTypeSpecificExtractionRules(contentType: ContentType): String =
             - Extract exception class names
             - Extract critical numeric values (response times, error counts)
             """.trimIndent()
+        }
 
-        ContentType.GENERIC ->
+        ContentType.GENERIC -> {
             """
             - Extract all visible text verbatim
             - Note UI element types (buttons, inputs, dropdowns)
             - Extract chart data (axis labels, values, legend)
             - Note error messages, warnings
             """.trimIndent()
+        }
     }

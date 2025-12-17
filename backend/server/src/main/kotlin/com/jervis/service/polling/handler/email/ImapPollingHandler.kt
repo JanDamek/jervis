@@ -2,12 +2,12 @@ package com.jervis.service.polling.handler.email
 
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.ConnectionDocument
-import com.jervis.entity.connection.PollingState
 import com.jervis.repository.EmailMessageIndexMongoRepository
 import com.jervis.service.connection.ConnectionService
 import com.jervis.service.polling.PollingResult
 import com.jervis.types.ProjectId
 import jakarta.mail.Folder
+import jakarta.mail.MessagingException
 import jakarta.mail.Session
 import jakarta.mail.UIDFolder
 import kotlinx.coroutines.Dispatchers
@@ -32,7 +32,7 @@ class ImapPollingHandler(
     private val connectionService: ConnectionService,
 ) : EmailPollingHandlerBase(repository) {
     override fun canHandle(connectionDocument: ConnectionDocument): Boolean =
-        connectionDocument is ConnectionDocument.ImapConnectionDocument
+        connectionDocument.connectionType == ConnectionDocument.ConnectionTypeEnum.IMAP
 
     override fun getProtocolName(): String = "IMAP"
 
@@ -41,7 +41,7 @@ class ImapPollingHandler(
         client: ClientDocument,
         projectId: ProjectId?,
     ): PollingResult {
-        if (connectionDocument !is ConnectionDocument.ImapConnectionDocument) {
+        if (connectionDocument.connectionType != ConnectionDocument.ConnectionTypeEnum.IMAP) {
             logger.warn { "Invalid connectionDocument type for IMAP polling" }
             return PollingResult(errors = 1)
         }
@@ -50,7 +50,7 @@ class ImapPollingHandler(
     }
 
     private suspend fun pollImap(
-        connectionDocument: ConnectionDocument.ImapConnectionDocument,
+        connectionDocument: ConnectionDocument,
         client: ClientDocument,
         projectId: ProjectId?,
     ): PollingResult =
@@ -63,6 +63,7 @@ class ImapPollingHandler(
                     setProperty("mail.store.protocol", "imap")
                     setProperty("mail.imap.host", connectionDocument.host)
                     setProperty("mail.imap.port", connectionDocument.port.toString())
+                    setProperty("mail.imap.user", connectionDocument.username)
                     if (connectionDocument.useSsl) {
                         setProperty("mail.imap.ssl.enable", "true")
                         setProperty("mail.imap.ssl.trust", "*")
@@ -74,13 +75,27 @@ class ImapPollingHandler(
             val session = Session.getInstance(properties)
             val store = session.getStore("imap")
 
-            store.use { store ->
-                store.connect(
-                    connectionDocument.host,
-                    connectionDocument.port,
-                    connectionDocument.username,
-                    connectionDocument.password,
-                )
+            try {
+                repeat(2) { attempt ->
+                    try {
+                        if (store.isConnected) store.close()
+                        store.connect(
+                            connectionDocument.host,
+                            connectionDocument.port,
+                            connectionDocument.username,
+                            connectionDocument.password,
+                        )
+                        return@repeat
+                    } catch (e: MessagingException) {
+                        if (attempt == 1) throw e
+                        try {
+                            store.close()
+                        } catch (_: Exception) {
+                        }
+                        logger.warn { "SSL handshake failed, retrying (${attempt + 1}/2)" }
+                        Thread.sleep(300)
+                    }
+                }
 
                 val folder = store.getFolder(connectionDocument.folderName)
                 folder.open(Folder.READ_ONLY)
@@ -102,7 +117,7 @@ class ImapPollingHandler(
                     }
 
                     // Load polling state from connectionDocument
-                    val lastFetchedUid = connectionDocument.pollingState?.lastFetchedUid ?: 0L
+                    val lastFetchedUid = connectionDocument.pollingStates["IMAP"]?.lastFetchedUid ?: 0L
 
                     logger.debug { "IMAP sync state: lastFetchedUid=$lastFetchedUid" }
 
@@ -171,14 +186,8 @@ class ImapPollingHandler(
                     // Save polling state to connectionDocument
                     // Always update if we processed messages (even if all skipped)
                     if (filteredMessages.isNotEmpty() && maxUidFetched > lastFetchedUid) {
-                        val updatedConnection =
-                            connectionDocument.copy(
-                                pollingState =
-                                    PollingState.Imap(
-                                        lastFetchedUid = maxUidFetched,
-                                    ),
-                            )
-                        connectionService.save(updatedConnection)
+                        connectionDocument.pollingStates["IMAP"]?.lastFetchedUid = maxUidFetched
+                        connectionService.save(connectionDocument)
                         logger.debug {
                             "Updated lastFetchedUid: $lastFetchedUid -> $maxUidFetched (processed: created=$created, skipped=$skipped)"
                         }
@@ -197,6 +206,8 @@ class ImapPollingHandler(
                 } finally {
                     folder.close(false)
                 }
+            } finally {
+                store.close()
             }
         }
 }

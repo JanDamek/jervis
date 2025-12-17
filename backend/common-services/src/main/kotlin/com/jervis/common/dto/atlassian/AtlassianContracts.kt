@@ -13,13 +13,14 @@ import java.time.Instant
 object InstantSerializer : KSerializer<Instant> {
     override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("Instant", PrimitiveKind.STRING)
 
-    override fun serialize(encoder: Encoder, value: Instant) {
+    override fun serialize(
+        encoder: Encoder,
+        value: Instant,
+    ) {
         encoder.encodeString(value.toString())
     }
 
-    override fun deserialize(decoder: Decoder): Instant {
-        return Instant.parse(decoder.decodeString())
-    }
+    override fun deserialize(decoder: Decoder): Instant = Instant.parse(decoder.decodeString())
 }
 
 // ============= Authentication & Common =============
@@ -27,7 +28,7 @@ object InstantSerializer : KSerializer<Instant> {
 @Serializable
 data class AtlassianMyselfRequest(
     val baseUrl: String,
-    val authType: String? = null, // NONE, BASIC, BEARER
+    val authType: String,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
@@ -45,12 +46,12 @@ data class AtlassianUserDto(
 @Serializable
 data class JiraSearchRequest(
     val baseUrl: String,
-    val authType: String? = null,
+    val authType: String,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
     val jql: String,
-    val maxResults: Int = 50,
+    val maxResults: Int = 1000,
     val startAt: Int = 0,
 )
 
@@ -66,6 +67,7 @@ data class JiraSearchResponse(
 data class JiraIssueSummary(
     val key: String,
     val id: String,
+    val self: String?, // Issue URL
     val fields: JiraIssueFields,
 )
 
@@ -79,6 +81,14 @@ data class JiraIssueFields(
     val priority: JiraPriority?,
     val assignee: JiraUser?,
     val reporter: JiraUser?,
+    val issueType: JiraIssueType?,
+    val project: JiraProject?,
+    val labels: List<String>?,
+    val components: List<JiraComponent>?,
+    val fixVersions: List<JiraVersion>?,
+    val parent: JiraIssueRef?, // Parent issue (for subtasks)
+    val subtasks: List<JiraIssueRef>?,
+    val attachments: List<JiraAttachment>? = null,
 )
 
 @Serializable
@@ -101,9 +111,46 @@ data class JiraUser(
 )
 
 @Serializable
+data class JiraIssueType(
+    val id: String,
+    val name: String,
+    val description: String?,
+    val subtask: Boolean = false,
+)
+
+@Serializable
+data class JiraProject(
+    val id: String,
+    val key: String,
+    val name: String,
+)
+
+@Serializable
+data class JiraComponent(
+    val id: String,
+    val name: String,
+    val description: String?,
+)
+
+@Serializable
+data class JiraVersion(
+    val id: String,
+    val name: String,
+    val released: Boolean = false,
+    val releaseDate: String?,
+)
+
+@Serializable
+data class JiraIssueRef(
+    val id: String,
+    val key: String,
+    val self: String?,
+)
+
+@Serializable
 data class JiraIssueRequest(
     val baseUrl: String,
-    val authType: String? = null,
+    val authType: String,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
@@ -118,6 +165,7 @@ data class JiraIssueResponse(
     val changelog: JiraChangelogResponse? = null,
     val comments: List<JiraComment>? = null,
     val attachments: List<JiraAttachment>? = null,
+    val renderedDescription: String? = null, // HTML-rendered description from renderedFields
 )
 
 @Serializable
@@ -127,8 +175,8 @@ data class JiraChangelogResponse(
 
 @Serializable
 data class JiraChangelog(
-    val id: String,  // Unique changelog ID from Jira
-    val created: String?,  // ISO timestamp
+    val id: String, // Unique changelog ID from Jira
+    val created: String?, // ISO timestamp
     val author: JiraUser?,
     val items: List<JiraChangelogItem> = emptyList(),
 )
@@ -136,7 +184,7 @@ data class JiraChangelog(
 @Serializable
 data class JiraChangelogItem(
     val field: String?,
-    val fieldtype: String?,
+    val fieldType: String?,
     val from: String?,
     val fromString: String?,
     val to: String?,
@@ -164,7 +212,7 @@ data class JiraAttachment(
 @Serializable
 data class JiraAttachmentDownloadRequest(
     val baseUrl: String,
-    val authType: String? = null,
+    val authType: String,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
@@ -176,15 +224,15 @@ data class JiraAttachmentDownloadRequest(
 @Serializable
 data class ConfluenceSearchRequest(
     val baseUrl: String,
-    val authType: String? = null,
+    val authType: String,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
     val spaceKey: String? = null,
     val cql: String? = null,
     @Serializable(with = InstantSerializer::class)
-    val lastModifiedSince: Instant? = null, // Will be formatted to CQL by AtlassianApiClient
-    val maxResults: Int = 50,
+    val lastModifiedSince: Instant? = null,
+    val maxResults: Int = 1000,
     val startAt: Int = 0,
 )
 
@@ -200,9 +248,18 @@ data class ConfluenceSearchResponse(
 data class ConfluencePageSummary(
     val id: String,
     val title: String,
+    val type: String?, // page, blogpost, attachment, etc.
+    val status: String?, // current, archived, draft
     val spaceKey: String?,
+    val spaceName: String?,
     val version: ConfluenceVersion?,
     val lastModified: String?, // ISO timestamp
+    val createdDate: String?, // ISO timestamp from version.when
+    val body: ConfluenceBody?,
+    val excerpt: String?, // Search result excerpt
+    val labels: List<String>?,
+    val parentId: String?, // Parent page ID from ancestors
+    val ancestors: List<String>?, // List of ancestor IDs
 )
 
 @Serializable
@@ -222,7 +279,7 @@ data class ConfluenceUser(
 @Serializable
 data class ConfluencePageRequest(
     val baseUrl: String,
-    val authType: String? = null,
+    val authType: String,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
@@ -233,10 +290,18 @@ data class ConfluencePageRequest(
 data class ConfluencePageResponse(
     val id: String,
     val title: String,
+    val type: String?, // page, blogpost, attachment, etc.
+    val status: String?, // current, archived, draft
     val spaceKey: String?,
+    val spaceName: String?,
     val version: ConfluenceVersion?,
     val body: ConfluenceBody?,
     val lastModified: String?,
+    val createdDate: String?,
+    val labels: List<String>?,
+    val parentId: String?,
+    val ancestors: List<String>?,
+    val attachments: List<ConfluenceAttachment>? = null,
 )
 
 @Serializable
@@ -249,4 +314,24 @@ data class ConfluenceBody(
 data class ConfluenceStorage(
     val value: String,
     val representation: String, // "storage", "view", etc.
+)
+
+@Serializable
+data class ConfluenceAttachment(
+    val id: String,
+    val title: String,
+    val type: String, // "attachment"
+    val mediaType: String?, // MIME type (e.g., "image/png")
+    val fileSize: Long?,
+    val downloadUrl: String?, // Relative URL, typically in _links.download
+)
+
+@Serializable
+data class ConfluenceAttachmentDownloadRequest(
+    val baseUrl: String,
+    val authType: String,
+    val basicUsername: String? = null,
+    val basicPassword: String? = null,
+    val bearerToken: String? = null,
+    val attachmentDownloadUrl: String, // Full download URL from attachment._links.download
 )

@@ -1,16 +1,16 @@
 package com.jervis.service.background
 
+import com.jervis.domain.atlassian.AttachmentMetadata
 import com.jervis.dto.PendingTaskStateEnum
 import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.entity.PendingTaskDocument
 import com.jervis.repository.PendingTaskMongoRepository
 import com.jervis.service.debug.DebugService
-import com.jervis.service.task.UserTaskService
+import com.jervis.service.text.TikaTextExtractionService
 import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
 import com.jervis.types.SourceUrn
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.reactor.awaitSingleOrNull
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -24,9 +24,9 @@ import java.time.Instant
 @Service
 class PendingTaskService(
     private val pendingTaskRepository: PendingTaskMongoRepository,
-    private val userTaskService: UserTaskService,
     private val debugService: DebugService,
     private val mongoTemplate: ReactiveMongoTemplate,
+    private val tikaTextExtractionService: TikaTextExtractionService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -38,21 +38,16 @@ class PendingTaskService(
         sourceUrn: SourceUrn,
         projectId: ProjectId? = null,
         state: PendingTaskStateEnum = PendingTaskStateEnum.READY_FOR_QUALIFICATION,
-        attachments: List<com.jervis.entity.AttachmentMetadata> = emptyList(),
+        attachments: List<AttachmentMetadata> = emptyList(),
     ): PendingTaskDocument {
         require(content.isNotBlank()) { "PendingTask content must be provided and non-blank" }
 
-        // Check if task with same correlationId already exists (deduplication)
-        val existing = pendingTaskRepository.findByCorrelationId(correlationId)
-        if (existing != null) {
-            logger.debug { "Task with correlationId=$correlationId already exists (id=${existing.id}), skipping creation" }
-            return existing
-        }
+        val cleanContent = cleanContentWithTika(content, correlationId, taskType)
 
         val task =
             PendingTaskDocument(
                 type = taskType,
-                content = content,
+                content = cleanContent,
                 projectId = projectId,
                 clientId = clientId,
                 state = state,
@@ -130,7 +125,11 @@ class PendingTaskService(
         val updated = task.copy(state = PendingTaskStateEnum.ERROR, errorMessage = errorMessage)
         val saved = pendingTaskRepository.save(updated)
         logger.error {
-            "TASK_MARKED_AS_ERROR: id=$taskId correlationId=${saved.correlationId} previousState=$previousState error='${errorMessage.take(200)}'"
+            "TASK_MARKED_AS_ERROR: id=$taskId correlationId=${saved.correlationId} previousState=$previousState error='${
+                errorMessage.take(
+                    200,
+                )
+            }'"
         }
 
         // Publish debug event
@@ -154,10 +153,11 @@ class PendingTaskService(
         taskId: ObjectId,
         maxRetries: Int,
     ) {
-        val task = pendingTaskRepository.findById(taskId) ?: run {
-            logger.warn { "Cannot return task to queue - not found: $taskId" }
-            return
-        }
+        val task =
+            pendingTaskRepository.findById(taskId) ?: run {
+                logger.warn { "Cannot return task to queue - not found: $taskId" }
+                return
+            }
 
         if (task.state != PendingTaskStateEnum.QUALIFYING) {
             logger.warn {
@@ -223,8 +223,7 @@ class PendingTaskService(
      * Note: QUALIFYING tasks are NOT included - they are already being processed.
      * This prevents multiple concurrent processing of the same task.
      */
-    fun findTasksForQualification(): Flow<PendingTaskDocument> =
-        findTasksByState(PendingTaskStateEnum.READY_FOR_QUALIFICATION)
+    fun findTasksForQualification(): Flow<PendingTaskDocument> = findTasksByState(PendingTaskStateEnum.READY_FOR_QUALIFICATION)
 
     /**
      * Atomically claim a task for qualification using MongoDB findAndModify.
@@ -310,4 +309,64 @@ class PendingTaskService(
             state != null -> pendingTaskRepository.countByState(state)
             else -> pendingTaskRepository.count()
         }
+
+    /**
+     * Clean content through Tika to remove HTML, XML, Confluence/Jira markup.
+     * Detects content type and applies appropriate extraction.
+     */
+    private suspend fun cleanContentWithTika(
+        content: String,
+        correlationId: String,
+        taskType: PendingTaskTypeEnum,
+    ): String {
+        val fileName =
+            when (taskType) {
+                PendingTaskTypeEnum.CONFLUENCE_PROCESSING -> "confluence-$correlationId.xml"
+                PendingTaskTypeEnum.JIRA_PROCESSING -> "jira-$correlationId.html"
+                else -> "content-$correlationId.txt"
+            }
+
+        return try {
+            logger.debug { "Cleaning content for $correlationId (type=$taskType), original length: ${content.length}" }
+            val cleaned =
+                tikaTextExtractionService.extractPlainText(
+                    content = content,
+                    fileName = fileName,
+                )
+            logger.debug { "Cleaned content for $correlationId, new length: ${cleaned.length}" }
+            cleaned
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to clean content through Tika for $correlationId, using original" }
+            content
+        }
+    }
+
+    /**
+     * Ensures task content is clean from excessive HTML/XML tags.
+     *
+     * If content contains more than 5 HTML tags, processes it through Tika
+     * and updates the task in database with cleaned content.
+     *
+     * This is a safety net for cases where continuous indexers missed cleaning.
+     */
+    suspend fun ensureCleanContent(task: PendingTaskDocument): PendingTaskDocument {
+        logger.info {
+            "CONTENT_CLEANING: taskId=${task.id} - processing through Tika"
+        }
+
+        val cleanedContent =
+            tikaTextExtractionService.extractPlainText(
+                content = task.content,
+                fileName = "task-${task.id}.html",
+            )
+
+        val cleanedTask = task.copy(content = cleanedContent)
+
+        logger.info {
+            "CONTENT_CLEANED: taskId=${task.id} before=${task.content.length} after=${cleanedContent.length} " +
+                "reduction=${((1.0 - cleanedContent.length.toDouble() / task.content.length) * 100).toInt()}%"
+        }
+
+        return cleanedTask
+    }
 }

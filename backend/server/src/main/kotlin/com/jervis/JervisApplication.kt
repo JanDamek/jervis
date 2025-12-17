@@ -13,7 +13,6 @@ import com.jervis.configuration.properties.KtorClientProperties
 import com.jervis.configuration.properties.LinkIndexingProperties
 import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.configuration.properties.PollingProperties
-import com.jervis.configuration.properties.PreloadOllamaProperties
 import com.jervis.configuration.properties.RetryProperties
 import com.jervis.configuration.properties.SecurityProperties
 import com.jervis.configuration.properties.WeaviateProperties
@@ -33,7 +32,6 @@ import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRep
     EndpointProperties::class,
     WebClientProperties::class,
     ModelsProperties::class,
-    PreloadOllamaProperties::class,
     ProviderCapabilitiesService::class,
     WeaviateProperties::class,
     RetryProperties::class,

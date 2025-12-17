@@ -1,5 +1,7 @@
 package com.jervis.koog.qualifier
 
+import com.jervis.domain.atlassian.AttachmentType
+
 /**
  * Vision-related data models for Qualifier Agent.
  *
@@ -9,7 +11,7 @@ data class AttachmentData(
     val id: String,
     val filename: String,
     val mimeType: String,
-    val type: com.jervis.entity.AttachmentType,
+    val type: AttachmentType,
     val binaryData: ByteArray,
 ) {
     override fun equals(other: Any?): Boolean {

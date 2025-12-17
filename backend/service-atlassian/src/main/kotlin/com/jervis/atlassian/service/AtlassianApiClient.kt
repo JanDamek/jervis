@@ -3,6 +3,7 @@ package com.jervis.atlassian.service
 import com.jervis.common.dto.atlassian.AtlassianConnection
 import com.jervis.common.dto.atlassian.AtlassianMyselfRequest
 import com.jervis.common.dto.atlassian.AtlassianUserDto
+import com.jervis.common.dto.atlassian.ConfluenceAttachmentDownloadRequest
 import com.jervis.common.dto.atlassian.ConfluencePageRequest
 import com.jervis.common.dto.atlassian.ConfluencePageResponse
 import com.jervis.common.dto.atlassian.ConfluenceSearchRequest
@@ -32,7 +33,9 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -51,19 +54,8 @@ private data class JiraSearchResultDto(
 private data class JiraIssueDtoItem(
     val key: String,
     val id: String,
-    val fields: JiraFieldsDto,
-)
-
-@Serializable
-private data class JiraFieldsDto(
-    val summary: String? = null,
-    val description: kotlinx.serialization.json.JsonElement? = null,
-    val updated: String? = null,
-    val created: String? = null,
-    val status: JiraStatusDto? = null,
-    val priority: JiraPriorityDto? = null,
-    val assignee: JiraUserDto? = null,
-    val reporter: JiraUserDto? = null,
+    val self: String? = null,
+    val fields: Map<String, kotlinx.serialization.json.JsonElement>,
 )
 
 @Serializable
@@ -85,6 +77,85 @@ private data class JiraUserDto(
     val emailAddress: String? = null,
 )
 
+@Serializable
+private data class JiraIssueTypeDto(
+    val id: String,
+    val name: String,
+    val description: String? = null,
+    val subtask: Boolean = false,
+)
+
+@Serializable
+private data class JiraProjectDto(
+    val id: String,
+    val key: String,
+    val name: String,
+)
+
+@Serializable
+private data class JiraComponentDto(
+    val id: String,
+    val name: String,
+    val description: String? = null,
+)
+
+@Serializable
+private data class JiraVersionDto(
+    val id: String,
+    val name: String,
+    val released: Boolean = false,
+    val releaseDate: String? = null,
+)
+
+@Serializable
+private data class JiraIssueRefDto(
+    val id: String,
+    val key: String,
+    val self: String? = null,
+)
+
+@Serializable
+private data class JiraAttachmentDto(
+    val id: String,
+    val filename: String,
+    val mimeType: String? = null,
+    val size: Long? = null,
+    val content: String? = null,
+)
+
+@Serializable
+private data class JiraIssueFieldsDto(
+    val summary: String? = null,
+    val description: kotlinx.serialization.json.JsonElement? = null,
+    val updated: String? = null,
+    val created: String? = null,
+    val status: JiraStatusDto? = null,
+    val priority: JiraPriorityDto? = null,
+    val assignee: JiraUserDto? = null,
+    val reporter: JiraUserDto? = null,
+    val issuetype: JiraIssueTypeDto? = null,
+    val project: JiraProjectDto? = null,
+    val labels: List<String>? = null,
+    val components: List<JiraComponentDto>? = null,
+    val fixVersions: List<JiraVersionDto>? = null,
+    val parent: JiraIssueRefDto? = null,
+    val subtasks: List<JiraIssueRefDto>? = null,
+    val attachment: List<JiraAttachmentDto>? = null,
+)
+
+@Serializable
+private data class JiraRenderedFieldsDto(
+    val description: String? = null,
+)
+
+@Serializable
+private data class JiraIssueDetailDto(
+    val key: String,
+    val id: String,
+    val fields: JiraIssueFieldsDto,
+    val renderedFields: JiraRenderedFieldsDto? = null,
+)
+
 // ============= Internal DTOs for Confluence API responses =============
 
 @Serializable
@@ -103,6 +174,12 @@ private data class ConfluencePageDto(
     val space: ConfluenceSpaceDto? = null,
     val version: ConfluenceVersionDto? = null,
     val history: ConfluenceHistoryDto? = null,
+    val ancestors: List<ConfluenceAncestorDto>? = null,
+)
+
+@Serializable
+private data class ConfluenceAncestorDto(
+    val id: String,
 )
 
 @Serializable
@@ -133,6 +210,73 @@ private data class ConfluenceUserDto(
     val accountId: String,
     val displayName: String? = null,
     val email: String? = null,
+)
+
+@Serializable
+private data class ConfluenceLabelDto(
+    val name: String,
+)
+
+@Serializable
+private data class ConfluenceLabelsDto(
+    val results: List<ConfluenceLabelDto>? = null,
+)
+
+@Serializable
+private data class ConfluenceMetadataDto(
+    val labels: ConfluenceLabelsDto? = null,
+)
+
+@Serializable
+private data class ConfluenceBodyStorageDto(
+    val value: String,
+    val representation: String,
+)
+
+@Serializable
+private data class ConfluenceBodyDto(
+    val storage: ConfluenceBodyStorageDto? = null,
+)
+
+@Serializable
+private data class ConfluenceAttachmentLinksDto(
+    val download: String? = null,
+)
+
+@Serializable
+private data class ConfluenceAttachmentDto(
+    val id: String,
+    val title: String,
+    val type: String,
+    val metadata: kotlinx.serialization.json.JsonObject? = null,
+    val extensions: kotlinx.serialization.json.JsonObject? = null,
+    @SerialName("_links")
+    val links: ConfluenceAttachmentLinksDto? = null,
+)
+
+@Serializable
+private data class ConfluenceChildrenResultsDto(
+    val results: List<ConfluenceAttachmentDto>? = null,
+)
+
+@Serializable
+private data class ConfluenceChildrenDto(
+    val attachment: ConfluenceChildrenResultsDto? = null,
+)
+
+@Serializable
+private data class ConfluencePageDetailDto(
+    val id: String,
+    val title: String,
+    val type: String? = null,
+    val status: String? = null,
+    val space: ConfluenceSpaceDto? = null,
+    val version: ConfluenceVersionDto? = null,
+    val body: ConfluenceBodyDto? = null,
+    val history: ConfluenceHistoryDto? = null,
+    val ancestors: List<ConfluenceAncestorDto>? = null,
+    val metadata: ConfluenceMetadataDto? = null,
+    val children: ConfluenceChildrenDto? = null,
 )
 
 @Service
@@ -310,10 +454,8 @@ class AtlassianApiClient {
                             parameters.append("jql", request.jql)
                             parameters.append("startAt", request.startAt.toString())
                             parameters.append("maxResults", request.maxResults.toString())
-                            parameters.append(
-                                "fields",
-                                "summary,status,assignee,priority,description,created,updated,reporter,project",
-                            )
+                            // Request minimal fields for polling (just for change detection)
+                            parameters.append("fields", "summary,updated,created,status")
                         }
                     }
                 } else {
@@ -335,18 +477,7 @@ class AtlassianApiClient {
                                 jql = request.jql,
                                 startAt = request.startAt,
                                 maxResults = request.maxResults,
-                                fields =
-                                    listOf(
-                                        "summary",
-                                        "status",
-                                        "assignee",
-                                        "priority",
-                                        "description",
-                                        "created",
-                                        "updated",
-                                        "reporter",
-                                        "project",
-                                    ),
+                                fields = listOf("summary", "updated", "created", "status"), // Minimal fields for polling
                             ),
                         )
                     }
@@ -366,41 +497,35 @@ class AtlassianApiClient {
 
         val issues =
             dto?.issues?.map { issue ->
+                val fields = issue.fields
                 com.jervis.common.dto.atlassian.JiraIssueSummary(
                     key = issue.key,
                     id = issue.id,
+                    self = issue.self,
                     fields =
                         com.jervis.common.dto.atlassian.JiraIssueFields(
-                            summary = issue.fields.summary,
-                            description = issue.fields.description,
-                            updated = issue.fields.updated,
-                            created = issue.fields.created,
+                            summary = fields["summary"]?.let { json.decodeFromJsonElement(String.serializer(), it) },
+                            description = null,
+                            updated = fields["updated"]?.let { json.decodeFromJsonElement(String.serializer(), it) },
+                            created = fields["created"]?.let { json.decodeFromJsonElement(String.serializer(), it) },
                             status =
-                                issue.fields.status?.let {
-                                    com.jervis.common.dto.atlassian
-                                        .JiraStatus(name = it.name, id = it.id)
+                                fields["status"]?.let {
+                                    runCatching {
+                                        json.decodeFromJsonElement(JiraStatusDto.serializer(), it)
+                                    }.getOrNull()?.let { dto ->
+                                        com.jervis.common.dto.atlassian.JiraStatus(name = dto.name, id = dto.id)
+                                    }
                                 },
-                            priority =
-                                issue.fields.priority?.let {
-                                    com.jervis.common.dto.atlassian
-                                        .JiraPriority(name = it.name, id = it.id)
-                                },
-                            assignee =
-                                issue.fields.assignee?.let {
-                                    com.jervis.common.dto.atlassian.JiraUser(
-                                        accountId = it.accountId,
-                                        displayName = it.displayName,
-                                        emailAddress = it.emailAddress,
-                                    )
-                                },
-                            reporter =
-                                issue.fields.reporter?.let {
-                                    com.jervis.common.dto.atlassian.JiraUser(
-                                        accountId = it.accountId,
-                                        displayName = it.displayName,
-                                        emailAddress = it.emailAddress,
-                                    )
-                                },
+                            priority = null,
+                            assignee = null,
+                            reporter = null,
+                            issueType = null,
+                            project = null,
+                            labels = null,
+                            components = null,
+                            fixVersions = null,
+                            parent = null,
+                            subtasks = null,
                         ),
                 )
             } ?: emptyList()
@@ -442,60 +567,118 @@ class AtlassianApiClient {
                 conn.baseUrl.trimEnd(
                     '/',
                 )
-            }/rest/api/$apiVersion/issue/${request.issueKey}?fields=summary,description,status,priority,assignee,reporter,created,updated&expand=changelog"
+            }/rest/api/$apiVersion/issue/${request.issueKey}"
 
         val response =
             rateLimitedRequest(url) { client, _ ->
                 client.request(url) {
                     method = HttpMethod.Get
                     applyAuth(conn)
+                    url {
+                        // Request all available fields for complete issue details
+                        parameters.append("fields", "*all")
+                        // Expand to get additional data (changelog, renderedFields, etc.)
+                        parameters.append("expand", "changelog,renderedFields")
+                    }
                 }
             }
 
-        if (response.status.value !in 200..299) {
-            logger.warn { "Jira get issue failed with status=${response.status.value}" }
-            return JiraIssueResponse(
-                key = "",
-                id = "",
-                fields =
-                    JiraIssueFields(
-                        summary = null,
-                        description = null,
-                        updated = null,
-                        created = null,
-                        status = null,
-                        priority = null,
-                        assignee = null,
-                        reporter = null,
-                    ),
-            )
+        require(response.status.value in 200..299) {
+            "Jira API request failed with status=${response.status.value}"
         }
 
-        @Serializable
-        data class JiraIssueDto(
-            val key: String? = null,
-            val id: String? = null,
-            val fields: Map<String, kotlinx.serialization.json.JsonElement>? = null,
-        )
+        val dto = response.body<JiraIssueDetailDto>()
 
-        val dto =
-            runCatching {
-                response.body<String>().let { json.decodeFromString(JiraIssueDto.serializer(), it) }
-            }.getOrNull()
         return JiraIssueResponse(
-            key = dto?.key ?: "",
-            id = dto?.id ?: "",
+            key = dto.key,
+            id = dto.id,
             fields =
                 JiraIssueFields(
-                    summary = null,
-                    description = null,
-                    updated = null,
-                    created = null,
-                    status = null,
-                    priority = null,
-                    assignee = null,
-                    reporter = null,
+                    summary = dto.fields.summary,
+                    description = dto.fields.description,
+                    updated = dto.fields.updated,
+                    created = dto.fields.created,
+                    status = dto.fields.status?.let { com.jervis.common.dto.atlassian.JiraStatus(name = it.name, id = it.id) },
+                    priority = dto.fields.priority?.let { com.jervis.common.dto.atlassian.JiraPriority(name = it.name, id = it.id) },
+                    assignee =
+                        dto.fields.assignee?.let {
+                            com.jervis.common.dto.atlassian.JiraUser(
+                                accountId = it.accountId,
+                                displayName = it.displayName,
+                                emailAddress = it.emailAddress,
+                            )
+                        },
+                    reporter =
+                        dto.fields.reporter?.let {
+                            com.jervis.common.dto.atlassian.JiraUser(
+                                accountId = it.accountId,
+                                displayName = it.displayName,
+                                emailAddress = it.emailAddress,
+                            )
+                        },
+                    issueType =
+                        dto.fields.issuetype?.let {
+                            com.jervis.common.dto.atlassian.JiraIssueType(
+                                id = it.id,
+                                name = it.name,
+                                description = it.description,
+                                subtask = it.subtask,
+                            )
+                        },
+                    project =
+                        dto.fields.project?.let {
+                            com.jervis.common.dto.atlassian.JiraProject(
+                                id = it.id,
+                                key = it.key,
+                                name = it.name,
+                            )
+                        },
+                    labels = dto.fields.labels,
+                    components =
+                        dto.fields.components?.map {
+                            com.jervis.common.dto.atlassian.JiraComponent(
+                                id = it.id,
+                                name = it.name,
+                                description = it.description,
+                            )
+                        },
+                    fixVersions =
+                        dto.fields.fixVersions?.map {
+                            com.jervis.common.dto.atlassian.JiraVersion(
+                                id = it.id,
+                                name = it.name,
+                                released = it.released,
+                                releaseDate = it.releaseDate,
+                            )
+                        },
+                    parent =
+                        dto.fields.parent?.let {
+                            com.jervis.common.dto.atlassian.JiraIssueRef(
+                                id = it.id,
+                                key = it.key,
+                                self = it.self,
+                            )
+                        },
+                    subtasks =
+                        dto.fields.subtasks?.map {
+                            com.jervis.common.dto.atlassian.JiraIssueRef(
+                                id = it.id,
+                                key = it.key,
+                                self = it.self,
+                            )
+                        },
+                    attachments =
+                        dto.fields.attachment?.map {
+                            com.jervis.common.dto.atlassian.JiraAttachment(
+                                id = it.id,
+                                filename = it.filename,
+                                mimeType = it.mimeType,
+                                size = it.size,
+                                content = it.content,
+                            )
+                        },
                 ),
+            renderedDescription = dto.renderedFields?.description,
         )
     }
 
@@ -548,6 +731,8 @@ class AtlassianApiClient {
                         parameters.append("cql", cqlQuery)
                         parameters.append("start", request.startAt.toString())
                         parameters.append("limit", request.maxResults.toString())
+                        // Request minimal fields for polling (just for change detection)
+                        parameters.append("expand", "version")
                     }
                 }
             }
@@ -567,7 +752,10 @@ class AtlassianApiClient {
                 com.jervis.common.dto.atlassian.ConfluencePageSummary(
                     id = page.id,
                     title = page.title,
-                    spaceKey = page.space?.key,
+                    type = page.type,
+                    status = null,
+                    spaceKey = null,
+                    spaceName = null,
                     version =
                         page.version?.let {
                             com.jervis.common.dto.atlassian.ConfluenceVersion(
@@ -583,7 +771,13 @@ class AtlassianApiClient {
                                     },
                             )
                         },
-                    lastModified = page.history?.lastUpdated?.`when` ?: page.version?.`when`,
+                    lastModified = page.version?.`when`,
+                    createdDate = page.version?.`when`,
+                    body = null,
+                    excerpt = null,
+                    labels = null,
+                    parentId = null,
+                    ancestors = null,
                 )
             } ?: emptyList()
 
@@ -616,13 +810,17 @@ class AtlassianApiClient {
                 }
             }
         val conn = AtlassianConnection(baseUrl = request.baseUrl, auth = auth)
-        val url = "${conn.baseUrl.trimEnd('/')}/wiki/rest/api/content/${request.pageId}?expand=body.storage,version"
+        val url = "${conn.baseUrl.trimEnd('/')}/wiki/rest/api/content/${request.pageId}"
 
         val response =
             rateLimitedRequest(url) { client, _ ->
                 client.request(url) {
                     method = HttpMethod.Get
                     applyAuth(conn)
+                    url {
+                        // Request all needed fields via expand (including attachments)
+                        parameters.append("expand", "version,space,body.storage,metadata.labels,ancestors,history.lastUpdated,children.attachment")
+                    }
                 }
             }
 
@@ -631,34 +829,94 @@ class AtlassianApiClient {
             return ConfluencePageResponse(
                 id = "",
                 title = "",
+                type = null,
+                status = null,
                 spaceKey = null,
+                spaceName = null,
                 version = null,
                 body = null,
                 lastModified = null,
+                createdDate = null,
+                labels = null,
+                parentId = null,
+                ancestors = null,
+                attachments = null,
             )
         }
 
-        @Serializable
-        data class ConfluencePageDto(
-            val id: String? = null,
-            val title: String? = null,
-        )
-
         val dto =
             runCatching {
-                response.body<String>().let { json.decodeFromString(ConfluencePageDto.serializer(), it) }
+                response.body<String>().let { json.decodeFromString(ConfluencePageDetailDto.serializer(), it) }
             }.getOrNull()
+
         return ConfluencePageResponse(
             id = dto?.id ?: "",
             title = dto?.title ?: "",
-            spaceKey = null,
-            version = null,
-            body = null,
-            lastModified = null,
+            type = dto?.type,
+            status = dto?.status,
+            spaceKey = dto?.space?.key,
+            spaceName = dto?.space?.name,
+            version =
+                dto?.version?.let {
+                    com.jervis.common.dto.atlassian.ConfluenceVersion(
+                        number = it.number,
+                        `when` = it.`when`,
+                        by =
+                            it.by?.let { user ->
+                                com.jervis.common.dto.atlassian.ConfluenceUser(
+                                    accountId = user.accountId,
+                                    displayName = user.displayName,
+                                    email = user.email,
+                                )
+                            },
+                    )
+                },
+            body =
+                dto?.body?.let {
+                    com.jervis.common.dto.atlassian.ConfluenceBody(
+                        storage =
+                            it.storage?.let { storage ->
+                                com.jervis.common.dto.atlassian.ConfluenceStorage(
+                                    value = storage.value,
+                                    representation = storage.representation,
+                                )
+                            },
+                        view = null,
+                    )
+                },
+            lastModified = dto?.history?.lastUpdated?.`when` ?: dto?.version?.`when`,
+            createdDate = dto?.version?.`when`,
+            labels = dto?.metadata?.labels?.results?.map { it.name },
+            parentId = dto?.ancestors?.lastOrNull()?.id,
+            ancestors = dto?.ancestors?.map { it.id },
+            attachments =
+                dto?.children?.attachment?.results
+                    ?.filter { attachment ->
+                        // Only include attachments that have a download link
+                        // Skip pages marked as attachments or deleted attachments
+                        attachment.links?.download != null
+                    }
+                    ?.map { attachment ->
+                        // Extract mediaType and fileSize from metadata/extensions
+                        val mediaType = attachment.extensions?.get("mediaType")?.let {
+                            json.decodeFromJsonElement(String.serializer(), it)
+                        }
+                        val fileSize = attachment.extensions?.get("fileSize")?.let {
+                            runCatching { json.decodeFromJsonElement(Long.serializer(), it) }.getOrNull()
+                        }
+                        com.jervis.common.dto.atlassian.ConfluenceAttachment(
+                            id = attachment.id,
+                            title = attachment.title,
+                            type = attachment.type,
+                            mediaType = mediaType,
+                            fileSize = fileSize,
+                            downloadUrl = attachment.links?.download,
+                        )
+                    },
         )
     }
 
-    suspend fun downloadJiraAttachment(request: JiraAttachmentDownloadRequest): ByteArray {
+    suspend fun downloadJiraAttachment(request: JiraAttachmentDownloadRequest): ByteArray? {
         logger.info { "Downloading Jira attachment from: ${request.attachmentUrl}" }
         val auth =
             when (request.authType?.uppercase()) {
@@ -680,6 +938,9 @@ class AtlassianApiClient {
             }
         val conn = AtlassianConnection(baseUrl = request.baseUrl, auth = auth)
 
+        logger.debug { "Downloading Jira attachment (Ktor will follow redirects): ${request.attachmentUrl}" }
+
+        // Ktor automatically follows redirects, so we just call the API URL
         val response =
             rateLimitedRequest(request.attachmentUrl) { client, url ->
                 client.request(url) {
@@ -689,10 +950,55 @@ class AtlassianApiClient {
             }
 
         if (response.status.value !in 200..299) {
-            logger.warn { "Jira attachment download failed with status=${response.status.value}" }
-            return ByteArray(0)
+            logger.warn { "Jira attachment download failed with status=${response.status.value}, URL: ${request.attachmentUrl}" }
+            return null
         }
 
-        return response.body<ByteArray>()
+        val bytes = response.body<ByteArray>()
+        logger.debug { "Successfully downloaded Jira attachment, size=${bytes?.size ?: 0} bytes" }
+        return bytes
+    }
+
+    suspend fun downloadConfluenceAttachment(request: ConfluenceAttachmentDownloadRequest): ByteArray? {
+        logger.info { "Downloading Confluence attachment from: ${request.attachmentDownloadUrl}" }
+        val auth =
+            when (request.authType?.uppercase()) {
+                "BASIC" -> {
+                    com.jervis.common.dto.atlassian.AtlassianAuth.Basic(
+                        request.basicUsername.orEmpty(),
+                        request.basicPassword.orEmpty(),
+                    )
+                }
+
+                "BEARER" -> {
+                    com.jervis.common.dto.atlassian.AtlassianAuth
+                        .Bearer(request.bearerToken.orEmpty())
+                }
+
+                else -> {
+                    com.jervis.common.dto.atlassian.AtlassianAuth.None
+                }
+            }
+        val conn = AtlassianConnection(baseUrl = request.baseUrl, auth = auth)
+
+        logger.debug { "Downloading Confluence attachment (Ktor will follow redirects): ${request.attachmentDownloadUrl}" }
+
+        // Ktor automatically follows redirects, so we just call the download URL
+        val response =
+            rateLimitedRequest(request.attachmentDownloadUrl) { client, url ->
+                client.request(url) {
+                    method = HttpMethod.Get
+                    applyAuth(conn)
+                }
+            }
+
+        if (response.status.value !in 200..299) {
+            logger.warn { "Confluence attachment download failed with status=${response.status.value}, URL: ${request.attachmentDownloadUrl}" }
+            return null
+        }
+
+        val bytes = response.body<ByteArray>()
+        logger.debug { "Successfully downloaded Confluence attachment, size=${bytes?.size ?: 0} bytes" }
+        return bytes
     }
 }
