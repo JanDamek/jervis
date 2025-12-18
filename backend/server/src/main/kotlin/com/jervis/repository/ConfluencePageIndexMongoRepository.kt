@@ -17,4 +17,9 @@ interface ConfluencePageIndexMongoRepository : CoroutineCrudRepository<Confluenc
     ): Boolean
 
     fun findAllByStatusOrderByConfluenceUpdatedAtDesc(status: PollingStatusEnum = PollingStatusEnum.NEW): Flow<ConfluencePageIndexDocument>
+
+    suspend fun findByConnectionDocumentIdAndPageId(
+        connectionDocumentId: ConnectionId,
+        pageId: String,
+    ): ConfluencePageIndexDocument?
 }

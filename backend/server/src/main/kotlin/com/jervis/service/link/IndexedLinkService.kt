@@ -1,15 +1,26 @@
 package com.jervis.service.link
 
+import com.jervis.domain.PollingStatusEnum
 import com.jervis.entity.IndexedLinkDocument
+import com.jervis.entity.confluence.ConfluencePageIndexDocument
+import com.jervis.entity.connection.ConnectionDocument
+import com.jervis.entity.jira.JiraIssueIndexDocument
+import com.jervis.repository.ConfluencePageIndexMongoRepository
 import com.jervis.repository.IndexedLinkMongoRepository
+import com.jervis.repository.JiraIssueIndexMongoRepository
 import com.jervis.types.ClientId
+import com.jervis.types.ConnectionId
+import com.jervis.types.ProjectId
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
+import java.time.Instant
 
 @Service
 class IndexedLinkService(
     private val indexedLinkRepository: IndexedLinkMongoRepository,
+    private val jiraIssueIndexRepository: JiraIssueIndexMongoRepository,
+    private val confluencePageIndexRepository: ConfluencePageIndexMongoRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -115,5 +126,93 @@ class IndexedLinkService(
     private fun extractDomain(url: String): String {
         val match = Regex("""https?://([^/]+)""").find(url)
         return match?.groupValues?.get(1) ?: url
+    }
+
+    /**
+     * Enqueue a Jira issue for indexing from a link.
+     * Creates a minimal JiraIssueIndexDocument with state NEW.
+     * JiraContinuousIndexer will pick it up and fetch full details via API.
+     *
+     * @param issueKey Jira issue key (e.g., "SS-191")
+     * @param connection Connection to use for fetching
+     * @param clientId Client ID
+     * @param projectId Optional project ID
+     * @return true if enqueued, false if already exists
+     */
+    suspend fun enqueueJiraIssueFromLink(
+        issueKey: String,
+        connection: ConnectionDocument,
+        clientId: ClientId,
+        projectId: ProjectId? = null,
+    ): Boolean {
+        // Check if issue already exists (any version)
+        val existing = jiraIssueIndexRepository.findByConnectionIdAndIssueKey(connection.id, issueKey)
+        if (existing != null) {
+            logger.info { "Jira issue $issueKey already exists in index (connectionId=${connection.id}), skipping" }
+            return false
+        }
+
+        // Create minimal index document with state NEW
+        // ContinuousIndexer will fetch full details via API
+        val doc = JiraIssueIndexDocument(
+            id = ObjectId(),
+            connectionId = connection.id,
+            issueKey = issueKey,
+            latestChangelogId = "from-link", // Placeholder - will be updated by indexer
+            jiraUpdatedAt = Instant.now(),
+            clientId = clientId,
+            projectId = projectId,
+            summary = null, // Will be fetched by indexer
+            indexingError = null,
+            status = PollingStatusEnum.NEW,
+        )
+
+        jiraIssueIndexRepository.save(doc)
+        logger.info { "✓ Enqueued Jira issue $issueKey for indexing (connectionId=${connection.id})" }
+        return true
+    }
+
+    /**
+     * Enqueue a Confluence page for indexing from a link.
+     * Creates a minimal ConfluencePageIndexDocument with state NEW.
+     * ConfluenceContinuousIndexer will pick it up and fetch full details via API.
+     *
+     * @param pageId Confluence page ID (e.g., "2116157441")
+     * @param connection Connection to use for fetching
+     * @param clientId Client ID
+     * @param projectId Optional project ID
+     * @return true if enqueued, false if already exists
+     */
+    suspend fun enqueueConfluencePageFromLink(
+        pageId: String,
+        connection: ConnectionDocument,
+        clientId: ClientId,
+        projectId: ProjectId? = null,
+    ): Boolean {
+        // Check if page already exists (any version)
+        val existing = confluencePageIndexRepository.findByConnectionDocumentIdAndPageId(connection.id, pageId)
+        if (existing != null) {
+            logger.info { "Confluence page $pageId already exists in index (connectionId=${connection.id}), skipping" }
+            return false
+        }
+
+        // Create minimal index document with state NEW
+        // ContinuousIndexer will fetch full details via API
+        val doc = ConfluencePageIndexDocument(
+            id = ObjectId(),
+            connectionDocumentId = connection.id,
+            pageId = pageId,
+            versionNumber = null, // Will be fetched by indexer
+            confluenceUpdatedAt = Instant.now(),
+            clientId = clientId,
+            projectId = projectId,
+            title = "From Link", // Placeholder - will be updated by indexer
+            indexingError = null,
+            status = PollingStatusEnum.NEW,
+        )
+
+        confluencePageIndexRepository.save(doc)
+        logger.info { "✓ Enqueued Confluence page $pageId for indexing (connectionId=${connection.id})" }
+        return true
     }
 }

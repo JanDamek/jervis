@@ -98,6 +98,7 @@ import org.springframework.stereotype.Service
  * @param smartModelSelector Service for dynamic model selection
  * @param tokenCountingService Service for token counting
  * @param directoryStructureService Service for attachment storage
+ * @param connectionService Service for connection management
  */
 @Service
 class KoogQualifierAgent(
@@ -114,6 +115,7 @@ class KoogQualifierAgent(
     private val smartModelSelector: SmartModelSelector,
     private val tokenCountingService: TokenCountingService,
     private val directoryStructureService: com.jervis.service.storage.DirectoryStructureService,
+    private val connectionService: com.jervis.service.connection.ConnectionService,
 ) {
     private val logger = KotlinLogging.logger {}
     private val supervisor = SupervisorJob()
@@ -967,6 +969,7 @@ Call routeTask tool:
                         pendingTaskService = pendingTaskService,
                         linkContentService = linkContentService,
                         indexedLinkService = indexedLinkService,
+                        connectionService = connectionService,
                         coroutineScope = scope,
                     ),
                 )
