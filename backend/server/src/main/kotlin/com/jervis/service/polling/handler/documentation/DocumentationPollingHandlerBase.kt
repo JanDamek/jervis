@@ -114,8 +114,9 @@ abstract class DocumentationPollingHandlerBase<TPage : Any>(
 
         var created = 0
         var skipped = 0
+        var latestUpdatedAt: Instant? = null
 
-        for (fullPage in fullPages) {
+        for ((index, fullPage) in fullPages.withIndex()) {
             if (findExisting(connectionDocument.id, fullPage)) {
                 skipped++
                 continue
@@ -123,16 +124,31 @@ abstract class DocumentationPollingHandlerBase<TPage : Any>(
 
             savePage(fullPage)
             created++
+
+            // Track latest updated timestamp
+            val pageUpdated = getPageUpdatedAt(fullPage)
+            latestUpdatedAt = latestUpdatedAt?.let { maxOf(it, pageUpdated) } ?: pageUpdated
+
+            // Save progress every 100 items to prevent re-downloading on interruption
+            if ((index + 1) % 100 == 0) {
+                val maxUpdated = state?.lastSeenUpdatedAt?.let { maxOf(it, latestUpdatedAt) } ?: latestUpdatedAt
+                val updatedPollingStates =
+                    connectionDocument.pollingStates + (getToolName() to PollingState(lastSeenUpdatedAt = maxUpdated))
+                connectionService.save(connectionDocument.copy(pollingStates = updatedPollingStates))
+                logger.debug { "${getSystemName()} progress saved: processed ${index + 1}/${fullPages.size}" }
+            }
         }
 
         logger.info { "${getSystemName()} polling for ${client.name}: created/updated=$created, skipped=$skipped" }
 
-        fullPages.maxOfOrNull { getPageUpdatedAt(it) }?.let { latestUpdated ->
-            val maxUpdated = state?.lastSeenUpdatedAt?.let { maxOf(it, latestUpdated) } ?: latestUpdated
-            val updatedPollingStates =
-                connectionDocument.pollingStates + (getToolName() to PollingState(lastSeenUpdatedAt = maxUpdated))
-            connectionService.save(connectionDocument.copy(pollingStates = updatedPollingStates))
-        }
+        // Always update lastSeenUpdatedAt - even if no pages found
+        // Use latest page timestamp if available, otherwise use current time to mark polling completion
+        val finalUpdatedAt = latestUpdatedAt ?: state?.lastSeenUpdatedAt ?: Instant.now()
+        val maxUpdated = state?.lastSeenUpdatedAt?.let { maxOf(it, finalUpdatedAt) } ?: finalUpdatedAt
+        val updatedPollingStates =
+            connectionDocument.pollingStates + (getToolName() to PollingState(lastSeenUpdatedAt = maxUpdated))
+        connectionService.save(connectionDocument.copy(pollingStates = updatedPollingStates))
+        logger.debug { "${getSystemName()} polling state saved: lastSeenUpdatedAt=$maxUpdated" }
 
         return PollingResult(
             itemsDiscovered = fullPages.size,
