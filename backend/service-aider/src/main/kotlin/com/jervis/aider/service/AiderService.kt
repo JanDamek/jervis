@@ -1,9 +1,8 @@
 package com.jervis.aider.service
 
 import com.jervis.aider.configuration.AiderProperties
-import com.jervis.common.dto.AiderRunRequest
-import com.jervis.common.dto.AiderRunResponse
-import com.jervis.common.dto.AiderStatusResponse
+import com.jervis.common.dto.CodingExecuteRequest
+import com.jervis.common.dto.CodingExecuteResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -17,7 +16,7 @@ private val logger = KotlinLogging.logger {}
 
 private data class ProcessResult(
     val output: String,
-    val exitCode: Int?
+    val exitCode: Int?,
 )
 
 @Service
@@ -25,54 +24,34 @@ class AiderService(
     private val aiderProperties: AiderProperties,
 ) {
     private val dataRootDir: String get() = aiderProperties.dataRootDir
-    private val jobStatuses = mutableMapOf<String, AiderStatusResponse>()
 
-    suspend fun executeAider(request: AiderRunRequest): AiderRunResponse =
+    suspend fun executeAider(request: CodingExecuteRequest): CodingExecuteResponse =
         withContext(Dispatchers.IO) {
             val jobId = UUID.randomUUID().toString()
             val projectDir = resolveAndValidateProjectDir(request.clientId, request.projectId)
 
             projectDir.fold(
                 onSuccess = { dir ->
-                    jobStatuses[jobId] = AiderStatusResponse(jobId = jobId, status = "RUNNING")
-
                     runCatching { executeAiderJob(jobId, request, dir) }
-                        .map { statusResponse ->
-                            jobStatuses[jobId] = statusResponse
-                            AiderRunResponse(
-                                success = statusResponse.status == "COMPLETED",
-                                output = statusResponse.result.orEmpty(),
-                                message = statusResponse.error,
-                                jobId = jobId,
-                                status = statusResponse.status,
-                            )
-                        }.getOrElse { e ->
+                        .getOrElse { e ->
                             logger.error(e) { "Aider execution failed for job $jobId" }
-                            val errorStatus = AiderStatusResponse(jobId = jobId, status = "FAILED", error = e.message)
-                            jobStatuses[jobId] = errorStatus
-                            AiderRunResponse(
+                            CodingExecuteResponse(
                                 success = false,
-                                output = "",
-                                message = e.message,
-                                jobId = jobId,
-                                status = "FAILED",
+                                summary = "Execution failed",
+                                details = e.message
                             )
                         }
                 },
                 onFailure = { e ->
                     logger.error { "Project directory validation failed: ${e.message}" }
-                    AiderRunResponse(
+                    CodingExecuteResponse(
                         success = false,
-                        output = "",
-                        message = e.message,
-                        jobId = jobId,
-                        status = "FAILED",
+                        summary = "Validation failed",
+                        details = e.message
                     )
                 },
             )
         }
-
-    fun getJobStatus(jobId: String): AiderStatusResponse? = jobStatuses[jobId]
 
     private fun resolveAndValidateProjectDir(
         clientId: String,
@@ -101,10 +80,10 @@ class AiderService(
 
     private fun executeAiderJob(
         jobId: String,
-        req: AiderRunRequest,
+        req: CodingExecuteRequest,
         projectDir: File,
-    ): AiderStatusResponse {
-        logger.info { "Starting Aider job $jobId in ${projectDir.name} with model ${req.model}" }
+    ): CodingExecuteResponse {
+        logger.info { "Starting Aider job $jobId in ${projectDir.name}" }
 
         ensureGitInitialized(projectDir)
 
@@ -114,10 +93,6 @@ class AiderService(
                 add("--yes")
                 add("--message")
                 add(req.taskDescription)
-                req.model?.takeIf(String::isNotBlank)?.let {
-                    add("--model")
-                    add(it)
-                }
                 addAll(req.targetFiles)
             }
 
@@ -128,24 +103,28 @@ class AiderService(
         return when (result.exitCode) {
             null -> {
                 logger.error { "Aider process timed out for job $jobId" }
-                AiderStatusResponse(
-                    jobId = jobId,
-                    status = "FAILED",
-                    error = "Process timed out after 30 minutes",
-                    result = result.output
+                CodingExecuteResponse(
+                    success = false,
+                    summary = "Process timed out after 30 minutes",
+                    details = result.output
                 )
             }
+
             0 -> {
                 logger.info { "Aider job $jobId completed successfully" }
-                AiderStatusResponse(jobId = jobId, status = "COMPLETED", result = result.output)
+                CodingExecuteResponse(
+                    success = true,
+                    summary = "COMPLETED",
+                    details = result.output
+                )
             }
+
             else -> {
                 logger.error { "Aider failed (code ${result.exitCode}): ${result.output}" }
-                AiderStatusResponse(
-                    jobId = jobId,
-                    status = "FAILED",
-                    error = "Exit code ${result.exitCode}",
-                    result = result.output
+                CodingExecuteResponse(
+                    success = false,
+                    summary = "Exit code ${result.exitCode}",
+                    details = result.output
                 )
             }
         }
@@ -156,11 +135,13 @@ class AiderService(
         workingDir: File,
         timeoutMinutes: Long,
     ): ProcessResult {
-        val process = ProcessBuilder(command).apply {
-            directory(workingDir)
-            redirectErrorStream(true)
-            environment().putAll(System.getenv())
-        }.start()
+        val process =
+            ProcessBuilder(command)
+                .apply {
+                    directory(workingDir)
+                    redirectErrorStream(true)
+                    environment().putAll(System.getenv())
+                }.start()
 
         val output = process.inputStream.bufferedReader().use { it.readText() }
         val completed = process.waitFor(timeoutMinutes, TimeUnit.MINUTES)
@@ -189,7 +170,10 @@ class AiderService(
         logger.info { "Git repository initialized successfully" }
     }
 
-    private fun executeGitCommand(workingDir: File, command: List<String>) {
+    private fun executeGitCommand(
+        workingDir: File,
+        command: List<String>,
+    ) {
         val result = executeProcess(command, workingDir, timeoutMinutes = 1)
         check(result.exitCode == 0) { "Git command failed: ${command.joinToString(" ")}\nOutput: ${result.output}" }
     }

@@ -36,26 +36,19 @@ class CodingEngineService(
                     .map { result ->
                         CodingExecuteResponse(
                             success = result.exitCode == 0,
-                            engine = "openhands",
                             summary = when (result.exitCode) {
                                 0 -> "OpenHands completed successfully"
                                 else -> "OpenHands failed with exit code ${result.exitCode}"
                             },
-                            details = result.output,
-                            metadata = mapOf(
-                                "correlationId" to request.correlationId,
-                                "exitCode" to (result.exitCode?.toString() ?: "timeout")
-                            )
+                            details = result.output
                         )
                     }
                     .getOrElse { e ->
                         logger.error(e) { "OpenHands execution failed for ${request.correlationId}" }
                         CodingExecuteResponse(
                             success = false,
-                            engine = "openhands",
                             summary = "Execution failed: ${e.message}",
-                            details = null,
-                            metadata = mapOf("error" to (e.message ?: "unknown"))
+                            details = null
                         )
                     }
             },
@@ -63,10 +56,8 @@ class CodingEngineService(
                 logger.error { "Project directory validation failed: ${e.message}" }
                 CodingExecuteResponse(
                     success = false,
-                    engine = "openhands",
                     summary = "Validation failed: ${e.message}",
-                    details = null,
-                    metadata = mapOf("error" to (e.message ?: "validation failed"))
+                    details = null
                 )
             }
         )
@@ -95,7 +86,7 @@ class CodingEngineService(
     private fun executeOpenHandsJob(req: CodingExecuteRequest, projectDir: File): ProcessResult {
         logger.info { "Starting OpenHands in ${projectDir.name}" }
 
-        val command = buildList {
+        val command = buildList<String> {
             add("python3")
             add("-m")
             add("openhands.core.main")
@@ -107,11 +98,6 @@ class CodingEngineService(
             add(properties.sandboxImage)
             add("--max-iterations")
             add(properties.maxIterations.toString())
-
-            req.extra["model"]?.let { model ->
-                add("--model")
-                add(model)
-            }
         }
 
         logger.info { "Executing OpenHands: ${command.joinToString(" ")}" }
