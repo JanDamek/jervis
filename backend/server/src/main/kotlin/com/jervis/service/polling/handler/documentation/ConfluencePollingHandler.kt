@@ -7,7 +7,7 @@ import com.jervis.entity.confluence.ConfluencePageIndexDocument
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
 import com.jervis.repository.ConfluencePageIndexMongoRepository
-import com.jervis.service.connection.ConnectionService
+import com.jervis.service.polling.PollingStateService
 import com.jervis.types.ClientId
 import com.jervis.types.ConnectionId
 import org.springframework.stereotype.Component
@@ -28,9 +28,9 @@ import java.time.Instant
 class ConfluencePollingHandler(
     private val repository: ConfluencePageIndexMongoRepository,
     private val atlassianClient: IAtlassianClient,
-    connectionService: ConnectionService,
+    pollingStateService: PollingStateService,
 ) : DocumentationPollingHandlerBase<ConfluencePageIndexDocument>(
-        connectionService = connectionService,
+        pollingStateService = pollingStateService,
     ) {
     override fun canHandle(connectionDocument: ConnectionDocument): Boolean =
         connectionDocument.connectionType == ConnectionDocument.ConnectionTypeEnum.HTTP &&

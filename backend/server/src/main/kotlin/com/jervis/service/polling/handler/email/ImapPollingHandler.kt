@@ -3,8 +3,8 @@ package com.jervis.service.polling.handler.email
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.repository.EmailMessageIndexMongoRepository
-import com.jervis.service.connection.ConnectionService
 import com.jervis.service.polling.PollingResult
+import com.jervis.service.polling.PollingStateService
 import com.jervis.types.ProjectId
 import jakarta.mail.Folder
 import jakarta.mail.MessagingException
@@ -29,7 +29,7 @@ import java.util.Properties
 @Component
 class ImapPollingHandler(
     repository: EmailMessageIndexMongoRepository,
-    private val connectionService: ConnectionService,
+    private val pollingStateService: PollingStateService,
 ) : EmailPollingHandlerBase(repository) {
     override fun canHandle(connectionDocument: ConnectionDocument): Boolean =
         connectionDocument.connectionType == ConnectionDocument.ConnectionTypeEnum.IMAP
@@ -116,8 +116,9 @@ class ImapPollingHandler(
                         return@withContext PollingResult(errors = 1)
                     }
 
-                    // Load polling state from connectionDocument
-                    val lastFetchedUid = connectionDocument.pollingStates["IMAP"]?.lastFetchedUid ?: 0L
+                    // Load polling state
+                    val pollingState = pollingStateService.getState(connectionDocument.id, "IMAP")
+                    val lastFetchedUid = pollingState?.lastFetchedUid ?: 0L
 
                     logger.debug { "IMAP sync state: lastFetchedUid=$lastFetchedUid" }
 
@@ -183,14 +184,9 @@ class ImapPollingHandler(
                             folderName = connectionDocument.folderName,
                         )
 
-                    // Save polling state to connectionDocument
-                    // Create new PollingState with updated UID (immutable map pattern)
+                    // Save polling state
                     if (filteredMessages.isNotEmpty() && maxUidFetched > lastFetchedUid) {
-                        val updatedPollingStates =
-                            connectionDocument.pollingStates + ("IMAP" to ConnectionDocument.PollingState(
-                                lastFetchedUid = maxUidFetched
-                            ))
-                        connectionService.save(connectionDocument.copy(pollingStates = updatedPollingStates))
+                        pollingStateService.updateWithUid(connectionDocument.id, "IMAP", maxUidFetched)
                         logger.debug {
                             "Updated lastFetchedUid: $lastFetchedUid -> $maxUidFetched (processed: created=$created, skipped=$skipped)"
                         }

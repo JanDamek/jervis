@@ -4,10 +4,9 @@ import com.jervis.entity.ClientDocument
 import com.jervis.entity.ProjectDocument
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
-import com.jervis.entity.connection.ConnectionDocument.PollingState
 import com.jervis.service.client.ClientService
-import com.jervis.service.connection.ConnectionService
 import com.jervis.service.polling.PollingResult
+import com.jervis.service.polling.PollingStateService
 import com.jervis.service.polling.handler.PollingContext
 import com.jervis.service.polling.handler.PollingHandler
 import com.jervis.types.ClientId
@@ -32,7 +31,7 @@ import java.time.Instant
  * - Repository-specific operations
  */
 abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
-    protected val connectionService: ConnectionService,
+    protected val pollingStateService: PollingStateService,
     protected val clientService: ClientService,
 ) : PollingHandler {
     protected val logger = KotlinLogging.logger {}
@@ -108,8 +107,8 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
         val credentials =
             requireNotNull(connectionDocument.credentials) { "HTTP credentials required for ${getSystemName()} polling" }
 
-        // Get last polling state for incremental polling from connectionDocument
-        val state = connectionDocument.pollingStates[getToolName()]
+        // Get last polling state for incremental polling
+        val state = pollingStateService.getState(connectionDocument.id, getToolName())
         val query = buildQuery(client, connectionDocument, state?.lastSeenUpdatedAt)
 
         logger.debug { "Polling ${getSystemName()} for client ${client.name} with query: $query" }
@@ -146,9 +145,7 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
             // Save progress every 100 items to prevent re-downloading on interruption
             if ((index + 1) % 100 == 0) {
                 val maxUpdated = state?.lastSeenUpdatedAt?.let { maxOf(it, latestUpdatedAt) } ?: latestUpdatedAt
-                val updatedPollingStates =
-                    connectionDocument.pollingStates + (getToolName() to PollingState(lastSeenUpdatedAt = maxUpdated))
-                connectionService.save(connectionDocument.copy(pollingStates = updatedPollingStates))
+                pollingStateService.updateWithTimestamp(connectionDocument.id, getToolName(), maxUpdated)
                 logger.debug { "${getSystemName()} progress saved: processed ${index + 1}/${fullIssues.size}" }
             }
         }
@@ -159,9 +156,7 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
         // Use latest issue timestamp if available, otherwise use current time to mark polling completion
         val finalUpdatedAt = latestUpdatedAt ?: state?.lastSeenUpdatedAt ?: Instant.now()
         val maxUpdated = state?.lastSeenUpdatedAt?.let { maxOf(it, finalUpdatedAt) } ?: finalUpdatedAt
-        val updatedPollingStates =
-            connectionDocument.pollingStates + (getToolName() to PollingState(lastSeenUpdatedAt = maxUpdated))
-        connectionService.save(connectionDocument.copy(pollingStates = updatedPollingStates))
+        pollingStateService.updateWithTimestamp(connectionDocument.id, getToolName(), maxUpdated)
         logger.debug { "${getSystemName()} polling state saved: lastSeenUpdatedAt=$maxUpdated" }
 
         return PollingResult(

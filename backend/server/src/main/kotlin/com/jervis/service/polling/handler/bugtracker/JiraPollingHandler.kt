@@ -9,7 +9,7 @@ import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
 import com.jervis.entity.jira.JiraIssueIndexDocument
 import com.jervis.repository.JiraIssueIndexMongoRepository
 import com.jervis.service.client.ClientService
-import com.jervis.service.connection.ConnectionService
+import com.jervis.service.polling.PollingStateService
 import com.jervis.types.ClientId
 import com.jervis.types.ConnectionId
 import com.jervis.types.ProjectId
@@ -39,9 +39,9 @@ class JiraPollingHandler(
     private val repository: JiraIssueIndexMongoRepository,
     private val atlassianClient: IAtlassianClient,
     clientService: ClientService,
-    connectionService: ConnectionService,
+    pollingStateService: PollingStateService,
 ) : BugTrackerPollingHandlerBase<JiraIssueIndexDocument>(
-        connectionService = connectionService,
+        pollingStateService = pollingStateService,
         clientService = clientService,
     ) {
     override fun canHandle(connectionDocument: ConnectionDocument): Boolean =
