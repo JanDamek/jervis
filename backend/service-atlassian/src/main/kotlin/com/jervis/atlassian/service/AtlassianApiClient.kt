@@ -705,6 +705,7 @@ class AtlassianApiClient {
         val conn = AtlassianConnection(baseUrl = request.baseUrl, auth = auth)
 
         // Build CQL query with proper date formatting for Confluence API
+        // Always filter by type=page to exclude attachments (they're fetched via children.attachment API)
         val cqlQuery: String =
             when {
                 request.cql.isNullOrBlank().not() -> request.cql
@@ -712,10 +713,10 @@ class AtlassianApiClient {
                     // Format Instant to Confluence CQL date format: "yyyy-MM-dd HH:mm"
                     val fmt = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(java.time.ZoneOffset.UTC)
                     val formattedDate = fmt.format(request.lastModifiedSince)
-                    val datePart = "lastModified >= \"$formattedDate\""
+                    val datePart = "type=page AND lastModified >= \"$formattedDate\""
                     if (request.spaceKey.isNullOrBlank().not()) "$datePart AND space = \"${request.spaceKey}\"" else datePart
                 }
-                request.spaceKey.isNullOrBlank().not() -> "space = \"${request.spaceKey}\""
+                request.spaceKey.isNullOrBlank().not() -> "type=page AND space = \"${request.spaceKey}\""
                 else -> "type=page" // Default: search all pages
             }.toString()
 
