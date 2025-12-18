@@ -132,17 +132,13 @@ class Pop3PollingHandler(
                             folderName = "INBOX",
                         )
 
-                    // Save polling state to connectionDocument (use max number from ALL fetched messages)
+                    // Save polling state to connectionDocument (immutable pattern)
                     if (maxNumberFetched > lastFetchedNumber) {
-                        val updatedStates =
-                            connectionDocument.pollingStates.toMutableMap().apply {
-                                val state = this[connectionDocument.connectionType.name] ?: ConnectionDocument.PollingState()
-                                state.lastFetchedMessageNumber = maxNumberFetched
-                                this[connectionDocument.connectionType.name] = state
-                            }
-
-                        val updatedConnection = connectionDocument.copy(pollingStates = updatedStates)
-                        connectionService.save(updatedConnection)
+                        val updatedPollingStates =
+                            connectionDocument.pollingStates + (connectionDocument.connectionType.name to ConnectionDocument.PollingState(
+                                lastFetchedMessageNumber = maxNumberFetched
+                            ))
+                        connectionService.save(connectionDocument.copy(pollingStates = updatedPollingStates))
                         logger.info {
                             "Updated lastFetchedMessageNumber: $lastFetchedNumber -> $maxNumberFetched (processed: created=$created, skipped=$skipped)"
                         }
