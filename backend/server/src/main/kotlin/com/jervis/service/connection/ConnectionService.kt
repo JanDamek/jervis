@@ -56,4 +56,22 @@ class ConnectionService(
         findById(id)?.let { repository.delete(it) }
         logger.info { "Deleted connection: $id" }
     }
+
+    /**
+     * Find VALID connection for a given domain (e.g., "tepsivo.atlassian.net").
+     * Used to detect if a link points to a known service the client has connected.
+     *
+     * @param domain The domain to search for (e.g., "tepsivo.atlassian.net", "jira.company.com")
+     * @return ConnectionDocument if found and VALID, null otherwise
+     */
+    suspend fun findValidConnectionByDomain(domain: String): ConnectionDocument? {
+        val connections = mutableListOf<ConnectionDocument>()
+        findAllValid().collect { connections.add(it) }
+
+        // Match exact domain or baseUrl contains domain
+        return connections.find { connection ->
+            connection.baseUrl.contains(domain, ignoreCase = true) ||
+            connection.host?.equals(domain, ignoreCase = true) == true
+        }
+    }
 }

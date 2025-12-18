@@ -17,4 +17,9 @@ interface JiraIssueIndexMongoRepository : CoroutineCrudRepository<JiraIssueIndex
     ): Boolean
 
     suspend fun findAllByStatusIs(status: PollingStatusEnum = PollingStatusEnum.NEW): Flow<JiraIssueIndexDocument>
+
+    suspend fun findByConnectionIdAndIssueKey(
+        connectionId: ConnectionId,
+        issueKey: String,
+    ): JiraIssueIndexDocument?
 }

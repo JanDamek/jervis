@@ -9,6 +9,7 @@ import com.jervis.dto.PendingTaskTypeEnum
 import com.jervis.entity.PendingTaskDocument
 import com.jervis.koog.qualifier.types.RouteTaskResult
 import com.jervis.service.background.PendingTaskService
+import com.jervis.service.connection.ConnectionService
 import com.jervis.service.link.IndexedLinkService
 import com.jervis.service.link.LinkContentService
 import com.jervis.service.scheduling.TaskManagementService
@@ -37,6 +38,7 @@ class TaskTools(
     private val pendingTaskService: PendingTaskService,
     private val linkContentService: LinkContentService,
     private val indexedLinkService: IndexedLinkService,
+    private val connectionService: ConnectionService,
     private val coroutineScope: CoroutineScope,
 ) : ToolSet {
     companion object {
@@ -139,18 +141,75 @@ class TaskTools(
                 // Detect if this is a known service (Confluence, Jira, GitHub)
                 val knownService = indexedLinkService.detectKnownService(url)
 
+                // Check if client has a connection for this service
+                val connection = if (knownService != null) {
+                    connectionService.findValidConnectionByDomain(knownService.domain)
+                } else {
+                    null
+                }
+
+                // If known service with connection, enqueue for ContinuousIndexer instead of HTML fetch
+                if (knownService != null && connection != null) {
+                    val enqueued = when (knownService.serviceType) {
+                        "JIRA" -> {
+                            indexedLinkService.enqueueJiraIssueFromLink(
+                                issueKey = knownService.identifier,
+                                connection = connection,
+                                clientId = task.clientId,
+                                projectId = task.projectId,
+                            )
+                        }
+                        "CONFLUENCE" -> {
+                            indexedLinkService.enqueueConfluencePageFromLink(
+                                pageId = knownService.identifier,
+                                connection = connection,
+                                clientId = task.clientId,
+                                projectId = task.projectId,
+                            )
+                        }
+                        else -> false
+                    }
+
+                    if (enqueued) {
+                        // Record link as indexed
+                        val correlationId = when (knownService.serviceType) {
+                            "JIRA" -> "jira:${knownService.identifier}"
+                            "CONFLUENCE" -> "confluence:${knownService.identifier}"
+                            else -> "link:${ObjectId()}"
+                        }
+
+                        indexedLinkService.recordIndexedLink(
+                            url = url,
+                            clientId = task.clientId,
+                            correlationId = correlationId,
+                            pendingTaskId = null, // Will be created by ContinuousIndexer
+                        )
+
+                        logger.info {
+                            "✓ Enqueued ${knownService.serviceType} ${knownService.identifier} for indexing via API: $url"
+                        }
+                    } else {
+                        logger.info {
+                            "${knownService.serviceType} ${knownService.identifier} already indexed, skipping: $url"
+                        }
+                    }
+                    return@launch
+                }
+
+                // Default: fetch HTML content
                 val content = linkContentService.fetchPlainText(url)
                 if (content.success) {
                     val correlationId = "link:${ObjectId()}"
 
-                    // Enrich content with known service metadata
+                    // Enrich content with known service metadata (if detected but no connection)
                     val enrichedContent = if (knownService != null) {
                         buildString {
-                            appendLine("--- KNOWN SERVICE DETECTED ---")
+                            appendLine("--- KNOWN SERVICE DETECTED (NO CONNECTION) ---")
                             appendLine("Service Type: ${knownService.serviceType}")
                             appendLine("Identifier: ${knownService.identifier}")
                             appendLine("Domain: ${knownService.domain}")
                             appendLine("URL: $url")
+                            appendLine("Note: Client does not have a connection for this service, using HTML content.")
                             appendLine("--- ORIGINAL CONTENT ---")
                             appendLine()
                             append(content.plainText)
@@ -179,7 +238,7 @@ class TaskTools(
 
                     logger.info {
                         if (knownService != null) {
-                            "Successfully created new task from downloaded link (${knownService.serviceType}): $url"
+                            "Successfully created new task from downloaded link (${knownService.serviceType}, no connection): $url"
                         } else {
                             "Successfully created new task from downloaded link: $url"
                         }

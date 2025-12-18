@@ -87,6 +87,7 @@ class KoogWorkflowAgent(
     private val graphDBService: GraphDBService,
     private val aiderClient: IAiderClient,
     private val codingEngineClient: ICodingEngineClient,
+    private val connectionService: com.jervis.service.connection.ConnectionService,
 ) {
     private val logger = KotlinLogging.logger {}
     private val activeAgents = ConcurrentHashMap<String, String>()
@@ -392,6 +393,7 @@ class KoogWorkflowAgent(
                         pendingTaskService = pendingTaskService,
                         linkContentService = linkContentService,
                         indexedLinkService = indexedLinkService,
+                        connectionService = connectionService,
                         coroutineScope = scope,
                     ),
                 )
