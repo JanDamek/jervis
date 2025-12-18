@@ -40,7 +40,6 @@ data class ConnectionDocument(
     val baseUrl: String = "",
     val credentials: HttpCredentials? = null,
     val timeoutMs: Long = 30000,
-    val pollingStates: Map<String, PollingState> = emptyMap(),
     val host: String? = null,
     val port: Int = 993,
     val username: String? = null,
@@ -62,12 +61,6 @@ data class ConnectionDocument(
         SMTP,
         OAUTH2,
     }
-
-    class PollingState(
-        var lastFetchedUid: Long? = null,
-        var lastFetchedMessageNumber: Int? = null,
-        var lastSeenUpdatedAt: Instant? = null,
-    )
 
     /**
      * Rate limit configuration.
