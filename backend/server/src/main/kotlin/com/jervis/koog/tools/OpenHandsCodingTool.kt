@@ -3,10 +3,9 @@ package com.jervis.koog.tools
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
+import com.jervis.common.client.ICodingEngineClient
+import com.jervis.common.dto.CodingExecuteRequest
 import com.jervis.entity.PendingTaskDocument
-import com.jervis.service.coding.CodingRequest
-import com.jervis.service.coding.ModelSelectionService
-import com.jervis.service.coding.OpenHandsCodingEngine
 import mu.KotlinLogging
 
 /**
@@ -25,8 +24,7 @@ import mu.KotlinLogging
 )
 class OpenHandsCodingTool(
     private val task: PendingTaskDocument,
-    private val engine: OpenHandsCodingEngine,
-    private val modelSelectionService: ModelSelectionService,
+    private val engine: ICodingEngineClient,
 ) : ToolSet {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -40,43 +38,20 @@ class OpenHandsCodingTool(
     suspend fun delegateToOpenHands(
         @LLMDescription("Detailed task specification for OpenHands (what to build/run/debug and expected outcome)")
         taskSpec: String,
-        @LLMDescription("Optional Git repository URL to clone into the workspace")
-        repoUrl: String? = null,
         @LLMDescription(
             "Model selection strategy: Leave NULL for standard tasks (uses fast local Qwen model). " +
-                "Set to 'paid' ONLY for complex architectural tasks, security audits, or large refactoring where SOTA reasoning is required."
+                "Set to 'paid' ONLY for complex architectural tasks, security audits, or large refactoring where SOTA reasoning is required.",
         )
         model: String? = null,
     ): String {
         logger.info { "OPENHANDS_TOOL_SUBMIT: correlationId=${task.correlationId}, model=$model" }
 
-        val selectedModel = when (model) {
-            "paid" -> {
-                val paidModel = modelSelectionService.getOpenHandsPaidModel()
-                logger.info { "Using paid model: $paidModel" }
-                paidModel
-            }
-            null -> {
-                val defaultModel = modelSelectionService.getOpenHandsDefaultModel()
-                logger.info { "Using default model: $defaultModel" }
-                defaultModel
-            }
-            else -> {
-                logger.info { "Using explicit model: $model" }
-                model
-            }
-        }
-
         val req =
-            CodingRequest(
+            CodingExecuteRequest(
                 correlationId = task.correlationId,
-                clientId = task.clientId,
-                projectId = task.projectId,
+                clientId = task.clientId.toString(),
+                projectId = task.projectId.toString(),
                 taskDescription = taskSpec,
-                extra = buildMap {
-                    repoUrl?.let { put("repoUrl", it) }
-                    put("model", selectedModel)
-                },
             )
 
         val res = engine.execute(req)
@@ -84,26 +59,7 @@ class OpenHandsCodingTool(
         return buildString {
             appendLine("OPENHANDS_SUBMIT: success=${res.success}")
             appendLine("summary: ${res.summary}")
-            if (res.metadata.containsKey("jobId")) {
-                appendLine("jobId: ${res.metadata["jobId"]}")
-            }
-            res.details?.let { appendLine("details:\n" + it.take(5000)) }
-        }
-    }
-
-    @Tool
-    @LLMDescription("Check status/result of an OpenHands job by jobId returned from delegateToOpenHands.")
-    suspend fun checkOpenHandsStatus(
-        @LLMDescription("The jobId returned from delegateToOpenHands")
-        jobId: String,
-    ): String {
-        logger.info { "OPENHANDS_TOOL_STATUS: jobId=$jobId" }
-        val status = engine.checkStatus(jobId)
-        return buildString {
-            appendLine("OPENHANDS_STATUS: ${status.status}")
-            appendLine("jobId: ${status.jobId}")
-            status.result?.let { appendLine("result:\n" + it.take(8000)) }
-            status.error?.let { appendLine("error:\n" + it.take(8000)) }
+            res.details?.let { appendLine("details:\n$it") }
         }
     }
 }

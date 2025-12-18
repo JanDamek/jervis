@@ -21,6 +21,8 @@ import ai.koog.agents.ext.tool.shell.JvmShellCommandExecutor
 import ai.koog.agents.ext.tool.shell.PrintShellCommandConfirmationHandler
 import ai.koog.prompt.dsl.Prompt
 import ai.koog.rag.base.files.JVMFileSystemProvider
+import com.jervis.common.client.IAiderClient
+import com.jervis.common.client.ICodingEngineClient
 import com.jervis.configuration.properties.KoogProperties
 import com.jervis.entity.PendingTaskDocument
 import com.jervis.graphdb.GraphDBService
@@ -34,9 +36,6 @@ import com.jervis.koog.tools.TaskTools
 import com.jervis.rag.KnowledgeService
 import com.jervis.rag.SearchRequest
 import com.jervis.service.background.PendingTaskService
-import com.jervis.service.coding.AiderCodingEngine
-import com.jervis.service.coding.ModelSelectionService
-import com.jervis.service.coding.OpenHandsCodingEngine
 import com.jervis.service.link.IndexedLinkService
 import com.jervis.service.link.LinkContentService
 import com.jervis.service.scheduling.TaskManagementService
@@ -80,15 +79,14 @@ class KoogWorkflowAgent(
     private val userTaskService: UserTaskService,
     private val promptExecutorFactory: KoogPromptExecutorFactory,
     private val koogProperties: KoogProperties,
-    private val aiderCodingEngine: AiderCodingEngine,
-    private val openHandsCodingEngine: OpenHandsCodingEngine,
-    private val modelSelectionService: ModelSelectionService,
     private val pendingTaskService: PendingTaskService,
     private val linkContentService: LinkContentService,
     private val indexedLinkService: IndexedLinkService,
     private val smartModelSelector: SmartModelSelector,
     private val tokenCountingService: TokenCountingService,
     private val graphDBService: GraphDBService,
+    private val aiderClient: IAiderClient,
+    private val codingEngineClient: ICodingEngineClient,
 ) {
     private val logger = KotlinLogging.logger {}
     private val activeAgents = ConcurrentHashMap<String, String>()
@@ -288,7 +286,7 @@ class KoogWorkflowAgent(
         // Workflow agent generates analysis, code, and actions - needs more output than input
         // Formula: output ≈ 2x input (analysis + actions can be verbose)
         val inputTokens = tokenCountingService.countTokens(task.content)
-        val dynamicOutputReserve = (inputTokens * 2).toInt().coerceAtLeast(4000)
+        val dynamicOutputReserve = (inputTokens * 2).coerceAtLeast(4000)
 
         val dynamicModel =
             smartModelSelector.selectModel(
@@ -398,8 +396,8 @@ class KoogWorkflowAgent(
                     ),
                 )
                 tools(CommunicationTools(task))
-                tools(AiderCodingTool(task, aiderCodingEngine, modelSelectionService))
-                tools(OpenHandsCodingTool(task, openHandsCodingEngine, modelSelectionService))
+                tools(AiderCodingTool(task, aiderClient))
+                tools(OpenHandsCodingTool(task, codingEngineClient))
             }
 
         return AIAgent(

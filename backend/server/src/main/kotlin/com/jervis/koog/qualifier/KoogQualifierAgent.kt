@@ -16,7 +16,12 @@ import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.agents.features.eventHandler.feature.EventHandler
 import ai.koog.prompt.dsl.Prompt
+import ai.koog.prompt.dsl.prompt
+import ai.koog.prompt.markdown.markdown
 import ai.koog.prompt.structure.StructuredResponse
+import kotlinx.io.files.Path
+import java.nio.file.Files
+import kotlin.io.path.writeBytes
 import com.jervis.configuration.properties.KoogProperties
 import com.jervis.domain.atlassian.shouldProcessWithVision
 import com.jervis.dto.PendingTaskStateEnum
@@ -144,44 +149,98 @@ class KoogQualifierAgent(
                         )
                     }
 
-                    // Select vision model
-                    val visionModel =
-                        smartModelSelector.selectVisionModel(
-                            baseModelName = "qwen3-vl:latest",
-                            textPrompt = "Analyze images and describe what you see. Return JSON.",
-                            images =
-                                visualAttachments.map {
-                                    SmartModelSelector.ImageMetadata(
-                                        widthPixels = 1920,
-                                        heightPixels = 1080,
-                                        format = it.mimeType,
-                                    )
-                                },
-                            outputReserve = 2000,
-                        )
+                    // Prepare temp files for image attachments (Koog attachments DSL requirement)
+                    val tmpFiles: List<Pair<String, java.nio.file.Path>> =
+                        visualAttachments
+                            .filter { it.mimeType.startsWith("image/") }
+                            .map { att ->
+                                val bytes = directoryStructureService.readAttachment(att.storagePath)
+                                val suffix =
+                                    when {
+                                        att.mimeType.contains("png") -> ".png"
+                                        att.mimeType.contains("jpeg") || att.mimeType.contains("jpg") -> ".jpg"
+                                        att.mimeType.contains("webp") -> ".webp"
+                                        else -> ".png"
+                                    }
+                                val tmp = Files.createTempFile("koog-vision-${att.id}-", suffix)
+                                tmp.writeBytes(bytes)
+                                att.filename to tmp
+                            }
 
-                    logger.info {
-                        "🔍 VISION_MODEL_SELECTED | correlationId=${task.correlationId} | model=${visionModel.id}"
-                    }
-
-                    // Run Stage 1: General description only
-                    val visionCtx =
-                        runTwoStageVision(
-                            executorFactory = promptExecutorFactory,
-                            providerSelector = ollamaProviderSelector,
-                            model = visionModel,
+                    if (tmpFiles.isEmpty()) {
+                        logger.info { "🔍 VISION_SKIP | correlationId=${task.correlationId} | reason=no_image_attachments" }
+                        return@node VisionContext(
                             originalText = task.content,
+                            generalVisionSummary = null,
+                            typeSpecificVisionDetails = null,
                             attachments = task.attachments,
-                            contentType = null, // Stage 2 will be called later with detected type
-                            directoryStructureService = directoryStructureService,
                         )
-
-                    logger.info {
-                        "🔍 VISION_STAGE1_COMPLETE | correlationId=${task.correlationId} | " +
-                            "hasGeneralSummary=${visionCtx.generalVisionSummary != null}"
                     }
 
-                    visionCtx
+                    try {
+                        // Build prompt with attachments.image(Path(...)) - Koog pattern
+                        val visionPrompt = prompt("jervis-vision-stage1") {
+                            system(
+                                """
+                                You are a vision assistant. Describe what you see in the attached images.
+                                Be factual and concise. If something is unreadable, say so.
+                                """.trimIndent(),
+                            )
+                            user {
+                                markdown {
+                                    +"Context text (may help disambiguate images):"
+                                    br()
+                                    +task.content
+                                    br()
+                                    br()
+                                    +"Task: Provide a short general visual summary of the attachments."
+                                }
+                                attachments {
+                                    tmpFiles.forEach { (_, tmpPath) ->
+                                        image(Path(tmpPath.toString()))
+                                    }
+                                }
+                            }
+                        }
+
+                        // Select vision model
+                        val visionModel =
+                            smartModelSelector.selectVisionModel(
+                                baseModelName = "qwen3-vl:latest",
+                                textPrompt = "Describe images.",
+                                images =
+                                    visualAttachments.map {
+                                        SmartModelSelector.ImageMetadata(
+                                            widthPixels = 1920,
+                                            heightPixels = 1080,
+                                            format = it.mimeType,
+                                        )
+                                    },
+                                outputReserve = 2000,
+                            )
+
+                        logger.info {
+                            "🔍 VISION_MODEL_SELECTED | correlationId=${task.correlationId} | model=${visionModel.id}"
+                        }
+
+                        val executor = promptExecutorFactory.getExecutor(ollamaProviderSelector.getProvider())
+                        val response = executor.execute(prompt = visionPrompt, model = visionModel, tools = emptyList()).first()
+                        val summary = response.content?.trim().takeUnless { it.isNullOrBlank() }
+
+                        logger.info {
+                            "🔍 VISION_STAGE1_COMPLETE | correlationId=${task.correlationId} | hasGeneralSummary=${summary != null}"
+                        }
+
+                        VisionContext(
+                            originalText = task.content,
+                            generalVisionSummary = summary,
+                            typeSpecificVisionDetails = null,
+                            attachments = task.attachments,
+                        )
+                    } finally {
+                        // Cleanup temp files
+                        tmpFiles.forEach { (_, pth) -> runCatching { Files.deleteIfExists(pth) } }
+                    }
                 }
 
                 // =================================================================
@@ -484,7 +543,7 @@ class KoogQualifierAgent(
                                 "key" to extraction.key,
                                 "status" to extraction.status,
                                 "type" to extraction.type,
-                                "assignee" to (extraction.assignee ?: "Unassigned"),
+                                "assignee" to extraction.assignee,
                                 "reporter" to extraction.reporter,
                                 "epic" to (extraction.epic ?: ""),
                                 "sprint" to (extraction.sprint ?: ""),
@@ -661,8 +720,6 @@ class KoogQualifierAgent(
                     fun hasMore(): Boolean = currentIndex < ctx.indexableChunks.size
 
                     fun nextChunk(): String = ctx.indexableChunks[currentIndex]
-
-                    fun advance(): ChunkProcessingState = copy(currentIndex = currentIndex + 1)
                 }
 
                 val nodeInitChunkProcessing by node<IndexingContext, ChunkProcessingState>(
