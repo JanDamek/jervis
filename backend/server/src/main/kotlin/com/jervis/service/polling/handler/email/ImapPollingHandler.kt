@@ -184,10 +184,13 @@ class ImapPollingHandler(
                         )
 
                     // Save polling state to connectionDocument
-                    // Always update if we processed messages (even if all skipped)
+                    // Create new PollingState with updated UID (immutable map pattern)
                     if (filteredMessages.isNotEmpty() && maxUidFetched > lastFetchedUid) {
-                        connectionDocument.pollingStates["IMAP"]?.lastFetchedUid = maxUidFetched
-                        connectionService.save(connectionDocument)
+                        val updatedPollingStates =
+                            connectionDocument.pollingStates + ("IMAP" to ConnectionDocument.PollingState(
+                                lastFetchedUid = maxUidFetched
+                            ))
+                        connectionService.save(connectionDocument.copy(pollingStates = updatedPollingStates))
                         logger.debug {
                             "Updated lastFetchedUid: $lastFetchedUid -> $maxUidFetched (processed: created=$created, skipped=$skipped)"
                         }
