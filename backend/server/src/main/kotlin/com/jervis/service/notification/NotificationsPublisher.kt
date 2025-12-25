@@ -1,7 +1,7 @@
 package com.jervis.service.notification
 
 import com.jervis.domain.websocket.WebSocketChannelTypeEnum
-import com.jervis.entity.UserTaskDocument
+import com.jervis.entity.TaskDocument
 import com.jervis.service.notification.domain.PlanStatusChangeEvent
 import com.jervis.service.notification.domain.StepCompletionEvent
 import com.jervis.service.websocket.WebSocketSessionManager
@@ -51,14 +51,14 @@ class NotificationsPublisher(
 
     fun publishUserTaskCreated(
         clientId: ClientId,
-        task: UserTaskDocument,
+        task: TaskDocument,
         timestamp: String,
     ) {
         val dto =
             UserTaskCreatedEventDtoD(
                 clientId = clientId.toString(),
                 taskId = task.id.toString(),
-                title = task.title,
+                title = task.taskName,
                 timestamp = timestamp,
             )
         sessionManager.broadcastToChannel(json.encodeToString(dto), WebSocketChannelTypeEnum.NOTIFICATIONS)
@@ -66,14 +66,14 @@ class NotificationsPublisher(
 
     fun publishUserTaskCancelled(
         clientId: ClientId,
-        task: UserTaskDocument,
+        task: TaskDocument,
         timestamp: String,
     ) {
         val dto =
             UserTaskCancelledEventDtoD(
                 clientId = clientId.toString(),
                 taskId = task.id.toString(),
-                title = task.title,
+                title = task.taskName,
                 timestamp = timestamp,
             )
         sessionManager.broadcastToChannel(json.encodeToString(dto), WebSocketChannelTypeEnum.NOTIFICATIONS)

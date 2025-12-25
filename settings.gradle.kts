@@ -23,20 +23,16 @@ dependencyResolutionManagement {
 
 rootProject.name = "jervis"
 
-includeBuild("shared/common-dto") {
-    dependencySubstitution {
-        substitute(module("com.jervis:common-dto")).using(project(":"))
-    }
-}
-
 if (System.getenv("DOCKER_BUILD") != "true") {
     include(
+        ":shared:common-dto",
         ":shared:common-api",
         ":shared:domain",
         ":shared:ui-common",
     )
 } else {
     include(
+        ":shared:common-dto",
         ":shared:common-api",
         ":shared:domain",
     )

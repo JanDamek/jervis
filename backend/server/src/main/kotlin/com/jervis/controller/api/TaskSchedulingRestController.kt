@@ -6,6 +6,7 @@ import com.jervis.service.ITaskSchedulingService
 import com.jervis.service.scheduling.TaskSchedulingService
 import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
+import com.jervis.types.TaskId
 import org.bson.types.ObjectId
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -44,7 +45,7 @@ class TaskSchedulingRestController(
     @GetMapping("/{taskId}")
     override suspend fun findById(
         @PathVariable taskId: String,
-    ): ScheduledTaskDto? = taskSchedulingService.findById(ObjectId(taskId))?.toDto()
+    ): ScheduledTaskDto? = taskSchedulingService.findById(TaskId.fromString(taskId))?.toDto()
 
     @GetMapping("/list")
     override suspend fun listAllTasks(): List<ScheduledTaskDto> = taskSchedulingService.listAllTasks().map { it.toDto() }
@@ -52,17 +53,17 @@ class TaskSchedulingRestController(
     @GetMapping("/project/{projectId}")
     override suspend fun listTasksForProject(
         @PathVariable projectId: String,
-    ): List<ScheduledTaskDto> = taskSchedulingService.listTasksForProject(ObjectId(projectId)).map { it.toDto() }
+    ): List<ScheduledTaskDto> = taskSchedulingService.listTasksForProject(ProjectId.fromString(projectId)).map { it.toDto() }
 
     @GetMapping("/client/{clientId}")
     override suspend fun listTasksForClient(
         @PathVariable clientId: String,
-    ): List<ScheduledTaskDto> = taskSchedulingService.listTasksForClient(ObjectId(clientId)).map { it.toDto() }
+    ): List<ScheduledTaskDto> = taskSchedulingService.listTasksForClient(ClientId.fromString(clientId)).map { it.toDto() }
 
     @DeleteMapping("/{taskId}")
     override suspend fun cancelTask(
         @PathVariable taskId: String,
     ) {
-        taskSchedulingService.cancelTask(ObjectId(taskId))
+        taskSchedulingService.cancelTask(TaskId.fromString(taskId))
     }
 }

@@ -1,7 +1,7 @@
 package com.jervis.entity
 
 import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
+import com.jervis.types.TaskId
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.CompoundIndex
@@ -28,5 +28,5 @@ data class IndexedLinkDocument(
     val lastIndexedAt: Instant = Instant.now(),
     val contentHash: String? = null,
     val correlationId: String? = null,
-    val pendingTaskId: ObjectId? = null,
+    val taskId: TaskId? = null,
 )

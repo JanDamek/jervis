@@ -2,8 +2,8 @@ package com.jervis.service.agent.coordinator
 
 import com.jervis.dto.ChatRequestContext
 import com.jervis.dto.ChatResponse
-import com.jervis.dto.PendingTaskTypeEnum
-import com.jervis.entity.PendingTaskDocument
+import com.jervis.dto.TaskTypeEnum
+import com.jervis.entity.TaskDocument
 import com.jervis.service.text.CzechKeyboardNormalizer
 import com.jervis.types.SourceUrn
 import mu.KotlinLogging
@@ -38,8 +38,8 @@ class AgentOrchestratorService(
         logger.info { "AGENT_HANDLE_START: text='${normalizedText.take(100)}' clientId=${ctx.clientId} projectId=${ctx.projectId}" }
 
         val taskContext =
-            PendingTaskDocument(
-                type = PendingTaskTypeEnum.USER_INPUT_PROCESSING,
+            TaskDocument(
+                type = TaskTypeEnum.USER_INPUT_PROCESSING,
                 content = normalizedText,
                 projectId = ctx.projectId,
                 clientId = ctx.clientId,
@@ -59,7 +59,7 @@ class AgentOrchestratorService(
      * Simply delegates to KoogWorkflowService, which runs the Koog agent.
      */
     suspend fun run(
-        task: PendingTaskDocument,
+        task: TaskDocument,
         userInput: String,
     ): ChatResponse {
         logger.info { "AGENT_ORCHESTRATOR_START: correlationId=${task.correlationId}" }

@@ -2,7 +2,7 @@ package com.jervis.service.indexing.confluence.state
 
 import com.jervis.domain.PollingStatusEnum
 import com.jervis.entity.confluence.ConfluencePageIndexDocument
-import com.jervis.repository.ConfluencePageIndexMongoRepository
+import com.jervis.repository.ConfluencePageIndexRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -24,7 +24,7 @@ private val logger = KotlinLogging.logger {}
  */
 @Service
 class ConfluenceStateManager(
-    private val repository: ConfluencePageIndexMongoRepository,
+    private val repository: ConfluencePageIndexRepository,
 ) {
     companion object {
         private const val POLL_DELAY_MS = 30_000L // 30 seconds when no NEW pages

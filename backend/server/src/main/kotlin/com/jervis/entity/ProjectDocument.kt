@@ -19,7 +19,7 @@ import org.springframework.data.mongodb.core.mapping.Document
 @Document(collection = "projects")
 data class ProjectDocument(
     @Id
-    val id: ProjectId = ProjectId(ObjectId.get()),
+    val id: ProjectId = ProjectId.generate(),
     @Indexed
     val clientId: ClientId,
     @Indexed(unique = true)

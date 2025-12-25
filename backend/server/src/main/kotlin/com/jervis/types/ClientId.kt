@@ -11,6 +11,6 @@ value class ClientId(
     companion object {
         fun fromString(hex: String): ClientId = ClientId(ObjectId(hex))
 
-        fun generate(): ClientId = ClientId(ObjectId.get())
+        fun generate(): ClientId = ClientId(ObjectId())
     }
 }

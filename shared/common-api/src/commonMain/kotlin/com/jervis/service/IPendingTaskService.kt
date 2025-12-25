@@ -1,9 +1,7 @@
 package com.jervis.service
 
 import com.jervis.dto.PendingTaskDto
-import de.jensklingenberg.ktorfit.http.DELETE
 import de.jensklingenberg.ktorfit.http.GET
-import de.jensklingenberg.ktorfit.http.Path
 import de.jensklingenberg.ktorfit.http.Query
 
 /**
@@ -21,9 +19,4 @@ interface IPendingTaskService {
         @Query("taskType") taskType: String? = null,
         @Query("state") state: String? = null,
     ): Long
-
-    @DELETE("api/pending-tasks/{id}")
-    suspend fun deletePendingTask(
-        @Path("id") id: String,
-    )
 }

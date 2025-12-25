@@ -1,7 +1,7 @@
 package com.jervis.dto.events
 
-import com.jervis.dto.PendingTaskStateEnum
-import com.jervis.dto.PendingTaskTypeEnum
+import com.jervis.dto.TaskStateEnum
+import com.jervis.dto.TaskTypeEnum
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -52,7 +52,7 @@ sealed class DebugEventDto {
         val taskId: String,
         val fromState: String,
         val toState: String,
-        val taskType: PendingTaskTypeEnum,
+        val taskType: TaskTypeEnum,
     ) : DebugEventDto()
 
     @Serializable
@@ -77,8 +77,8 @@ sealed class DebugEventDto {
     data class GpuTaskPickup(
         val correlationId: String,
         val taskId: String,
-        val taskType: PendingTaskTypeEnum,
-        val state: PendingTaskStateEnum,
+        val taskType: TaskTypeEnum,
+        val state: TaskStateEnum,
     ) : DebugEventDto()
 
     @Serializable
@@ -275,53 +275,101 @@ fun DebugEventDto.getEventName(): String? =
 
 fun DebugEventDto.getEventDetails(): String? =
     when (this) {
-        is DebugEventDto.TaskCreated ->
+        is DebugEventDto.TaskCreated -> {
             "Task $taskId created (type: $taskType, state: $state)"
-        is DebugEventDto.TaskStateTransition ->
+        }
+
+        is DebugEventDto.TaskStateTransition -> {
             "Task $taskId: $fromState → $toState"
-        is DebugEventDto.QualificationStart ->
+        }
+
+        is DebugEventDto.QualificationStart -> {
             "Started qualification for task $taskId (type: $taskType)"
-        is DebugEventDto.QualificationDecision ->
+        }
+
+        is DebugEventDto.QualificationDecision -> {
             "Decision: $decision\nReason: $reason"
-        is DebugEventDto.GpuTaskPickup ->
+        }
+
+        is DebugEventDto.GpuTaskPickup -> {
             "GPU picked up task $taskId (type: $taskType, state: $state)"
-        is DebugEventDto.PlanCreated ->
+        }
+
+        is DebugEventDto.PlanCreated -> {
             "Plan $planId created\nInstruction: $taskInstruction\nBackground: $backgroundMode"
-        is DebugEventDto.PlanStatusChanged ->
+        }
+
+        is DebugEventDto.PlanStatusChanged -> {
             "Plan $planId status changed to: $status"
-        is DebugEventDto.PlanStepAdded ->
+        }
+
+        is DebugEventDto.PlanStepAdded -> {
             "Step #$order added to plan $planId\nTool: $toolName\nInstruction: $instruction"
-        is DebugEventDto.StepExecutionStart ->
+        }
+
+        is DebugEventDto.StepExecutionStart -> {
             "Started step #$order in plan $planId\nTool: $toolName"
-        is DebugEventDto.StepExecutionCompleted ->
+        }
+
+        is DebugEventDto.StepExecutionCompleted -> {
             "Completed step in plan $planId\nTool: $toolName\nStatus: $status\nResult type: $resultType"
-        is DebugEventDto.FinalizerStart ->
+        }
+
+        is DebugEventDto.FinalizerStart -> {
             "Finalizer started for plan $planId\nTotal: $totalSteps, Completed: $completedSteps, Failed: $failedSteps"
-        is DebugEventDto.FinalizerComplete ->
+        }
+
+        is DebugEventDto.FinalizerComplete -> {
             "Finalizer completed for plan $planId\nAnswer length: $answerLength"
-        is DebugEventDto.IndexingStart ->
+        }
+
+        is DebugEventDto.IndexingStart -> {
             "Indexing started\nSource: $sourceType\nModel: $modelType\nURI: ${sourceUri ?: "N/A"}\nText length: $textLength"
-        is DebugEventDto.EmbeddingGenerated ->
+        }
+
+        is DebugEventDto.EmbeddingGenerated -> {
             "Embedding generated\nModel: $modelType\nDimension: $vectorDim\nText length: $textLength"
-        is DebugEventDto.VectorStored ->
+        }
+
+        is DebugEventDto.VectorStored -> {
             "Vector stored\nModel: $modelType\nStore ID: $vectorStoreId"
-        is DebugEventDto.IndexingCompleted ->
+        }
+
+        is DebugEventDto.IndexingCompleted -> {
             "Indexing completed\nSuccess: $success${errorMessage?.let { "\nError: $it" } ?: ""}"
-        is DebugEventDto.TextExtracted ->
+        }
+
+        is DebugEventDto.TextExtracted -> {
             "Text extracted\nExtractor: $extractor\nLength: $length"
-        is DebugEventDto.TextNormalized ->
+        }
+
+        is DebugEventDto.TextNormalized -> {
             "Text normalized\nLength: $length"
-        is DebugEventDto.Chunked ->
+        }
+
+        is DebugEventDto.Chunked -> {
             "Text chunked into $chunks chunks"
-        is DebugEventDto.ChunkStored ->
+        }
+
+        is DebugEventDto.ChunkStored -> {
             "Chunk stored\nIndex: $index/$total\nStore ID: $vectorStoreId"
-        is DebugEventDto.ExternalDownloadStart ->
+        }
+
+        is DebugEventDto.ExternalDownloadStart -> {
             "Download started\nURL: $url"
-        is DebugEventDto.ExternalDownloadCompleted ->
+        }
+
+        is DebugEventDto.ExternalDownloadCompleted -> {
             "Download completed\nURL: $url\nType: ${contentType ?: "unknown"}\nSize: $bytes bytes"
-        is DebugEventDto.ExternalDownloadFailed ->
+        }
+
+        is DebugEventDto.ExternalDownloadFailed -> {
             "Download failed\nURL: $url\nReason: $reason"
-        else -> null
+        }
+
+        else -> {
+            null
+        }
     }
 
 fun DebugEventDto.getCorrelationId(): String? =

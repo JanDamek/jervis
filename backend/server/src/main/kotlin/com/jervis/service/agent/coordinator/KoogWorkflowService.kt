@@ -1,7 +1,7 @@
 package com.jervis.service.agent.coordinator
 
 import com.jervis.dto.ChatResponse
-import com.jervis.entity.PendingTaskDocument
+import com.jervis.entity.TaskDocument
 import com.jervis.koog.KoogWorkflowAgent
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -25,7 +25,7 @@ class KoogWorkflowService(
      * translated to the task.originalLanguage.
      */
     suspend fun run(
-        task: PendingTaskDocument,
+        task: TaskDocument,
         userInput: String,
     ): ChatResponse {
         logger.info { "KOOG_WORKFLOW_START: correlationId=${task.correlationId}" }

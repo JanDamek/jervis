@@ -7,7 +7,7 @@ import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
 import com.jervis.entity.jira.JiraIssueIndexDocument
-import com.jervis.repository.JiraIssueIndexMongoRepository
+import com.jervis.repository.JiraIssueIndexRepository
 import com.jervis.service.client.ClientService
 import com.jervis.service.polling.PollingStateService
 import com.jervis.types.ClientId
@@ -36,7 +36,7 @@ private val logger = KotlinLogging.logger {}
  */
 @Component
 class JiraPollingHandler(
-    private val repository: JiraIssueIndexMongoRepository,
+    private val repository: JiraIssueIndexRepository,
     private val atlassianClient: IAtlassianClient,
     clientService: ClientService,
     pollingStateService: PollingStateService,

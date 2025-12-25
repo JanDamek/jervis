@@ -7,8 +7,14 @@ Všechny ostatní historické „guidelines“ soubory jsou aliasy odkazující 
 
 ## 1) Cíle a principy
 
-- Fail‑fast kultura: chyby nezakrývat, žádné tiché fallbacky. Výjimka je lepší než maskovat chybu. Try/catch pouze na
-  hranicích (I/O, REST boundary) pro konverzi na doménové chyby a logování; ne uvnitř business logiky.
+- **FAIL-FAST:** Chyby nezakrývat, žádné tiché fallbacky. Výjimka je lepší než maskovat chybu.
+  - ❌ Try/catch uvnitř business logiky (services, tools, repositories)
+  - ❌ Catching exceptions jen pro logging a re-throw
+  - ❌ Generic Result<T> wrappery všude
+  - ✅ Try/catch POUZE na hranicích: I/O, REST boundary, top-level controller
+  - ✅ Let it crash - exception propaguje do top-level handler
+  - ✅ Pro Tools (Koog): Tools throwují exception, framework je handluje jako tool error
+  - ✅ Validace na vstupu (fail-fast), ne defensive programming všude
 - Kotlin‑first, idiomaticky: coroutines + Flow jako základ asynchronní práce. Vyhýbat se „Javě v Kotlinu". Preferuj
   streamování (`Flow`, `Sequence`) před budováním velkých `List`.
 - IF‑LESS pattern: kde hrozí rozšiřování, nahrazuj `if/when` polymorfismem, sealed hierarchiemi, strategy mapami nebo
@@ -16,9 +22,17 @@ Všechny ostatní historické „guidelines“ soubory jsou aliasy odkazující 
 - SOLID: malé, jednoúčelové funkce; vysoká soudržnost, nízké vazby; eliminace duplicit (preferuj extension functions
   před „utils" třídami).
 - Jazyk v kódu, komentářích a logách: výhradně angličtina. Inline komentáře „co" nepíšeme; „proč" patří do KDoc.
-- **NO DECORATIVE COMMENTS:** NIKDY nepoužívej dekorativní komentáře jako ASCII art separátory (`// ════════════`,
-  `// ───────`, apod.). Píš samopopisující kód. POUZE KDoc pro public API a žádné inline komentáře kromě kritických "
-  proč" poznámek.
+- **NO DECORATIVE COMMENTS:** NIKDY nepoužívej dekorativní komentáře jako ASCII art separátory nebo section headers:
+  - ❌ `// ════════════`
+  - ❌ `// ───────────`
+  - ❌ `// ==================== RESULT POJO ====================`
+  - ❌ `// ==================== READ OPERATIONS ====================`
+  - ❌ `// === Section Header ===`
+  - ❌ `/* ********** */`
+  - ✅ Píš samopopisující kód - structure speaks for itself
+  - ✅ POUZE KDoc pro public API
+  - ✅ Žádné inline komentáře kromě kritických "proč" poznámek
+  - ✅ Pokud potřebuješ oddělení, použij prázdný řádek nebo package structure
 - **NO METADATA MAPS - ANTIPATTERN:** NIKDY nepoužívej `metadata: MutableMap<String, Any>` nebo podobné generické mapy
   pro ukládání strukturovaných dat. VŽDY vytvoř proper data class s typovanými fieldy. Metadata mapy jsou antipattern -
   neumožňují type safety, refactoring, IDE podporu ani čitelnost kódu.

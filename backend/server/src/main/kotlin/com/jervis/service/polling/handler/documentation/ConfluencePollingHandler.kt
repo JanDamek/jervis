@@ -6,7 +6,7 @@ import com.jervis.entity.ClientDocument
 import com.jervis.entity.confluence.ConfluencePageIndexDocument
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
-import com.jervis.repository.ConfluencePageIndexMongoRepository
+import com.jervis.repository.ConfluencePageIndexRepository
 import com.jervis.service.polling.PollingStateService
 import com.jervis.types.ClientId
 import com.jervis.types.ConnectionId
@@ -26,7 +26,7 @@ import java.time.Instant
  */
 @Component
 class ConfluencePollingHandler(
-    private val repository: ConfluencePageIndexMongoRepository,
+    private val repository: ConfluencePageIndexRepository,
     private val atlassianClient: IAtlassianClient,
     pollingStateService: PollingStateService,
 ) : DocumentationPollingHandlerBase<ConfluencePageIndexDocument>(

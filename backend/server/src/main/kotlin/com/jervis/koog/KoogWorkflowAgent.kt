@@ -24,23 +24,23 @@ import ai.koog.rag.base.files.JVMFileSystemProvider
 import com.jervis.common.client.IAiderClient
 import com.jervis.common.client.ICodingEngineClient
 import com.jervis.configuration.properties.KoogProperties
-import com.jervis.entity.PendingTaskDocument
+import com.jervis.entity.TaskDocument
 import com.jervis.graphdb.GraphDBService
 import com.jervis.graphdb.model.Direction
 import com.jervis.koog.tools.AiderCodingTool
 import com.jervis.koog.tools.CommunicationTools
-import com.jervis.koog.tools.GraphTools
+import com.jervis.koog.tools.KnowledgeStorageTools
 import com.jervis.koog.tools.OpenHandsCodingTool
-import com.jervis.koog.tools.RagTools
-import com.jervis.koog.tools.TaskTools
+import com.jervis.koog.tools.qualifier.QualifierRoutingTools
+import com.jervis.koog.tools.scheduler.SchedulerTools
+import com.jervis.koog.tools.user.UserInteractionTools
 import com.jervis.rag.KnowledgeService
 import com.jervis.rag.SearchRequest
-import com.jervis.service.background.PendingTaskService
+import com.jervis.service.background.TaskService
 import com.jervis.service.link.IndexedLinkService
 import com.jervis.service.link.LinkContentService
 import com.jervis.service.scheduling.TaskManagementService
 import com.jervis.service.task.UserTaskService
-import com.jervis.service.token.TokenCountingService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -79,11 +79,10 @@ class KoogWorkflowAgent(
     private val userTaskService: UserTaskService,
     private val promptExecutorFactory: KoogPromptExecutorFactory,
     private val koogProperties: KoogProperties,
-    private val pendingTaskService: PendingTaskService,
+    private val taskService: TaskService,
     private val linkContentService: LinkContentService,
     private val indexedLinkService: IndexedLinkService,
     private val smartModelSelector: SmartModelSelector,
-    private val tokenCountingService: TokenCountingService,
     private val graphDBService: GraphDBService,
     private val aiderClient: IAiderClient,
     private val codingEngineClient: ICodingEngineClient,
@@ -103,7 +102,7 @@ class KoogWorkflowAgent(
         val originalLanguage: String,
     )
 
-    suspend fun create(task: PendingTaskDocument): AIAgent<String, String> {
+    suspend fun create(task: TaskDocument): AIAgent<String, String> {
         val promptExecutor = promptExecutorFactory.getExecutor("OLLAMA")
 
         val agentStrategy =
@@ -114,7 +113,7 @@ class KoogWorkflowAgent(
                 val nodeParallelEnrich by node<String, EnrichmentContext> { input ->
                     val ragResult =
                         try {
-                            val query = input.take(500)
+                            val query = input
                             val searchRequest =
                                 SearchRequest(
                                     query = query,
@@ -144,7 +143,7 @@ class KoogWorkflowAgent(
                             } else {
                                 buildString {
                                     appendLine("Graph related nodes (summary):")
-                                    nodes.take(20).forEach { n ->
+                                    nodes.forEach { n ->
                                         append("- ").append(n.key)
                                         appendLine()
                                     }
@@ -282,26 +281,16 @@ class KoogWorkflowAgent(
                 edge((storageSubgraph forwardTo nodeFinish).transformed { it })
             }
 
-        // Dynamic model selection based on task content length
-        // SmartModelSelector uses exact BPE token counting (jtokkit)
-        // Workflow agent generates analysis, code, and actions - needs more output than input
-        // Formula: output ≈ 2x input (analysis + actions can be verbose)
-        val inputTokens = tokenCountingService.countTokens(task.content)
-        val dynamicOutputReserve = (inputTokens * 2).coerceAtLeast(4000)
-
         val dynamicModel =
             smartModelSelector.selectModel(
-                baseModelName = MODEL_WORKFLOW_NAME, // Base: qwen3-coder-tool:30b
+                baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
                 inputContent = task.content,
-                outputReserve = dynamicOutputReserve, // Dynamic: 2x input tokens
             )
 
         logger.info {
             "KoogWorkflowAgent | Dynamic model selected: ${dynamicModel.id} | " +
                 "contextLength=${dynamicModel.contextLength} | " +
                 "taskContentLength=${task.content.length} | " +
-                "inputTokens=$inputTokens | " +
-                "outputReserve=$dynamicOutputReserve | " +
                 "baseModel=$MODEL_WORKFLOW_NAME"
         }
 
@@ -383,21 +372,30 @@ class KoogWorkflowAgent(
                     ),
                 )
 
-                tools(RagTools(task, knowledgeService))
-                tools(GraphTools(task, graphDBService))
+                tools(KnowledgeStorageTools(task, knowledgeService, graphDBService))
+
+                // Routing & Delegation
                 tools(
-                    TaskTools(
-                        task = task,
-                        taskManagementService = taskManagementService,
-                        userTaskService = userTaskService,
-                        pendingTaskService = pendingTaskService,
-                        linkContentService = linkContentService,
-                        indexedLinkService = indexedLinkService,
-                        connectionService = connectionService,
-                        coroutineScope = scope,
+                    QualifierRoutingTools(
+                        task,
+                        taskService,
+                        linkContentService,
+                        indexedLinkService,
+                        connectionService,
+                        scope,
                     ),
                 )
+
+                // Scheduling
+                tools(SchedulerTools(task, taskManagementService))
+
+                // User Interaction
+                tools(UserInteractionTools(task, userTaskService))
+
+                // Communication
                 tools(CommunicationTools(task))
+
+                // Coding
                 tools(AiderCodingTool(task, aiderClient))
                 tools(OpenHandsCodingTool(task, codingEngineClient))
             }
@@ -411,7 +409,7 @@ class KoogWorkflowAgent(
     }
 
     suspend fun run(
-        task: PendingTaskDocument,
+        task: TaskDocument,
         userInput: String,
     ): String {
         val startTime = System.currentTimeMillis()

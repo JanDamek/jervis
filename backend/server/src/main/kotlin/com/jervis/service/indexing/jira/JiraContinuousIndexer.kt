@@ -5,7 +5,7 @@ import com.jervis.common.dto.atlassian.JiraAttachmentDownloadRequest
 import com.jervis.common.dto.atlassian.JiraIssueRequest
 import com.jervis.domain.PollingStatusEnum
 import com.jervis.domain.atlassian.AttachmentMetadata
-import com.jervis.dto.PendingTaskTypeEnum
+import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
 import com.jervis.entity.connection.basicPassword
@@ -13,7 +13,7 @@ import com.jervis.entity.connection.basicUsername
 import com.jervis.entity.connection.bearerToken
 import com.jervis.entity.connection.toAuthType
 import com.jervis.entity.jira.JiraIssueIndexDocument
-import com.jervis.service.background.PendingTaskService
+import com.jervis.service.background.TaskService
 import com.jervis.service.connection.ConnectionService
 import com.jervis.service.indexing.jira.state.JiraStateManager
 import com.jervis.service.storage.DirectoryStructureService
@@ -25,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import mu.KotlinLogging
+import org.springframework.context.annotation.Profile
 import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Service
 
@@ -44,10 +45,11 @@ private val logger = KotlinLogging.logger {}
  * ETL Flow: MongoDB (NEW minimal) → API (full details) → JIRA_PROCESSING Task → KoogQualifierAgent → Graph + RAG
  */
 @Service
+@Profile("!cli")
 @Order(10) // Start after WeaviateSchemaInitializer
 class JiraContinuousIndexer(
     private val stateManager: JiraStateManager,
-    private val pendingTaskService: PendingTaskService,
+    private val taskService: TaskService,
     private val connectionService: ConnectionService,
     private val atlassianClient: IAtlassianClient,
     private val directoryStructureService: DirectoryStructureService,
@@ -218,8 +220,8 @@ class JiraContinuousIndexer(
                     ?: emptyList()
 
             // Create JIRA_PROCESSING task with attachments
-            pendingTaskService.createTask(
-                taskType = PendingTaskTypeEnum.JIRA_PROCESSING,
+            taskService.createTask(
+                taskType = TaskTypeEnum.JIRA_PROCESSING,
                 content = issueContent,
                 projectId = doc.projectId,
                 clientId = doc.clientId,

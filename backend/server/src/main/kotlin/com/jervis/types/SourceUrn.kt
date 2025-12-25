@@ -7,6 +7,8 @@ value class SourceUrn(
     val value: String,
 ) {
     companion object {
+        fun unknownSource(): SourceUrn = SourceUrn("unknown")
+
         fun link(url: String): SourceUrn = SourceUrn("link::url:${encodeValue(url)}")
 
         fun confluence(

@@ -11,11 +11,14 @@ import org.bson.types.ObjectId
  * - Clear intent in code
  */
 @JvmInline
-value class PollingStateId(val value: ObjectId) {
+value class PollingStateId(
+    val value: ObjectId,
+) {
     override fun toString(): String = value.toHexString()
 
     companion object {
         fun fromString(hex: String): PollingStateId = PollingStateId(ObjectId(hex))
-        fun generate(): PollingStateId = PollingStateId(ObjectId.get())
+
+        fun generate(): PollingStateId = PollingStateId(ObjectId())
     }
 }

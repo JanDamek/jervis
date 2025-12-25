@@ -1,56 +1,42 @@
 package com.jervis.service.task
 
-import com.jervis.entity.PendingTaskDocument
-import com.jervis.entity.UserTaskDocument
-import com.jervis.repository.UserTaskMongoRepository
+import com.jervis.dto.TaskTypeEnum
+import com.jervis.entity.TaskDocument
+import com.jervis.repository.TaskRepository
 import com.jervis.service.notification.NotificationsPublisher
 import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
+import com.jervis.types.SourceUrn
+import com.jervis.types.TaskId
 import kotlinx.coroutines.flow.Flow
 import mu.KotlinLogging
-import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 import java.time.Instant
 
 @Service
 class UserTaskService(
-    private val userTaskRepository: UserTaskMongoRepository,
+    private val userTaskRepository: TaskRepository,
     private val notificationsPublisher: NotificationsPublisher,
 ) {
     private val logger = KotlinLogging.logger {}
 
     suspend fun createTask(
         title: String,
-        description: String? = null,
-        priority: TaskPriorityEnum = TaskPriorityEnum.MEDIUM,
-        dueDate: Instant? = null,
+        description: String,
         projectId: ProjectId? = null,
         clientId: ClientId,
-        sourceType: TaskSourceType,
         correlationId: String,
-    ): UserTaskDocument {
-        val existing =
-            userTaskRepository.findFirstByClientIdAndSourceTypeAndStatusIn(
-                clientId = clientId,
-                sourceType = sourceType,
-                statuses = listOf(TaskStatusEnum.TODO, TaskStatusEnum.IN_PROGRESS),
-            )
-        if (existing != null) {
-            logger.info { "Skipped duplicate user task for (existing=${existing.id})" }
-            return existing
-        }
-
+        sourceUrn: SourceUrn = SourceUrn.unknownSource(),
+    ): TaskDocument {
         val task =
-            UserTaskDocument(
-                title = title,
-                description = description,
-                priority = priority,
-                dueDate = dueDate,
+            TaskDocument(
+                taskName = title,
+                content = description,
                 projectId = projectId,
                 clientId = clientId,
-                sourceType = sourceType,
                 correlationId = correlationId,
-                status = TaskStatusEnum.TODO,
+                type = TaskTypeEnum.USER_TASK,
+                sourceUrn = sourceUrn,
             )
 
         val saved = userTaskRepository.save(task)
@@ -64,16 +50,16 @@ class UserTaskService(
         return saved
     }
 
-    suspend fun getTaskById(taskId: ObjectId): UserTaskDocument? = userTaskRepository.findById(taskId)
+    suspend fun getTaskById(taskId: TaskId): TaskDocument? = userTaskRepository.findById(taskId)
 
-    fun findActiveTasksByClient(clientId: ClientId): Flow<UserTaskDocument> =
+    suspend fun findActiveTasksByClient(clientId: ClientId): Flow<TaskDocument> =
         userTaskRepository
-            .findActiveTasksByClientIdAndStatusIn(
+            .findByClientIdAndType(
                 clientId = clientId,
-                statuses = listOf(TaskStatusEnum.TODO, TaskStatusEnum.IN_PROGRESS),
+                type = TaskTypeEnum.USER_TASK,
             )
 
-    suspend fun cancelTask(taskId: ObjectId): UserTaskDocument {
+    suspend fun cancelTask(taskId: TaskId): TaskDocument {
         val existing = userTaskRepository.findById(taskId) ?: error("User task not found: $taskId")
 
         userTaskRepository.deleteById(taskId)
@@ -89,7 +75,7 @@ class UserTaskService(
     }
 
     suspend fun failAndEscalateToUserTask(
-        task: PendingTaskDocument,
+        task: TaskDocument,
         reason: String,
         error: Throwable? = null,
     ) {
@@ -108,7 +94,6 @@ class UserTaskService(
             description = description,
             projectId = task.projectId,
             clientId = task.clientId,
-            sourceType = TaskSourceType.AGENT_SUGGESTION,
             correlationId = task.correlationId,
         )
         logger.info { "TASK_FAILED_ESCALATED:  reason=$reason" }

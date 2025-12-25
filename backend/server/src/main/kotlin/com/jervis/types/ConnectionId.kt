@@ -11,11 +11,14 @@ import org.bson.types.ObjectId
  * - Clear intent in code
  */
 @JvmInline
-value class ConnectionId(val value: ObjectId) {
+value class ConnectionId(
+    val value: ObjectId,
+) {
     override fun toString(): String = value.toHexString()
 
     companion object {
         fun fromString(hex: String): ConnectionId = ConnectionId(ObjectId(hex))
-        fun generate(): ConnectionId = ConnectionId(ObjectId.get())
+
+        fun generate(): ConnectionId = ConnectionId(ObjectId())
     }
 }

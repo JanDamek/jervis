@@ -4,16 +4,15 @@ import com.jervis.dto.ProjectDto
 import com.jervis.entity.ProjectDocument
 import com.jervis.mapper.toDocument
 import com.jervis.mapper.toDto
-import com.jervis.repository.ProjectMongoRepository
+import com.jervis.repository.ProjectRepository
 import com.jervis.service.storage.DirectoryStructureService
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
-import java.time.Instant
 
 @Service
 class ProjectService(
-    private val projectRepository: ProjectMongoRepository,
+    private val projectRepository: ProjectRepository,
     // private val gitRepositoryService: GitRepositoryService, // Temporarily disabled
     private val directoryStructureService: DirectoryStructureService,
 ) {

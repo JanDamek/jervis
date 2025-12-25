@@ -5,7 +5,7 @@ import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
 import com.jervis.common.client.ICodingEngineClient
 import com.jervis.common.dto.CodingExecuteRequest
-import com.jervis.entity.PendingTaskDocument
+import com.jervis.entity.TaskDocument
 import mu.KotlinLogging
 
 /**
@@ -23,7 +23,7 @@ import mu.KotlinLogging
     "Delegate complex coding tasks to OpenHands in an isolated K8s environment. Ideal for running apps, heavy debugging, or large changes.",
 )
 class OpenHandsCodingTool(
-    private val task: PendingTaskDocument,
+    private val task: TaskDocument,
     private val engine: ICodingEngineClient,
 ) : ToolSet {
     companion object {

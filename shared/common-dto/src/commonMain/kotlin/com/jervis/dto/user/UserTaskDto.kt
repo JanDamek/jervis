@@ -7,12 +7,9 @@ data class UserTaskDto(
     val id: String,
     val title: String,
     val description: String? = null,
-    val priority: String,
-    val status: String,
-    val dueDateEpochMillis: Long? = null,
+    val state: String,
     val projectId: String? = null,
     val clientId: String,
-    val sourceType: String,
     val sourceUri: String? = null,
     val createdAtEpochMillis: Long,
 )

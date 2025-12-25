@@ -2,7 +2,7 @@ package com.jervis.service.indexing.jira.state
 
 import com.jervis.domain.PollingStatusEnum
 import com.jervis.entity.jira.JiraIssueIndexDocument
-import com.jervis.repository.JiraIssueIndexMongoRepository
+import com.jervis.repository.JiraIssueIndexRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -22,7 +22,7 @@ import org.springframework.stereotype.Service
  */
 @Service
 class JiraStateManager(
-    private val repository: JiraIssueIndexMongoRepository,
+    private val repository: JiraIssueIndexRepository,
 ) {
     companion object {
         private const val POLL_DELAY_MS = 30_000L // 30 seconds when no NEW issues
