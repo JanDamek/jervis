@@ -2,7 +2,7 @@ package com.jervis.service.connection
 
 import com.jervis.dto.connection.ConnectionStateEnum
 import com.jervis.entity.connection.ConnectionDocument
-import com.jervis.repository.ConnectionMongoRepository
+import com.jervis.repository.ConnectionRepository
 import com.jervis.types.ConnectionId
 import kotlinx.coroutines.flow.Flow
 import mu.KotlinLogging
@@ -14,7 +14,7 @@ import org.springframework.stereotype.Service
  */
 @Service
 class ConnectionService(
-    private val repository: ConnectionMongoRepository,
+    private val repository: ConnectionRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -26,7 +26,7 @@ class ConnectionService(
 
     /**
      * Find a connection by ID.
-     * 
+     *
      * NOTE: Spring Data MongoDB has issues with @JvmInline value classes as ID.
      * Workaround: Load all and filter in-memory (acceptable since connections are few).
      */
@@ -71,7 +71,7 @@ class ConnectionService(
         // Match exact domain or baseUrl contains domain
         return connections.find { connection ->
             connection.baseUrl.contains(domain, ignoreCase = true) ||
-            connection.host?.equals(domain, ignoreCase = true) == true
+                connection.host?.equals(domain, ignoreCase = true) == true
         }
     }
 }

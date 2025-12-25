@@ -2,7 +2,7 @@ package com.jervis.bootstrap
 
 import com.jervis.graphdb.GraphDBService
 import com.jervis.rag.internal.WeaviatePerClientProvisioner
-import com.jervis.repository.ClientMongoRepository
+import com.jervis.repository.ClientRepository
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.runBlocking
@@ -21,7 +21,7 @@ import org.springframework.stereotype.Component
 @Component
 @Order(2)
 class ClientBootstrapService(
-    private val clientRepository: ClientMongoRepository,
+    private val clientRepository: ClientRepository,
     private val graphDBService: GraphDBService,
     private val weaviateProvisioner: WeaviatePerClientProvisioner,
 ) {

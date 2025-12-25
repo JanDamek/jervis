@@ -3,7 +3,7 @@ package com.jervis.service.client
 import com.jervis.entity.ClientDocument
 import com.jervis.graphdb.GraphDBService
 import com.jervis.rag.internal.WeaviatePerClientProvisioner
-import com.jervis.repository.ClientMongoRepository
+import com.jervis.repository.ClientRepository
 import com.jervis.types.ClientId
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service
 
 @Service
 class ClientService(
-    private val clientRepository: ClientMongoRepository,
+    private val clientRepository: ClientRepository,
     private val graphDBService: GraphDBService,
     private val weaviateProvisioner: WeaviatePerClientProvisioner,
 ) {

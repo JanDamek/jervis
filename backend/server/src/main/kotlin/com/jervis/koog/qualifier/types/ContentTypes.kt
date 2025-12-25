@@ -38,15 +38,6 @@ data class VisionContext(
 )
 
 /**
- * Content type detection result from Phase 1.
- */
-data class ContentTypeContext(
-    val contentType: ContentType,
-    val originalText: String,
-    val visionContext: VisionContext,
-)
-
-/**
  * Email-specific extracted information.
  */
 data class EmailExtraction(

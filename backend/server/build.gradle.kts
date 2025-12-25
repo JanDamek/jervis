@@ -6,6 +6,11 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+// Set default main class to server application (not CLI)
+springBoot {
+    mainClass.set("com.jervis.JervisApplicationKt")
+}
+
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(21))

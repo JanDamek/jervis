@@ -151,12 +151,12 @@ class MongoIndexInitializer(
                         if (createErrorMsg.contains("E11000") || createErrorMsg.contains("duplicate key error")) {
                             logger.warn { "      ~ Cannot create unique index $indexName - duplicate keys exist" }
                         } else {
-                            logger.error { "      ✗ Failed to recreate index $indexName: ${createErrorMsg.take(200)}" }
+                            logger.error { "      ✗ Failed to recreate index $indexName: $createErrorMsg" }
                             throw createEx
                         }
                     }
                 } else {
-                    logger.error { "    ✗ Failed to create index $indexName: ${errorMsg.take(200)}" }
+                    logger.error { "    ✗ Failed to create index $indexName: $errorMsg" }
                     throw e
                 }
             }

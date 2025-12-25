@@ -2,7 +2,7 @@ package com.jervis.service.error
 
 import com.jervis.domain.error.ErrorLog
 import com.jervis.entity.ErrorLogDocument
-import com.jervis.repository.ErrorLogMongoRepository
+import com.jervis.repository.ErrorLogRepository
 import com.jervis.service.notification.ErrorNotificationsPublisher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.toList
@@ -16,7 +16,7 @@ import java.io.StringWriter
 
 @Service
 class ErrorLogService(
-    private val repository: ErrorLogMongoRepository,
+    private val repository: ErrorLogRepository,
     private val errorPublisher: ErrorNotificationsPublisher,
 ) {
     private val logger = KotlinLogging.logger {}

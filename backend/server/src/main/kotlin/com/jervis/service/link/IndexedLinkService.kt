@@ -5,12 +5,12 @@ import com.jervis.entity.IndexedLinkDocument
 import com.jervis.entity.confluence.ConfluencePageIndexDocument
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.entity.jira.JiraIssueIndexDocument
-import com.jervis.repository.ConfluencePageIndexMongoRepository
-import com.jervis.repository.IndexedLinkMongoRepository
-import com.jervis.repository.JiraIssueIndexMongoRepository
+import com.jervis.repository.ConfluencePageIndexRepository
+import com.jervis.repository.IndexedLinkRepository
+import com.jervis.repository.JiraIssueIndexRepository
 import com.jervis.types.ClientId
-import com.jervis.types.ConnectionId
 import com.jervis.types.ProjectId
+import com.jervis.types.TaskId
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -18,9 +18,9 @@ import java.time.Instant
 
 @Service
 class IndexedLinkService(
-    private val indexedLinkRepository: IndexedLinkMongoRepository,
-    private val jiraIssueIndexRepository: JiraIssueIndexMongoRepository,
-    private val confluencePageIndexRepository: ConfluencePageIndexMongoRepository,
+    private val indexedLinkRepository: IndexedLinkRepository,
+    private val jiraIssueIndexRepository: JiraIssueIndexRepository,
+    private val confluencePageIndexRepository: ConfluencePageIndexRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -50,7 +50,7 @@ class IndexedLinkService(
         url: String,
         clientId: ClientId,
         correlationId: String? = null,
-        pendingTaskId: ObjectId? = null,
+        taskId: TaskId? = null,
         contentHash: String? = null,
     ): IndexedLinkDocument {
         val document =
@@ -58,7 +58,7 @@ class IndexedLinkService(
                 url = url,
                 clientId = clientId,
                 correlationId = correlationId,
-                pendingTaskId = pendingTaskId,
+                taskId = taskId,
                 contentHash = contentHash,
             )
         val saved = indexedLinkRepository.save(document)
@@ -154,18 +154,19 @@ class IndexedLinkService(
 
         // Create minimal index document with state NEW
         // ContinuousIndexer will fetch full details via API
-        val doc = JiraIssueIndexDocument(
-            id = ObjectId(),
-            connectionId = connection.id,
-            issueKey = issueKey,
-            latestChangelogId = "from-link", // Placeholder - will be updated by indexer
-            jiraUpdatedAt = Instant.now(),
-            clientId = clientId,
-            projectId = projectId,
-            summary = null, // Will be fetched by indexer
-            indexingError = null,
-            status = PollingStatusEnum.NEW,
-        )
+        val doc =
+            JiraIssueIndexDocument(
+                id = ObjectId(),
+                connectionId = connection.id,
+                issueKey = issueKey,
+                latestChangelogId = "from-link", // Placeholder - will be updated by indexer
+                jiraUpdatedAt = Instant.now(),
+                clientId = clientId,
+                projectId = projectId,
+                summary = null, // Will be fetched by indexer
+                indexingError = null,
+                status = PollingStatusEnum.NEW,
+            )
 
         jiraIssueIndexRepository.save(doc)
         logger.info { "✓ Enqueued Jira issue $issueKey for indexing (connectionId=${connection.id})" }
@@ -198,18 +199,19 @@ class IndexedLinkService(
 
         // Create minimal index document with state NEW
         // ContinuousIndexer will fetch full details via API
-        val doc = ConfluencePageIndexDocument(
-            id = ObjectId(),
-            connectionDocumentId = connection.id,
-            pageId = pageId,
-            versionNumber = null, // Will be fetched by indexer
-            confluenceUpdatedAt = Instant.now(),
-            clientId = clientId,
-            projectId = projectId,
-            title = "From Link", // Placeholder - will be updated by indexer
-            indexingError = null,
-            status = PollingStatusEnum.NEW,
-        )
+        val doc =
+            ConfluencePageIndexDocument(
+                id = ObjectId(),
+                connectionDocumentId = connection.id,
+                pageId = pageId,
+                versionNumber = null, // Will be fetched by indexer
+                confluenceUpdatedAt = Instant.now(),
+                clientId = clientId,
+                projectId = projectId,
+                title = "From Link", // Placeholder - will be updated by indexer
+                indexingError = null,
+                status = PollingStatusEnum.NEW,
+            )
 
         confluencePageIndexRepository.save(doc)
         logger.info { "✓ Enqueued Confluence page $pageId for indexing (connectionId=${connection.id})" }

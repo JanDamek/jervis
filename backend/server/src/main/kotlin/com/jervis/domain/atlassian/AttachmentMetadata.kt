@@ -7,7 +7,7 @@ import java.time.Instant
 /**
  * Attachment metadata for vision analysis.
  *
- * Stored in PendingTaskDocument to enable vision model processing.
+ * Stored in TaskDocument to enable vision model processing.
  */
 @Serializable
 data class AttachmentMetadata(

@@ -3,13 +3,11 @@ package com.jervis.service.polling
 import com.jervis.configuration.properties.PollingProperties
 import com.jervis.dto.connection.ConnectionStateEnum
 import com.jervis.entity.connection.ConnectionDocument
-import com.jervis.repository.ClientMongoRepository
-import com.jervis.repository.ProjectMongoRepository
+import com.jervis.repository.ClientRepository
+import com.jervis.repository.ProjectRepository
 import com.jervis.service.connection.ConnectionService
 import com.jervis.service.polling.handler.PollingContext
 import com.jervis.service.polling.handler.PollingHandler
-import com.jervis.service.task.TaskPriorityEnum
-import com.jervis.service.task.TaskSourceType
 import com.jervis.service.task.UserTaskService
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineScope
@@ -26,6 +24,7 @@ import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import mu.KotlinLogging
+import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Service
 import java.time.Duration
 import java.time.Instant
@@ -48,10 +47,11 @@ import java.time.Instant
  * 5. ContinuousIndexer picks up NEW items and indexes them
  */
 @Service
+@Profile("!cli")
 class CentralPoller(
     private val connectionService: ConnectionService,
-    private val clientRepository: ClientMongoRepository,
-    private val projectRepository: ProjectMongoRepository,
+    private val clientRepository: ClientRepository,
+    private val projectRepository: ProjectRepository,
     private val handlers: List<PollingHandler>,
     private val userTaskService: UserTaskService,
     private val pollingProperties: PollingProperties,
@@ -163,84 +163,84 @@ class CentralPoller(
             }
 
             // Find ALL handlers for this connectionDocument type (e.g., Atlassian → Jira + Confluence)
-        val matchingHandlers = handlers.filter { it.canHandle(connectionDocument) }
+            val matchingHandlers = handlers.filter { it.canHandle(connectionDocument) }
 
-        if (matchingHandlers.isEmpty()) {
-            logger.warn {
-                "No handler found for connectionDocument '${connectionDocument.name}' (type: ${connectionDocument::class.simpleName})"
+            if (matchingHandlers.isEmpty()) {
+                logger.warn {
+                    "No handler found for connectionDocument '${connectionDocument.name}' (type: ${connectionDocument::class.simpleName})"
+                }
+                return
             }
-            return
-        }
 
-        // Find all clients/projects using this connectionDocument
-        val clients = clientRepository.findByConnectionIdsContaining(connectionDocument.id).toList()
-        val projects = projectRepository.findByConnectionIdsContaining(connectionDocument.id).toList()
+            // Find all clients/projects using this connectionDocument
+            val clients = clientRepository.findByConnectionIdsContaining(connectionDocument.id).toList()
+            val projects = projectRepository.findByConnectionIdsContaining(connectionDocument.id).toList()
 
-        if (clients.isEmpty() && projects.isEmpty()) {
+            if (clients.isEmpty() && projects.isEmpty()) {
+                logger.debug {
+                    "Skipping '${connectionDocument.name}' (id=${connectionDocument.id}): " +
+                        "no clients or projects using this connectionDocument"
+                }
+                return
+            }
+
+            // Create polling context
+            val context = PollingContext(clients = clients, projects = projects)
+
+            val handlerNames = matchingHandlers.joinToString(", ") { it::class.simpleName ?: "Unknown" }
+            val clientNames = clients.joinToString(", ") { it.name }
+            val projectNames = projects.joinToString(", ") { it.name }
+            val scope =
+                if (projects.isNotEmpty()) {
+                    "Clients: [$clientNames] | Projects: [$projectNames]"
+                } else {
+                    "Clients: [$clientNames]"
+                }
             logger.debug {
-                "Skipping '${connectionDocument.name}' (id=${connectionDocument.id}): " +
-                    "no clients or projects using this connectionDocument"
+                "Polling '${connectionDocument.name}' (${connectionDocument::class.simpleName}) | $scope | Handlers: [$handlerNames]"
             }
-            return
-        }
 
-        // Create polling context
-        val context = PollingContext(clients = clients, projects = projects)
-
-        val handlerNames = matchingHandlers.joinToString(", ") { it::class.simpleName ?: "Unknown" }
-        val clientNames = clients.joinToString(", ") { it.name }
-        val projectNames = projects.joinToString(", ") { it.name }
-        val scope =
-            if (projects.isNotEmpty()) {
-                "Clients: [$clientNames] | Projects: [$projectNames]"
-            } else {
-                "Clients: [$clientNames]"
-            }
-        logger.debug {
-            "Polling '${connectionDocument.name}' (${connectionDocument::class.simpleName}) | $scope | Handlers: [$handlerNames]"
-        }
-
-        // Execute all matching handlers in parallel (e.g., Jira + Confluence for Atlassian)
-        val results =
-            coroutineScope {
-                matchingHandlers
-                    .map { handler ->
-                        async {
-                            try {
-                                handler.poll(connectionDocument, context)
-                            } catch (e: Exception) {
-                                logger.error(
-                                    e,
-                                ) { "Error in handler ${handler::class.simpleName} for connectionDocument ${connectionDocument.name}" }
-                                PollingResult(errors = 1)
+            // Execute all matching handlers in parallel (e.g., Jira + Confluence for Atlassian)
+            val results =
+                coroutineScope {
+                    matchingHandlers
+                        .map { handler ->
+                            async {
+                                try {
+                                    handler.poll(connectionDocument, context)
+                                } catch (e: Exception) {
+                                    logger.error(
+                                        e,
+                                    ) { "Error in handler ${handler::class.simpleName} for connectionDocument ${connectionDocument.name}" }
+                                    PollingResult(errors = 1)
+                                }
                             }
-                        }
-                    }.awaitAll()
+                        }.awaitAll()
+                }
+
+            // Aggregate results from all handlers
+            val totalResult =
+                results.fold(PollingResult()) { acc, result ->
+                    PollingResult(
+                        itemsDiscovered = acc.itemsDiscovered + result.itemsDiscovered,
+                        itemsCreated = acc.itemsCreated + result.itemsCreated,
+                        itemsSkipped = acc.itemsSkipped + result.itemsSkipped,
+                        errors = acc.errors + result.errors,
+                    )
+                }
+
+            val duration = Duration.between(startTime, Instant.now())
+            val statusIcon = if (totalResult.errors > 0) "✗" else "✓"
+            logger.debug {
+                "$statusIcon Completed '${connectionDocument.name}' in ${duration.toMillis()}ms | " +
+                    "Discovered: ${totalResult.itemsDiscovered}, Created: ${totalResult.itemsCreated}, " +
+                    "Skipped: ${totalResult.itemsSkipped}, Errors: ${totalResult.errors}"
             }
 
-        // Aggregate results from all handlers
-        val totalResult =
-            results.fold(PollingResult()) { acc, result ->
-                PollingResult(
-                    itemsDiscovered = acc.itemsDiscovered + result.itemsDiscovered,
-                    itemsCreated = acc.itemsCreated + result.itemsCreated,
-                    itemsSkipped = acc.itemsSkipped + result.itemsSkipped,
-                    errors = acc.errors + result.errors,
-                )
+            // Handle authentication errors - set connectionDocument to INVALID and create UserTask for manual fix
+            if (totalResult.authenticationError) {
+                handlePollingError(connectionDocument, context, totalResult)
             }
-
-        val duration = Duration.between(startTime, Instant.now())
-        val statusIcon = if (totalResult.errors > 0) "✗" else "✓"
-        logger.debug {
-            "$statusIcon Completed '${connectionDocument.name}' in ${duration.toMillis()}ms | " +
-                "Discovered: ${totalResult.itemsDiscovered}, Created: ${totalResult.itemsCreated}, " +
-                "Skipped: ${totalResult.itemsSkipped}, Errors: ${totalResult.errors}"
-        }
-
-        // Handle authentication errors - set connectionDocument to INVALID and create UserTask for manual fix
-        if (totalResult.authenticationError) {
-            handlePollingError(connectionDocument, context, totalResult)
-        }
 
             // Update last poll time
             lastPollTimes[connectionId] = now
@@ -295,11 +295,8 @@ class CentralPoller(
         userTaskService.createTask(
             title = "Fix ConnectionDocument: ${connectionDocument.name}",
             description = taskDescription,
-            priority = TaskPriorityEnum.HIGH,
-            dueDate = null,
             projectId = null,
             clientId = clientId,
-            sourceType = TaskSourceType.CONNECTION_ERROR,
             correlationId = correlationId,
         )
 
@@ -309,9 +306,14 @@ class CentralPoller(
     private fun getPollingInterval(connectionDocument: ConnectionDocument): Duration =
         when (connectionDocument.connectionType) {
             ConnectionDocument.ConnectionTypeEnum.HTTP -> pollingProperties.http
+
             ConnectionDocument.ConnectionTypeEnum.IMAP -> pollingProperties.imap
+
             ConnectionDocument.ConnectionTypeEnum.POP3 -> pollingProperties.pop3
-            ConnectionDocument.ConnectionTypeEnum.SMTP -> Duration.ofDays(365) // SMTP is for sending only
+
+            ConnectionDocument.ConnectionTypeEnum.SMTP -> Duration.ofDays(365)
+
+            // SMTP is for sending only
             ConnectionDocument.ConnectionTypeEnum.OAUTH2 -> pollingProperties.oauth2
         }
 }

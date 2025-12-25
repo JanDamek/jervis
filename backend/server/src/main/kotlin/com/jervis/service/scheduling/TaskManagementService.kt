@@ -1,10 +1,12 @@
 package com.jervis.service.scheduling
 
-import com.jervis.entity.ScheduledTaskDocument
-import com.jervis.repository.ScheduledTaskMongoRepository
+import com.jervis.dto.TaskTypeEnum
+import com.jervis.entity.TaskDocument
+import com.jervis.repository.TaskRepository
 import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
 import com.jervis.types.SourceUrn
+import com.jervis.types.TaskId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -18,7 +20,7 @@ import java.time.Instant
  */
 @Service
 class TaskManagementService(
-    private val scheduledTaskRepository: ScheduledTaskMongoRepository,
+    private val scheduledTaskRepository: TaskRepository,
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -35,10 +37,10 @@ class TaskManagementService(
         scheduledAt: Instant,
         cronExpression: String? = null,
         correlationId: String? = null,
-    ): ScheduledTaskDocument =
+    ): TaskDocument =
         withContext(Dispatchers.IO) {
             val task =
-                ScheduledTaskDocument(
+                TaskDocument(
                     clientId = clientId,
                     projectId = projectId,
                     content = content,
@@ -47,6 +49,7 @@ class TaskManagementService(
                     cronExpression = cronExpression,
                     correlationId = correlationId ?: ObjectId().toString(),
                     sourceUrn = SourceUrn.scheduled(taskName),
+                    type = TaskTypeEnum.SCHEDULED_TASK,
                 )
 
             val savedTask = scheduledTaskRepository.save(task)
@@ -55,12 +58,12 @@ class TaskManagementService(
         }
 
     /**
-     * Update scheduled time for recurring task (cron)
+     * Update scheduled time for a recurring task (cron)
      */
     suspend fun updateScheduledTime(
-        taskId: ObjectId,
+        taskId: TaskId,
         newScheduledAt: Instant,
-    ): ScheduledTaskDocument? =
+    ): TaskDocument? =
         withContext(Dispatchers.IO) {
             val task = scheduledTaskRepository.findById(taskId) ?: return@withContext null
             val updated = task.copy(scheduledAt = newScheduledAt)
@@ -70,7 +73,7 @@ class TaskManagementService(
     /**
      * Cancel/delete a task
      */
-    suspend fun cancelTask(taskId: ObjectId): Boolean =
+    suspend fun cancelTask(taskId: TaskId): Boolean =
         withContext(Dispatchers.IO) {
             val exists = scheduledTaskRepository.existsById(taskId)
             if (exists) {

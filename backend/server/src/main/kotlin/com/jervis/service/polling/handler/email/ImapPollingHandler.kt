@@ -2,7 +2,7 @@ package com.jervis.service.polling.handler.email
 
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.ConnectionDocument
-import com.jervis.repository.EmailMessageIndexMongoRepository
+import com.jervis.repository.EmailMessageIndexRepository
 import com.jervis.service.polling.PollingResult
 import com.jervis.service.polling.PollingStateService
 import com.jervis.types.ProjectId
@@ -28,7 +28,7 @@ import java.util.Properties
  */
 @Component
 class ImapPollingHandler(
-    repository: EmailMessageIndexMongoRepository,
+    repository: EmailMessageIndexRepository,
     private val pollingStateService: PollingStateService,
 ) : EmailPollingHandlerBase(repository) {
     override fun canHandle(connectionDocument: ConnectionDocument): Boolean =

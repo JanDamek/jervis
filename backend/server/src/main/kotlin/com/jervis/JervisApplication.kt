@@ -1,7 +1,6 @@
 package com.jervis
 
 import com.jervis.configuration.YamlPropertySourceFactory
-import com.jervis.configuration.prompts.PromptsConfiguration
 import com.jervis.configuration.prompts.ProviderCapabilitiesService
 import com.jervis.configuration.properties.ArangoProperties
 import com.jervis.configuration.properties.BackgroundProperties
@@ -26,7 +25,6 @@ import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRep
 @SpringBootApplication
 @EnableReactiveMongoRepositories(basePackages = ["com.jervis"])
 @EnableConfigurationProperties(
-    PromptsConfiguration::class,
     DataRootProperties::class,
     LinkIndexingProperties::class,
     EndpointProperties::class,
@@ -44,10 +42,7 @@ import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRep
     PollingProperties::class,
 )
 @PropertySource(
-    value = [
-        "classpath:prompts.yaml", "classpath:models-config.yaml",
-        "classpath:pending-tasks-goals.yaml",
-    ],
+    value = ["classpath:models-config.yaml"],
     factory = YamlPropertySourceFactory::class,
 )
 class JervisApplication

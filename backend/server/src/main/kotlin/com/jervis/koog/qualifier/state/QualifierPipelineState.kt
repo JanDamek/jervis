@@ -1,7 +1,7 @@
 package com.jervis.koog.qualifier.state
 
 import com.jervis.domain.atlassian.AttachmentMetadata
-import com.jervis.entity.PendingTaskDocument
+import com.jervis.entity.TaskDocument
 import com.jervis.koog.qualifier.types.ContentType
 import com.jervis.koog.qualifier.types.ContentTypeDetection
 import com.jervis.koog.qualifier.types.ExtractionResult
@@ -104,8 +104,7 @@ data class QualifierPipelineState(
     /**
      * Update metrics.
      */
-    fun withMetrics(updater: (ProcessingMetrics) -> ProcessingMetrics): QualifierPipelineState =
-        copy(metrics = updater(metrics))
+    fun withMetrics(updater: (ProcessingMetrics) -> ProcessingMetrics): QualifierPipelineState = copy(metrics = updater(metrics))
 
     companion object {
         /**
@@ -117,7 +116,7 @@ data class QualifierPipelineState(
          * @param task Pending task document
          * @return Initial pipeline state with empty/default values
          */
-        fun initial(task: PendingTaskDocument): QualifierPipelineState =
+        fun initial(task: TaskDocument): QualifierPipelineState =
             QualifierPipelineState(
                 taskMeta =
                     TaskMetadata(

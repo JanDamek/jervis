@@ -1,18 +1,17 @@
 package com.jervis.mapper
 
 import com.jervis.dto.ScheduledTaskDto
-import com.jervis.entity.ScheduledTaskDocument
-import org.bson.types.ObjectId
+import com.jervis.entity.TaskDocument
 import java.time.Instant
 
-fun ScheduledTaskDocument.toDto(): ScheduledTaskDto =
+fun TaskDocument.toDto(): ScheduledTaskDto =
     ScheduledTaskDto(
         id = this.id.toString(),
         clientId = this.clientId.toString(),
         projectId = this.projectId?.toString(),
         content = this.content,
         taskName = this.taskName,
-        scheduledAt = this.scheduledAt.toEpochMilli(),
+        scheduledAt = this.scheduledAt?.toEpochMilli() ?: Instant.now().toEpochMilli(),
         cronExpression = this.cronExpression,
         correlationId = this.correlationId,
     )

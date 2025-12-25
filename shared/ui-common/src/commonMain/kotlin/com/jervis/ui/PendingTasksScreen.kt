@@ -1,17 +1,42 @@
 package com.jervis.ui
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.PendingTaskDto
-import com.jervis.dto.PendingTaskStateEnum
-import com.jervis.dto.PendingTaskTypeEnum
+import com.jervis.dto.TaskStateEnum
+import com.jervis.dto.TaskTypeEnum
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.JTopBar
 import kotlinx.coroutines.launch
@@ -33,8 +58,8 @@ fun PendingTasksScreen(
     var selectedTaskType by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedState by rememberSaveable { mutableStateOf<String?>(null) }
 
-    val taskTypes = remember { PendingTaskTypeEnum.values().map { it.name } }
-    val taskStates = remember { PendingTaskStateEnum.values().map { it.name } }
+    val taskTypes = remember { TaskTypeEnum.values().map { it.name } }
+    val taskStates = remember { TaskStateEnum.values().map { it.name } }
 
     fun load() {
         scope.launch {
@@ -99,16 +124,19 @@ fun PendingTasksScreen(
                         com.jervis.ui.design
                             .JCenteredLoading()
                     }
+
                     error != null -> {
                         com.jervis.ui.design.JErrorState(
                             message = "Failed to load: $error",
                             onRetry = { load() },
                         )
                     }
+
                     tasks.isEmpty() -> {
                         com.jervis.ui.design
                             .JEmptyState(message = "No pending tasks")
                     }
+
                     else -> {
                         LazyColumn(modifier = Modifier.fillMaxSize().padding(12.dp)) {
                             items(tasks) { task ->

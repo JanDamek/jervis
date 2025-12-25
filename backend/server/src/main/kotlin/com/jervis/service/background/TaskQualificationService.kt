@@ -3,11 +3,9 @@ package com.jervis.service.background
 import com.jervis.configuration.prompts.ProviderCapabilitiesService
 import com.jervis.configuration.properties.KoogProperties
 import com.jervis.domain.model.ModelProviderEnum
-import com.jervis.dto.PendingTaskTypeEnum
-import com.jervis.entity.PendingTaskDocument
+import com.jervis.dto.TaskTypeEnum
+import com.jervis.entity.TaskDocument
 import com.jervis.koog.qualifier.KoogQualifierAgent
-import com.jervis.service.prompts.PromptRepository
-import com.jervis.service.text.TikaTextExtractionService
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.catch
@@ -23,16 +21,14 @@ import org.springframework.stereotype.Service
  *
  * SINGLETON GUARANTEE:
  * - Only ONE instance of processAllQualifications() can run at a time
- * - Uses atomic flag to prevent concurrent execution
- * - This ensures qualifier agent runs exactly once per application instance
+ * - Uses an atomic flag to prevent concurrent execution
+ * - This ensures the qualifier agent runs exactly once per application instance
  */
 @Service
 class TaskQualificationService(
-    private val pendingTaskService: PendingTaskService,
+    private val taskService: TaskService,
     private val koogQualifierAgent: KoogQualifierAgent,
     private val providerCapabilitiesService: ProviderCapabilitiesService,
-    private val promptRepository: PromptRepository,
-    private val tikaTextExtractionService: TikaTextExtractionService,
     private val koogProperties: KoogProperties,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -59,7 +55,7 @@ class TaskQualificationService(
             val capabilities = providerCapabilitiesService.getProviderCapabilities(ModelProviderEnum.OLLAMA_QUALIFIER)
             val effectiveConcurrency = (capabilities.maxConcurrentRequests).coerceAtLeast(1)
 
-            pendingTaskService
+            taskService
                 .findTasksForQualification()
                 .buffer(effectiveConcurrency)
                 .flatMapMerge(concurrency = effectiveConcurrency) { task ->
@@ -73,10 +69,10 @@ class TaskQualificationService(
 
                                 if (isRetriable) {
                                     // Return to READY_FOR_QUALIFICATION for retry
-                                    pendingTaskService.returnToQueue(task.id, koogProperties.qualifierMaxRetries)
+                                    taskService.returnToQueue(task, koogProperties.qualifierMaxRetries)
                                 } else {
                                     // Non-retriable error - mark as ERROR
-                                    pendingTaskService.markAsError(task.id, e.message ?: "Unknown error")
+                                    taskService.markAsError(task, e.message ?: "Unknown error")
                                 }
                             }
                         emit(Unit)
@@ -87,24 +83,21 @@ class TaskQualificationService(
 
             logger.info { "QUALIFICATION_CYCLE_COMPLETE: Processing finished, releasing singleton lock" }
         } finally {
-            // ALWAYS release the lock, even if exception occurs
+            // ALWAYS release the lock, even if an exception occurs
             isQualificationRunning.set(false)
         }
     }
 
-    private suspend fun processOne(original: PendingTaskDocument) {
-        if (original.type == PendingTaskTypeEnum.DATA_PROCESSING) {
+    private suspend fun processOne(original: TaskDocument) {
+        if (original.type == TaskTypeEnum.DATA_PROCESSING) {
             logger.debug { "QUALIFICATION_SKIP: id=${original.id} type=${original.type} - data processing tasks bypass qualification" }
             return
         }
         val task =
-            pendingTaskService.tryClaimForQualification(original.id) ?: run {
+            taskService.setToQualifying(original) ?: run {
                 logger.debug { "QUALIFICATION_SKIP: id=${original.id} - task already claimed" }
                 return
             }
-
-        val extractionGoal = promptRepository.goals[original.type]
-        require(extractionGoal != null) { "No extraction goal found for: ${original.type}" }
 
         val result = koogQualifierAgent.run(task = task)
 
@@ -123,7 +116,6 @@ class TaskQualificationService(
             message.contains("doesn't match any condition on available edges", ignoreCase = true) ||
             message.contains("stuck in node", ignoreCase = true) ||
             e is java.net.SocketTimeoutException ||
-            e is java.net.SocketException ||
-            e is java.net.ConnectException
+            e is java.net.SocketException
     }
 }

@@ -4,7 +4,7 @@ import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.entity.email.EmailAttachment
 import com.jervis.entity.email.EmailMessageIndexDocument
-import com.jervis.repository.EmailMessageIndexMongoRepository
+import com.jervis.repository.EmailMessageIndexRepository
 import com.jervis.service.polling.PollingResult
 import com.jervis.service.polling.handler.PollingContext
 import com.jervis.service.polling.handler.PollingHandler
@@ -32,7 +32,7 @@ import java.time.Instant
  * - Message fetching
  */
 abstract class EmailPollingHandlerBase(
-    protected val repository: EmailMessageIndexMongoRepository,
+    protected val repository: EmailMessageIndexRepository,
 ) : PollingHandler {
     protected val logger = KotlinLogging.logger {}
 

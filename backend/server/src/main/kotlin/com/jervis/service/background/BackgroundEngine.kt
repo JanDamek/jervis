@@ -1,14 +1,11 @@
 package com.jervis.service.background
 
 import com.jervis.configuration.properties.BackgroundProperties
-import com.jervis.dto.PendingTaskStateEnum
-import com.jervis.dto.PendingTaskTypeEnum
-import com.jervis.entity.PendingTaskDocument
-import com.jervis.repository.ScheduledTaskMongoRepository
+import com.jervis.dto.TaskStateEnum
+import com.jervis.entity.TaskDocument
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.debug.DebugService
 import com.jervis.service.notification.ErrorNotificationsPublisher
-import com.jervis.service.scheduling.TaskManagementService
 import com.jervis.service.task.UserTaskService
 import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
@@ -19,19 +16,16 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.time.delay
 import kotlinx.coroutines.withTimeout
 import mu.KotlinLogging
+import org.springframework.context.annotation.Profile
 import org.springframework.core.annotation.Order
-import org.springframework.scheduling.support.CronExpression
 import org.springframework.stereotype.Service
 import java.time.Duration
 import java.time.Instant
-import java.time.ZoneId
-import java.time.ZonedDateTime
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -40,7 +34,7 @@ import java.util.concurrent.atomic.AtomicReference
  * NEW ARCHITECTURE (Graph-Based Routing):
  * - Qualifier structures data → routes to DONE or READY_FOR_GPU
  * - GPU tasks processed only during idle time (no user requests)
- * - Preemption: User requests immediately interrupt background tasks
+ * - Preemption: User requests to immediately interrupt background tasks
  *
  * THREE INDEPENDENT LOOPS:
  * 1. Qualification loop (CPU) - runs continuously, checks DB every 30s
@@ -51,7 +45,7 @@ import java.util.concurrent.atomic.AtomicReference
  *    - Only runs when no active user requests (checked via LlmLoadMonitor)
  *    - Process READY_FOR_GPU tasks through KoogWorkflowAgent
  *    - Loads TaskMemory context from Qualifier for efficient execution
- *    - Preemption: Interrupted immediately when user request arrives
+ *    - Preemption: Interrupted immediately when a user request arrives
  *
  * 3. Scheduler loop - dispatches scheduled tasks 10 minutes before the scheduled time
  *
@@ -68,16 +62,15 @@ import java.util.concurrent.atomic.AtomicReference
  */
 @Service
 @Order(10) // Start after schema initialization
+@Profile("!cli")
 class BackgroundEngine(
     private val llmLoadMonitor: LlmLoadMonitor,
-    private val pendingTaskService: PendingTaskService,
+    private val taskService: TaskService,
     private val taskQualificationService: TaskQualificationService,
     private val agentOrchestrator: AgentOrchestratorService,
     private val backgroundProperties: BackgroundProperties,
     private val errorNotificationsPublisher: ErrorNotificationsPublisher,
     private val debugService: DebugService,
-    private val scheduledTaskRepository: ScheduledTaskMongoRepository,
-    private val taskManagementService: TaskManagementService,
     private val userTaskService: UserTaskService,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -92,7 +85,9 @@ class BackgroundEngine(
     private val schedulerAdvanceMinutes = 10L
 
     // Atomic flag to ensure @PostConstruct is called only once
-    private val isInitialized = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val isInitialized =
+        java.util.concurrent.atomic
+            .AtomicBoolean(false)
 
     @PostConstruct
     fun start() {
@@ -100,7 +95,7 @@ class BackgroundEngine(
         if (!isInitialized.compareAndSet(false, true)) {
             logger.error {
                 "BackgroundEngine.start() called multiple times! This should never happen. " +
-                "Ignoring duplicate initialization to prevent multiple qualifier agent instances."
+                    "Ignoring duplicate initialization to prevent multiple qualifier agent instances."
             }
             return
         }
@@ -163,21 +158,21 @@ class BackgroundEngine(
     }
 
     /**
-     * Qualification loop - runs continuously on CPU, independent of the GPU state.
-     * Processes the entire Flow of tasks needing qualification using concurrency limit.
-     * Simple: load Flow, process all with semaphore, wait the 30s if nothing, repeat.
-     *
-     * SINGLETON GUARANTEE:
-     * - This method is called ONLY ONCE from @PostConstruct start()
-     * - BackgroundEngine is a @Service singleton managed by Spring
-     * - isInitialized flag prevents duplicate start() calls (defensive)
-     * - processAllQualifications() has its own singleton lock (isQualificationRunning)
-     * - Each task uses tryClaimForQualification() atomic operation
-     *
-     * RESULT: Only ONE qualifier agent instance runs per application instance, guaranteed at 3 levels:
-     * 1. Spring @Service singleton
-     * 2. BackgroundEngine.isInitialized flag
-     * 3. TaskQualificationService.isQualificationRunning flag
+     * Qualification loop - continuously operates on the CPU, unaffected by the GPU's status.
+     It handles the entire sequence of tasks requiring qualification by employing a concurrency limit.
+     The process is straightforward: load the task sequence, process all tasks with semaphore, pause for 30 seconds if no tasks are pending, and then restart.
+
+     SINGLETON GUARANTEE:
+     - This function is invoked EXCLUSIVELY ONCE from the @PostConstruct start() method.
+     - BackgroundEngine is a singleton designated as a @Service by Spring.
+     - The isInitialized flag ensures that start() is not executed multiple times (as a safeguard).
+     - processAllQualifications() incorporates its own singleton lock (isQualificationRunning).
+     - Every task uses the setToQualifying() atomic operation.
+
+     OUTCOME: A maximum of ONE qualifier agent operates per application instance, assured at three distinct levels:
+     1. Spring's @Service singleton management.
+     2. The BackgroundEngine.isInitialized flag.
+     3. The TaskQualificationService.isQualificationRunning flag.
      */
     private suspend fun runQualificationLoop() {
         logger.info { "Qualification loop entering main loop (SINGLETON GUARANTEED at 3 levels)..." }
@@ -232,8 +227,8 @@ class BackgroundEngine(
 
                 if (canRunBackgroundTask) {
                     val task =
-                        pendingTaskService
-                            .findTasksByState(PendingTaskStateEnum.DISPATCHED_GPU)
+                        taskService
+                            .findTasksByState(TaskStateEnum.DISPATCHED_GPU)
                             .firstOrNull()
 
                     if (task != null) {
@@ -250,7 +245,7 @@ class BackgroundEngine(
 
                         executeTask(task)
                         logger.info { "GPU_TASK_FINISHED: id=${task.id} correlationId=${task.correlationId}" }
-                        // Task finished - immediately check for next task without delay
+                        // Task finished - immediately check for the next task without delay
                     } else {
                         logger.debug { "No qualified tasks found, sleeping 30s..." }
                         delay(30_000)
@@ -273,14 +268,14 @@ class BackgroundEngine(
         }
     }
 
-    private suspend fun executeTask(task: PendingTaskDocument) {
+    private suspend fun executeTask(task: TaskDocument) {
         val taskJob =
             scope.launch {
                 logger.info { "GPU_EXECUTION_START: id=${task.id} correlationId=${task.correlationId} type=${task.type}" }
 
                 try {
                     agentOrchestrator.run(task, "")
-                    pendingTaskService.deleteTask(task.id)
+                    taskService.deleteTask(task)
                     logger.info { "GPU_EXECUTION_SUCCESS: id=${task.id} correlationId=${task.correlationId}" }
 
                     consecutiveFailures = 0
@@ -337,26 +332,14 @@ class BackgroundEngine(
                                 correlationId = task.id.toString(),
                             )
                             logger.info { "Published LLM error to notifications for task ${task.id}" }
-                            pendingTaskService.deleteTask(task.id)
+                            taskService.deleteTask(task)
                         } else {
                             userTaskService.failAndEscalateToUserTask(task, reason = errorType, error = e)
-                            val possibleState =
-                                setOf(
-                                    PendingTaskStateEnum.QUALIFYING,
-                                    PendingTaskStateEnum.DISPATCHED_GPU,
-                                    PendingTaskStateEnum.READY_FOR_GPU,
-                                )
-                            possibleState.forEach { state ->
-                                pendingTaskService.updateState(
-                                    task.id,
-                                    state,
-                                    PendingTaskStateEnum.ERROR,
-                                )
-                            }
+                            taskService.updateState(task, TaskStateEnum.ERROR)
                         }
                     } catch (esc: Exception) {
                         logger.error(esc) { "Failed to handle task error for ${task.id}" }
-                        pendingTaskService.deleteTask(task.id)
+                        taskService.deleteTask(task)
                     }
 
                     if (backoffDelay > 0) {
@@ -390,63 +373,8 @@ class BackgroundEngine(
 
                 logger.debug { "Scheduler: checking tasks scheduled between $now and $windowEnd" }
 
-                val upcomingTasks =
-                    scheduledTaskRepository
-                        .findTasksScheduledBetween(now, windowEnd)
-                        .toList()
-
-                if (upcomingTasks.isNotEmpty()) {
-                    logger.info { "Scheduler: found ${upcomingTasks.size} upcoming task(s) to dispatch" }
-
-                    upcomingTasks.forEach { task ->
-                        try {
-                            pendingTaskService.createTask(
-                                taskType = PendingTaskTypeEnum.SCHEDULED_PROCESSING,
-                                content = task.content,
-                                clientId = task.clientId,
-                                projectId = task.projectId,
-                                correlationId = task.correlationId,
-                                state = PendingTaskStateEnum.READY_FOR_GPU,
-                                sourceUrn = task.sourceUrn,
-                            )
-
-                            if (task.cronExpression != null) {
-                                try {
-                                    val cron = CronExpression.parse(task.cronExpression)
-                                    val nextOccurrence =
-                                        cron.next(ZonedDateTime.ofInstant(task.scheduledAt, ZoneId.systemDefault()))
-
-                                    if (nextOccurrence != null) {
-                                        taskManagementService.updateScheduledTime(task.id, nextOccurrence.toInstant())
-                                        logger.info {
-                                            "Scheduler: dispatched recurring task '${task.taskName}', next occurrence: $nextOccurrence"
-                                        }
-                                    } else {
-                                        logger.warn {
-                                            "Scheduler: no next occurrence for recurring task '${task.taskName}', deleting"
-                                        }
-                                        scheduledTaskRepository.deleteById(task.id)
-                                    }
-                                } catch (e: Exception) {
-                                    logger.error(e) {
-                                        "Scheduler: failed to parse cron expression '${task.cronExpression}' for task '${task.taskName}', deleting task"
-                                    }
-                                    scheduledTaskRepository.deleteById(task.id)
-                                }
-                            } else {
-                                // One-time task - delete after dispatch
-                                scheduledTaskRepository.deleteById(task.id)
-                                logger.info {
-                                    "Scheduler: dispatched one-time task '${task.taskName}' (scheduled for ${task.scheduledAt}), task deleted"
-                                }
-                            }
-                        } catch (e: Exception) {
-                            logger.error(e) { "Scheduler: failed to dispatch task ${task.id}" }
-                        }
-                    }
-                } else {
-                    logger.debug { "Scheduler: no upcoming tasks in next $schedulerAdvanceMinutes minutes" }
-                }
+                // TODO implement scheduled task to execute
+                logger.debug { "Scheduler: no upcoming tasks in next $schedulerAdvanceMinutes minutes" }
 
                 delay(advanceWindow.toMillis())
             } catch (e: CancellationException) {

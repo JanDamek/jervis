@@ -1,12 +1,13 @@
 package com.jervis.service.scheduling
 
-import com.jervis.entity.ScheduledTaskDocument
-import com.jervis.repository.ScheduledTaskMongoRepository
+import com.jervis.dto.TaskTypeEnum
+import com.jervis.entity.TaskDocument
+import com.jervis.repository.TaskRepository
 import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
+import com.jervis.types.TaskId
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
-import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 import java.time.Instant
 
@@ -16,7 +17,7 @@ import java.time.Instant
  */
 @Service
 class TaskSchedulingService(
-    private val scheduledTaskRepository: ScheduledTaskMongoRepository,
+    private val scheduledTaskRepository: TaskRepository,
     private val taskManagementService: TaskManagementService,
 ) {
     companion object {
@@ -34,7 +35,7 @@ class TaskSchedulingService(
         scheduledAt: Instant,
         cronExpression: String? = null,
         correlationId: String? = null,
-    ): ScheduledTaskDocument =
+    ): TaskDocument =
         taskManagementService.scheduleTask(
             clientId = clientId,
             projectId = projectId,
@@ -48,15 +49,15 @@ class TaskSchedulingService(
     /**
      * Cancel a task
      */
-    suspend fun cancelTask(taskId: ObjectId): Boolean = taskManagementService.cancelTask(taskId)
+    suspend fun cancelTask(taskId: TaskId): Boolean = taskManagementService.cancelTask(taskId)
 
-    suspend fun findById(taskId: ObjectId): ScheduledTaskDocument? = scheduledTaskRepository.findById(taskId)
+    suspend fun findById(taskId: TaskId): TaskDocument? = scheduledTaskRepository.findById(taskId)
 
-    suspend fun listAllTasks(): List<ScheduledTaskDocument> = scheduledTaskRepository.findAll().toList()
+    suspend fun listAllTasks(): List<TaskDocument> = scheduledTaskRepository.findAll().toList()
 
-    suspend fun listTasksForProject(projectId: ObjectId): List<ScheduledTaskDocument> =
-        scheduledTaskRepository.findByProjectId(projectId).toList()
+    suspend fun listTasksForProject(projectId: ProjectId): List<TaskDocument> =
+        scheduledTaskRepository.findByProjectIdAndType(projectId, TaskTypeEnum.SCHEDULED_TASK).toList()
 
-    suspend fun listTasksForClient(clientId: ObjectId): List<ScheduledTaskDocument> =
-        scheduledTaskRepository.findByClientId(clientId).toList()
+    suspend fun listTasksForClient(clientId: ClientId): List<TaskDocument> =
+        scheduledTaskRepository.findByClientIdAndType(clientId, TaskTypeEnum.SCHEDULED_TASK).toList()
 }

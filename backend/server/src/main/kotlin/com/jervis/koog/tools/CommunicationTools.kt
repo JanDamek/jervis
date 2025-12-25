@@ -3,7 +3,7 @@ package com.jervis.koog.tools
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
-import com.jervis.entity.PendingTaskDocument
+import com.jervis.entity.TaskDocument
 import mu.KotlinLogging
 
 /**
@@ -17,7 +17,7 @@ import mu.KotlinLogging
  */
 @LLMDescription("Communication tools: send emails, Slack messages, Teams messages")
 class CommunicationTools(
-    private val taskContext: PendingTaskDocument,
+    private val taskContext: TaskDocument,
 ) : ToolSet {
     companion object {
         private val logger = KotlinLogging.logger {}

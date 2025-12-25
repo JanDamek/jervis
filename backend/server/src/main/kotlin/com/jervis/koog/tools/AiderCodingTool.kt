@@ -5,7 +5,7 @@ import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
 import com.jervis.common.client.IAiderClient
 import com.jervis.common.dto.CodingExecuteRequest
-import com.jervis.entity.PendingTaskDocument
+import com.jervis.entity.TaskDocument
 import mu.KotlinLogging
 
 /**
@@ -23,7 +23,7 @@ import mu.KotlinLogging
     "Local surgical code edits via Aider on the project's git workspace. Ideal for small fixes/refactors in specific files.",
 )
 class AiderCodingTool(
-    private val task: PendingTaskDocument,
+    private val task: TaskDocument,
     private val engine: IAiderClient,
 ) : ToolSet {
     companion object {
@@ -62,7 +62,7 @@ class AiderCodingTool(
         return buildString {
             appendLine("AIDER_RESULT: success=${res.success}")
             appendLine("summary: ${res.summary}")
-            res.details?.let { appendLine("details:\n" + it.take(5000)) }
+            res.details?.let { appendLine("details:\n$it") }
         }
     }
 }

@@ -1,0 +1,26 @@
+spring:
+  main:
+    banner-mode: off
+    web-application-type: none  # Disable web server for CLI mode
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.web.reactive.ReactiveWebServerFactoryAutoConfiguration
+      - org.springframework.boot.autoconfigure.web.reactive.WebFluxAutoConfiguration
+
+# CLI doesn't need file logging - disable it
+logging.file.name: ""
+
+logging:
+  level:
+    root: INFO
+    com.jervis: DEBUG
+    com.jervis.cli: DEBUG
+    ai.koog: INFO
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %highlight(%-5level) %cyan(%logger{36}) - %msg%n"
+
+# CLI-specific settings (override main application.yml if needed)
+jervis:
+  # Use same Koog settings as main application
+  koog:
+    max-iterations: 50

@@ -1,10 +1,10 @@
 package com.jervis.service.email
 
 import com.jervis.domain.PollingStatusEnum
-import com.jervis.dto.PendingTaskTypeEnum
+import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.email.EmailMessageIndexDocument
-import com.jervis.repository.EmailMessageIndexMongoRepository
-import com.jervis.service.background.PendingTaskService
+import com.jervis.repository.EmailMessageIndexRepository
+import com.jervis.service.background.TaskService
 import com.jervis.service.text.TikaTextExtractionService
 import com.jervis.types.SourceUrn
 import jakarta.annotation.PostConstruct
@@ -15,6 +15,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import mu.KotlinLogging
+import org.springframework.context.annotation.Profile
 import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Service
 
@@ -37,9 +38,10 @@ private val logger = KotlinLogging.logger {}
  */
 @Service
 @Order(11) // Start after JiraContinuousIndexer
+@Profile("!cli")
 class EmailContinuousIndexer(
-    private val repository: EmailMessageIndexMongoRepository,
-    private val pendingTaskService: PendingTaskService,
+    private val repository: EmailMessageIndexRepository,
+    private val taskService: TaskService,
     private val tikaTextExtractionService: TikaTextExtractionService,
 ) {
     private val supervisor = SupervisorJob()
@@ -152,8 +154,8 @@ class EmailContinuousIndexer(
                     append("- **Client ID:** ${doc.clientId}\n")
                 }
 
-            pendingTaskService.createTask(
-                taskType = PendingTaskTypeEnum.EMAIL_PROCESSING,
+            taskService.createTask(
+                taskType = TaskTypeEnum.EMAIL_PROCESSING,
                 content = emailContent,
                 clientId = doc.clientId,
                 correlationId = "email:${doc.id}",

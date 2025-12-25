@@ -3,10 +3,11 @@ package com.jervis.controller.api
 import com.jervis.dto.user.TaskRoutingMode
 import com.jervis.dto.user.UserTaskCountDto
 import com.jervis.dto.user.UserTaskDto
-import com.jervis.entity.UserTaskDocument
+import com.jervis.entity.TaskDocument
 import com.jervis.service.IUserTaskService
 import com.jervis.service.task.UserTaskService
 import com.jervis.types.ClientId
+import com.jervis.types.TaskId
 import kotlinx.coroutines.flow.toList
 import org.bson.types.ObjectId
 import org.springframework.web.bind.annotation.GetMapping
@@ -45,8 +46,7 @@ class UserTaskRestController(
     override suspend fun cancel(
         @RequestParam taskId: String,
     ): UserTaskDto {
-        val tid = ObjectId(taskId)
-        val updated = userTaskService.cancelTask(tid)
+        val updated = userTaskService.cancelTask(TaskId.fromString(taskId))
         return updated.toDto()
     }
 
@@ -56,25 +56,20 @@ class UserTaskRestController(
         @RequestParam routingMode: TaskRoutingMode,
         @RequestBody additionalInput: String?,
     ): UserTaskDto {
-        // TODO: Implement full routing logic as per docs/USER_TASK_TO_AGENT_FLOW.md
-        // For now, just return the task unchanged
-        val tid = ObjectId(taskId)
-        val task = userTaskService.getTaskById(tid) ?: throw IllegalArgumentException("Task not found")
+        val task =
+            userTaskService.getTaskById(TaskId.fromString(taskId)) ?: throw IllegalArgumentException("Task not found")
         return task.toDto()
     }
 }
 
-private fun UserTaskDocument.toDto(): UserTaskDto =
+private fun TaskDocument.toDto(): UserTaskDto =
     UserTaskDto(
         id = this.id.toString(),
-        title = this.title,
-        description = this.description,
-        priority = this.priority.name,
-        status = this.status.name,
-        dueDateEpochMillis = this.dueDate?.toEpochMilli(),
+        title = this.taskName,
+        description = this.content,
+        state = this.state.name,
         projectId = this.projectId?.toString(),
         clientId = this.clientId.toString(),
-        sourceType = this.sourceType.name,
         sourceUri = this.correlationId,
         createdAtEpochMillis = Instant.now().toEpochMilli(),
     )

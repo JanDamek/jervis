@@ -104,17 +104,15 @@ class SmartModelSelector(
      *
      * @param baseModelName Base model name (e.g., "qwen3-coder-tool:30b" or "qwen3-tool:30b")
      * @param inputContent The text content to process
-     * @param outputReserve Tokens to reserve for model output (default: 2000 tokens minimum)
      * @return LLModel configured for Koog framework with tier inserted into model name
      */
     fun selectModel(
-        baseModelName: String,
-        inputContent: String,
-        outputReserve: Int = MIN_OUTPUT_RESERVE,
+        baseModelName: BaseModelTypeEnum,
+        inputContent: String = "",
     ): LLModel {
         // Count actual tokens using BPE tokenizer (jtokkit)
-        val inputTokens = tokenCountingService.countTokens(inputContent)
-        val totalTokensNeeded = inputTokens + outputReserve
+        val inputTokens = if (inputContent.isNotBlank()) tokenCountingService.countTokens(inputContent) else 8196
+        val totalTokensNeeded = inputTokens + (inputTokens * 1.5).toInt().coerceAtLeast(2000)
 
         // Find smallest tier that fits
         val selectedTierK =
@@ -123,7 +121,7 @@ class SmartModelSelector(
             } ?: AVAILABLE_TIERS.last() // Fallback to max tier (256k)
 
         val contextLength = selectedTierK * 1024
-        val modelId = insertTierIntoModelName(baseModelName, selectedTierK)
+        val modelId = insertTierIntoModelName(baseModelName.modelName, selectedTierK)
 
         logger.debug {
             buildString {
@@ -131,7 +129,6 @@ class SmartModelSelector(
                 append("baseModel=$baseModelName | ")
                 append("inputChars=${inputContent.length} | ")
                 append("inputTokens=$inputTokens | ")
-                append("outputReserve=$outputReserve | ")
                 append("totalNeeded=$totalTokensNeeded | ")
                 append("selectedTier=${selectedTierK}k | ")
                 append("modelId=$modelId | ")
@@ -142,10 +139,25 @@ class SmartModelSelector(
         return LLModel(
             provider = LLMProvider.Ollama,
             id = modelId,
-            capabilities = listOf(LLMCapability.Tools, LLMCapability.Schema.JSON.Basic, LLMCapability.Temperature,
-                LLMCapability.ToolChoice, LLMCapability.Document),
-            contextLength = contextLength.toLong(), // MUST match Modelfile num_ctx!
+            capabilities =
+                listOf(
+                    LLMCapability.Tools,
+                    LLMCapability.Schema.JSON.Basic,
+                    LLMCapability.Temperature,
+                    LLMCapability.ToolChoice,
+                    LLMCapability.Document,
+                ),
+            contextLength = contextLength.toLong(),
         )
+    }
+
+    enum class BaseModelTypeEnum(
+        val modelName: String,
+    ) {
+        REASONING("qwen3-tool:30b"),
+        AGENT("qwen3-coder-tool:30b"),
+        PLANNER("qwen3-tool:14b"), // Lightweight model for planning
+        VL("qwen3-vl-tool:30b"),
     }
 
     /**
@@ -163,16 +175,9 @@ class SmartModelSelector(
         images: List<ImageMetadata>,
         outputReserve: Int = MIN_OUTPUT_RESERVE,
     ): LLModel {
-        // Count text tokens
         val textTokens = tokenCountingService.countTokens(textPrompt)
-
-        // Estimate image tokens
         val imageTokens = images.sumOf { it.estimateTokens() }
-
-        // Total tokens needed
         val totalTokensNeeded = textTokens + imageTokens + outputReserve
-
-        // Find smallest tier that fits
         val selectedTierK =
             AVAILABLE_TIERS.firstOrNull { tierK ->
                 (tierK * 1024) >= totalTokensNeeded

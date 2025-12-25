@@ -28,7 +28,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             // Common dependencies
-            api("com.jervis:common-dto:1.0.0")
+            api(project(":shared:common-dto"))
             api("de.jensklingenberg.ktorfit:ktorfit-lib:2.6.4")
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.datetime)

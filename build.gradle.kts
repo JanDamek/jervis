@@ -33,6 +33,7 @@ tasks.register("buildAll") {
         ":backend:service-aider:build",
         ":backend:service-coding-engine:build",
         ":backend:service-atlassian:build",
+        ":backend:koog-cli-tester:build",
         ":backend:server:build",
         ":apps:desktop:build",
         ":apps:mobile:build"
