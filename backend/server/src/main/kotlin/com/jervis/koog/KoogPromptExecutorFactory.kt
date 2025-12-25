@@ -24,7 +24,7 @@ class KoogPromptExecutorFactory(
      * Provider names: OLLAMA, OLLAMA_QUALIFIER, ANTHROPIC, OPENAI, GOOGLE
      */
     fun getExecutor(providerName: String): PromptExecutor {
-        logger.debug { "Getting PromptExecutor bean for provider=$providerName" }
+        logger.info { "Getting PromptExecutor bean for provider=$providerName" }
 
         return when (providerName) {
             "OLLAMA" -> ollamaPromptExecutor

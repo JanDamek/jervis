@@ -15,6 +15,8 @@ import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.agents.features.eventHandler.feature.EventHandler
 import ai.koog.prompt.dsl.Prompt
+import ai.koog.prompt.dsl.prompt
+import ai.koog.prompt.markdown.markdown
 import ai.koog.prompt.structure.StructuredResponse
 import com.jervis.configuration.properties.KoogProperties
 import com.jervis.domain.atlassian.shouldProcessWithVision
@@ -25,13 +27,8 @@ import com.jervis.graphdb.model.GraphNode
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.OllamaProviderSelector
 import com.jervis.koog.SmartModelSelector
-import com.jervis.koog.qualifier.types.ConfluenceExtractionOutput
 import com.jervis.koog.qualifier.types.ContentType
-import com.jervis.koog.qualifier.types.EmailExtractionOutput
-import com.jervis.koog.qualifier.types.GenericChunkingOutput
 import com.jervis.koog.qualifier.types.IndexingContext
-import com.jervis.koog.qualifier.types.JiraExtractionOutput
-import com.jervis.koog.qualifier.types.LogSummarizationOutput
 import com.jervis.koog.qualifier.types.VisionContext
 import com.jervis.koog.tools.KnowledgeStorageTools
 import com.jervis.koog.tools.content.ContentAnalysisTools
@@ -54,6 +51,7 @@ import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.nio.file.Files
+import java.security.MessageDigest
 import kotlin.io.path.writeBytes
 
 @Service
@@ -79,19 +77,54 @@ class KoogQualifierAgent(
     /**
      * NOTE:
      * Koog "structured request nodes" accept String input and return Result<StructuredResponse<T>>.
-     * To keep the pipeline strongly-typed without fighting the DSL, we keep a single mutable pipeline-context
-     * object per strategy instance (agent instance). This avoids the broken dummy-state loop from the old version.
+     * We keep a single mutable pipeline-context object per strategy instance (agent instance).
      */
     private data class PipelineCtx(
         var vision: VisionContext? = null,
         var contentType: ContentType? = null,
         var indexing: IndexingContext? = null,
+        var plan: IndexingPlan? = null,
     )
 
     @Serializable
     private data class ContentTypeDetection(
         val contentType: String,
         val reason: String,
+    )
+
+    /**
+     * LLM-produced indexing plan.
+     * - Kotlin is responsible for stable IDs/keys and persistence.
+     * - LLM is responsible for semantic chunk text + conceptual vertices/edges + associations.
+     */
+    @Serializable
+    private data class IndexingPlan(
+        val baseInfo: String,
+        val vertices: List<PlannedVertex> = emptyList(),
+        val edges: List<PlannedEdge> = emptyList(),
+        val chunks: List<PlannedChunk> = emptyList(),
+    )
+
+    @Serializable
+    private data class PlannedVertex(
+        val alias: String,
+        val type: String,
+        val label: String,
+    )
+
+    @Serializable
+    private data class PlannedEdge(
+        val from: String,
+        val to: String,
+        val relation: String,
+        val label: String? = null,
+    )
+
+    @Serializable
+    private data class PlannedChunk(
+        val content: String,
+        val vertexAliases: List<String> = emptyList(),
+        val tags: List<String> = emptyList(),
     )
 
     fun create(task: TaskDocument): AIAgent<String, String> {
@@ -154,19 +187,22 @@ class KoogQualifierAgent(
                     }
 
                     try {
+                        val visionContextText = buildVisionPromptContext(task = task, fullText = inputText)
                         val visionPrompt =
-                            ai.koog.prompt.dsl.prompt("jervis-vision-stage1") {
+                            prompt("jervis-vision-stage1") {
                                 system(
-                                    "Describe the attached images. Be factual. If something is unreadable, say so.",
+                                    "Describe ONLY what is visible in the attached images. Attachments may be screenshots (errors/UI), photos, charts/graphs, or scanned documents. Be factual. Do not summarize the provided text context; use it only to understand what the images relate to. If text in the image is unreadable, say so.",
                                 )
                                 user {
-                                    ai.koog.prompt.markdown.markdown {
-                                        +"Text context:"
+                                    markdown {
+                                        +"Context (condensed):"
                                         br()
-                                        +inputText
+                                        +visionContextText
                                         br()
                                         br()
-                                        +"Describe the images."
+                                        +"Describe ONLY what is visible in the images. "
+                                        +"Use the context only to understand what the images relate to. "
+                                        +"If text is unreadable, say so."
                                     }
                                     attachments {
                                         tmpFiles.forEach { (_, tmpPath) ->
@@ -284,19 +320,87 @@ class KoogQualifierAgent(
                 }
 
                 // ============================================================
-                // PHASE 2: TYPE-SPECIFIC EXTRACTION (Structured)
+                // PHASE 2: LLM BUILDS SEMANTIC CHUNKS + CONCEPT GRAPH (Structured)
+                // - Keep it GENERAL: works for EMAIL/JIRA/CONFLUENCE now, and can be extended.
+                // - Use small/simple structures (Lists + flat objects) to reduce retries.
                 // ============================================================
-                val nodePrepareExtractionPrompt by node<ContentType, String>(name = "🧩 Phase 2: Build Extraction Prompt") { type ->
+
+                fun buildIndexingPlanPrompt(type: ContentType): String {
                     val vctx = pipeline.vision ?: VisionContext(task.content, null, null, task.attachments)
 
-                    buildString {
-                        appendLine("You will extract structured information from the given content.")
-                        appendLine("Be strict, do not hallucinate. If unknown, use empty string / empty list / null.")
-                        appendLine()
+                    val typeSpecificHints =
+                        when (type) {
+                            ContentType.EMAIL -> {
+                                """
+                                Hints for EMAIL:
+                                - Prefer vertices like: company_sender, person_recipient, order_12345, status_delayed, location_store.
+                                - Chunks should capture: what happened, what will happen next, important facts (order/items/prices) if present.
+                                """.trimIndent()
+                            }
 
+                            ContentType.JIRA -> {
+                                """
+                                Hints for JIRA:
+                                - Prefer vertices like: issue_SDB_1234, status_in_progress, assignee_john_doe, component_auth, error_nullpointer.
+                                - If screenshots are present, treat them as evidence of UI/error state.
+                                - Chunks should capture: the change/request, key fields, reproduction/impact, next action.
+                                """.trimIndent()
+                            }
+
+                            ContentType.CONFLUENCE -> {
+                                """
+                                Hints for CONFLUENCE:
+                                - Prefer vertices like: page_title_x, system_name, component_x, decision_y, diagram_architecture.
+                                - If charts/diagrams are present, treat them as evidence of structure/metrics.
+                                - Chunks should capture: topic, decisions, key concepts, procedures.
+                                """.trimIndent()
+                            }
+
+                            ContentType.LOG -> {
+                                """
+                                Hints for LOG:
+                                - Prefer vertices like: system_service_name, error_type, endpoint_x, component_y, timeframe.
+                                - Chunks should capture: failure summary, timeline, suspected cause, affected area.
+                                """.trimIndent()
+                            }
+
+                            ContentType.GENERIC -> {
+                                """
+                                Hints for GENERIC:
+                                - Prefer vertices for the most important named entities and concepts.
+                                - Chunks should be thematic blocks that remain useful out of context.
+                                """.trimIndent()
+                            }
+                        }
+
+                    return buildString {
+                        appendLine("You are creating an INDEXING PLAN for RAG + Graph.")
+                        appendLine("Kotlin will generate stable IDs/keys and persist your plan.")
+                        appendLine("You MUST provide semantic content; do not output boilerplate or meaningless separators.")
+                        appendLine()
+                        appendLine("Rules:")
+                        appendLine("- baseInfo: 1-2 sentences describing what this source is about.")
+                        appendLine(
+                            "- vertices: 2-8 conceptual entities relevant for retrieval (company/person/order/issue/error/system/etc).",
+                        )
+                        appendLine("  Each vertex has:")
+                        appendLine("    * alias: stable, human-readable identifier (lowercase snake_case).")
+                        appendLine("    * type: lowercase category like 'company','person','order','issue','status','system','error'.")
+                        appendLine("    * label: short human label.")
+                        appendLine(
+                            "- edges: 0-12 relations between vertex aliases. relation is lowercase like 'sent','mentions','has_status','affects','caused_by'.",
+                        )
+                        appendLine("- chunks: 3-10 chunks. Each chunk is 1-6 sentences, self-contained, no headers/boilerplate.")
+                        appendLine(
+                            "  Each chunk lists vertexAliases it is about (0..n) and optional tags like 'summary','facts','action','error'.",
+                        )
+                        appendLine("- Be factual. If unknown, omit it.")
+                        appendLine()
                         appendLine("CONTENT TYPE: $type")
                         appendLine()
-                        appendLine("CONTENT:")
+                        appendLine(typeSpecificHints)
+                        appendLine()
+                        appendLine("SOURCE CONTENT (raw):")
                         appendLine(vctx.originalText)
 
                         vctx.generalVisionSummary?.let {
@@ -304,295 +408,332 @@ class KoogQualifierAgent(
                             appendLine("VISUAL CONTEXT (general):")
                             appendLine(it)
                         }
-
-                        appendLine()
-                        appendLine(
-                            when (type) {
-                                ContentType.EMAIL -> {
-                                    "Extract: sender, recipients[], subject, classification"
-                                }
-
-                                ContentType.JIRA -> {
-                                    "Extract: key, status, type, assignee, reporter, epic?, sprint?, changeDescription"
-                                }
-
-                                ContentType.CONFLUENCE -> {
-                                    "Extract: author, title, topic"
-                                }
-
-                                ContentType.LOG -> {
-                                    "Summarize: summary, keyEvents[], criticalDetails[]"
-                                }
-
-                                ContentType.GENERIC -> {
-                                    "Chunk: baseInfo, chunks[] (semantic blocks, no tiny fragments)"
-                                }
-                            },
-                        )
                     }
                 }
 
-                val nodeExtractEmail by nodeLLMRequestStructured<EmailExtractionOutput>(
-                    name = "📧 Phase 2: Extract EMAIL",
-                    examples =
-                        listOf(
-                            EmailExtractionOutput(
-                                sender = "john.doe@example.com",
-                                recipients = listOf("support@example.com"),
-                                subject = "Bug Report: Login fails on mobile",
-                                classification = "Bug report",
+                val planningEmailSubgraph by subgraph<ContentType, Result<StructuredResponse<IndexingPlan>>>(
+                    name = "🧠 Phase 2: Plan EMAIL",
+                ) {
+                    val nodeBuildPrompt by node<ContentType, String>(name = "Build EMAIL plan prompt") { ct ->
+                        buildIndexingPlanPrompt(
+                            ct,
+                        )
+                    }
+                    val nodePlan by nodeLLMRequestStructured<IndexingPlan>(
+                        name = "Plan EMAIL indexing",
+                        examples =
+                            listOf(
+                                IndexingPlan(
+                                    baseInfo = "Email from an e-shop notifying about a delayed order and next steps.",
+                                    vertices =
+                                        listOf(
+                                            PlannedVertex(alias = "company_alza", type = "company", label = "Alza.cz"),
+                                            PlannedVertex(
+                                                alias = "order_530798957",
+                                                type = "order",
+                                                label = "Order 530798957",
+                                            ),
+                                            PlannedVertex(
+                                                alias = "status_delayed_pickup",
+                                                type = "status",
+                                                label = "Delayed pickup",
+                                            ),
+                                        ),
+                                    edges =
+                                        listOf(
+                                            PlannedEdge(
+                                                from = "company_alza",
+                                                to = "order_530798957",
+                                                relation = "mentions",
+                                            ),
+                                            PlannedEdge(
+                                                from = "order_530798957",
+                                                to = "status_delayed_pickup",
+                                                relation = "has_status",
+                                            ),
+                                        ),
+                                    chunks =
+                                        listOf(
+                                            PlannedChunk(
+                                                content = "The seller informs the customer that the order will be delayed and not ready for pickup on time.",
+                                                vertexAliases =
+                                                    listOf(
+                                                        "company_alza",
+                                                        "order_530798957",
+                                                        "status_delayed_pickup",
+                                                    ),
+                                                tags = listOf("summary"),
+                                            ),
+                                            PlannedChunk(
+                                                content = "The seller will provide an updated pickup or delivery time after checking additional information.",
+                                                vertexAliases = listOf("company_alza", "order_530798957"),
+                                                tags = listOf("next_steps"),
+                                            ),
+                                        ),
+                                ),
                             ),
-                        ),
-                )
+                    )
 
-                val nodeExtractJira by nodeLLMRequestStructured<JiraExtractionOutput>(
-                    name = "🎫 Phase 2: Extract JIRA",
-                    examples =
-                        listOf(
-                            JiraExtractionOutput(
-                                key = "SDB-2080",
-                                status = "In Progress",
-                                type = "Bug",
-                                assignee = "John Doe",
-                                reporter = "Jane Smith",
-                                epic = "EPIC-123",
-                                sprint = "Sprint 42",
-                                changeDescription = "Status changed from Open to In Progress; added reproduction steps.",
-                            ),
-                        ),
-                )
+                    edge(nodeStart forwardTo nodeBuildPrompt)
+                    edge(nodeBuildPrompt forwardTo nodePlan)
+                    edge(nodePlan forwardTo nodeFinish)
+                }
 
-                val nodeExtractConfluence by nodeLLMRequestStructured<ConfluenceExtractionOutput>(
-                    name = "📄 Phase 2: Extract CONFLUENCE",
-                    examples =
-                        listOf(
-                            ConfluenceExtractionOutput(
-                                author = "John Doe",
-                                title = "API Documentation",
-                                topic = "REST endpoints and authentication",
+                val planningJiraSubgraph by subgraph<ContentType, Result<StructuredResponse<IndexingPlan>>>(
+                    name = "🧠 Phase 2: Plan JIRA",
+                ) {
+                    val nodeBuildPrompt by node<ContentType, String>(name = "Build JIRA plan prompt") { ct ->
+                        buildIndexingPlanPrompt(
+                            ct,
+                        )
+                    }
+                    val nodePlan by nodeLLMRequestStructured<IndexingPlan>(
+                        name = "Plan JIRA indexing",
+                        examples =
+                            listOf(
+                                IndexingPlan(
+                                    baseInfo = "Jira issue describing a bug and its current status with next action.",
+                                    vertices =
+                                        listOf(
+                                            PlannedVertex(alias = "issue_sdb_2080", type = "issue", label = "SDB-2080"),
+                                            PlannedVertex(
+                                                alias = "status_in_progress",
+                                                type = "status",
+                                                label = "In Progress",
+                                            ),
+                                            PlannedVertex(
+                                                alias = "component_login",
+                                                type = "component",
+                                                label = "Login",
+                                            ),
+                                        ),
+                                    edges =
+                                        listOf(
+                                            PlannedEdge(
+                                                from = "issue_sdb_2080",
+                                                to = "status_in_progress",
+                                                relation = "has_status",
+                                            ),
+                                            PlannedEdge(
+                                                from = "issue_sdb_2080",
+                                                to = "component_login",
+                                                relation = "affects",
+                                            ),
+                                        ),
+                                    chunks =
+                                        listOf(
+                                            PlannedChunk(
+                                                content = "The issue reports a login-related problem and tracks its progress and ownership.",
+                                                vertexAliases = listOf("issue_sdb_2080", "component_login"),
+                                                tags = listOf("summary"),
+                                            ),
+                                            PlannedChunk(
+                                                content = "Current status is In Progress; the team is working on reproduction and a fix.",
+                                                vertexAliases = listOf("issue_sdb_2080", "status_in_progress"),
+                                                tags = listOf("status"),
+                                            ),
+                                        ),
+                                ),
                             ),
-                        ),
-                )
+                    )
 
-                val nodeExtractLog by nodeLLMRequestStructured<LogSummarizationOutput>(
-                    name = "📜 Phase 2: Summarize LOG",
-                    examples =
-                        listOf(
-                            LogSummarizationOutput(
-                                summary = "Crash caused by NullPointerException in UserService",
-                                keyEvents = listOf("ERROR at 10:23:45 - NullPointerException", "Restart at 10:25:00"),
-                                criticalDetails = listOf("UserService.java:42", "user_id=12345"),
-                            ),
-                        ),
-                )
+                    edge(nodeStart forwardTo nodeBuildPrompt)
+                    edge(nodeBuildPrompt forwardTo nodePlan)
+                    edge(nodePlan forwardTo nodeFinish)
+                }
 
-                val nodeExtractGeneric by nodeLLMRequestStructured<GenericChunkingOutput>(
-                    name = "📝 Phase 2: Chunk GENERIC",
-                    examples =
-                        listOf(
-                            GenericChunkingOutput(
-                                baseInfo = "Technical documentation about Kubernetes deployment strategies",
-                                chunks =
-                                    listOf(
-                                        "Introduction: Kubernetes provides multiple deployment strategies...",
-                                        "Rolling updates: Gradually replaces pods while keeping service available...",
-                                    ),
+                val planningConfluenceSubgraph by subgraph<ContentType, Result<StructuredResponse<IndexingPlan>>>(
+                    name = "🧠 Phase 2: Plan CONFLUENCE",
+                ) {
+                    val nodeBuildPrompt by node<ContentType, String>(name = "Build Confluence plan prompt") { ct ->
+                        buildIndexingPlanPrompt(
+                            ct,
+                        )
+                    }
+                    val nodePlan by nodeLLMRequestStructured<IndexingPlan>(
+                        name = "Plan Confluence indexing",
+                        examples =
+                            listOf(
+                                IndexingPlan(
+                                    baseInfo = "Confluence page documenting an architecture decision and key components.",
+                                    vertices =
+                                        listOf(
+                                            PlannedVertex(
+                                                alias = "topic_architecture",
+                                                type = "topic",
+                                                label = "Architecture",
+                                            ),
+                                            PlannedVertex(alias = "system_jervis", type = "system", label = "JERVIS"),
+                                            PlannedVertex(
+                                                alias = "decision_rag_first",
+                                                type = "decision",
+                                                label = "RAG-first approach",
+                                            ),
+                                        ),
+                                    edges =
+                                        listOf(
+                                            PlannedEdge(
+                                                from = "system_jervis",
+                                                to = "decision_rag_first",
+                                                relation = "uses",
+                                            ),
+                                            PlannedEdge(
+                                                from = "topic_architecture",
+                                                to = "system_jervis",
+                                                relation = "describes",
+                                            ),
+                                        ),
+                                    chunks =
+                                        listOf(
+                                            PlannedChunk(
+                                                content = "The page describes an architecture topic and documents the reasoning behind a decision.",
+                                                vertexAliases = listOf("topic_architecture", "decision_rag_first"),
+                                                tags = listOf("summary"),
+                                            ),
+                                            PlannedChunk(
+                                                content = "It outlines the system components and how the chosen approach impacts the workflow.",
+                                                vertexAliases = listOf("system_jervis", "decision_rag_first"),
+                                                tags = listOf("details"),
+                                            ),
+                                        ),
+                                ),
                             ),
-                        ),
-                )
+                    )
+
+                    edge(nodeStart forwardTo nodeBuildPrompt)
+                    edge(nodeBuildPrompt forwardTo nodePlan)
+                    edge(nodePlan forwardTo nodeFinish)
+                }
+
+                val planningGenericSubgraph by subgraph<ContentType, Result<StructuredResponse<IndexingPlan>>>(
+                    name = "🧠 Phase 2: Plan GENERIC",
+                ) {
+                    val nodeBuildPrompt by node<ContentType, String>(name = "Build GENERIC plan prompt") { ct ->
+                        buildIndexingPlanPrompt(
+                            ct,
+                        )
+                    }
+                    val nodePlan by nodeLLMRequestStructured<IndexingPlan>(
+                        name = "Plan GENERIC indexing",
+                        examples =
+                            listOf(
+                                IndexingPlan(
+                                    baseInfo = "Document describing a situation, key facts, and possible next actions.",
+                                    vertices =
+                                        listOf(
+                                            PlannedVertex(alias = "topic_main", type = "topic", label = "Main topic"),
+                                            PlannedVertex(
+                                                alias = "system_or_context",
+                                                type = "system",
+                                                label = "System/Context",
+                                            ),
+                                        ),
+                                    edges =
+                                        listOf(
+                                            PlannedEdge(
+                                                from = "topic_main",
+                                                to = "system_or_context",
+                                                relation = "relates_to",
+                                            ),
+                                        ),
+                                    chunks =
+                                        listOf(
+                                            PlannedChunk(
+                                                content = "This chunk captures the core meaning of the document in a self-contained way.",
+                                                vertexAliases = listOf("topic_main"),
+                                                tags = listOf("summary"),
+                                            ),
+                                            PlannedChunk(
+                                                content = "This chunk captures key facts that are useful for later retrieval and reasoning.",
+                                                vertexAliases = listOf("topic_main", "system_or_context"),
+                                                tags = listOf("facts"),
+                                            ),
+                                        ),
+                                ),
+                            ),
+                    )
+
+                    edge(nodeStart forwardTo nodeBuildPrompt)
+                    edge(nodeBuildPrompt forwardTo nodePlan)
+                    edge(nodePlan forwardTo nodeFinish)
+                }
 
                 // ============================================================
-                // PHASE 3: BUILD UNIFIED IndexingContext (no broken loops)
+                // PHASE 3: BUILD IndexingContext from plan (Kotlin only for IDs)
                 // ============================================================
-                val nodeBuildIndexingContext by node<Any, IndexingContext>(name = "📦 Phase 3: Build IndexingContext") { extractionResult ->
+                val nodeBuildIndexingContext by node<Result<StructuredResponse<IndexingPlan>>, IndexingContext>(
+                    name = "📦 Phase 3: Build IndexingContext (from plan)",
+                ) { result ->
                     val type = pipeline.contentType ?: ContentType.GENERIC
                     val vctx = pipeline.vision ?: VisionContext(task.content, null, null, task.attachments)
 
-                    fun baseNodeKey(): String =
-                        when (type) {
-                            ContentType.JIRA -> {
-                                val key = (extractionResult as? Result<*>)?.getOrNull()
-                                val jiraKey =
-                                    (key as? StructuredResponse<*>)
-                                        ?.structure
-                                        ?.let { it as? JiraExtractionOutput }
-                                        ?.key
-                                        ?.takeUnless { it.isBlank() }
-                                if (jiraKey != null) {
-                                    "jira_${jiraKey.replace("-", "_").lowercase()}"
-                                } else {
-                                    "jira_${task.correlationId.replace("-", "_")}"
-                                }
-                            }
+                    val plan =
+                        result.getOrNull()?.structure
+                            ?: IndexingPlan(
+                                baseInfo = "Unparsed content (${type.name}) | correlationId=${task.correlationId}",
+                                vertices = emptyList(),
+                                edges = emptyList(),
+                                chunks =
+                                    listOf(
+                                        PlannedChunk(
+                                            content = normalizeForRag(vctx.originalText.take(2500)),
+                                            tags = listOf("raw"),
+                                        ),
+                                    ),
+                            )
 
-                            ContentType.EMAIL -> {
-                                "email_${task.correlationId.replace("-", "_")}"
-                            }
+                    pipeline.plan = plan
 
-                            ContentType.CONFLUENCE -> {
-                                "confluence_${task.correlationId.replace("-", "_")}"
-                            }
+                    val baseNodeKey =
+                        computeBaseNodeKey(
+                            task = task,
+                            type = type,
+                            rawText = vctx.originalText,
+                            baseInfo = plan.baseInfo,
+                        )
 
-                            ContentType.LOG -> {
-                                "log_${task.correlationId.replace("-", "_")}"
-                            }
-
-                            ContentType.GENERIC -> {
-                                "doc_${task.correlationId.replace("-", "_")}"
-                            }
-                        }
+                    val chunks =
+                        plan.chunks
+                            .map { normalizeForRag(it.content) }
+                            .filter { it.isNotBlank() }
+                            .take(12)
 
                     val ctx =
-                        when (type) {
-                            ContentType.EMAIL -> {
-                                val r = extractionResult as Result<StructuredResponse<EmailExtractionOutput>>
-                                val ex = r.getOrNull()?.structure
-                                val baseInfo =
-                                    if (ex != null) {
-                                        "Email from ${ex.sender} to ${ex.recipients.joinToString(", ")}: ${ex.subject}"
-                                    } else {
-                                        "Email (unparsed) | correlationId=${task.correlationId}"
-                                    }
-
-                                IndexingContext(
-                                    contentType = ContentType.EMAIL,
-                                    baseNodeKey = baseNodeKey(),
-                                    baseInfo = baseInfo,
-                                    indexableChunks = chunkText(vctx.originalText),
-                                    visionContext = vctx,
-                                    metadata =
-                                        mapOf(
-                                            "sender" to (ex?.sender ?: ""),
-                                            "recipients" to (ex?.recipients?.joinToString(", ") ?: ""),
-                                            "subject" to (ex?.subject ?: ""),
-                                            "classification" to (ex?.classification ?: ""),
-                                        ),
-                                )
-                            }
-
-                            ContentType.JIRA -> {
-                                val r = extractionResult as Result<StructuredResponse<JiraExtractionOutput>>
-                                val ex = r.getOrNull()?.structure
-                                val baseInfo =
-                                    if (ex != null) {
-                                        "[${ex.key}] ${ex.type} - ${ex.status} - ${ex.changeDescription}"
-                                    } else {
-                                        "JIRA (unparsed) | correlationId=${task.correlationId}"
-                                    }
-
-                                IndexingContext(
-                                    contentType = ContentType.JIRA,
-                                    baseNodeKey = baseNodeKey(),
-                                    baseInfo = baseInfo,
-                                    indexableChunks = chunkText(vctx.originalText),
-                                    visionContext = vctx,
-                                    metadata =
-                                        mapOf(
-                                            "key" to (ex?.key ?: ""),
-                                            "status" to (ex?.status ?: ""),
-                                            "type" to (ex?.type ?: ""),
-                                            "assignee" to (ex?.assignee ?: ""),
-                                            "reporter" to (ex?.reporter ?: ""),
-                                            "epic" to (ex?.epic ?: ""),
-                                            "sprint" to (ex?.sprint ?: ""),
-                                        ),
-                                )
-                            }
-
-                            ContentType.CONFLUENCE -> {
-                                val r = extractionResult as Result<StructuredResponse<ConfluenceExtractionOutput>>
-                                val ex = r.getOrNull()?.structure
-                                val baseInfo =
-                                    if (ex != null) {
-                                        "${ex.title} by ${ex.author} - ${ex.topic}"
-                                    } else {
-                                        "Confluence (unparsed) | correlationId=${task.correlationId}"
-                                    }
-
-                                IndexingContext(
-                                    contentType = ContentType.CONFLUENCE,
-                                    baseNodeKey = baseNodeKey(),
-                                    baseInfo = baseInfo,
-                                    indexableChunks = chunkText(vctx.originalText),
-                                    visionContext = vctx,
-                                    metadata =
-                                        mapOf(
-                                            "author" to (ex?.author ?: ""),
-                                            "title" to (ex?.title ?: ""),
-                                            "topic" to (ex?.topic ?: ""),
-                                        ),
-                                )
-                            }
-
-                            ContentType.LOG -> {
-                                val r = extractionResult as Result<StructuredResponse<LogSummarizationOutput>>
-                                val ex = r.getOrNull()?.structure
-                                val baseInfo =
-                                    ex?.summary ?: "Log summary (unparsed) | correlationId=${task.correlationId}"
-
-                                val chunks =
-                                    if (ex != null) {
-                                        listOf(
-                                            "Summary: ${ex.summary}",
-                                            "Key Events:\n- ${ex.keyEvents.joinToString("\n- ")}",
-                                            "Critical Details:\n- ${ex.criticalDetails.joinToString("\n- ")}",
-                                        )
-                                    } else {
-                                        // fallback: do not index raw logs as huge chunks; store a small slice
-                                        listOf("Log (unparsed). First 4000 chars:\n${vctx.originalText.take(4000)}")
-                                    }
-
-                                IndexingContext(
-                                    contentType = ContentType.LOG,
-                                    baseNodeKey = baseNodeKey(),
-                                    baseInfo = baseInfo,
-                                    indexableChunks = chunks,
-                                    visionContext = vctx,
-                                    metadata =
-                                        mapOf(
-                                            "summary" to (ex?.summary ?: ""),
-                                            "keyEventsCount" to (ex?.keyEvents?.size?.toString() ?: "0"),
-                                            "criticalDetailsCount" to (ex?.criticalDetails?.size?.toString() ?: "0"),
-                                        ),
-                                )
-                            }
-
-                            ContentType.GENERIC -> {
-                                val r = extractionResult as Result<StructuredResponse<GenericChunkingOutput>>
-                                val ex = r.getOrNull()?.structure
-                                val baseInfo = ex?.baseInfo ?: "Document | correlationId=${task.correlationId}"
-                                val chunks =
-                                    ex?.chunks?.filter { it.isNotBlank() }?.ifEmpty { null }
-                                        ?: chunkText(vctx.originalText)
-
-                                IndexingContext(
-                                    contentType = ContentType.GENERIC,
-                                    baseNodeKey = baseNodeKey(),
-                                    baseInfo = baseInfo,
-                                    indexableChunks = chunks,
-                                    visionContext = vctx,
-                                    metadata = emptyMap(),
-                                )
-                            }
-                        }
-
-                    logger.info {
-                        "📦 INDEXING_CTX | correlationId=${task.correlationId} | type=${ctx.contentType} | baseNodeKey=${ctx.baseNodeKey} | chunks=${ctx.indexableChunks.size}"
-                    }
+                        IndexingContext(
+                            contentType = type,
+                            baseNodeKey = baseNodeKey,
+                            baseInfo =
+                                normalizeForRag(plan.baseInfo).takeIf { it.isNotBlank() }
+                                    ?: "Document | correlationId=${task.correlationId}",
+                            indexableChunks = chunks,
+                            visionContext = vctx,
+                            metadata = emptyMap(),
+                        )
 
                     pipeline.indexing = ctx
+
+                    logger.info {
+                        "📦 INDEXING_CTX | correlationId=${task.correlationId} | type=${ctx.contentType} | baseNodeKey=${ctx.baseNodeKey} | chunks=${ctx.indexableChunks.size} | vertices=${plan.vertices.size} | edges=${plan.edges.size}"
+                    }
+
                     ctx
                 }
 
                 // ============================================================
-                // PHASE 4: UNIFIED INDEXING (deterministic, no graph-loop hacks)
+                // PHASE 4: PERSIST (RAG + Graph). No chunk-nodes.
+                // - RAG chunks reference base node + relevant vertex nodes (by stable keys)
+                // - Graph has base node + semantic vertex nodes + semantic edges
                 // ============================================================
                 val nodeIndexToRagAndGraph by node<IndexingContext, IndexingContext>(name = "🧱 Phase 4: Index to RAG + Graph") { ctx ->
+                    val plan = pipeline.plan
                     logger.info {
                         "🧱 INDEX_START | correlationId=${task.correlationId} | baseNodeKey=${ctx.baseNodeKey} | type=${ctx.contentType}"
                     }
 
-                    // Base info chunk
+                    val aliasToKey = buildAliasKeyMap(baseNodeKey = ctx.baseNodeKey, plan = plan)
+
+                    // Store base summary chunk
+                    val ragChunkIds = mutableListOf<String>()
                     val baseChunkId =
                         knowledgeService.storeChunk(
                             StoreChunkRequest(
@@ -603,56 +744,134 @@ class KoogQualifierAgent(
                                 sourceUrn = task.sourceUrn,
                             ),
                         )
+                    ragChunkIds += baseChunkId
 
-                    graphService.upsertNode(
-                        clientId = task.clientId,
-                        node =
-                            GraphNode(
-                                key = ctx.baseNodeKey,
-                                entityType = ctx.contentType.name.lowercase(),
-                                ragChunks = listOf(baseChunkId),
-                            ),
-                    )
+                    // Store content chunks. Each chunk references base + semantic vertices.
+                    val vertexToChunkIds = linkedMapOf<String, MutableList<String>>()
 
-                    // Chunk indexing (RAG + chunk-nodes). Relationship edges are best handled inside your Graph service;
-                    // here we keep it safe and consistent even if edge API differs.
-                    ctx.indexableChunks.forEachIndexed { idx, chunk ->
-                        val chunkKey = "${ctx.baseNodeKey}_chunk_${idx + 1}"
+                    val plannedChunks = plan?.chunks ?: ctx.indexableChunks.map { PlannedChunk(content = it) }
+                    plannedChunks.forEachIndexed { idx, pc ->
+                        val content = normalizeForRag(pc.content)
+                        if (content.isBlank()) return@forEachIndexed
+
+                        val vertexKeys =
+                            pc.vertexAliases
+                                .mapNotNull { aliasToKey[it.trim()] }
+                                .distinct()
+                                .take(3)
+
+                        val graphRefs =
+                            buildList {
+                                add(ctx.baseNodeKey)
+                                addAll(vertexKeys)
+                            }
 
                         val chunkId =
                             knowledgeService.storeChunk(
                                 StoreChunkRequest(
                                     clientId = task.clientId,
                                     projectId = task.projectId,
-                                    content = chunk,
-                                    graphRefs = listOf(ctx.baseNodeKey, chunkKey),
+                                    content = content,
+                                    graphRefs = graphRefs,
                                     sourceUrn = task.sourceUrn,
                                 ),
                             )
 
+                        ragChunkIds += chunkId
+
+                        vertexKeys.forEach { vk ->
+                            vertexToChunkIds.getOrPut(vk) { mutableListOf() }.add(chunkId)
+                        }
+
+                        logger.debug {
+                            "🧱 STORED_CHUNK | correlationId=${task.correlationId} | idx=${idx + 1} | vertices=${vertexKeys.size} | tags=${
+                                pc.tags.joinToString(
+                                    ",",
+                                )
+                            }"
+                        }
+                    }
+
+                    // Upsert base node with all RAG chunks
+                    graphService.upsertNode(
+                        clientId = task.clientId,
+                        node =
+                            GraphNode(
+                                key = ctx.baseNodeKey,
+                                entityType = ctx.contentType.name.lowercase(),
+                                ragChunks = ragChunkIds.distinct(),
+                            ),
+                    )
+
+                    // Link base document node -> semantic vertices (makes graphRefs useful across queries)
+                    plan?.vertices.orEmpty().forEach { v ->
+                        val vKey = aliasToKey[v.alias] ?: return@forEach
+                        runCatching {
+                            upsertGraphEdgeReflectively(
+                                graphService = graphService,
+                                clientId = task.clientId,
+                                fromKey = ctx.baseNodeKey,
+                                toKey = vKey,
+                                relation = "mentions",
+                                label = null,
+                            )
+                        }.onFailure { ex ->
+                            logger.debug(ex) {
+                                "GRAPH_EDGE_UPSERT_FAILED | correlationId=${task.correlationId} | from=${ctx.baseNodeKey} | to=$vKey | relation=mentions"
+                            }
+                        }
+                    }
+
+                    // Upsert semantic vertices (no chunk nodes)
+                    plan?.vertices.orEmpty().forEach { v ->
+                        val vKey = aliasToKey[v.alias] ?: return@forEach
+                        val vChunkIds = vertexToChunkIds[vKey].orEmpty()
                         graphService.upsertNode(
                             clientId = task.clientId,
                             node =
                                 GraphNode(
-                                    key = chunkKey,
-                                    entityType = "chunk",
-                                    ragChunks = listOf(chunkId),
+                                    key = vKey,
+                                    entityType =
+                                        v.type
+                                            .trim()
+                                            .lowercase()
+                                            .ifBlank { "entity" },
+                                    ragChunks = vChunkIds.distinct(),
                                 ),
                         )
+                    }
 
-                        // If you have an explicit edge API, wire it here:
-                        // graphService.upsertEdge(clientId = task.clientId, edge = GraphEdge(from = chunkKey, to = ctx.baseNodeKey, type = "PART_OF"))
+                    // Upsert edges via reflection (compile-safe across variants)
+                    plan?.edges.orEmpty().forEach { e ->
+                        val fromKey = aliasToKey[e.from]
+                        val toKey = aliasToKey[e.to]
+                        if (fromKey == null || toKey == null) return@forEach
+
+                        runCatching {
+                            upsertGraphEdgeReflectively(
+                                graphService = graphService,
+                                clientId = task.clientId,
+                                fromKey = fromKey,
+                                toKey = toKey,
+                                relation = e.relation,
+                                label = e.label,
+                            )
+                        }.onFailure { ex ->
+                            logger.warn(ex) {
+                                "GRAPH_EDGE_UPSERT_FAILED | correlationId=${task.correlationId} | from=$fromKey | to=$toKey | relation=${e.relation}"
+                            }
+                        }
                     }
 
                     logger.info {
-                        "🧱 INDEX_DONE | correlationId=${task.correlationId} | baseChunkId=$baseChunkId | chunks=${ctx.indexableChunks.size}"
+                        "🧱 INDEX_DONE | correlationId=${task.correlationId} | baseNodeKey=${ctx.baseNodeKey} | ragChunks=${ragChunkIds.size} | vertices=${plan?.vertices?.size ?: 0} | edges=${plan?.edges?.size ?: 0}"
                     }
 
                     ctx
                 }
 
                 // ============================================================
-                // PHASE 5: FINAL ROUTING (tool-based, Koog-docs style)
+                // PHASE 5: FINAL ROUTING (tool-based)
                 // ============================================================
                 val nodePrepareRoutingPrompt by node<IndexingContext, String>(name = "🎯 Phase 5: Build Routing Prompt") { ctx ->
                     """
@@ -661,7 +880,6 @@ All content has been indexed to RAG + Graph.
 SUMMARY:
 - Content Type: ${ctx.contentType}
 - Base Node: ${ctx.baseNodeKey}
-- Stored Chunks: ${ctx.indexableChunks.size}
 
 NOW call the tool routeTask with ONE of:
 - DONE    (all information indexed, no further actions needed)
@@ -676,16 +894,10 @@ IMPORTANT:
                 val routingSubgraph by subgraph<String, String>(name = "Final Routing") {
                     val nodeSendRoutingRequest by nodeLLMRequest(name = "Send Routing Request")
                     val nodeExecuteRoutingTool by nodeExecuteTool(name = "Execute routeTask")
-
-                    // IMPORTANT: after routeTask execution we end the graph without any further LLM call
                     val nodeReturnEmpty by node<Any, String>(name = "Return empty output") { "" }
 
                     edge(nodeStart forwardTo nodeSendRoutingRequest)
-
-                    // If assistant replies instead of calling tool, finish (but you'll see it in logs)
                     edge(nodeSendRoutingRequest forwardTo nodeFinish onAssistantMessage { true })
-
-                    // Normal tool path
                     edge(nodeSendRoutingRequest forwardTo nodeExecuteRoutingTool onToolCall { true })
                     edge(nodeExecuteRoutingTool forwardTo nodeReturnEmpty)
                     edge(nodeReturnEmpty forwardTo nodeFinish)
@@ -700,29 +912,29 @@ IMPORTANT:
                 edge(nodePrepareContentTypePrompt forwardTo nodeDetectContentType)
                 edge(nodeDetectContentType forwardTo nodeApplyContentType)
 
-                edge(nodeApplyContentType forwardTo nodePrepareExtractionPrompt)
-
-                // Route to the right structured extractor:
-                edge((nodePrepareExtractionPrompt forwardTo nodeExtractEmail).onCondition { pipeline.contentType == ContentType.EMAIL })
-                edge((nodePrepareExtractionPrompt forwardTo nodeExtractJira).onCondition { pipeline.contentType == ContentType.JIRA })
+                // Phase 2 planning is split into subgraphs by detected type (Koog best practice).
+                edge((nodeApplyContentType forwardTo planningEmailSubgraph).onCondition { pipeline.contentType == ContentType.EMAIL })
+                edge((nodeApplyContentType forwardTo planningJiraSubgraph).onCondition { pipeline.contentType == ContentType.JIRA })
                 edge(
-                    (nodePrepareExtractionPrompt forwardTo nodeExtractConfluence).onCondition {
+                    (nodeApplyContentType forwardTo planningConfluenceSubgraph).onCondition {
                         pipeline.contentType ==
                             ContentType.CONFLUENCE
                     },
                 )
-                edge((nodePrepareExtractionPrompt forwardTo nodeExtractLog).onCondition { pipeline.contentType == ContentType.LOG })
-                edge((nodePrepareExtractionPrompt forwardTo nodeExtractGeneric).onCondition { pipeline.contentType == ContentType.GENERIC })
+                edge(
+                    (nodeApplyContentType forwardTo planningGenericSubgraph).onCondition {
+                        pipeline.contentType == ContentType.LOG || pipeline.contentType == ContentType.GENERIC ||
+                            pipeline.contentType == null
+                    },
+                )
 
-                // Converge into IndexingContext builder (single node):
-                edge(nodeExtractEmail forwardTo nodeBuildIndexingContext)
-                edge(nodeExtractJira forwardTo nodeBuildIndexingContext)
-                edge(nodeExtractConfluence forwardTo nodeBuildIndexingContext)
-                edge(nodeExtractLog forwardTo nodeBuildIndexingContext)
-                edge(nodeExtractGeneric forwardTo nodeBuildIndexingContext)
+                // Converge: all planning subgraphs produce Result<StructuredResponse<IndexingPlan>>
+                edge(planningEmailSubgraph forwardTo nodeBuildIndexingContext)
+                edge(planningJiraSubgraph forwardTo nodeBuildIndexingContext)
+                edge(planningConfluenceSubgraph forwardTo nodeBuildIndexingContext)
+                edge(planningGenericSubgraph forwardTo nodeBuildIndexingContext)
 
                 edge(nodeBuildIndexingContext forwardTo nodeIndexToRagAndGraph)
-
                 edge(nodeIndexToRagAndGraph forwardTo nodePrepareRoutingPrompt)
                 edge(nodePrepareRoutingPrompt forwardTo routingSubgraph)
                 edge(routingSubgraph forwardTo nodeFinish)
@@ -735,7 +947,7 @@ IMPORTANT:
             )
 
         logger.info {
-            "KoogQualifierAgent | Model selected: ${dynamicModel.id} | contextLength=${dynamicModel.contextLength}"
+            "KoogQualifierAgent | Model selected: ${dynamicModel.id} | contextLength=${dynamicModel.contextLength} | provider: ${dynamicModel.provider}"
         }
 
         val agentConfig =
@@ -744,9 +956,9 @@ IMPORTANT:
                     Prompt.build("jervis-qualifier") {
                         system(
                             """
-                            You are JERVIS Qualification Agent.
-                            You must follow the instructions and output structured JSON for structured requests.
-                            Do not hallucinate. If unknown, use empty strings/lists/nulls.
+You are JERVIS Qualification Agent.
+You must follow the instructions and output structured JSON for structured requests.
+Do not hallucinate. If unknown, omit it.
                             """.trimIndent(),
                         )
                     },
@@ -851,25 +1063,244 @@ IMPORTANT:
         val completed: Boolean,
     )
 
-    private fun chunkText(text: String): List<String> {
-        val trimmed = text.trim()
-        if (trimmed.isBlank()) return listOf("")
+    // ============================================================
+    // Helpers: Kotlin does stable IDs + normalization only.
+    // ============================================================
 
-        // Prefer paragraph-ish chunks; then cap size.
-        val paras = trimmed.split(Regex("\n{2,}")).map { it.trim() }.filter { it.isNotBlank() }
-        val coarse = if (paras.isEmpty()) listOf(trimmed) else paras
+    private fun computeBaseNodeKey(
+        task: TaskDocument,
+        type: ContentType,
+        rawText: String,
+        baseInfo: String,
+    ): String =
+        when (type) {
+            ContentType.EMAIL -> {
+                val emailId = parseEmailIdFromText(rawText)
+                if (emailId != null) {
+                    "email_email:$emailId"
+                } else {
+                    "email_${shortHash(task.sourceUrn.value)}"
+                }
+            }
 
-        val maxLen = 2500
-        val out = ArrayList<String>(coarse.size)
+            ContentType.JIRA -> {
+                val key = parseJiraKeyFromText(rawText) ?: parseJiraKeyFromText(baseInfo)
+                if (key != null) {
+                    "jira_${key.replace("-", "_").lowercase()}"
+                } else {
+                    "jira_${shortHash(task.sourceUrn.value)}"
+                }
+            }
 
-        coarse.forEach { p ->
-            if (p.length <= maxLen) {
-                out += p
-            } else {
-                out += p.chunked(maxLen)
+            ContentType.CONFLUENCE -> {
+                "confluence_${shortHash(task.sourceUrn.value)}"
+            }
+
+            ContentType.LOG -> {
+                "log_${shortHash(task.sourceUrn.value)}"
+            }
+
+            ContentType.GENERIC -> {
+                "doc_${shortHash(task.sourceUrn.value)}"
             }
         }
 
-        return out
+    private fun parseEmailIdFromText(rawText: String): String? {
+        // Matches lines like: - **Email ID:** 69426bee41e778f2d0885196
+        val regex = Regex("""Email ID:\*\*\s*([0-9a-fA-F]{24})""")
+        return regex
+            .find(rawText)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.lowercase()
+    }
+
+    private fun parseJiraKeyFromText(text: String): String? {
+        // Matches typical keys: ABC-1234
+        val regex = Regex("""\b([A-Z][A-Z0-9]+-\d+)\b""")
+        return regex.find(text)?.groupValues?.getOrNull(1)
+    }
+
+    private fun buildAliasKeyMap(
+        baseNodeKey: String,
+        plan: IndexingPlan?,
+    ): Map<String, String> {
+        if (plan == null) return emptyMap()
+        val m = LinkedHashMap<String, String>()
+
+        plan.vertices.forEach { v ->
+            val alias = v.alias.trim()
+            if (alias.isBlank()) return@forEach
+
+            val type =
+                v.type
+                    .trim()
+                    .lowercase()
+                    .ifBlank { "entity" }
+            // IMPORTANT: do NOT scope to the base node; we want stable keys that can be reused across documents.
+            // GraphDB is per-client anyway.
+            val key = "$type:${normalizeKeyPart(alias)}"
+            m[alias] = key
+        }
+
+        return m
+    }
+
+    private fun normalizeKeyPart(value: String): String {
+        val cleaned =
+            value
+                .lowercase()
+                .trim()
+                .replace(Regex("""\s+"""), "_")
+                .replace(Regex("""[^a-z0-9:_\-]+"""), "_")
+                .replace(Regex("""_+"""), "_")
+                .trim('_')
+
+        return when {
+            cleaned.isBlank() -> shortHash(value)
+            cleaned.length <= 80 -> cleaned
+            else -> cleaned.take(80)
+        }
+    }
+
+    private fun normalizeForRag(text: String): String {
+        val t = text.replace("\r\n", "\n").replace("\r", "\n")
+        val lines =
+            t
+                .lines()
+                .map { it.replace('\u00A0', ' ').trim() }
+                .filter { it.isNotBlank() }
+        return lines
+            .joinToString("\n")
+            .replace(Regex("""[ \t]{2,}"""), " ")
+            .replace(Regex("""\n{3,}"""), "\n\n")
+            .trim()
+    }
+
+    private fun shortHash(value: String): String = sha256(value).take(12)
+
+    private fun sha256(value: String): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        val bytes = md.digest(value.toByteArray(Charsets.UTF_8))
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * Reflection-based edge upsert to avoid compile coupling to GraphEdge API shape.
+     * Supports common variants:
+     * - GraphDBService.upsertEdge(clientId, edge)
+     * - GraphDBService.upsertEdges(clientId, edges)
+     */
+    private fun upsertGraphEdgeReflectively(
+        graphService: GraphDBService,
+        clientId: Any,
+        fromKey: String,
+        toKey: String,
+        relation: String,
+        label: String?,
+    ) {
+        val edgeObj = newGraphEdgeInstance(fromKey, toKey, relation, label)
+
+        val svcClass = graphService.javaClass
+        val methods = svcClass.methods.toList()
+
+        // Try upsertEdge(clientId, edge)
+        methods.firstOrNull { it.name == "upsertEdge" && it.parameterCount == 2 }?.let { m ->
+            m.invoke(graphService, clientId, edgeObj)
+            return
+        }
+
+        // Try upsertEdges(clientId, list)
+        methods.firstOrNull { it.name == "upsertEdges" && it.parameterCount == 2 }?.let { m ->
+            m.invoke(graphService, clientId, listOf(edgeObj))
+            return
+        }
+
+        // Try any method that looks like (clientId, edge) but named differently
+        methods
+            .firstOrNull { it.parameterCount == 2 && it.parameterTypes[1].isAssignableFrom(edgeObj.javaClass) }
+            ?.let { m ->
+                m.invoke(graphService, clientId, edgeObj)
+                return
+            }
+
+        logger.debug { "Graph edge upsert skipped: no compatible method found on ${svcClass.name}" }
+    }
+
+    private fun newGraphEdgeInstance(
+        fromKey: String,
+        toKey: String,
+        relation: String,
+        label: String?,
+    ): Any {
+        val clazz = Class.forName("com.jervis.graphdb.model.GraphEdge")
+
+        // Prefer (from, to, type)
+        clazz.declaredConstructors
+            .firstOrNull { c ->
+                c.parameterTypes.size == 3 && c.parameterTypes.all { it == String::class.java }
+            }?.let { c ->
+                c.isAccessible = true
+                return c.newInstance(fromKey, toKey, relation)
+            }
+
+        // Try (from, to, type, label)
+        clazz.declaredConstructors
+            .firstOrNull { c ->
+                c.parameterTypes.size == 4 && c.parameterTypes.all { it == String::class.java }
+            }?.let { c ->
+                c.isAccessible = true
+                return c.newInstance(fromKey, toKey, relation, label ?: "")
+            }
+
+        // Fallback: first constructor, try to fill strings
+        val c = clazz.declaredConstructors.first()
+        c.isAccessible = true
+        val args =
+            Array(c.parameterTypes.size) { idx ->
+                when (idx) {
+                    0 -> fromKey
+                    1 -> toKey
+                    2 -> relation
+                    else -> label ?: ""
+                }
+            }
+        return c.newInstance(*args)
+    }
+
+    // ============================================================
+    // Vision helper: Build prompt context for vision
+    // ============================================================
+    private fun buildVisionPromptContext(
+        task: TaskDocument,
+        fullText: String,
+    ): String {
+        // Vision does not need the whole document; keep it small to reduce tokens and noise.
+        val normalized = normalizeForRag(fullText)
+        val head = normalized.take(1000)
+        val tail = if (normalized.length > 1600) normalized.takeLast(400) else ""
+
+        val attachmentNames =
+            task.attachments
+                .take(12)
+                .joinToString(", ") {
+                    val name = it.filename.ifBlank { it.id.toString() }
+                    val mt = it.mimeType.ifBlank { "unknown" }
+                    "$name ($mt)"
+                }.ifBlank { "none" }
+
+        return buildString {
+            appendLine("sourceUrn: ${task.sourceUrn.value}")
+            appendLine("correlationId: ${task.correlationId}")
+            appendLine("attachments: $attachmentNames")
+            appendLine()
+            appendLine("text_excerpt_head:")
+            appendLine(head)
+            if (tail.isNotBlank()) {
+                appendLine()
+                appendLine("text_excerpt_tail:")
+                appendLine(tail)
+            }
+        }.trim()
     }
 }
