@@ -64,7 +64,6 @@ import java.util.concurrent.atomic.AtomicReference
 @Order(10) // Start after schema initialization
 @Profile("!cli")
 class BackgroundEngine(
-    private val llmLoadMonitor: LlmLoadMonitor,
     private val taskService: TaskService,
     private val taskQualificationService: TaskQualificationService,
     private val agentOrchestrator: AgentOrchestratorService,
@@ -82,7 +81,7 @@ class BackgroundEngine(
     private var schedulerJob: Job? = null
     private var consecutiveFailures = 0
     private val maxRetryDelay = 300_000L
-    private val schedulerAdvanceMinutes = 10L
+    private val schedulerAdvance = Duration.ofMinutes(10)
 
     // Atomic flag to ensure @PostConstruct is called only once
     private val isInitialized =
@@ -91,7 +90,6 @@ class BackgroundEngine(
 
     @PostConstruct
     fun start() {
-        // SINGLETON GUARANTEE: Prevent multiple initialization (defensive)
         if (!isInitialized.compareAndSet(false, true)) {
             logger.error {
                 "BackgroundEngine.start() called multiple times! This should never happen. " +
@@ -119,16 +117,6 @@ class BackgroundEngine(
                     runExecutionLoop()
                 } catch (e: Exception) {
                     logger.error(e) { "Execution loop FAILED to start!" }
-                }
-            }
-
-        schedulerJob =
-            scope.launch {
-                try {
-                    logger.info { "Scheduler loop STARTED (10-minute interval)" }
-                    runSchedulerLoop()
-                } catch (e: Exception) {
-                    logger.error(e) { "Scheduler loop FAILED to start!" }
                 }
             }
 
@@ -204,34 +192,10 @@ class BackgroundEngine(
     private suspend fun runExecutionLoop() {
         while (scope.isActive) {
             try {
-                val activeRequests = llmLoadMonitor.getActiveRequestCount()
-                val idleDuration = llmLoadMonitor.getIdleDuration()
-
-                logger.debug { "Execution loop: activeRequests=$activeRequests, idleDuration=${idleDuration.seconds}s" }
-
-                val canRunBackgroundTask =
-                    if (activeRequests == 0) {
-                        logger.debug { "No active foreground requests, background can run immediately" }
-                        true
-                    } else {
-                        val idleThreshold = Duration.ofSeconds(30)
-                        val isIdle = llmLoadMonitor.isIdleFor(idleThreshold)
-                        if (isIdle) {
-                            logger.debug {
-                                "Foreground idle for ${idleDuration.seconds}s (>${idleThreshold.seconds}" +
-                                    "s threshold), background can run"
-                            }
-                        }
-                        isIdle
-                    }
-
-                if (canRunBackgroundTask) {
-                    val task =
-                        taskService
-                            .findTasksByState(TaskStateEnum.DISPATCHED_GPU)
-                            .firstOrNull()
-
-                    if (task != null) {
+                taskService
+                    .findTasksToRun()
+                    .firstOrNull()
+                    ?.let { task ->
                         logger.info {
                             "GPU_TASK_PICKUP: id=${task.id} correlationId=${task.correlationId} type=${task.type} state=${task.state}"
                         }
@@ -245,25 +209,13 @@ class BackgroundEngine(
 
                         executeTask(task)
                         logger.info { "GPU_TASK_FINISHED: id=${task.id} correlationId=${task.correlationId}" }
-                        // Task finished - immediately check for the next task without delay
-                    } else {
-                        logger.debug { "No qualified tasks found, sleeping 30s..." }
-                        delay(30_000)
                     }
-                } else {
-                    logger.debug {
-                        "GPU not idle yet (activeRequests=$activeRequests, idle=${idleDuration.seconds}" +
-                            "s < 30s), waiting 1s..."
-                    }
-                    delay(1_000)
-                }
             } catch (e: CancellationException) {
                 logger.info { "Execution loop cancelled" }
                 throw e
             } catch (e: Exception) {
-                val waitMs = backgroundProperties.waitOnError.toMillis()
-                logger.error(e) { "Error in execution loop - will retry in ${waitMs / 1000}s (configured)" }
-                delay(waitMs)
+                logger.error(e) { "Error in execution loop - will retry in ${backgroundProperties.waitOnError} (configured)" }
+                delay(backgroundProperties.waitOnError)
             }
         }
     }
@@ -275,7 +227,6 @@ class BackgroundEngine(
 
                 try {
                     agentOrchestrator.run(task, "")
-                    taskService.deleteTask(task)
                     logger.info { "GPU_EXECUTION_SUCCESS: id=${task.id} correlationId=${task.correlationId}" }
 
                     consecutiveFailures = 0
@@ -368,22 +319,20 @@ class BackgroundEngine(
         while (scope.isActive) {
             try {
                 val now = Instant.now()
-                val advanceWindow = Duration.ofMinutes(schedulerAdvanceMinutes)
-                val windowEnd = now.plus(advanceWindow)
+                val windowEnd = now.plus(schedulerAdvance)
 
                 logger.debug { "Scheduler: checking tasks scheduled between $now and $windowEnd" }
 
                 // TODO implement scheduled task to execute
-                logger.debug { "Scheduler: no upcoming tasks in next $schedulerAdvanceMinutes minutes" }
+                logger.debug { "Scheduler: no upcoming tasks in next $schedulerAdvance minutes" }
 
-                delay(advanceWindow.toMillis())
+                delay(schedulerAdvance)
             } catch (e: CancellationException) {
                 logger.info { "Scheduler loop cancelled" }
                 throw e
             } catch (e: Exception) {
-                val waitMs = backgroundProperties.waitOnError.toMillis()
-                logger.error(e) { "ERROR in scheduler loop - will retry in ${waitMs / 1000}s (configured)" }
-                delay(waitMs)
+                logger.error(e) { "ERROR in scheduler loop - will retry in ${backgroundProperties.waitOnError} (configured)" }
+                delay(backgroundProperties.waitOnError)
             }
         }
 

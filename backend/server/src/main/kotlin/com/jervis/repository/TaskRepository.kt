@@ -9,12 +9,16 @@ import com.jervis.types.TaskId
 import kotlinx.coroutines.flow.Flow
 import org.springframework.data.repository.kotlin.CoroutineCrudRepository
 import org.springframework.stereotype.Repository
+import java.time.Instant
 
 @Repository
 interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
-    suspend fun findOneById(id: TaskId): TaskDocument?
-
     suspend fun findAllByOrderByCreatedAtAsc(): Flow<TaskDocument>
+
+    suspend fun findOneByScheduledAtLessThanAndTypeOrderByScheduledAtAsc(
+        scheduledAt: Instant = Instant.now(),
+        type: TaskTypeEnum = TaskTypeEnum.SCHEDULED_TASK,
+    ): TaskDocument?
 
     suspend fun findByStateOrderByCreatedAtAsc(state: TaskStateEnum): Flow<TaskDocument>
 

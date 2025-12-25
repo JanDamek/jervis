@@ -11,6 +11,8 @@ import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
 import com.jervis.types.SourceUrn
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.time.Instant
@@ -74,7 +76,13 @@ class TaskService(
         logger.info { "TASK_DELETED: id=${task.id} " }
     }
 
-    suspend fun findTasksByState(state: TaskStateEnum): Flow<TaskDocument> = taskRepository.findByStateOrderByCreatedAtAsc(state)
+    suspend fun findTasksToRun(): Flow<TaskDocument> =
+        flow {
+            taskRepository.findOneByScheduledAtLessThanAndTypeOrderByScheduledAtAsc()?.let {
+                emit(it)
+            }
+            emitAll(taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.READY_FOR_GPU))
+        }
 
     suspend fun updateState(
         task: TaskDocument,
@@ -187,7 +195,8 @@ class TaskService(
      * Note: QUALIFYING tasks are NOT included - they are already being processed.
      * This prevents multiple concurrent processing of the same task.
      */
-    suspend fun findTasksForQualification(): Flow<TaskDocument> = findTasksByState(TaskStateEnum.READY_FOR_QUALIFICATION)
+    suspend fun findTasksForQualification(): Flow<TaskDocument> =
+        taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.READY_FOR_QUALIFICATION)
 
     /**
      * Atomically claim a task for qualification using MongoDB findAndModify.
