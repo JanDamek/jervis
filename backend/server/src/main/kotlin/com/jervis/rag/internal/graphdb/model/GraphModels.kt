@@ -1,4 +1,4 @@
-package com.jervis.graphdb.model
+package com.jervis.rag.internal.graphdb.model
 
 data class GraphNode(
     val key: String,

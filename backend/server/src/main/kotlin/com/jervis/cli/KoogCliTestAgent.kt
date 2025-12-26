@@ -40,7 +40,6 @@ import com.jervis.common.client.ICodingEngineClient
 import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.TaskDocument
-import com.jervis.graphdb.GraphDBService
 import com.jervis.koog.SmartModelSelector
 import com.jervis.koog.tools.AiderCodingTool
 import com.jervis.koog.tools.CommunicationTools
@@ -51,6 +50,7 @@ import com.jervis.koog.tools.qualifier.QualifierRoutingTools
 import com.jervis.koog.tools.scheduler.SchedulerTools
 import com.jervis.koog.tools.user.UserInteractionTools
 import com.jervis.rag.KnowledgeService
+import com.jervis.rag.internal.graphdb.GraphDBService
 import com.jervis.repository.ProjectRepository
 import com.jervis.service.background.TaskService
 import com.jervis.service.connection.ConnectionService
@@ -61,7 +61,6 @@ import com.jervis.service.task.UserTaskService
 import com.jervis.types.ClientId
 import com.jervis.types.SourceUrn
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.serialization.Serializable
 import org.bson.types.ObjectId
 
@@ -90,7 +89,6 @@ class KoogCliTestAgent(
     private val projectRepository: ProjectRepository,
     private val aiderClient: IAiderClient,
     private val codingEngineClient: ICodingEngineClient,
-    private val coroutineScope: CoroutineScope,
     private val smartModelSelector: SmartModelSelector,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -135,7 +133,6 @@ class KoogCliTestAgent(
                         linkContentService,
                         indexedLinkService,
                         connectionService,
-                        coroutineScope,
                     ),
                 )
 

@@ -9,12 +9,12 @@ class PendingTaskRepository(
     suspend fun listPendingTasks(
         taskType: String? = null,
         state: String? = null,
-    ): List<PendingTaskDto> = service.listPendingTasks(taskType, state)
+    ): List<PendingTaskDto> = service.listTasks(taskType, state)
 
     suspend fun countPendingTasks(
         taskType: String? = null,
         state: String? = null,
-    ): Long = service.countPendingTasks(taskType, state)
+    ): Long = service.countTasks(taskType, state)
 
     suspend fun deletePendingTask(id: String) {
         service.deletePendingTask(id)

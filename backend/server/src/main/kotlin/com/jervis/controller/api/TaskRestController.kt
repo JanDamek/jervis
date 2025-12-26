@@ -20,12 +20,12 @@ private val logger = KotlinLogging.logger {}
  * Tasks are created with complete content, no need for manual updates.
  */
 @RestController
-class PendingTaskRestController(
+class TaskRestController(
     private val taskService: TaskService,
 ) : IPendingTaskService {
     private val fmt: DateTimeFormatter = DateTimeFormatter.ISO_INSTANT
 
-    override suspend fun listPendingTasks(
+    override suspend fun listTasks(
         taskType: String?,
         state: String?,
     ): List<PendingTaskDto> {
@@ -47,7 +47,7 @@ class PendingTaskRestController(
             }.toList()
     }
 
-    override suspend fun countPendingTasks(
+    override suspend fun countTasks(
         taskType: String?,
         state: String?,
     ): Long {

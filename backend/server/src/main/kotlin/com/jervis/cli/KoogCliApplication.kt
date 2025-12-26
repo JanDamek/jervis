@@ -2,10 +2,10 @@ package com.jervis.cli
 
 import com.jervis.common.client.IAiderClient
 import com.jervis.common.client.ICodingEngineClient
-import com.jervis.graphdb.GraphDBService
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.SmartModelSelector
 import com.jervis.rag.KnowledgeService
+import com.jervis.rag.internal.graphdb.GraphDBService
 import com.jervis.repository.ProjectRepository
 import com.jervis.service.background.TaskService
 import com.jervis.service.connection.ConnectionService
@@ -13,8 +13,6 @@ import com.jervis.service.link.IndexedLinkService
 import com.jervis.service.link.LinkContentService
 import com.jervis.service.scheduling.TaskManagementService
 import com.jervis.service.task.UserTaskService
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
 import mu.KotlinLogging
@@ -36,7 +34,7 @@ import org.springframework.stereotype.Component
  * ./gradlew :backend:server:bootRun --args='--spring.profiles.active=cli'
  *
  * Or:
- * java -jar backend/server/build/libs/server-*.jar --spring.profiles.active=cli
+ * java-jar backend/server/build/libs/server-*.jar --spring.profiles.active=cli
  */
 @Profile("cli")
 @ComponentScan(
@@ -71,7 +69,6 @@ class KoogCliRunner(
 ) : CommandLineRunner {
     private val logger = KotlinLogging.logger {}
     private val supervisor = SupervisorJob()
-    private val scope = CoroutineScope(Dispatchers.IO + supervisor)
 
     override fun run(vararg args: String) {
         // Check if we're running in CLI mode
@@ -235,7 +232,6 @@ class KoogCliRunner(
                 projectRepository = projectRepository,
                 aiderClient = aiderClient,
                 codingEngineClient = codingEngineClient,
-                coroutineScope = scope,
                 smartModelSelector = smartModelSelector,
             )
 

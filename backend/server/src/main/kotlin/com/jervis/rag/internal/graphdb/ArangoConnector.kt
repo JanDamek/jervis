@@ -1,8 +1,9 @@
-package com.jervis.graphdb
+package com.jervis.rag.internal.graphdb
 
 import com.arangodb.ArangoDB
 import com.arangodb.ArangoDatabase
 import com.arangodb.entity.DatabaseEntity
+import com.arangodb.model.AqlQueryOptions
 import com.jervis.configuration.properties.ArangoProperties
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.Dispatchers
@@ -21,11 +22,13 @@ class ArangoConnector(
     private val logger = KotlinLogging.logger {}
 
     private val client: ArangoDB by lazy {
-        val builder = ArangoDB.Builder()
-            .host(properties.host, properties.port)
-            .user(properties.username)
-            .password(properties.password)
-            .timeout(properties.timeoutMs.toInt())
+        val builder =
+            ArangoDB
+                .Builder()
+                .host(properties.host, properties.port)
+                .user(properties.username)
+                .password(properties.password)
+                .timeout(properties.timeoutMs.toInt())
 
         // Use SSL if scheme is https; otherwise defaults are fine
         if (properties.scheme.equals("https", ignoreCase = true)) {
@@ -53,11 +56,16 @@ class ArangoConnector(
                             db.graphs.map { it.name }
                         }
                     val graphNames = allGraphs.filter { !it.startsWith("_") }
+                    val expectedPatternGraph = Regex("^c[a-f0-9]{24}_(graph)$")
 
-                    if (graphNames.isNotEmpty()) {
-                        logger.warn { "Found ${graphNames.size} graph(s) to delete: ${graphNames.joinToString()}" }
+                    val graphToDelete =
+                        graphNames.filter { collectionName ->
+                            !expectedPatternGraph.matches(collectionName)
+                        }
+                    if (graphToDelete.isNotEmpty()) {
+                        logger.warn { "Found ${graphToDelete.size} graph(s) to delete: ${graphToDelete.joinToString()}" }
                         withContext(Dispatchers.IO) {
-                            for (graphName in graphNames) {
+                            for (graphName in graphToDelete) {
                                 try {
                                     db.graph(graphName).drop()
                                     logger.info { "Deleted graph: $graphName" }
@@ -73,9 +81,10 @@ class ArangoConnector(
                 }
 
                 // Step 2: Delete unexpected collections
-                val existingCollections = withContext(Dispatchers.IO) {
-                    db.collections.map { it.name }.filter { !it.startsWith("_") }
-                }
+                val existingCollections =
+                    withContext(Dispatchers.IO) {
+                        db.collections.map { it.name }.filter { !it.startsWith("_") }
+                    }
 
                 logger.info { "Found ${existingCollections.size} collection(s) in ArangoDB: ${existingCollections.joinToString()}" }
 
@@ -83,9 +92,10 @@ class ArangoConnector(
                 // We only keep collections that match this pattern
                 val expectedPattern = Regex("^c[a-f0-9]{24}_(nodes|edges)$")
 
-                val collectionsToDelete = existingCollections.filter { collectionName ->
-                    !expectedPattern.matches(collectionName)
-                }
+                val collectionsToDelete =
+                    existingCollections.filter { collectionName ->
+                        !expectedPattern.matches(collectionName)
+                    }
 
                 if (collectionsToDelete.isNotEmpty()) {
                     logger.warn {
@@ -103,7 +113,7 @@ class ArangoConnector(
                         }
                     }
 
-                    logger.info { "Schema cleanup completed: deleted ${graphsDeleted} graph(s), ${collectionsToDelete.size} collection(s)" }
+                    logger.info { "Schema cleanup completed: deleted $graphsDeleted graph(s), ${collectionsToDelete.size} collection(s)" }
                 } else {
                     logger.info { "ArangoDB schema is clean - all collections match expected pattern" }
                 }
@@ -117,16 +127,17 @@ class ArangoConnector(
                     withContext(Dispatchers.IO) {
                         for (collectionName in nodeCollections) {
                             try {
-                                val aql = """
+                                val aql =
+                                    """
                                     FOR doc IN @@collection
                                         FILTER HAS(doc, 'entityType') && !HAS(doc, 'type')
                                         UPDATE doc WITH { type: doc.entityType } IN @@collection
                                         OPTIONS { keepNull: false }
                                         RETURN NEW
-                                """.trimIndent()
+                                    """.trimIndent()
 
                                 val bindVars = mapOf("@collection" to collectionName)
-                                val cursor = db.query(aql, Map::class.java, bindVars, com.arangodb.model.AqlQueryOptions())
+                                val cursor = db.query(aql, Map::class.java, bindVars, AqlQueryOptions())
                                 val updated = cursor.asListRemaining().size
 
                                 if (updated > 0) {
@@ -140,33 +151,37 @@ class ArangoConnector(
                     }
 
                     if (migrationCount > 0) {
-                        logger.info { "Migration completed: updated $migrationCount document(s) across ${nodeCollections.size} collection(s)" }
+                        logger.info {
+                            "Migration completed: updated $migrationCount document(s) across ${nodeCollections.size} collection(s)"
+                        }
                     } else {
                         logger.info { "No documents required migration" }
                     }
                 } catch (e: Exception) {
                     logger.warn(e) { "Migration entityType -> type encountered issues, but continuing startup" }
                 }
-
             } catch (e: Exception) {
                 logger.error(e) { "Failed to initialize ArangoDB schema" }
             }
         }
     }
 
-    suspend fun database(): ArangoDatabase = withContext(Dispatchers.IO) {
-        client.db(properties.database)
-    }
-
-    suspend fun ensureDatabase(): ArangoDatabase = withContext(Dispatchers.IO) {
-        val db = client.db(properties.database)
-        if (!db.exists()) {
-            client.createDatabase(properties.database)
+    suspend fun database(): ArangoDatabase =
+        withContext(Dispatchers.IO) {
+            client.db(properties.database)
         }
-        client.db(properties.database)
-    }
 
-    suspend fun health(): Result<DatabaseEntity> = withContext(Dispatchers.IO) {
-        runCatching { client.db(properties.database).getInfo() }
-    }
+    suspend fun ensureDatabase(): ArangoDatabase =
+        withContext(Dispatchers.IO) {
+            val db = client.db(properties.database)
+            if (!db.exists()) {
+                client.createDatabase(properties.database)
+            }
+            client.db(properties.database)
+        }
+
+    suspend fun health(): Result<DatabaseEntity> =
+        withContext(Dispatchers.IO) {
+            runCatching { client.db(properties.database).getInfo() }
+        }
 }

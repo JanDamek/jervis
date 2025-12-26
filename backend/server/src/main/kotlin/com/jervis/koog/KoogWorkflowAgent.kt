@@ -25,8 +25,6 @@ import com.jervis.common.client.IAiderClient
 import com.jervis.common.client.ICodingEngineClient
 import com.jervis.configuration.properties.KoogProperties
 import com.jervis.entity.TaskDocument
-import com.jervis.graphdb.GraphDBService
-import com.jervis.graphdb.model.Direction
 import com.jervis.koog.tools.AiderCodingTool
 import com.jervis.koog.tools.CommunicationTools
 import com.jervis.koog.tools.KnowledgeStorageTools
@@ -36,14 +34,13 @@ import com.jervis.koog.tools.scheduler.SchedulerTools
 import com.jervis.koog.tools.user.UserInteractionTools
 import com.jervis.rag.KnowledgeService
 import com.jervis.rag.SearchRequest
+import com.jervis.rag.internal.graphdb.GraphDBService
+import com.jervis.rag.internal.graphdb.model.Direction
 import com.jervis.service.background.TaskService
 import com.jervis.service.link.IndexedLinkService
 import com.jervis.service.link.LinkContentService
 import com.jervis.service.scheduling.TaskManagementService
 import com.jervis.service.task.UserTaskService
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.util.concurrent.ConcurrentHashMap
@@ -91,9 +88,6 @@ class KoogWorkflowAgent(
     private val logger = KotlinLogging.logger {}
     private val activeAgents = ConcurrentHashMap<String, String>()
 
-    private val supervisor = SupervisorJob()
-    private val scope = CoroutineScope(Dispatchers.IO + supervisor)
-
     fun isProviderInUse(providerName: String): Boolean = activeAgents.containsValue(providerName)
 
     data class EnrichmentContext(
@@ -113,10 +107,9 @@ class KoogWorkflowAgent(
                 val nodeParallelEnrich by node<String, EnrichmentContext> { input ->
                     val ragResult =
                         try {
-                            val query = input
                             val searchRequest =
                                 SearchRequest(
-                                    query = query,
+                                    query = input,
                                     clientId = task.clientId,
                                     projectId = task.projectId,
                                     maxResults = 15,
@@ -382,7 +375,6 @@ class KoogWorkflowAgent(
                         linkContentService,
                         indexedLinkService,
                         connectionService,
-                        scope,
                     ),
                 )
 
