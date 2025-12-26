@@ -4,14 +4,12 @@ import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
 import com.jervis.entity.TaskDocument
-import com.jervis.graphdb.GraphDBService
-import com.jervis.graphdb.model.Direction
-import com.jervis.graphdb.model.GraphEdge
-import com.jervis.graphdb.model.GraphNode
-import com.jervis.graphdb.model.TraversalSpec
 import com.jervis.rag.HybridSearchRequest
 import com.jervis.rag.KnowledgeService
 import com.jervis.rag.StoreChunkRequest
+import com.jervis.rag.internal.graphdb.GraphDBService
+import com.jervis.rag.internal.graphdb.model.Direction
+import com.jervis.rag.internal.graphdb.model.TraversalSpec
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.Serializable
@@ -38,9 +36,9 @@ class KnowledgeStorageTools(
     suspend fun searchKnowledge(
         @LLMDescription("Search query")
         query: String,
-        @LLMDescription("Balance: 0.0=keywords only, 0.5=balanced, 1.0=semantic only")
+        @LLMDescription("Balance: 0.0=keywords only, 0.5=balanced, 1.0=semantic only. 0.8=standard")
         alpha: Float = 0.8f,
-        @LLMDescription("Max results")
+        @LLMDescription("Max results> 10=standard")
         limit: Int = 10,
     ): SearchResult =
         try {
@@ -60,33 +58,6 @@ class KnowledgeStorageTools(
             logger.error(e) { "Search failed" }
             SearchResult(success = false, results = "", query = query, error = e.message)
         }
-
-    @Tool
-    @LLMDescription("Get single node from Graph DB by key")
-    suspend fun getNode(
-        @LLMDescription("Node key (e.g., 'jira::PROJ-123', 'file::src/Service.kt')")
-        nodeKey: String,
-    ): NodeResult {
-        val nodes =
-            graphDBService.getRelated(
-                clientId = task.clientId,
-                nodeKey = nodeKey,
-                edgeTypes = emptyList(),
-                direction = Direction.ANY,
-                limit = 10,
-            )
-        return if (nodes.isEmpty()) {
-            NodeResult(success = false, error = "Node not found: $nodeKey")
-        } else {
-            val node = nodes.first()
-            NodeResult(
-                success = true,
-                nodeKey = node.key,
-                entityType = node.entityType,
-                ragChunksCount = node.ragChunks.size,
-            )
-        }
-    }
 
     @Tool
     @LLMDescription("Get related nodes via graph relationships")
@@ -126,57 +97,6 @@ class KnowledgeStorageTools(
         } catch (e: Exception) {
             logger.error(e) { "Failed to get related nodes" }
             RelatedNodesResult(success = false, sourceNode = nodeKey, relatedNodes = emptyList(), error = e.message)
-        }
-
-    @Tool
-    @LLMDescription("Create or update node in Graph DB")
-    suspend fun upsertNode(
-        @LLMDescription("Node key (format: 'type::id')")
-        nodeKey: String,
-        @LLMDescription("Entity type (e.g., jira_issue, file, class, commit)")
-        entityType: String,
-    ): UpsertResult =
-        try {
-            val result =
-                graphDBService.upsertNode(
-                    clientId = task.clientId,
-                    node = GraphNode(key = nodeKey, entityType = entityType),
-                )
-            logger.info { "NODE_UPSERTED: $nodeKey (${if (result.created) "created" else "updated"})" }
-            UpsertResult(success = true, nodeKey = nodeKey, created = result.created)
-        } catch (e: Exception) {
-            logger.error(e) { "Failed to upsert node" }
-            UpsertResult(success = false, nodeKey = nodeKey, created = false, error = e.message)
-        }
-
-    @Tool
-    @LLMDescription("Create relationship (edge) between two nodes")
-    suspend fun createLink(
-        @LLMDescription("Source node key")
-        fromKey: String,
-        @LLMDescription("Target node key")
-        toKey: String,
-        @LLMDescription("Relationship type (e.g., mentions, implements, fixes, calls)")
-        edgeType: String,
-    ): LinkResult =
-        try {
-            val result =
-                graphDBService.upsertEdge(
-                    clientId = task.clientId,
-                    edge = GraphEdge(edgeType = edgeType, fromKey = fromKey, toKey = toKey),
-                )
-            logger.info { "LINK_CREATED: $fromKey --[$edgeType]--> $toKey" }
-            LinkResult(success = true, fromKey = fromKey, toKey = toKey, edgeType = edgeType, created = result.created)
-        } catch (e: Exception) {
-            logger.error(e) { "Failed to create link" }
-            LinkResult(
-                success = false,
-                fromKey = fromKey,
-                toKey = toKey,
-                edgeType = edgeType,
-                created = false,
-                error = e.message,
-            )
         }
 
     @Tool
@@ -222,8 +142,6 @@ class KnowledgeStorageTools(
             )
         }
 
-    // ==================== COMBINED OPERATIONS ====================
-
     @Tool
     @LLMDescription("Store knowledge chunk in RAG and create graph structure atomically")
     suspend fun storeKnowledgeWithGraph(
@@ -231,18 +149,10 @@ class KnowledgeStorageTools(
         content: String,
         @LLMDescription("Main node key for this content")
         mainNodeKey: String,
-        @LLMDescription("Graph relationships in 'source -[TYPE]-> target' format")
+        @LLMDescription("Graph relationships as triple 'from|edge|to'.")
         relationships: List<String> = emptyList(),
     ): CombinedStoreResult =
         try {
-            val parsedRels = relationships.mapNotNull { parseRelationship(it) }
-            val allNodes = mutableSetOf(mainNodeKey)
-            parsedRels.forEach { (from, _, to) ->
-                allNodes.add(from)
-                allNodes.add(to)
-            }
-
-            // Store chunk
             val chunkId =
                 knowledgeService.storeChunk(
                     StoreChunkRequest(
@@ -250,83 +160,30 @@ class KnowledgeStorageTools(
                         clientId = task.clientId,
                         projectId = task.projectId,
                         sourceUrn = task.sourceUrn,
-                        graphRefs = allNodes.toList(),
+                        mainNodeKey = mainNodeKey,
+                        relationships = relationships,
                     ),
                 )
 
-            // Create nodes
-            for (nodeKey in allNodes) {
-                val (type, _) = parseNodeKey(nodeKey)
-                graphDBService.upsertNode(
-                    clientId = task.clientId,
-                    node = GraphNode(key = nodeKey, entityType = type, ragChunks = listOf(chunkId)),
-                )
-            }
-
-            // Create edges
-            for ((from, edgeType, to) in parsedRels) {
-                graphDBService.upsertEdge(
-                    clientId = task.clientId,
-                    edge = GraphEdge(edgeType = edgeType, fromKey = from, toKey = to),
-                )
-            }
-
-            logger.info { "COMBINED_STORE: chunkId=$chunkId, nodes=${allNodes.size}, edges=${parsedRels.size}" }
+            logger.info { "STORE_WITH_GRAPH: chunkId=$chunkId, mainNodeKey=$mainNodeKey, relationships=${relationships.size}" }
             CombinedStoreResult(
                 success = true,
                 chunkId = chunkId,
-                mainNodeKey = mainNodeKey,
-                nodesCreated = allNodes.size,
-                edgesCreated = parsedRels.size,
             )
         } catch (e: Exception) {
-            logger.error(e) { "Combined store failed" }
+            logger.error(e) { "Store with graph failed" }
             CombinedStoreResult(
                 success = false,
                 chunkId = "",
-                mainNodeKey = mainNodeKey,
-                nodesCreated = 0,
-                edgesCreated = 0,
                 error = e.message,
             )
         }
-
-    // ==================== HELPER FUNCTIONS ====================
-
-    private fun parseRelationship(rel: String): Triple<String, String, String>? {
-        val regex = """^(.+?)\s*-\[(.+?)\]->\s*(.+)$""".toRegex()
-        val match = regex.matchEntire(rel.trim()) ?: return null
-        val (from, edge, to) = match.destructured
-        return Triple(from.trim(), edge.trim(), to.trim())
-    }
-
-    private fun parseNodeKey(key: String): Pair<String, String> {
-        val parts = key.split("::", limit = 2)
-        return if (parts.size == 2) parts[0] to parts[1] else "entity" to key
-    }
-
-    @Serializable
-    data class StoreChunkResult(
-        val success: Boolean,
-        val chunkId: String,
-        val nodeKey: String,
-        val error: String? = null,
-    )
 
     @Serializable
     data class SearchResult(
         val success: Boolean,
         val results: String,
         val query: String,
-        val error: String? = null,
-    )
-
-    @Serializable
-    data class NodeResult(
-        val success: Boolean,
-        val nodeKey: String? = null,
-        val entityType: String? = null,
-        val ragChunksCount: Int = 0,
         val error: String? = null,
     )
 
@@ -346,24 +203,6 @@ class KnowledgeStorageTools(
     )
 
     @Serializable
-    data class UpsertResult(
-        val success: Boolean,
-        val nodeKey: String,
-        val created: Boolean,
-        val error: String? = null,
-    )
-
-    @Serializable
-    data class LinkResult(
-        val success: Boolean,
-        val fromKey: String,
-        val toKey: String,
-        val edgeType: String,
-        val created: Boolean,
-        val error: String? = null,
-    )
-
-    @Serializable
     data class TraversalResult(
         val success: Boolean,
         val startKey: String,
@@ -376,9 +215,6 @@ class KnowledgeStorageTools(
     data class CombinedStoreResult(
         val success: Boolean,
         val chunkId: String,
-        val mainNodeKey: String,
-        val nodesCreated: Int,
-        val edgesCreated: Int,
         val error: String? = null,
     )
 }

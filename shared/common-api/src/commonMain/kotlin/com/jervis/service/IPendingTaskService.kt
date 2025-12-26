@@ -9,13 +9,13 @@ import de.jensklingenberg.ktorfit.http.Query
  */
 interface IPendingTaskService {
     @GET("api/pending-tasks")
-    suspend fun listPendingTasks(
+    suspend fun listTasks(
         @Query("taskType") taskType: String? = null,
         @Query("state") state: String? = null,
     ): List<PendingTaskDto>
 
     @GET("api/pending-tasks/count")
-    suspend fun countPendingTasks(
+    suspend fun countTasks(
         @Query("taskType") taskType: String? = null,
         @Query("state") state: String? = null,
     ): Long

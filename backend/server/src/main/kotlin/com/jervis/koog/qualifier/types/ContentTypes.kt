@@ -9,19 +9,10 @@ import kotlinx.serialization.Serializable
  * Each content type requires different key information extraction and processing approach.
  */
 enum class ContentType {
-    /** Email message - requires sender, recipient, subject extraction */
     EMAIL,
-
-    /** JIRA ticket - requires key (e.g., SDB-2080), status, assignee, epic, sprint */
     JIRA,
-
-    /** Confluence page - requires author, title, topic classification */
     CONFLUENCE,
-
-    /** Log file - requires summarization instead of chunking */
     LOG,
-
-    /** Generic content - standard chunking and indexing */
     GENERIC,
 }
 

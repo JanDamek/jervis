@@ -10,6 +10,8 @@ import com.jervis.service.connection.ConnectionService
 import com.jervis.service.link.IndexedLinkService
 import com.jervis.service.link.LinkContentService
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
@@ -26,11 +28,13 @@ class QualifierRoutingTools(
     private val linkContentService: LinkContentService,
     private val indexedLinkService: IndexedLinkService,
     private val connectionService: ConnectionService,
-    private val coroutineScope: CoroutineScope,
 ) : ToolSet {
     companion object {
         private val logger = KotlinLogging.logger {}
     }
+
+    private val supervisor = SupervisorJob()
+    private val scope = CoroutineScope(Dispatchers.IO + supervisor)
 
     @Serializable
     enum class RoutingDecision { DONE, LIFT_UP }
@@ -85,7 +89,7 @@ Background processing: Returns immediately, download happens asynchronously""",
             )
         }
 
-        coroutineScope.launch {
+        scope.launch {
             try {
                 // Check if link already indexed
                 if (indexedLinkService.isLinkIndexed(url, task.clientId)) {

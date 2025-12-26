@@ -42,5 +42,6 @@ data class StoreChunkRequest(
     val projectId: ProjectId? = null,
     val content: String,
     val sourceUrn: SourceUrn,
-    val graphRefs: List<String>,
+    val mainNodeKey: String,
+    val relationships: List<String>,
 )

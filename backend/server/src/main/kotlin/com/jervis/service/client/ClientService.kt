@@ -1,8 +1,8 @@
 package com.jervis.service.client
 
 import com.jervis.entity.ClientDocument
-import com.jervis.graphdb.GraphDBService
 import com.jervis.rag.internal.WeaviatePerClientProvisioner
+import com.jervis.rag.internal.graphdb.GraphDBService
 import com.jervis.repository.ClientRepository
 import com.jervis.types.ClientId
 import kotlinx.coroutines.flow.toList

@@ -5,6 +5,9 @@ import com.jervis.rag.KnowledgeService
 import com.jervis.rag.SearchRequest
 import com.jervis.rag.SearchResult
 import com.jervis.rag.StoreChunkRequest
+import com.jervis.rag.internal.graphdb.GraphDBService
+import com.jervis.rag.internal.graphdb.model.GraphEdge
+import com.jervis.rag.internal.graphdb.model.GraphNode
 import com.jervis.rag.internal.model.RagMetadata
 import com.jervis.rag.internal.repository.VectorDocument
 import com.jervis.rag.internal.repository.VectorFilters
@@ -41,6 +44,7 @@ internal class KnowledgeServiceImpl(
     private val ragMetadataUpdater: RagMetadataUpdater,
     private val weaviateProvisioner: WeaviatePerClientProvisioner,
     private val graphEntityRegistryRepository: GraphEntityRegistryRepository,
+    private val graphDBService: GraphDBService,
 ) : KnowledgeService {
     private val logger = KotlinLogging.logger {}
 
@@ -58,7 +62,14 @@ internal class KnowledgeServiceImpl(
             throw IllegalArgumentException("Content cannot be blank")
         }
 
-        val normalizedGraph = normalizeGraphRefs(request.clientId, request.graphRefs)
+        val graphPayload =
+            buildGraphPayload(
+                clientId = request.clientId,
+                mainNodeKey = request.mainNodeKey,
+                relationships = request.relationships,
+            )
+
+        val normalizedGraph = normalizeGraphRefs(request.clientId, graphPayload.allNodes)
 
         val chunkId = UUID.randomUUID().toString()
 
@@ -72,6 +83,7 @@ internal class KnowledgeServiceImpl(
                 "content" to request.content,
                 "sourceUrn" to request.sourceUrn.value,
                 "clientId" to request.clientId.toString(),
+                "mainNodeKey" to request.mainNodeKey,
             )
 
         request.projectId?.let { metadata["projectId"] = it.toString() }
@@ -84,6 +96,10 @@ internal class KnowledgeServiceImpl(
             metadata["graphAreas"] = normalizedGraph.areas
             normalizedGraph.rootRef?.let { metadata["graphRootRef"] = it }
             normalizedGraph.primaryArea?.let { metadata["graphPrimaryArea"] = it }
+        }
+
+        if (graphPayload.canonicalRelationships.isNotEmpty()) {
+            metadata["graphRelationships"] = graphPayload.canonicalRelationships
         }
 
         // 3. Store in Weaviate (with BM25 indexing on the 'content' field)
@@ -100,7 +116,19 @@ internal class KnowledgeServiceImpl(
         val classNameOverride = perClientClassName(request.clientId)
         weaviateVectorStore.store(vectorDoc, classNameOverride).getOrThrow()
 
-        // 4. Cross-link RAG -> Graph (best-effort)
+        // 4. Persist graph (best-effort): nodes + edges
+        runCatching {
+            persistGraph(
+                clientId = request.clientId,
+                ragChunkId = chunkId,
+                nodes = normalizedGraph.refs,
+                relationships = graphPayload.canonicalTriples,
+            )
+        }.onFailure { e ->
+            logger.warn(e) { "Graph persistence failed for chunk $chunkId (non-fatal)" }
+        }
+
+        // 5. Cross-link RAG -> Graph (best-effort, legacy hook)
         runCatching {
             val meta =
                 RagMetadata(
@@ -295,6 +323,162 @@ internal class KnowledgeServiceImpl(
         val primaryArea: String?,
     )
 
+    private data class GraphPayload(
+        val allNodes: List<String>,
+        val canonicalTriples: List<Triple<String, String, String>>,
+        val canonicalRelationships: List<String>,
+    )
+
+    private suspend fun buildGraphPayload(
+        clientId: ClientId,
+        mainNodeKey: String,
+        relationships: List<String>,
+    ): GraphPayload {
+        val mainRaw = mainNodeKey.trim()
+        val mainId = extractTrailingId(mainRaw)
+
+        val parsedTriples =
+            relationships
+                .mapNotNull { parseRelationshipPipe(it) }
+                .map { (from, edge, to) ->
+                    Triple(
+                        expandShortNodeKey(from, mainRaw, mainId),
+                        edge,
+                        expandShortNodeKey(to, mainRaw, mainId),
+                    )
+                }
+
+        val canonicalMain = resolveCanonicalGraphRef(clientId, normalizeSingleGraphRef(mainRaw))
+
+        val canonicalTriples =
+            parsedTriples.map { (from, edge, to) ->
+                val cFrom = resolveCanonicalGraphRef(clientId, normalizeSingleGraphRef(from))
+                val cTo = resolveCanonicalGraphRef(clientId, normalizeSingleGraphRef(to))
+                Triple(cFrom, normalizeEdgeType(edge), cTo)
+            }
+
+        val allNodes =
+            buildSet {
+                add(canonicalMain)
+                canonicalTriples.forEach { (from, _, to) ->
+                    add(from)
+                    add(to)
+                }
+            }.toList()
+
+        val canonicalRelationships =
+            canonicalTriples
+                .map { (from, edge, to) -> "$from|$edge|$to" }
+                .distinct()
+
+        return GraphPayload(
+            allNodes = allNodes,
+            canonicalTriples = canonicalTriples,
+            canonicalRelationships = canonicalRelationships,
+        )
+    }
+
+    private fun extractTrailingId(nodeKey: String): String? {
+        val base = nodeKey.substringBefore("::").trim()
+        if (base.isBlank()) return null
+        if (!base.contains(":")) return null
+        val id = base.substringAfterLast(":").trim()
+        return id.ifBlank { null }
+    }
+
+    private fun expandShortNodeKey(
+        raw: String,
+        mainNodeKey: String,
+        mainId: String?,
+    ): String {
+        val s = raw.trim()
+        if (s.isBlank()) return s
+
+        if (s.contains(":") || s.contains("::")) return s
+
+        if (mainId != null && s == mainId) return mainNodeKey
+        if (mainNodeKey.endsWith(":$s")) return mainNodeKey
+
+        return s
+    }
+
+    private fun parseRelationshipPipe(rel: String): Triple<String, String, String>? {
+        val s = rel.trim()
+        if (s.isBlank()) return null
+
+        // Primary format: from|edge|to
+        val parts = s.split('|', limit = 3).map { it.trim() }
+        if (parts.size == 3 && parts.all { it.isNotBlank() }) {
+            return Triple(parts[0], parts[1], parts[2])
+        }
+
+        // Compatibility: from->edge->to
+        if (s.contains("->")) {
+            val p = s.split("->", limit = 3).map { it.trim() }
+            if (p.size == 3 && p.all { it.isNotBlank() }) {
+                return Triple(p[0], p[1], p[2])
+            }
+        }
+
+        // Compatibility: from -[edge]-> to
+        val regex = """^(.+?)\s*-\[(.+?)]-?>\s*(.+)$""".toRegex()
+        val match = regex.matchEntire(s) ?: return null
+        val (from, edge, to) = match.destructured
+        val f = from.trim()
+        val e = edge.trim()
+        val t = to.trim()
+        if (f.isBlank() || e.isBlank() || t.isBlank()) return null
+        return Triple(f, e, t)
+    }
+
+    private fun normalizeEdgeType(edge: String): String =
+        edge
+            .trim()
+            .lowercase()
+            .replace(Regex("\\s+"), "_")
+
+    private fun entityTypeFromNodeKey(nodeKey: String): String {
+        val base = nodeKey.substringBefore("::").trim()
+        return base
+            .substringBefore(":", missingDelimiterValue = base)
+            .trim()
+            .lowercase()
+            .ifBlank { "entity" }
+    }
+
+    private suspend fun persistGraph(
+        clientId: ClientId,
+        ragChunkId: String,
+        nodes: List<String>,
+        relationships: List<Triple<String, String, String>>,
+    ) {
+        // Upsert nodes (attach chunk id). GraphDBService should merge ragChunks on upsert.
+        for (key in nodes) {
+            graphDBService.upsertNode(
+                clientId = clientId,
+                node =
+                    GraphNode(
+                        key = key,
+                        entityType = entityTypeFromNodeKey(key),
+                        ragChunks = listOf(ragChunkId),
+                    ),
+            )
+        }
+
+        // Upsert edges
+        for ((from, edgeType, to) in relationships) {
+            graphDBService.upsertEdge(
+                clientId = clientId,
+                edge =
+                    GraphEdge(
+                        edgeType = edgeType,
+                        fromKey = from,
+                        toKey = to,
+                    ),
+            )
+        }
+    }
+
     /**
      * Normalizes graphRefs coming from the agent.
      * Goal: keep refs stable (case/whitespace), and also derive query-friendly "areas".
@@ -337,8 +521,9 @@ internal class KnowledgeServiceImpl(
 
         val rootRef =
             refs.firstOrNull { ref ->
-                // Prefer the "document root" ref if present
-                ref.startsWith("email_") || ref.startsWith("jira_") || ref.startsWith("confluence_") ||
+                ref.startsWith("email:") || ref.startsWith("jira:") || ref.startsWith("confluence:") ||
+                    ref.startsWith("doc:") || ref.startsWith("log:") ||
+                    ref.startsWith("email_") || ref.startsWith("jira_") || ref.startsWith("confluence_") ||
                     ref.startsWith("doc_") || ref.startsWith("log_")
             } ?: refs.firstOrNull()
 
@@ -413,6 +598,13 @@ internal class KnowledgeServiceImpl(
             // Ensure the canonical key is also present as an alias to itself (helps future lookups + suggestions)
             ensureCanonicalSelfMapping(clientId, canonicalToUse, now)
 
+            // If aliasRef is already canonical, DO NOT insert a second identical document.
+            // Self-mapping above is sufficient.
+            if (aliasRef == canonicalToUse) {
+                graphRefCache[cacheKey] = canonicalToUse
+                return@withLock canonicalToUse
+            }
+
             // 4) Upsert the alias mapping (best-effort, tolerates races)
             runCatching {
                 graphEntityRegistryRepository.save(
@@ -447,7 +639,25 @@ internal class KnowledgeServiceImpl(
     ) {
         val clientKey = clientId.toString()
         val existing = graphEntityRegistryRepository.findFirstByClientIdAndAliasKey(clientKey, canonicalRef)
-        if (existing != null) return
+
+        if (existing != null) {
+            // Best-effort stats refresh (non-fatal)
+            runCatching {
+                graphEntityRegistryRepository.save(
+                    existing.copy(
+                        area = existing.area ?: deriveGraphArea(existing.canonicalKey),
+                        lastSeenAt = now,
+                        seenCount = existing.seenCount + 1,
+                        updatedAt = now,
+                    ),
+                )
+            }.onFailure { e ->
+                if (e !is DuplicateKeyException) {
+                    logger.debug(e) { "Failed to update canonical self-mapping stats (non-fatal): $canonicalRef" }
+                }
+            }
+            return
+        }
 
         runCatching {
             graphEntityRegistryRepository.save(
@@ -528,11 +738,23 @@ internal class KnowledgeServiceImpl(
         val base = ref.substringBefore("::").trim()
         if (base.isBlank()) return null
 
-        val ns = base.substringBefore(":", missingDelimiterValue = base).trim()
-        if (ns.isBlank()) return null
+        val nsRaw = base.substringBefore(":", missingDelimiterValue = base).trim()
+        if (nsRaw.isBlank()) return null
 
         // If namespace is compound (email_email / jira_issue / etc.), area is the first token.
-        return ns.substringBefore("_").lowercase()
+        val areaCandidate = nsRaw.substringBefore("_").lowercase()
+
+        // Coarse bucketing for better retrieval/filters (keeps agent freedom, but gives stable buckets)
+        return when (areaCandidate) {
+            // Time-like entities
+            "date", "datetime", "time", "deadline", "due" -> "time"
+
+            // Location-like entities
+            "address", "street", "location", "place", "city", "country" -> "location"
+
+            // Otherwise keep the derived area as-is
+            else -> areaCandidate
+        }
     }
 }
 

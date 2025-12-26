@@ -1,7 +1,7 @@
 package com.jervis.rag.internal
 
-import com.jervis.graphdb.GraphDBService
-import com.jervis.graphdb.model.GraphNode
+import com.jervis.rag.internal.graphdb.GraphDBService
+import com.jervis.rag.internal.graphdb.model.GraphNode
 import com.jervis.rag.internal.model.RagMetadata
 import com.jervis.types.ClientId
 import kotlinx.coroutines.Dispatchers

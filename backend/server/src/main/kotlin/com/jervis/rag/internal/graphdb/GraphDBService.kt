@@ -1,19 +1,21 @@
-package com.jervis.graphdb
+package com.jervis.rag.internal.graphdb
 
 import com.arangodb.entity.CollectionType
+import com.arangodb.entity.EdgeDefinition
+import com.arangodb.model.AqlQueryOptions
 import com.arangodb.model.CollectionCreateOptions
 import com.arangodb.model.PersistentIndexOptions
-import com.jervis.graphdb.model.Direction
-import com.jervis.graphdb.model.GraphEdge
-import com.jervis.graphdb.model.GraphEdgeResult
-import com.jervis.graphdb.model.GraphNode
-import com.jervis.graphdb.model.GraphNodeResult
-import com.jervis.graphdb.model.GraphSchemaStatus
-import com.jervis.graphdb.model.TraversalSpec
+import com.jervis.rag.internal.graphdb.model.Direction
+import com.jervis.rag.internal.graphdb.model.GraphEdge
+import com.jervis.rag.internal.graphdb.model.GraphEdgeResult
+import com.jervis.rag.internal.graphdb.model.GraphNode
+import com.jervis.rag.internal.graphdb.model.GraphNodeResult
+import com.jervis.rag.internal.graphdb.model.GraphSchemaStatus
+import com.jervis.rag.internal.graphdb.model.TraversalSpec
 import com.jervis.types.ClientId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -121,9 +123,52 @@ class GraphDBService(
         direction: Direction,
         limit: Int,
     ): List<GraphNode> {
-        // TODO: implement AQL traversal once driver signature is verified
-        logger.debug { "getRelated requested: nodeKey=$nodeKey, edgeTypes=$edgeTypes, direction=$direction, limit=$limit" }
-        return emptyList()
+        val startVertex = keyToDocumentId(clientId, nodeKey)
+        val dir =
+            when (direction) {
+                Direction.OUTBOUND -> "OUTBOUND"
+                Direction.INBOUND -> "INBOUND"
+                Direction.ANY -> "ANY"
+            }
+
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val db = connector.ensureDatabase()
+                val aql =
+                    if (edgeTypes.isEmpty()) {
+                        """
+                        FOR v, e IN 1..1 $dir @startVertex GRAPH @graphName
+                            LIMIT @limit
+                            RETURN v
+                        """.trimIndent()
+                    } else {
+                        """
+                        FOR v, e IN 1..1 $dir @startVertex GRAPH @graphName
+                            FILTER e.edgeType IN @edgeTypes
+                            LIMIT @limit
+                            RETURN v
+                        """.trimIndent()
+                    }
+
+                val bindVars =
+                    mutableMapOf<String, Any>(
+                        "startVertex" to startVertex,
+                        "graphName" to graphName(clientId),
+                        "limit" to limit.coerceAtLeast(0),
+                    ).apply {
+                        if (edgeTypes.isNotEmpty()) put("edgeTypes", edgeTypes)
+                    }
+
+                val cursor = db.query(aql, Map::class.java, bindVars, AqlQueryOptions())
+                val rows = cursor.asListRemaining()
+                rows.mapNotNull { (it as? Map<*, *>)?.let(::mapToGraphNode) }
+            }.getOrElse { e ->
+                logger.error(e) {
+                    "getRelated failed: clientId=$clientId, nodeKey=$nodeKey, edgeTypes=$edgeTypes, direction=$direction, limit=$limit"
+                }
+                emptyList()
+            }
+        }
     }
 
     suspend fun traverse(
@@ -131,9 +176,49 @@ class GraphDBService(
         startKey: String,
         spec: TraversalSpec,
     ): Flow<GraphNode> {
-        // TODO: implement AQL traversal once driver signature is verified
-        logger.debug { "traverse requested: startKey=$startKey, spec=$spec" }
-        return emptyFlow()
+        val startVertex = keyToDocumentId(clientId, startKey)
+        val maxDepth = spec.maxDepth.coerceAtLeast(1)
+        val edgeTypes = spec.edgeTypes
+
+        return flow {
+            val nodes: List<GraphNode> =
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        val db = connector.ensureDatabase()
+                        val aql =
+                            if (edgeTypes.isEmpty()) {
+                                """
+                                FOR v, e IN 1..@maxDepth ANY @startVertex GRAPH @graphName
+                                    RETURN DISTINCT v
+                                """.trimIndent()
+                            } else {
+                                """
+                                FOR v, e IN 1..@maxDepth ANY @startVertex GRAPH @graphName
+                                    FILTER e.edgeType IN @edgeTypes
+                                    RETURN DISTINCT v
+                                """.trimIndent()
+                            }
+
+                        val bindVars =
+                            mutableMapOf<String, Any>(
+                                "startVertex" to startVertex,
+                                "graphName" to graphName(clientId),
+                                "maxDepth" to maxDepth,
+                            ).apply {
+                                if (edgeTypes.isNotEmpty()) put("edgeTypes", edgeTypes)
+                            }
+
+                        val cursor = db.query(aql, Map::class.java, bindVars, AqlQueryOptions())
+                        val rows = cursor.asListRemaining()
+                        rows.mapNotNull { (it as? Map<*, *>)?.let(::mapToGraphNode) }
+                    }.getOrElse { e ->
+                        logger.error(e) { "traverse failed: clientId=$clientId, startKey=$startKey, spec=$spec" }
+                        emptyList()
+                    }
+                }
+
+            for (n in nodes) emit(n)
+        }
     }
 
     suspend fun ensureSchema(clientId: ClientId): GraphSchemaStatus =
@@ -175,7 +260,7 @@ class GraphDBService(
                     val graph = db.graph(graphName)
                     if (!graph.exists()) {
                         val edgeDefinition =
-                            com.arangodb.entity.EdgeDefinition()
+                            EdgeDefinition()
                                 .collection(edgeCollName)
                                 .from(nodeCollName)
                                 .to(nodeCollName)
@@ -200,6 +285,16 @@ class GraphDBService(
                 warnings = warnings,
             )
         }
+
+    private fun mapToGraphNode(doc: Map<*, *>): GraphNode {
+        val key = doc["_key"]?.toString().orEmpty()
+        val type = doc["type"]?.toString() ?: "entity"
+        val ragChunks =
+            (doc["ragChunks"] as? List<*>)
+                ?.mapNotNull { it?.toString() }
+                ?: emptyList()
+        return GraphNode(key = key, entityType = type, ragChunks = ragChunks)
+    }
 
     private fun keyToDocumentId(
         clientId: ClientId,
