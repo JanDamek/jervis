@@ -1,30 +1,21 @@
 package com.jervis.koog.qualifier
 
-import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
-import ai.koog.agents.core.dsl.builder.forwardTo
-import ai.koog.agents.core.dsl.builder.strategy
-import ai.koog.agents.core.dsl.extension.nodeExecuteTool
-import ai.koog.agents.core.dsl.extension.nodeLLMRequest
-import ai.koog.agents.core.dsl.extension.nodeLLMRequestStructured
-import ai.koog.agents.core.dsl.extension.nodeLLMSendToolResult
-import ai.koog.agents.core.dsl.extension.onAssistantMessage
-import ai.koog.agents.core.dsl.extension.onToolCall
 import ai.koog.agents.core.feature.handler.agent.AgentStartingContext
-import ai.koog.agents.core.tools.Tool
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.core.tools.reflect.asTools
+import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.agents.features.eventHandler.feature.EventHandler
+import ai.koog.agents.planner.AIAgentPlannerStrategy
+import ai.koog.agents.planner.PlannerAIAgent
+import ai.koog.agents.planner.goap.goap
 import ai.koog.prompt.dsl.prompt
-import ai.koog.prompt.structure.StructuredResponse
-import com.jervis.configuration.properties.KoogProperties
 import com.jervis.entity.TaskDocument
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.OllamaProviderSelector
 import com.jervis.koog.SmartModelSelector
 import com.jervis.koog.tools.KnowledgeStorageTools
 import com.jervis.koog.tools.qualifier.QualifierRoutingTools
-import com.jervis.koog.vision.AttachmentDescription
 import com.jervis.koog.vision.VisionAnalysisAgent
 import com.jervis.rag.KnowledgeService
 import com.jervis.rag.internal.graphdb.GraphDBService
@@ -32,9 +23,9 @@ import com.jervis.service.background.TaskService
 import com.jervis.service.connection.ConnectionService
 import com.jervis.service.link.IndexedLinkService
 import com.jervis.service.link.LinkContentService
-import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
+import kotlin.reflect.typeOf
 
 /**
  * KoogQualifierAgent
@@ -48,7 +39,6 @@ import org.springframework.stereotype.Service
 @Service
 class KoogQualifierAgent(
     private val promptExecutorFactory: KoogPromptExecutorFactory,
-    private val koogProperties: KoogProperties,
     private val providerSelector: OllamaProviderSelector,
     private val modelSelector: SmartModelSelector,
     private val visionAgent: VisionAnalysisAgent,
@@ -61,19 +51,7 @@ class KoogQualifierAgent(
 ) {
     private val logger = KotlinLogging.logger {}
 
-    private data class PipelineCtx(
-        var basicInfo: String = "",
-        val pendingGroups: ArrayDeque<String> = ArrayDeque(),
-    )
-
-    data class AgentWithInput(
-        val agent: AIAgent<SplitInput, String>,
-        val input: SplitInput,
-    )
-
-    suspend fun create(task: TaskDocument): AgentWithInput {
-        val ctx = PipelineCtx()
-
+    suspend fun run(task: TaskDocument) {
         val visionResult = visionAgent.analyze(task.attachments)
 
         logger.info {
@@ -81,7 +59,7 @@ class KoogQualifierAgent(
                 "contentLength=${task.content.length} | attachments=${visionResult.descriptions.size}"
         }
 
-        val routingTool =
+        val qualifierTool =
             QualifierRoutingTools(
                 task,
                 taskService,
@@ -90,258 +68,201 @@ class KoogQualifierAgent(
                 connectionService,
             )
 
-        val indexingTool = KnowledgeStorageTools(task, knowledgeService, graphDBService)
-
-        val routingTools: List<Tool<*, *>> = routingTool.asTools()
-        val storageTools: List<Tool<*, *>> = indexingTool.asTools()
+        val tools = qualifierTool.asTools()
 
         val toolRegistry =
             ToolRegistry {
-                routingTools.forEach { tool(it) }
-                storageTools.forEach { tool(it) }
+                tools(qualifierTool)
+                tools(KnowledgeStorageTools(task, knowledgeService, graphDBService))
             }
 
-        val graphStrategy =
-            strategy<SplitInput, String>("Jervis Qualifier Strategy") {
-                val nodeSplitPrompt by node<SplitInput, String>(name = "Split prompt") { input ->
-                    buildString {
-                        appendLine("Content to split:")
-                        appendLine(input.content)
-                        if (input.visionDescriptions.isNotEmpty()) {
-                            appendLine()
-                            appendLine("Vision analysis:")
-                            input.visionDescriptions.forEach { desc ->
-                                appendLine("- ${desc.filename}: ${desc.description}")
+        val planner =
+            goap<IndexingGoapState>(typeOf<IndexingGoapState>()) {
+                // Action 1: Analyze content and plan routing
+                action(
+                    name = "AnalyzeAndPlanRouting",
+                    precondition = { state -> !state.analyzed },
+                    belief = { state -> state.copy(analyzed = true) },
+                    cost = { 2.0 },
+                ) { ctx, state ->
+                    logger.info { "GOAP_ACTION: Analyzing content and planning routing" }
+
+                    val response =
+                        ctx.llm.writeSession {
+                            appendPrompt {
+                                user {
+                                    +"""Analyze this content and group content into thematic groups for indexing.
+
+Content:
+${state.taskContent}
+
+${
+                                        if (state.visionDescriptions.isNotEmpty()) {
+                                            "Attachments:\n${
+                                                state.visionDescriptions.joinToString(
+                                                    "\n",
+                                                ) { "- ${it.filename}: ${it.description}" }
+                                            }\n"
+                                        } else {
+                                            ""
+                                        }
+                                    }
+
+Tasks:
+1. Identify distinct thematic groups in the content
+2. Determine final routing for this task:
+   - DONE: Content is purely informational, indexing is sufficient
+   - LIFT_UP: Requires further processing, coding, or user interaction
+   - Create SCHEDULED_TASK: If follow-up action needed at specific time
+   - Create USER_TASK: If requires user decision or input
+
+Provide the thematic groups."""
+                                }
+                            }
+                            requestLLMStructured<InputGroup>()
+                        }
+
+                    state.copy(
+                        analyzed = response.isSuccess,
+                        groups = response.getOrNull()?.data?.groups ?: emptyList(),
+                        finalAction = response.getOrNull()?.data?.finalAction,
+                    )
+                }
+
+                // Action 2: Store groups to RAG with relationships
+                action(
+                    name = "IndexGroups",
+                    precondition = { state -> state.analyzed && !state.indexed },
+                    belief = { state -> state.copy(indexed = true) },
+                    cost = { 2.0 },
+                ) { ctx, state ->
+                    logger.info { "GOAP_ACTION: Indexing groups to RAG and Graph" }
+
+                    ctx.llm.writeSession {
+                        appendPrompt {
+                            user {
+                                +"""Index the identified thematic groups to knowledge base.
+
+For each group:
+1. Create semantic chunks (200-500 words each)
+2. Extract relationships as triplets: from|edge|to
+3. Store using storeKnowledgeWithGraph tool
+Content for chunking: ${state.groups.first()}
+Store all groups completely."""
                             }
                         }
+                        requestLLMForceOneTool(tools.first { it.name == "storeKnowledgeWithGraph" })
                     }
+                    state.groups.drop(1)
+                    state.copy(indexed = state.groups.isEmpty())
                 }
 
-                val nodeSplit by nodeLLMRequestStructured<ThematicSplit>(
-                    name = "Split",
-                    examples =
-                        listOf(
-                            ThematicSplit(
-                                basicInfo = "Complete authentication system refactoring with OAuth2 migration, security audit, and deployment plan.",
-                                groups =
-                                    listOf(
-                                        """
-                                        Authentication System Refactoring - Complete Project
+                // Action 3: Execute routing decision
+                action(
+                    name = "ExecuteRouting",
+                    precondition = { state -> state.indexed && !state.routed },
+                    belief = { state -> state.copy(routed = true) },
+                    cost = { 1.0 },
+                ) { ctx, state ->
+                    logger.info { "GOAP_ACTION: Executing routing decision" }
 
-                                        OAuth2 Implementation: Added OAuth2Provider service supporting Google, GitHub, and Microsoft. Updated LoginController for multiple auth methods including legacy password-based and new OAuth2 flows. Integrated JWT token generation (15-min access, 7-day refresh tokens). Modified AuthConfig for OAuth2 endpoints (/oauth2/authorize, /oauth2/token, /oauth2/callback). Created database tables for OAuth2 state management and provider mappings. Implemented provider-specific adapters.
+                    val response =
+                        ctx.llm.writeSession {
+                            appendPrompt {
+                                user {
+                                    +"""Execute the routing decision you determined earlier.
 
-                                        Testing: Successful login flow with all providers. Load testing: 1000 concurrent auths without degradation. Edge cases tested: expired tokens, invalid state, network failures. 95% code coverage.
+Available routing tools:
+- routeTask(DONE): Mark task as complete (no further action)
+- routeTask(LIFT_UP): Escalate to GPU agent for complex processing
+- delegateLinkProcessing: For safe content-rich URLs (use carefully, read safety rules)
 
-                                        Security Review: Fixed CSRF vulnerability in callback handler with state parameter validation. Implemented rate limiting (10 req/min per IP). Added AES-256 encryption for refresh tokens. Secure HTTP-only cookies for token storage. Audit logging for all auth events. Penetration testing scheduled.
+If you determined need for scheduled task or user task, you can optionally:
+1. Use delegateLinkProcessing for relevant links (if applicable and safe)
+2. Then route with DONE or LIFT_UP
 
-                                        Deployment: Q1 2025 phased rollout. Phase 1: Internal employees (week 1-2). Phase 2: Beta customers (week 3-4). Phase 3: General availability (week 5+). Monitoring: auth failure rates, token refresh rates, provider success rates. Alerting: >5% failure rate. Rollback: feature flag flip, 5-min downtime estimate. Backward-compatible migrations.
-                                        """.trimIndent(),
-                                    ),
-                            ),
-                        ),
-                )
-
-                val nodeApplySplit by node<Result<StructuredResponse<ThematicSplit>>, Unit>(name = "Apply split") { r ->
-                    val split = r.getOrNull()?.structure
-                    ctx.basicInfo = split?.basicInfo?.trim().orEmpty()
-                    ctx.pendingGroups.clear()
-                    split
-                        ?.groups
-                        .orEmpty()
-                        .map { it.trim() }
-                        .filter { it.isNotBlank() }
-                        .forEach { ctx.pendingGroups.addLast(it) }
-                    logger.info { "INDEXING_CTX | correlationId=${task.correlationId} | groups=${ctx.pendingGroups.size}" }
-                }
-
-                val nodeNextGroup by node<Unit, String?>(name = "Next group") {
-                    if (ctx.pendingGroups.isEmpty()) null else ctx.pendingGroups.removeFirst()
-                }
-
-                val nodeIndexPrompt by node<String, String>(name = "Index prompt") { group ->
-                    buildString {
-                        appendLine("Process this group: split into semantic chunks (~400 tokens each) and store each chunk with graph relationships.")
-                        appendLine()
-                        appendLine("mainNodeKey: ${task.correlationId}")
-                        appendLine()
-                        appendLine("Basic context:")
-                        appendLine(ctx.basicInfo)
-                        appendLine()
-                        appendLine("Group content:")
-                        appendLine(group)
-                        if (visionResult.descriptions.isNotEmpty()) {
-                            appendLine()
-                            appendLine("Vision analysis:")
-                            visionResult.descriptions.forEach { desc ->
-                                appendLine("- ${desc.filename}: ${desc.description}")
+Execute the routing now for this ${state.finalAction}"""
+                                }
                             }
+                            requestLLMOnlyCallingTools()
                         }
-                        appendLine()
-                        appendLine("For each chunk: call tool with content, mainNodeKey, and graph relationships (format: node:type:key, edge:from|rel|to).")
-                        appendLine("When all chunks are stored, respond with 'done'.")
-                    }
+
+                    state.copy(routed = response.content.isEmpty())
                 }
 
-                val indexingSubgraph by subgraph<String, Unit>(
-                    name = "Process group",
-                    tools = storageTools,
-                ) {
-                    val ask by nodeLLMRequest()
-                    val exec by nodeExecuteTool()
-                    val sendResult by nodeLLMSendToolResult()
-
-                    edge(nodeStart forwardTo ask)
-                    edge(ask forwardTo exec onToolCall { true })
-                    edge(exec forwardTo sendResult)
-                    edge(sendResult forwardTo exec onToolCall { true })  // LLM může zavolat další tool
-                    edge((sendResult forwardTo nodeFinish) onAssistantMessage { true } transformed { })
-                    edge((ask forwardTo nodeFinish) onAssistantMessage { true } transformed { })
-                }
-
-                val nodeRoutingPrompt by node<Unit, String>(name = "Routing prompt") {
-                    "Decide the next action and use an available tool."
-                }
-
-                val routingSubgraph by subgraph<String, String>(
-                    name = "Final Routing",
-                    tools = routingTools,
-                ) {
-                    val ask by nodeLLMRequest()
-                    val exec by nodeExecuteTool()
-
-                    edge(nodeStart forwardTo ask)
-                    edge(ask forwardTo exec onToolCall { true })
-                    edge((ask forwardTo nodeFinish) onAssistantMessage { true } transformed { it })
-                    edge((exec forwardTo nodeFinish) transformed { "OK" })
-                }
-
-                edge(nodeStart forwardTo nodeSplitPrompt)
-                edge(nodeSplitPrompt forwardTo nodeSplit)
-                edge(nodeSplit forwardTo nodeApplySplit)
-
-                edge(nodeApplySplit forwardTo nodeNextGroup)
-
-                edge(
-                    (nodeNextGroup forwardTo nodeRoutingPrompt)
-                        onCondition { it == null }
-                        transformed { },
+                // Goals
+                goal(
+                    name = "AllIndexedAndRouted",
+                    description = "All content indexed and task routed",
+                    condition = { state -> state.indexed && state.routed },
                 )
-
-                edge(
-                    (nodeNextGroup forwardTo nodeIndexPrompt)
-                        onCondition { it != null }
-                        transformed { it!! },
-                )
-
-                edge(nodeIndexPrompt forwardTo indexingSubgraph)
-                edge(indexingSubgraph forwardTo nodeNextGroup)
-
-                edge(nodeRoutingPrompt forwardTo routingSubgraph)
-                edge(routingSubgraph forwardTo nodeFinish)
             }
 
-        val visionText = visionResult.descriptions.joinToString("\n") { it.description }
-        val totalContext = task.content + "\n" + visionText
-
-        val model =
-            modelSelector.selectModel(
-                baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
-                inputContent = totalContext,
-            )
-
-        logger.info {
-            "MODEL_SELECTED | correlationId=${task.correlationId} | model=${model.id} | " +
-                "contentLength=${task.content.length} | visionLength=${visionText.length}"
-        }
-
+        // Create and run the agent
+        val strategy = AIAgentPlannerStrategy("qualifier-indexing-planner", planner)
         val agentConfig =
             AIAgentConfig(
-                model = model,
-                maxAgentIterations = koogProperties.maxIterations,
                 prompt =
-                    prompt("Jervis Qualifier Agent") {
-                        system(
-                            """
-                            You are a text qualifier agent. Process the input and create structured output.
+                    prompt("qualifier") {
+                        system {
+                            +"""You are a knowledge indexing specialist.
 
-                            When splitting documents into groups:
-                            - Each group = ONE COMPLETE THEME
-                            - Include ALL content for that theme in the group
-                            - Group size: several thousand tokens (up to 16k soft limit)
-                            - Groups will be chunked later (~400 tokens per RAG chunk)
-                            - ONLY create multiple groups when themes are clearly distinct
-                            - JIRA ticket = usually 1 group (unless off-topic comments)
-                            - Large email thread = 1 group if one topic
-                            - When in doubt: FEWER, LARGER groups
-                            """.trimIndent(),
-                        )
+Your goal: Index ALL content completely into RAG and Graph, then route appropriately.
+
+Workflow:
+1. Analyze content, identify thematic groups, and determine routing strategy
+2. Index all groups with semantic chunks and graph relationships
+3. Execute routing (DONE, LIFT_UP, or create tasks if needed)
+
+Important: Use tools to execute actions, do not explain - just do it."""
+                        }
                     },
-            )
-
-        val inputData =
-            SplitInput(
-                content = task.content,
-                visionDescriptions = visionResult.descriptions,
+                model = modelSelector.selectModel(SmartModelSelector.BaseModelTypeEnum.AGENT),
+                maxAgentIterations = 20,
             )
 
         val agent =
-            AIAgent(
-                promptExecutor = promptExecutorFactory.getExecutor(providerSelector.getProvider()),
-                toolRegistry = toolRegistry,
-                strategy = graphStrategy,
+            PlannerAIAgent(
+                promptExecutor = promptExecutorFactory.getExecutor("OLLAMA"),
+                strategy = strategy,
                 agentConfig = agentConfig,
+                toolRegistry = toolRegistry,
                 installFeatures = {
                     install(feature = EventHandler) {
                         onAgentStarting { ctx: AgentStartingContext ->
-                            logger.info { "Agent starting: ${ctx.agent.id}" }
+                            logger.info { "QUALIFIER_AGENT_START: ${ctx.agent.id} | task=${task.id}" }
                         }
                     }
                 },
             )
 
-        return AgentWithInput(agent, inputData)
+        val initialState =
+            IndexingGoapState(
+                taskContent = task.content,
+                visionDescriptions = visionResult.descriptions,
+            )
+
+        agent.run(initialState)
+
+        logger.info { "QUALIFIER_COMPLETE: task=${task.id}" }
     }
+
+    /**
+     * GOAP state for knowledge indexing workflow.
+     * Tracks progress: analyze+plan → index groups → route
+     */
+    data class IndexingGoapState(
+        val taskContent: String,
+        val visionDescriptions: List<com.jervis.koog.vision.AttachmentDescription> = emptyList(),
+        val analyzed: Boolean = false,
+        val groups: List<String> = emptyList(),
+        val finalAction: String? = null,
+        val indexed: Boolean = false,
+        val routed: Boolean = false,
+    )
 }
 
-@Serializable
-data class SplitInput(
-    val content: String,
-    val visionDescriptions: List<AttachmentDescription>,
-)
-
-/**
- * Split document into thematic groups.
- *
- * CRITICAL: Each group = ONE COMPLETE THEME
- *
- * Rules:
- * - basicInfo: Brief summary of entire document (1-2 sentences)
- * - groups: Thematic groups. ONE group per theme. Include ALL content for that theme.
- * - Group size: Typically several thousand tokens. Can be up to 16k tokens (soft limit).
- * - Groups are NOT pre-chunked - model will chunk each group later (~400 tokens per RAG chunk)
- *
- * When to create multiple groups:
- * - ONLY when content has clearly distinct themes
- * - Example: JIRA ticket is usually 1 group (unless comments are off-topic)
- * - Example: Large email thread might be 1 group if discussing one topic
- * - Example: GIT diff with auth + UI changes = 2 groups (different themes)
- *
- * When in doubt: Prefer FEWER, LARGER groups. Don't split unnecessarily.
- */
-@Serializable
-data class ThematicSplit(
-    val basicInfo: String,
+data class InputGroup(
     val groups: List<String>,
-)
-
-/**
- * Graph is line-based to keep it simple:
- * - node:type:key
- * - edge:from|rel|to
- */
-@Serializable
-data class GroupIndexing(
-    val title: String,
-    val chunks: List<String>,
-    val graph: List<String>,
+    val finalAction: String?,
 )

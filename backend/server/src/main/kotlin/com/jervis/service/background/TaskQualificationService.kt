@@ -99,11 +99,10 @@ class TaskQualificationService(
                 return
             }
 
-        val agentWithInput = koogQualifierAgent.create(task)
-        val result = agentWithInput.agent.run(agentWithInput.input)
+        koogQualifierAgent.run(task)
 
         logger.info {
-            "QUALIFICATION_RESULT: id=${task.id} type=${task.type} completed=$result"
+            "QUALIFICATION_RESULT: id=${task.id} type=${task.type} completed"
         }
     }
 
