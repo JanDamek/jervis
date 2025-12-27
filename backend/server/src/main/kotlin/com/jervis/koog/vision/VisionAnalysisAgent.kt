@@ -6,6 +6,7 @@ import com.jervis.domain.atlassian.shouldProcessWithVision
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.OllamaProviderSelector
 import com.jervis.koog.SmartModelSelector
+import com.jervis.service.storage.DirectoryStructureService
 import kotlinx.io.files.Path
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
@@ -41,6 +42,7 @@ class VisionAnalysisAgent(
     private val promptExecutorFactory: KoogPromptExecutorFactory,
     private val providerSelector: OllamaProviderSelector,
     private val modelSelector: SmartModelSelector,
+    private val directoryStructureService: DirectoryStructureService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -57,7 +59,8 @@ class VisionAnalysisAgent(
             visualAttachments.map { attachment ->
                 try {
                     if (attachment.mimeType.startsWith("image/")) {
-                        val imageFile = File(attachment.storagePath)
+                        val fullPath = directoryStructureService.workspaceRoot().resolve(attachment.storagePath)
+                        val imageFile = fullPath.toFile()
                         val bufferedImage: BufferedImage = ImageIO.read(imageFile)
                         SmartModelSelector.ImageMetadata(
                             widthPixels = bufferedImage.width,
@@ -95,7 +98,8 @@ class VisionAnalysisAgent(
                 user {
                     text("Analyze each attachment:\n" + visualAttachments.joinToString("\n") { "File: ${it.filename} (${it.mimeType})" })
                     visualAttachments.forEach { attachment ->
-                        image(Path(attachment.storagePath))
+                        val fullPath = directoryStructureService.workspaceRoot().resolve(attachment.storagePath)
+                        image(Path(fullPath.toString()))
                     }
                 }
             }
