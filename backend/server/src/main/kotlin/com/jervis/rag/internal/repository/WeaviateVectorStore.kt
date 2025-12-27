@@ -253,7 +253,7 @@ internal class WeaviateVectorStore(
                 .build(),
         )
 
-        // Project ID
+        // Project ID (optional)
         filters.projectId?.let {
             conditions.add(
                 WhereFilter
@@ -261,6 +261,30 @@ internal class WeaviateVectorStore(
                     .path("projectId")
                     .operator(Operator.Equal)
                     .valueText(it.toString())
+                    .build(),
+            )
+        }
+
+        // Kind (optional) - "TEXT" | "CODE"
+        filters.kind?.let {
+            conditions.add(
+                WhereFilter
+                    .builder()
+                    .path("kind")
+                    .operator(Operator.Equal)
+                    .valueText(it)
+                    .build(),
+            )
+        }
+
+        // Scope (optional) - "project" | "client" | "global"
+        filters.scope?.let {
+            conditions.add(
+                WhereFilter
+                    .builder()
+                    .path("scope")
+                    .operator(Operator.Equal)
+                    .valueText(it)
                     .build(),
             )
         }

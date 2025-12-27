@@ -5,28 +5,22 @@ import com.jervis.rag.KnowledgeService
 import com.jervis.rag.SearchRequest
 import com.jervis.rag.SearchResult
 import com.jervis.rag.StoreChunkRequest
+import com.jervis.rag.internal.entity.GraphEntityRegistryDocument
 import com.jervis.rag.internal.graphdb.GraphDBService
 import com.jervis.rag.internal.graphdb.model.GraphEdge
 import com.jervis.rag.internal.graphdb.model.GraphNode
 import com.jervis.rag.internal.model.RagMetadata
+import com.jervis.rag.internal.repository.GraphEntityRegistryRepository
 import com.jervis.rag.internal.repository.VectorDocument
 import com.jervis.rag.internal.repository.VectorFilters
 import com.jervis.rag.internal.repository.VectorQuery
 import com.jervis.rag.internal.repository.WeaviateVectorStore
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.types.ClientId
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import mu.KotlinLogging
-import org.bson.types.ObjectId
 import org.springframework.dao.DuplicateKeyException
-import org.springframework.data.annotation.Id
-import org.springframework.data.mongodb.core.index.CompoundIndex
-import org.springframework.data.mongodb.core.index.CompoundIndexes
-import org.springframework.data.mongodb.core.index.Indexed
-import org.springframework.data.mongodb.core.mapping.Document
-import org.springframework.data.repository.kotlin.CoroutineCrudRepository
 import org.springframework.stereotype.Service
 import java.time.Instant
 import java.util.UUID
@@ -48,7 +42,6 @@ internal class KnowledgeServiceImpl(
 ) : KnowledgeService {
     private val logger = KotlinLogging.logger {}
 
-    // Normalization cache (per-client) to keep graph refs stable across chunks.
     private val graphRefCache = ConcurrentHashMap<String, String>()
     private val graphRefLocks = ConcurrentHashMap<String, Mutex>()
 
@@ -64,19 +57,27 @@ internal class KnowledgeServiceImpl(
 
         val graphPayload =
             buildGraphPayload(
-                clientId = request.clientId,
                 mainNodeKey = request.mainNodeKey,
                 relationships = request.relationships,
             )
 
         val normalizedGraph = normalizeGraphRefs(request.clientId, graphPayload.allNodes)
 
+        val canonicalTriples =
+            graphPayload.rawTriples.map { (from, edge, to) ->
+                val cFrom = normalizedGraph.aliasToCanonical[from] ?: resolveCanonicalGraphRef(request.clientId, from)
+                val cTo = normalizedGraph.aliasToCanonical[to] ?: resolveCanonicalGraphRef(request.clientId, to)
+                Triple(cFrom, edge, cTo)
+            }
+
+        val canonicalRelationships =
+            canonicalTriples
+                .map { (from, edge, to) -> "$from|$edge|$to" }
+                .distinct()
+
         val chunkId = UUID.randomUUID().toString()
 
-        // 1. Generate embedding
         val embedding = embeddingGateway.callEmbedding(request.content)
-
-        // 2. Build metadata
         val metadata =
             mutableMapOf<String, Any>(
                 "knowledgeId" to chunkId,
@@ -84,22 +85,21 @@ internal class KnowledgeServiceImpl(
                 "sourceUrn" to request.sourceUrn.value,
                 "clientId" to request.clientId.toString(),
                 "mainNodeKey" to request.mainNodeKey,
+                "kind" to "TEXT",
+                "scope" to if (request.projectId != null) "project" else "client",
             )
 
         request.projectId?.let { metadata["projectId"] = it.toString() }
 
         if (normalizedGraph.refs.isNotEmpty()) {
-            // Keep the original list shape for backwards compatibility, but ensure it is normalized.
             metadata["graphRefs"] = normalizedGraph.refs
-
-            // Extra, query-friendly hints (helps later retrieval + model reasoning)
             metadata["graphAreas"] = normalizedGraph.areas
             normalizedGraph.rootRef?.let { metadata["graphRootRef"] = it }
             normalizedGraph.primaryArea?.let { metadata["graphPrimaryArea"] = it }
         }
 
-        if (graphPayload.canonicalRelationships.isNotEmpty()) {
-            metadata["graphRelationships"] = graphPayload.canonicalRelationships
+        if (canonicalRelationships.isNotEmpty()) {
+            metadata["graphRelationships"] = canonicalRelationships
         }
 
         // 3. Store in Weaviate (with BM25 indexing on the 'content' field)
@@ -116,13 +116,12 @@ internal class KnowledgeServiceImpl(
         val classNameOverride = perClientClassName(request.clientId)
         weaviateVectorStore.store(vectorDoc, classNameOverride).getOrThrow()
 
-        // 4. Persist graph (best-effort): nodes + edges
         runCatching {
             persistGraph(
                 clientId = request.clientId,
                 ragChunkId = chunkId,
                 nodes = normalizedGraph.refs,
-                relationships = graphPayload.canonicalTriples,
+                relationships = canonicalTriples,
             )
         }.onFailure { e ->
             logger.warn(e) { "Graph persistence failed for chunk $chunkId (non-fatal)" }
@@ -186,21 +185,7 @@ internal class KnowledgeServiceImpl(
 
         logger.info { "HYBRID_SEARCH_COMPLETE: found=${results.size} results" }
 
-        val fragments =
-            results.map { result ->
-                InternalFragment(
-                    sourceUrn = result.metadata["sourceUrn"]?.toString() ?: "",
-                    content = result.content,
-                    graphPrimaryArea = result.metadata["graphPrimaryArea"]?.toString(),
-                    graphAreas =
-                        (result.metadata["graphAreas"] as? List<*>)?.mapNotNull { it?.toString() }
-                            ?: emptyList(),
-                    graphRefs =
-                        (result.metadata["graphRefs"] as? List<*>)?.mapNotNull { it?.toString() }
-                            ?: emptyList(),
-                )
-            }
-
+        val fragments = toFragments(results)
         return SearchResult(formatFragmentsForLlm(fragments))
     }
 
@@ -238,21 +223,7 @@ internal class KnowledgeServiceImpl(
         logger.info { "Search completed: found=${results.size} results" }
 
         // Map to internal fragments and format as text
-        val fragments =
-            results.map { result ->
-                InternalFragment(
-                    sourceUrn = result.metadata["sourceUrn"]?.toString() ?: "",
-                    content = result.content,
-                    graphPrimaryArea = result.metadata["graphPrimaryArea"]?.toString(),
-                    graphAreas =
-                        (result.metadata["graphAreas"] as? List<*>)?.mapNotNull { it?.toString() }
-                            ?: emptyList(),
-                    graphRefs =
-                        (result.metadata["graphRefs"] as? List<*>)?.mapNotNull { it?.toString() }
-                            ?: emptyList(),
-                )
-            }
-
+        val fragments = toFragments(results)
         return SearchResult(formatFragmentsForLlm(fragments))
     }
 
@@ -305,76 +276,51 @@ internal class KnowledgeServiceImpl(
 
     private suspend fun perClientClassName(clientId: ClientId): String = WeaviateClassNameUtil.classFor(clientId)
 
-    /**
-     * Internal fragment representation - only for formatting.
-     */
-    private data class InternalFragment(
-        val sourceUrn: String,
-        val content: String,
-        val graphPrimaryArea: String? = null,
-        val graphAreas: List<String> = emptyList(),
-        val graphRefs: List<String> = emptyList(),
-    )
-
     private data class NormalizedGraphRefs(
         val refs: List<String>,
         val areas: List<String>,
         val rootRef: String?,
         val primaryArea: String?,
+        val aliasToCanonical: Map<String, String>,
     )
 
     private data class GraphPayload(
         val allNodes: List<String>,
-        val canonicalTriples: List<Triple<String, String, String>>,
-        val canonicalRelationships: List<String>,
+        val rawTriples: List<Triple<String, String, String>>,
     )
 
-    private suspend fun buildGraphPayload(
-        clientId: ClientId,
+    private fun buildGraphPayload(
         mainNodeKey: String,
         relationships: List<String>,
     ): GraphPayload {
         val mainRaw = mainNodeKey.trim()
         val mainId = extractTrailingId(mainRaw)
 
-        val parsedTriples =
+        val mainNorm = normalizeSingleGraphRef(mainRaw)
+
+        val rawTriples =
             relationships
                 .mapNotNull { parseRelationshipPipe(it) }
                 .map { (from, edge, to) ->
                     Triple(
-                        expandShortNodeKey(from, mainRaw, mainId),
-                        edge,
-                        expandShortNodeKey(to, mainRaw, mainId),
+                        normalizeSingleGraphRef(expandShortNodeKey(from, mainRaw, mainId)),
+                        normalizeEdgeType(edge),
+                        normalizeSingleGraphRef(expandShortNodeKey(to, mainRaw, mainId)),
                     )
                 }
 
-        val canonicalMain = resolveCanonicalGraphRef(clientId, normalizeSingleGraphRef(mainRaw))
-
-        val canonicalTriples =
-            parsedTriples.map { (from, edge, to) ->
-                val cFrom = resolveCanonicalGraphRef(clientId, normalizeSingleGraphRef(from))
-                val cTo = resolveCanonicalGraphRef(clientId, normalizeSingleGraphRef(to))
-                Triple(cFrom, normalizeEdgeType(edge), cTo)
-            }
-
         val allNodes =
             buildSet {
-                add(canonicalMain)
-                canonicalTriples.forEach { (from, _, to) ->
+                add(mainNorm)
+                rawTriples.forEach { (from, _, to) ->
                     add(from)
                     add(to)
                 }
             }.toList()
 
-        val canonicalRelationships =
-            canonicalTriples
-                .map { (from, edge, to) -> "$from|$edge|$to" }
-                .distinct()
-
         return GraphPayload(
             allNodes = allNodes,
-            canonicalTriples = canonicalTriples,
-            canonicalRelationships = canonicalRelationships,
+            rawTriples = rawTriples,
         )
     }
 
@@ -504,12 +450,12 @@ internal class KnowledgeServiceImpl(
                 .toList()
 
         // 2) Canonicalization + aliasing via MongoDB (per-client)
-        val canonicalRefs = mutableListOf<String>()
+        val aliasToCanonical = LinkedHashMap<String, String>()
         for (ref in normalizedInput) {
-            canonicalRefs += resolveCanonicalGraphRef(clientId, ref)
+            aliasToCanonical[ref] = resolveCanonicalGraphRef(clientId, ref)
         }
 
-        val refs = canonicalRefs.distinct().sorted()
+        val refs = aliasToCanonical.values.distinct().sorted()
 
         val areas =
             refs
@@ -534,6 +480,7 @@ internal class KnowledgeServiceImpl(
             areas = areas,
             rootRef = rootRef,
             primaryArea = primaryArea,
+            aliasToCanonical = aliasToCanonical.toMap(),
         )
     }
 
@@ -759,46 +706,77 @@ internal class KnowledgeServiceImpl(
 }
 
 /**
- * Mongo registry for graph entity aliasing.
- * Stores per-client mapping: aliasKey -> canonicalKey.
+ * Internal fragment representation - only for formatting.
+ * File-private so both the service and helpers can access it.
  */
-@Document("graph_entity_registry")
-@CompoundIndexes(
-    CompoundIndex(name = "client_alias_unique", def = "{'clientId': 1, 'aliasKey': 1}", unique = true),
-    CompoundIndex(name = "client_canonical_idx", def = "{'clientId': 1, 'canonicalKey': 1}"),
-    CompoundIndex(name = "client_area_idx", def = "{'clientId': 1, 'area': 1}"),
-)
-internal data class GraphEntityRegistryDocument(
-    @Id
-    val id: ObjectId? = null,
-    @Indexed
-    val clientId: String,
-    @Indexed
-    val aliasKey: String,
-    @Indexed
-    val canonicalKey: String,
-    @Indexed
-    val area: String? = null,
-    val firstSeenAt: Instant = Instant.now(),
-    val lastSeenAt: Instant = Instant.now(),
-    val seenCount: Long = 0,
-    val createdAt: Instant = Instant.now(),
-    val updatedAt: Instant = Instant.now(),
+private data class InternalFragment(
+    val sourceUrn: String,
+    val content: String,
+    val graphPrimaryArea: String? = null,
+    val graphAreas: List<String> = emptyList(),
+    val graphRefs: List<String> = emptyList(),
 )
 
-internal interface GraphEntityRegistryRepository : CoroutineCrudRepository<GraphEntityRegistryDocument, ObjectId> {
-    suspend fun findFirstByClientIdAndAliasKey(
-        clientId: String,
-        aliasKey: String,
-    ): GraphEntityRegistryDocument?
+/**
+ * Convert Weaviate results into fragments.
+ * NOTE: `weaviateVectorStore.search(...)` currently returns `List<VectorSearchResult>`.
+ * We keep this adapter tolerant by accepting `List<Any>` (List is covariant), and extracting a
+ * `VectorDocument` via reflection when needed.
+ */
+private fun toFragments(results: List<Any>): List<InternalFragment> =
+    results.mapNotNull { item ->
+        val doc =
+            when (item) {
+                is VectorDocument -> item
+                else -> item.extractVectorDocumentOrNull()
+            }
 
-    suspend fun findFirstByClientIdAndCanonicalKey(
-        clientId: String,
-        canonicalKey: String,
-    ): GraphEntityRegistryDocument?
+        val content = doc?.content ?: item.readStringProperty("content") ?: return@mapNotNull null
+        val metadata = doc?.metadata ?: item.readMapProperty("metadata") ?: emptyMap()
 
-    fun findAllByClientIdAndArea(
-        clientId: String,
-        area: String,
-    ): Flow<GraphEntityRegistryDocument>
+        InternalFragment(
+            sourceUrn = metadata["sourceUrn"]?.toString() ?: "",
+            content = content,
+            graphPrimaryArea = metadata["graphPrimaryArea"]?.toString(),
+            graphAreas = (metadata["graphAreas"] as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList(),
+            graphRefs = (metadata["graphRefs"] as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList(),
+        )
+    }
+
+/** Try to unwrap `VectorSearchResult`-like wrappers to `VectorDocument` via common accessor names. */
+private fun Any.extractVectorDocumentOrNull(): VectorDocument? {
+    readObjectProperty("document")?.let { if (it is VectorDocument) return it }
+    readObjectProperty("item")?.let { if (it is VectorDocument) return it }
+    readObjectProperty("result")?.let { if (it is VectorDocument) return it }
+    readObjectProperty("vectorDocument")?.let { if (it is VectorDocument) return it }
+    return null
 }
+
+private fun Any.readObjectProperty(name: String): Any? {
+    val cls = this.javaClass
+
+    val getterName = "get" + name.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+    runCatching {
+        val m = cls.methods.firstOrNull { it.name == getterName && it.parameterCount == 0 }
+        if (m != null) return m.invoke(this)
+    }
+
+    runCatching {
+        val f = cls.declaredFields.firstOrNull { it.name == name }
+        if (f != null) {
+            f.isAccessible = true
+            return f.get(this)
+        }
+    }
+
+    return null
+}
+
+private fun Any.readStringProperty(name: String): String? = readObjectProperty(name) as? String
+
+@Suppress("UNCHECKED_CAST")
+private fun Any.readMapProperty(name: String): Map<String, Any> =
+    (readObjectProperty(name) as? Map<*, *>)
+        ?.mapNotNull { (k, v) -> (k as? String)?.let { it to (v as Any) } }
+        ?.toMap()
+        ?: emptyMap()
