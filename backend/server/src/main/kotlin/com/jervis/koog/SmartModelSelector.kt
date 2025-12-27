@@ -110,11 +110,9 @@ class SmartModelSelector(
         baseModelName: BaseModelTypeEnum,
         inputContent: String = "",
     ): LLModel {
-        // Count actual tokens using BPE tokenizer (jtokkit)
         val inputTokens = if (inputContent.isNotBlank()) tokenCountingService.countTokens(inputContent) else 8196
         val totalTokensNeeded = inputTokens + (inputTokens * 1.5).toInt().coerceAtLeast(2000)
 
-        // Find smallest tier that fits
         val selectedTierK =
             AVAILABLE_TIERS.firstOrNull { tierK ->
                 (tierK * 1024) >= totalTokensNeeded
@@ -123,13 +121,13 @@ class SmartModelSelector(
         val contextLength = selectedTierK * 1024
         val modelId = insertTierIntoModelName(baseModelName.modelName, selectedTierK)
 
-        logger.debug {
+        logger.info {
             buildString {
                 append("SmartModelSelector [TEXT] | ")
                 append("baseModel=$baseModelName | ")
                 append("inputChars=${inputContent.length} | ")
                 append("inputTokens=$inputTokens | ")
-                append("totalNeeded=$totalTokensNeeded | ")
+                append("totalTokensNeeded=$totalTokensNeeded | ")
                 append("selectedTier=${selectedTierK}k | ")
                 append("modelId=$modelId | ")
                 append("contextLength=$contextLength")
@@ -156,8 +154,7 @@ class SmartModelSelector(
     ) {
         REASONING("qwen3-tool:30b"),
         AGENT("qwen3-coder-tool:30b"),
-        PLANNER("qwen3-tool:14b"), // Lightweight model for planning
-        VL("qwen3-vl-tool:30b"),
+        VL("qwen3-vl-tool:latest"),
     }
 
     /**
@@ -186,7 +183,7 @@ class SmartModelSelector(
         val contextLength = selectedTierK * 1024
         val modelId = insertTierIntoModelName(baseModelName, selectedTierK)
 
-        logger.debug {
+        logger.info {
             buildString {
                 append("SmartModelSelector [VISION] | ")
                 append("baseModel=$baseModelName | ")

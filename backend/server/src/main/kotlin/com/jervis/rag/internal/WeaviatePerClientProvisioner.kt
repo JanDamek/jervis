@@ -49,7 +49,7 @@ class WeaviatePerClientProvisioner(
 
         val properties =
             listOf(
-                // Core RAG props (epic)
+                // Core RAG props
                 Property
                     .builder()
                     .name("content")
@@ -57,7 +57,42 @@ class WeaviatePerClientProvisioner(
                     .build(),
                 Property
                     .builder()
+                    .name("clientId")
+                    .dataType(listOf(DataType.TEXT))
+                    .build(),
+                Property
+                    .builder()
                     .name("projectId")
+                    .dataType(listOf(DataType.TEXT))
+                    .build(),
+                Property
+                    .builder()
+                    .name("scope")
+                    .dataType(listOf(DataType.TEXT))
+                    .build(),
+                Property
+                    .builder()
+                    .name("kind")
+                    .dataType(listOf(DataType.TEXT))
+                    .build(),
+                Property
+                    .builder()
+                    .name("sourceUrn")
+                    .dataType(listOf(DataType.TEXT))
+                    .build(),
+                Property
+                    .builder()
+                    .name("fileName")
+                    .dataType(listOf(DataType.TEXT))
+                    .build(),
+                Property
+                    .builder()
+                    .name("path")
+                    .dataType(listOf(DataType.TEXT))
+                    .build(),
+                Property
+                    .builder()
+                    .name("language")
                     .dataType(listOf(DataType.TEXT))
                     .build(),
                 Property
@@ -90,6 +125,36 @@ class WeaviatePerClientProvisioner(
                     .name("graphRefs")
                     .dataType(listOf(DataType.TEXT_ARRAY))
                     .build(),
+                Property
+                    .builder()
+                    .name("graphAreas")
+                    .dataType(listOf(DataType.TEXT_ARRAY))
+                    .build(),
+                Property
+                    .builder()
+                    .name("graphRootRef")
+                    .dataType(listOf(DataType.TEXT))
+                    .build(),
+                Property
+                    .builder()
+                    .name("graphPrimaryArea")
+                    .dataType(listOf(DataType.TEXT))
+                    .build(),
+                Property
+                    .builder()
+                    .name("graphRelationships")
+                    .dataType(listOf(DataType.TEXT_ARRAY))
+                    .build(),
+                Property
+                    .builder()
+                    .name("mainNodeKey")
+                    .dataType(listOf(DataType.TEXT))
+                    .build(),
+                Property
+                    .builder()
+                    .name("knowledgeId")
+                    .dataType(listOf(DataType.TEXT))
+                    .build(),
                 // Backward-compat for existing KnowledgeService
                 Property
                     .builder()
@@ -114,11 +179,6 @@ class WeaviatePerClientProvisioner(
                 Property
                     .builder()
                     .name("documentLocation")
-                    .dataType(listOf(DataType.TEXT))
-                    .build(),
-                Property
-                    .builder()
-                    .name("clientId")
                     .dataType(listOf(DataType.TEXT))
                     .build(),
                 Property

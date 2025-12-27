@@ -24,6 +24,8 @@ internal data class VectorQuery(
 internal data class VectorFilters(
     val clientId: ClientId,
     val projectId: ProjectId? = null,
+    val kind: String? = null, // "TEXT" | "CODE", null = search both
+    val scope: String? = null, // "project" | "client" | "global", null = search all
 )
 
 /**
