@@ -3,7 +3,6 @@ package com.jervis.cli
 import com.jervis.common.client.IAiderClient
 import com.jervis.common.client.ICodingEngineClient
 import com.jervis.koog.KoogPromptExecutorFactory
-import com.jervis.koog.SmartModelSelector
 import com.jervis.rag.KnowledgeService
 import com.jervis.rag.internal.graphdb.GraphDBService
 import com.jervis.repository.ProjectRepository
@@ -65,7 +64,6 @@ class KoogCliRunner(
     private val codingEngineClient: ICodingEngineClient,
     private val promptExecutorFactory: KoogPromptExecutorFactory,
     private val environment: Environment,
-    private val smartModelSelector: SmartModelSelector,
 ) : CommandLineRunner {
     private val logger = KotlinLogging.logger {}
     private val supervisor = SupervisorJob()
@@ -232,7 +230,6 @@ class KoogCliRunner(
                 projectRepository = projectRepository,
                 aiderClient = aiderClient,
                 codingEngineClient = codingEngineClient,
-                smartModelSelector = smartModelSelector,
             )
 
         val agent = testAgentFactory.create(promptExecutor, clientId = "68a332361b04695a243e5ae8")
@@ -268,7 +265,8 @@ class KoogCliRunner(
 
         runBlocking {
             try {
-                val result = agent.run(selectedPrompt.text)
+                val initialState = KoogCliTestAgent.OrchestratorState(userInput = selectedPrompt.text)
+                val result = agent.run(initialState)
                 println()
                 println("─".repeat(80))
                 println("✅ Agent Response:")

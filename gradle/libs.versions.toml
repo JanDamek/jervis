@@ -1,6 +1,6 @@
 [versions]
 angus = "2.0.3"
-koogAgents = "0.5.4"
+koogAgents = "0.6.0"
 kotlin = "2.2.21"
 spring-boot = "4.0.0"
 spring-depMgmt = "1.1.7"
@@ -32,6 +32,7 @@ junit-jupiter-engine = { module = "org.junit.jupiter:junit-jupiter-engine" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 jupiter-junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 koog-agents = { module = "ai.koog:koog-agents", version.ref = "koogAgents" }
+koog-agents-planner = { module = "ai.koog:agents-planner", version.ref = "koogAgents" }
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib-jdk8" }
 kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect" }
 kotlin-compiler-embeddable = { module = "org.jetbrains.kotlin:kotlin-compiler-embeddable", version.ref = "kotlin" }
