@@ -7,6 +7,7 @@ import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.OllamaProviderSelector
 import com.jervis.koog.SmartModelSelector
 import com.jervis.service.storage.DirectoryStructureService
+import com.jervis.types.ClientId
 import kotlinx.io.files.Path
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
@@ -47,10 +48,15 @@ class VisionAnalysisAgent(
     private val providerSelector: OllamaProviderSelector,
     private val modelSelector: SmartModelSelector,
     private val directoryStructureService: DirectoryStructureService,
+    private val cacheRepository: AttachmentAnalysisCacheRepository,
 ) {
     private val logger = KotlinLogging.logger {}
+    private val cache = AttachmentAnalysisCache(cacheRepository, logger)
 
-    suspend fun analyze(attachments: List<AttachmentMetadata>): VisionAnalysisResult {
+    suspend fun analyze(
+        attachments: List<AttachmentMetadata>,
+        clientId: ClientId,
+    ): VisionAnalysisResult {
         val visualAttachments = attachments.filter { it.shouldProcessWithVision() }
         if (visualAttachments.isEmpty()) {
             return VisionAnalysisResult(emptyList())
@@ -63,6 +69,18 @@ class VisionAnalysisAgent(
         // Process each attachment individually
         val descriptions =
             visualAttachments.map { attachment ->
+                // Check cache first
+                cache.get(attachment.storagePath, clientId)?.let { cached ->
+                    logger.info { "VISION_CACHE_HIT | file=${attachment.filename}" }
+                    return@map AttachmentDescription(
+                        filename = attachment.filename,
+                        description = cached.description,
+                        extractedText = cached.extractedText,
+                        entities = cached.entities,
+                        metadata = cached.metadata,
+                    )
+                }
+
                 logger.info { "VISION_PROCESSING | file=${attachment.filename}" }
 
                 // Get image dimensions for this specific attachment
@@ -115,13 +133,19 @@ class VisionAnalysisAgent(
                     "VISION_FILE_COMPLETE | file=${attachment.filename} | responseLength=${responseText.length}"
                 }
 
-                AttachmentDescription(
-                    filename = attachment.filename,
-                    description = responseText,
-                    extractedText = "",
-                    entities = emptyList(),
-                    metadata = emptyList(),
-                )
+                val description =
+                    AttachmentDescription(
+                        filename = attachment.filename,
+                        description = responseText,
+                        extractedText = "",
+                        entities = emptyList(),
+                        metadata = emptyList(),
+                    )
+
+                // Save to cache
+                cache.put(attachment, clientId, description)
+
+                description
             }
 
         logger.info {
@@ -129,5 +153,67 @@ class VisionAnalysisAgent(
         }
 
         return VisionAnalysisResult(descriptions)
+    }
+
+    /**
+     * Private cache service for attachment analysis results.
+     *
+     * Orchestrates caching of vision analysis results to avoid redundant processing.
+     * If a process crashes during vision analysis, already analyzed attachments
+     * can be reused from MongoDB cache.
+     */
+    private class AttachmentAnalysisCache(
+        private val repository: AttachmentAnalysisCacheRepository,
+        private val logger: mu.KLogger,
+    ) {
+        /**
+         * Retrieves cached analysis result for an attachment.
+         *
+         * @param storagePath Path to the attachment file in storage
+         * @param clientId Client that owns the attachment
+         * @return Cached analysis result if found, null otherwise
+         */
+        suspend fun get(
+            storagePath: String,
+            clientId: ClientId,
+        ): AttachmentAnalysisCacheDocument? {
+            return try {
+                repository.findByStoragePathAndClientId(storagePath, clientId)
+            } catch (e: Exception) {
+                logger.warn { "Failed to retrieve from cache | path=$storagePath | error=${e.message}" }
+                null
+            }
+        }
+
+        /**
+         * Saves analysis result to cache.
+         *
+         * @param attachment The analyzed attachment metadata
+         * @param clientId Client that owns the attachment
+         * @param description Analysis result to cache
+         */
+        suspend fun put(
+            attachment: AttachmentMetadata,
+            clientId: ClientId,
+            description: AttachmentDescription,
+        ) {
+            try {
+                val cacheDocument =
+                    AttachmentAnalysisCacheDocument(
+                        storagePath = attachment.storagePath,
+                        clientId = clientId,
+                        filename = attachment.filename,
+                        mimeType = attachment.mimeType,
+                        description = description.description,
+                        extractedText = description.extractedText,
+                        entities = description.entities,
+                        metadata = description.metadata,
+                    )
+                repository.save(cacheDocument)
+                logger.debug { "CACHE_SAVED | path=${attachment.storagePath}" }
+            } catch (e: Exception) {
+                logger.warn { "Failed to save to cache | path=${attachment.storagePath} | error=${e.message}" }
+            }
+        }
     }
 }

@@ -52,7 +52,7 @@ class KoogQualifierAgent(
     private val logger = KotlinLogging.logger {}
 
     suspend fun run(task: TaskDocument) {
-        val visionResult = visionAgent.analyze(task.attachments)
+        val visionResult = visionAgent.analyze(task.attachments, task.clientId)
 
         logger.info {
             "VISION_COMPLETE | correlationId=${task.correlationId} | " +
