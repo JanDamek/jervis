@@ -76,6 +76,7 @@ class KoogQualifierAgent(
                 tools(KnowledgeStorageTools(task, knowledgeService, graphDBService))
             }
 
+        val graphStoreTool = tools.first { it.name == "storeKnowledgeWithGraph" }
         val planner =
             goap<IndexingGoapState>(typeOf<IndexingGoapState>()) {
                 // Action 1: Analyze content and plan routing
@@ -151,7 +152,7 @@ Content for chunking: ${state.groups.first()}
 Store all groups completely."""
                             }
                         }
-                        requestLLMForceOneTool(tools.first { it.name == "storeKnowledgeWithGraph" })
+                        requestLLMForceOneTool(graphStoreTool)
                     }
                     state.groups.drop(1)
                     state.copy(indexed = state.groups.isEmpty())

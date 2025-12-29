@@ -64,7 +64,7 @@ class SmartModelSelector(
          * Minimum output reserve in tokens.
          * Used as fallback when caller doesn't provide explicit value.
          */
-        private const val MIN_OUTPUT_RESERVE = 2000
+        private const val MIN_OUTPUT_RESERVE = 4186
 
         /**
          * Vision model image token estimation.

@@ -12,7 +12,6 @@ import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.awt.image.BufferedImage
-import java.io.File
 import javax.imageio.ImageIO
 
 @Serializable
@@ -28,6 +27,11 @@ data class AttachmentDescription(
     val entities: List<String>,
     val metadata: List<String>,
 )
+
+private const val VISION_SYSTEM_PROMPT =
+    "Extract ALL visible information from the attached image/document. " +
+        "Provide: description, extracted text (transcribe exactly), " +
+        "entities (numbers, dates, codes, identifiers), metadata."
 
 /**
  * Standalone service for analyzing visual attachments (images, PDFs).
@@ -54,63 +58,63 @@ class VisionAnalysisAgent(
 
         logger.info { "VISION_START | attachments=${visualAttachments.size}" }
 
-        // Get actual image dimensions for accurate token estimation
-        val imageMetadata =
-            visualAttachments.map { attachment ->
-                try {
-                    if (attachment.mimeType.startsWith("image/")) {
-                        val fullPath = directoryStructureService.workspaceRoot().resolve(attachment.storagePath)
-                        val imageFile = fullPath.toFile()
-                        val bufferedImage: BufferedImage = ImageIO.read(imageFile)
-                        SmartModelSelector.ImageMetadata(
-                            widthPixels = bufferedImage.width,
-                            heightPixels = bufferedImage.height,
-                            format = attachment.mimeType,
-                        )
-                    } else {
-                        // For PDFs, estimate dimensions
-                        SmartModelSelector.ImageMetadata(1920, 1080, attachment.mimeType)
-                    }
-                } catch (e: Exception) {
-                    logger.warn { "Failed to read image dimensions for ${attachment.filename}: ${e.message}" }
-                    SmartModelSelector.ImageMetadata(1024, 1024, attachment.mimeType)
-                }
-            }
-
-        val visionModel =
-            modelSelector.selectVisionModel(
-                baseModelName = SmartModelSelector.BaseModelTypeEnum.VL.modelName,
-                textPrompt = "Analyze attachments and extract all information",
-                images = imageMetadata,
-            )
-
-        logger.info {
-            "MODEL_SELECTED | model=${visionModel.id} | images=${imageMetadata.size}"
-        }
-
-        val visionPrompt =
-            prompt("Vision analysis") {
-                system(
-                    "Extract ALL visible information from the attached images/documents. " +
-                        "For each file provide: description, extracted text (transcribe exactly), " +
-                        "entities (numbers, dates, codes, identifiers), metadata.",
-                )
-                user {
-                    text("Analyze each attachment:\n" + visualAttachments.joinToString("\n") { "File: ${it.filename} (${it.mimeType})" })
-                    visualAttachments.forEach { attachment ->
-                        val fullPath = directoryStructureService.workspaceRoot().resolve(attachment.storagePath)
-                        image(Path(fullPath.toString()))
-                    }
-                }
-            }
-
         val executor = promptExecutorFactory.getExecutor(providerSelector.getProvider())
-        val response = executor.execute(prompt = visionPrompt, model = visionModel)
 
-        val responseText = response.toString()
-
+        // Process each attachment individually
         val descriptions =
             visualAttachments.map { attachment ->
+                logger.info { "VISION_PROCESSING | file=${attachment.filename}" }
+
+                // Get image dimensions for this specific attachment
+                val imageMetadata =
+                    try {
+                        if (attachment.mimeType.startsWith("image/")) {
+                            val fullPath = directoryStructureService.workspaceRoot().resolve(attachment.storagePath)
+                            val imageFile = fullPath.toFile()
+                            val bufferedImage: BufferedImage = ImageIO.read(imageFile)
+                            SmartModelSelector.ImageMetadata(
+                                widthPixels = bufferedImage.width,
+                                heightPixels = bufferedImage.height,
+                                format = attachment.mimeType,
+                            )
+                        } else {
+                            // For PDFs, estimate dimensions
+                            SmartModelSelector.ImageMetadata(1920, 1080, attachment.mimeType)
+                        }
+                    } catch (e: Exception) {
+                        logger.warn { "Failed to read image dimensions for ${attachment.filename}: ${e.message}" }
+                        SmartModelSelector.ImageMetadata(1024, 1024, attachment.mimeType)
+                    }
+
+                // Select a model for this specific attachment
+                val visionModel =
+                    modelSelector.selectVisionModel(
+                        baseModelName = SmartModelSelector.BaseModelTypeEnum.VL.modelName,
+                        textPrompt = VISION_SYSTEM_PROMPT,
+                        images = listOf(imageMetadata),
+                    )
+
+                logger.info { "MODEL_SELECTED | file=${attachment.filename} | model=${visionModel.id}" }
+
+                // Create a prompt for this single attachment
+                val visionPrompt =
+                    prompt("Vision analysis - ${attachment.filename}") {
+                        system(VISION_SYSTEM_PROMPT)
+                        user {
+                            text("Analyze this attachment: ${attachment.filename} (${attachment.mimeType})")
+                            val fullPath = directoryStructureService.workspaceRoot().resolve(attachment.storagePath)
+                            image(Path(fullPath.toString()))
+                        }
+                    }
+
+                // Execute vision analysis for this single attachment
+                val response = executor.execute(prompt = visionPrompt, model = visionModel)
+                val responseText = response.toString()
+
+                logger.info {
+                    "VISION_FILE_COMPLETE | file=${attachment.filename} | responseLength=${responseText.length}"
+                }
+
                 AttachmentDescription(
                     filename = attachment.filename,
                     description = responseText,
@@ -121,7 +125,7 @@ class VisionAnalysisAgent(
             }
 
         logger.info {
-            "VISION_COMPLETE | descriptions=${descriptions.size} | responseLength=${responseText.length}"
+            "VISION_ALL_COMPLETE | totalDescriptions=${descriptions.size}"
         }
 
         return VisionAnalysisResult(descriptions)
