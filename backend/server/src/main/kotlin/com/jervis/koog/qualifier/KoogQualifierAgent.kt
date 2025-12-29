@@ -23,6 +23,7 @@ import com.jervis.service.background.TaskService
 import com.jervis.service.connection.ConnectionService
 import com.jervis.service.link.IndexedLinkService
 import com.jervis.service.link.LinkContentService
+import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import kotlin.reflect.typeOf
@@ -67,13 +68,14 @@ class KoogQualifierAgent(
                 indexedLinkService,
                 connectionService,
             )
+        val knowledgeTool = KnowledgeStorageTools(task, knowledgeService, graphDBService)
 
-        val tools = qualifierTool.asTools()
+        val tools = knowledgeTool.asTools()
 
         val toolRegistry =
             ToolRegistry {
                 tools(qualifierTool)
-                tools(KnowledgeStorageTools(task, knowledgeService, graphDBService))
+                tools(knowledgeTool)
             }
 
         val graphStoreTool = tools.first { it.name == "storeKnowledgeWithGraph" }
@@ -263,6 +265,7 @@ Important: Use tools to execute actions, do not explain - just do it."""
     )
 }
 
+@Serializable
 data class InputGroup(
     val groups: List<String>,
     val finalAction: String?,
