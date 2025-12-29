@@ -3,7 +3,6 @@ package com.jervis.service.background
 import com.jervis.configuration.prompts.ProviderCapabilitiesService
 import com.jervis.configuration.properties.KoogProperties
 import com.jervis.domain.model.ModelProviderEnum
-import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.TaskDocument
 import com.jervis.koog.qualifier.KoogQualifierAgent
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -89,10 +88,6 @@ class TaskQualificationService(
     }
 
     private suspend fun processOne(original: TaskDocument) {
-        if (original.type == TaskTypeEnum.DATA_PROCESSING) {
-            logger.debug { "QUALIFICATION_SKIP: id=${original.id} type=${original.type} - data processing tasks bypass qualification" }
-            return
-        }
         val task =
             taskService.setToQualifying(original) ?: run {
                 logger.debug { "QUALIFICATION_SKIP: id=${original.id} - task already claimed" }
