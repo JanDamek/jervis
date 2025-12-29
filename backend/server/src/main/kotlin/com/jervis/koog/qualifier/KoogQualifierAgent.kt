@@ -12,10 +12,10 @@ import ai.koog.agents.planner.goap.goap
 import ai.koog.prompt.dsl.prompt
 import com.jervis.entity.TaskDocument
 import com.jervis.koog.KoogPromptExecutorFactory
-import com.jervis.koog.OllamaProviderSelector
 import com.jervis.koog.SmartModelSelector
 import com.jervis.koog.tools.KnowledgeStorageTools
 import com.jervis.koog.tools.qualifier.QualifierRoutingTools
+import com.jervis.koog.vision.AttachmentDescription
 import com.jervis.koog.vision.VisionAnalysisAgent
 import com.jervis.rag.KnowledgeService
 import com.jervis.rag.internal.graphdb.GraphDBService
@@ -40,7 +40,6 @@ import kotlin.reflect.typeOf
 @Service
 class KoogQualifierAgent(
     private val promptExecutorFactory: KoogPromptExecutorFactory,
-    private val providerSelector: OllamaProviderSelector,
     private val modelSelector: SmartModelSelector,
     private val visionAgent: VisionAnalysisAgent,
     private val taskService: TaskService,
@@ -70,15 +69,15 @@ class KoogQualifierAgent(
             )
         val knowledgeTool = KnowledgeStorageTools(task, knowledgeService, graphDBService)
 
-        val tools = knowledgeTool.asTools()
-
         val toolRegistry =
             ToolRegistry {
                 tools(qualifierTool)
                 tools(knowledgeTool)
             }
 
-        val graphStoreTool = tools.first { it.name == "storeKnowledgeWithGraph" }
+        val graphStoreTool = knowledgeTool.asTools().first { it.name == "storeKnowledgeWithGraph" }
+        val finalToolCall = qualifierTool.asTools().first { it.name == "routeTask" }
+
         val planner =
             goap<IndexingGoapState>(typeOf<IndexingGoapState>()) {
                 // Action 1: Analyze content and plan routing
@@ -94,7 +93,25 @@ class KoogQualifierAgent(
                         ctx.llm.writeSession {
                             appendPrompt {
                                 user {
-                                    +"""Analyze this content and group content into thematic groups for indexing.
+                                    +
+                                        """
+Analyze the following content and split it into a small number of groups for indexing.
+
+Preprocessing (mandatory):
+- First, clean the input text by removing all markup/tags and their attributes (HTML/XML/Confluence-style tags like <...>, <ac:...>, <ri:...>, etc.).
+- Keep only human-readable text content, headings, list items, filenames, URLs, IDs, and metadata values.
+- Preserve the original order of the text as it appears after cleaning.
+
+Rules for groups:
+- Every group must contain verbatim text copied from the cleaned text (no paraphrasing inside groups).
+- The groups together must cover all cleaned text (no omissions). Do not duplicate large passages across groups.
+- Prefer fewer, larger groups. Split only when themes are clearly distinct.
+- Attachments and document metadata must be included in the most relevant group, or put them into one dedicated “Metadata & Attachments” group if they apply globally.
+
+Also produce:
+- mainNodeKey: the single stable key for the whole document, derived from the “Document Metadata” section (use “Document ID” if present; otherwise use the most specific available ID from that block). Keep the chosen identifier exactly as it appears in the input (do not rewrite its format).
+- basicInfo: 1–2 sentence summary of the whole cleaned input.
+- finalAction: write a short, concrete “next step” task description (it may include multiple follow-up activities), but do not mention tools, formats, JSON, or any framework details.
 
 Content:
 ${state.taskContent}
@@ -102,24 +119,13 @@ ${state.taskContent}
 ${
                                         if (state.visionDescriptions.isNotEmpty()) {
                                             "Attachments:\n${
-                                                state.visionDescriptions.joinToString(
-                                                    "\n",
-                                                ) { "- ${it.filename}: ${it.description}" }
+                                                state.visionDescriptions.joinToString("\n") { "- ${it.filename}: ${it.description}" }
                                             }\n"
                                         } else {
                                             ""
                                         }
-                                    }
-
-Tasks:
-1. Identify distinct thematic groups in the content
-2. Determine final routing for this task:
-   - DONE: Content is purely informational, indexing is sufficient
-   - LIFT_UP: Requires further processing, coding, or user interaction
-   - Create SCHEDULED_TASK: If follow-up action needed at specific time
-   - Create USER_TASK: If requires user decision or input
-
-Provide the thematic groups."""
+                                    }                                        
+                                        """.trimIndent()
                                 }
                             }
                             requestLLMStructured<InputGroup>()
@@ -144,14 +150,31 @@ Provide the thematic groups."""
                     ctx.llm.writeSession {
                         appendPrompt {
                             user {
-                                +"""Index the identified thematic groups to knowledge base.
+                                +
+                                    """
+                                    Index the following text into a knowledge base.
 
-For each group:
-1. Create semantic chunks (200-500 words each)
-2. Extract relationships as triplets: from|edge|to
-3. Store using storeKnowledgeWithGraph tool
-Content for chunking: ${state.groups.first()}
-Store all groups completely."""
+Context:
+basicInfo:
+${state.basicInfo}
+
+mainNodeKey:
+${state.mainNodeKey}
+
+Instructions:
+1) Split the provided text into semantic chunks (200–500 words each). Do not omit anything; cover the full input text.
+2) For each chunk, extract relationships as triplets in the form: from|edge|to
+   - Every relationship must be a valid vertex–edge–vertex triplet.
+   - Use stable keys: prefer IDs/URLs/ticket IDs when present.
+   - Ensure at least the primary document node (mainNodeKey) is connected to important entities (e.g., tickets, parent page, space, key people, URLs).
+3) For each chunk, output:
+   - chunkContent (verbatim chunk text)
+   - mainNodeKey (same value as above)
+   - relationships (list of from|edge|to triplets for that chunk)
+
+Text to index:
+${state.groups.first()}                                    
+                                    """.trimIndent()
                             }
                         }
                         requestLLMForceOneTool(graphStoreTool)
@@ -256,12 +279,14 @@ Important: Use tools to execute actions, do not explain - just do it."""
      */
     data class IndexingGoapState(
         val taskContent: String,
-        val visionDescriptions: List<com.jervis.koog.vision.AttachmentDescription> = emptyList(),
+        val visionDescriptions: List<AttachmentDescription> = emptyList(),
         val analyzed: Boolean = false,
         val groups: List<String> = emptyList(),
         val finalAction: String? = null,
         val indexed: Boolean = false,
         val routed: Boolean = false,
+        val basicInfo: String? = null,
+        val mainNodeKey: String? = null,
     )
 }
 
