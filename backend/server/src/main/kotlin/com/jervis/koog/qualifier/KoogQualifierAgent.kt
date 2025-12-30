@@ -85,8 +85,9 @@ class KoogQualifierAgent(
                     name = "RemoveMarkDownHtmlFromContent",
                     precondition = { state -> state.indexed.not() && state.groups.isEmpty() && state.optimization.not() },
                     belief = { state -> state.copy(optimization = true) },
+                    cost = { 0.8 },
                 ) { _, state ->
-                    logger.info { "Removing Markdown and HTML from content for optimization" }
+                    logger.info { "GOAP_ACTION: Removing Markdown and HTML from content for optimization" }
                     state.copy(
                         optimization = true,
                         optimizedContent = tikaTextExtractionService.extractPlainText(state.content),
@@ -105,7 +106,7 @@ class KoogQualifierAgent(
                                 ),
                         )
                     },
-                    cost = { 2.0 },
+                    cost = { if (it.optimization) 1.1 else 2.0 },
                 ) { ctx, state ->
                     logger.info { "GOAP_ACTION: Splitting content to groups" }
                     val prompt =
@@ -114,11 +115,18 @@ Projdi celý vstup uživatele a najdi společné části, skupiny, grupy.
 Celý tento text podle skupin rozděl. Výtvoř z původního textu skupiny, 
 tak aby tématický každá skupina mělo něco společného a obsahavala semanticky, obsahově vše co vstupní text.
                         """.trimIndent()
+                    val userOptimized =
+                        if (state.optimization) {
+                            "Optimiyed content: ${state.optimizedContent}"
+                        } else {
+                            ""
+                        }
                     val response =
                         ctx.llm.writeSession {
                             appendPrompt {
                                 user {
                                     +prompt
+                                    +userOptimized
                                 }
                             }
                             requestLLMStructured<InputGroup>()
@@ -133,7 +141,17 @@ tak aby tématický každá skupina mělo něco společného a obsahavala semant
                     name = "IndexContent",
                     precondition = { state -> state.indexed.not() },
                     belief = { state -> state.copy(indexed = true) },
-                    cost = { 1.0 },
+                    cost = {
+                        if (it.optimization) {
+                            0.8
+                        } else {
+                            if (it.content.length > 1000) {
+                                1.8
+                            } else {
+                                0.8
+                            }
+                        }
+                    },
                 ) { ctx, state ->
                     logger.info { "GOAP_ACTION: Indexing content to RAG and Graph" }
                     val prompt =
@@ -151,10 +169,17 @@ Instructions:
    - mainNodeKey (same value as above)
    - relationships (list of "from|edge|to" triplets for that chunk. It's a list for GraphDB store. Use a simple domain names.)                                 
                         """.trimIndent()
+                    val userOptimization =
+                        if (state.optimization) {
+                            "Optimized content: ${state.optimizedContent}"
+                        } else {
+                            ""
+                        }
                     ctx.llm.writeSession {
                         appendPrompt {
                             user {
                                 +prompt
+                                +userOptimization
                             }
                         }
                         requestLLMOnlyCallingTools()
@@ -167,7 +192,7 @@ Instructions:
                     name = "IndexAllSmallGroups",
                     precondition = { state -> state.groups.isNotEmpty() && state.indexed.not() },
                     belief = { state -> state.copy(indexed = true) },
-                    cost = { 2.0 },
+                    cost = { it.groups.size * 0.2 + 1 },
                 ) { ctx, state ->
                     logger.info { "GOAP_ACTION: Indexing groups to RAG and Graph" }
                     val prompt =
@@ -235,8 +260,27 @@ If you determined need for scheduled task or user task, you can optionally:
                 }
 
                 action(
-                    name = "VerifiIndexing",
+                    name = "SearchForVerify",
                     precondition = { state -> state.indexed && !state.verified },
+                    belief = { state -> state.copy(searchForVerify = "Content from RAG and GraphDB") },
+                    cost = { 0.8 },
+                ) { ctx, state ->
+                    logger.info { "GOAP_ACTION: Searching for verification content" }
+                    val response =
+                        ctx.llm.writeSession {
+                            appendPrompt {
+                                user {
+                                    +"Ask knowledgeBase to verify indexing data is in correct indexed."
+                                }
+                            }
+                            requestLLM()
+                        }
+                    state.copy(searchForVerify = response.content)
+                }
+
+                action(
+                    name = "VerifiIndexing",
+                    precondition = { state -> state.indexed && !state.verified && state.searchForVerify?.isNotBlank() == true },
                     belief = { state -> state.copy(verified = true) },
                 ) { ctx, state ->
                     logger.info { "GOAP_ACTION: Verifying indexing" }
@@ -246,6 +290,9 @@ If you determined need for scheduled task or user task, you can optionally:
                                 user {
                                     +"Use tool to verify indexing data is in correct format."
                                     +"If you find data in knowledgebase, RAG and Graph mar as verified."
+                                    +"Fetch the information from RAG and Graph DB and compare what is the result Ok."
+                                    +"If not match response false and index the content to RAG a Graph DB."
+                                    +"For search use: ${state.searchForVerify}"
                                 }
                             }
                             requestLLMStructured<VerifyResponse>()
@@ -355,6 +402,7 @@ Context for this task: ${task.content}
         val groups: List<String> = emptyList(),
         val indexed: Boolean = false,
         val routed: Boolean = false,
+        val searchForVerify: String? = null,
         val verified: Boolean = false,
     )
 }
