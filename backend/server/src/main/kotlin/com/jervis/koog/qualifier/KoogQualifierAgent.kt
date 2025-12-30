@@ -252,7 +252,7 @@ If you determined need for scheduled task or user task, you can optionally:
                         }
                     state.copy(
                         verified = response.getOrNull()?.data?.verified == true,
-                        indexed = response.getOrNull()?.data?.verified == false,
+                        indexed = response.getOrNull()?.data?.verified == true,
                     )
                 }
 
