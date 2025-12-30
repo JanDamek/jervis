@@ -203,7 +203,7 @@ Text to index:
 
                 action(
                     name = "Execute routing",
-                    precondition = { state -> state.indexed && !state.routed },
+                    precondition = { state -> state.indexed && state.verified && !state.routed },
                     belief = { state -> state.copy(routed = true) },
                     cost = { 1.0 },
                 ) { ctx, state ->
@@ -250,7 +250,10 @@ If you determined need for scheduled task or user task, you can optionally:
                             }
                             requestLLMStructured<VerifyResponse>()
                         }
-                    state.copy(verified = response.getOrNull()?.data?.verified == true)
+                    state.copy(
+                        verified = response.getOrNull()?.data?.verified == true,
+                        indexed = response.getOrNull()?.data?.verified == false,
+                    )
                 }
 
                 goal(
