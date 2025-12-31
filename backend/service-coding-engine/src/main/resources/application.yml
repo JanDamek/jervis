@@ -1,9 +1,27 @@
 spring:
   application:
     name: jervis-coding-engine
+  codec:
+    max-in-memory-size: 512MB
+  servlet:
+    multipart:
+      max-file-size: 10GB
+      max-request-size: 10GB
 
 server:
   port: ${SERVER_PORT:3200}
+  max-http-request-header-size: 1GB
+  tomcat:
+    max-swallow-size: -1
+    max-http-form-post-size: -1
+
+spring:
+  codec:
+    max-in-memory-size: 512MB
+  servlet:
+    multipart:
+      max-file-size: 10GB
+      max-request-size: 10GB
 
 coding-engine:
   data-root-dir: ${DATA_ROOT_DIR:/opt/jervis/data}

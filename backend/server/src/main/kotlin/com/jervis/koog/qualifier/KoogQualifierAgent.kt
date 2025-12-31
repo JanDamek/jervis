@@ -1,6 +1,8 @@
 package com.jervis.koog.qualifier
 
 import ai.koog.agents.core.agent.config.AIAgentConfig
+import ai.koog.agents.core.dsl.extension.requestLLM
+import ai.koog.agents.core.dsl.extension.requestLLMStructured
 import ai.koog.agents.core.feature.handler.agent.AgentClosingContext
 import ai.koog.agents.core.feature.handler.agent.AgentCompletedContext
 import ai.koog.agents.core.feature.handler.agent.AgentStartingContext
@@ -11,7 +13,6 @@ import ai.koog.agents.planner.AIAgentPlannerStrategy
 import ai.koog.agents.planner.PlannerAIAgent
 import ai.koog.agents.planner.goap.goap
 import ai.koog.prompt.dsl.prompt
-import ai.koog.prompt.message.Message
 import com.jervis.entity.TaskDocument
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.SmartModelSelector
@@ -30,15 +31,6 @@ import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import kotlin.reflect.typeOf
 
-/**
- * KoogQualifierAgent
- *
- * Goals (per Koog rules):
- * - Short, tool-agnostic prompts.
- * - Tools are scoped ONLY via subgraphs (no "tool format" instructions in prompts).
- * - LLM outputs are simple POJOs: strings and lists (no deep nesting).
- * - Routing is done via tool call inside Koog.
- */
 @Service
 class KoogQualifierAgent(
     private val promptExecutorFactory: KoogPromptExecutorFactory,
@@ -57,297 +49,263 @@ class KoogQualifierAgent(
     suspend fun run(task: TaskDocument) {
         val visionResult = visionAgent.analyze(task.attachments, task.clientId)
 
+        val cleanedContent = tikaTextExtractionService.extractPlainText(task.content)
+        val attachmentsText =
+            if (visionResult.descriptions.isNotEmpty()) {
+                visionResult.descriptions.joinToString(
+                    prefix = "\n\nAttachments:\n",
+                    separator = "\n",
+                ) { "- ${it.filename}: ${it.description}" }
+            } else {
+                "\n\nAttachments:\n- none"
+            }
+
+        val normalizedInput = cleanedContent + attachmentsText
+
         logger.info {
             "VISION_COMPLETE | correlationId=${task.correlationId} | " +
                 "contentLength=${task.content.length} | attachments=${visionResult.descriptions.size}"
         }
 
-        val qualifierTool =
-            QualifierRoutingTools(
-                task,
-                taskService,
-                linkContentService,
-                indexedLinkService,
-                connectionService,
-            )
-        val knowledgeTool =
-            KnowledgeStorageTools(task, knowledgeService, graphDBService)
-
         val toolRegistry =
             ToolRegistry {
-                tools(qualifierTool)
-                tools(knowledgeTool)
+                tools(
+                    QualifierRoutingTools(
+                        task,
+                        taskService,
+                        linkContentService,
+                        indexedLinkService,
+                        connectionService,
+                    ),
+                )
+                tools(KnowledgeStorageTools(task, knowledgeService, graphDBService))
             }
 
         val planner =
             goap<IndexingGoapState>(typeOf<IndexingGoapState>()) {
                 action(
-                    name = "RemoveMarkDownHtmlFromContent",
-                    precondition = { state -> state.indexed.not() && state.groups.isEmpty() && state.optimization.not() },
-                    belief = { state -> state.copy(optimization = true) },
-                    cost = { 0.8 },
-                ) { _, state ->
-                    logger.info { "GOAP_ACTION: Removing Markdown and HTML from content for optimization" }
-                    state.copy(
-                        optimization = true,
-                        optimizedContent = tikaTextExtractionService.extractPlainText(state.content),
-                    )
-                }
-
-                action(
-                    name = "ApartContextToSmallGroups",
-                    precondition = { state -> state.groups.isEmpty() },
+                    name = "AnalyzeAndGroup",
+                    precondition = { state -> !state.analyzed },
                     belief = { state ->
                         state.copy(
-                            groups =
-                                listOf(
-                                    "Objenavka je připravená k odběru",
-                                    "Dodavatel oznámil dodání zboží",
-                                ),
+                            analyzed = true,
+                            basicInfo = "prepared",
+                            mainNodeKey = "prepared",
+                            allGroups = listOf("prepared"),
+                            pendingGroups = listOf("prepared"),
+                            finalAction = "prepared",
                         )
                     },
-                    cost = { if (it.optimization) 1.1 else 2.0 },
+                    cost = { 1.0 },
                 ) { ctx, state ->
-                    logger.info { "GOAP_ACTION: Splitting content to groups" }
+                    logger.info { "GOAP_ACTION: Analyzing and grouping content" }
+
                     val prompt =
                         """
-Projdi celý vstup uživatele a najdi společné části, skupiny, grupy. 
-Celý tento text podle skupin rozděl. Výtvoř z původního textu skupiny, 
-tak aby tématický každá skupina mělo něco společného a obsahavala semanticky, obsahově vše co vstupní text.
+Analyze the following content and split it into a small number of thematic groups for indexing.
+
+Rules:
+- Every group must contain verbatim content copied from the input (do not paraphrase group content).
+- The groups together must cover all input text exactly once (no omissions, no duplicates).
+- Prefer fewer, larger groups.
+- Keep attachments and metadata in the most relevant group (or in a separate Metadata group if shared).
+- The input is already cleaned from markup/HTML; treat it as plain text.
+
+Main node key:
+- Pick one stable mainNodeKey for the primary document.
+- Prefer stable IDs when present (e.g., jira:TLIT-822, confluence:2056421411, git:commit:<sha>, git:file:<path>@<sha>, url:<url>).
+- This mainNodeKey will be used to link GraphDB relationships and as the primary document anchor.
+
+What to produce:
+1) basicInfo: 1–2 sentences summarizing the whole input.
+2) mainNodeKey: the primary document key.
+3) groups: list of group texts. Each group starts with a single title line, then contains verbatim portions of the input for that theme.
+4) finalAction: a clear plain-text instruction of what should happen next (may be multi-step).
+
+Content:
+${state.content}
                         """.trimIndent()
-                    val userOptimized =
-                        if (state.optimization) {
-                            "Optimiyed content: ${state.optimizedContent}"
-                        } else {
-                            ""
-                        }
+
                     val response =
                         ctx.llm.writeSession {
-                            appendPrompt {
-                                user {
-                                    +prompt
-                                    +userOptimized
-                                }
-                            }
-                            requestLLMStructured<InputGroup>()
+                            appendPrompt { user { +prompt } }
+                            requestLLMStructured<GroupingResult>()
                         }
 
+                    val data = response.getOrNull()?.data
                     state.copy(
-                        groups = response.getOrNull()?.data?.groups ?: emptyList(),
+                        analyzed = true,
+                        basicInfo = data?.basicInfo.orEmpty(),
+                        mainNodeKey = data?.mainNodeKey.orEmpty(),
+                        allGroups = data?.groups ?: emptyList(),
+                        pendingGroups = data?.groups ?: emptyList(),
+                        finalAction = data?.finalAction.orEmpty(),
                     )
                 }
 
                 action(
-                    name = "IndexContent",
-                    precondition = { state -> state.indexed.not() },
-                    belief = { state -> state.copy(indexed = true) },
-                    cost = {
-                        if (it.optimization) {
-                            0.8
-                        } else {
-                            if (it.content.length > 1000) {
-                                1.8
-                            } else {
-                                0.8
-                            }
-                        }
-                    },
+                    name = "IndexPendingGroups",
+                    precondition = { state -> state.analyzed && !state.indexed },
+                    belief = { state -> state.copy(indexed = true, pendingGroups = emptyList()) },
+                    cost = { state -> (state.pendingGroups.size * 0.25) + 1.0 },
                 ) { ctx, state ->
-                    logger.info { "GOAP_ACTION: Indexing content to RAG and Graph" }
-                    val prompt =
-                        """
-Index the text into a knowledge base.
+                    if (state.mainNodeKey.isBlank()) {
+                        return@action state.copy(indexed = false)
+                    }
+
+                    logger.info { "GOAP_ACTION: Indexing pending groups to RAG and Graph" }
+
+                    var nextState = state
+                    while (nextState.pendingGroups.isNotEmpty()) {
+                        val groupText = nextState.pendingGroups.first()
+
+                        val prompt =
+                            """
+Index the following text into the knowledge base.
+
+Context:
+- basicInfo: ${nextState.basicInfo}
+- mainNodeKey: ${nextState.mainNodeKey}
 
 Instructions:
 1) Split the provided text into semantic chunks (200–500 tokens each). Do not omit anything; cover the full input text.
-2) For each chunk, extract relationships as triplets in the form: from|edge|to
+2) For each chunk, extract GraphDB relationships as triplets in the form: from|edge|to
    - Every relationship must be a valid vertex–edge–vertex triplet.
    - Use stable keys: prefer IDs/URLs/ticket IDs when present.
-   - Ensure at least the primary document node (mainNodeKey) is connected to important entities (e.g., tickets, parent page, space, key people, URLs).
-3) For each chunk, output:
-   - chunkContent (verbatim chunk text)
-   - mainNodeKey (same value as above)
-   - relationships (list of "from|edge|to" triplets for that chunk. It's a list for GraphDB store. Use a simple domain names.)                                 
-                        """.trimIndent()
-                    val userOptimization =
-                        if (state.optimization) {
-                            "Optimized content: ${state.optimizedContent}"
-                        } else {
-                            ""
-                        }
-                    ctx.llm.writeSession {
-                        appendPrompt {
-                            user {
-                                +prompt
-                                +userOptimization
-                            }
-                        }
-                        requestLLMOnlyCallingTools()
+   - Ensure the mainNodeKey is connected to important entities (tickets, parent page, space, people, URLs, commit/file keys).
+   - Use simple domain edge names, consistent across chunks.
+3) Persist both semantic content and graph relationships so they can be retrieved later for verification.
+
+Text:
+$groupText
+                            """.trimIndent()
+
+                        ctx.requestLLM(prompt)
+                        nextState = nextState.copy(pendingGroups = nextState.pendingGroups.drop(1))
                     }
-                    state.copy(indexed = true)
+
+                    nextState.copy(indexed = true)
                 }
 
-                // Action 2: Store groups to RAG with relationships
                 action(
-                    name = "IndexAllSmallGroups",
-                    precondition = { state -> state.groups.isNotEmpty() && state.indexed.not() },
-                    belief = { state -> state.copy(indexed = true) },
-                    cost = { it.groups.size * 0.2 + 1 },
+                    name = "SearchForVerify",
+                    precondition = { state -> state.indexed && !state.verified && state.verifyQuery.isBlank() },
+                    belief = { state -> state.copy(verifyQuery = "prepared") },
+                    cost = { 1.0 },
                 ) { ctx, state ->
-                    logger.info { "GOAP_ACTION: Indexing groups to RAG and Graph" }
+                    logger.info { "GOAP_ACTION: Preparing verification query" }
+
                     val prompt =
                         """
-Index the following text into a knowledge base.
+Create a concise verification query that can be used to retrieve the indexed content back from the knowledge base.
 
-Instructions:
-1) Split the provided text into semantic chunks (200–500 tokens each). Do not omit anything; cover the full input text.
-2) For each chunk, extract relationships as triplets in the form: from|edge|to
-   - Every relationship must be a valid vertex–edge–vertex triplet.
-   - Use stable keys: prefer IDs/URLs/ticket IDs when present.
-   - Ensure at least the primary document node (mainNodeKey) is connected to important entities (e.g., tickets, parent page, space, key people, URLs).
-3) For each chunk, output:
-   - chunkContent (verbatim chunk text)
-   - mainNodeKey (same value as above)
-   - relationships (list of from|edge|to triplets for that chunk)
+Rules:
+- Use stable identifiers from the input when possible (mainNodeKey, ticket IDs, URLs, space/page IDs).
+- Keep it short and high-signal.
+- Output only the query text.
 
-Text to index:                                 
+Context:
+- basicInfo: ${state.basicInfo}
+- mainNodeKey: ${state.mainNodeKey}
                         """.trimIndent()
-                    state.groups.forEach { group ->
-                        ctx.llm.writeSession {
-                            appendPrompt {
-                                user {
-                                    +prompt
-                                    +group
-                                }
-                            }
-                            requestLLMOnlyCallingTools()
-                        }
-                    }
-                    state.copy(indexed = true)
+
+                    val response = ctx.requestLLM(prompt)
+                    state.copy(verifyQuery = response.content.trim())
                 }
 
                 action(
-                    name = "Execute routing",
+                    name = "VerifiIndexing",
+                    precondition = { state -> state.indexed && !state.verified && state.verifyQuery.isNotBlank() },
+                    belief = { state -> state.copy(verified = true, indexed = true) },
+                ) { ctx, state ->
+                    logger.info { "GOAP_ACTION: Verifying indexing" }
+
+                    val prompt =
+                        """
+Verify that the content has been correctly indexed into both the knowledge base and the graph.
+
+Requirements:
+- Retrieve the indexed data using the provided verifyQuery.
+- Compare the retrieved data against the original input themes (basicInfo and the indexed groups).
+- If anything important is missing, set verified=false.
+- If verified=false, do not attempt to re-index here; leave it for the planner loop to re-run indexing.
+
+Inputs:
+- verifyQuery: ${state.verifyQuery}
+- mainNodeKey: ${state.mainNodeKey}
+- basicInfo: ${state.basicInfo}
+- expectedGroupCount: ${state.allGroups.size}
+                        """.trimIndent()
+
+                    val response = ctx.requestLLMStructured<VerifyResponse>(prompt)
+                    val verified = response.getOrNull()?.data?.verified == true
+                    if (verified) {
+                        state.copy(verified = true, indexed = true)
+                    } else {
+                        state.copy(
+                            verified = false,
+                            indexed = false,
+                            pendingGroups = state.allGroups,
+                        )
+                    }
+                }
+
+                action(
+                    name = "ExecuteRouting",
                     precondition = { state -> state.indexed && state.verified && !state.routed },
                     belief = { state -> state.copy(routed = true) },
                     cost = { 1.0 },
                 ) { ctx, state ->
                     logger.info { "GOAP_ACTION: Executing routing decision" }
+
                     val prompt =
                         """
-Execute the routing decision you determined earlier.
-
-Available routing tools:
-- routeTask(DONE): Mark task as complete (no further action)
-- routeTask(LIFT_UP): Escalate to GPU agent for complex processing
-- delegateLinkProcessing: For safe content-rich URLs (use carefully, read safety rules)
-
-If you determined need for scheduled task or user task, you can optionally:
-1. Use delegateLinkProcessing for relevant links (if applicable and safe)
-2. Then route with DONE or LIFT_UP
+Execute the final action based on this instruction:
+${state.finalAction}
                         """.trimIndent()
-                    val response =
-                        ctx.llm.writeSession {
-                            appendPrompt {
-                                user {
-                                    +prompt
-                                }
-                            }
-                            requestLLMOnlyCallingTools()
-                        }
 
-                    state.copy(routed = response is Message.Tool.Call)
-                }
+                    ctx.llm.writeSession {
+                        appendPrompt { user { +prompt } }
+                        requestLLMOnlyCallingTools()
+                    }
 
-                action(
-                    name = "SearchForVerify",
-                    precondition = { state -> state.indexed && !state.verified },
-                    belief = { state -> state.copy(searchForVerify = "Content from RAG and GraphDB") },
-                    cost = { 0.8 },
-                ) { ctx, state ->
-                    logger.info { "GOAP_ACTION: Searching for verification content" }
-                    val response =
-                        ctx.llm.writeSession {
-                            appendPrompt {
-                                user {
-                                    +"Ask knowledgeBase to verify indexing data is in correct indexed."
-                                }
-                            }
-                            requestLLM()
-                        }
-                    state.copy(searchForVerify = response.content)
-                }
-
-                action(
-                    name = "VerifiIndexing",
-                    precondition = { state -> state.indexed && !state.verified && state.searchForVerify?.isNotBlank() == true },
-                    belief = { state -> state.copy(verified = true) },
-                ) { ctx, state ->
-                    logger.info { "GOAP_ACTION: Verifying indexing" }
-                    val response =
-                        ctx.llm.writeSession {
-                            appendPrompt {
-                                user {
-                                    +"Use tool to verify indexing data is in correct format."
-                                    +"If you find data in knowledgebase, RAG and Graph mar as verified."
-                                    +"Fetch the information from RAG and Graph DB and compare what is the result Ok."
-                                    +"If not match response false and index the content to RAG a Graph DB."
-                                    +"For search use: ${state.searchForVerify}"
-                                }
-                            }
-                            requestLLMStructured<VerifyResponse>()
-                        }
-                    state.copy(
-                        verified = response.getOrNull()?.data?.verified == true,
-                        indexed = response.getOrNull()?.data?.verified == true,
-                    )
+                    state.copy(routed = true)
                 }
 
                 goal(
                     name = "All Indexed and routed",
                     description = "All content indexed and task routed",
-                    condition = { state -> state.indexed && state.routed && state.verified },
+                    condition = { state -> state.analyzed && state.indexed && state.verified && state.routed },
                     cost = { 1.0 },
                 )
             }
 
         val systemPrompt =
             """
-            You are a knowledge indexing specialist.
+You are a knowledge indexing specialist.
 
-Your goal: Index ALL content completely into RAG and Graph, then route appropriately.
+Your goal:
+- Index ALL content completely into semantic storage and graph storage.
+- Ensure the primary document key (mainNodeKey) connects to important entities (tickets, pages, spaces, people, URLs, commits/files).
+- After indexing, verify the content can be retrieved and matches the source, then execute routing.
 
-Workflow:
-1. Analyze content, identify thematic groups, and determine routing strategy
-2. Index all groups with semantic chunks and graph relationships
-3. Execute routing (DONE, LIFT_UP, or create tasks if needed)
-
-Important: Use tools to execute actions, do not explain - just do it.
+Keep outputs simple and deterministic. Prefer stable identifiers when available.
             """.trimIndent()
+
         val userPrompt =
             """
-Context for this task: ${task.content}
-"Attachments:\n
-                            ${
-                if (visionResult.descriptions.isNotEmpty()) {
-                    "${visionResult.descriptions.joinToString("\n") { "- ${it.filename}: ${it.description}" }}\n"
-                } else {
-                    "No attachments."
-                }
-            }            
+Context for this task:
+$normalizedInput
             """.trimIndent()
-        // Create and run the agent
+
         val strategy = AIAgentPlannerStrategy("qualifier-indexing-planner", planner)
+
         val agentConfig =
             AIAgentConfig(
                 prompt =
                     prompt("qualifier") {
-                        system {
-                            +systemPrompt
-                        }
-                        user {
-                            +userPrompt
-                        }
+                        system { +systemPrompt }
+                        user { +userPrompt }
                     },
                 model =
                     modelSelector.selectModel(
@@ -381,33 +339,35 @@ Context for this task: ${task.content}
                 },
             )
 
-        agent.run(IndexingGoapState(content = task.content))
+        agent.run(IndexingGoapState(content = normalizedInput))
 
         logger.info { "QUALIFIER_COMPLETE: task=${task.id}" }
     }
 
     @Serializable
-    class VerifyResponse {
-        val verified: Boolean = false
-    }
+    data class VerifyResponse(
+        val verified: Boolean = false,
+    )
 
-    /**
-     * GOAP state for knowledge indexing workflow.
-     * Tracks progress: analyze+plan → index groups → route
-     */
     data class IndexingGoapState(
         val content: String,
-        val optimization: Boolean = false,
-        val optimizedContent: String = "",
-        val groups: List<String> = emptyList(),
+        val analyzed: Boolean = false,
+        val basicInfo: String = "",
+        val mainNodeKey: String = "",
+        val allGroups: List<String> = emptyList(),
+        val pendingGroups: List<String> = emptyList(),
+        val finalAction: String = "",
         val indexed: Boolean = false,
         val routed: Boolean = false,
-        val searchForVerify: String? = null,
+        val verifyQuery: String = "",
         val verified: Boolean = false,
     )
 }
 
 @Serializable
-data class InputGroup(
+data class GroupingResult(
+    val basicInfo: String,
+    val mainNodeKey: String,
     val groups: List<String>,
+    val finalAction: String,
 )
