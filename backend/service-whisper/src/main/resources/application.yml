@@ -1,5 +1,17 @@
 server:
   port: 8083
+  max-http-request-header-size: 1GB
+  tomcat:
+    max-swallow-size: -1
+    max-http-form-post-size: -1
+
+spring:
+  codec:
+    max-in-memory-size: 512MB
+  servlet:
+    multipart:
+      max-file-size: 10GB
+      max-request-size: 10GB
 
 management:
   endpoints:
