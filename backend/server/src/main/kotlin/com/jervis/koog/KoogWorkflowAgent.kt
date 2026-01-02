@@ -21,8 +21,7 @@ import ai.koog.agents.ext.tool.shell.JvmShellCommandExecutor
 import ai.koog.agents.ext.tool.shell.PrintShellCommandConfirmationHandler
 import ai.koog.prompt.dsl.Prompt
 import ai.koog.rag.base.files.JVMFileSystemProvider
-import com.jervis.common.client.IAiderClient
-import com.jervis.common.client.ICodingEngineClient
+// Legacy clients removed - now using Koog A2A protocol
 import com.jervis.configuration.properties.KoogProperties
 import com.jervis.entity.TaskDocument
 import com.jervis.koog.tools.AiderCodingTool
@@ -81,8 +80,6 @@ class KoogWorkflowAgent(
     private val indexedLinkService: IndexedLinkService,
     private val smartModelSelector: SmartModelSelector,
     private val graphDBService: GraphDBService,
-    private val aiderClient: IAiderClient,
-    private val codingEngineClient: ICodingEngineClient,
     private val connectionService: com.jervis.service.connection.ConnectionService,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -387,9 +384,9 @@ class KoogWorkflowAgent(
                 // Communication
                 tools(CommunicationTools(task))
 
-                // Coding
-                tools(AiderCodingTool(task, aiderClient))
-                tools(OpenHandsCodingTool(task, codingEngineClient))
+                // Coding - Koog A2A integration
+                tools(AiderCodingTool(task))
+                tools(OpenHandsCodingTool(task))
             }
 
         return AIAgent(

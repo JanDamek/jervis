@@ -1,15 +1,25 @@
 package com.jervis.koog.tools
 
+import ai.koog.a2a.client.A2AClient
+import ai.koog.a2a.client.UrlAgentCardResolver
+import ai.koog.a2a.model.Message
+import ai.koog.a2a.model.MessageSendParams
+import ai.koog.a2a.transport.Request
+import ai.koog.a2a.model.Role
+import ai.koog.a2a.model.TextPart
+import ai.koog.a2a.transport.client.jsonrpc.http.HttpJSONRPCClientTransport
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
-import com.jervis.common.client.ICodingEngineClient
-import com.jervis.common.dto.CodingExecuteRequest
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.jervis.entity.TaskDocument
 import mu.KotlinLogging
+import java.util.*
 
 /**
  * OpenHandsCodingTool – heavy-weight autonomous coding in isolated K8s sandbox (Server 3).
+ *
+ * Uses Koog A2A Client to communicate with service-coding-engine.
  *
  * Use for:
  * - New projects or large-scale refactors
@@ -24,42 +34,74 @@ import mu.KotlinLogging
 )
 class OpenHandsCodingTool(
     private val task: TaskDocument,
-    private val engine: ICodingEngineClient,
+    private val openHandsBaseUrl: String = "http://localhost:8082"
 ) : ToolSet {
     companion object {
         private val logger = KotlinLogging.logger {}
+        private val objectMapper = ObjectMapper()
+    }
+
+    private val a2aClient: A2AClient by lazy {
+        val transport = HttpJSONRPCClientTransport(url = "$openHandsBaseUrl/a2a")
+        val agentCardResolver = UrlAgentCardResolver(
+            baseUrl = openHandsBaseUrl,
+            path = "/.well-known/agent-card.json"
+        )
+        A2AClient(transport = transport, agentCardResolver = agentCardResolver)
     }
 
     @Tool
     @LLMDescription(
         "Submit a complex job to OpenHands. Provide a detailed task spec. Optionally include repoUrl to clone. " +
-            "By default uses fast local Qwen model. For complex/critical tasks, set model='paid' to use more powerful paid API.",
+            "By default uses fast local Qwen model. For complex/critical tasks.",
     )
     suspend fun delegateToOpenHands(
         @LLMDescription("Detailed task specification for OpenHands (what to build/run/debug and expected outcome)")
         taskSpec: String,
-        @LLMDescription(
-            "Model selection strategy: Leave NULL for standard tasks (uses fast local Qwen model). " +
-                "Set to 'paid' ONLY for complex architectural tasks, security audits, or large refactoring where SOTA reasoning is required.",
-        )
-        model: String? = null,
     ): String {
-        logger.info { "OPENHANDS_TOOL_SUBMIT: correlationId=${task.correlationId}, model=$model" }
+        logger.info { "OPENHANDS_TOOL_SUBMIT: correlationId=${task.correlationId}" }
 
-        val req =
-            CodingExecuteRequest(
-                correlationId = task.correlationId,
-                clientId = task.clientId.toString(),
-                projectId = task.projectId.toString(),
-                taskDescription = taskSpec,
+        return try {
+            // Build request params as JSON
+            val paramsMap = mapOf(
+                "correlationId" to task.correlationId,
+                "clientId" to task.clientId.toString(),
+                "projectId" to task.projectId.toString(),
+                "taskDescription" to taskSpec,
+                "targetFiles" to emptyList<String>(),
+                "codingInstruction" to " ",
+                "codingRules" to " "
+            )
+            val paramsJson = objectMapper.writeValueAsString(paramsMap)
+
+            // Create A2A message
+            val message = Message(
+                messageId = UUID.randomUUID().toString(),
+                role = Role.User,
+                parts = listOf(TextPart(paramsJson)),
+                contextId = task.correlationId
             )
 
-        val res = engine.execute(req)
+            val request = Request(data = MessageSendParams(message))
 
-        return buildString {
-            appendLine("OPENHANDS_SUBMIT: success=${res.success}")
-            appendLine("summary: ${res.summary}")
-            res.details?.let { appendLine("details:\n$it") }
+            // Send message and get response
+            val response = a2aClient.sendMessage(request)
+
+            when (val event = response.data) {
+                is Message -> {
+                    val text = event.parts
+                        .filterIsInstance<TextPart>()
+                        .joinToString(" ") { it.text }
+                    buildString {
+                        appendLine("OPENHANDS_RESULT:")
+                        appendLine(text)
+                    }
+                }
+                else -> "OPENHANDS_RESULT: Unexpected response type"
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "OPENHANDS_A2A_ERROR: ${e.message}" }
+            "ERROR: OpenHands A2A call failed: ${e.message}"
         }
     }
 }
