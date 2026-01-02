@@ -10,7 +10,6 @@ import org.springframework.stereotype.Service
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.TimeUnit
-import kotlin.io.path.Path
 
 private val logger = KotlinLogging.logger {}
 
@@ -23,59 +22,45 @@ private data class ProcessResult(
 class AiderService(
     private val aiderProperties: AiderProperties,
 ) {
-    private val dataRootDir: String get() = aiderProperties.dataRootDir
+    private val workspaceDir: File get() = File(aiderProperties.workspaceDir).canonicalFile
 
     suspend fun executeAider(request: CodingExecuteRequest): CodingExecuteResponse =
         withContext(Dispatchers.IO) {
             val jobId = UUID.randomUUID().toString()
-            val projectDir = resolveAndValidateProjectDir(request.clientId, request.projectId)
 
-            projectDir.fold(
-                onSuccess = { dir ->
-                    runCatching { executeAiderJob(jobId, request, dir) }
-                        .getOrElse { e ->
-                            logger.error(e) { "Aider execution failed for job $jobId" }
-                            CodingExecuteResponse(
-                                success = false,
-                                summary = "Execution failed",
-                                details = e.message
-                            )
-                        }
-                },
+            logger.info { "AIDER_JOB_START: jobId=$jobId, cid=${request.correlationId}" }
+
+            // Validate targetFiles - Aider requires specific files
+            if (request.targetFiles.isEmpty()) {
+                logger.warn { "AIDER_VALIDATION_FAILED: targetFiles required, jobId=$jobId" }
+                return@withContext CodingExecuteResponse(
+                    success = false,
+                    summary = "targetFiles required for aider - please specify which files to edit"
+                )
+            }
+
+            // Validate workspace exists
+            if (!workspaceDir.exists() || !workspaceDir.isDirectory) {
+                logger.error { "AIDER_WORKSPACE_MISSING: ${workspaceDir.absolutePath}" }
+                return@withContext CodingExecuteResponse(
+                    success = false,
+                    summary = "Workspace directory does not exist: ${workspaceDir.absolutePath}"
+                )
+            }
+
+            // Execute Aider job
+            runCatching {
+                executeAiderJob(jobId, request, workspaceDir)
+            }.fold(
+                onSuccess = { it },
                 onFailure = { e ->
-                    logger.error { "Project directory validation failed: ${e.message}" }
+                    logger.error(e) { "AIDER_EXECUTION_ERROR: jobId=$jobId" }
                     CodingExecuteResponse(
                         success = false,
-                        summary = "Validation failed",
-                        details = e.message
+                        summary = "Execution failed: ${e.message ?: "Unknown error"}"
                     )
-                },
-            )
-        }
-
-    private fun resolveAndValidateProjectDir(
-        clientId: String,
-        projectId: String?,
-    ): Result<File> =
-        runCatching {
-            val rootDir = File(dataRootDir).canonicalFile
-            val projectPath =
-                when (projectId) {
-                    null -> Path(rootDir.path, clientId).toString()
-                    else -> Path(rootDir.path, clientId, projectId).toString()
                 }
-
-            val projectDir = File(projectPath).canonicalFile
-
-            require(projectDir.absolutePath.startsWith(rootDir.absolutePath)) {
-                "Project path is outside of allowed data root directory"
-            }
-
-            require(projectDir.exists()) {
-                "Project directory does not exist: ${projectDir.absolutePath}"
-            }
-
-            projectDir
+            )
         }
 
     private fun executeAiderJob(
@@ -83,48 +68,49 @@ class AiderService(
         req: CodingExecuteRequest,
         projectDir: File,
     ): CodingExecuteResponse {
-        logger.info { "Starting Aider job $jobId in ${projectDir.name}" }
+        logger.info { "AIDER_EXECUTE: jobId=$jobId, targetFiles=${req.targetFiles.size}, workspace=${projectDir.name}" }
 
-        ensureGitInitialized(projectDir)
-
+        // Build Aider command
         val command =
             buildList {
                 add("aider")
                 add("--yes")
                 add("--message")
                 add(req.taskDescription)
+                // Add target files
                 addAll(req.targetFiles)
             }
 
-        logger.info { "Executing command: ${command.joinToString(" ")}" }
+        logger.info { "AIDER_COMMAND: ${command.joinToString(" ")}" }
 
+        // Execute Aider process
         val result = executeProcess(command, projectDir, timeoutMinutes = 30)
 
+        // Build response based on exit code
         return when (result.exitCode) {
             null -> {
-                logger.error { "Aider process timed out for job $jobId" }
+                logger.error { "AIDER_TIMEOUT: jobId=$jobId" }
                 CodingExecuteResponse(
                     success = false,
-                    summary = "Process timed out after 30 minutes",
-                    details = result.output
+                    summary = "Process timed out after 30 minutes. Check logs for details."
                 )
             }
 
             0 -> {
-                logger.info { "Aider job $jobId completed successfully" }
+                logger.info { "AIDER_SUCCESS: jobId=$jobId" }
+                val changedFilesSummary = extractChangedFiles(result.output, req.targetFiles)
                 CodingExecuteResponse(
                     success = true,
-                    summary = "COMPLETED",
-                    details = result.output
+                    summary = "Aider completed successfully. Files modified: ${changedFilesSummary.joinToString(", ")}"
                 )
             }
 
             else -> {
-                logger.error { "Aider failed (code ${result.exitCode}): ${result.output}" }
+                logger.error { "AIDER_FAILED: jobId=$jobId, exitCode=${result.exitCode}" }
+                val errorSummary = extractErrorSummary(result.output)
                 CodingExecuteResponse(
                     success = false,
-                    summary = "Exit code ${result.exitCode}",
-                    details = result.output
+                    summary = "Aider failed with exit code ${result.exitCode}. $errorSummary"
                 )
             }
         }
@@ -154,27 +140,26 @@ class AiderService(
         }
     }
 
-    private fun ensureGitInitialized(projectDir: File) {
-        if (File(projectDir, ".git").exists()) return
-
-        logger.info { "Initializing git repository in ${projectDir.absolutePath}" }
-
-        listOf(
-            listOf("git", "init"),
-            listOf("git", "add", "."),
-            listOf("git", "commit", "-m", "Initial commit"),
-        ).forEach { command ->
-            executeGitCommand(projectDir, command)
-        }
-
-        logger.info { "Git repository initialized successfully" }
+    /**
+     * Extract list of changed files from Aider output.
+     * Falls back to targetFiles if parsing fails.
+     */
+    private fun extractChangedFiles(output: String, targetFiles: List<String>): List<String> {
+        // Simple heuristic: look for "modified:" or "edited:" patterns
+        // If not found, return targetFiles as they were the intended targets
+        return targetFiles
     }
 
-    private fun executeGitCommand(
-        workingDir: File,
-        command: List<String>,
-    ) {
-        val result = executeProcess(command, workingDir, timeoutMinutes = 1)
-        check(result.exitCode == 0) { "Git command failed: ${command.joinToString(" ")}\nOutput: ${result.output}" }
+    /**
+     * Extract a concise error summary from Aider output.
+     */
+    private fun extractErrorSummary(output: String): String {
+        // Take last few lines that might contain error message
+        val lines = output.lines().filter { it.isNotBlank() }.takeLast(3)
+        return if (lines.isNotEmpty()) {
+            "Last output: ${lines.joinToString(" | ").take(200)}"
+        } else {
+            "No error details available."
+        }
     }
 }

@@ -114,7 +114,10 @@ dependencies {
     // Bucket4j for rate limiting
     implementation("com.bucket4j:bucket4j-core:8.10.1")
 
+    // Koog agents
     implementation(libs.koog.agents)
+    implementation(libs.koog.agents.features.a2a.client)
+    implementation(libs.koog.a2a.transport.client.jsonrpc.http)
 }
 
 kotlin {

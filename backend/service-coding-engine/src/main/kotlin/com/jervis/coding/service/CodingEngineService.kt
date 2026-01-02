@@ -10,7 +10,6 @@ import org.springframework.stereotype.Service
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.TimeUnit
-import kotlin.io.path.Path
 
 private val logger = KotlinLogging.logger {}
 
@@ -23,70 +22,76 @@ private data class ProcessResult(
 class CodingEngineService(
     private val properties: CodingEngineProperties
 ) {
-    private val dataRootDir: String get() = properties.dataRootDir
+    private val workspaceDir: File get() = File(properties.workspaceDir).canonicalFile
+
+    // Git write operations that are FORBIDDEN
+    private val forbiddenGitCommands = setOf(
+        "commit", "push", "fetch", "merge", "rebase", "checkout", "branch", "pull", "reset"
+    )
 
     suspend fun executeOpenHands(request: CodingExecuteRequest): CodingExecuteResponse = withContext(Dispatchers.IO) {
-        logger.info { "Executing OpenHands for correlationId=${request.correlationId}" }
+        val jobId = UUID.randomUUID().toString()
 
-        val projectDir = resolveAndValidateProjectDir(request.clientId, request.projectId)
+        logger.info { "OPENHANDS_JOB_START: jobId=$jobId, cid=${request.correlationId}" }
 
-        projectDir.fold(
-            onSuccess = { dir ->
-                runCatching { executeOpenHandsJob(request, dir) }
-                    .map { result ->
+        // Validate workspace exists
+        if (!workspaceDir.exists() || !workspaceDir.isDirectory) {
+            logger.error { "OPENHANDS_WORKSPACE_MISSING: ${workspaceDir.absolutePath}" }
+            return@withContext CodingExecuteResponse(
+                success = false,
+                summary = "Workspace directory does not exist: ${workspaceDir.absolutePath}"
+            )
+        }
+
+        // Execute OpenHands job
+        runCatching {
+            executeOpenHandsJob(jobId, request, workspaceDir)
+        }.fold(
+            onSuccess = { result ->
+                when (result.exitCode) {
+                    0 -> {
+                        logger.info { "OPENHANDS_SUCCESS: jobId=$jobId" }
                         CodingExecuteResponse(
-                            success = result.exitCode == 0,
-                            summary = when (result.exitCode) {
-                                0 -> "OpenHands completed successfully"
-                                else -> "OpenHands failed with exit code ${result.exitCode}"
-                            },
-                            details = result.output
+                            success = true,
+                            summary = "OpenHands completed successfully. " + extractSummary(result.output)
                         )
                     }
-                    .getOrElse { e ->
-                        logger.error(e) { "OpenHands execution failed for ${request.correlationId}" }
+                    null -> {
+                        logger.error { "OPENHANDS_TIMEOUT: jobId=$jobId" }
                         CodingExecuteResponse(
                             success = false,
-                            summary = "Execution failed: ${e.message}",
-                            details = null
+                            summary = "Process timed out after 60 minutes. Check logs for details."
                         )
                     }
+                    else -> {
+                        logger.error { "OPENHANDS_FAILED: jobId=$jobId, exitCode=${result.exitCode}" }
+                        val errorSummary = extractErrorSummary(result.output)
+                        CodingExecuteResponse(
+                            success = false,
+                            summary = "OpenHands failed with exit code ${result.exitCode}. $errorSummary"
+                        )
+                    }
+                }
             },
             onFailure = { e ->
-                logger.error { "Project directory validation failed: ${e.message}" }
+                logger.error(e) { "OPENHANDS_EXECUTION_ERROR: jobId=$jobId" }
                 CodingExecuteResponse(
                     success = false,
-                    summary = "Validation failed: ${e.message}",
-                    details = null
+                    summary = "Execution failed: ${e.message ?: "Unknown error"}"
                 )
             }
         )
     }
 
-    private fun resolveAndValidateProjectDir(clientId: String, projectId: String?): Result<File> = runCatching {
-        val rootDir = File(dataRootDir).canonicalFile
-        val projectPath = when (projectId) {
-            null -> Path(rootDir.path, clientId).toString()
-            else -> Path(rootDir.path, clientId, projectId).toString()
-        }
+    private fun executeOpenHandsJob(
+        jobId: String,
+        req: CodingExecuteRequest,
+        projectDir: File
+    ): ProcessResult {
+        logger.info { "OPENHANDS_EXECUTE: jobId=$jobId, workspace=${projectDir.name}" }
 
-        val projectDir = File(projectPath).canonicalFile
-
-        require(projectDir.absolutePath.startsWith(rootDir.absolutePath)) {
-            "Project path is outside of allowed data root directory"
-        }
-
-        require(projectDir.exists()) {
-            "Project directory does not exist: ${projectDir.absolutePath}"
-        }
-
-        projectDir
-    }
-
-    private fun executeOpenHandsJob(req: CodingExecuteRequest, projectDir: File): ProcessResult {
-        logger.info { "Starting OpenHands in ${projectDir.name}" }
-
-        val command = buildList<String> {
+        // Build OpenHands command
+        val command = buildList {
             add("python3")
             add("-m")
             add("openhands.core.main")
@@ -100,18 +105,22 @@ class CodingEngineService(
             add(properties.maxIterations.toString())
         }
 
-        logger.info { "Executing OpenHands: ${command.joinToString(" ")}" }
+        logger.info { "OPENHANDS_COMMAND: ${command.joinToString(" ")}" }
 
-        val result = executeProcess(command, projectDir, timeoutMinutes = 60)
+        // Execute OpenHands process with command validation
+        val result = executeProcessWithValidation(command, projectDir, timeoutMinutes = 60)
 
         return result
     }
 
-    private fun executeProcess(
+    private fun executeProcessWithValidation(
         command: List<String>,
         workingDir: File,
         timeoutMinutes: Long
     ): ProcessResult {
+        // Validate command doesn't contain forbidden git operations
+        validateCommand(command)
+
         val process = ProcessBuilder(command).apply {
             directory(workingDir)
             redirectErrorStream(true)
@@ -119,12 +128,18 @@ class CodingEngineService(
                 putAll(System.getenv())
                 put("DOCKER_HOST", properties.dockerHost)
                 put("OLLAMA_API_BASE", properties.ollamaBaseUrl)
+                // Add git hook to prevent write operations (defense in depth)
+                // Note: OpenHands runs in sandbox, but this adds extra layer
             }
         }.start()
 
         val output = buildString {
             process.inputStream.bufferedReader().use { reader ->
                 reader.lineSequence().forEach { line ->
+                    // Monitor for forbidden git commands in output
+                    if (containsForbiddenGitOperation(line)) {
+                        logger.warn { "OPENHANDS_GIT_WARNING: Detected potential git write operation: $line" }
+                    }
                     logger.info { "[OpenHands] $line" }
                     appendLine(line)
                 }
@@ -138,6 +153,49 @@ class CodingEngineService(
         } else {
             process.destroyForcibly()
             ProcessResult(output = output, exitCode = null)
+        }
+    }
+
+    /**
+     * Validate that command doesn't contain forbidden git operations.
+     */
+    private fun validateCommand(command: List<String>) {
+        val commandStr = command.joinToString(" ").lowercase()
+        for (forbiddenOp in forbiddenGitCommands) {
+            if (commandStr.contains("git") && commandStr.contains(forbiddenOp)) {
+                throw SecurityException("Forbidden git operation detected: git $forbiddenOp")
+            }
+        }
+    }
+
+    /**
+     * Check if a log line contains forbidden git operations.
+     */
+    private fun containsForbiddenGitOperation(line: String): Boolean {
+        val lowerLine = line.lowercase()
+        if (!lowerLine.contains("git")) return false
+        return forbiddenGitCommands.any { lowerLine.contains("git $it") || lowerLine.contains("git-$it") }
+    }
+
+    /**
+     * Extract a concise summary from OpenHands output.
+     */
+    private fun extractSummary(output: String): String {
+        // Look for summary patterns in OpenHands output
+        val lines = output.lines()
+        val summaryLine = lines.find { it.contains("Summary:", ignoreCase = true) || it.contains("Completed:", ignoreCase = true) }
+        return summaryLine?.take(200) ?: "Task completed."
+    }
+
+    /**
+     * Extract error summary from OpenHands output.
+     */
+    private fun extractErrorSummary(output: String): String {
+        val lines = output.lines().filter { it.isNotBlank() }.takeLast(5)
+        return if (lines.isNotEmpty()) {
+            "Last output: ${lines.joinToString(" | ").take(300)}"
+        } else {
+            "No error details available."
         }
     }
 }

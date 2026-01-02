@@ -4,5 +4,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 
 @ConfigurationProperties(prefix = "aider")
 data class AiderProperties(
-    val dataRootDir: String
+    /**
+     * Workspace directory path (shared with JERVIS orchestrator).
+     * Should be set to the same value as WORKSPACE_DIR environment variable.
+     */
+    val workspaceDir: String
 )
