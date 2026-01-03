@@ -1,20 +1,10 @@
 package com.jervis.koog.tools
 
-import ai.koog.a2a.client.A2AClient
-import ai.koog.a2a.client.UrlAgentCardResolver
-import ai.koog.a2a.model.Message
-import ai.koog.a2a.model.MessageSendParams
-import ai.koog.a2a.transport.Request
-import ai.koog.a2a.model.Role
-import ai.koog.a2a.model.TextPart
-import ai.koog.a2a.transport.client.jsonrpc.http.HttpJSONRPCClientTransport
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
-import com.fasterxml.jackson.databind.ObjectMapper
 import com.jervis.entity.TaskDocument
 import mu.KotlinLogging
-import java.util.*
 
 /**
  * OpenHandsCodingTool – heavy-weight autonomous coding in isolated K8s sandbox (Server 3).
@@ -34,20 +24,10 @@ import java.util.*
 )
 class OpenHandsCodingTool(
     private val task: TaskDocument,
-    private val openHandsBaseUrl: String = "http://localhost:8082"
+    private val openHandsBaseUrl: String = "http://localhost:8082",
 ) : ToolSet {
     companion object {
         private val logger = KotlinLogging.logger {}
-        private val objectMapper = ObjectMapper()
-    }
-
-    private val a2aClient: A2AClient by lazy {
-        val transport = HttpJSONRPCClientTransport(url = "$openHandsBaseUrl/a2a")
-        val agentCardResolver = UrlAgentCardResolver(
-            baseUrl = openHandsBaseUrl,
-            path = "/.well-known/agent-card.json"
-        )
-        A2AClient(transport = transport, agentCardResolver = agentCardResolver)
     }
 
     @Tool
@@ -62,46 +42,59 @@ class OpenHandsCodingTool(
         logger.info { "OPENHANDS_TOOL_SUBMIT: correlationId=${task.correlationId}" }
 
         return try {
-            // Build request params as JSON
-            val paramsMap = mapOf(
-                "correlationId" to task.correlationId,
-                "clientId" to task.clientId.toString(),
-                "projectId" to task.projectId.toString(),
-                "taskDescription" to taskSpec,
-                "targetFiles" to emptyList<String>(),
-                "codingInstruction" to " ",
-                "codingRules" to " "
-            )
-            val paramsJson = objectMapper.writeValueAsString(paramsMap)
+            val client = A2AClientHelper.getOrCreate(openHandsBaseUrl)
+            val result =
+                A2AClientHelper.sendCodingRequest(
+                    client = client,
+                    task = task,
+                    taskDescription = taskSpec,
+                    targetFiles = emptyList(),
+                    codingInstruction =
+                        "Autonomously solve the task. You can explore the codebase, run commands, install dependencies, " +
+                            "debug issues, and make necessary code changes. Provide a summary of changes made.",
+                    codingRules = CodingRules.NO_GIT_WRITES_RULES,
+                )
 
-            // Create A2A message
-            val message = Message(
-                messageId = UUID.randomUUID().toString(),
-                role = Role.User,
-                parts = listOf(TextPart(paramsJson)),
-                contextId = task.correlationId
-            )
-
-            val request = Request(data = MessageSendParams(message))
-
-            // Send message and get response
-            val response = a2aClient.sendMessage(request)
-
-            when (val event = response.data) {
-                is Message -> {
-                    val text = event.parts
-                        .filterIsInstance<TextPart>()
-                        .joinToString(" ") { it.text }
-                    buildString {
-                        appendLine("OPENHANDS_RESULT:")
-                        appendLine(text)
-                    }
-                }
-                else -> "OPENHANDS_RESULT: Unexpected response type"
+            buildString {
+                appendLine("OPENHANDS_RESULT:")
+                appendLine(result)
             }
         } catch (e: Exception) {
             logger.error(e) { "OPENHANDS_A2A_ERROR: ${e.message}" }
             "ERROR: OpenHands A2A call failed: ${e.message}"
+        }
+    }
+
+    @Tool
+    @LLMDescription(
+        "Execute verification commands (build/test) and return results. " +
+            "Does NOT edit code. Used after coding changes to verify correctness.",
+    )
+    suspend fun runVerificationWithOpenHands(
+        @LLMDescription("Build/test commands to execute (e.g., 'gradle build' or 'npm test')")
+        verificationSpec: String,
+    ): String {
+        logger.info { "OPENHANDS_VERIFY: correlationId=${task.correlationId}" }
+
+        return try {
+            val client = A2AClientHelper.getOrCreate(openHandsBaseUrl)
+            val result =
+                A2AClientHelper.sendCodingRequest(
+                    client = client,
+                    task = task,
+                    taskDescription = "VERIFY: $verificationSpec",
+                    targetFiles = emptyList(),
+                    codingInstruction = "Execute the specified commands and report results. Do not edit code unless explicitly asked.",
+                    codingRules = CodingRules.VERIFY_RULES,
+                )
+
+            buildString {
+                appendLine("OPENHANDS_VERIFY_RESULT:")
+                appendLine(result)
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "OPENHANDS_VERIFY_ERROR: ${e.message}" }
+            "ERROR: Verification failed: ${e.message}"
         }
     }
 }
