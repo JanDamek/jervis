@@ -4,8 +4,7 @@ import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.dsl.builder.forwardTo
 import ai.koog.agents.core.dsl.builder.strategy
-import ai.koog.agents.core.dsl.extension.nodeLLMRequest
-import ai.koog.agents.core.dsl.extension.onAssistantMessage
+import ai.koog.agents.core.dsl.extension.nodeLLMRequestStructured
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.prompt.dsl.Prompt
 import com.jervis.entity.TaskDocument
@@ -40,7 +39,7 @@ class ReviewerAgent(
 
     /**
      * Create reviewer agent instance.
-     * Returns ReviewResult directly - Koog serializes automatically.
+     * Returns ReviewResult directly via structured output - Koog serializes automatically.
      */
     suspend fun create(
         task: TaskDocument,
@@ -49,18 +48,33 @@ class ReviewerAgent(
     ): AIAgent<String, ReviewResult> {
         val promptExecutor = promptExecutorFactory.getExecutor("OLLAMA")
 
+        val exampleReview = ReviewResult(
+            complete = true,
+            missingParts = emptyList(),
+            violations = emptyList(),
+            reasoning = "All parts of query addressed, verify step present after coding"
+        )
+
         val agentStrategy =
             strategy("Completeness Review") {
-                val nodeLLMRequest by nodeLLMRequest()
+                val nodeReview by
+                    nodeLLMRequestStructured<ReviewResult>(
+                        examples = listOf(exampleReview),
+                    ).transform { result ->
+                        val reviewResult = result.getOrElse { e ->
+                            throw IllegalStateException("ReviewerAgent: structured output parsing failed", e)
+                        }.data
 
-                // Node that builds ReviewResult from LLM response
-                val nodeBuildReview by node<String, ReviewResult> { llmResponse ->
-                    parseReviewFromText(llmResponse, currentIteration, maxIterations)
-                }
+                        // Force complete at max iterations
+                        if (currentIteration >= maxIterations) {
+                            reviewResult.copy(complete = true)
+                        } else {
+                            reviewResult
+                        }
+                    }
 
-                edge(nodeStart forwardTo nodeLLMRequest)
-                edge((nodeLLMRequest forwardTo nodeBuildReview).onAssistantMessage { true })
-                edge(nodeBuildReview forwardTo nodeFinish)
+                edge(nodeStart forwardTo nodeReview)
+                edge(nodeReview forwardTo nodeFinish)
             }
 
         val model =
@@ -97,18 +111,11 @@ class ReviewerAgent(
                                - No contradictory information in evidence?
                                - Execution errors properly handled?
 
-                            Output your review clearly:
-
-                            If INCOMPLETE or VIOLATIONS found:
-                            - State "INCOMPLETE"
-                            - List missing parts
-                            - Suggest additional steps needed
-                            - Explain violations found
-
-                            If COMPLETE:
-                            - State "COMPLETE"
-                            - Summarize what was verified
-                            - Confirm no violations
+                            Output a ReviewResult with:
+                            - complete: true if all parts addressed, false otherwise
+                            - missingParts: list of what's missing (empty if complete)
+                            - violations: list of security/constraint violations found
+                            - reasoning: brief explanation of your decision
 
                             Max 2 iterations allowed. If already iterated twice, mark complete even if gaps remain.
                             """.trimIndent(),
@@ -183,50 +190,4 @@ class ReviewerAgent(
         return result
     }
 
-    /**
-     * Parse agent's text output into ReviewResult.
-     * Agent analyzes completeness, we structure the decision.
-     */
-    private fun parseReviewFromText(
-        text: String,
-        currentIteration: Int,
-        maxIterations: Int,
-    ): ReviewResult {
-        val lower = text.lowercase()
-
-        // Check if agent says "complete" or "incomplete"
-        val complete =
-            when {
-                currentIteration >= maxIterations -> true // Force complete at max iterations
-                lower.contains("complete") && !lower.contains("incomplete") -> true
-                lower.contains("incomplete") -> false
-                else -> true // Default to complete if unclear
-            }
-
-        // Extract violations (simple heuristic)
-        val violations = mutableListOf<String>()
-        if (lower.contains("git push") || lower.contains("git commit")) {
-            violations.add("Git write operations detected")
-        }
-        if (lower.contains("no verify") || lower.contains("missing verify")) {
-            violations.add("Verify step missing after coding")
-        }
-
-        // Extract missing parts (look for bullet points or "missing:")
-        val missingParts = mutableListOf<String>()
-        val missingSection = text.substringAfter("missing", "").take(300)
-        missingSection.lines().forEach { line ->
-            if (line.trim().startsWith("-") || line.trim().startsWith("*")) {
-                missingParts.add(line.trim().removePrefix("-").removePrefix("*").trim())
-            }
-        }
-
-        return ReviewResult(
-            complete = complete,
-            missingParts = missingParts,
-            violations = violations,
-            reasoning = text.take(500), // First 500 chars as reasoning
-            extraSteps = emptyList(), // Simplification: Planner creates new steps if needed
-        )
-    }
 }

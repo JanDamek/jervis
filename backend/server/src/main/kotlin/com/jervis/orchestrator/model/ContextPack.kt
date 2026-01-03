@@ -13,8 +13,8 @@ data class ContextPack(
     /** Project name (human-readable, for LLM context) */
     val projectName: String?,
 
-    /** Workspace path where code lives (fixed per container) */
-    val workspacePath: String,
+    /** Project path where code lives (from DirectoryStructureService) */
+    val projectPath: String,
 
     /** Build commands for CODING_VERIFY tasks (from ProjectDocument.buildConfig) */
     val buildCommands: List<String>,

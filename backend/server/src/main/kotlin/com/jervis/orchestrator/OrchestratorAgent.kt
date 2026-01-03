@@ -1,21 +1,30 @@
 package com.jervis.orchestrator
 
+import ai.koog.a2a.client.A2AClient
+import ai.koog.a2a.client.UrlAgentCardResolver
+import ai.koog.a2a.model.Message
+import ai.koog.a2a.model.MessageSendParams
+import ai.koog.a2a.model.Role
+import ai.koog.a2a.model.Task
+import ai.koog.a2a.model.TextPart
+import ai.koog.a2a.transport.Request
+import ai.koog.a2a.transport.client.jsonrpc.http.HttpJSONRPCClientTransport
 import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.dsl.builder.forwardTo
 import ai.koog.agents.core.dsl.builder.strategy
 import ai.koog.agents.core.dsl.extension.*
 import ai.koog.agents.core.tools.ToolRegistry
+import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.prompt.dsl.Prompt
+import ai.koog.prompt.structure.StructuredResponse
 import com.jervis.configuration.properties.KoogProperties
 import com.jervis.entity.TaskDocument
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.SmartModelSelector
-import com.jervis.koog.tools.AiderCodingTool
 import com.jervis.koog.tools.CommunicationTools
 import com.jervis.koog.tools.KnowledgeStorageTools
-import com.jervis.koog.tools.OpenHandsCodingTool
 import com.jervis.koog.tools.qualifier.QualifierRoutingTools
 import com.jervis.koog.tools.scheduler.SchedulerTools
 import com.jervis.koog.tools.user.UserInteractionTools
@@ -33,8 +42,12 @@ import com.jervis.service.link.IndexedLinkService
 import com.jervis.service.link.LinkContentService
 import com.jervis.service.scheduling.TaskManagementService
 import com.jervis.service.task.UserTaskService
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
+import java.net.URI
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -54,8 +67,7 @@ import java.util.concurrent.ConcurrentHashMap
  * - ReviewerAgent: Check completeness and create follow-ups
  *
  * External agents (A2A):
- * - AiderCodingTool: Fast surgical edits
- * - OpenHandsCodingTool: Complex debugging, build/test
+ * - Coding delegation via Koog A2A (routing is driven by Koog Structured Output decision)
  *
  * All tools available:
  * - Knowledge: RAG, GraphDB
@@ -87,6 +99,8 @@ class OrchestratorAgent(
     companion object {
         private val logger = KotlinLogging.logger {}
         private const val MAX_ITERATIONS = 3
+        private const val A2A_AGENT_AIDER = "aider"
+        private const val A2A_AGENT_OPENHANDS = "openhands"
     }
 
     private val activeAgents = ConcurrentHashMap<String, String>()
@@ -100,7 +114,44 @@ class OrchestratorAgent(
     suspend fun create(task: TaskDocument): AIAgent<String, String> {
         val promptExecutor = promptExecutorFactory.getExecutor("OLLAMA")
 
-        // Simple tool-calling loop strategy like KoogWorkflowAgent
+        val aiderA2aUrl =
+            System.getenv("JERVIS_A2A_AIDER_URL")
+                ?: error("Missing env JERVIS_A2A_AIDER_URL (e.g. http://localhost:8081/a2a)")
+        val openHandsA2aUrl =
+            System.getenv("JERVIS_A2A_OPENHANDS_URL")
+                ?: error("Missing env JERVIS_A2A_OPENHANDS_URL (e.g. http://localhost:8082/a2a)")
+
+        val aiderClient = createA2AClient(aiderA2aUrl)
+        val openHandsClient = createA2AClient(openHandsA2aUrl)
+
+        runCatching { aiderClient.connect() }
+            .getOrElse { throw IllegalStateException("Failed to connect A2A client for Aider at $aiderA2aUrl", it) }
+        runCatching { openHandsClient.connect() }
+            .getOrElse {
+                throw IllegalStateException(
+                    "Failed to connect A2A client for OpenHands at $openHandsA2aUrl",
+                    it,
+                )
+            }
+
+        val decisionExamples =
+            listOf(
+                OrchestratorDecision(
+                    type = DecisionType.A2A,
+                    agent = A2A_AGENT_AIDER,
+                    payload = "Fix a small localized bug in Foo.kt and adjust unit test if needed.",
+                ),
+                OrchestratorDecision(
+                    type = DecisionType.A2A,
+                    agent = A2A_AGENT_OPENHANDS,
+                    payload = "Refactor across multiple modules. Search logs, run tests, and produce a robust fix.",
+                ),
+                OrchestratorDecision(
+                    type = DecisionType.FINAL,
+                    finalAnswer = "Hotovo. Níže je shrnutí výsledků a další doporučení.",
+                ),
+            )
+
         val agentStrategy =
             strategy("JERVIS Orchestrator") {
                 val nodeLLMRequest by nodeLLMRequest()
@@ -108,15 +159,82 @@ class OrchestratorAgent(
                 val nodeSendToolResult by nodeLLMSendToolResult()
                 val nodeCompressHistory by nodeLLMCompressHistory()
 
+                // Ask Koog Structured Output for the next routing decision (fail-fast)
+                val nodeDecideNextAction by nodeLLMRequestStructured<OrchestratorDecision>(
+                    name = "decide-next-action",
+                    examples = decisionExamples,
+                )
+
+                // Convert structured result into a routing output type
+                val nodeMapNextAction by node<Result<StructuredResponse<OrchestratorDecision>>, NextAction> { result ->
+                    val decision =
+                        result
+                            .getOrElse {
+                                throw IllegalStateException(
+                                    "Structured decision failed: ${it.message}",
+                                    it,
+                                )
+                            }.data
+                    mapDecisionToAction(decision)
+                }
+
+                // Build A2A request and send it directly
+                val nodeSendA2ARequest by node<A2AInvocation, String> { inv ->
+                    val client = when (inv.agentId) {
+                        A2A_AGENT_AIDER -> aiderClient
+                        A2A_AGENT_OPENHANDS -> openHandsClient
+                        else -> throw IllegalStateException("Unknown A2A agent: ${inv.agentId}")
+                    }
+
+                    val message = Message(
+                        messageId = java.util.UUID.randomUUID().toString(),
+                        role = Role.User,
+                        parts = listOf(TextPart(inv.payload)),
+                        contextId = task.correlationId
+                    )
+
+                    val response = client.sendMessage(Request(data = MessageSendParams(message)))
+
+                    val responseText = when (val event = response.data) {
+                        is Message -> {
+                            event.parts.filterIsInstance<TextPart>().joinToString("\n") { it.text }
+                        }
+                        is Task -> {
+                            val status = event.status
+                            val statusText = status?.message?.parts?.filterIsInstance<TextPart>()?.joinToString("\n") { it.text }
+                            "Task(id=${event.id}, state=${status?.state})" + (statusText?.let { "\n$it" } ?: "")
+                        }
+                        else -> event.toString()
+                    }
+
+                    // Append response to session
+                    llm.writeSession {
+                        appendPrompt {
+                            system("A2A_RESPONSE:\n$responseText")
+                        }
+                    }
+
+                    responseText
+                }
+
                 edge(nodeStart forwardTo nodeLLMRequest)
 
-                // On assistant message → done
-                edge((nodeLLMRequest forwardTo nodeFinish).onAssistantMessage { true })
+                // === LLM output routing ===
+                // Any assistant message is followed by a structured routing decision (A2A delegate vs FINAL)
+                val nodeTransformToDecision by node<String, String> { assistantMessage ->
+                    buildDecisionPrompt(assistantMessage)
+                }
+                edge(
+                    (nodeLLMRequest forwardTo nodeTransformToDecision)
+                        .onAssistantMessage { true }
+                )
+                edge(nodeTransformToDecision forwardTo nodeDecideNextAction)
+                edge(nodeDecideNextAction forwardTo nodeMapNextAction)
 
-                // On tool call → execute
+                // Tool call -> execute
                 edge((nodeLLMRequest forwardTo nodeExecuteTool).onToolCall { true })
 
-                // Compress history if needed
+                // === Tool execution routing ===
                 edge(
                     (nodeExecuteTool forwardTo nodeCompressHistory)
                         .onCondition { llm.readSession { prompt.messages.size > 50 } },
@@ -128,9 +246,28 @@ class OrchestratorAgent(
                         .onCondition { llm.readSession { prompt.messages.size <= 50 } },
                 )
 
-                // Loop back
-                edge((nodeSendToolResult forwardTo nodeFinish).onAssistantMessage { true })
+                // === After sending tool result, route again ===
+                edge(
+                    (nodeSendToolResult forwardTo nodeTransformToDecision)
+                        .onAssistantMessage { true }
+                )
+
+                // Route based on structured decision
+                edge(
+                    (nodeMapNextAction forwardTo nodeSendA2ARequest)
+                        .onIsInstance(NextAction.Delegate::class)
+                        .transformed { it.invocation },
+                )
+                edge(
+                    (nodeMapNextAction forwardTo nodeFinish)
+                        .onIsInstance(NextAction.Final::class)
+                        .transformed { it.answer },
+                )
+
                 edge((nodeSendToolResult forwardTo nodeExecuteTool).onToolCall { true })
+
+                // === A2A call flow ===
+                edge(nodeSendA2ARequest forwardTo nodeLLMRequest)
             }
 
         val model =
@@ -160,10 +297,18 @@ class OrchestratorAgent(
                                - If plan has "research" steps, execute them via gatherEvidence()
 
                             2. EXECUTION PHASE:
+                               CODING EXECUTOR SELECTION (strict):
+                               - Prefer Aider when the change is small and localized:
+                                 * quick bugfix, minor code edits, formatting, small tweaks
+                                 * typically 1–3 files, no wide refactor
+                               - Prefer OpenHands when the work is complex or broad:
+                                 * refactoring across modules/files, architectural changes
+                                 * debugging from logs, deep repo search, running tests/builds
+                                 * tasks that require multi-step reasoning or exploration
                                - Execute plan steps in order using appropriate tools:
-                                 * action=coding, executor=aider → runAiderCoding()
-                                 * action=coding, executor=openhands → delegateToOpenHands()
-                                 * action=verify → runVerificationWithOpenHands()
+                                 * For coding/verify delegation you will be asked for a structured OrchestratorDecision.
+                                   - Use type=A2A with agent ('aider' or 'openhands') and payload (instruction)
+                                   - For verification use payload: "VERIFY\n<commands>"
                                  * action=rag_ingest → storeInKnowledge()
                                  * action=rag_lookup → searchKnowledge()
                                  * action=graph_update → upsertNode()
@@ -192,7 +337,8 @@ class OrchestratorAgent(
                             - ALWAYS call getContext() first
                             - NEVER skip planning phase
                             - Execute steps in exact order from plan
-                            - Delegate coding to Aider/OpenHands (never edit files directly)
+                            - Delegate coding/verify via Koog Structured Output decision, never edit files directly
+                            - Aider = small/surgical edits; OpenHands = complex/refactor/debug/test
                             - Always verify after coding (unless plan explicitly skips it)
                             - NO git push/commit (create UserTask if needed)
                             - Include context (clientId, projectId) in all outputs
@@ -218,9 +364,7 @@ class OrchestratorAgent(
                     ),
                 )
 
-                // Coding tools (A2A external)
-                tools(AiderCodingTool(task))
-                tools(OpenHandsCodingTool(task))
+                // External coding is delegated via A2A_CALL (A2AAgentClient), not exposed as tools.
 
                 // Knowledge tools
                 tools(KnowledgeStorageTools(task, knowledgeService, graphDBService))
@@ -293,4 +437,98 @@ class OrchestratorAgent(
             activeAgents.remove(task.correlationId)
         }
     }
+
+    @Serializable
+    @SerialName("OrchestratorDecision")
+    @LLMDescription(
+        "Routing decision for the orchestrator: either delegate work to an external A2A coding agent or finish with the final user answer",
+    )
+    private data class OrchestratorDecision(
+        @property:LLMDescription("Decision type: A2A means delegate to coding agent; FINAL means return final answer to user")
+        val type: DecisionType,
+        @property:LLMDescription("Target A2A agent id when type=A2A. Allowed values: 'aider' or 'openhands'.")
+        val agent: String? = null,
+        @property:LLMDescription("Instruction payload to send to the A2A agent when type=A2A. Must be a concrete, actionable instruction.")
+        val payload: String? = null,
+        @property:LLMDescription("Final answer to show to the user when type=FINAL. Must be in the user's language.")
+        val finalAnswer: String? = null,
+    )
+
+    @Serializable
+    @SerialName("DecisionType")
+    private enum class DecisionType { A2A, FINAL }
+
+    private sealed interface NextAction {
+        data class Delegate(
+            val invocation: A2AInvocation,
+        ) : NextAction
+
+        data class Final(
+            val answer: String,
+        ) : NextAction
+    }
+
+    private data class A2AInvocation(
+        val agentId: String,
+        val payload: String,
+    )
+
+    private fun buildDecisionPrompt(lastAssistantMessage: String): String =
+        """
+        Decide the NEXT orchestrator action based on the conversation so far.
+
+        - If you need to delegate coding or verification to an external coding agent, choose type=A2A and fill:
+          * agent: 'aider' for small, localized edits OR 'openhands' for complex/refactor/debug/test
+          * payload: the exact instruction to execute (for verify use: 'VERIFY\n<commands>')
+
+        - If you are ready to respond to the user, choose type=FINAL and fill finalAnswer.
+
+        Context: last assistant message (for reference only):
+        ---
+        $lastAssistantMessage
+        ---
+        """.trimIndent()
+
+    private fun mapDecisionToAction(decision: OrchestratorDecision): NextAction =
+        when (decision.type) {
+            DecisionType.A2A -> {
+                val agent =
+                    decision.agent
+                        ?: throw IllegalStateException("OrchestratorDecision: agent is required for type=A2A")
+                if (agent != A2A_AGENT_AIDER && agent != A2A_AGENT_OPENHANDS) {
+                    throw IllegalStateException("OrchestratorDecision: invalid agent '$agent'")
+                }
+                val payload =
+                    decision.payload?.takeIf { it.isNotBlank() }
+                        ?: throw IllegalStateException("OrchestratorDecision: payload is required for type=A2A")
+                NextAction.Delegate(A2AInvocation(agentId = agent, payload = payload))
+            }
+
+            DecisionType.FINAL -> {
+                val answer =
+                    decision.finalAnswer?.takeIf { it.isNotBlank() }
+                        ?: throw IllegalStateException("OrchestratorDecision: finalAnswer is required for type=FINAL")
+                NextAction.Final(answer)
+            }
+        }
+
+    private fun createA2AClient(url: String): A2AClient {
+        val uri = URI(url)
+        val baseUrl =
+            buildString {
+                append(uri.scheme)
+                append("://")
+                append(uri.host)
+                if (uri.port != -1) {
+                    append(":")
+                    append(uri.port)
+                }
+            }
+        val path = uri.rawPath?.takeIf { it.isNotBlank() } ?: ""
+
+        val transport = HttpJSONRPCClientTransport(url = baseUrl + path)
+        val agentCardResolver = UrlAgentCardResolver(baseUrl = baseUrl, path = path)
+        return A2AClient(transport = transport, agentCardResolver = agentCardResolver)
+    }
+
 }

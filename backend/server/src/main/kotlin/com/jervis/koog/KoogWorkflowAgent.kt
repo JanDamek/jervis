@@ -24,10 +24,8 @@ import ai.koog.rag.base.files.JVMFileSystemProvider
 // Legacy clients removed - now using Koog A2A protocol
 import com.jervis.configuration.properties.KoogProperties
 import com.jervis.entity.TaskDocument
-import com.jervis.koog.tools.AiderCodingTool
 import com.jervis.koog.tools.CommunicationTools
 import com.jervis.koog.tools.KnowledgeStorageTools
-import com.jervis.koog.tools.OpenHandsCodingTool
 import com.jervis.koog.tools.qualifier.QualifierRoutingTools
 import com.jervis.koog.tools.scheduler.SchedulerTools
 import com.jervis.koog.tools.user.UserInteractionTools
@@ -384,9 +382,8 @@ class KoogWorkflowAgent(
                 // Communication
                 tools(CommunicationTools(task))
 
-                // Coding - Koog A2A integration
-                tools(AiderCodingTool(task))
-                tools(OpenHandsCodingTool(task))
+                // NOTE: Coding delegation is now handled via A2A in OrchestratorAgent
+                // AiderCodingTool and OpenHandsCodingTool have been removed
             }
 
         return AIAgent(

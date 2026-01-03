@@ -64,7 +64,7 @@ class ContextAgent(
         val exampleContextPack =
             ContextPack(
                 projectName = "Example project",
-                workspacePath = "/mnt/shared/client/project/correlation",
+                projectPath = "/path/to/project",
                 buildCommands = listOf("./gradlew build"),
                 testCommands = listOf("./gradlew test"),
                 environmentHints = "Kotlin/Gradle",
@@ -171,7 +171,7 @@ class ContextGatheringTools(
         return mapOf(
             "buildCommands" to (project.buildConfig?.buildCommands ?: emptyList<String>()),
             "testCommands" to (project.buildConfig?.testCommands ?: emptyList<String>()),
-            "workingDirectory" to directoryStructureService.projectDir(project),
+            "projectPath" to directoryStructureService.projectDir(project).toString(),
         )
     }
 

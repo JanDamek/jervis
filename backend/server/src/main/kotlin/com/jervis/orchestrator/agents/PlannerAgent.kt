@@ -4,8 +4,7 @@ import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.dsl.builder.forwardTo
 import ai.koog.agents.core.dsl.builder.strategy
-import ai.koog.agents.core.dsl.extension.nodeLLMRequest
-import ai.koog.agents.core.dsl.extension.onAssistantMessage
+import ai.koog.agents.core.dsl.extension.nodeLLMRequestStructured
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.prompt.dsl.Prompt
 import com.jervis.entity.TaskDocument
@@ -42,7 +41,7 @@ class PlannerAgent(
 
     /**
      * Create planner agent instance.
-     * Returns OrderedPlan directly - Koog serializes automatically.
+     * Returns OrderedPlan directly via structured output - Koog serializes automatically.
      */
     suspend fun create(
         task: TaskDocument,
@@ -51,18 +50,35 @@ class PlannerAgent(
     ): AIAgent<String, OrderedPlan> {
         val promptExecutor = promptExecutorFactory.getExecutor("OLLAMA")
 
+        val examplePlan = OrderedPlan(
+            steps = listOf(
+                PlanStep(
+                    action = "coding",
+                    executor = "aider",
+                    description = "Fix bug in UserService.kt line 42"
+                ),
+                PlanStep(
+                    action = "verify",
+                    executor = "openhands",
+                    description = "Run tests to verify the fix"
+                )
+            ),
+            reasoning = "Small fix with verification"
+        )
+
         val agentStrategy =
             strategy("Task Planning") {
-                val nodeLLMRequest by nodeLLMRequest()
+                val nodePlan by
+                    nodeLLMRequestStructured<OrderedPlan>(
+                        examples = listOf(examplePlan),
+                    ).transform { result ->
+                        result.getOrElse { e ->
+                            throw IllegalStateException("PlannerAgent: structured output parsing failed", e)
+                        }.data
+                    }
 
-                // Node that builds OrderedPlan from LLM response
-                val nodeBuildPlan by node<String, OrderedPlan> { llmResponse ->
-                    parsePlanFromText(llmResponse, task.content)
-                }
-
-                edge(nodeStart forwardTo nodeLLMRequest)
-                edge((nodeLLMRequest forwardTo nodeBuildPlan).onAssistantMessage { true })
-                edge(nodeBuildPlan forwardTo nodeFinish)
+                edge(nodeStart forwardTo nodePlan)
+                edge(nodePlan forwardTo nodeFinish)
             }
 
         val model =
@@ -103,12 +119,11 @@ class PlannerAgent(
                             - slack_post: Post to Slack
                             - research: Gather evidence via tool calls
 
-                            Output a numbered list of steps with:
-                            - Step ID
-                            - Action type
-                            - Clear description
-                            - Executor hint
-                            - Expected outcome
+                            Output an OrderedPlan with list of steps.
+                            Each step has:
+                            - action: type of action
+                            - executor: who executes it
+                            - description: what to do
 
                             Be concise and specific.
                             """.trimIndent(),
@@ -155,7 +170,7 @@ class PlannerAgent(
                 if (context.projectName != null) {
                     appendLine("  project: ${context.projectName}")
                 }
-                appendLine("  workspacePath: ${context.workspacePath}")
+                appendLine("  projectPath: ${context.projectPath}")
                 appendLine("  buildCommands: ${context.buildCommands.joinToString(", ")}")
                 appendLine("  testCommands: ${context.testCommands.joinToString(", ")}")
                 appendLine("  environmentHints: ${context.environmentHints}")
@@ -186,53 +201,4 @@ class PlannerAgent(
         return result
     }
 
-    /**
-     * Parse agent's text output into OrderedPlan.
-     * Agent outputs numbered steps, we structure them.
-     */
-    private fun parsePlanFromText(
-        text: String,
-        fallbackQuery: String,
-    ): OrderedPlan {
-        // Simple parser: look for numbered steps
-        val steps = mutableListOf<PlanStep>()
-        val lines = text.lines()
-
-        var currentId = 1
-        for (line in lines) {
-            // Match patterns like "1. ", "Step 1:", etc.
-            if (line.matches(Regex("^\\s*\\d+[.:].*"))) {
-                steps.add(
-                    PlanStep(
-                        id = currentId.toString(),
-                        action = "coding", // Default, refine later
-                        description = line.replace(Regex("^\\s*\\d+[.:]\\s*"), ""),
-                        executor = "openhands", // Default autonomous
-                    ),
-                )
-                currentId++
-            }
-        }
-
-        return if (steps.isEmpty()) {
-            // Fallback: single step
-            OrderedPlan(
-                steps =
-                    listOf(
-                        PlanStep(
-                            id = "1",
-                            action = "coding",
-                            description = fallbackQuery,
-                            executor = "openhands",
-                        ),
-                    ),
-                reasoning = "Single-step plan (parsing fallback)",
-            )
-        } else {
-            OrderedPlan(
-                steps = steps,
-                reasoning = "Decomposed query into ${steps.size} steps",
-            )
-        }
-    }
 }
