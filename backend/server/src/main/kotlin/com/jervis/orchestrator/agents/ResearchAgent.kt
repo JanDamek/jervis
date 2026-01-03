@@ -63,16 +63,33 @@ class ResearchAgent(
                 val nodeSendToolResult by nodeLLMSendToolResult()
                 val nodeCompressHistory by nodeLLMCompressHistory()
 
-                // Final node that builds EvidencePack from conversation
-                val nodeBuildEvidence by node<String, EvidencePack> { llmResponse ->
-                    parseEvidenceFromText(llmResponse, "research_completed")
-                }
+                // Final node that builds EvidencePack from conversation using structured output
+                val nodeRequestEvidencePack by
+                    nodeLLMRequestStructured<EvidencePack>(
+                        name = "request-evidence-pack",
+                        examples = listOf(
+                            EvidencePack(
+                                items = listOf(
+                                    com.jervis.orchestrator.model.EvidenceItem(
+                                        source = "RAG",
+                                        content = "Found implementation of UserService in src/main/UserService.kt",
+                                        confidence = 0.9
+                                    )
+                                ),
+                                summary = "Located UserService implementation"
+                            )
+                        ),
+                    ).transform { result ->
+                        result.getOrElse { e ->
+                            throw IllegalStateException("ResearchAgent: structured output parsing failed", e)
+                        }.data
+                    }
 
                 edge(nodeStart forwardTo nodeLLMRequest)
 
-                // On assistant message (no tool call) → build evidence pack
-                edge((nodeLLMRequest forwardTo nodeBuildEvidence).onAssistantMessage { true })
-                edge(nodeBuildEvidence forwardTo nodeFinish)
+                // On assistant message (no tool call) → request structured evidence pack
+                edge((nodeLLMRequest forwardTo nodeRequestEvidencePack).onAssistantMessage { true })
+                edge(nodeRequestEvidencePack forwardTo nodeFinish)
 
                 // On tool call → execute tool
                 edge((nodeLLMRequest forwardTo nodeExecuteTool).onToolCall { true })
@@ -90,9 +107,9 @@ class ResearchAgent(
                 )
 
                 // After sending tool result:
-                // - If assistant says "done" → build evidence pack
+                // - If assistant says "done" → request structured evidence pack
                 // - If assistant calls more tools → loop back
-                edge((nodeSendToolResult forwardTo nodeBuildEvidence).onAssistantMessage { true })
+                edge((nodeSendToolResult forwardTo nodeRequestEvidencePack).onAssistantMessage { true })
                 edge((nodeSendToolResult forwardTo nodeExecuteTool).onToolCall { true })
             }
 
@@ -122,10 +139,9 @@ class ResearchAgent(
                             2. Multiple tools return similar/redundant info
                             3. Reached max iterations (you'll be stopped automatically)
 
-                            When done, output a clear summary:
-                            - List all evidence items found
-                            - Note the source of each (RAG, GraphDB, files)
-                            - Provide high-level conclusion
+                            When done, you will be asked to provide an EvidencePack with:
+                            - items: list of evidence items, each with source, content, confidence
+                            - summary: high-level conclusion of your research
 
                             Be thorough but efficient. Don't repeat the same query.
                             """.trimIndent(),
@@ -194,50 +210,4 @@ class ResearchAgent(
         return result
     }
 
-    /**
-     * Parse agent's text output into EvidencePack.
-     * Agent gathered evidence via tools, we structure the results.
-     */
-    private fun parseEvidenceFromText(
-        text: String,
-        researchQuestion: String,
-    ): EvidencePack {
-        // Extract evidence items from text
-        // Simple heuristic: each paragraph or bullet point = evidence item
-        val items = mutableListOf<com.jervis.orchestrator.model.EvidenceItem>()
-
-        // Split by double newlines (paragraphs) or bullets
-        val sections =
-            text.split(Regex("\n\n+|\\n\\s*[-*]\\s+"))
-                .filter { it.trim().length > 20 } // Skip short lines
-
-        for (section in sections.take(10)) {
-            items.add(
-                com.jervis.orchestrator.model.EvidenceItem(
-                    source = detectSource(section),
-                    content = section.trim(),
-                    confidence = 0.7, // Default confidence
-                ),
-            )
-        }
-
-        return EvidencePack(
-            items = items,
-            summary = text.take(500), // Use first 500 chars as summary
-        )
-    }
-
-    /**
-     * Detect evidence source from text content.
-     */
-    private fun detectSource(text: String): String {
-        val lower = text.lowercase()
-        return when {
-            lower.contains("rag") || lower.contains("document") -> "RAG"
-            lower.contains("graph") || lower.contains("node") -> "GraphDB"
-            lower.contains("file") || lower.contains("code") -> "Files"
-            lower.contains("log") -> "Logs"
-            else -> "research_agent"
-        }
-    }
 }

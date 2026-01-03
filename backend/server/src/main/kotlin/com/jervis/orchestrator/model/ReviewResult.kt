@@ -7,7 +7,7 @@ import kotlinx.serialization.Serializable
  *
  * Determines if orchestrator should:
  * - Finish and compose answer (complete=true)
- * - Execute extraSteps and iterate (complete=false)
+ * - Create new plan based on missingParts and iterate (complete=false)
  */
 @Serializable
 data class ReviewResult(
@@ -17,18 +17,9 @@ data class ReviewResult(
     /** Parts of original query not yet addressed */
     val missingParts: List<String> = emptyList(),
 
-    /** Additional steps to execute (if incomplete) */
-    val extraSteps: List<PlanStep> = emptyList(),
+    /** Security/constraint violations found (e.g., "git push detected") */
+    val violations: List<String> = emptyList(),
 
     /** Reviewer's reasoning (for debugging/logging) */
     val reasoning: String = "",
-
-    /** Security/constraint violations found (e.g., "git push detected") */
-    val violations: List<String> = emptyList(),
-) {
-    /** Should orchestrator iterate? */
-    val needsIteration: Boolean = !complete && extraSteps.isNotEmpty()
-
-    /** Is answer ready to return to user? */
-    val readyForUser: Boolean = complete && violations.isEmpty()
-}
+)

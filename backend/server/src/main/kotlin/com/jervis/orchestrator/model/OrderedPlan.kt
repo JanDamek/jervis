@@ -19,24 +19,16 @@ data class OrderedPlan(
 
 /**
  * Single atomic step in execution plan.
+ * Order in list determines execution order (no IDs needed).
  */
 @Serializable
 data class PlanStep(
-    /** Sequential ID (1, 2, 3, ...) */
-    val id: String,
-
     /** Action type: "coding", "verify", "rag_ingest", "jira_update", "email_send", "research", etc. */
     val action: String,
 
-    /** Clear description of what to do (1-2 sentences) */
-    val description: String,
-
-    /** Executor hint: "aider", "openhands", "internal", "research" */
+    /** Executor hint: "aider", "openhands", "internal" */
     val executor: String,
 
-    /** Inputs for this step (e.g., targetFiles for Aider, query for research) */
-    val inputs: Map<String, String> = emptyMap(),
-
-    /** Expected output description (for verification) */
-    val expectedOutput: String = "",
+    /** Clear description of what to do (1-2 sentences) */
+    val description: String,
 )
