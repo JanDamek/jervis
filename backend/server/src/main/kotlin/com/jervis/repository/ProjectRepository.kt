@@ -24,4 +24,6 @@ interface ProjectRepository : CoroutineCrudRepository<ProjectDocument, ProjectId
      * Find all projects that have this connection ID in their connectionIds list.
      */
     fun findByConnectionIdsContaining(connectionId: ConnectionId): Flow<ProjectDocument>
+
+    fun getById(projectId: ProjectId): ProjectDocument
 }

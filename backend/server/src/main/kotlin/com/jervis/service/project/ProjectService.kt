@@ -6,6 +6,7 @@ import com.jervis.mapper.toDocument
 import com.jervis.mapper.toDto
 import com.jervis.repository.ProjectRepository
 import com.jervis.service.storage.DirectoryStructureService
+import com.jervis.types.ProjectId
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -49,4 +50,6 @@ class ProjectService(
         requireNotNull(name?.let { projectRepository.findByName(it) }) {
             "Project not found with name: $name"
         }
+
+    fun getProjectById(projectId: ProjectId) = projectRepository.getById(projectId)
 }

@@ -1,20 +1,10 @@
 package com.jervis.koog.tools
 
-import ai.koog.a2a.client.A2AClient
-import ai.koog.a2a.client.UrlAgentCardResolver
-import ai.koog.a2a.model.Message
-import ai.koog.a2a.model.MessageSendParams
-import ai.koog.a2a.transport.Request
-import ai.koog.a2a.model.Role
-import ai.koog.a2a.model.TextPart
-import ai.koog.a2a.transport.client.jsonrpc.http.HttpJSONRPCClientTransport
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
-import com.fasterxml.jackson.databind.ObjectMapper
 import com.jervis.entity.TaskDocument
 import mu.KotlinLogging
-import java.util.*
 
 /**
  * AiderCodingTool – local surgical code edits using Aider (CLI) on the project workspace.
@@ -34,20 +24,10 @@ import java.util.*
 )
 class AiderCodingTool(
     private val task: TaskDocument,
-    private val aiderBaseUrl: String = "http://localhost:8081"
+    private val aiderBaseUrl: String = "http://localhost:8081",
 ) : ToolSet {
     companion object {
         private val logger = KotlinLogging.logger {}
-        private val objectMapper = ObjectMapper()
-    }
-
-    private val a2aClient: A2AClient by lazy {
-        val transport = HttpJSONRPCClientTransport(url = "$aiderBaseUrl/a2a")
-        val agentCardResolver = UrlAgentCardResolver(
-            baseUrl = aiderBaseUrl,
-            path = "/.well-known/agent-card.json"
-        )
-        A2AClient(transport = transport, agentCardResolver = agentCardResolver)
     }
 
     @Tool
@@ -64,42 +44,20 @@ class AiderCodingTool(
         logger.info { "AIDER_TOOL_CALL: files=$targetFiles" }
 
         return try {
-            // Build request params as JSON
-            val paramsMap = mapOf(
-                "correlationId" to task.correlationId,
-                "clientId" to task.clientId.toString(),
-                "projectId" to task.projectId.toString(),
-                "taskDescription" to taskDescription,
-                "targetFiles" to targetFiles,
-                "codingInstruction" to " ",
-                "codingRules" to " "
-            )
-            val paramsJson = objectMapper.writeValueAsString(paramsMap)
+            val client = A2AClientHelper.getOrCreate(aiderBaseUrl)
+            val result =
+                A2AClientHelper.sendCodingRequest(
+                    client = client,
+                    task = task,
+                    taskDescription = taskDescription,
+                    targetFiles = targetFiles,
+                    codingInstruction = "Modify the specified files according to the task description. Focus on surgical, targeted changes.",
+                    codingRules = CodingRules.NO_GIT_WRITES_RULES,
+                )
 
-            // Create A2A message
-            val message = Message(
-                messageId = UUID.randomUUID().toString(),
-                role = Role.User,
-                parts = listOf(TextPart(paramsJson)),
-                contextId = task.correlationId
-            )
-
-            val request = Request(data = MessageSendParams(message))
-
-            // Send message and get response
-            val response = a2aClient.sendMessage(request)
-
-            when (val event = response.data) {
-                is Message -> {
-                    val text = event.parts
-                        .filterIsInstance<TextPart>()
-                        .joinToString(" ") { it.text }
-                    buildString {
-                        appendLine("AIDER_RESULT:")
-                        appendLine(text)
-                    }
-                }
-                else -> "AIDER_RESULT: Unexpected response type"
+            buildString {
+                appendLine("AIDER_RESULT:")
+                appendLine(result)
             }
         } catch (e: Exception) {
             logger.error(e) { "AIDER_A2A_ERROR: ${e.message}" }

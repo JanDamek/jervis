@@ -34,4 +34,20 @@ data class ProjectDocument(
     val jiraBoardId: Long? = null,
     val confluenceSpaceKey: String? = null,
     val confluenceRootPageId: String? = null,
+    val buildConfig: ProjectBuildConfig? = null,
+)
+
+/**
+ * Build and verification configuration for a project.
+ *
+ * Used by Brain Agent when delegating CODING_VERIFY tasks to OpenHands.
+ * If null, Brain Agent will attempt auto-detection based on files in workspace.
+ */
+data class ProjectBuildConfig(
+    /** Commands to run for building (e.g., ["./gradlew build"]) */
+    val buildCommands: List<String> = emptyList(),
+    /** Commands to run for testing (e.g., ["./gradlew test"]) */
+    val testCommands: List<String> = emptyList(),
+    /** Maximum time to wait for verification (in seconds) */
+    val verifyTimeoutSeconds: Long = 600, // 10 minutes default
 )
