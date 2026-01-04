@@ -26,6 +26,7 @@ import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.prompt.dsl.Prompt
 import ai.koog.prompt.structure.StructuredResponse
+import com.jervis.common.dto.TaskParams
 import com.jervis.configuration.properties.EndpointProperties
 import com.jervis.configuration.properties.KoogProperties
 import com.jervis.entity.TaskDocument
@@ -59,6 +60,8 @@ import com.jervis.service.scheduling.TaskManagementService
 import com.jervis.service.task.UserTaskService
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.net.URI
@@ -213,12 +216,26 @@ class OrchestratorAgent(
                             else -> throw IllegalStateException("Unknown A2A agent: ${inv.agentId}")
                         }
 
+                    val params =
+                        try {
+                            Json.decodeFromString<TaskParams>(inv.payload)
+                        } catch (e: Exception) {
+                            null
+                        }
+
                     val message =
                         Message(
                             messageId = UUID.randomUUID().toString(),
                             role = Role.User,
                             parts = listOf(TextPart(inv.payload)),
                             contextId = task.correlationId,
+                            metadata =
+                                params?.let {
+                                    Json.encodeToJsonElement(
+                                        TaskParams.serializer(),
+                                        it,
+                                    ) as? JsonObject
+                                },
                         )
 
                     val response = client.sendMessage(Request(data = MessageSendParams(message)))

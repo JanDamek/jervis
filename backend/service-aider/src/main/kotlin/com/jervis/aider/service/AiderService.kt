@@ -1,15 +1,12 @@
 package com.jervis.aider.service
 
-import com.jervis.aider.configuration.AiderProperties
 import com.jervis.common.dto.CodingExecuteRequest
 import com.jervis.common.dto.CodingExecuteResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
-import java.io.File
 import java.util.UUID
-import java.util.concurrent.TimeUnit
 
 private val logger = KotlinLogging.logger {}
 
@@ -19,11 +16,7 @@ private data class ProcessResult(
 )
 
 @Service
-class AiderService(
-    private val aiderProperties: AiderProperties,
-) {
-    private val workspaceDir: File get() = File(aiderProperties.workspaceDir).canonicalFile
-
+class AiderService {
     suspend fun executeAider(request: CodingExecuteRequest): CodingExecuteResponse =
         withContext(Dispatchers.IO) {
             val jobId = UUID.randomUUID().toString()
@@ -35,40 +28,30 @@ class AiderService(
                 logger.warn { "AIDER_VALIDATION_FAILED: targetFiles required, jobId=$jobId" }
                 return@withContext CodingExecuteResponse(
                     success = false,
-                    summary = "targetFiles required for aider - please specify which files to edit"
-                )
-            }
-
-            // Validate workspace exists
-            if (!workspaceDir.exists() || !workspaceDir.isDirectory) {
-                logger.error { "AIDER_WORKSPACE_MISSING: ${workspaceDir.absolutePath}" }
-                return@withContext CodingExecuteResponse(
-                    success = false,
-                    summary = "Workspace directory does not exist: ${workspaceDir.absolutePath}"
+                    summary = "targetFiles required for aider - please specify which files to edit",
                 )
             }
 
             // Execute Aider job
             runCatching {
-                executeAiderJob(jobId, request, workspaceDir)
+                executeAiderJob(jobId, request)
             }.fold(
                 onSuccess = { it },
                 onFailure = { e ->
                     logger.error(e) { "AIDER_EXECUTION_ERROR: jobId=$jobId" }
                     CodingExecuteResponse(
                         success = false,
-                        summary = "Execution failed: ${e.message ?: "Unknown error"}"
+                        summary = "Execution failed: ${e.message ?: "Unknown error"}",
                     )
-                }
+                },
             )
         }
 
     private fun executeAiderJob(
         jobId: String,
         req: CodingExecuteRequest,
-        projectDir: File,
     ): CodingExecuteResponse {
-        logger.info { "AIDER_EXECUTE: jobId=$jobId, targetFiles=${req.targetFiles.size}, workspace=${projectDir.name}" }
+        logger.info { "AIDER_EXECUTE: jobId=$jobId, targetFiles=${req.targetFiles.size}" }
 
         // Build Aider command
         val command =
@@ -84,7 +67,7 @@ class AiderService(
         logger.info { "AIDER_COMMAND: ${command.joinToString(" ")}" }
 
         // Execute Aider process
-        val result = executeProcess(command, projectDir, timeoutMinutes = 30)
+        val result = executeProcess(command)
 
         // Build response based on exit code
         return when (result.exitCode) {
@@ -92,16 +75,16 @@ class AiderService(
                 logger.error { "AIDER_TIMEOUT: jobId=$jobId" }
                 CodingExecuteResponse(
                     success = false,
-                    summary = "Process timed out after 30 minutes. Check logs for details."
+                    summary = "Process timed out after 30 minutes. Check logs for details.",
                 )
             }
 
             0 -> {
                 logger.info { "AIDER_SUCCESS: jobId=$jobId" }
-                val changedFilesSummary = extractChangedFiles(result.output, req.targetFiles)
+                val changedFilesSummary = extractChangedFiles(req.targetFiles)
                 CodingExecuteResponse(
                     success = true,
-                    summary = "Aider completed successfully. Files modified: ${changedFilesSummary.joinToString(", ")}"
+                    summary = "Aider completed successfully. Files modified: ${changedFilesSummary.joinToString(", ")}",
                 )
             }
 
@@ -110,51 +93,37 @@ class AiderService(
                 val errorSummary = extractErrorSummary(result.output)
                 CodingExecuteResponse(
                     success = false,
-                    summary = "Aider failed with exit code ${result.exitCode}. $errorSummary"
+                    summary = "Aider failed with exit code ${result.exitCode}. $errorSummary",
                 )
             }
         }
     }
 
-    private fun executeProcess(
-        command: List<String>,
-        workingDir: File,
-        timeoutMinutes: Long,
-    ): ProcessResult {
+    private fun executeProcess(command: List<String>): ProcessResult {
         val process =
             ProcessBuilder(command)
                 .apply {
-                    directory(workingDir)
                     redirectErrorStream(true)
                     environment().putAll(System.getenv())
                 }.start()
 
         val output = process.inputStream.bufferedReader().use { it.readText() }
-        val completed = process.waitFor(timeoutMinutes, TimeUnit.MINUTES)
+        process.waitFor()
 
-        return if (completed) {
-            ProcessResult(output = output, exitCode = process.exitValue())
-        } else {
-            process.destroyForcibly()
-            ProcessResult(output = output, exitCode = null)
-        }
+        return ProcessResult(output = output, exitCode = process.exitValue())
     }
 
     /**
-     * Extract list of changed files from Aider output.
+     * Extract the list of changed files from Aider output.
      * Falls back to targetFiles if parsing fails.
      */
-    private fun extractChangedFiles(output: String, targetFiles: List<String>): List<String> {
-        // Simple heuristic: look for "modified:" or "edited:" patterns
-        // If not found, return targetFiles as they were the intended targets
-        return targetFiles
-    }
+    private fun extractChangedFiles(targetFiles: List<String>): List<String> = targetFiles
 
     /**
      * Extract a concise error summary from Aider output.
      */
     private fun extractErrorSummary(output: String): String {
-        // Take last few lines that might contain error message
+        // Take the last few lines that might contain an error message
         val lines = output.lines().filter { it.isNotBlank() }.takeLast(3)
         return if (lines.isNotEmpty()) {
             "Last output: ${lines.joinToString(" | ").take(200)}"

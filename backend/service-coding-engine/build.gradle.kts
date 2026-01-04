@@ -31,9 +31,6 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation(libs.kotlin.logging)
 
-    // Jackson for JSON processing
-    implementation(libs.jackson.module.kotlin)
-
     // Koog A2A Server
     implementation(libs.koog.agents.features.a2a.server)
     implementation(libs.koog.a2a.transport.server.jsonrpc.http)
