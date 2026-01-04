@@ -15,12 +15,11 @@ data class EndpointProperties(
     val lmStudio: Host,
     val searxng: Host,
     val aider: Host,
-    val openhands: Host,
+    val coding: Host,
     val tika: Host,
     val joern: Host,
     val whisper: Host,
     val atlassian: Host,
-    val coding: Host,
 ) {
     data class Api(
         val apiKey: String,

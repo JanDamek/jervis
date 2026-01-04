@@ -3,21 +3,25 @@ package com.jervis.configuration
 import com.jervis.configuration.properties.EndpointProperties
 import com.jervis.configuration.properties.KtorClientProperties
 import com.jervis.configuration.properties.RetryProperties
-import io.ktor.client.*
-import io.ktor.client.engine.cio.*
-import io.ktor.client.plugins.*
-import io.ktor.client.plugins.contentnegotiation.*
-import io.ktor.client.plugins.logging.*
-import io.ktor.client.request.*
-import io.ktor.http.*
-import io.ktor.serialization.kotlinx.json.*
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.engine.cio.endpoint
+import io.ktor.client.plugins.DefaultRequest
+import io.ktor.client.plugins.HttpRequestRetry
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.plugins.logging.LogLevel
+import io.ktor.client.plugins.logging.Logger
+import io.ktor.client.plugins.logging.Logging
+import io.ktor.client.request.accept
+import io.ktor.client.request.header
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
-import java.io.IOException
-import java.net.ConnectException
-
-private val logger = KotlinLogging.logger {}
 
 /**
  * Factory for creating Ktor HttpClients for LLM provider communication and other HTTP services.
@@ -68,10 +72,7 @@ class KtorClientFactory(
                 },
             )
             put("searxng", createHttpClient(endpoints.searxng.baseUrl))
-            // Aider external coding service (GPU/CPU worker)
             put("aider", createHttpClient(endpoints.aider.baseUrl))
-            // OpenHands agent API (self-hosted, K8s)
-            put("openhands", createHttpClient(endpoints.openhands.baseUrl))
         }
     }
 
@@ -84,13 +85,6 @@ class KtorClientFactory(
     fun getHttpClient(endpointName: String): HttpClient =
         httpClients[endpointName]
             ?: throw IllegalArgumentException("HttpClient not found for endpoint: $endpointName")
-
-    /**
-     * Close all managed HttpClients. Call on application shutdown.
-     */
-    fun closeAll() {
-        httpClients.values.forEach { it.close() }
-    }
 
     private fun createHttpClient(baseUrl: String): HttpClient =
         HttpClient(CIO) {
