@@ -4,7 +4,13 @@ import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.dsl.builder.forwardTo
 import ai.koog.agents.core.dsl.builder.strategy
-import ai.koog.agents.core.dsl.extension.*
+import ai.koog.agents.core.dsl.extension.nodeExecuteTool
+import ai.koog.agents.core.dsl.extension.nodeLLMCompressHistory
+import ai.koog.agents.core.dsl.extension.nodeLLMRequest
+import ai.koog.agents.core.dsl.extension.nodeLLMRequestStructured
+import ai.koog.agents.core.dsl.extension.nodeLLMSendToolResult
+import ai.koog.agents.core.dsl.extension.onAssistantMessage
+import ai.koog.agents.core.dsl.extension.onToolCall
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.prompt.dsl.Prompt
@@ -12,10 +18,16 @@ import com.jervis.entity.TaskDocument
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.SmartModelSelector
 import com.jervis.koog.tools.KnowledgeStorageTools
+import com.jervis.koog.tools.external.ConfluenceReadTools
+import com.jervis.koog.tools.external.EmailReadTools
+import com.jervis.koog.tools.external.JiraReadTools
 import com.jervis.orchestrator.model.ContextPack
 import com.jervis.orchestrator.model.EvidencePack
 import com.jervis.rag.KnowledgeService
 import com.jervis.rag.internal.graphdb.GraphDBService
+import com.jervis.service.confluence.ConfluenceService
+import com.jervis.service.email.EmailService
+import com.jervis.service.jira.JiraService
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
 
@@ -40,6 +52,9 @@ class ResearchAgent(
     private val smartModelSelector: SmartModelSelector,
     private val knowledgeService: KnowledgeService,
     private val graphDBService: GraphDBService,
+    private val jiraService: JiraService,
+    private val confluenceService: ConfluenceService,
+    private val emailService: EmailService,
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -67,22 +82,25 @@ class ResearchAgent(
                 val nodeRequestEvidencePack by
                     nodeLLMRequestStructured<EvidencePack>(
                         name = "request-evidence-pack",
-                        examples = listOf(
-                            EvidencePack(
-                                items = listOf(
-                                    com.jervis.orchestrator.model.EvidenceItem(
-                                        source = "RAG",
-                                        content = "Found implementation of UserService in src/main/UserService.kt",
-                                        confidence = 0.9
-                                    )
+                        examples =
+                            listOf(
+                                EvidencePack(
+                                    items =
+                                        listOf(
+                                            com.jervis.orchestrator.model.EvidenceItem(
+                                                source = "RAG",
+                                                content = "Found implementation of UserService in src/main/UserService.kt",
+                                                confidence = 0.9,
+                                            ),
+                                        ),
+                                    summary = "Located UserService implementation",
                                 ),
-                                summary = "Located UserService implementation"
-                            )
-                        ),
+                            ),
                     ).transform { result ->
-                        result.getOrElse { e ->
-                            throw IllegalStateException("ResearchAgent: structured output parsing failed", e)
-                        }.data
+                        result
+                            .getOrElse { e ->
+                                throw IllegalStateException("ResearchAgent: structured output parsing failed", e)
+                            }.data
                     }
 
                 edge(nodeStart forwardTo nodeLLMRequest)
@@ -130,7 +148,9 @@ class ResearchAgent(
                             Available tools:
                             - searchKnowledge: Search RAG for relevant documents/code
                             - queryGraph: Query GraphDB for entities and relationships
-                            - searchInFiles: Search codebase files (if needed)
+                            - searchIssues / getIssue / getComments: Read from Jira
+                            - searchPages / getPage / getChildren: Read from Confluence
+                            - searchEmails / getEmail / getThread: Read from Email
 
                             Your goal: Collect enough evidence to answer the research question.
 
@@ -155,6 +175,11 @@ class ResearchAgent(
             ToolRegistry {
                 // Knowledge tools (RAG + GraphDB)
                 tools(KnowledgeStorageTools(task, knowledgeService, graphDBService))
+
+                // External read tools
+                tools(JiraReadTools(task, jiraService))
+                tools(ConfluenceReadTools(task, confluenceService))
+                tools(EmailReadTools(task, emailService))
 
                 // TODO: Add Joern tools, log search tools when available
             }
@@ -209,5 +234,4 @@ class ResearchAgent(
 
         return result
     }
-
 }

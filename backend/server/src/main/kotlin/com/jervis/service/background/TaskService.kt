@@ -10,6 +10,7 @@ import com.jervis.service.text.TikaTextExtractionService
 import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
 import com.jervis.types.SourceUrn
+import com.jervis.types.TaskId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
@@ -74,6 +75,11 @@ class TaskService(
     suspend fun deleteTask(task: TaskDocument) {
         taskRepository.delete(task)
         logger.info { "TASK_DELETED: id=${task.id} " }
+    }
+
+    suspend fun deleteTaskById(id: TaskId) {
+        taskRepository.deleteById(id)
+        logger.info { "TASK_DELETED: id=$id " }
     }
 
     suspend fun findTasksToRun(): Flow<TaskDocument> =

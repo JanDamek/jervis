@@ -96,14 +96,24 @@ class ContextAgent(
                         system(
                             """
                             You are ContextAgent.
-
+                            
                             Goal: Output ONLY a structured ContextPack for the current run.
-
+                            
                             Rules:
-                            - Use tools to gather real data (project build config, known facts, task metadata).
-                            - Do NOT invent values. Do NOT assume defaults.
-                            - If something is missing or unknown, keep the corresponding field empty (empty list / null) and add a clear item into missingInfo.
-                            - Do not propose plans or perform any execution.
+                            1. DATA GATHERING:
+                               - Use getProjectBuildConfig() to get buildCommands, testCommands and projectPath.
+                               - Use getKnownFacts() to get background info from GraphDB.
+                               - Use getTaskMetadata() for correlationId and basic IDs.
+                            
+                            2. INTEGRITY:
+                               - If any tool returns a 'missing' list or indicates chybějící data (like build/test commands), YOU MUST add these items into 'missingInfo' field of ContextPack.
+                               - projectPath must be an absolute path from the tools.
+                               - Do NOT invent values. Do NOT assume defaults like './gradlew build' if the tool doesn't return it.
+                               - If projectId is missing, mark it in missingInfo.
+                            
+                            3. FORMAT:
+                               - Output ONLY the JSON matching ContextPack structure.
+                               - No reasoning, no conversational filler.
                             """.trimIndent(),
                         )
                     },
@@ -160,7 +170,7 @@ class ContextGatheringTools(
             task.projectId ?: return mapOf(
                 "buildCommands" to emptyList<String>(),
                 "testCommands" to emptyList<String>(),
-                "workingDirectory" to ".",
+                "projectPath" to ".",
                 "missing" to listOf("projectId is null"),
             )
 
@@ -168,10 +178,19 @@ class ContextGatheringTools(
             projectService.getProjectById(projectId)
                 ?: throw IllegalStateException("Project not found for projectId=$projectId")
 
+        val buildCommands = project.buildConfig?.buildCommands ?: emptyList<String>()
+        val testCommands = project.buildConfig?.testCommands ?: emptyList<String>()
+        val projectPath = directoryStructureService.projectDir(project).toString()
+
+        val missing = mutableListOf<String>()
+        if (buildCommands.isEmpty()) missing.add("buildCommands missing in project config")
+        if (testCommands.isEmpty()) missing.add("testCommands missing in project config")
+
         return mapOf(
-            "buildCommands" to (project.buildConfig?.buildCommands ?: emptyList<String>()),
-            "testCommands" to (project.buildConfig?.testCommands ?: emptyList<String>()),
-            "projectPath" to directoryStructureService.projectDir(project).toString(),
+            "buildCommands" to buildCommands,
+            "testCommands" to testCommands,
+            "projectPath" to projectPath,
+            "missing" to missing,
         )
     }
 
