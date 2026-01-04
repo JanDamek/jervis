@@ -13,12 +13,20 @@ import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.dsl.builder.forwardTo
 import ai.koog.agents.core.dsl.builder.strategy
-import ai.koog.agents.core.dsl.extension.*
+import ai.koog.agents.core.dsl.extension.nodeExecuteTool
+import ai.koog.agents.core.dsl.extension.nodeLLMCompressHistory
+import ai.koog.agents.core.dsl.extension.nodeLLMRequest
+import ai.koog.agents.core.dsl.extension.nodeLLMRequestStructured
+import ai.koog.agents.core.dsl.extension.nodeLLMSendToolResult
+import ai.koog.agents.core.dsl.extension.onAssistantMessage
+import ai.koog.agents.core.dsl.extension.onIsInstance
+import ai.koog.agents.core.dsl.extension.onToolCall
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.prompt.dsl.Prompt
 import ai.koog.prompt.structure.StructuredResponse
+import com.jervis.configuration.properties.EndpointProperties
 import com.jervis.configuration.properties.KoogProperties
 import com.jervis.entity.TaskDocument
 import com.jervis.koog.KoogPromptExecutorFactory
@@ -32,7 +40,6 @@ import com.jervis.orchestrator.agents.ContextAgent
 import com.jervis.orchestrator.agents.PlannerAgent
 import com.jervis.orchestrator.agents.ResearchAgent
 import com.jervis.orchestrator.agents.ReviewerAgent
-import com.jervis.orchestrator.model.*
 import com.jervis.orchestrator.tools.InternalAgentTools
 import com.jervis.rag.KnowledgeService
 import com.jervis.rag.internal.graphdb.GraphDBService
@@ -84,6 +91,7 @@ class OrchestratorAgent(
     private val userTaskService: UserTaskService,
     private val promptExecutorFactory: KoogPromptExecutorFactory,
     private val koogProperties: KoogProperties,
+    private val endpointProperties: EndpointProperties,
     private val taskService: TaskService,
     private val linkContentService: LinkContentService,
     private val indexedLinkService: IndexedLinkService,
@@ -98,9 +106,9 @@ class OrchestratorAgent(
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
-        private const val MAX_ITERATIONS = 3
         private const val A2A_AGENT_AIDER = "aider"
         private const val A2A_AGENT_OPENHANDS = "openhands"
+        private const val A2A_PATH = "/a2a"
     }
 
     private val activeAgents = ConcurrentHashMap<String, String>()
@@ -114,12 +122,17 @@ class OrchestratorAgent(
     suspend fun create(task: TaskDocument): AIAgent<String, String> {
         val promptExecutor = promptExecutorFactory.getExecutor("OLLAMA")
 
-        val aiderA2aUrl =
-            System.getenv("JERVIS_A2A_AIDER_URL")
-                ?: error("Missing env JERVIS_A2A_AIDER_URL (e.g. http://localhost:8081/a2a)")
-        val openHandsA2aUrl =
-            System.getenv("JERVIS_A2A_OPENHANDS_URL")
-                ?: error("Missing env JERVIS_A2A_OPENHANDS_URL (e.g. http://localhost:8082/a2a)")
+        val aiderBaseUrl =
+            endpointProperties.aider.baseUrl.ifBlank {
+                error("Missing endpoints.aider.baseUrl (e.g. http://localhost:8081)")
+            }
+        val openHandsBaseUrl =
+            endpointProperties.coding.baseUrl.ifBlank {
+                error("Missing endpoints.coding.baseUrl (e.g. http://localhost:8082)")
+            }
+
+        val aiderA2aUrl = toA2aUrl(aiderBaseUrl)
+        val openHandsA2aUrl = toA2aUrl(openHandsBaseUrl)
 
         val aiderClient = createA2AClient(aiderA2aUrl)
         val openHandsClient = createA2AClient(openHandsA2aUrl)
@@ -180,32 +193,40 @@ class OrchestratorAgent(
 
                 // Build A2A request and send it directly
                 val nodeSendA2ARequest by node<A2AInvocation, String> { inv ->
-                    val client = when (inv.agentId) {
-                        A2A_AGENT_AIDER -> aiderClient
-                        A2A_AGENT_OPENHANDS -> openHandsClient
-                        else -> throw IllegalStateException("Unknown A2A agent: ${inv.agentId}")
-                    }
+                    val client =
+                        when (inv.agentId) {
+                            A2A_AGENT_AIDER -> aiderClient
+                            A2A_AGENT_OPENHANDS -> openHandsClient
+                            else -> throw IllegalStateException("Unknown A2A agent: ${inv.agentId}")
+                        }
 
-                    val message = Message(
-                        messageId = java.util.UUID.randomUUID().toString(),
-                        role = Role.User,
-                        parts = listOf(TextPart(inv.payload)),
-                        contextId = task.correlationId
-                    )
+                    val message =
+                        Message(
+                            messageId = UUID.randomUUID().toString(),
+                            role = Role.User,
+                            parts = listOf(TextPart(inv.payload)),
+                            contextId = task.correlationId,
+                        )
 
                     val response = client.sendMessage(Request(data = MessageSendParams(message)))
 
-                    val responseText = when (val event = response.data) {
-                        is Message -> {
-                            event.parts.filterIsInstance<TextPart>().joinToString("\n") { it.text }
+                    val responseText =
+                        when (val event = response.data) {
+                            is Message -> {
+                                event.parts.filterIsInstance<TextPart>().joinToString("\n") { it.text }
+                            }
+
+                            is Task -> {
+                                val status = event.status
+                                val statusText =
+                                    status
+                                        .message
+                                        ?.parts
+                                        ?.filterIsInstance<TextPart>()
+                                        ?.joinToString("\n") { it.text }
+                                "Task(id=${event.id}, state=${status.state})" + (statusText?.let { "\n$it" } ?: "")
+                            }
                         }
-                        is Task -> {
-                            val status = event.status
-                            val statusText = status?.message?.parts?.filterIsInstance<TextPart>()?.joinToString("\n") { it.text }
-                            "Task(id=${event.id}, state=${status?.state})" + (statusText?.let { "\n$it" } ?: "")
-                        }
-                        else -> event.toString()
-                    }
 
                     // Append response to session
                     llm.writeSession {
@@ -226,7 +247,7 @@ class OrchestratorAgent(
                 }
                 edge(
                     (nodeLLMRequest forwardTo nodeTransformToDecision)
-                        .onAssistantMessage { true }
+                        .onAssistantMessage { true },
                 )
                 edge(nodeTransformToDecision forwardTo nodeDecideNextAction)
                 edge(nodeDecideNextAction forwardTo nodeMapNextAction)
@@ -249,7 +270,7 @@ class OrchestratorAgent(
                 // === After sending tool result, route again ===
                 edge(
                     (nodeSendToolResult forwardTo nodeTransformToDecision)
-                        .onAssistantMessage { true }
+                        .onAssistantMessage { true },
                 )
 
                 // Route based on structured decision
@@ -512,6 +533,11 @@ class OrchestratorAgent(
             }
         }
 
+    private fun toA2aUrl(baseUrl: String): String {
+        val normalized = baseUrl.trimEnd('/')
+        return if (normalized.endsWith(A2A_PATH)) normalized else normalized + A2A_PATH
+    }
+
     private fun createA2AClient(url: String): A2AClient {
         val uri = URI(url)
         val baseUrl =
@@ -530,5 +556,4 @@ class OrchestratorAgent(
         val agentCardResolver = UrlAgentCardResolver(baseUrl = baseUrl, path = path)
         return A2AClient(transport = transport, agentCardResolver = agentCardResolver)
     }
-
 }
