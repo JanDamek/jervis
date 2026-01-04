@@ -5,15 +5,14 @@ import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
 import com.jervis.entity.TaskDocument
 import com.jervis.orchestrator.agents.ContextAgent
+import com.jervis.orchestrator.agents.IngestAgent
 import com.jervis.orchestrator.agents.PlannerAgent
 import com.jervis.orchestrator.agents.ResearchAgent
 import com.jervis.orchestrator.agents.ReviewerAgent
+import com.jervis.orchestrator.agents.SolutionArchitectAgent
 import com.jervis.orchestrator.model.ContextPack
 import com.jervis.orchestrator.model.EvidencePack
-import com.jervis.orchestrator.model.OrderedPlan
 import com.jervis.orchestrator.model.PlanStep
-import com.jervis.orchestrator.model.ReviewResult
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 
@@ -30,6 +29,8 @@ class InternalAgentTools(
     private val plannerAgent: PlannerAgent,
     private val researchAgent: ResearchAgent,
     private val reviewerAgent: ReviewerAgent,
+    private val ingestAgent: IngestAgent,
+    private val solutionArchitectAgent: SolutionArchitectAgent,
 ) : ToolSet {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -107,14 +108,51 @@ class InternalAgentTools(
         logger.info { "TOOL_reviewCompleteness | correlationId=${task.correlationId} | iteration=$iteration/$maxIterations" }
         val executedSteps = json.decodeFromString<List<PlanStep>>(executedStepsJson)
         val evidence = json.decodeFromString<EvidencePack>(evidenceJson)
-        val review = reviewerAgent.run(
-            task = task,
-            originalQuery = originalQuery,
-            executedSteps = executedSteps,
-            evidence = evidence,
-            currentIteration = iteration,
-            maxIterations = maxIterations,
-        )
+        val review =
+            reviewerAgent.run(
+                task = task,
+                originalQuery = originalQuery,
+                executedSteps = executedSteps,
+                evidence = evidence,
+                currentIteration = iteration,
+                maxIterations = maxIterations,
+            )
         return json.encodeToString(review)
+    }
+
+    @Tool
+    @LLMDescription(
+        "Ingest information into RAG and GraphDB for long-term storage. " +
+            "Returns: IngestResult with summary of indexed facts.",
+    )
+    suspend fun ingestKnowledge(
+        @LLMDescription("Facts or analysis results to be indexed")
+        informationToIngest: String,
+    ): String {
+        logger.info { "TOOL_ingestKnowledge | correlationId=${task.correlationId}" }
+        val result = ingestAgent.run(task = task, informationToIngest = informationToIngest)
+        return json.encodeToString(result)
+    }
+
+    @Tool
+    @LLMDescription(
+        "Propose technical specification for a plan step. MANDATORY before any coding/delegation. " +
+            "Returns: A2ADelegationSpec with target agent, files and instructions.",
+    )
+    suspend fun proposeTechnicalSpecification(
+        @LLMDescription("The current plan step being architected")
+        planStepJson: String,
+        @LLMDescription("Context JSON from getContext()")
+        contextJson: String,
+        @LLMDescription("Evidence JSON from gatherEvidence() or previous steps")
+        evidenceJson: String,
+    ): String {
+        logger.info { "TOOL_proposeTechnicalSpecification | correlationId=${task.correlationId}" }
+        val step = json.decodeFromString<PlanStep>(planStepJson)
+        val context = json.decodeFromString<ContextPack>(contextJson)
+        val evidence = json.decodeFromString<EvidencePack>(evidenceJson)
+        val spec = solutionArchitectAgent.run(task = task, context = context, evidence = evidence, step = step)
+        logger.info { "TOOL_proposeTechnicalSpecification | result=${spec.agent}" }
+        return json.encodeToString(spec)
     }
 }

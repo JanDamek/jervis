@@ -50,21 +50,23 @@ class PlannerAgent(
     ): AIAgent<String, OrderedPlan> {
         val promptExecutor = promptExecutorFactory.getExecutor("OLLAMA")
 
-        val examplePlan = OrderedPlan(
-            steps = listOf(
-                PlanStep(
-                    action = "coding",
-                    executor = "aider",
-                    description = "Fix bug in UserService.kt line 42"
-                ),
-                PlanStep(
-                    action = "verify",
-                    executor = "openhands",
-                    description = "Run tests to verify the fix"
-                )
-            ),
-            reasoning = "Small fix with verification"
-        )
+        val examplePlan =
+            OrderedPlan(
+                steps =
+                    listOf(
+                        PlanStep(
+                            action = "coding",
+                            executor = "aider",
+                            description = "Fix bug in UserService.kt line 42",
+                        ),
+                        PlanStep(
+                            action = "verify",
+                            executor = "openhands",
+                            description = "Run tests to verify the fix",
+                        ),
+                    ),
+                reasoning = "Small fix with verification",
+            )
 
         val agentStrategy =
             strategy("Task Planning") {
@@ -72,9 +74,10 @@ class PlannerAgent(
                     nodeLLMRequestStructured<OrderedPlan>(
                         examples = listOf(examplePlan),
                     ).transform { result ->
-                        result.getOrElse { e ->
-                            throw IllegalStateException("PlannerAgent: structured output parsing failed", e)
-                        }.data
+                        result
+                            .getOrElse { e ->
+                                throw IllegalStateException("PlannerAgent: structured output parsing failed", e)
+                            }.data
                     }
 
                 edge(nodeStart forwardTo nodePlan)
@@ -109,12 +112,15 @@ class PlannerAgent(
                             Action types:
                             - coding: Code changes
                             - verify: Run build/test
-                            - rag_ingest: Add documents to RAG
-                            - rag_lookup: Search RAG
+                            - rag_ingest: Ingest information into RAG and GraphDB via ingestKnowledge()
+                            - rag_lookup: Search RAG via searchKnowledge()
                             - graph_query: Query GraphDB
                             - graph_update: Update GraphDB nodes/edges
+                            - jira_read: Read from Jira via searchIssues(), getIssue(), getComments()
                             - jira_update: Create/update JIRA ticket
+                            - confluence_read: Read from Confluence via searchPages(), getPage(), getChildren()
                             - confluence_update: Update Confluence page
+                            - email_read: Read from Email via searchEmails(), getEmail(), getThread()
                             - email_send: Send email
                             - slack_post: Post to Slack
                             - research: Gather evidence via tool calls
@@ -133,9 +139,10 @@ class PlannerAgent(
                 maxAgentIterations = 2, // Allow minor refinement
             )
 
-        val toolRegistry = ToolRegistry {
-            // No tools needed - planner just thinks and outputs structured plan
-        }
+        val toolRegistry =
+            ToolRegistry {
+                // No tools needed - planner just thinks and outputs structured plan
+            }
 
         return AIAgent(
             promptExecutor = promptExecutor,
@@ -200,5 +207,4 @@ class PlannerAgent(
 
         return result
     }
-
 }

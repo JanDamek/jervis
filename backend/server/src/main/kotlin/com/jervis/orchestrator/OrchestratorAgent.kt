@@ -33,18 +33,26 @@ import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.SmartModelSelector
 import com.jervis.koog.tools.CommunicationTools
 import com.jervis.koog.tools.KnowledgeStorageTools
+import com.jervis.koog.tools.external.ConfluenceReadTools
+import com.jervis.koog.tools.external.EmailReadTools
+import com.jervis.koog.tools.external.JiraReadTools
 import com.jervis.koog.tools.qualifier.QualifierRoutingTools
 import com.jervis.koog.tools.scheduler.SchedulerTools
 import com.jervis.koog.tools.user.UserInteractionTools
 import com.jervis.orchestrator.agents.ContextAgent
+import com.jervis.orchestrator.agents.IngestAgent
 import com.jervis.orchestrator.agents.PlannerAgent
 import com.jervis.orchestrator.agents.ResearchAgent
 import com.jervis.orchestrator.agents.ReviewerAgent
+import com.jervis.orchestrator.agents.SolutionArchitectAgent
 import com.jervis.orchestrator.tools.InternalAgentTools
 import com.jervis.rag.KnowledgeService
 import com.jervis.rag.internal.graphdb.GraphDBService
 import com.jervis.service.background.TaskService
+import com.jervis.service.confluence.ConfluenceService
 import com.jervis.service.connection.ConnectionService
+import com.jervis.service.email.EmailService
+import com.jervis.service.jira.JiraService
 import com.jervis.service.link.IndexedLinkService
 import com.jervis.service.link.LinkContentService
 import com.jervis.service.scheduling.TaskManagementService
@@ -98,11 +106,16 @@ class OrchestratorAgent(
     private val smartModelSelector: SmartModelSelector,
     private val graphDBService: GraphDBService,
     private val connectionService: ConnectionService,
+    private val jiraService: JiraService,
+    private val confluenceService: ConfluenceService,
+    private val emailService: EmailService,
     // Internal agents
     private val contextAgent: ContextAgent,
     private val plannerAgent: PlannerAgent,
     private val researchAgent: ResearchAgent,
     private val reviewerAgent: ReviewerAgent,
+    private val ingestAgent: IngestAgent,
+    private val solutionArchitectAgent: SolutionArchitectAgent,
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -317,30 +330,34 @@ class OrchestratorAgent(
                                - Call createPlan(query, contextJson) to get OrderedPlan
                                - If plan has "research" steps, execute them via gatherEvidence()
 
-                            2. EXECUTION PHASE:
-                               CODING EXECUTOR SELECTION (strict):
-                               - Prefer Aider when the change is small and localized:
-                                 * quick bugfix, minor code edits, formatting, small tweaks
-                                 * typically 1–3 files, no wide refactor
-                               - Prefer OpenHands when the work is complex or broad:
-                                 * refactoring across modules/files, architectural changes
-                                 * debugging from logs, deep repo search, running tests/builds
-                                 * tasks that require multi-step reasoning or exploration
+                            2. ARCHITECT PHASE (Mandatory for coding/verify):
+                               - Before delegating any "coding" or "verify" step, you MUST call proposeTechnicalSpecification(step, context, evidence)
+                               - This tool designers the technical solution and returns A2ADelegationSpec.
+                               - The spec tells you WHICH agent to use (Aider vs OpenHands) and WHAT exactly to do.
+
+                            3. EXECUTION PHASE:
                                - Execute plan steps in order using appropriate tools:
-                                 * For coding/verify delegation you will be asked for a structured OrchestratorDecision.
-                                   - Use type=A2A with agent ('aider' or 'openhands') and payload (instruction)
-                                   - For verification use payload: "VERIFY\n<commands>"
-                                 * action=rag_ingest → storeInKnowledge()
+                                 * For coding/verify delegation:
+                                   - MUST call proposeTechnicalSpecification() first.
+                                   - Then use the resulting A2ADelegationSpec to make an A2A delegation decision.
+                                   - When asked for OrchestratorDecision:
+                                     - type=A2A
+                                     - agent = spec.agent
+                                     - payload = "FILES: " + spec.targetFiles + "\nINSTRUCTIONS: " + spec.instructions + "\nVERIFY: " + spec.verifyInstructions
+                                 * action=rag_ingest → ingestKnowledge()
                                  * action=rag_lookup → searchKnowledge()
                                  * action=graph_update → upsertNode()
                                  * action=jira_update → (JIRA tools)
                                  * action=confluence_update → (Confluence tools)
                                  * action=email_send → (Email tools)
                                  * action=slack_post → (Slack tools)
+                                 * action=jira_read → (Jira tools)
+                                 * action=confluence_read → (Confluence tools)
+                                 * action=email_read → (Email tools)
                                  * action=research → gatherEvidence()
                                - Collect all results as evidence
 
-                            3. REVIEW PHASE:
+                            4. REVIEW PHASE:
                                - Call reviewCompleteness(originalQuery, executedStepsJson, evidenceJson, iteration, maxIterations)
                                - If review.complete=false and review.extraSteps not empty:
                                  * Update plan with extraSteps
@@ -348,7 +365,7 @@ class OrchestratorAgent(
                                - If review.complete=true or maxIterations reached:
                                  * Proceed to COMPOSE PHASE
 
-                            4. COMPOSE PHASE:
+                            5. COMPOSE PHASE:
                                - Build final answer from evidence
                                - Include: what was done, results, any warnings/violations
                                - Answer in user's language
@@ -357,11 +374,10 @@ class OrchestratorAgent(
                             CRITICAL RULES:
                             - ALWAYS call getContext() first
                             - NEVER skip planning phase
+                            - ALWAYS call proposeTechnicalSpecification() before Aider/OpenHands delegation
                             - Execute steps in exact order from plan
-                            - Delegate coding/verify via Koog Structured Output decision, never edit files directly
-                            - Aider = small/surgical edits; OpenHands = complex/refactor/debug/test
-                            - Always verify after coding (unless plan explicitly skips it)
-                            - NO git push/commit (create UserTask if needed)
+                            - Delegate coding/verify via Koog Structured Output decision using specification from Architect
+                            - No git push/commit (create UserTask if needed)
                             - Include context (clientId, projectId) in all outputs
 
                             CURRENT_PHASE will be specified in subgraph prompts.
@@ -382,6 +398,8 @@ class OrchestratorAgent(
                         plannerAgent,
                         researchAgent,
                         reviewerAgent,
+                        ingestAgent,
+                        solutionArchitectAgent,
                     ),
                 )
 
@@ -409,6 +427,11 @@ class OrchestratorAgent(
 
                 // Communication
                 tools(CommunicationTools(task))
+
+                // External read tools
+                tools(JiraReadTools(task, jiraService))
+                tools(ConfluenceReadTools(task, confluenceService))
+                tools(EmailReadTools(task, emailService))
             }
 
         return AIAgent(

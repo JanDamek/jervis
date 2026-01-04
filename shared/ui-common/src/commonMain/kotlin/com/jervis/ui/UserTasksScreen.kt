@@ -1,13 +1,41 @@
 package com.jervis.ui
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Badge
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.AnnotatedString
@@ -48,7 +76,6 @@ fun UserTasksScreen(
                 allTasks.filter { task ->
                     task.title.lowercase().contains(query) ||
                         (task.description?.lowercase()?.contains(query) == true) ||
-                        task.sourceType.lowercase().contains(query) ||
                         (task.projectId?.lowercase()?.contains(query) == true)
                 }
             }
@@ -235,13 +262,8 @@ fun UserTasksScreen(
                                     verticalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
                                     TaskDetailField("Title", selectedTask!!.title)
-                                    TaskDetailField("Priority", selectedTask!!.priority)
                                     TaskDetailField("Status", selectedTask!!.state)
-                                    selectedTask!!.dueDateEpochMillis?.let {
-                                        TaskDetailField("Due", formatDateTime(it))
-                                    }
                                     TaskDetailField("Project", selectedTask!!.projectId ?: "-")
-                                    TaskDetailField("Source Type", selectedTask!!.sourceType)
 
                                     if (!selectedTask!!.sourceUri.isNullOrBlank()) {
                                         Row(
@@ -460,23 +482,15 @@ private fun UserTaskRow(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.padding(top = 4.dp),
                         ) {
-                            Badge { Text(task.priority) }
                             Badge { Text(task.state) }
                         }
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
-                            text = task.sourceType,
+                            text = task.sourceUri ?: "",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        task.dueDateEpochMillis?.let {
-                            Text(
-                                text = formatDate(it),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
                     }
                 }
 

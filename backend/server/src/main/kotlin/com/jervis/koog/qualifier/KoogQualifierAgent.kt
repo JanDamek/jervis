@@ -214,7 +214,7 @@ Context:
                 }
 
                 action(
-                    name = "VerifiIndexing",
+                    name = "verifiIndexing",
                     precondition = { state -> state.indexed && !state.verified && state.verifyQuery.isNotBlank() },
                     belief = { state -> state.copy(verified = true, indexed = true) },
                 ) { ctx, state ->

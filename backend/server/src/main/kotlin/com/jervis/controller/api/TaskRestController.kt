@@ -5,13 +5,11 @@ import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.service.IPendingTaskService
 import com.jervis.service.background.TaskService
+import com.jervis.types.TaskId
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
-import mu.KotlinLogging
 import org.springframework.web.bind.annotation.RestController
 import java.time.format.DateTimeFormatter
-
-private val logger = KotlinLogging.logger {}
 
 /**
  * REST API for PendingTask management.
@@ -55,4 +53,6 @@ class TaskRestController(
         val stateEnum = state?.let { runCatching { TaskStateEnum.valueOf(it) }.getOrNull() }
         return taskService.countTasks(taskTypeEnum, stateEnum)
     }
+
+    override suspend fun deletePendingTask(id: String) = taskService.deleteTaskById(TaskId.fromString(id))
 }
