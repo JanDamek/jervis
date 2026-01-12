@@ -33,3 +33,4 @@
 /build/
 /shared/ui-common/build/
 /apps/desktop/build/
+.aider*

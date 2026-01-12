@@ -2,11 +2,12 @@ package com.jervis.common.client
 
 import com.jervis.common.dto.WhisperRequestDto
 import com.jervis.common.dto.WhisperResultDto
-import org.springframework.web.service.annotation.HttpExchange
-import org.springframework.web.service.annotation.PostExchange
+import de.jensklingenberg.ktorfit.http.Body
+import de.jensklingenberg.ktorfit.http.POST
 
-@HttpExchange("/api/whisper")
 interface IWhisperClient {
-    @PostExchange("/transcribe")
-    suspend fun transcribe(request: WhisperRequestDto): WhisperResultDto
+    @POST("api/whisper/transcribe")
+    suspend fun transcribe(
+        @Body request: WhisperRequestDto,
+    ): WhisperResultDto
 }

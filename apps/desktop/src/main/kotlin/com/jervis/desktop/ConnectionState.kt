@@ -7,7 +7,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.jervis.di.NetworkModule
-import com.jervis.di.createJervisServices
 import com.jervis.dto.events.DebugEventDto
 import com.jervis.dto.events.ErrorNotificationEventDto
 import com.jervis.repository.JervisRepository
@@ -73,7 +72,10 @@ class ConnectionManager(
                 status = ConnectionStatus.Connecting
 
                 // Try to create services
-                services = createJervisServices(serverBaseUrl)
+                val httpClient = NetworkModule.createHttpClient()
+                val ktorfit = NetworkModule.createKtorfit(serverBaseUrl, httpClient)
+                val a2aClient = NetworkModule.createA2AClient(serverBaseUrl, httpClient)
+                services = NetworkModule.createServices(ktorfit, a2aClient)
 
                 // Create repository
                 repository =

@@ -86,9 +86,9 @@ COPY backend/service-atlassian backend/service-atlassian/
 RUN DOCKER_BUILD=true GRADLE_OPTS="-Xmx1g -XX:MaxMetaspaceSize=512m" \
     gradle -x test --no-daemon \
     :backend:common-services:jar \
-    :backend:service-tika:bootJar \
-    :backend:service-aider:bootJar \
-    :backend:service-coding-engine:bootJar \
+    :backend:service-tika:jar \
+    :backend:service-aider:jar \
+    :backend:service-coding-engine:jar \
     :backend:service-atlassian:bootJar \
     && rm -rf /root/.gradle/caches/build-cache-*
 
@@ -217,13 +217,13 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
 FROM aider-base AS runtime-aider
 WORKDIR /opt/jervis
 COPY --from=builder /app/backend/service-aider/build/libs/*.jar app.jar
-ENV SERVER_PORT=8080 \
+ENV SERVER_PORT=3100 \
     JAVA_OPTS="-Xmx1g -Xms256m" \
     DATA_ROOT_DIR=/opt/jervis/data \
     PYTHONIOENCODING=utf-8
-EXPOSE 8080
+EXPOSE 3100
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:${SERVER_PORT}/actuator/health || exit 1
+    CMD curl -f http://localhost:${SERVER_PORT}/.well-known/agent-card.json || exit 1
 ENTRYPOINT ["sh", "-c", "mkdir -p ${DATA_ROOT_DIR} && java ${JAVA_OPTS} -Ddata.root.dir=${DATA_ROOT_DIR} -jar /opt/jervis/app.jar"]
 
 # ---------- OpenHands base (Python + OpenHands + Docker CLI)
@@ -259,13 +259,13 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
 FROM openhands-base AS runtime-coding-engine
 WORKDIR /opt/jervis
 COPY --from=builder /app/backend/service-coding-engine/build/libs/*.jar app.jar
-ENV SERVER_PORT=8080 \
+ENV SERVER_PORT=3200 \
     JAVA_OPTS="-Xmx2g -Xms512m" \
     DATA_ROOT_DIR=/opt/jervis/data \
     DOCKER_HOST=tcp://localhost:2375
-EXPOSE 8080
+EXPOSE 3200
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:${SERVER_PORT}/actuator/health || exit 1
+    CMD curl -f http://localhost:${SERVER_PORT}/.well-known/agent-card.json || exit 1
 ENTRYPOINT ["sh", "-c", "mkdir -p ${DATA_ROOT_DIR} && java ${JAVA_OPTS} -Ddata.root.dir=${DATA_ROOT_DIR} -jar /opt/jervis/app.jar"]
 
 # ---------- Final image: jervis-atlassian
@@ -338,8 +338,8 @@ COPY --from=builder /app/backend/server/build/libs/*.jar app.jar
 COPY scripts/mongodb /opt/jervis/scripts/mongodb
 
 ENV SERVER_PORT=5500 JAVA_OPTS="-Xmx4g -Xms1g" DATA_ROOT_DIR=/opt/jervis/data WORK_DATA=/opt/jervis/work
-EXPOSE 5500
+EXPOSE 5500 5501
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-    CMD curl -f --insecure https://localhost:${SERVER_PORT}/actuator/health || exit 1
+    CMD curl -f http://localhost:5501/actuator/health || exit 1
 VOLUME ["/opt/jervis/data"]
 ENTRYPOINT ["sh", "-c", "WD=${WORK_DATA}; if [ -z \"$WD\" ]; then WD=$(printenv WORK-DATA || true); fi; if [ -z \"$WD\" ]; then WD=/opt/jervis/work; fi; mkdir -p ${DATA_ROOT_DIR} $WD && java ${JAVA_OPTS} -Ddata.root.dir=${DATA_ROOT_DIR} -Djava.io.tmpdir=$WD -jar /opt/jervis/app.jar"]

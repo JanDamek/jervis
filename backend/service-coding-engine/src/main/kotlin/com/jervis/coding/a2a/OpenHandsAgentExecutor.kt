@@ -15,7 +15,6 @@ import kotlinx.coroutines.Deferred
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
 import mu.KotlinLogging
-import org.springframework.stereotype.Component
 import java.util.UUID
 
 /**
@@ -23,7 +22,6 @@ import java.util.UUID
  *
  * Exposes CodingEngineService as an A2A agent following Koog framework.
  */
-@Component
 class OpenHandsAgentExecutor(
     private val codingEngineService: CodingEngineService,
 ) : AgentExecutor {
@@ -45,24 +43,10 @@ class OpenHandsAgentExecutor(
                     .filterIsInstance<TextPart>()
                     .joinToString(" ") { it.text }
 
-            // Parse JSON from task description or metadata
+            // Strict JSON parsing - fail-fast if invalid
             val params =
-                try {
-                    message.metadata?.let {
-                        Json.decodeFromJsonElement<TaskParams>(it)
-                    } ?: Json.decodeFromString<TaskParams>(taskDescription)
-                } catch (e: Exception) {
-                    logger.error(e) { "Failed to parse task description as JSON" }
-                    eventProcessor.sendMessage(
-                        Message(
-                            messageId = UUID.randomUUID().toString(),
-                            role = Role.Agent,
-                            parts = listOf(TextPart("ERROR: Invalid request format")),
-                            contextId = message.contextId,
-                        ),
-                    )
-                    return
-                }
+                message.metadata?.let { Json.decodeFromJsonElement<TaskParams>(it) }
+                    ?: Json.decodeFromString<TaskParams>(taskDescription)
 
             val codingRequest =
                 CodingExecuteRequest(

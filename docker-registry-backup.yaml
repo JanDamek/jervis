@@ -1,0 +1,128 @@
+apiVersion: v1
+items:
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    annotations:
+      deployment.kubernetes.io/revision: "3"
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{"deployment.kubernetes.io/revision":"2","meta.helm.sh/release-name":"docker-registry-1639141181","meta.helm.sh/release-namespace":"registry"},"creationTimestamp":"2021-12-10T12:59:43Z","generation":4,"labels":{"app":"docker-registry","app.kubernetes.io/managed-by":"Helm","chart":"docker-registry-1.15.0","heritage":"Helm","release":"docker-registry-1639141181"},"name":"docker-registry-1639141181","namespace":"registry","resourceVersion":"155174601","uid":"ec8ef0d5-7691-4a76-a405-d244c36fe852"},"spec":{"minReadySeconds":5,"progressDeadlineSeconds":600,"replicas":1,"revisionHistoryLimit":10,"selector":{"matchLabels":{"app":"docker-registry","release":"docker-registry-1639141181"}},"strategy":{"rollingUpdate":{"maxSurge":"25%","maxUnavailable":"25%"},"type":"RollingUpdate"},"template":{"metadata":{"annotations":{"checksum/config":"118a2a48994343d854b3b8e7b32b9e7846551e19dbd667f38574b94c0914b0f4","kubectl.kubernetes.io/restartedAt":"2023-06-15T06:26:45Z"},"creationTimestamp":null,"labels":{"app":"docker-registry","release":"docker-registry-1639141181"}},"spec":{"containers":[{"command":["/bin/registry","serve","/etc/docker/registry/config.yml"],"env":[{"name":"REGISTRY_HTTP_SECRET","valueFrom":{"secretKeyRef":{"key":"haSharedSecret","name":"docker-registry-1639141181-secret"}}},{"name":"REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY","value":"/var/lib/registry"}],"image":"registry:latest","imagePullPolicy":"IfNotPresent","livenessProbe":{"failureThreshold":3,"httpGet":{"path":"/","port":5000,"scheme":"HTTP"},"periodSeconds":10,"successThreshold":1,"timeoutSeconds":1},"name":"docker-registry","ports":[{"containerPort":5000,"protocol":"TCP"}],"readinessProbe":{"failureThreshold":3,"httpGet":{"path":"/","port":5000,"scheme":"HTTP"},"periodSeconds":10,"successThreshold":1,"timeoutSeconds":1},"resources":{},"terminationMessagePath":"/dev/termination-log","terminationMessagePolicy":"File","volumeMounts":[{"mountPath":"/var/lib/registry/","name":"data"},{"mountPath":"/etc/docker/registry","name":"docker-registry-1639141181-config"}]}],"dnsPolicy":"ClusterFirst","restartPolicy":"Always","schedulerName":"default-scheduler","securityContext":{"fsGroup":0,"runAsUser":0},"terminationGracePeriodSeconds":30,"volumes":[{"name":"data","persistentVolumeClaim":{"claimName":"docker-registry-1639141181"}},{"configMap":{"defaultMode":420,"name":"docker-registry-1639141181-config"},"name":"docker-registry-1639141181-config"}]}}},"status":{"conditions":[{"lastTransitionTime":"2021-12-10T12:59:43Z","lastUpdateTime":"2023-06-15T06:27:06Z","message":"ReplicaSet \"docker-registry-1639141181-6765b84569\" has successfully progressed.","reason":"NewReplicaSetAvailable","status":"True","type":"Progressing"},{"lastTransitionTime":"2025-02-25T18:56:44Z","lastUpdateTime":"2025-02-25T18:56:44Z","message":"Deployment does not have minimum availability.","reason":"MinimumReplicasUnavailable","status":"False","type":"Available"}],"observedGeneration":4,"replicas":1,"unavailableReplicas":1,"updatedReplicas":1}}
+      meta.helm.sh/release-name: docker-registry-1639141181
+      meta.helm.sh/release-namespace: registry
+    creationTimestamp: "2021-12-10T12:59:43Z"
+    generation: 5
+    labels:
+      app: docker-registry
+      app.kubernetes.io/managed-by: Helm
+      chart: docker-registry-1.15.0
+      heritage: Helm
+      release: docker-registry-1639141181
+    name: docker-registry-1639141181
+    namespace: registry
+    resourceVersion: "159770236"
+    uid: ec8ef0d5-7691-4a76-a405-d244c36fe852
+  spec:
+    minReadySeconds: 5
+    progressDeadlineSeconds: 600
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      matchLabels:
+        app: docker-registry
+        release: docker-registry-1639141181
+    strategy:
+      rollingUpdate:
+        maxSurge: 25%
+        maxUnavailable: 25%
+      type: RollingUpdate
+    template:
+      metadata:
+        annotations:
+          checksum/config: 118a2a48994343d854b3b8e7b32b9e7846551e19dbd667f38574b94c0914b0f4
+          kubectl.kubernetes.io/restartedAt: "2023-06-15T06:26:45Z"
+        creationTimestamp: null
+        labels:
+          app: docker-registry
+          release: docker-registry-1639141181
+      spec:
+        containers:
+        - command:
+          - /bin/registry
+          - serve
+          - /etc/docker/registry/config.yml
+          env:
+          - name: REGISTRY_HTTP_SECRET
+            valueFrom:
+              secretKeyRef:
+                key: haSharedSecret
+                name: docker-registry-1639141181-secret
+          - name: REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY
+            value: /var/lib/registry
+          image: registry:latest
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /
+              port: 5000
+              scheme: HTTP
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          name: docker-registry
+          ports:
+          - containerPort: 5000
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /
+              port: 5000
+              scheme: HTTP
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /var/lib/registry/
+            name: data
+          - mountPath: /etc/docker/registry
+            name: docker-registry-1639141181-config
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext:
+          fsGroup: 0
+          runAsUser: 0
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: docker-registry-1639141181
+        - configMap:
+            defaultMode: 420
+            name: docker-registry-1639141181-config
+          name: docker-registry-1639141181-config
+  status:
+    conditions:
+    - lastTransitionTime: "2025-02-25T18:56:44Z"
+      lastUpdateTime: "2025-02-25T18:56:44Z"
+      message: Deployment does not have minimum availability.
+      reason: MinimumReplicasUnavailable
+      status: "False"
+      type: Available
+    - lastTransitionTime: "2021-12-10T12:59:43Z"
+      lastUpdateTime: "2026-01-12T15:06:06Z"
+      message: ReplicaSet "docker-registry-1639141181-7889b7bb97" is progressing.
+      reason: ReplicaSetUpdated
+      status: "True"
+      type: Progressing
+    observedGeneration: 5
+    replicas: 2
+    unavailableReplicas: 2
+    updatedReplicas: 1
+kind: List
+metadata:
+  resourceVersion: ""

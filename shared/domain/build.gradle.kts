@@ -13,7 +13,7 @@ kotlin {
     jvmToolchain(21)
 
     // Targets
-    jvm()           // JVM (Desktop + Server)
+    jvm() // JVM (Desktop + Server)
 
     // Only configure Android and iOS targets when not building in Docker
     if (System.getenv("DOCKER_BUILD") != "true") {
@@ -36,6 +36,10 @@ kotlin {
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.kotlinx.json)
             implementation(libs.ktor.client.logging)
+
+            // Koog A2A
+            api(libs.koog.a2a.client)
+            api(libs.koog.a2a.transport.client.jsonrpc.http)
 
             // Ktorfit runtime
             implementation("de.jensklingenberg.ktorfit:ktorfit-lib:2.6.4")

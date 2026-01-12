@@ -50,7 +50,9 @@ import java.awt.Dimension
  */
 fun main() =
     application {
-        val serverBaseUrl = System.getProperty("jervis.server.url") ?: "https://home.damek-soft.eu:5500/"
+        val serverBaseUrl =
+            System.getProperty("jervis.server.url")
+                ?: "http://localhost:5500/" // TODO: Change for prod HTTPS (2026-01-05)
 
         // Window state
         var showMainWindow by remember { mutableStateOf(true) }

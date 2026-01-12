@@ -1,4 +1,5 @@
 import org.openapitools.generator.gradle.plugin.tasks.GenerateTask
+import sun.jvmstat.monitor.MonitoredVmUtil.mainClass
 import java.net.URL
 
 plugins {
@@ -7,6 +8,7 @@ plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.spring)
     alias(libs.plugins.kotlin.serialization)
+    id("org.gradle.application")
     id("org.openapi.generator") version "7.17.0"
 }
 
@@ -68,6 +70,19 @@ kotlin {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
         freeCompilerArgs.add("-Xjsr305=strict")
     }
+}
+
+application {
+    mainClass.set("com.jervis.atlassian.AtlassianApplicationKt")
+}
+
+tasks.jar {
+    manifest {
+        attributes["Main-Class"] = "com.jervis.atlassian.AtlassianApplicationKt"
+    }
+    val dependencies = configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) }
+    from(dependencies)
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
 tasks.test {

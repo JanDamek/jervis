@@ -5,7 +5,6 @@ import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.TaskDocument
 import com.jervis.repository.TaskRepository
-import com.jervis.service.debug.DebugService
 import com.jervis.service.text.TikaTextExtractionService
 import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
@@ -21,7 +20,6 @@ import java.time.Instant
 @Service
 class TaskService(
     private val taskRepository: TaskRepository,
-    private val debugService: DebugService,
     private val tikaTextExtractionService: TikaTextExtractionService,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -58,17 +56,6 @@ class TaskService(
             "TASK_CREATED: id=${saved.id} correlationId=${saved.correlationId} type=${taskType.name} state=${task.state} clientId=$clientId projectId=${projectId?.toString() ?: "none"} contentLength=${content.length}"
         }
 
-        // Publish debug event
-        debugService.taskCreated(
-            correlationId = saved.correlationId,
-            taskId = saved.id.toString(),
-            taskType = taskType.name,
-            state = task.state.name,
-            clientId = clientId.toString(),
-            projectId = projectId?.toString(),
-            contentLength = content.length,
-        )
-
         return saved
     }
 
@@ -101,15 +88,6 @@ class TaskService(
             "TASK_STATE_TRANSITION: id=${task.id} correlationId=${saved.correlationId} from=$fromState to=$next type=${task.type}"
         }
 
-        // Publish debug event
-        debugService.taskStateTransition(
-            correlationId = saved.correlationId,
-            taskId = task.id,
-            fromState = fromState.name,
-            toState = next.name,
-            taskType = task.type,
-        )
-
         return saved
     }
 
@@ -131,16 +109,6 @@ class TaskService(
                 )
             }'"
         }
-
-        // Publish debug event
-        debugService.taskStateTransition(
-            correlationId = saved.correlationId,
-            taskId = task.id,
-            fromState = previousState.name,
-            toState = TaskStateEnum.ERROR.name,
-            taskType = task.type,
-        )
-
         return saved
     }
 
@@ -184,14 +152,6 @@ class TaskService(
                 "from=QUALIFYING to=READY_FOR_QUALIFICATION retry=$newRetryCount/$maxRetries " +
                 "(moved to end of queue)"
         }
-
-        debugService.taskStateTransition(
-            correlationId = task.correlationId,
-            taskId = task.id,
-            fromState = TaskStateEnum.QUALIFYING.name,
-            toState = TaskStateEnum.READY_FOR_QUALIFICATION.name,
-            taskType = task.type,
-        )
     }
 
     /**
@@ -222,57 +182,8 @@ class TaskService(
                 "from=READY_FOR_QUALIFICATION to=QUALIFYING type=${task.type} (ATOMICALLY CLAIMED)"
         }
 
-        task.let { updatedTask ->
-            debugService.taskStateTransition(
-                correlationId = updatedTask.correlationId,
-                taskId = task.id,
-                fromState = TaskStateEnum.READY_FOR_QUALIFICATION.name,
-                toState = TaskStateEnum.QUALIFYING.name,
-                taskType = updatedTask.type,
-            )
-        }
-
         return task
     }
-
-    suspend fun findAllTasks(
-        taskType: TaskTypeEnum?,
-        state: TaskStateEnum?,
-    ): Flow<TaskDocument> {
-        val tasks =
-            when {
-                taskType != null && state != null -> {
-                    taskRepository.findByTypeAndStateOrderByCreatedAtAsc(
-                        taskType,
-                        state,
-                    )
-                }
-
-                taskType != null -> {
-                    taskRepository.findByTypeOrderByCreatedAtAsc(taskType)
-                }
-
-                state != null -> {
-                    taskRepository.findByStateOrderByCreatedAtAsc(state)
-                }
-
-                else -> {
-                    taskRepository.findAllByOrderByCreatedAtAsc()
-                }
-            }
-        return tasks
-    }
-
-    suspend fun countTasks(
-        taskType: TaskTypeEnum?,
-        state: TaskStateEnum?,
-    ): Long =
-        when {
-            taskType != null && state != null -> taskRepository.countByTypeAndState(taskType, state)
-            taskType != null -> taskRepository.countByType(taskType)
-            state != null -> taskRepository.countByState(state)
-            else -> taskRepository.count()
-        }
 
     /**
      * Clean content through Tika to remove HTML, XML, Confluence/Jira markup.

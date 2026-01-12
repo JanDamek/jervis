@@ -2,14 +2,12 @@ package com.jervis.common.client
 
 import com.jervis.common.dto.TikaProcessRequest
 import com.jervis.common.dto.TikaProcessResult
-import org.springframework.web.bind.annotation.RequestBody
-import org.springframework.web.service.annotation.HttpExchange
-import org.springframework.web.service.annotation.PostExchange
+import de.jensklingenberg.ktorfit.http.Body
+import de.jensklingenberg.ktorfit.http.POST
 
-@HttpExchange("/api/tika")
 interface ITikaClient {
-    @PostExchange("/process")
+    @POST("api/tika/process")
     suspend fun process(
-        @RequestBody request: TikaProcessRequest,
+        @Body request: TikaProcessRequest,
     ): TikaProcessResult
 }

@@ -15,7 +15,6 @@ import com.jervis.configuration.properties.PollingProperties
 import com.jervis.configuration.properties.RetryProperties
 import com.jervis.configuration.properties.SecurityProperties
 import com.jervis.configuration.properties.WeaviateProperties
-import com.jervis.configuration.properties.WebClientProperties
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.runApplication
@@ -28,7 +27,6 @@ import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRep
     DataRootProperties::class,
     LinkIndexingProperties::class,
     EndpointProperties::class,
-    WebClientProperties::class,
     ModelsProperties::class,
     ProviderCapabilitiesService::class,
     WeaviateProperties::class,

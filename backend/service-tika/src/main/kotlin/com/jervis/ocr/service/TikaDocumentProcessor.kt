@@ -9,7 +9,6 @@ import org.apache.tika.parser.ParseContext
 import org.apache.tika.parser.ocr.TesseractOCRConfig
 import org.apache.tika.parser.pdf.PDFParserConfig
 import org.apache.tika.sax.BodyContentHandler
-import org.springframework.stereotype.Service
 import java.io.BufferedInputStream
 import java.io.InputStream
 import java.nio.file.Files
@@ -20,7 +19,6 @@ import kotlin.io.path.pathString
  * Service for processing various document formats using Apache Tika.
  * Provides text extraction with metadata preservation for source location tracking.
  */
-@Service
 class TikaDocumentProcessor(
     private val ocr: TikaProperties,
 ) {
@@ -301,12 +299,12 @@ class TikaDocumentProcessor(
  */
 private class LinkPreservingContentHandler : BodyContentHandler(-1) {
     private val currentLink = ThreadLocal<String?>()
-    
+
     override fun startElement(
         uri: String?,
         localName: String?,
         qName: String?,
-        atts: org.xml.sax.Attributes?
+        atts: org.xml.sax.Attributes?,
     ) {
         super.startElement(uri, localName, qName, atts)
         if (localName == "a" && atts != null) {
@@ -316,8 +314,12 @@ private class LinkPreservingContentHandler : BodyContentHandler(-1) {
             }
         }
     }
-    
-    override fun endElement(uri: String?, localName: String?, qName: String?) {
+
+    override fun endElement(
+        uri: String?,
+        localName: String?,
+        qName: String?,
+    ) {
         if (localName == "a") {
             val href = currentLink.get()
             if (!href.isNullOrBlank()) {

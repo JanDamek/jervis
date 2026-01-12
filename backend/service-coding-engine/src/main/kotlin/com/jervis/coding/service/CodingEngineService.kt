@@ -6,7 +6,6 @@ import com.jervis.common.dto.CodingExecuteResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
-import org.springframework.stereotype.Service
 import java.util.UUID
 
 private val logger = KotlinLogging.logger {}
@@ -16,7 +15,6 @@ private data class ProcessResult(
     val exitCode: Int?,
 )
 
-@Service
 class CodingEngineService(
     private val properties: CodingEngineProperties,
 ) {

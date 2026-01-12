@@ -22,6 +22,8 @@ logging:
       max-file-size: 10MB
 
 spring:
+  main:
+    web-application-type: none
   mongodb:
     host: 192.168.100.117
     port: 27017
@@ -37,7 +39,6 @@ spring:
 # Vector database configuration
 # Weaviate - hybrid search vector DB with BM25 + semantic search
 weaviate:
-  enabled: true
   host: 192.168.100.117  # Change to TrueNAS host after deployment
   port: 8080  # HTTP REST API port
   scheme: http
@@ -46,107 +47,12 @@ weaviate:
     enabled: true
     alpha: 0.85  # 0.85 = 85% semantic + 15% keyword (BM25) - optimized for Czech text with BGE-M3
   auto-migrate:
-    enabled: true  # Automatically migrate schema when config changes
     countdown-seconds: 10  # Countdown before starting migration (Ctrl+C to abort)
-    require-confirmation: false  # Set to true to require manual API confirmation
-    dry-run: false  # Set to true to simulate migration without deleting data
 
-server:
-  port: 5500
-  ssl:
-    enabled: true
-    key-store: classpath:keystore.p12
-    key-store-password: changeit
-    key-store-type: PKCS12
-    key-alias: jervis
-  netty:
-    connection-timeout: 600s # 10 minutes for long-running agent operations
-    idle-timeout: 600s
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: "health"
-  endpoint:
-    health:
-      probes:
-        enabled: true
-
-# ArangoDB (Knowledge Graph) configuration
-arango:
-  scheme: http
-  host: 192.168.100.117
-  port: 8529
-  database: jervis
-  username: root
-  password: changeit
-  timeout-ms: 5000
-
-jervis:
-  background:
-    wait-on-error: 30s
-    wait-interval: 30s
-    wait-on-startup: 1m
-  koog:
-    max-iterations: 900
-  polling:
-    # Polling intervals for different connection types
-    http: 5m    # Jira, Confluence, etc.
-    imap: 5m    # IMAP email
-    pop3: 5m    # POP3 email
-    oauth2: 5m  # OAuth2 connections
-    # Note: SMTP is for sending only, not used for polling
-  security:
-    # Unique client token for mobile apps - acts as port scanning protection
-    # Any request without this header is considered an attack attempt and gets no response
-    client-token: "a7f3c9e2-4b8d-11ef-9a1c-0242ac120002"
-
-  # Adaptive API rate limiting to prevent bans (applied per domain)
-  # Phase 1: Fast initial sync, Phase 2: Moderate speed, Phase 3: Conservative sustained rate
-  rate-limit:
-    phase1-item-count: 100      # First 100 items processed quickly
-    phase1-delay-ms: 0           # No delay during fast burst
-    phase2-item-count: 400       # Next 400 items (101-500) at moderate speed
-    phase2-delay-ms: 100         # 100ms = 10 req/sec
-    phase3-delay-ms: 1000        # After 500 items: 1000ms = 1 req/sec (prevents API bans)
-
-  # Ktor HttpClient configuration (for external HTTP calls)
-  http-client:
-    max-requests-per-second: 10
-    max-requests-per-minute: 100
-    rate-limit-enabled: true
-    rate-limit-ttl-seconds: 300  # 5 minutes TTL for unused domain rate limiters
-    request-timeout-ms: 30000    # 30 seconds
-    connect-timeout-ms: 10000    # 10 seconds
-    socket-timeout-ms: 30000     # 30 seconds
-
-  # Netty server configuration (embedded Netty for WebFlux)
-  netty:
-    connect-timeout-ms: 60000    # 60 seconds
-    idle-timeout-seconds: 600    # 10 minutes
-    read-timeout-seconds: 600    # 10 minutes
-    write-timeout-seconds: 600   # 10 minutes
-    so-keepalive: true
-
-# HTTP client connections and timeouts (WebClient for external compute services with @HttpExchange: joern, tika, whisper)
-connections:
-  connection-pool:
-    max-connections: 500
-    max-idle-time: 30m
-    max-life-time: 60m
-    pending-acquire-timeout: 30m
-    evict-in-background: 60m
-    pending-acquire-max-count: 1000
-  timeouts:
-    connect-timeout-millis: 60000
-    response-timeout-millis: 1800000  # 30 minutes for reasoning models (Qwen3, DeepSeek, etc.)
-  buffers:
-    default-max-in-memory-bytes: 8388608      # 8 MB (default for most endpoints)
-    tika-max-in-memory-bytes: 67108864        # 64 MB (for large Tika document payloads)
-
-# Ktor HTTP client for LLM providers (OpenAI, Anthropic, Google, Ollama, LM Studio) and HTTP services (searxng)
 ktor:
+  server:
+    port: 5500
+    max-http-request-header-size: 1GB
   connection-pool:
     max-connections: 500
     max-connections-per-route: 100
@@ -163,11 +69,6 @@ ktor:
 
 # Retry configuration for external HTTP calls
 retry:
-  webclient:
-    max-attempts: 5
-    initial-backoff-millis: 1000
-    max-backoff-millis: 30000
-    backoff-multiplier: 2.0
   ktor:
     max-attempts: 5
     initial-backoff-millis: 1000
@@ -176,6 +77,33 @@ retry:
 # Workspace configuration - central root for all server-managed files
 data:
   root-dir: ${DATA_ROOT_DIR}
+
+# ArangoDB (Knowledge Graph) configuration
+arango:
+  scheme: http
+  host: 192.168.100.117
+  port: 8529
+  database: jervis
+  username: root
+  password: changeit
+  timeout-ms: 5000
+
+jervis:
+  security:
+    client-token: "a7f3c9e2-4b8d-11ef-9a1c-0242ac120002"
+    ssl:
+      enabled: false  # TODO: Re-enable HTTPS after fixing keystore/Netty SSL configuration issues (2026-01-05)
+      key-store: "classpath:keystore.p12"
+      key-store-password: "changeit"
+      key-alias: "jervis"
+      key-password: "changeit"
+  koog:
+    max-iterations: 50
+    qualifier-max-retries: 5
+  background:
+    wait-on-startup: 10s
+    wait-on-error: 1m
+    wait-interval: 30s
 
 # Link indexing configuration
 link:

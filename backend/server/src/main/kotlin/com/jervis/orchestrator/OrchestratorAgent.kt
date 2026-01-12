@@ -2,13 +2,17 @@ package com.jervis.orchestrator
 
 import ai.koog.a2a.client.A2AClient
 import ai.koog.a2a.client.UrlAgentCardResolver
+import ai.koog.a2a.model.CommunicationEvent
 import ai.koog.a2a.model.Message
 import ai.koog.a2a.model.MessageSendParams
 import ai.koog.a2a.model.Role
 import ai.koog.a2a.model.Task
 import ai.koog.a2a.model.TextPart
-import ai.koog.a2a.transport.Request
+import ai.koog.a2a.transport.ClientCallContext
 import ai.koog.a2a.transport.client.jsonrpc.http.HttpJSONRPCClientTransport
+import ai.koog.agents.a2a.client.feature.A2AAgentClient
+import ai.koog.agents.a2a.client.feature.A2AClientRequest
+import ai.koog.agents.a2a.client.feature.nodeA2AClientSendMessage
 import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.dsl.builder.forwardTo
@@ -119,6 +123,7 @@ class OrchestratorAgent(
     private val reviewerAgent: ReviewerAgent,
     private val ingestAgent: IngestAgent,
     private val solutionArchitectAgent: SolutionArchitectAgent,
+    private val ktorClientFactory: com.jervis.configuration.KtorClientFactory,
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -150,8 +155,8 @@ class OrchestratorAgent(
         val aiderA2aUrl = toA2aUrl(aiderBaseUrl)
         val openHandsA2aUrl = toA2aUrl(openHandsBaseUrl)
 
-        val aiderClient = createA2AClient(aiderA2aUrl)
-        val openHandsClient = createA2AClient(openHandsA2aUrl)
+        val aiderClient = createA2AClient(aiderA2aUrl, ktorClientFactory.getHttpClient("aider"))
+        val openHandsClient = createA2AClient(openHandsA2aUrl, ktorClientFactory.getHttpClient("coding"))
 
         runCatching { aiderClient.connect() }
             .getOrElse { throw IllegalStateException("Failed to connect A2A client for Aider at $aiderA2aUrl", it) }
@@ -204,44 +209,58 @@ class OrchestratorAgent(
                                     it,
                                 )
                             }.data
-                    mapDecisionToAction(decision)
+
+                    when (decision.type) {
+                        DecisionType.A2A -> {
+                            val agentId =
+                                decision.agent
+                                    ?: throw IllegalStateException("OrchestratorDecision: agent is required for type=A2A")
+                            val payload =
+                                decision.payload?.takeIf { it.isNotBlank() }
+                                    ?: throw IllegalStateException("OrchestratorDecision: payload is required for type=A2A")
+
+                            val params = Json.decodeFromString<TaskParams>(payload)
+
+                            val message =
+                                Message(
+                                    messageId = UUID.randomUUID().toString(),
+                                    role = Role.User,
+                                    parts = listOf(TextPart(payload)),
+                                    contextId = task.correlationId,
+                                    metadata =
+                                        params?.let {
+                                            Json.encodeToJsonElement(
+                                                TaskParams.serializer(),
+                                                it,
+                                            ) as? JsonObject
+                                        },
+                                )
+
+                            NextAction.Delegate(
+                                A2AClientRequest(
+                                    agentId = agentId,
+                                    callContext = ClientCallContext(),
+                                    params = MessageSendParams(message = message),
+                                ),
+                            )
+                        }
+
+                        DecisionType.FINAL -> {
+                            val answer =
+                                decision.finalAnswer?.takeIf { it.isNotBlank() }
+                                    ?: throw IllegalStateException("OrchestratorDecision: finalAnswer is required for type=FINAL")
+                            NextAction.Final(answer)
+                        }
+                    }
                 }
 
-                // Build A2A request and send it directly
-                val nodeSendA2ARequest by node<A2AInvocation, String> { inv ->
-                    val client =
-                        when (inv.agentId) {
-                            A2A_AGENT_AIDER -> aiderClient
-                            A2A_AGENT_OPENHANDS -> openHandsClient
-                            else -> throw IllegalStateException("Unknown A2A agent: ${inv.agentId}")
-                        }
+                // Native Koog A2A node
+                val nodeA2ASendMessage by nodeA2AClientSendMessage()
 
-                    val params =
-                        try {
-                            Json.decodeFromString<TaskParams>(inv.payload)
-                        } catch (e: Exception) {
-                            null
-                        }
-
-                    val message =
-                        Message(
-                            messageId = UUID.randomUUID().toString(),
-                            role = Role.User,
-                            parts = listOf(TextPart(inv.payload)),
-                            contextId = task.correlationId,
-                            metadata =
-                                params?.let {
-                                    Json.encodeToJsonElement(
-                                        TaskParams.serializer(),
-                                        it,
-                                    ) as? JsonObject
-                                },
-                        )
-
-                    val response = client.sendMessage(Request(data = MessageSendParams(message)))
-
+                // Process response event
+                val nodeProcessA2AResponse by node<CommunicationEvent, String> { event ->
                     val responseText =
-                        when (val event = response.data) {
+                        when (event) {
                             is Message -> {
                                 event.parts.filterIsInstance<TextPart>().joinToString("\n") { it.text }
                             }
@@ -305,9 +324,9 @@ class OrchestratorAgent(
 
                 // Route based on structured decision
                 edge(
-                    (nodeMapNextAction forwardTo nodeSendA2ARequest)
+                    (nodeMapNextAction forwardTo nodeA2ASendMessage)
                         .onIsInstance(NextAction.Delegate::class)
-                        .transformed { it.invocation },
+                        .transformed { it.request },
                 )
                 edge(
                     (nodeMapNextAction forwardTo nodeFinish)
@@ -318,7 +337,8 @@ class OrchestratorAgent(
                 edge((nodeSendToolResult forwardTo nodeExecuteTool).onToolCall { true })
 
                 // === A2A call flow ===
-                edge(nodeSendA2ARequest forwardTo nodeLLMRequest)
+                edge(nodeA2ASendMessage forwardTo nodeProcessA2AResponse)
+                edge(nodeProcessA2AResponse forwardTo nodeLLMRequest)
             }
 
         val model =
@@ -456,6 +476,15 @@ class OrchestratorAgent(
             toolRegistry = toolRegistry,
             strategy = agentStrategy,
             agentConfig = agentConfig,
+            installFeatures = {
+                install(A2AAgentClient) {
+                    a2aClients =
+                        mapOf(
+                            A2A_AGENT_AIDER to aiderClient,
+                            A2A_AGENT_OPENHANDS to openHandsClient,
+                        )
+                }
+            },
         )
     }
 
@@ -521,18 +550,13 @@ class OrchestratorAgent(
 
     private sealed interface NextAction {
         data class Delegate(
-            val invocation: A2AInvocation,
+            val request: A2AClientRequest<MessageSendParams>,
         ) : NextAction
 
         data class Final(
             val answer: String,
         ) : NextAction
     }
-
-    private data class A2AInvocation(
-        val agentId: String,
-        val payload: String,
-    )
 
     private fun buildDecisionPrompt(lastAssistantMessage: String): String =
         """
@@ -550,35 +574,15 @@ class OrchestratorAgent(
         ---
         """.trimIndent()
 
-    private fun mapDecisionToAction(decision: OrchestratorDecision): NextAction =
-        when (decision.type) {
-            DecisionType.A2A -> {
-                val agent =
-                    decision.agent
-                        ?: throw IllegalStateException("OrchestratorDecision: agent is required for type=A2A")
-                if (agent != A2A_AGENT_AIDER && agent != A2A_AGENT_OPENHANDS) {
-                    throw IllegalStateException("OrchestratorDecision: invalid agent '$agent'")
-                }
-                val payload =
-                    decision.payload?.takeIf { it.isNotBlank() }
-                        ?: throw IllegalStateException("OrchestratorDecision: payload is required for type=A2A")
-                NextAction.Delegate(A2AInvocation(agentId = agent, payload = payload))
-            }
-
-            DecisionType.FINAL -> {
-                val answer =
-                    decision.finalAnswer?.takeIf { it.isNotBlank() }
-                        ?: throw IllegalStateException("OrchestratorDecision: finalAnswer is required for type=FINAL")
-                NextAction.Final(answer)
-            }
-        }
-
     private fun toA2aUrl(baseUrl: String): String {
         val normalized = baseUrl.trimEnd('/')
         return if (normalized.endsWith(A2A_PATH)) normalized else normalized + A2A_PATH
     }
 
-    private fun createA2AClient(url: String): A2AClient {
+    private fun createA2AClient(
+        url: String,
+        httpClient: io.ktor.client.HttpClient,
+    ): A2AClient {
         val uri = URI(url)
         val baseUrl =
             buildString {
@@ -592,8 +596,8 @@ class OrchestratorAgent(
             }
         val path = uri.rawPath?.takeIf { it.isNotBlank() } ?: ""
 
-        val transport = HttpJSONRPCClientTransport(url = baseUrl + path)
-        val agentCardResolver = UrlAgentCardResolver(baseUrl = baseUrl, path = path)
+        val transport = HttpJSONRPCClientTransport(baseUrl + path, httpClient)
+        val agentCardResolver = UrlAgentCardResolver(baseUrl = baseUrl, path = "/.well-known/agent-card.json")
         return A2AClient(transport = transport, agentCardResolver = agentCardResolver)
     }
 }

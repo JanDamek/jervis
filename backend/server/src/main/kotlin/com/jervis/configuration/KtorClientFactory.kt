@@ -1,5 +1,6 @@
 package com.jervis.configuration
 
+import com.jervis.api.SecurityConstants
 import com.jervis.configuration.properties.EndpointProperties
 import com.jervis.configuration.properties.KtorClientProperties
 import com.jervis.configuration.properties.RetryProperties
@@ -73,6 +74,11 @@ class KtorClientFactory(
             )
             put("searxng", createHttpClient(endpoints.searxng.baseUrl))
             put("aider", createHttpClient(endpoints.aider.baseUrl))
+            put("coding", createHttpClient(endpoints.coding.baseUrl))
+            put("tika", createHttpClient(endpoints.tika.baseUrl))
+            put("joern", createHttpClient(endpoints.joern.baseUrl))
+            put("whisper", createHttpClient(endpoints.whisper.baseUrl))
+            put("atlassian", createHttpClient(endpoints.atlassian.baseUrl))
         }
     }
 
@@ -93,6 +99,7 @@ class KtorClientFactory(
                 url(baseUrl.trimEnd('/'))
                 contentType(ContentType.Application.Json)
                 accept(ContentType.Application.Json)
+                header(SecurityConstants.CLIENT_HEADER, SecurityConstants.CLIENT_TOKEN)
             }
 
             // JSON serialization
@@ -164,6 +171,7 @@ class KtorClientFactory(
                 url(baseUrl.trimEnd('/'))
                 contentType(ContentType.Application.Json)
                 accept(ContentType.Application.Json)
+                header(SecurityConstants.CLIENT_HEADER, SecurityConstants.CLIENT_TOKEN)
 
                 if (apiKey.isNotBlank()) {
                     authHeadersConfig(this, apiKey)

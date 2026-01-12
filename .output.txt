@@ -1,0 +1,206 @@
+Command finished with exit code 0.
+stdout=
+
+stderr=
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 14.93kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/gradle:9.2.1-jdk21-jammy
+#2 ...
+
+#3 [internal] load metadata for docker.io/library/eclipse-temurin:21-jre-jammy
+#3 ...
+
+#4 [auth] library/eclipse-temurin:pull token for registry-1.docker.io
+#4 DONE 0.0s
+
+#5 [auth] library/gradle:pull token for registry-1.docker.io
+#5 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/eclipse-temurin:21-jre-jammy
+#3 DONE 22.5s
+
+#2 [internal] load metadata for docker.io/library/gradle:9.2.1-jdk21-jammy
+#2 DONE 22.6s
+
+#6 [internal] load .dockerignore
+#6 transferring context: 338B done
+#6 DONE 0.0s
+
+#7 [builder  1/19] FROM docker.io/library/gradle:9.2.1-jdk21-jammy@sha256:f5e2f1d289eb3a287a8f9e5016946f9e5622d4b2e33a3836d7e1331b25711816
+#7 DONE 0.0s
+
+#8 [runtime-server 1/7] FROM docker.io/library/eclipse-temurin:21-jre-jammy@sha256:2843f155a9fe5aab6a73a71a9f65c38143e8e929366a1a7787f07c2a89c26887
+#8 DONE 0.0s
+
+#9 [runtime-server 4/7] RUN git --version && mongosh --version
+#9 CACHED
+
+#10 [runtime-server 2/7] RUN apt-get update &&     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends     git     openssh-client     ca-certificates     curl     gnupg     wget &&     rm -rf /var/lib/apt/lists/*
+#10 CACHED
+
+#11 [runtime-server 3/7] RUN wget -qO- https://www.mongodb.org/static/pgp/server-8.0.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-8.0.gpg &&     echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list &&     apt-get update &&     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends mongodb-mongosh &&     rm -rf /var/lib/apt/lists/*
+#11 CACHED
+
+#12 [runtime-server 5/7] WORKDIR /opt/jervis
+#12 CACHED
+
+#13 [internal] load build context
+#13 transferring context: 65.61kB 0.1s done
+#13 DONE 0.1s
+
+#14 [builder 14/19] COPY backend/service-aider backend/service-aider/
+#14 CACHED
+
+#15 [builder 13/19] COPY backend/service-whisper backend/service-whisper/
+#15 CACHED
+
+#16 [builder  6/19] COPY shared/common-dto shared/common-dto/
+#16 CACHED
+
+#17 [builder 10/19] COPY backend/server backend/server/
+#17 CACHED
+
+#18 [builder 12/19] COPY backend/service-joern backend/service-joern/
+#18 CACHED
+
+#19 [builder  9/19] COPY backend/common-services backend/common-services/
+#19 CACHED
+
+#20 [builder  5/19] COPY build.gradle.kts settings.gradle.kts ./
+#20 CACHED
+
+#21 [builder  4/19] COPY gradlew gradlew.bat gradle.properties ./
+#21 CACHED
+
+#22 [builder 11/19] COPY backend/service-tika backend/service-tika/
+#22 CACHED
+
+#23 [builder 15/19] COPY backend/service-coding-engine backend/service-coding-engine/
+#23 CACHED
+
+#24 [builder  3/19] COPY gradle gradle/
+#24 CACHED
+
+#25 [builder  8/19] COPY shared/domain shared/domain/
+#25 CACHED
+
+#26 [builder  2/19] WORKDIR /app
+#26 CACHED
+
+#27 [builder  7/19] COPY shared/common-api shared/common-api/
+#27 CACHED
+
+#28 [builder 16/19] COPY backend/service-atlassian backend/service-atlassian/
+#28 CACHED
+
+#29 [builder 17/19] RUN DOCKER_BUILD=true GRADLE_OPTS="-Xmx1g -XX:MaxMetaspaceSize=512m"     gradle -x test --no-daemon     :backend:common-services:jar     :backend:service-tika:jar     :backend:service-aider:jar     :backend:service-coding-engine:jar     :backend:service-atlassian:bootJar     && rm -rf /root/.gradle/caches/build-cache-*
+#29 0.891 To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.2.1/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+#29 1.691 Daemon will be stopped at the end of the build 
+#29 193.6 
+#29 193.6 > Configure project :backend:service-atlassian
+#29 193.6 w: file:///app/backend/service-atlassian/build.gradle.kts:421:32: 'constructor(p0: String!): URL' is deprecated. Deprecated in Java.
+#29 200.6 
+#29 200.6 > Configure project :shared:common-api
+#29 200.6 The archives configuration has been deprecated for artifact declaration. This will fail with an error in Gradle 10. Add artifacts as direct task dependencies of the 'assemble' task instead of declaring them in the archives configuration. Consult the upgrading guide for further information: https://docs.gradle.org/9.2.1/userguide/upgrading_version_9.html#sec:archives-configuration
+#29 200.6 	at Build_gradle$1.execute(build.gradle.kts:18)
+#29 200.6 	(Run with --stacktrace to get the full stack trace of this deprecation warning.)
+#29 288.0 
+#29 288.0 > Task :backend:service-tika:checkKotlinGradlePluginConfigurationErrors SKIPPED
+#29 288.0 > Task :backend:service-aider:checkKotlinGradlePluginConfigurationErrors SKIPPED
+#29 288.0 > Task :backend:common-services:checkKotlinGradlePluginConfigurationErrors SKIPPED
+#29 288.0 > Task :backend:service-coding-
+...<omitted due to large string size>...
+ layer c96155ff172a 35.62MB / 163.22MB 78.5s
+#35 pushing layer 2e35018c5091 78.81MB / 164.88MB 78.8s
+#35 pushing layer 6dd0a168d3a8 122.52MB / 279.81MB 83.1s
+#35 pushing layer 2e35018c5091 88.28MB / 164.88MB 83.2s
+#35 pushing layer c96155ff172a 40.63MB / 163.22MB 83.8s
+#35 pushing layer 2e35018c5091 97.75MB / 164.88MB 85.9s
+#35 pushing layer 6dd0a168d3a8 130.32MB / 279.81MB 90.5s
+#35 pushing layer c96155ff172a 43.42MB / 163.22MB 90.6s
+#35 pushing layer 2e35018c5091 109.45MB / 164.88MB 91.9s
+#35 pushing layer 2e35018c5091 119.43MB / 164.88MB 93.8s
+#35 pushing layer d7f35fe61206 94.1s done
+#35 pushing layer 2e35018c5091 131.09MB / 164.88MB 95.8s
+#35 pushing layer 6dd0a168d3a8 134.22MB / 279.81MB 96.1s
+#35 pushing layer c96155ff172a 45.09MB / 163.22MB 97.1s
+#35 pushing layer 2e35018c5091 141.65MB / 164.88MB 98.8s
+#35 pushing layer 849856fa4d4e 99.4s done
+#35 pushing layer c96155ff172a 46.76MB / 163.22MB 103.7s
+#35 pushing layer 6dd0a168d3a8 141.46MB / 279.81MB 105.0s
+#35 pushing layer 2e35018c5091 151.68MB / 164.88MB 105.7s
+#35 pushing layer 6dd0a168d3a8 147.59MB / 279.81MB 112.0s
+#35 pushing layer 2e35018c5091 161.71MB / 164.88MB 112.4s
+#35 pushing layer b3f74c31dcae 547.84kB / 69.35MB 112.8s
+#35 pushing layer b3f74c31dcae 6.49MB / 69.35MB 113.0s
+#35 pushing layer b3f74c31dcae 11.40MB / 69.35MB 113.6s
+#35 pushing layer c96155ff172a 47.88MB / 163.22MB 113.9s
+#35 pushing layer b3f74c31dcae 17.40MB / 69.35MB 116.2s
+#35 pushing layer 6dd0a168d3a8 160.96MB / 279.81MB 119.8s
+#35 pushing layer b3f74c31dcae 22.78MB / 69.35MB 123.5s
+#35 pushing layer b3f74c31dcae 27.64MB / 69.35MB 126.1s
+#35 pushing layer 6dd0a168d3a8 173.20MB / 279.81MB 128.7s
+#35 pushing layer c96155ff172a 49.55MB / 163.22MB 129.4s
+#35 pushing layer b3f74c31dcae 34.24MB / 69.35MB 133.4s
+#35 pushing layer 6dd0a168d3a8 177.66MB / 279.81MB 134.3s
+#35 pushing layer c96155ff172a 51.22MB / 163.22MB 138.8s
+#35 pushing layer 6dd0a168d3a8 181.00MB / 279.81MB 141.3s
+#35 pushing layer 2e35018c5091 141.4s done
+#35 pushing layer b3f74c31dcae 40.19MB / 69.35MB 142.6s
+#35 pushing layer c96155ff172a 54.56MB / 163.22MB 144.5s
+#35 pushing layer b3f74c31dcae 47.24MB / 69.35MB 148.7s
+#35 pushing layer c96155ff172a 59.02MB / 163.22MB 150.9s
+#35 pushing layer 6dd0a168d3a8 188.80MB / 279.81MB 150.9s
+#35 pushing layer b3f74c31dcae 51.59MB / 69.35MB 151.0s
+#35 pushing layer b3f74c31dcae 54.86MB / 69.35MB 156.6s
+#35 pushing layer c96155ff172a 62.36MB / 163.22MB 156.7s
+#35 pushing layer b3f74c31dcae 60.71MB / 69.35MB 156.9s
+#35 pushing layer 6dd0a168d3a8 192.14MB / 279.81MB 159.3s
+#35 pushing layer c96155ff172a 64.03MB / 163.22MB 162.0s
+#35 pushing layer b3f74c31dcae 61.24MB / 69.35MB 162.8s
+#35 pushing layer b3f74c31dcae 64.97MB / 69.35MB 167.4s
+#35 pushing layer c96155ff172a 68.49MB / 163.22MB 169.5s
+#35 pushing layer b3f74c31dcae 69.24MB / 69.35MB 171.3s
+#35 pushing layer 6dd0a168d3a8 198.27MB / 279.81MB 172.6s
+#35 pushing layer c96155ff172a 73.50MB / 163.22MB 177.0s
+#35 pushing layer c96155ff172a 75.17MB / 163.22MB 183.0s
+#35 pushing layer 6dd0a168d3a8 201.05MB / 279.81MB 184.3s
+#35 pushing layer c96155ff172a 78.51MB / 163.22MB 189.8s
+#35 pushing layer 6dd0a168d3a8 204.40MB / 279.81MB 193.4s
+#35 pushing layer c96155ff172a 84.08MB / 163.22MB 195.2s
+#35 pushing layer b3f74c31dcae 200.3s done
+#35 pushing layer c96155ff172a 90.77MB / 163.22MB 201.9s
+#35 pushing layer 6dd0a168d3a8 207.18MB / 279.81MB 202.2s
+#35 pushing layer c96155ff172a 95.78MB / 163.22MB 207.3s
+#35 pushing layer 6dd0a168d3a8 210.52MB / 279.81MB 207.9s
+#35 pushing layer c96155ff172a 98.01MB / 163.22MB 212.7s
+#35 pushing layer 6dd0a168d3a8 213.87MB / 279.81MB 212.9s
+#35 pushing layer c96155ff172a 100.80MB / 163.22MB 219.0s
+#35 pushing layer 6dd0a168d3a8 220.55MB / 279.81MB 219.4s
+#35 pushing layer c96155ff172a 103.58MB / 163.22MB 225.7s
+#35 pushing layer 6dd0a168d3a8 227.24MB / 279.81MB 226.5s
+#35 pushing layer c96155ff172a 106.92MB / 163.22MB 231.1s
+#35 pushing layer 6dd0a168d3a8 237.82MB / 279.81MB 234.0s
+#35 pushing layer 6dd0a168d3a8 253.97MB / 279.81MB 236.0s
+#35 pushing layer 6dd0a168d3a8 269.57MB / 279.81MB 236.1s
+#35 pushing layer c96155ff172a 112.49MB / 163.22MB 238.3s
+#35 pushing layer c96155ff172a 114.17MB / 163.22MB 245.0s
+#35 pushing layer c96155ff172a 115.84MB / 163.22MB 250.2s
+#35 pushing layer c96155ff172a 118.62MB / 163.22MB 256.2s
+#35 pushing layer c96155ff172a 123.64MB / 163.22MB 263.2s
+#35 pushing layer c96155ff172a 128.65MB / 163.22MB 273.6s
+#35 pushing layer 6dd0a168d3a8 275.9s done
+#35 pushing layer c96155ff172a 130.32MB / 163.22MB 280.1s
+#35 pushing layer c96155ff172a 135.33MB / 163.22MB 285.1s
+#35 pushing layer c96155ff172a 142.02MB / 163.22MB 291.3s
+#35 pushing layer c96155ff172a 148.15MB / 163.22MB 298.2s
+#35 pushing layer c96155ff172a 156.50MB / 163.22MB 305.7s
+#35 pushing layer c96155ff172a 159.29MB / 163.22MB 310.8s
+#35 pushing layer c96155ff172a 334.7s done
+#35 DONE 366.0s
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/ovkvf4rg1122bgp07e9ofs1fq

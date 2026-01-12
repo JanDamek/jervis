@@ -12,11 +12,9 @@ import com.jervis.aider.service.AiderService
 import com.jervis.common.dto.CodingExecuteRequest
 import com.jervis.common.dto.TaskParams
 import kotlinx.coroutines.Deferred
-import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
 import mu.KotlinLogging
-import org.springframework.stereotype.Component
 import java.util.UUID
 
 /**
@@ -24,7 +22,6 @@ import java.util.UUID
  *
  * Exposes AiderService as an A2A agent following Koog framework.
  */
-@Component
 class AiderAgentExecutor(
     private val aiderService: AiderService,
 ) : AgentExecutor {
@@ -45,45 +42,21 @@ class AiderAgentExecutor(
                     .filterIsInstance<TextPart>()
                     .joinToString(" ") { it.text }
 
-            // Parse JSON from task description or metadata
-            val paramsMap =
-                try {
-                    message.metadata?.let {
-                        Json.decodeFromJsonElement<TaskParams>(it)
-                    } ?: Json.decodeFromString<TaskParams>(taskDescription)
-                } catch (e: SerializationException) {
-                    logger.error(e) { "Failed to parse task description as JSON" }
-                    eventProcessor.sendMessage(
-                        Message(
-                            messageId = UUID.randomUUID().toString(),
-                            role = Role.Agent,
-                            parts = listOf(TextPart("ERROR: Invalid request format")),
-                            contextId = message.contextId,
-                        ),
-                    )
-                    return
-                } catch (e: Exception) {
-                    logger.error(e) { "Failed to parse task description as JSON" }
-                    eventProcessor.sendMessage(
-                        Message(
-                            messageId = UUID.randomUUID().toString(),
-                            role = Role.Agent,
-                            parts = listOf(TextPart("ERROR: Invalid request format")),
-                            contextId = message.contextId,
-                        ),
-                    )
-                    return
-                }
+            // Parse JSON from metadata first
+            val params =
+                message.metadata?.let {
+                    Json.decodeFromJsonElement<TaskParams>(it)
+                } ?: Json.decodeFromString<TaskParams>(taskDescription)
 
             val codingRequest =
                 CodingExecuteRequest(
-                    correlationId = paramsMap.correlationId,
-                    clientId = paramsMap.clientId,
-                    projectId = paramsMap.projectId,
-                    taskDescription = paramsMap.taskDescription,
-                    targetFiles = paramsMap.targetFiles,
-                    codingInstruction = paramsMap.codingInstruction,
-                    codingRules = paramsMap.codingRules,
+                    correlationId = params.correlationId,
+                    clientId = params.clientId,
+                    projectId = params.projectId,
+                    taskDescription = params.taskDescription,
+                    targetFiles = params.targetFiles,
+                    codingInstruction = params.codingInstruction,
+                    codingRules = params.codingRules,
                 )
 
             // Execute aider

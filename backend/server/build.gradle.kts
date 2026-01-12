@@ -38,7 +38,7 @@ dependencies {
 
     implementation(project(":shared:common-api"))
     implementation(project(":backend:common-services"))
-    implementation(libs.spring.boot.starter.webflux)
+    implementation(libs.spring.boot.starter)
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     annotationProcessor(libs.spring.boot.configuration.processor)
 

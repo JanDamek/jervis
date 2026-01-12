@@ -1,8 +1,9 @@
 package com.jervis.coding.configuration
 
-import org.springframework.boot.context.properties.ConfigurationProperties
-
-@ConfigurationProperties(prefix = "coding-engine")
+/**
+ * Configuration properties for Coding Engine.
+ * Loaded from environment variables in non-Spring environment.
+ */
 data class CodingEngineProperties(
     val dockerHost: String,
     val sandboxImage: String,

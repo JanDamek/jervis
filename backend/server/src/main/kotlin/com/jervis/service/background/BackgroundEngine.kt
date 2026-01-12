@@ -4,8 +4,6 @@ import com.jervis.configuration.properties.BackgroundProperties
 import com.jervis.dto.TaskStateEnum
 import com.jervis.entity.TaskDocument
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
-import com.jervis.service.debug.DebugService
-import com.jervis.service.notification.ErrorNotificationsPublisher
 import com.jervis.service.task.UserTaskService
 import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
@@ -25,7 +23,6 @@ import org.springframework.context.annotation.Profile
 import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Service
 import java.time.Duration
-import java.time.Instant
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -68,8 +65,6 @@ class BackgroundEngine(
     private val taskQualificationService: TaskQualificationService,
     private val agentOrchestrator: AgentOrchestratorService,
     private val backgroundProperties: BackgroundProperties,
-    private val errorNotificationsPublisher: ErrorNotificationsPublisher,
-    private val debugService: DebugService,
     private val userTaskService: UserTaskService,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -200,13 +195,6 @@ class BackgroundEngine(
                             "GPU_TASK_PICKUP: id=${task.id} correlationId=${task.correlationId} type=${task.type} state=${task.state}"
                         }
 
-                        debugService.gpuTaskPickup(
-                            correlationId = task.correlationId,
-                            taskId = task.id.toString(),
-                            taskType = task.type,
-                            state = task.state,
-                        )
-
                         executeTask(task)
                         logger.info { "GPU_TASK_FINISHED: id=${task.id} correlationId=${task.correlationId}" }
                     }
@@ -277,11 +265,6 @@ class BackgroundEngine(
                         if (isCommunicationError) {
                             val errorMessage =
                                 "Background task failed (${task.type}): $errorType - ${e.message}"
-                            errorNotificationsPublisher.publishError(
-                                message = errorMessage,
-                                stackTrace = e.stackTraceToString(),
-                                correlationId = task.id.toString(),
-                            )
                             logger.info { "Published LLM error to notifications for task ${task.id}" }
                             taskService.deleteTask(task)
                         } else {
@@ -309,45 +292,7 @@ class BackgroundEngine(
         currentTaskJob.compareAndSet(taskJob, null)
     }
 
-    /**
-     * Scheduler loop - dispatches scheduled tasks 10 minutes before their scheduled time.
-     * Runs every 10 minutes, finds tasks scheduled within the next 10 minutes, and creates pending tasks.
-     */
-    private suspend fun runSchedulerLoop() {
-        logger.info { "Scheduler loop entering main loop..." }
-
-        while (scope.isActive) {
-            try {
-                val now = Instant.now()
-                val windowEnd = now.plus(schedulerAdvance)
-
-                logger.debug { "Scheduler: checking tasks scheduled between $now and $windowEnd" }
-
-                // TODO implement scheduled task to execute
-                logger.debug { "Scheduler: no upcoming tasks in next $schedulerAdvance minutes" }
-
-                delay(schedulerAdvance)
-            } catch (e: CancellationException) {
-                logger.info { "Scheduler loop cancelled" }
-                throw e
-            } catch (e: Exception) {
-                logger.error(e) { "ERROR in scheduler loop - will retry in ${backgroundProperties.waitOnError} (configured)" }
-                delay(backgroundProperties.waitOnError)
-            }
-        }
-
-        logger.warn { "Scheduler loop exited - scope is no longer active" }
-    }
-
     companion object {
         private val currentTaskJob = AtomicReference<Job?>(null)
-
-        /**
-         * Immediately interrupts the currently running background task.
-         * Called by LlmLoadMonitor when transitioning to a busy state.
-         */
-        fun interruptNow() {
-            currentTaskJob.getAndSet(null)?.cancel(CancellationException("Foreground request"))
-        }
     }
 }

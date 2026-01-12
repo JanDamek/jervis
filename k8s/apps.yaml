@@ -1,0 +1,365 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-tika
+  namespace: jervis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jervis-tika
+  template:
+    metadata:
+      labels:
+        app: jervis-tika
+    spec:
+      containers:
+      - name: tika
+        image: ghcr.io/jandamek/jervis-tika:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: SERVER_PORT
+          value: "8080"
+        - name: WORK_DATA
+          value: "/opt/jervis/work"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-tika
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-tika
+  ports:
+  - port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-joern
+  namespace: jervis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jervis-joern
+  template:
+    metadata:
+      labels:
+        app: jervis-joern
+    spec:
+      containers:
+      - name: joern
+        image: ghcr.io/jandamek/jervis-joern:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: SERVER_PORT
+          value: "8080"
+        - name: WORK_DATA
+          value: "/opt/jervis/work"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-joern
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-joern
+  ports:
+  - port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-whisper
+  namespace: jervis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jervis-whisper
+  template:
+    metadata:
+      labels:
+        app: jervis-whisper
+    spec:
+      containers:
+      - name: whisper
+        image: ghcr.io/jandamek/jervis-whisper:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: SERVER_PORT
+          value: "8080"
+        - name: WORK_DATA
+          value: "/opt/jervis/work"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-whisper
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-whisper
+  ports:
+  - port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-aider
+  namespace: jervis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jervis-aider
+  template:
+    metadata:
+      labels:
+        app: jervis-aider
+    spec:
+      containers:
+      - name: aider
+        image: ghcr.io/jandamek/jervis-aider:latest
+        ports:
+        - containerPort: 3100
+        env:
+        - name: SERVER_PORT
+          value: "3100"
+        - name: DATA_ROOT_DIR
+          value: "/opt/jervis/data"
+        volumeMounts:
+        - name: jervis-data
+          mountPath: /opt/jervis/data
+      volumes:
+      - name: jervis-data
+        persistentVolumeClaim:
+          claimName: jervis-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-aider
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-aider
+  ports:
+  - port: 3100
+    targetPort: 3100
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-coding-engine
+  namespace: jervis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jervis-coding-engine
+  template:
+    metadata:
+      labels:
+        app: jervis-coding-engine
+    spec:
+      containers:
+      - name: coding-engine
+        image: ghcr.io/jandamek/jervis-coding-engine:latest
+        ports:
+        - containerPort: 3200
+        env:
+        - name: SERVER_PORT
+          value: "3200"
+        - name: DATA_ROOT_DIR
+          value: "/opt/jervis/data"
+        volumeMounts:
+        - name: jervis-data
+          mountPath: /opt/jervis/data
+      volumes:
+      - name: jervis-data
+        persistentVolumeClaim:
+          claimName: jervis-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-coding-engine
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-coding-engine
+  ports:
+  - port: 3200
+    targetPort: 3200
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-atlassian
+  namespace: jervis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jervis-atlassian
+  template:
+    metadata:
+      labels:
+        app: jervis-atlassian
+    spec:
+      containers:
+      - name: atlassian
+        image: ghcr.io/jandamek/jervis-atlassian:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: SERVER_PORT
+          value: "8080"
+        - name: WORK_DATA
+          value: "/opt/jervis/work"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-atlassian
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-atlassian
+  ports:
+  - port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-weaviate
+  namespace: jervis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jervis-weaviate
+  template:
+    metadata:
+      labels:
+        app: jervis-weaviate
+    spec:
+      containers:
+      - name: weaviate
+        image: ghcr.io/jandamek/jervis-weaviate:latest
+        ports:
+        - containerPort: 8080
+        - containerPort: 50051
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-weaviate
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-weaviate
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  - name: grpc
+    port: 50051
+    targetPort: 50051
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-server
+  namespace: jervis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jervis-server
+  template:
+    metadata:
+      labels:
+        app: jervis-server
+    spec:
+      containers:
+      - name: server
+        image: ghcr.io/jandamek/jervis-server:latest
+        ports:
+        - containerPort: 5500
+        - containerPort: 5501
+        env:
+        - name: SERVER_PORT
+          value: "5500"
+        - name: DATA_ROOT_DIR
+          value: "/opt/jervis/data"
+        - name: WORK_DATA
+          value: "/opt/jervis/work"
+        - name: TIKA_BASE_URL
+          value: "http://jervis-tika:8080/"
+        - name: JOERN_BASE_URL
+          value: "http://jervis-joern:8080/"
+        - name: WHISPER_BASE_URL
+          value: "http://jervis-whisper:8080/"
+        - name: ATLASSIAN_BASE_URL
+          value: "http://jervis-atlassian:8080/"
+        - name: AIDER_BASE_URL
+          value: "http://jervis-aider:3100/"
+        - name: CODING_BASE_URL
+          value: "http://jervis-coding-engine:3200/"
+        - name: WEAVIATE_HOST
+          value: "jervis-weaviate"
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: jervis-secrets
+              key: ANTHROPIC_API_KEY
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: jervis-secrets
+              key: OPENAI_API_KEY
+        - name: GOOGLE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: jervis-secrets
+              key: GOOGLE_API_KEY
+        - name: AtklassienTepsivoToken
+          valueFrom:
+            secretKeyRef:
+              name: jervis-secrets
+              key: ATLASSIAN_TOKEN
+        volumeMounts:
+        - name: jervis-data
+          mountPath: /opt/jervis/data
+      volumes:
+      - name: jervis-data
+        persistentVolumeClaim:
+          claimName: jervis-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-server
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-server
+  ports:
+  - name: http
+    port: 5500
+    targetPort: 5500
+  - name: actuator
+    port: 5501
+    targetPort: 5501

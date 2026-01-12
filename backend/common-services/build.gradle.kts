@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
+    id("com.google.devtools.ksp") version "2.2.21-2.0.4"
 }
 
 java {
@@ -23,13 +24,20 @@ dependencies {
     implementation(enforcedPlatform("org.jetbrains.kotlinx:kotlinx-serialization-bom:${libs.versions.serialization.get()}"))
     implementation(platform("org.springframework.boot:spring-boot-dependencies:${libs.versions.spring.boot.get()}"))
 
+    implementation(project(":shared:common-api"))
+
     implementation(libs.kotlin.stdlib)
     implementation(libs.kotlin.reflect)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
 
-    // Spring 6 HTTP interfaces annotations (@HttpExchange)
-    implementation("org.springframework:spring-web")
+    // Ktorfit
+    implementation("de.jensklingenberg.ktorfit:ktorfit-lib:2.6.4")
+    add("ksp", "de.jensklingenberg.ktorfit:ktorfit-ksp:2.6.4")
+
+    // Ktor Server (for shared plugins)
+    implementation(libs.ktor.server.core)
+    implementation(libs.kotlin.logging)
 }
 
 kotlin {

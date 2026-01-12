@@ -1,9 +1,12 @@
+import sun.jvmstat.monitor.MonitoredVmUtil.mainClass
+
 plugins {
     alias(libs.plugins.spring.boot)
     alias(libs.plugins.spring.dependency.management)
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.spring)
     alias(libs.plugins.kotlin.serialization)
+    id("org.gradle.application")
 }
 
 java {
@@ -46,6 +49,19 @@ kotlin {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
         freeCompilerArgs.add("-Xjsr305=strict")
     }
+}
+
+application {
+    mainClass.set("com.jervis.joern.JoernApplicationKt")
+}
+
+tasks.jar {
+    manifest {
+        attributes["Main-Class"] = "com.jervis.joern.JoernApplicationKt"
+    }
+    val dependencies = configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) }
+    from(dependencies)
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
 tasks.test {
