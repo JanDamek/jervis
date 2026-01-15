@@ -2,17 +2,11 @@ package com.jervis.service
 
 import com.jervis.dto.ChatRequestDto
 import com.jervis.dto.ChatResponseDto
-import de.jensklingenberg.ktorfit.http.Body
-import de.jensklingenberg.ktorfit.http.POST
+import kotlinx.rpc.annotations.Rpc
 
+@Rpc
 interface IAgentOrchestratorService {
-    @POST("api/agent/handle")
-    suspend fun handle(
-        @Body request: ChatRequestDto,
-    )
+    suspend fun handle(request: ChatRequestDto)
 
-    @POST("api/agent/chat")
-    suspend fun chat(
-        @Body request: ChatRequestDto,
-    ): ChatResponseDto
+    suspend fun chat(request: ChatRequestDto): ChatResponseDto
 }

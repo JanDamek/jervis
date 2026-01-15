@@ -155,9 +155,15 @@ class ResearchAgent(
                             Your goal: Collect enough evidence to answer the research question.
 
                             When to stop:
-                            1. You have gathered sufficient information
-                            2. Multiple tools return similar/redundant info
-                            3. Reached max iterations (you'll be stopped automatically)
+                            1. GATHER EVIDENCE: Use knowledge storage tools (RAG, GraphDB), Jira, Confluence, and Email tools.
+                            2. GRAPH AUGMENTATION: If you find a key entity (ticket ID, file path, user), use 'getRelated' or 'traverse' to discover its context.
+                            3. HYBRID SEARCH: Use 'searchKnowledge' with different alpha values (0.0 for exact, 0.8 for semantic) to find relevant chunks.
+                            4. STOPPING CRITERION: If you have enough information to answer the original request, stop and summarize.
+                            
+                            KNOWLEDGE BASE RULES:
+                            - Every RAG chunk is anchored to a GraphNode.
+                            - If a RAG search returns results, follow the 'mainNodeKey' to see its neighbors in the graph.
+                            - Semantic partitioning in RAG is thematic; look for context headers in chunks.
 
                             When done, you will be asked to provide an EvidencePack with:
                             - items: list of evidence items, each with source, content, confidence

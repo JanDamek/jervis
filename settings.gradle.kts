@@ -6,6 +6,7 @@ pluginManagement {
         maven("https://repo.spring.io/milestone")
         maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
         maven("https://jitpack.io")
+        maven("https://maven.pkg.jetbrains.space/public/p/kotlinx-rpc/maven")
     }
 }
 
@@ -47,6 +48,7 @@ include(
     ":backend:service-aider",
     ":backend:service-coding-engine",
     ":backend:service-atlassian",
+    ":backend:service-junie",
 )
 
 if (System.getenv("DOCKER_BUILD") != "true") {

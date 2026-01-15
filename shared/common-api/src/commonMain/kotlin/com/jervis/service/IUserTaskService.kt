@@ -3,32 +3,19 @@ package com.jervis.service
 import com.jervis.dto.user.TaskRoutingMode
 import com.jervis.dto.user.UserTaskCountDto
 import com.jervis.dto.user.UserTaskDto
-import de.jensklingenberg.ktorfit.http.Body
-import de.jensklingenberg.ktorfit.http.GET
-import de.jensklingenberg.ktorfit.http.POST
-import de.jensklingenberg.ktorfit.http.PUT
-import de.jensklingenberg.ktorfit.http.Query
+import kotlinx.rpc.annotations.Rpc
 
+@Rpc
 interface IUserTaskService {
-    @GET("api/user-tasks/active")
-    suspend fun listActive(
-        @Query clientId: String,
-    ): List<UserTaskDto>
+    suspend fun listActive(clientId: String): List<UserTaskDto>
 
-    @GET("api/user-tasks/active-count")
-    suspend fun activeCount(
-        @Query clientId: String,
-    ): UserTaskCountDto
+    suspend fun activeCount(clientId: String): UserTaskCountDto
 
-    @PUT("api/user-tasks/cancel")
-    suspend fun cancel(
-        @Query taskId: String,
-    ): UserTaskDto
+    suspend fun cancel(taskId: String): UserTaskDto
 
-    @POST("api/user-tasks/send-to-agent")
     suspend fun sendToAgent(
-        @Query taskId: String,
-        @Query routingMode: TaskRoutingMode,
-        @Body additionalInput: String?,
+        taskId: String,
+        routingMode: TaskRoutingMode,
+        additionalInput: String?,
     ): UserTaskDto
 }

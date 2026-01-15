@@ -5,17 +5,45 @@ import com.jervis.common.dto.WhisperRequestDto
 import com.jervis.common.dto.WhisperResultDto
 import com.jervis.whisper.domain.WhisperJob
 import com.jervis.whisper.domain.WhisperService
+import io.ktor.server.application.*
+import io.ktor.server.engine.*
+import io.ktor.server.netty.*
+import io.ktor.server.routing.*
+import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.rpc.krpc.ktor.server.*
+import kotlinx.rpc.krpc.serialization.cbor.cbor
 import mu.KotlinLogging
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
 class WhisperController(
     private val service: WhisperService,
+    @Value("\${server.port:8080}") private val port: Int,
 ) : IWhisperClient {
     private val logger = KotlinLogging.logger {}
+
+    @PostConstruct
+    fun startRpcServer() {
+        Thread {
+            embeddedServer(Netty, port = port, host = "0.0.0.0") {
+                routing {
+                    rpc("/rpc") {
+                        rpcConfig {
+                            serialization {
+                                cbor()
+                            }
+                        }
+                        registerService<IWhisperClient> { this@WhisperController }
+                    }
+                }
+            }.start(wait = true)
+        }.start()
+        logger.info { "Whisper RPC server started on port $port at /rpc" }
+    }
 
     override suspend fun transcribe(
         @RequestBody request: WhisperRequestDto,

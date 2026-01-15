@@ -3,6 +3,7 @@ import sun.jvmstat.monitor.MonitoredVmUtil.mainClass
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.kotlinx.rpc)
     id("org.gradle.application")
 }
 
@@ -16,13 +17,12 @@ configurations.all {
     resolutionStrategy.eachDependency {
         if (requested.group == "org.jetbrains.kotlinx" && requested.name.startsWith("kotlinx-serialization")) {
             useVersion(libs.versions.serialization.get())
-            because("Spring Boot BOM has outdated version; align with Ktor requirements")
+            because("Align with Ktor requirements")
         }
     }
 }
 
 dependencies {
-    // Enforce kotlinx BOM to override Spring Boot BOM constraints
     implementation(enforcedPlatform("org.jetbrains.kotlinx:kotlinx-serialization-bom:${libs.versions.serialization.get()}"))
 
     implementation(project(":backend:common-services"))
@@ -33,11 +33,18 @@ dependencies {
     implementation(libs.ktor.server.netty)
     implementation(libs.ktor.server.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
+    implementation(libs.ktor.serialization.kotlinx.cbor)
+
+    // RPC
+    implementation(libs.kotlinx.rpc.krpc.server)
+    implementation(libs.kotlinx.rpc.krpc.ktor.server)
+    implementation(libs.kotlinx.rpc.krpc.serialization.cbor)
 
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlin.stdlib)
     implementation(libs.kotlin.reflect)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotlinx.serialization.cbor)
 
     // Apache Tika for document processing with OCR support
     implementation(libs.tika.core)
@@ -67,7 +74,11 @@ tasks.jar {
         attributes["Main-Class"] = "com.jervis.ocr.TikaKtorServer"
     }
     val dependencies = configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) }
-    from(dependencies)
+    from(dependencies) {
+        exclude("META-INF/*.SF")
+        exclude("META-INF/*.DSA")
+        exclude("META-INF/*.RSA")
+    }
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 

@@ -1,26 +1,27 @@
 [versions]
 angus = "2.0.3"
 koogAgents = "0.6.0"
-kotlin = "2.2.21"
-spring-boot = "4.0.0"
+kotlin = "2.3.0"
+spring-boot = "4.0.1"
 spring-depMgmt = "1.1.7"
 coroutines = "1.10.2"
 serialization = "1.9.0"
+rpc = "0.10.1"
 datetime = "0.6.2"
-ktor = "3.2.2"
+ktor = "3.3.3"
 logging = "3.0.5"
 weaviate = "5.5.0"
-arangodb = "7.23.0"
+arangodb = "7.24.2"
 commons-text = "1.15.0"
-javaparser = "3.27.1"
-jsoup = "1.21.2"
+javaparser = "3.28.0"
+jsoup = "1.22.1"
 tika = "3.2.3"
 java-diff-utils = "4.16"
 guava = "33.5.0-jre"
 flatlaf = "3.7"
 joern = "4.0.439"
-langchain4j = "1.9.1"
-google-cloud-bom = "26.72.0"
+langchain4j = "1.10.0"
+google-cloud-bom = "26.73.0"
 jtokkit = "1.1.0"
 compose = "1.9.3"
 agp = "8.12.3"
@@ -54,7 +55,15 @@ kotlinx-coroutines-reactor = { module = "org.jetbrains.kotlinx:kotlinx-coroutine
 kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
+kotlinx-serialization-cbor = { module = "org.jetbrains.kotlinx:kotlinx-serialization-cbor", version.ref = "serialization" }
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "datetime" }
+
+# RPC
+kotlinx-rpc-krpc-client = { module = "org.jetbrains.kotlinx:kotlinx-rpc-krpc-client", version.ref = "rpc" }
+kotlinx-rpc-krpc-ktor-client = { module = "org.jetbrains.kotlinx:kotlinx-rpc-krpc-ktor-client", version.ref = "rpc" }
+kotlinx-rpc-krpc-server = { module = "org.jetbrains.kotlinx:kotlinx-rpc-krpc-server", version.ref = "rpc" }
+kotlinx-rpc-krpc-ktor-server = { module = "org.jetbrains.kotlinx:kotlinx-rpc-krpc-ktor-server", version.ref = "rpc" }
+kotlinx-rpc-krpc-serialization-cbor = { module = "org.jetbrains.kotlinx:kotlinx-rpc-krpc-serialization-cbor", version.ref = "rpc" }
 
 # Spring & Boot
 spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" }
@@ -72,9 +81,9 @@ ktor-client-darwin = { module = "io.ktor:ktor-client-darwin", version.ref = "kto
 ktor-client-websocket = { module = "io.ktor:ktor-client-websockets", version.ref = "ktor" }
 ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
 ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
+ktor-serialization-kotlinx-cbor = { module = "io.ktor:ktor-serialization-kotlinx-cbor", version.ref = "ktor" }
 ktor-client-logging = { module = "io.ktor:ktor-client-logging", version.ref = "ktor" }
 ktor-server-netty = { module = "io.ktor:ktor-server-netty", version.ref = "ktor" }
-ktor-server-engine = { module = "io.ktor:ktor-server-engine", version.ref = "ktor" }
 ktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }
 ktor-server-content-negotiation = { module = "io.ktor:ktor-server-content-negotiation", version.ref = "ktor" }
 ktor-server-status-pages = { module = "io.ktor:ktor-server-status-pages", version.ref = "ktor" }
@@ -107,19 +116,10 @@ tika-parsers-standardpkg = { module = "org.apache.tika:tika-parsers-standard-pac
 java-diff-utils = { module = "io.github.java-diff-utils:java-diff-utils", version.ref = "java-diff-utils" }
 guava = { module = "com.google.guava:guava", version.ref = "guava" }
 jakarta-annotation-api = { module = "jakarta.annotation:jakarta.annotation-api" }
-flatlaf = { module = "com.formdev:flatlaf", version.ref = "flatlaf" }
 langchain4j = { module = "dev.langchain4j:langchain4j", version.ref = "langchain4j" }
 jtokkit = { module = "com.knuddels:jtokkit", version.ref = "jtokkit" }
 
-# Google Cloud APIs
-google-cloud-bom = { module = "com.google.cloud:libraries-bom", version.ref = "google-cloud-bom" }
-google-cloud-texttospeech = { module = "com.google.cloud:google-cloud-texttospeech" }
-google-cloud-speech = { module = "com.google.cloud:google-cloud-speech" }
-google-cloud-translate = { module = "com.google.cloud:google-cloud-translate" }
-google-cloud-vision = { module = "com.google.cloud:google-cloud-vision" }
-
 # Testing
-junit-bom = { module = "org.junit:junit-bom" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 
@@ -130,6 +130,7 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-spring = { id = "org.jetbrains.kotlin.plugin.spring", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlinx-rpc = { id = "org.jetbrains.kotlinx.rpc.plugin", version.ref = "rpc" }
 compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "compose" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -6,6 +6,10 @@ import com.jervis.domain.PollingStatusEnum
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
+import com.jervis.entity.connection.basicPassword
+import com.jervis.entity.connection.basicUsername
+import com.jervis.entity.connection.bearerToken
+import com.jervis.entity.connection.toAuthType
 import com.jervis.entity.jira.JiraIssueIndexDocument
 import com.jervis.repository.JiraIssueIndexRepository
 import com.jervis.service.client.ClientService
@@ -71,19 +75,13 @@ class JiraPollingHandler(
         lastSeenUpdatedAt: Instant?,
     ): List<JiraIssueIndexDocument> {
         try {
-            val authInfo =
-                when (credentials) {
-                    is HttpCredentials.Basic -> AuthInfo("BASIC", credentials.username, credentials.password, null)
-                    is HttpCredentials.Bearer -> AuthInfo("BEARER", null, null, credentials.token)
-                }
-
             val searchRequest =
                 JiraSearchRequest(
                     baseUrl = connectionDocument.baseUrl,
-                    authType = authInfo.authType,
-                    basicUsername = authInfo.username,
-                    basicPassword = authInfo.password,
-                    bearerToken = authInfo.bearerToken,
+                    authType = credentials.toAuthType(),
+                    basicUsername = credentials.basicUsername(),
+                    basicPassword = credentials.basicPassword(),
+                    bearerToken = credentials.bearerToken(),
                     jql = query,
                 )
 
@@ -116,20 +114,22 @@ class JiraPollingHandler(
     private fun parseInstant(isoString: String?): Instant =
         if (isoString != null) {
             try {
-                Instant.parse(isoString)
+                // Jira uses format like 2024-03-21T15:43:02.000+0000 or 2024-03-21T15:43:02.000Z
+                // Instant.parse handles Z, but not +0000
+                val normalized = isoString.replace(Regex("(\\+\\d{2})(\\d{2})$"), "$1:$2")
+                Instant.parse(normalized)
             } catch (_: Exception) {
-                Instant.now()
+                try {
+                    // Try OffsetDateTime for formats like +0000
+                    java.time.OffsetDateTime.parse(isoString, java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSZ")).toInstant()
+                } catch (__: Exception) {
+                    Instant.now()
+                }
             }
         } else {
             Instant.now()
         }
 
-    private data class AuthInfo(
-        val authType: String,
-        val username: String?,
-        val password: String?,
-        val bearerToken: String?,
-    )
 
     override fun getIssueUpdatedAt(issue: JiraIssueIndexDocument): Instant = issue.jiraUpdatedAt
 
@@ -151,3 +151,10 @@ class JiraPollingHandler(
         }
     }
 }
+
+    private data class AuthInfo(
+        val authType: String,
+        val username: String?,
+        val password: String?,
+        val bearerToken: String?,
+    )

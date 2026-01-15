@@ -1,29 +1,19 @@
 package com.jervis.service
 
 import com.jervis.dto.PendingTaskDto
-import de.jensklingenberg.ktorfit.http.DELETE
-import de.jensklingenberg.ktorfit.http.GET
-import de.jensklingenberg.ktorfit.http.Path
-import de.jensklingenberg.ktorfit.http.Query
+import kotlinx.rpc.annotations.Rpc
 
-/**
- * Pending Task API for UI
- */
+@Rpc
 interface IPendingTaskService {
-    @GET("api/pending-tasks")
     suspend fun listTasks(
-        @Query("taskType") taskType: String? = null,
-        @Query("state") state: String? = null,
+        taskType: String? = null,
+        state: String? = null,
     ): List<PendingTaskDto>
 
-    @GET("api/pending-tasks/count")
     suspend fun countTasks(
-        @Query("taskType") taskType: String? = null,
-        @Query("state") state: String? = null,
+        taskType: String? = null,
+        state: String? = null,
     ): Long
 
-    @DELETE("api/pending-tasks/{id}")
-    suspend fun deletePendingTask(
-        @Path("id") id: String,
-    )
+    suspend fun deletePendingTask(id: String)
 }

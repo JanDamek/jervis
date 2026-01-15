@@ -1,7 +1,7 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
-    id("com.google.devtools.ksp") version "2.2.21-2.0.4"
+    alias(libs.plugins.kotlinx.rpc)
 }
 
 java {
@@ -31,13 +31,17 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
 
-    // Ktorfit
-    implementation("de.jensklingenberg.ktorfit:ktorfit-lib:2.6.4")
-    add("ksp", "de.jensklingenberg.ktorfit:ktorfit-ksp:2.6.4")
-
     // Ktor Server (for shared plugins)
     implementation(libs.ktor.server.core)
+    implementation(libs.ktor.serialization.kotlinx.cbor)
     implementation(libs.kotlin.logging)
+
+    // RPC
+    implementation(libs.kotlinx.rpc.krpc.client)
+    implementation(libs.kotlinx.rpc.krpc.ktor.client)
+    implementation(libs.kotlinx.rpc.krpc.server)
+    implementation(libs.kotlinx.rpc.krpc.ktor.server)
+    implementation(libs.kotlinx.rpc.krpc.serialization.cbor)
 }
 
 kotlin {

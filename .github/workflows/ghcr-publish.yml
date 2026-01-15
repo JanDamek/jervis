@@ -2,7 +2,7 @@ name: Build and Push Images to GHCR
 
 on:
   push:
-    branches: [ "main", "master", "release-*" ]
+    branches: [ "release-*" ]
     tags: [ "v*", "release-*" ]
   workflow_dispatch:
 
@@ -83,25 +83,25 @@ jobs:
             printf '%s\n' "${args[@]}"
           }
 
-          # Build and push all runtime images from the multi-stage Dockerfile
-          build_push() {
-            local target="$1"; shift
+          # Build and push all runtime images using their individual Dockerfiles
+          build_push_service() {
+            local dir="$1"; shift
             local image="$1"; shift
-            echo "==> Building $image from target $target with tags: ${TAGS[*]}"
+            echo "==> Building $image from backend/$dir/Dockerfile with tags: ${TAGS[*]}"
             docker buildx build \
-              --target "$target" \
-              --cache-from type=gha,scope=${target} \
-              --cache-to type=gha,mode=max,scope=${target} \
+              -f "backend/$dir/Dockerfile" \
+              --cache-from type=gha,scope=${dir} \
+              --cache-to type=gha,mode=max,scope=${dir} \
               $(tag_args "$image" "${TAGS[@]}") \
               --push \
               .
           }
 
-          build_push runtime-server   "ghcr.io/$OWNER_LC/jervis-server"
-          build_push runtime-joern    "ghcr.io/$OWNER_LC/jervis-joern"
-          build_push runtime-whisper  "ghcr.io/$OWNER_LC/jervis-whisper"
-          build_push runtime-tika     "ghcr.io/$OWNER_LC/jervis-tika"
-          build_push runtime-weaviate "ghcr.io/$OWNER_LC/jervis-weaviate"
-          build_push runtime-aider    "ghcr.io/$OWNER_LC/jervis-aider"
-          build_push runtime-coding-engine "ghcr.io/$OWNER_LC/jervis-coding-engine"
-          build_push runtime-atlassian "ghcr.io/$OWNER_LC/jervis-atlassian"
+          build_push_service server   "ghcr.io/$OWNER_LC/jervis-server"
+          build_push_service service-joern    "ghcr.io/$OWNER_LC/jervis-joern"
+          build_push_service service-whisper  "ghcr.io/$OWNER_LC/jervis-whisper"
+          build_push_service service-tika     "ghcr.io/$OWNER_LC/jervis-tika"
+          build_push_service service-aider    "ghcr.io/$OWNER_LC/jervis-aider"
+          build_push_service service-junie    "ghcr.io/$OWNER_LC/jervis-junie"
+          build_push_service service-coding-engine "ghcr.io/$OWNER_LC/jervis-coding-engine"
+          build_push_service service-atlassian "ghcr.io/$OWNER_LC/jervis-atlassian"

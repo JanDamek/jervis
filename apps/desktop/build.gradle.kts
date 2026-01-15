@@ -2,8 +2,7 @@ plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.compose.compiler)
-    id("com.google.devtools.ksp") version "2.2.21-2.0.4"
-    id("de.jensklingenberg.ktorfit") version "2.6.4"
+    alias(libs.plugins.kotlinx.rpc)
 }
 
 group = "com.jervis"
@@ -35,9 +34,16 @@ dependencies {
     implementation(libs.ktor.client.cio)
     implementation(libs.ktor.client.websocket)
     implementation(libs.ktor.serialization.kotlinx.json)
+    implementation(libs.ktor.serialization.kotlinx.cbor)
 
     // Kotlinx Serialization
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotlinx.serialization.cbor)
+
+    // kotlinx-rpc
+    implementation(libs.kotlinx.rpc.krpc.client)
+    implementation(libs.kotlinx.rpc.krpc.ktor.client)
+    implementation(libs.kotlinx.rpc.krpc.serialization.cbor)
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.core)
@@ -45,9 +51,6 @@ dependencies {
 
     // SLF4J implementation (to suppress warning)
     implementation("org.slf4j:slf4j-simple:2.0.9")
-
-    // Ktorfit code generation
-    ksp("de.jensklingenberg.ktorfit:ktorfit-ksp:2.6.4")
 }
 
 // Server URL configuration
@@ -55,11 +58,11 @@ val serverUrls =
     mapOf(
         "local" to "https://localhost:5500/",
         "remote" to "https://192.168.100.117:5500/",
-        // Placeholder for a publicly reachable server; override via -Pjervis.server.url
-        "public" to "https://home.damek-soft.eu:5500/",
+        // Public server URL via Ingress
+        "public" to "https://jervis.damek-soft.eu/",
     )
 
-val currentProfile = findProperty("jervis.profile")?.toString() ?: "local"
+val currentProfile = findProperty("jervis.profile")?.toString() ?: "public"
 val serverUrl = findProperty("jervis.server.url")?.toString() ?: serverUrls[currentProfile] ?: serverUrls["local"]
 
 compose.desktop {

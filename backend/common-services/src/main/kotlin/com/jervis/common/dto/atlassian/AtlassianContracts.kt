@@ -1,29 +1,6 @@
 package com.jervis.common.dto.atlassian
 
-import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.descriptors.PrimitiveKind
-import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.encoding.Decoder
-import kotlinx.serialization.encoding.Encoder
-import java.time.Instant
-
-// Custom serializer for java.time.Instant
-object InstantSerializer : KSerializer<Instant> {
-    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("Instant", PrimitiveKind.STRING)
-
-    override fun serialize(
-        encoder: Encoder,
-        value: Instant,
-    ) {
-        encoder.encodeString(value.toString())
-    }
-
-    override fun deserialize(decoder: Decoder): Instant = Instant.parse(decoder.decodeString())
-}
-
-// ============= Authentication & Common =============
 
 @Serializable
 data class AtlassianMyselfRequest(
@@ -41,8 +18,6 @@ data class AtlassianUserDto(
     val displayName: String? = null,
 )
 
-// ============= Jira =============
-
 @Serializable
 data class JiraSearchRequest(
     val baseUrl: String,
@@ -57,25 +32,25 @@ data class JiraSearchRequest(
 
 @Serializable
 data class JiraSearchResponse(
-    val total: Int,
-    val startAt: Int,
-    val maxResults: Int,
-    val issues: List<JiraIssueSummary>,
+    val total: Int = 0,
+    val startAt: Int = 0,
+    val maxResults: Int = 0,
+    val issues: List<JiraIssueSummary> = emptyList(),
 )
 
 @Serializable
 data class JiraIssueSummary(
     val key: String,
     val id: String,
-    val self: String?, // Issue URL
+    val self: String?,
     val fields: JiraIssueFields,
 )
 
 @Serializable
 data class JiraIssueFields(
     val summary: String?,
-    val description: kotlinx.serialization.json.JsonElement? = null, // Can be string or ADF object
-    val updated: String?, // ISO timestamp
+    val description: kotlinx.serialization.json.JsonElement? = null,
+    val updated: String?,
     val created: String?,
     val status: JiraStatus?,
     val priority: JiraPriority?,
@@ -86,7 +61,7 @@ data class JiraIssueFields(
     val labels: List<String>?,
     val components: List<JiraComponent>?,
     val fixVersions: List<JiraVersion>?,
-    val parent: JiraIssueRef?, // Parent issue (for subtasks)
+    val parent: JiraIssueRef?,
     val subtasks: List<JiraIssueRef>?,
     val attachments: List<JiraAttachment>? = null,
 )
@@ -230,18 +205,17 @@ data class ConfluenceSearchRequest(
     val bearerToken: String? = null,
     val spaceKey: String? = null,
     val cql: String? = null,
-    @Serializable(with = InstantSerializer::class)
-    val lastModifiedSince: Instant? = null,
+    val lastModifiedSince: String? = null, // ISO timestamp as String
     val maxResults: Int = 1000,
     val startAt: Int = 0,
 )
 
 @Serializable
 data class ConfluenceSearchResponse(
-    val total: Int,
-    val startAt: Int,
-    val maxResults: Int,
-    val pages: List<ConfluencePageSummary>,
+    val total: Int = 0,
+    val startAt: Int = 0,
+    val maxResults: Int = 0,
+    val pages: List<ConfluencePageSummary> = emptyList(),
 )
 
 @Serializable

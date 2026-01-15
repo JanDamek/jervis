@@ -67,7 +67,7 @@ class ConfluencePollingHandler(
                     bearerToken = authInfo.bearerToken,
                     spaceKey = spaceKey,
                     cql = null,
-                    lastModifiedSince = lastSeenUpdatedAt,
+                    lastModifiedSince = lastSeenUpdatedAt?.toString(),
                     maxResults = maxResults,
                     startAt = startAt,
                 )

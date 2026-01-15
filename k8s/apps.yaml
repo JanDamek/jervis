@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: tika
-        image: ghcr.io/jandamek/jervis-tika:latest
+        image: registry.damek-soft.eu/jandamek/jervis-tika:latest
         ports:
         - containerPort: 8080
         env:
@@ -23,6 +23,18 @@ spec:
           value: "8080"
         - name: WORK_DATA
           value: "/opt/jervis/work"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 10
 ---
 apiVersion: v1
 kind: Service
@@ -53,7 +65,7 @@ spec:
     spec:
       containers:
       - name: joern
-        image: ghcr.io/jandamek/jervis-joern:latest
+        image: registry.damek-soft.eu/jandamek/jervis-joern:latest
         ports:
         - containerPort: 8080
         env:
@@ -61,6 +73,18 @@ spec:
           value: "8080"
         - name: WORK_DATA
           value: "/opt/jervis/work"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 10
 ---
 apiVersion: v1
 kind: Service
@@ -91,7 +115,7 @@ spec:
     spec:
       containers:
       - name: whisper
-        image: ghcr.io/jandamek/jervis-whisper:latest
+        image: registry.damek-soft.eu/jandamek/jervis-whisper:latest
         ports:
         - containerPort: 8080
         env:
@@ -99,6 +123,18 @@ spec:
           value: "8080"
         - name: WORK_DATA
           value: "/opt/jervis/work"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 10
 ---
 apiVersion: v1
 kind: Service
@@ -129,7 +165,7 @@ spec:
     spec:
       containers:
       - name: aider
-        image: ghcr.io/jandamek/jervis-aider:latest
+        image: registry.damek-soft.eu/jandamek/jervis-aider:latest
         ports:
         - containerPort: 3100
         env:
@@ -137,6 +173,18 @@ spec:
           value: "3100"
         - name: DATA_ROOT_DIR
           value: "/opt/jervis/data"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3100
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3100
+          initialDelaySeconds: 15
+          periodSeconds: 10
         volumeMounts:
         - name: jervis-data
           mountPath: /opt/jervis/data
@@ -174,7 +222,7 @@ spec:
     spec:
       containers:
       - name: coding-engine
-        image: ghcr.io/jandamek/jervis-coding-engine:latest
+        image: registry.damek-soft.eu/jandamek/jervis-coding-engine:latest
         ports:
         - containerPort: 3200
         env:
@@ -182,6 +230,18 @@ spec:
           value: "3200"
         - name: DATA_ROOT_DIR
           value: "/opt/jervis/data"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3200
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3200
+          initialDelaySeconds: 15
+          periodSeconds: 10
         volumeMounts:
         - name: jervis-data
           mountPath: /opt/jervis/data
@@ -219,7 +279,7 @@ spec:
     spec:
       containers:
       - name: atlassian
-        image: ghcr.io/jandamek/jervis-atlassian:latest
+        image: registry.damek-soft.eu/jandamek/jervis-atlassian:latest
         ports:
         - containerPort: 8080
         env:
@@ -227,6 +287,18 @@ spec:
           value: "8080"
         - name: WORK_DATA
           value: "/opt/jervis/work"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 10
 ---
 apiVersion: v1
 kind: Service
@@ -239,44 +311,6 @@ spec:
   ports:
   - port: 8080
     targetPort: 8080
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: jervis-weaviate
-  namespace: jervis
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: jervis-weaviate
-  template:
-    metadata:
-      labels:
-        app: jervis-weaviate
-    spec:
-      containers:
-      - name: weaviate
-        image: ghcr.io/jandamek/jervis-weaviate:latest
-        ports:
-        - containerPort: 8080
-        - containerPort: 50051
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: jervis-weaviate
-  namespace: jervis
-spec:
-  selector:
-    app: jervis-weaviate
-  ports:
-  - name: http
-    port: 8080
-    targetPort: 8080
-  - name: grpc
-    port: 50051
-    targetPort: 50051
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -295,31 +329,24 @@ spec:
     spec:
       containers:
       - name: server
-        image: ghcr.io/jandamek/jervis-server:latest
+        image: registry.damek-soft.eu/jandamek/jervis-server:latest
         ports:
         - containerPort: 5500
-        - containerPort: 5501
+        envFrom:
+        - configMapRef:
+            name: jervis-server-config
         env:
-        - name: SERVER_PORT
-          value: "5500"
-        - name: DATA_ROOT_DIR
-          value: "/opt/jervis/data"
-        - name: WORK_DATA
-          value: "/opt/jervis/work"
-        - name: TIKA_BASE_URL
-          value: "http://jervis-tika:8080/"
-        - name: JOERN_BASE_URL
-          value: "http://jervis-joern:8080/"
-        - name: WHISPER_BASE_URL
-          value: "http://jervis-whisper:8080/"
-        - name: ATLASSIAN_BASE_URL
-          value: "http://jervis-atlassian:8080/"
-        - name: AIDER_BASE_URL
-          value: "http://jervis-aider:3100/"
-        - name: CODING_BASE_URL
-          value: "http://jervis-coding-engine:3200/"
-        - name: WEAVIATE_HOST
-          value: "jervis-weaviate"
+        # Secrets (passwords, API keys)
+        - name: MONGODB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: jervis-secrets
+              key: MONGODB_PASSWORD
+        - name: ARANGO_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: jervis-secrets
+              key: ARANGO_PASSWORD
         - name: ANTHROPIC_API_KEY
           valueFrom:
             secretKeyRef:
@@ -335,14 +362,41 @@ spec:
             secretKeyRef:
               name: jervis-secrets
               key: GOOGLE_API_KEY
-        - name: AtklassienTepsivoToken
+        - name: ATLASSIAN_TOKEN
           valueFrom:
             secretKeyRef:
               name: jervis-secrets
               key: ATLASSIAN_TOKEN
+        - name: JUNIE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: jervis-secrets
+              key: JUNIE_API_KEY
         volumeMounts:
         - name: jervis-data
           mountPath: /opt/jervis/data
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5500
+          initialDelaySeconds: 45
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5500
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 5500
+          failureThreshold: 30
+          periodSeconds: 10
       volumes:
       - name: jervis-data
         persistentVolumeClaim:
@@ -360,6 +414,53 @@ spec:
   - name: http
     port: 5500
     targetPort: 5500
-  - name: actuator
-    port: 5501
-    targetPort: 5501
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-junie
+  namespace: jervis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jervis-junie
+  template:
+    metadata:
+      labels:
+        app: jervis-junie
+    spec:
+      containers:
+      - name: junie
+        image: registry.damek-soft.eu/jandamek/jervis-junie:latest
+        ports:
+        - containerPort: 3300
+        env:
+        - name: SERVER_PORT
+          value: "3300"
+        - name: DATA_ROOT_DIR
+          value: "/opt/jervis/data"
+        - name: JUNIE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: jervis-secrets
+              key: JUNIE_API_KEY
+        volumeMounts:
+        - name: jervis-data
+          mountPath: /opt/jervis/data
+      volumes:
+      - name: jervis-data
+        persistentVolumeClaim:
+          claimName: jervis-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-junie
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-junie
+  ports:
+  - port: 3300
+    targetPort: 3300

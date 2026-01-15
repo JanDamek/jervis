@@ -16,18 +16,6 @@ import com.jervis.service.IProjectService
 import com.jervis.service.IRagSearchService
 import com.jervis.service.ITaskSchedulingService
 import com.jervis.service.IUserTaskService
-import com.jervis.service.createIAgentOrchestratorService
-import com.jervis.service.createIClientProjectLinkService
-import com.jervis.service.createIClientService
-import com.jervis.service.createIConnectionService
-import com.jervis.service.createIErrorLogService
-import com.jervis.service.createIGitConfigurationService
-import com.jervis.service.createIPendingTaskService
-import com.jervis.service.createIProjectService
-import com.jervis.service.createIRagSearchService
-import com.jervis.service.createITaskSchedulingService
-import com.jervis.service.createIUserTaskService
-import de.jensklingenberg.ktorfit.Ktorfit
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
 import io.ktor.client.call.body
@@ -46,7 +34,15 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
+import io.ktor.serialization.kotlinx.cbor.cbor
 import kotlinx.serialization.json.Json
+import io.ktor.http.URLProtocol
+import io.ktor.http.encodedPath
+import kotlinx.rpc.krpc.ktor.client.KtorRpcClient
+import kotlinx.rpc.krpc.ktor.client.installKrpc
+import kotlinx.rpc.krpc.ktor.client.rpc
+import kotlinx.rpc.krpc.serialization.cbor.cbor
+import kotlinx.rpc.withService
 
 /**
  * Platform-specific HTTP client creation with SSL configuration
@@ -56,7 +52,7 @@ expect fun createPlatformHttpClient(block: HttpClientConfig<*>.() -> Unit): Http
 
 /**
  * Network module for dependency injection
- * Creates Ktorfit client and all service instances
+ * Creates all service instances via RPC or A2A
  */
 object NetworkModule {
     /**
@@ -66,13 +62,12 @@ object NetworkModule {
     fun createHttpClient(): HttpClient =
         createPlatformHttpClient {
             install(ContentNegotiation) {
-                json(
-                    Json {
-                        prettyPrint = true
-                        isLenient = true
-                        ignoreUnknownKeys = true
-                    },
-                )
+                json(Json {
+                    prettyPrint = true
+                    isLenient = true
+                    ignoreUnknownKeys = true
+                })
+                cbor()
             }
 
             install(Logging) {
@@ -85,60 +80,92 @@ object NetworkModule {
                 connectTimeoutMillis = 10_000
             }
 
+            installKrpc {
+                serialization {
+                    cbor()
+                }
+            }
+
             defaultRequest {
-                contentType(ContentType.Application.Json)
                 headers[SecurityConstants.CLIENT_HEADER] = SecurityConstants.CLIENT_TOKEN
                 headers[SecurityConstants.PLATFORM_HEADER] = SecurityConstants.PLATFORM_DESKTOP
             }
         }
 
-    /**
-     * Create Ktorfit instance
-     * @param baseUrl Server base URL (e.g., "http://localhost:5500")
-     */
-    fun createKtorfit(
+    suspend fun createRpcClient(
         baseUrl: String,
-        httpClient: HttpClient = createHttpClient(),
-    ): Ktorfit =
-        Ktorfit
-            .Builder()
-            .baseUrl(baseUrl)
-            .httpClient(httpClient)
-            .build()
+        httpClient: HttpClient = createHttpClient()
+    ): KtorRpcClient {
+        val url = io.ktor.http.Url(baseUrl)
+        return httpClient.rpc {
+            url {
+                protocol = url.protocol
+                host = url.host
+                port = if (url.port != -1) url.port else protocol.defaultPort
+                encodedPath = "rpc"
+            }
+        }
+    }
 
     fun createA2AClient(
         baseUrl: String,
         httpClient: HttpClient,
     ): A2AClient {
         val normalized = baseUrl.trimEnd('/')
-        val a2aUrl = if (normalized.endsWith("/a2a/system")) normalized else normalized + "/a2a/system"
+        // If baseUrl already points to /a2a/system, use it as is
+        val a2aUrl = if (normalized.endsWith("/a2a/system")) {
+            normalized
+        } else {
+            // Otherwise, assume it's the root URL and append /a2a/system
+            normalized + "/a2a/system"
+        }
         val transport = HttpJSONRPCClientTransport(a2aUrl, httpClient)
-        val agentCardResolver = UrlAgentCardResolver(baseUrl = normalized, path = "/a2a/system")
+        // Resolver should point to the agent server's root
+        val resolverBaseUrl = if (normalized.endsWith("/a2a/system")) {
+            normalized.removeSuffix("/a2a/system")
+        } else {
+            normalized
+        }
+        val agentCardResolver = UrlAgentCardResolver(baseUrl = resolverBaseUrl, path = "/a2a/system")
         return A2AClient(transport = transport, agentCardResolver = agentCardResolver)
     }
 
     /**
-     * Create all service instances from Ktorfit
-     * These are auto-generated by KSP from interface definitions
+     * Create all service instances
      */
     fun createServices(
-        ktorfit: Ktorfit,
         a2aClient: A2AClient? = null,
+        rpcClient: KtorRpcClient? = null,
     ): Services {
-        val rpcClient = a2aClient?.let { A2ARPCClient(it, Json { ignoreUnknownKeys = true }) }
+        val a2aRpcClient = a2aClient?.let { A2ARPCClient(it, Json { ignoreUnknownKeys = true }) }
 
         return Services(
-            projectService = rpcClient?.ProjectServiceProxy() ?: ktorfit.createIProjectService(),
-            clientService = rpcClient?.ClientServiceProxy() ?: ktorfit.createIClientService(),
-            clientProjectLinkService = ktorfit.createIClientProjectLinkService(),
-            userTaskService = rpcClient?.UserTaskServiceProxy() ?: ktorfit.createIUserTaskService(),
-            ragSearchService = rpcClient?.RagSearchServiceProxy() ?: ktorfit.createIRagSearchService(),
-            taskSchedulingService = ktorfit.createITaskSchedulingService(),
-            agentOrchestratorService = ktorfit.createIAgentOrchestratorService(),
-            errorLogService = ktorfit.createIErrorLogService(),
-            gitConfigurationService = ktorfit.createIGitConfigurationService(),
-            pendingTaskService = ktorfit.createIPendingTaskService(),
-            connectionService = ktorfit.createIConnectionService(),
+            projectService = rpcClient?.withService<IProjectService>()
+                ?: a2aRpcClient?.ProjectServiceProxy()
+                ?: error("IProjectService implementation not found"),
+            clientService = rpcClient?.withService<IClientService>()
+                ?: a2aRpcClient?.ClientServiceProxy()
+                ?: error("IClientService implementation not found"),
+            clientProjectLinkService = rpcClient?.withService<IClientProjectLinkService>()
+                ?: error("IClientProjectLinkService implementation not found"),
+            userTaskService = rpcClient?.withService<IUserTaskService>()
+                ?: a2aRpcClient?.UserTaskServiceProxy()
+                ?: error("IUserTaskService implementation not found"),
+            ragSearchService = rpcClient?.withService<IRagSearchService>()
+                ?: a2aRpcClient?.RagSearchServiceProxy()
+                ?: error("IRagSearchService implementation not found"),
+            taskSchedulingService = rpcClient?.withService<ITaskSchedulingService>()
+                ?: error("ITaskSchedulingService implementation not found"),
+            agentOrchestratorService = rpcClient?.withService<IAgentOrchestratorService>()
+                ?: error("IAgentOrchestratorService implementation not found"),
+            errorLogService = rpcClient?.withService<IErrorLogService>()
+                ?: error("IErrorLogService implementation not found"),
+            gitConfigurationService = rpcClient?.withService<IGitConfigurationService>()
+                ?: error("IGitConfigurationService implementation not found"),
+            pendingTaskService = rpcClient?.withService<IPendingTaskService>()
+                ?: error("IPendingTaskService implementation not found"),
+            connectionService = rpcClient?.withService<IConnectionService>()
+                ?: error("IConnectionService implementation not found"),
         )
     }
 
@@ -158,50 +185,19 @@ object NetworkModule {
         val pendingTaskService: IPendingTaskService,
         val connectionService: IConnectionService,
     )
+}
 
-    // Simple fallback implementation of IUserTaskService using raw HttpClient calls.
-    // Intended as a runtime-safe fallback when Ktorfit KSP-generated clients are not
-    // available in the classpath (prevents NoClassDefFoundError in the desktop app).
-    private class SimpleUserTaskService(
-        private val client: HttpClient,
-    ) : IUserTaskService {
-        override suspend fun listActive(clientId: String): List<com.jervis.dto.user.UserTaskDto> =
-            client
-                .get("api/user-tasks/active") {
-                    parameter("clientId", clientId)
-                }.body()
-
-        override suspend fun activeCount(clientId: String): com.jervis.dto.user.UserTaskCountDto =
-            client
-                .get("api/user-tasks/active-count") {
-                    parameter("clientId", clientId)
-                }.body()
-
-        override suspend fun cancel(taskId: String): com.jervis.dto.user.UserTaskDto =
-            client
-                .put("api/user-tasks/cancel") {
-                    parameter("taskId", taskId)
-                }.body()
-
-        override suspend fun sendToAgent(
-            taskId: String,
-            routingMode: com.jervis.dto.user.TaskRoutingMode,
-            additionalInput: String?,
-        ): com.jervis.dto.user.UserTaskDto =
-            client
-                .post("api/user-tasks/send-to-agent") {
-                    parameter("taskId", taskId)
-                    parameter("routingMode", routingMode)
-                    setBody(additionalInput ?: "")
-                }.body()
-    }
+fun createJervisServices(baseUrl: String): NetworkModule.Services {
+    val httpClient = NetworkModule.createHttpClient()
+    val a2aClient = NetworkModule.createA2AClient(baseUrl, httpClient)
+    return NetworkModule.createServices(a2aClient = a2aClient, rpcClient = null)
 }
 
 /**
- * Extension to easily create all services
+ * Extension to easily create all services (blocking version for legacy use)
  */
-fun createJervisServices(baseUrl: String): NetworkModule.Services {
+fun createJervisServicesBlocking(baseUrl: String): NetworkModule.Services {
     val httpClient = NetworkModule.createHttpClient()
-    val ktorfit = NetworkModule.createKtorfit(baseUrl, httpClient)
-    return NetworkModule.createServices(ktorfit)
+    val a2aClient = NetworkModule.createA2AClient(baseUrl, httpClient)
+    return NetworkModule.createServices(a2aClient = a2aClient, rpcClient = null)
 }

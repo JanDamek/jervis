@@ -95,7 +95,19 @@ class LinkContentService(
                     )
                 }
 
-                LinkPlainText(url, processingResult.plainText, contentType, success = true, errorMessage = null)
+                val plainText = processingResult.plainText.trim()
+                if (plainText.isEmpty() && responseBody.isNotEmpty()) {
+                    logger.warn { "Tika returned empty content for URL $url. Using original response body as text to prevent data loss." }
+                    return@withContext LinkPlainText(
+                        url,
+                        String(responseBody, Charsets.UTF_8),
+                        contentType,
+                        success = true,
+                        errorMessage = "Tika returned empty content, fell back to raw UTF-8",
+                    )
+                }
+
+                LinkPlainText(url, plainText, contentType, success = true, errorMessage = null)
             }.getOrElse { e ->
                 logger.warn { "Failed to fetch or parse URL $url error:${e.message}" }
                 LinkPlainText(url, "", null, success = false, errorMessage = e.message)

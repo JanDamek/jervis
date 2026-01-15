@@ -2,12 +2,9 @@ package com.jervis.common.client
 
 import com.jervis.common.dto.JoernQueryDto
 import com.jervis.common.dto.JoernResultDto
-import de.jensklingenberg.ktorfit.http.Body
-import de.jensklingenberg.ktorfit.http.POST
+import kotlinx.rpc.annotations.Rpc
 
+@Rpc
 interface IJoernClient {
-    @POST("api/joern/query")
-    suspend fun run(
-        @Body request: JoernQueryDto,
-    ): JoernResultDto
+    suspend fun run(request: JoernQueryDto): JoernResultDto
 }

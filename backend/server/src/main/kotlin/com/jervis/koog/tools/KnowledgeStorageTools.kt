@@ -31,7 +31,7 @@ class KnowledgeStorageTools(
 
     @Tool
     @LLMDescription(
-        "Hybrid search combining BM25 (keyword) + Vector (semantic). Use alpha=0.0 for exact matching, 0.5 for balanced, 1.0 for semantic only.",
+        "Hybrid search combining BM25 (keyword) + Vector (semantic). Use alpha=0.0 for exact matching, 0.5 for balanced, 1.0 for semantic only. 0.8=standard. IMPORTANT: If results are found, always check the graph for context via getRelated(mainNodeKey).",
     )
     suspend fun searchKnowledge(
         @LLMDescription("Search query")

@@ -10,10 +10,10 @@ metadata:
 spec:
   tls:
   - hosts:
-    - jervice.damek-soft.eu
+    - jervis.damek-soft.eu
     secretName: jervis-tls-cert
   rules:
-  - host: jervice.damek-soft.eu
+  - host: jervis.damek-soft.eu
     http:
       paths:
       - path: /

@@ -4,32 +4,22 @@ import com.jervis.dto.connection.ConnectionCreateRequestDto
 import com.jervis.dto.connection.ConnectionResponseDto
 import com.jervis.dto.connection.ConnectionTestResultDto
 import com.jervis.dto.connection.ConnectionUpdateRequestDto
-import de.jensklingenberg.ktorfit.http.*
+import kotlinx.rpc.annotations.Rpc
 
-/**
- * Connection Service API
- * Manages all connection types (HTTP, IMAP, POP3, SMTP, OAuth2)
- */
+@Rpc
 interface IConnectionService {
-
-    @GET("api/connections")
     suspend fun getAllConnections(): List<ConnectionResponseDto>
 
-    @GET("api/connections/{id}")
-    suspend fun getConnectionById(@Path("id") id: String): ConnectionResponseDto?
+    suspend fun getConnectionById(id: String): ConnectionResponseDto?
 
-    @POST("api/connections")
-    suspend fun createConnection(@Body request: ConnectionCreateRequestDto): ConnectionResponseDto
+    suspend fun createConnection(request: ConnectionCreateRequestDto): ConnectionResponseDto
 
-    @PUT("api/connections/{id}")
     suspend fun updateConnection(
-        @Path("id") id: String,
-        @Body request: ConnectionUpdateRequestDto
+        id: String,
+        request: ConnectionUpdateRequestDto,
     ): ConnectionResponseDto
 
-    @DELETE("api/connections/{id}")
-    suspend fun deleteConnection(@Path("id") id: String)
+    suspend fun deleteConnection(id: String)
 
-    @POST("api/connections/{id}/test")
-    suspend fun testConnection(@Path("id") id: String): ConnectionTestResultDto
+    suspend fun testConnection(id: String): ConnectionTestResultDto
 }

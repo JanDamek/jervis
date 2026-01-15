@@ -110,11 +110,16 @@ class IngestAgent(
                             YOUR WORKFLOW:
                             1. Analyze the input 'INFORMATION_TO_INGEST'.
                             2. Decompose it into logical entities (mainNodeKey) and relationships (from|edge|to).
-                            3. For each significant piece of information, call storeKnowledgeWithGraph().
-                            4. When finished, provide a structured IngestResult.
+                            3. Identify semantic partitions: look for natural breaks in the text.
+                            4. For each significant piece of information, call storeKnowledgeWithGraph().
+                               - Include a Context Header in each RAG chunk (e.g., "[Source: JIRA-101, Project: Jervis]").
+                            5. Verify consistency: Ensure all newly created RAG chunks point back to the same GraphNode.
+                            6. When finished, provide a structured IngestResult.
                             
                             CRITICAL RULES:
                             - Be precise and structured.
+                            - Standardized Keys: Always use format <type>:<id> (e.g. 'user:jandamek', 'ticket:TLIT-822').
+                            - Bidirectional Linking: Ensure the graph is traversable in both directions.
                             - Choose descriptive mainNodeKey names (e.g. 'class:UserService', 'feature:auth').
                             - Relationships should follow 'Source|Relation|Target' format.
                             - If the information is too vague, try to infer context or mark it in the summary.

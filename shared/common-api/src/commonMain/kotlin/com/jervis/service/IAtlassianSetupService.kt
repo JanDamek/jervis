@@ -12,70 +12,32 @@ import com.jervis.dto.atlassian.AtlassianProjectRefDto
 import com.jervis.dto.atlassian.AtlassianProjectSelectionDto
 import com.jervis.dto.atlassian.AtlassianSetupStatusDto
 import com.jervis.dto.atlassian.AtlassianUserSelectionDto
-import de.jensklingenberg.ktorfit.http.Body
-import de.jensklingenberg.ktorfit.http.GET
-import de.jensklingenberg.ktorfit.http.POST
-import de.jensklingenberg.ktorfit.http.PUT
-import de.jensklingenberg.ktorfit.http.Query
+import kotlinx.rpc.annotations.Rpc
 
+@Rpc
 interface IAtlassianSetupService {
-    @GET("api/atlassian/setup/status")
-    suspend fun getStatus(
-        @Query clientId: String,
-    ): AtlassianSetupStatusDto
+    suspend fun getStatus(clientId: String): AtlassianSetupStatusDto
 
-    @POST("api/atlassian/setup/test-api-token")
-    suspend fun testApiToken(
-        @Body request: AtlassianApiTokenTestRequestDto,
-    ): AtlassianApiTokenTestResponseDto
+    suspend fun testApiToken(request: AtlassianApiTokenTestRequestDto): AtlassianApiTokenTestResponseDto
 
-    @POST("api/atlassian/setup/save-api-token")
-    suspend fun saveApiToken(
-        @Body request: AtlassianApiTokenSaveRequestDto,
-    ): AtlassianSetupStatusDto
+    suspend fun saveApiToken(request: AtlassianApiTokenSaveRequestDto): AtlassianSetupStatusDto
 
-    @POST("api/atlassian/setup/begin-auth")
-    suspend fun beginAuth(
-        @Body request: AtlassianBeginAuthRequestDto,
-    ): AtlassianBeginAuthResponseDto
+    suspend fun beginAuth(request: AtlassianBeginAuthRequestDto): AtlassianBeginAuthResponseDto
 
-    @POST("api/atlassian/setup/complete-auth")
-    suspend fun completeAuth(
-        @Body request: AtlassianCompleteAuthRequestDto,
-    ): AtlassianSetupStatusDto
+    suspend fun completeAuth(request: AtlassianCompleteAuthRequestDto): AtlassianSetupStatusDto
 
-    @PUT("api/atlassian/setup/primary-project")
-    suspend fun setPrimaryProject(
-        @Body request: AtlassianProjectSelectionDto,
-    ): AtlassianSetupStatusDto
+    suspend fun setPrimaryProject(request: AtlassianProjectSelectionDto): AtlassianSetupStatusDto
 
-    @PUT("api/atlassian/setup/main-board")
-    suspend fun setMainBoard(
-        @Body request: AtlassianBoardSelectionDto,
-    ): AtlassianSetupStatusDto
+    suspend fun setMainBoard(request: AtlassianBoardSelectionDto): AtlassianSetupStatusDto
 
-    @PUT("api/atlassian/setup/preferred-user")
-    suspend fun setPreferredUser(
-        @Body request: AtlassianUserSelectionDto,
-    ): AtlassianSetupStatusDto
+    suspend fun setPreferredUser(request: AtlassianUserSelectionDto): AtlassianSetupStatusDto
 
-    /**
-     * UI-only action to verify Atlassian token for the client and, on success, enable Jira usage (authStatus → VALID).
-     */
-    @POST("api/atlassian/setup/test-connection")
-    suspend fun testConnection(
-        @Query clientId: String,
-    ): AtlassianSetupStatusDto
+    suspend fun testConnection(clientId: String): AtlassianSetupStatusDto
 
-    // Lists for UI selection
-    @GET("api/atlassian/setup/projects")
-    suspend fun listProjects(
-        @Query clientId: String,
-    ): List<AtlassianProjectRefDto>
+    suspend fun listProjects(clientId: String): List<AtlassianProjectRefDto>
 
-    @GET("api/atlassian/setup/boards")
     suspend fun listBoards(
-        @Query clientId: String,
-        @Query projectKey: String? = null,
+        clientId: String,
+        projectKey: String? = null,
     ): List<AtlassianBoardRefDto>
 }

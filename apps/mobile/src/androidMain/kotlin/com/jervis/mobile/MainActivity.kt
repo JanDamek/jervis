@@ -16,7 +16,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-            val serverBaseUrl = "https://home.damek-soft.eu:5500/"
+            val serverBaseUrl = "https://jervis.damek-soft.eu/"
             val debugProvider = rememberLifecycleAwareDebugProvider(serverBaseUrl)
 
             JervisApp(

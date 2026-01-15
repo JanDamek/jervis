@@ -1,34 +1,29 @@
 package com.jervis.service
 
 import com.jervis.dto.ClientDto
-import de.jensklingenberg.ktorfit.http.*
+import kotlinx.rpc.annotations.Rpc
 
 /**
  * Client Service API
  */
+@Rpc
 interface IClientService {
 
-    @GET("api/clients")
     suspend fun getAllClients(): List<ClientDto>
 
-    @GET("api/clients/{id}")
-    suspend fun getClientById(@Path("id") id: String): ClientDto?
+    suspend fun getClientById(id: String): ClientDto?
 
-    @POST("api/clients")
-    suspend fun createClient(@Body client: ClientDto): ClientDto
+    suspend fun createClient(client: ClientDto): ClientDto
 
-    @PUT("api/clients/{id}")
     suspend fun updateClient(
-        @Path("id") id: String,
-        @Body client: ClientDto
+        id: String,
+        client: ClientDto
     ): ClientDto
 
-    @DELETE("api/clients/{id}")
-    suspend fun deleteClient(@Path("id") id: String)
+    suspend fun deleteClient(id: String)
 
-    @PATCH("api/clients/{id}/last-selected-project")
     suspend fun updateLastSelectedProject(
-        @Path("id") id: String,
-        @Query projectId: String?
+        id: String,
+        projectId: String?
     ): ClientDto
 }

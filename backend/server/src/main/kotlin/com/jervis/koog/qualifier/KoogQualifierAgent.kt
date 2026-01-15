@@ -109,16 +109,17 @@ Rules:
 - The groups together must cover all input text exactly once (no omissions, no duplicates).
 - Prefer fewer, larger groups.
 - Keep attachments and metadata in the most relevant group (or in a separate Metadata group if shared).
+- Semantic Grouping: Look for natural thematic breaks to ensure related facts stay together in a single chunk.
 - The input is already cleaned from markup/HTML; treat it as plain text.
 
 Main node key:
 - Pick one stable mainNodeKey for the primary document.
-- Prefer stable IDs when present (e.g., jira:TLIT-822, confluence:2056421411, git:commit:<sha>, git:file:<path>@<sha>, url:<url>).
+- Prefer stable IDs when present: format <type>:<id> (e.g., jira:TLIT-822, confluence:2056421411, git:commit:<sha>, user:jandamek, url:<url>).
 - This mainNodeKey will be used to link GraphDB relationships and as the primary document anchor.
 
 What to produce:
 1) basicInfo: 1–2 sentences summarizing the whole input.
-2) mainNodeKey: the primary document key.
+2) mainNodeKey: the primary document key (format <type>:<id>).
 3) groups: list of group texts. Each group starts with a single title line, then contains verbatim portions of the input for that theme.
 4) finalAction: a clear plain-text instruction of what should happen next (may be multi-step).
 
@@ -169,12 +170,14 @@ Context:
 
 Instructions:
 1) Split the provided text into semantic chunks (200–500 tokens each). Do not omit anything; cover the full input text.
-2) For each chunk, extract GraphDB relationships as triplets in the form: from|edge|to
+2) For each chunk, provide a Context Header (e.g., "[Doc: ${nextState.mainNodeKey}, Summary: ${nextState.basicInfo}]") to ensure the chunk is self-contained.
+3) For each chunk, extract GraphDB relationships as triplets in the form: from|edge|to
    - Every relationship must be a valid vertex–edge–vertex triplet.
-   - Use stable keys: prefer IDs/URLs/ticket IDs when present.
+   - Use stable keys: prefer IDs/URLs/ticket IDs when present, always in <type>:<id> format.
    - Ensure the mainNodeKey is connected to important entities (tickets, parent page, space, people, URLs, commit/file keys).
+   - Bidirectional consistency: If A|related_to|B is important, explicitly state B|related_to|A if the edge is not naturally symmetric.
    - Use simple domain edge names, consistent across chunks.
-3) Persist both semantic content and graph relationships so they can be retrieved later for verification.
+4) Persist both semantic content (with context header) and graph relationships so they can be retrieved later for verification.
 
 Text:
 $groupText
@@ -226,7 +229,9 @@ Verify that the content has been correctly indexed into both the knowledge base 
 
 Requirements:
 - Retrieve the indexed data using the provided verifyQuery.
+- Use 'searchKnowledge' for RAG check and 'getRelated'/'traverse' for graph check.
 - Compare the retrieved data against the original input themes (basicInfo and the indexed groups).
+- Ensure relationships are traversable and entities are linked as expected.
 - If anything important is missing, set verified=false.
 - If verified=false, do not attempt to re-index here; leave it for the planner loop to re-run indexing.
 

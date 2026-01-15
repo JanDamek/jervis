@@ -4,17 +4,45 @@ import com.jervis.common.client.IJoernClient
 import com.jervis.common.dto.JoernQueryDto
 import com.jervis.common.dto.JoernResultDto
 import com.jervis.joern.domain.JoernRunner
+import io.ktor.server.application.*
+import io.ktor.server.engine.*
+import io.ktor.server.netty.*
+import io.ktor.server.routing.*
+import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.rpc.krpc.ktor.server.*
+import kotlinx.rpc.krpc.serialization.cbor.cbor
 import mu.KotlinLogging
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
 class JoernController(
     private val runner: JoernRunner,
+    @Value("\${server.port:8080}") private val port: Int,
 ) : IJoernClient {
     private val logger = KotlinLogging.logger {}
+
+    @PostConstruct
+    fun startRpcServer() {
+        Thread {
+            embeddedServer(Netty, port = port, host = "0.0.0.0") {
+                routing {
+                    rpc("/rpc") {
+                        rpcConfig {
+                            serialization {
+                                cbor()
+                            }
+                        }
+                        registerService<IJoernClient> { this@JoernController }
+                    }
+                }
+            }.start(wait = true)
+        }.start()
+        logger.info { "Joern RPC server started on port $port at /rpc" }
+    }
 
     override suspend fun run(
         @RequestBody request: JoernQueryDto,

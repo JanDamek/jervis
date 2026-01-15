@@ -52,7 +52,7 @@ fun main() =
     application {
         val serverBaseUrl =
             System.getProperty("jervis.server.url")
-                ?: "http://localhost:5500/" // TODO: Change for prod HTTPS (2026-01-05)
+                ?: "https://jervis.damek-soft.eu/"
 
         // Window state
         var showMainWindow by remember { mutableStateOf(true) }

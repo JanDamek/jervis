@@ -5,7 +5,11 @@ import ai.koog.a2a.server.A2AServer
 import ai.koog.a2a.transport.server.jsonrpc.http.HttpJSONRPCServerTransport
 import com.jervis.coding.configuration.CodingEngineProperties
 import com.jervis.coding.service.CodingEngineService
+import io.ktor.server.application.call
 import io.ktor.server.netty.Netty
+import io.ktor.server.response.respond
+import io.ktor.server.routing.get
+import io.ktor.server.routing.routing
 import kotlinx.coroutines.runBlocking
 import mu.KotlinLogging
 

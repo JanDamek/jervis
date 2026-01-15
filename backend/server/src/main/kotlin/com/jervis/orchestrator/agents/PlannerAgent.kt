@@ -106,8 +106,10 @@ class PlannerAgent(
                                - "openhands": Complex debugging, build/test, unknown files
                                - "internal": RAG, GraphDB, JIRA, Confluence, Email, Slack
                                - "research": Gather more evidence before proceeding
-                            4. If context shows missingInfo, create "research" step first
-                            5. Always include "verify" step after "coding" steps
+                            4. RESEARCH FIRST: If the user asks about existing logic, status, or previous decisions, ALWAYS start with a "research" step.
+                            5. CROSS-REFERENCE: If a task involves multiple sources (e.g. "Fix bug mentioned in Jira-123 using docs from Confluence"), plan steps to gather evidence from both before coding.
+                            6. If context shows missingInfo, create "research" step first
+                            7. Always include "verify" step after "coding" steps
 
                             Action types:
                             - coding: Code changes

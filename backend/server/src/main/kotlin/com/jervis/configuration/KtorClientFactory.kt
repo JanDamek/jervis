@@ -20,7 +20,9 @@ import io.ktor.client.request.header
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
-import kotlinx.serialization.json.Json
+import io.ktor.serialization.kotlinx.cbor.cbor
+import kotlinx.rpc.krpc.ktor.client.installKrpc
+import kotlinx.rpc.krpc.serialization.cbor.cbor as rpcCbor
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
 
@@ -79,6 +81,7 @@ class KtorClientFactory(
             put("joern", createHttpClient(endpoints.joern.baseUrl))
             put("whisper", createHttpClient(endpoints.whisper.baseUrl))
             put("atlassian", createHttpClient(endpoints.atlassian.baseUrl))
+            put("junie", createHttpClient(endpoints.junie.baseUrl))
         }
     }
 
@@ -105,13 +108,21 @@ class KtorClientFactory(
             // JSON serialization
             install(ContentNegotiation) {
                 json(
-                    Json {
+                    kotlinx.serialization.json.Json {
                         ignoreUnknownKeys = true
                         coerceInputValues = true
                         isLenient = true
                         prettyPrint = false
+                        explicitNulls = false
                     },
                 )
+                cbor()
+            }
+
+            installKrpc {
+                serialization {
+                    rpcCbor()
+                }
             }
 
             // Timeouts
@@ -181,13 +192,21 @@ class KtorClientFactory(
             // JSON serialization
             install(ContentNegotiation) {
                 json(
-                    Json {
+                    kotlinx.serialization.json.Json {
                         ignoreUnknownKeys = true
                         coerceInputValues = true
                         isLenient = true
                         prettyPrint = false
+                        explicitNulls = false
                     },
                 )
+                cbor()
+            }
+
+            installKrpc {
+                serialization {
+                    rpcCbor()
+                }
             }
 
             // Timeouts

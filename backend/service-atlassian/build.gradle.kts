@@ -3,11 +3,9 @@ import sun.jvmstat.monitor.MonitoredVmUtil.mainClass
 import java.net.URL
 
 plugins {
-    alias(libs.plugins.spring.boot)
-    alias(libs.plugins.spring.dependency.management)
     alias(libs.plugins.kotlin.jvm)
-    alias(libs.plugins.kotlin.spring)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.kotlinx.rpc)
     id("org.gradle.application")
     id("org.openapi.generator") version "7.17.0"
 }
@@ -22,35 +20,43 @@ configurations.all {
     resolutionStrategy.eachDependency {
         if (requested.group == "org.jetbrains.kotlinx" && requested.name.startsWith("kotlinx-serialization")) {
             useVersion(libs.versions.serialization.get())
-            because("Spring Boot BOM has outdated version; align with Ktor requirements")
+            because("Align with Ktor requirements")
         }
     }
 }
 
 dependencies {
-    // Enforce kotlinx BOM to override Spring Boot BOM constraints
     implementation(enforcedPlatform("org.jetbrains.kotlinx:kotlinx-serialization-bom:${libs.versions.serialization.get()}"))
-    implementation(platform("org.springframework.boot:spring-boot-dependencies:${libs.versions.spring.boot.get()}"))
 
     implementation(project(":backend:common-services"))
 
-    implementation(libs.spring.boot.starter.webflux)
-    // Ensure availability of Spring 6 HTTP interfaces annotations like @HttpExchange
-    implementation("org.springframework:spring-web")
-    implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation(libs.kotlin.logging)
+    implementation(libs.logback.classic)
 
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.reactor)
     implementation(libs.kotlin.stdlib)
     implementation(libs.kotlin.reflect)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotlinx.serialization.cbor)
+
+    // RPC
+    implementation(libs.kotlinx.rpc.krpc.server)
+    implementation(libs.kotlinx.rpc.krpc.ktor.server)
+    implementation(libs.kotlinx.rpc.krpc.serialization.cbor)
+
+    // Ktor Server for RPC
+    implementation(libs.ktor.server.core)
+    implementation(libs.ktor.server.netty)
+    implementation(libs.ktor.server.content.negotiation)
+    implementation(libs.ktor.serialization.kotlinx.cbor)
 
     // Ktor HTTP client for calling Atlassian Cloud and for generated clients
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.cio)
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
+    implementation(libs.ktor.serialization.kotlinx.cbor)
     implementation(libs.ktor.client.logging)
 
     // Annotations commonly used by generated sources
@@ -68,7 +74,6 @@ kotlin {
     jvmToolchain(21)
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
-        freeCompilerArgs.add("-Xjsr305=strict")
     }
 }
 

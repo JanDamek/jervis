@@ -1,30 +1,24 @@
 package com.jervis.service
 
 import com.jervis.dto.ProjectDto
-import de.jensklingenberg.ktorfit.http.*
+import kotlinx.rpc.annotations.Rpc
 
 /**
  * Project Service API
- * Ktorfit will auto-generate client implementation for Desktop/Mobile
- * Server implements this interface manually in Controller
+ * kotlinx-rpc will auto-generate client implementation for Desktop/Mobile
  */
+@Rpc
 interface IProjectService {
-
-    @GET("api/projects")
     suspend fun getAllProjects(): List<ProjectDto>
 
-    @POST("api/projects")
-    suspend fun saveProject(@Body project: ProjectDto): ProjectDto
+    suspend fun saveProject(project: ProjectDto): ProjectDto
 
-    @PUT("api/projects/{id}")
     suspend fun updateProject(
-        @Path id: String,
-        @Body project: ProjectDto,
+        id: String,
+        project: ProjectDto,
     ): ProjectDto
 
-    @DELETE("api/projects")
-    suspend fun deleteProject(@Body project: ProjectDto)
+    suspend fun deleteProject(project: ProjectDto)
 
-    @GET("api/projects/by-name")
-    suspend fun getProjectByName(@Query name: String?): ProjectDto
+    suspend fun getProjectByName(name: String?): ProjectDto
 }

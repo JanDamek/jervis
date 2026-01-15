@@ -1,7 +1,9 @@
-# Ignore build outputs
-**/build/
+# Ignore build outputs (except backend service JARs needed for Docker)
+# **/build/
 **/target/
 **/.gradle/
+apps/**/build/
+shared/**/build/
 
 # Ignore IDE files
 **/.idea/

@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.kotlinx.rpc)
     if (System.getenv("DOCKER_BUILD") != "true") {
         alias(libs.plugins.android.library)
     }
@@ -25,7 +26,7 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
-            // API interfaces (with Ktorfit)
+            // API interfaces
             api(project(":shared:common-api"))
 
             // Kotlin coroutines
@@ -35,14 +36,21 @@ kotlin {
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.kotlinx.json)
+            implementation(libs.ktor.serialization.kotlinx.cbor)
             implementation(libs.ktor.client.logging)
+
+            // Serialization
+            implementation(libs.kotlinx.serialization.json)
+            implementation(libs.kotlinx.serialization.cbor)
+
+            // kotlinx-rpc
+            implementation(libs.kotlinx.rpc.krpc.client)
+            implementation(libs.kotlinx.rpc.krpc.ktor.client)
+            implementation(libs.kotlinx.rpc.krpc.serialization.cbor)
 
             // Koog A2A
             api(libs.koog.a2a.client)
             api(libs.koog.a2a.transport.client.jsonrpc.http)
-
-            // Ktorfit runtime
-            implementation("de.jensklingenberg.ktorfit:ktorfit-lib:2.6.4")
         }
 
         jvmMain.dependencies {

@@ -33,12 +33,12 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
+import io.ktor.util.encodeBase64
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
-import org.springframework.stereotype.Service
 
 // ============= Internal DTOs for Jira API responses =============
 
@@ -279,8 +279,7 @@ private data class ConfluencePageDetailDto(
     val children: ConfluenceChildrenDto? = null,
 )
 
-@Service
-class AtlassianApiClient {
+class AtlassianApiClient(private val sharedHttpClient: HttpClient? = null) {
     private val logger = KotlinLogging.logger {}
 
     // Default rate limit for Atlassian: 10 req/sec, 100 req/min
@@ -294,7 +293,7 @@ class AtlassianApiClient {
         }
 
     private fun httpClient(timeoutMs: Long?): HttpClient =
-        HttpClient(CIO) {
+        sharedHttpClient ?: HttpClient(CIO) {
             install(ContentNegotiation) { json(json) }
             install(Logging) {
                 logger =
@@ -319,9 +318,7 @@ class AtlassianApiClient {
 
             is com.jervis.common.dto.atlassian.AtlassianAuth.Basic -> {
                 val basic =
-                    java.util.Base64
-                        .getEncoder()
-                        .encodeToString("${auth.username}:${auth.password}".toByteArray())
+                    io.ktor.util.encodeBase64("${auth.username}:${auth.password}")
                 headers.append(HttpHeaders.Authorization, "Basic $basic")
             }
 
@@ -455,7 +452,7 @@ class AtlassianApiClient {
                             parameters.append("startAt", request.startAt.toString())
                             parameters.append("maxResults", request.maxResults.toString())
                             // Request minimal fields for polling (just for change detection)
-                            parameters.append("fields", "summary,updated,created,status")
+                            parameters.append("fields", "summary,updated,created,status,project,issuetype,priority,assignee,reporter,labels,components,fixversions")
                         }
                     }
                 } else {
@@ -477,7 +474,7 @@ class AtlassianApiClient {
                                 jql = request.jql,
                                 startAt = request.startAt,
                                 maxResults = request.maxResults,
-                                fields = listOf("summary", "updated", "created", "status"), // Minimal fields for polling
+                                fields = listOf("summary", "updated", "created", "status", "project", "issuetype", "priority", "assignee", "reporter", "labels", "components", "fixversions"), // Minimal fields for polling
                             ),
                         )
                     }
@@ -492,7 +489,12 @@ class AtlassianApiClient {
 
         val dto =
             runCatching {
-                response.body<String>().let { json.decodeFromString(JiraSearchResultDto.serializer(), it) }
+                response.body<String>().let {
+                    logger.debug { "Jira search response body: $it" }
+                    json.decodeFromString(JiraSearchResultDto.serializer(), it)
+                }
+            }.onFailure {
+                logger.error(it) { "Failed to deserialize Jira search response" }
             }.getOrNull()
 
         val issues =
@@ -516,14 +518,68 @@ class AtlassianApiClient {
                                         com.jervis.common.dto.atlassian.JiraStatus(name = dto.name, id = dto.id)
                                     }
                                 },
-                            priority = null,
-                            assignee = null,
-                            reporter = null,
-                            issueType = null,
-                            project = null,
-                            labels = null,
-                            components = null,
-                            fixVersions = null,
+                            priority =
+                                fields["priority"]?.let {
+                                    runCatching {
+                                        json.decodeFromJsonElement(JiraPriorityDto.serializer(), it)
+                                    }.getOrNull()?.let { dto ->
+                                        com.jervis.common.dto.atlassian.JiraPriority(name = dto.name, id = dto.id)
+                                    }
+                                },
+                            assignee =
+                                fields["assignee"]?.let {
+                                    runCatching {
+                                        json.decodeFromJsonElement(JiraUserDto.serializer(), it)
+                                    }.getOrNull()?.let { dto ->
+                                        com.jervis.common.dto.atlassian.JiraUser(accountId = dto.accountId, displayName = dto.displayName, emailAddress = dto.emailAddress)
+                                    }
+                                },
+                            reporter =
+                                fields["reporter"]?.let {
+                                    runCatching {
+                                        json.decodeFromJsonElement(JiraUserDto.serializer(), it)
+                                    }.getOrNull()?.let { dto ->
+                                        com.jervis.common.dto.atlassian.JiraUser(accountId = dto.accountId, displayName = dto.displayName, emailAddress = dto.emailAddress)
+                                    }
+                                },
+                            issueType =
+                                fields["issuetype"]?.let {
+                                    runCatching {
+                                        json.decodeFromJsonElement(JiraIssueTypeDto.serializer(), it)
+                                    }.getOrNull()?.let { dto ->
+                                        com.jervis.common.dto.atlassian.JiraIssueType(id = dto.id, name = dto.name, description = dto.description, subtask = dto.subtask)
+                                    }
+                                },
+                            project =
+                                fields["project"]?.let {
+                                    runCatching {
+                                        json.decodeFromJsonElement(JiraProjectDto.serializer(), it)
+                                    }.getOrNull()?.let { dto ->
+                                        com.jervis.common.dto.atlassian.JiraProject(id = dto.id, key = dto.key, name = dto.name)
+                                    }
+                                },
+                            labels =
+                                fields["labels"]?.let {
+                                    runCatching {
+                                        json.decodeFromJsonElement(kotlinx.serialization.builtins.ListSerializer(String.serializer()), it)
+                                    }.getOrNull()
+                                },
+                            components =
+                                fields["components"]?.let {
+                                    runCatching {
+                                        json.decodeFromJsonElement(kotlinx.serialization.builtins.ListSerializer(JiraComponentDto.serializer()), it)
+                                    }.getOrNull()?.map { dto ->
+                                        com.jervis.common.dto.atlassian.JiraComponent(id = dto.id, name = dto.name, description = dto.description)
+                                    }
+                                },
+                            fixVersions =
+                                fields["fixVersions"]?.let {
+                                    runCatching {
+                                        json.decodeFromJsonElement(kotlinx.serialization.builtins.ListSerializer(JiraVersionDto.serializer()), it)
+                                    }.getOrNull()?.map { dto ->
+                                        com.jervis.common.dto.atlassian.JiraVersion(id = dto.id, name = dto.name, released = dto.released, releaseDate = dto.releaseDate)
+                                    }
+                                },
                             parent = null,
                             subtasks = null,
                         ),
@@ -710,9 +766,10 @@ class AtlassianApiClient {
             when {
                 request.cql.isNullOrBlank().not() -> request.cql
                 request.lastModifiedSince != null -> {
-                    // Format Instant to Confluence CQL date format: "yyyy-MM-dd HH:mm"
+                    // Format ISO string to Confluence CQL date format: "yyyy-MM-dd HH:mm"
+                    val instant = java.time.Instant.parse(request.lastModifiedSince)
                     val fmt = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(java.time.ZoneOffset.UTC)
-                    val formattedDate = fmt.format(request.lastModifiedSince)
+                    val formattedDate = fmt.format(instant)
                     val datePart = "type=page AND lastModified >= \"$formattedDate\""
                     if (request.spaceKey.isNullOrBlank().not()) "$datePart AND space = \"${request.spaceKey}\"" else datePart
                 }
@@ -755,8 +812,8 @@ class AtlassianApiClient {
                     title = page.title,
                     type = page.type,
                     status = null,
-                    spaceKey = null,
-                    spaceName = null,
+                    spaceKey = page.space?.key,
+                    spaceName = page.space?.name,
                     version =
                         page.version?.let {
                             com.jervis.common.dto.atlassian.ConfluenceVersion(

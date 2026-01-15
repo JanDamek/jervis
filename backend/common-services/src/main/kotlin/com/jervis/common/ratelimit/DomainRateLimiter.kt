@@ -3,6 +3,7 @@ package com.jervis.common.ratelimit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
@@ -28,7 +29,7 @@ class DomainRateLimiter(
     private val mutex = Mutex()
 
     companion object {
-        private const val ttlSeconds = 300L // 5 minutes
+        private val MAX_WAIT_TIME = Duration.ofMinutes(5)
     }
 
     /**
@@ -65,7 +66,7 @@ class DomainRateLimiter(
             domainStates.entries
                 .filter { (_, state) ->
                     val elapsed = now.epochSecond - state.lastAccessTime.epochSecond
-                    elapsed > ttlSeconds
+                    elapsed > MAX_WAIT_TIME.toSeconds()
                 }.map { it.key }
 
         if (expiredDomains.isNotEmpty()) {
@@ -74,19 +75,6 @@ class DomainRateLimiter(
             }
         }
     }
-
-    /**
-     * Get current stats for monitoring/debugging.
-     */
-    fun getStats(): Map<String, DomainStats> =
-        domainStates.mapValues { (_, state) ->
-            DomainStats(
-                domain = state.domain,
-                requestsInLastSecond = state.requestsInLastSecond.size,
-                requestsInLastMinute = state.requestsInLastMinute.size,
-                lastAccessTime = state.lastAccessTime,
-            )
-        }
 
     data class DomainStats(
         val domain: String,

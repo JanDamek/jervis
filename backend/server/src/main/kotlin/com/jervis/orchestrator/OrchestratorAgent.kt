@@ -129,6 +129,7 @@ class OrchestratorAgent(
         private val logger = KotlinLogging.logger {}
         private const val A2A_AGENT_AIDER = "aider"
         private const val A2A_AGENT_OPENHANDS = "openhands"
+        private const val A2A_AGENT_JUNIE = "junie"
         private const val A2A_PATH = "/a2a"
     }
 
@@ -151,12 +152,18 @@ class OrchestratorAgent(
             endpointProperties.coding.baseUrl.ifBlank {
                 error("Missing endpoints.coding.baseUrl (e.g. http://localhost:8082)")
             }
+        val junieBaseUrl =
+            endpointProperties.junie.baseUrl.ifBlank {
+                error("Missing endpoints.junie.baseUrl (e.g. http://localhost:8083)")
+            }
 
         val aiderA2aUrl = toA2aUrl(aiderBaseUrl)
         val openHandsA2aUrl = toA2aUrl(openHandsBaseUrl)
+        val junieA2aUrl = toA2aUrl(junieBaseUrl)
 
         val aiderClient = createA2AClient(aiderA2aUrl, ktorClientFactory.getHttpClient("aider"))
         val openHandsClient = createA2AClient(openHandsA2aUrl, ktorClientFactory.getHttpClient("coding"))
+        val junieClient = createA2AClient(junieA2aUrl, ktorClientFactory.getHttpClient("junie"))
 
         runCatching { aiderClient.connect() }
             .getOrElse { throw IllegalStateException("Failed to connect A2A client for Aider at $aiderA2aUrl", it) }
@@ -164,6 +171,13 @@ class OrchestratorAgent(
             .getOrElse {
                 throw IllegalStateException(
                     "Failed to connect A2A client for OpenHands at $openHandsA2aUrl",
+                    it,
+                )
+            }
+        runCatching { junieClient.connect() }
+            .getOrElse {
+                throw IllegalStateException(
+                    "Failed to connect A2A client for Junie at $junieA2aUrl",
                     it,
                 )
             }
@@ -482,6 +496,7 @@ class OrchestratorAgent(
                         mapOf(
                             A2A_AGENT_AIDER to aiderClient,
                             A2A_AGENT_OPENHANDS to openHandsClient,
+                            A2A_AGENT_JUNIE to junieClient,
                         )
                 }
             },
@@ -536,7 +551,7 @@ class OrchestratorAgent(
     private data class OrchestratorDecision(
         @property:LLMDescription("Decision type: A2A means delegate to coding agent; FINAL means return final answer to user")
         val type: DecisionType,
-        @property:LLMDescription("Target A2A agent id when type=A2A. Allowed values: 'aider' or 'openhands'.")
+        @property:LLMDescription("Target A2A agent id when type=A2A. Allowed values: 'aider', 'openhands', or 'junie'.")
         val agent: String? = null,
         @property:LLMDescription("Instruction payload to send to the A2A agent when type=A2A. Must be a concrete, actionable instruction.")
         val payload: String? = null,
@@ -563,7 +578,7 @@ class OrchestratorAgent(
         Decide the NEXT orchestrator action based on the conversation so far.
 
         - If you need to delegate coding or verification to an external coding agent, choose type=A2A and fill:
-          * agent: 'aider' for small, localized edits OR 'openhands' for complex/refactor/debug/test
+          * agent: 'aider' for small localized edits, 'openhands' for complex/refactor/debug, OR 'junie' for time-critical/complex tasks (expensive but fast).
           * payload: the exact instruction to execute (for verify use: 'VERIFY\n<commands>')
 
         - If you are ready to respond to the user, choose type=FINAL and fill finalAnswer.

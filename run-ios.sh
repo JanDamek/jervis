@@ -68,7 +68,27 @@ else
       clean build
 
     echo "Installing and launching app on physical device..."
-    echo "Note: Make sure your device is connected and trusted"
-    # The build process will automatically install on the connected device
-    # You may need to manually launch the app on the device after installation
+    # Find device ID for the given name
+    DEVICE_ID=$(xcrun devicectl list devices --verbose | grep -B 20 "$DEVICE_NAME" | grep "udid:" | head -n 1 | sed 's/.*("//' | sed 's/")//')
+    
+    if [ -z "$DEVICE_ID" ]; then
+        DEVICE_ID=$(xcrun devicectl list devices | grep "$DEVICE_NAME" | awk '{print $3}')
+    fi
+    
+    if [ -z "$DEVICE_ID" ] || [ ${#DEVICE_ID} -lt 20 ]; then
+        # Fallback for newer Xcode/devicectl output formats
+        DEVICE_ID=$(xcrun devicectl list devices | grep -B 1 "$DEVICE_NAME" | grep "Identifier" | awk '{print $NF}' | head -n 1)
+    fi
+
+    if [ -n "$DEVICE_ID" ]; then
+        echo "Found Device ID: $DEVICE_ID"
+        echo "Installing app..."
+        xcrun devicectl device install app --device "$DEVICE_ID" "build/ios/Build/Products/Debug-iphoneos/iosApp.app"
+        
+        echo "Launching app..."
+        xcrun devicectl device process launch --device "$DEVICE_ID" com.jervis.iosApp
+    else
+        echo "Error: Could not find device ID for '$DEVICE_NAME'. Please ensure it's connected and paired."
+        echo "You can check connected devices with: xcrun devicectl list devices"
+    fi
 fi

@@ -99,6 +99,11 @@ class SolutionArchitectAgent(
                                 * You don't know all the files involved (requires exploration).
                                 * Requires running complex builds/tests and debugging from output.
                                 * Involves multiple modules or cross-cutting concerns.
+                            - Prefer 'junie' when:
+                                * The task is extremely time-critical (expensive but very fast).
+                                * High-priority status investigation where speed is key.
+                                * Coding tasks where 'openhands' or 'aider' failed after 2 iterations.
+                                * Complex coding where time is a primary factor.
                             
                             OUTPUT:
                             - You MUST output a structured A2ADelegationSpec.

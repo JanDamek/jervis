@@ -2,9 +2,15 @@ package com.jervis.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.jervis.di.NetworkModule
 import com.jervis.di.createJervisServices
 import com.jervis.repository.JervisRepository
+import kotlinx.rpc.krpc.ktor.client.KtorRpcClient
 
 /**
  * Main Jervis Application Composable
@@ -23,22 +29,39 @@ fun JervisApp(
     debugEventsProvider: DebugEventsProvider? = null,
 ) {
     // Initialize services
-    val services = remember { createJervisServices(serverBaseUrl) }
+    var services by remember { mutableStateOf<NetworkModule.Services?>(null) }
 
-    // Create repository
+    LaunchedEffect(serverBaseUrl) {
+        try {
+            val httpClient = NetworkModule.createHttpClient()
+            val rpcClient = NetworkModule.createRpcClient(serverBaseUrl, httpClient)
+            services = NetworkModule.createServices(rpcClient = rpcClient)
+        } catch (e: Exception) {
+            println("Error connecting to server: ${e.message}")
+            // Fallback or show error
+        }
+    }
+
+    // Create repository only when services are ready
+    val currentServices = services
+    if (currentServices == null) {
+        // Show loading or splash screen while connecting
+        return
+    }
+
     val repository =
-        remember {
+        remember(currentServices) {
             JervisRepository(
-                clientService = services.clientService,
-                projectService = services.projectService,
-                userTaskService = services.userTaskService,
-                ragSearchService = services.ragSearchService,
-                taskSchedulingService = services.taskSchedulingService,
-                agentOrchestratorService = services.agentOrchestratorService,
-                errorLogService = services.errorLogService,
-                gitConfigurationService = services.gitConfigurationService,
-                pendingTaskService = services.pendingTaskService,
-                connectionService = services.connectionService,
+                clientService = currentServices.clientService,
+                projectService = currentServices.projectService,
+                userTaskService = currentServices.userTaskService,
+                ragSearchService = currentServices.ragSearchService,
+                taskSchedulingService = currentServices.taskSchedulingService,
+                agentOrchestratorService = currentServices.agentOrchestratorService,
+                errorLogService = currentServices.errorLogService,
+                gitConfigurationService = currentServices.gitConfigurationService,
+                pendingTaskService = currentServices.pendingTaskService,
+                connectionService = currentServices.connectionService,
             )
         }
 

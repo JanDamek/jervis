@@ -71,6 +71,12 @@ class TikaTextExtractionService(
                     "Tika extraction successful: ${content.length} chars → ${plainText.length} chars " +
                         "(${((1.0 - plainText.length.toDouble() / content.length) * 100).toInt()}% reduction)"
                 }
+
+                if (plainText.isBlank() && content.isNotBlank()) {
+                    logger.warn { "Tika returned empty content (100% reduction) for non-empty input for file $fileName. Returning original content to prevent data loss." }
+                    return content
+                }
+
                 plainText
             } else {
                 logger.warn { "Tika extraction failed: ${result.errorMessage}, returning original content" }

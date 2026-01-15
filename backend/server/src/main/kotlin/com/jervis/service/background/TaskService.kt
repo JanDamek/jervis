@@ -208,6 +208,12 @@ class TaskService(
                     content = content,
                     fileName = fileName,
                 )
+
+            if (cleaned.isBlank() && content.isNotBlank()) {
+                logger.warn { "Tika returned empty content for $correlationId (type=$taskType). Using original content to prevent data loss." }
+                return content
+            }
+
             logger.debug { "Cleaned content for $correlationId, new length: ${cleaned.length}" }
             cleaned
         } catch (e: Exception) {

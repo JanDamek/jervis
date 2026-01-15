@@ -73,9 +73,9 @@ class ConnectionManager(
 
                 // Try to create services
                 val httpClient = NetworkModule.createHttpClient()
-                val ktorfit = NetworkModule.createKtorfit(serverBaseUrl, httpClient)
                 val a2aClient = NetworkModule.createA2AClient(serverBaseUrl, httpClient)
-                services = NetworkModule.createServices(ktorfit, a2aClient)
+                val rpcClient = NetworkModule.createRpcClient(serverBaseUrl, httpClient)
+                services = NetworkModule.createServices(a2aClient, rpcClient)
 
                 // Create repository
                 repository =

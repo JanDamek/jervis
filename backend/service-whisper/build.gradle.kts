@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.spring)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.kotlinx.rpc)
     id("org.gradle.application")
 }
 
@@ -39,6 +40,18 @@ dependencies {
     implementation(libs.kotlin.stdlib)
     implementation(libs.kotlin.reflect)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotlinx.serialization.cbor)
+
+    // RPC
+    implementation(libs.kotlinx.rpc.krpc.server)
+    implementation(libs.kotlinx.rpc.krpc.ktor.server)
+    implementation(libs.kotlinx.rpc.krpc.serialization.cbor)
+
+    // Ktor Server for RPC
+    implementation(libs.ktor.server.core)
+    implementation(libs.ktor.server.netty)
+    implementation(libs.ktor.server.content.negotiation)
+    implementation(libs.ktor.serialization.kotlinx.cbor)
 
     testImplementation(libs.junit.jupiter)
 }

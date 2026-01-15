@@ -2,71 +2,82 @@ package com.jervis.atlassian.api
 
 import com.jervis.atlassian.service.AtlassianApiClient
 import com.jervis.common.client.IAtlassianClient
-import com.jervis.common.dto.atlassian.AtlassianMyselfRequest
-import com.jervis.common.dto.atlassian.AtlassianUserDto
-import com.jervis.common.dto.atlassian.ConfluenceAttachmentDownloadRequest
-import com.jervis.common.dto.atlassian.ConfluencePageRequest
-import com.jervis.common.dto.atlassian.ConfluencePageResponse
-import com.jervis.common.dto.atlassian.ConfluenceSearchRequest
-import com.jervis.common.dto.atlassian.ConfluenceSearchResponse
-import com.jervis.common.dto.atlassian.JiraAttachmentDownloadRequest
-import com.jervis.common.dto.atlassian.JiraIssueRequest
-import com.jervis.common.dto.atlassian.JiraIssueResponse
-import com.jervis.common.dto.atlassian.JiraSearchRequest
-import com.jervis.common.dto.atlassian.JiraSearchResponse
+import com.jervis.common.dto.atlassian.*
+import io.ktor.server.application.*
+import io.ktor.server.engine.*
+import io.ktor.server.netty.*
+import io.ktor.server.routing.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.springframework.web.bind.annotation.RequestBody
-import org.springframework.web.bind.annotation.RestController
+import kotlinx.rpc.krpc.ktor.server.*
+import kotlinx.rpc.krpc.serialization.cbor.cbor
+import mu.KotlinLogging
 
-@RestController
 class AtlassianController(
     private val atlassianApiClient: AtlassianApiClient,
+    private val port: Int = 8080,
 ) : IAtlassianClient {
+    private val logger = KotlinLogging.logger {}
+
+    fun startRpcServer() {
+        embeddedServer(Netty, port = port, host = "0.0.0.0") {
+            routing {
+                rpc("/rpc") {
+                    rpcConfig {
+                        serialization {
+                            cbor()
+                        }
+                    }
+                    registerService<IAtlassianClient> { this@AtlassianController }
+                }
+            }
+        }.start(wait = true)
+    }
+
     override suspend fun getMyself(
-        @RequestBody request: AtlassianMyselfRequest,
+        request: AtlassianMyselfRequest,
     ): AtlassianUserDto =
         withContext(Dispatchers.IO) {
             atlassianApiClient.getMyself(request)
         }
 
     override suspend fun searchJiraIssues(
-        @RequestBody request: JiraSearchRequest,
+        request: JiraSearchRequest,
     ): JiraSearchResponse =
         withContext(Dispatchers.IO) {
             atlassianApiClient.searchJiraIssues(request)
         }
 
     override suspend fun getJiraIssue(
-        @RequestBody request: JiraIssueRequest,
+        request: JiraIssueRequest,
     ): JiraIssueResponse =
         withContext(Dispatchers.IO) {
             atlassianApiClient.getJiraIssue(request)
         }
 
     override suspend fun searchConfluencePages(
-        @RequestBody request: ConfluenceSearchRequest,
+        request: ConfluenceSearchRequest,
     ): ConfluenceSearchResponse =
         withContext(Dispatchers.IO) {
             atlassianApiClient.searchConfluencePages(request)
         }
 
     override suspend fun getConfluencePage(
-        @RequestBody request: ConfluencePageRequest,
+        request: ConfluencePageRequest,
     ): ConfluencePageResponse =
         withContext(Dispatchers.IO) {
             atlassianApiClient.getConfluencePage(request)
         }
 
     override suspend fun downloadJiraAttachment(
-        @RequestBody request: JiraAttachmentDownloadRequest,
+        request: JiraAttachmentDownloadRequest,
     ): ByteArray? =
         withContext(Dispatchers.IO) {
             atlassianApiClient.downloadJiraAttachment(request)
         }
 
     override suspend fun downloadConfluenceAttachment(
-        @RequestBody request: ConfluenceAttachmentDownloadRequest,
+        request: ConfluenceAttachmentDownloadRequest,
     ): ByteArray? =
         withContext(Dispatchers.IO) {
             atlassianApiClient.downloadConfluenceAttachment(request)

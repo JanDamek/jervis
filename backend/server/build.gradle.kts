@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.spring)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.kotlinx.rpc)
 }
 
 // Set default main class to server application (not CLI)
@@ -38,8 +39,9 @@ dependencies {
 
     implementation(project(":shared:common-api"))
     implementation(project(":backend:common-services"))
+    // Spring Boot (bez webflux - používáme Ktor)
     implementation(libs.spring.boot.starter)
-    implementation("org.springframework.boot:spring-boot-starter-actuator")
+    // implementation("org.springframework.boot:spring-boot-starter-actuator") // Odstraněno
     annotationProcessor(libs.spring.boot.configuration.processor)
 
     // Kotlin
@@ -49,13 +51,27 @@ dependencies {
     implementation(libs.kotlin.reflect)
 
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotlinx.serialization.cbor)
     implementation(libs.kotlinx.datetime)
+
+    // kotlinx-rpc (server + client)
+    implementation(libs.kotlinx.rpc.krpc.server)
+    implementation(libs.kotlinx.rpc.krpc.ktor.server)
+    implementation(libs.kotlinx.rpc.krpc.client)
+    implementation(libs.kotlinx.rpc.krpc.ktor.client)
+    implementation(libs.kotlinx.rpc.krpc.serialization.cbor)
+
+    // Ktor Server for RPC
+    implementation(libs.ktor.server.core)
+    implementation(libs.ktor.server.netty)
+    implementation(libs.ktor.server.content.negotiation)
 
     // Ktor HTTP client for integrations
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.cio)
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
+    implementation(libs.ktor.serialization.kotlinx.cbor)
 
     // Logging
     implementation(libs.kotlin.logging)
@@ -118,6 +134,11 @@ dependencies {
     implementation(libs.koog.agents)
     implementation(libs.koog.agents.features.a2a.client)
     implementation(libs.koog.a2a.transport.client.jsonrpc.http)
+
+    testImplementation(libs.jupiter.junit.jupiter)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 kotlin {
