@@ -7,12 +7,18 @@ import com.jervis.joern.domain.JoernRunner
 import io.ktor.server.application.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
+import io.ktor.server.plugins.contentnegotiation.*
+import io.ktor.serialization.kotlinx.json.*
+import io.ktor.server.response.*
+import io.ktor.server.request.*
 import io.ktor.server.routing.*
+import io.ktor.server.websocket.*
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.rpc.krpc.ktor.server.*
 import kotlinx.rpc.krpc.serialization.cbor.cbor
+import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.web.bind.annotation.RequestBody
@@ -29,7 +35,31 @@ class JoernController(
     fun startRpcServer() {
         Thread {
             embeddedServer(Netty, port = port, host = "0.0.0.0") {
+                install(WebSockets)
+                install(ContentNegotiation) {
+                    json(Json {
+                        ignoreUnknownKeys = true
+                        isLenient = true
+                        explicitNulls = false
+                    })
+                }
                 routing {
+                    get("/health") {
+                        call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
+                    }
+                    get("/actuator/health") {
+                        call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
+                    }
+
+                    post("/api/joern/run") {
+                        val req = call.receive<JoernQueryDto>()
+                        call.respond(run(req))
+                    }
+
+                    get("/") {
+                        call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
+                    }
+
                     rpc("/rpc") {
                         rpcConfig {
                             serialization {

@@ -18,6 +18,7 @@ import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.request.accept
 import io.ktor.client.request.header
 import io.ktor.http.ContentType
+import io.ktor.http.URLProtocol
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.serialization.kotlinx.cbor.cbor
@@ -25,6 +26,7 @@ import kotlinx.rpc.krpc.ktor.client.installKrpc
 import kotlinx.rpc.krpc.serialization.cbor.cbor as rpcCbor
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
+import java.net.URI
 
 /**
  * Factory for creating Ktor HttpClients for LLM provider communication and other HTTP services.
@@ -97,9 +99,15 @@ class KtorClientFactory(
 
     private fun createHttpClient(baseUrl: String): HttpClient =
         HttpClient(CIO) {
+            val uri = URI(baseUrl)
             // Base URL
             defaultRequest {
-                url(baseUrl.trimEnd('/'))
+                url {
+                    protocol = if (uri.scheme == "https") URLProtocol.HTTPS else URLProtocol.HTTP
+                    host = uri.host
+                    if (uri.port != -1) port = uri.port
+                    path(uri.path.trimEnd('/') + "/")
+                }
                 contentType(ContentType.Application.Json)
                 accept(ContentType.Application.Json)
                 header(SecurityConstants.CLIENT_HEADER, SecurityConstants.CLIENT_TOKEN)
@@ -177,9 +185,15 @@ class KtorClientFactory(
         authHeadersConfig: (DefaultRequest.DefaultRequestBuilder, String) -> Unit,
     ): HttpClient =
         HttpClient(CIO) {
+            val uri = URI(baseUrl)
             // Base URL and authentication
             defaultRequest {
-                url(baseUrl.trimEnd('/'))
+                url {
+                    protocol = if (uri.scheme == "https") URLProtocol.HTTPS else URLProtocol.HTTP
+                    host = uri.host
+                    if (uri.port != -1) port = uri.port
+                    path(uri.path.trimEnd('/') + "/")
+                }
                 contentType(ContentType.Application.Json)
                 accept(ContentType.Application.Json)
                 header(SecurityConstants.CLIENT_HEADER, SecurityConstants.CLIENT_TOKEN)

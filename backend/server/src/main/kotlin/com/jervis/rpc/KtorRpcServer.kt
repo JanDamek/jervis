@@ -7,6 +7,7 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.netty.NettyApplicationEngine
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
@@ -33,19 +34,31 @@ class KtorRpcServer(
             try {
                 server =
                     embeddedServer(Netty, port = port, host = "0.0.0.0") {
-                        install(WebSockets)
+                        install(WebSockets) {
+                            pingPeriodMillis = 30000
+                            timeoutMillis = 60000
+                            maxFrameSize = Long.MAX_VALUE
+                            masking = false
+                        }
 
                         routing {
+                            get("/") {
+                                call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
+                            }
                             // Health check endpoint pro K8s
                             get("/health") {
-                                call.respond(HttpStatusCode.OK, mapOf("status" to "UP"))
+                                call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
                             }
-
                             get("/actuator/health") {
-                                call.respond(HttpStatusCode.OK, mapOf("status" to "UP"))
+                                call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
                             }
 
                             // RPC endpoints for internal services and UI
+                            post("/rpc") {
+                                // Fallback for clients trying to use POST for RPC if they don't support WebSockets
+                                call.respond(HttpStatusCode.MethodNotAllowed, "RPC requires WebSockets for now, but internal services should use HTTP.")
+                            }
+
                             rpc("/rpc") {
                                 rpcConfig {
                                     serialization {

@@ -6,8 +6,9 @@ import ai.koog.a2a.transport.server.jsonrpc.http.HttpJSONRPCServerTransport
 import com.jervis.coding.configuration.CodingEngineProperties
 import com.jervis.coding.service.CodingEngineService
 import io.ktor.server.application.call
+import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
-import io.ktor.server.response.respond
+import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.runBlocking
@@ -74,8 +75,22 @@ object CodingEngineA2AServer {
                 engineFactory = Netty,
                 port = port,
                 path = a2aPath,
-                wait = true,
+                wait = false,
             )
+
+            io.ktor.server.engine.embeddedServer(Netty, port = port, host = host) {
+                routing {
+                    get("/health") {
+                        call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
+                    }
+                    get("/actuator/health") {
+                        call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
+                    }
+                    get("/") {
+                        call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
+                    }
+                }
+            }.start(wait = true)
         }
     }
 }

@@ -13,6 +13,7 @@ import io.ktor.server.netty.*
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondText
 import io.ktor.server.routing.*
 import io.ktor.server.websocket.*
 import kotlinx.coroutines.Dispatchers
@@ -134,7 +135,15 @@ object TikaKtorServer {
                 }
 
                 get("/health") {
-                    call.respond(mapOf("status" to "UP"))
+                    call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
+                }
+
+                get("/actuator/health") {
+                    call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
+                }
+
+                get("/") {
+                    call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
                 }
             }
         }.start(wait = true)

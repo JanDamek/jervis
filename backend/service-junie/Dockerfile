@@ -2,15 +2,20 @@
 FROM gradle:9.2.1-jdk21-jammy AS builder
 WORKDIR /app
 COPY . .
-RUN DOCKER_BUILD=true gradle :backend:service-junie:jar --no-daemon
+RUN DOCKER_BUILD=true GRADLE_OPTS="-Xmx512m -XX:MaxMetaspaceSize=256m" gradle :backend:service-junie:jar --no-daemon
 
 # --- Run Stage ---
 FROM eclipse-temurin:21-jre-jammy
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    git curl ca-certificates libarchive-tools && \
+    git curl ca-certificates gnupg libarchive-tools && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs && \
+    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg && \
+    chmod 644 /etc/apt/keyrings/kubernetes-apt-keyring.gpg && \
+    echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /' | tee /etc/apt/sources.list.d/kubernetes.list && \
+    chmod 644 /etc/apt/sources.list.d/kubernetes.list && \
+    apt-get update && \
+    apt-get install -y nodejs kubectl && \
     rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /opt/junie && \

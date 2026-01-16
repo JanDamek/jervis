@@ -599,9 +599,10 @@ class OrchestratorAgent(
         httpClient: io.ktor.client.HttpClient,
     ): A2AClient {
         val uri = URI(url)
+        val protocol = if (uri.scheme == "https") "https" else "http"
         val baseUrl =
             buildString {
-                append(uri.scheme)
+                append(protocol)
                 append("://")
                 append(uri.host)
                 if (uri.port != -1) {

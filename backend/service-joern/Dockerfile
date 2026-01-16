@@ -2,7 +2,7 @@
 FROM gradle:9.2.1-jdk21-jammy AS builder
 WORKDIR /app
 COPY . .
-RUN DOCKER_BUILD=true gradle :backend:service-joern:jar --no-daemon
+RUN DOCKER_BUILD=true GRADLE_OPTS="-Xmx512m -XX:MaxMetaspaceSize=256m" gradle :backend:service-joern:jar --no-daemon
 
 # --- Run Stage ---
 # Dockerfile pro jervis-joern (optimized - lokální JAR)

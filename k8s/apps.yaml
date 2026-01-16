@@ -25,13 +25,13 @@ spec:
           value: "/opt/jervis/work"
         livenessProbe:
           httpGet:
-            path: /health
+            path: /actuator/health
             port: 8080
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
-            path: /health
+            path: /actuator/health
             port: 8080
           initialDelaySeconds: 15
           periodSeconds: 10
@@ -75,13 +75,13 @@ spec:
           value: "/opt/jervis/work"
         livenessProbe:
           httpGet:
-            path: /health
+            path: /actuator/health
             port: 8080
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
-            path: /health
+            path: /actuator/health
             port: 8080
           initialDelaySeconds: 15
           periodSeconds: 10
@@ -125,13 +125,13 @@ spec:
           value: "/opt/jervis/work"
         livenessProbe:
           httpGet:
-            path: /health
+            path: /actuator/health
             port: 8080
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
-            path: /health
+            path: /actuator/health
             port: 8080
           initialDelaySeconds: 15
           periodSeconds: 10
@@ -177,13 +177,19 @@ spec:
           httpGet:
             path: /health
             port: 3100
-          initialDelaySeconds: 30
-          periodSeconds: 10
+          initialDelaySeconds: 45
+          periodSeconds: 15
         readinessProbe:
           httpGet:
             path: /health
             port: 3100
-          initialDelaySeconds: 15
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 3100
+          failureThreshold: 30
           periodSeconds: 10
         volumeMounts:
         - name: jervis-data
@@ -234,13 +240,19 @@ spec:
           httpGet:
             path: /health
             port: 3200
-          initialDelaySeconds: 30
-          periodSeconds: 10
+          initialDelaySeconds: 45
+          periodSeconds: 15
         readinessProbe:
           httpGet:
             path: /health
             port: 3200
-          initialDelaySeconds: 15
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 3200
+          failureThreshold: 30
           periodSeconds: 10
         volumeMounts:
         - name: jervis-data
@@ -289,13 +301,13 @@ spec:
           value: "/opt/jervis/work"
         livenessProbe:
           httpGet:
-            path: /health
+            path: /actuator/health
             port: 8080
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
-            path: /health
+            path: /actuator/health
             port: 8080
           initialDelaySeconds: 15
           periodSeconds: 10
@@ -445,6 +457,24 @@ spec:
             secretKeyRef:
               name: jervis-secrets
               key: JUNIE_API_KEY
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3300
+          initialDelaySeconds: 45
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3300
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 3300
+          failureThreshold: 30
+          periodSeconds: 10
         volumeMounts:
         - name: jervis-data
           mountPath: /opt/jervis/data

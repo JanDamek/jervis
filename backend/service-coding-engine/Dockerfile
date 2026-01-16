@@ -2,7 +2,7 @@
 FROM gradle:9.2.1-jdk21-jammy AS builder
 WORKDIR /app
 COPY . .
-RUN DOCKER_BUILD=true gradle :backend:service-coding-engine:jar --no-daemon
+RUN DOCKER_BUILD=true GRADLE_OPTS="-Xmx512m -XX:MaxMetaspaceSize=256m" gradle :backend:service-coding-engine:jar --no-daemon
 
 # --- Run Stage ---
 FROM eclipse-temurin:21-jre-jammy
@@ -18,8 +18,12 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
     chmod a+r /etc/apt/keyrings/docker.gpg && \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg && \
+    chmod 644 /etc/apt/keyrings/kubernetes-apt-keyring.gpg && \
+    echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /' | tee /etc/apt/sources.list.d/kubernetes.list && \
+    chmod 644 /etc/apt/sources.list.d/kubernetes.list && \
     apt-get update && \
-    apt-get install -y docker-ce-cli && \
+    apt-get install -y docker-ce-cli kubectl && \
     rm -rf /var/lib/apt/lists/*
 
 ENV VIRTUAL_ENV=/opt/venv
