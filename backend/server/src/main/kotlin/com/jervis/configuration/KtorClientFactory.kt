@@ -18,15 +18,16 @@ import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.request.accept
 import io.ktor.client.request.header
 import io.ktor.http.ContentType
-import io.ktor.http.URLProtocol
 import io.ktor.http.contentType
-import io.ktor.serialization.kotlinx.json.json
+import io.ktor.http.takeFrom
 import io.ktor.serialization.kotlinx.cbor.cbor
+import io.ktor.serialization.kotlinx.json.json
 import kotlinx.rpc.krpc.ktor.client.installKrpc
-import kotlinx.rpc.krpc.serialization.cbor.cbor as rpcCbor
+import kotlinx.serialization.ExperimentalSerializationApi
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
 import java.net.URI
+import kotlinx.rpc.krpc.serialization.cbor.cbor as rpcCbor
 
 /**
  * Factory for creating Ktor HttpClients for LLM provider communication and other HTTP services.
@@ -97,16 +98,21 @@ class KtorClientFactory(
         httpClients[endpointName]
             ?: throw IllegalArgumentException("HttpClient not found for endpoint: $endpointName")
 
+    @OptIn(ExperimentalSerializationApi::class)
     private fun createHttpClient(baseUrl: String): HttpClient =
         HttpClient(CIO) {
             val uri = URI(baseUrl)
             // Base URL
             defaultRequest {
                 url {
-                    protocol = if (uri.scheme == "https") URLProtocol.HTTPS else URLProtocol.HTTP
-                    host = uri.host
-                    if (uri.port != -1) port = uri.port
-                    path(uri.path.trimEnd('/') + "/")
+                    val protocolStr = if (uri.scheme == "https") "https" else "http"
+                    takeFrom(
+                        "$protocolStr://${uri.host}${if (uri.port != -1) ":${uri.port}" else ""}${
+                            uri.path.trimEnd(
+                                '/',
+                            )
+                        }/",
+                    )
                 }
                 contentType(ContentType.Application.Json)
                 accept(ContentType.Application.Json)
@@ -179,6 +185,7 @@ class KtorClientFactory(
             expectSuccess = false
         }
 
+    @OptIn(ExperimentalSerializationApi::class)
     private fun createHttpClientWithAuth(
         baseUrl: String,
         apiKey: String,
@@ -189,10 +196,14 @@ class KtorClientFactory(
             // Base URL and authentication
             defaultRequest {
                 url {
-                    protocol = if (uri.scheme == "https") URLProtocol.HTTPS else URLProtocol.HTTP
-                    host = uri.host
-                    if (uri.port != -1) port = uri.port
-                    path(uri.path.trimEnd('/') + "/")
+                    val protocolStr = if (uri.scheme == "https") "https" else "http"
+                    takeFrom(
+                        "$protocolStr://${uri.host}${if (uri.port != -1) ":${uri.port}" else ""}${
+                            uri.path.trimEnd(
+                                '/',
+                            )
+                        }/",
+                    )
                 }
                 contentType(ContentType.Application.Json)
                 accept(ContentType.Application.Json)

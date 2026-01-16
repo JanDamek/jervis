@@ -22,10 +22,10 @@ RUN apt-get update && \
 COPY --from=joern-downloader /opt/joern /opt/joern
 ENV JOERN_HOME=/opt/joern
 ENV PATH="${JOERN_HOME}/joern-cli:${PATH}"
-WORKDIR /opt/jervis
-COPY --from=builder /app/backend/service-joern/build/libs/*.jar app.jar
-ENV SERVER_PORT=8080 JAVA_OPTS="-Xmx2g -Xms512m" WORK_DATA=/opt/jervis/work
-EXPOSE 8080
+WORKDIR /opt/jervis/joern
+COPY --from=builder /app/backend/service-joern/build/libs/*.jar jervis-joern.jar
+ENV JAVA_OPTS="-Xmx2g -Xms512m"
+EXPOSE 8082
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:${SERVER_PORT}/actuator/health || exit 1
-ENTRYPOINT ["sh", "-c", "mkdir -p ${WORK_DATA} && java ${JAVA_OPTS} -Djava.io.tmpdir=${WORK_DATA} -jar /opt/jervis/app.jar"]
+    CMD curl -f http://localhost:8082/actuator/health || exit 1
+ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /opt/jervis/joern/jervis-joern.jar --spring.config.additional-location=optional:file:/opt/jervis/joern/config/"]

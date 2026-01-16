@@ -34,3 +34,4 @@
 /shared/ui-common/build/
 /apps/desktop/build/
 .aider*
+/data/

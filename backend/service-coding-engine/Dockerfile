@@ -32,13 +32,12 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir openhands-ai
 
-WORKDIR /opt/jervis
-COPY --from=builder /app/backend/service-coding-engine/build/libs/*.jar app.jar
-ENV SERVER_PORT=3200 \
+WORKDIR /opt/jervis/coding-engine
+COPY --from=builder /app/backend/service-coding-engine/build/libs/*.jar jervis-coding-engine.jar
+ENV PORT=3200 \
     JAVA_OPTS="-Xmx2g -Xms512m" \
-    DATA_ROOT_DIR=/opt/jervis/data \
     DOCKER_HOST=tcp://localhost:2375
 EXPOSE 3200
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:${SERVER_PORT}/.well-known/agent-card.json || exit 1
-ENTRYPOINT ["sh", "-c", "mkdir -p ${DATA_ROOT_DIR} && java ${JAVA_OPTS} -Ddata.root.dir=${DATA_ROOT_DIR} -jar /opt/jervis/app.jar"]
+    CMD curl -f http://localhost:3200/.well-known/agent-card.json || exit 1
+ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /opt/jervis/coding-engine/jervis-coding-engine.jar"]

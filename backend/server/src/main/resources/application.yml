@@ -1,13 +1,12 @@
-# Logging level configuration
 logging:
   level:
-    root: ${LOG_LEVEL_ROOT:INFO}
-    com.jervis: ${LOG_LEVEL_JERVIS:INFO}
-    io.ktor: ${LOG_LEVEL_KTOR:INFO}
-    org.springframework: ${LOG_LEVEL_SPRING:INFO}
+    root: INFO
+    com.jervis: INFO
+    io.ktor: INFO
+    org.springframework: INFO
     com.arangodb.internal.serde.SerdeUtils: INFO
-    ai.koog: ${LOG_LEVEL_KOOG:INFO}
-    com.jervis.koog: ${LOG_LEVEL_KOOG:INFO}
+    ai.koog: INFO
+    com.jervis.koog: INFO
     org.springframework.web: WARN
     org.springframework.web.reactive.socket: WARN
     org.springframework.web.reactive.handler: WARN
@@ -16,7 +15,7 @@ logging:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
     file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
   file:
-    name: ${DATA_ROOT_DIR}/logs/jervis-app.log
+    name: /Users/damekjan/git/jervis/data/logs/jervis-server.log
   logback:
     rollingpolicy:
       max-history: 7
@@ -26,130 +25,116 @@ spring:
   main:
     web-application-type: none
   mongodb:
-    host: ${MONGODB_HOST}
-    port: ${MONGODB_PORT:27017}
-    database: ${MONGODB_DATABASE:jervis}
-    username: ${MONGODB_USERNAME}
+    host: 192.168.100.117
+    port: 27017
+    database: jervis
+    username: root
     password: ${MONGODB_PASSWORD}
-    authentication-database: ${MONGODB_AUTH_DATABASE:admin}
+    authentication-database: admin
   data:
     mongodb:
-      auto-index-creation: false  # Disabled - indexes managed by MongoIndexInitializer
+      auto-index-creation: false
 
-# Vector database configuration
-# Weaviate - hybrid search vector DB with BM25 + semantic search
 weaviate:
-  host: ${WEAVIATE_HOST}
-  port: ${WEAVIATE_PORT:8080}
-  scheme: ${WEAVIATE_SCHEME:http}
-  grpc-port: ${WEAVIATE_GRPC_PORT:50051}
+  host: 192.168.100.117
+  port: 8080
+  scheme: http
+  grpc-port: 50051
   hybrid-search:
     enabled: true
-    alpha: ${WEAVIATE_HYBRID_ALPHA:0.85}  # 0.85 = 85% semantic + 15% keyword (BM25) - optimized for Czech text with BGE-M3
+    alpha: 0.85
   auto-migrate:
-    countdown-seconds: ${WEAVIATE_AUTO_MIGRATE_COUNTDOWN:10}  # Countdown before starting migration (Ctrl+C to abort)
+    countdown-seconds: 10
 
 ktor:
-  # Ktor client configuration
   connection-pool:
-    max-connections: ${KTOR_CONNECTION_POOL_MAX_CONNECTIONS:500}
-    max-connections-per-route: ${KTOR_CONNECTION_POOL_MAX_CONNECTIONS_PER_ROUTE:100}
-    keep-alive-time-millis: ${KTOR_CONNECTION_POOL_KEEP_ALIVE_TIME_MILLIS:300000}  # 5 minutes
+    max-connections: 500
+    max-connections-per-route: 100
+    keep-alive-time-millis: 300000
   timeouts:
-    connect-timeout-millis: ${KTOR_TIMEOUTS_CONNECT_TIMEOUT_MILLIS:60000}
-    request-timeout-millis: ${KTOR_TIMEOUTS_REQUEST_TIMEOUT_MILLIS:1800000}  # 30 minutes for reasoning models (Qwen3, DeepSeek, etc.)
-    socket-timeout-millis: ${KTOR_TIMEOUTS_SOCKET_TIMEOUT_MILLIS:1800000}   # 30 minutes
+    connect-timeout-millis: 60000
+    request-timeout-millis: 1800000
+    socket-timeout-millis: 1800000
   api-versions:
-    anthropic-version: ${KTOR_API_VERSIONS_ANTHROPIC_VERSION:2023-06-01}
+    anthropic-version: "2023-06-01"
   logging:
-    enabled: ${KTOR_LOGGING_ENABLED:false}
-    level: ${KTOR_LOGGING_LEVEL:INFO}
+    enabled: false
+    level: INFO
 
-# Retry configuration for external HTTP calls
 retry:
   ktor:
-    max-attempts: ${RETRY_MAX_ATTEMPTS:5}
-    initial-backoff-millis: ${RETRY_INITIAL_BACKOFF_MILLIS:1000}
-    max-backoff-millis: ${RETRY_MAX_BACKOFF_MILLIS:30000}
+    max-attempts: 5
+    initial-backoff-millis: 1000
+    max-backoff-millis: 30000
 
-# Workspace configuration - central root for all server-managed files
 data:
-  root-dir: ${DATA_ROOT_DIR}
+  root-dir: /Users/damekjan/git/jervis/data
 
-# ArangoDB (Knowledge Graph) configuration
 arango:
-  scheme: ${ARANGO_SCHEME:http}
-  host: ${ARANGO_HOST}
-  port: ${ARANGO_PORT:8529}
-  database: ${ARANGO_DATABASE:jervis}
-  username: ${ARANGO_USERNAME}
+  scheme: http
+  host: 192.168.100.117
+  port: 8529
+  database: jervis
+  username: root
   password: ${ARANGO_PASSWORD}
-  timeout-ms: ${ARANGO_TIMEOUT_MS:5000}
+  timeout-ms: 5000
 
 jervis:
   security:
-    client-token: ${JERVIS_CLIENT_TOKEN}
-    ssl:
-      enabled: ${JERVIS_SSL_ENABLED:false}  # TODO: Re-enable HTTPS after fixing keystore/Netty SSL configuration issues (2026-01-05)
-      key-store: "classpath:keystore.p12"
-      key-store-password: "changeit"
-      key-alias: "jervis"
-      key-password: "changeit"
+    client-token: a7f3c9e2-4b8d-11ef-9a1c-0242ac120002
   koog:
-    max-iterations: ${JERVIS_KOOG_MAX_ITERATIONS:50}
-    qualifier-max-retries: ${JERVIS_KOOG_QUALIFIER_MAX_RETRIES:5}
+    max-iterations: 50
+    qualifier-max-retries: 5
   background:
-    wait-on-startup: ${JERVIS_BACKGROUND_WAIT_ON_STARTUP:10s}
-    wait-on-error: ${JERVIS_BACKGROUND_WAIT_ON_ERROR:1m}
-    wait-interval: ${JERVIS_BACKGROUND_WAIT_INTERVAL:30s}
+    wait-on-startup: 10s
+    wait-on-error: 1m
+    wait-interval: 30s
 
-# Link indexing configuration
 link:
   indexing:
-    skip-if-indexed-within: ${LINK_INDEXING_SKIP_IF_INDEXED_WITHIN:30d}
+    skip-if-indexed-within: 30d
 
-# Ollama preload and keep-alive configuration (fail-fast: all values must be provided)
 preload:
   ollama:
     gpu:
-      concurrency: ${OLLAMA_GPU_CONCURRENCY:2}
+      concurrency: 2
     cpu:
-      concurrency: ${OLLAMA_CPU_CONCURRENCY:6}
+      concurrency: 6
     llm:
-      keep-alive: ${OLLAMA_LLM_KEEP_ALIVE:1h}
-      refresh-safety-factor: ${OLLAMA_LLM_REFRESH_SAFETY_FACTOR:0.9}
+      keep-alive: 1h
+      refresh-safety-factor: 0.9
     embed:
-      concurrency: ${OLLAMA_EMBED_CONCURRENCY:6}
-      keep-alive: ${OLLAMA_EMBED_KEEP_ALIVE:1h}
-      refresh-safety-factor: ${OLLAMA_EMBED_REFRESH_SAFETY_FACTOR:0.9}
+      concurrency: 6
+      keep-alive: 1h
+      refresh-safety-factor: 0.9
 
 coding-tools:
   aider:
-    default-provider: ${AIDER_DEFAULT_PROVIDER:ollama}
-    default-model: ${AIDER_DEFAULT_MODEL:qwen3-coder-tool:30b}
-    paid-provider: ${AIDER_PAID_PROVIDER:anthropic}
-    paid-model: ${AIDER_PAID_MODEL:claude-3-5-sonnet-20241022}
+    default-provider: ollama
+    default-model: qwen3-coder-tool:30b
+    paid-provider: anthropic
+    paid-model: claude-3-5-sonnet-20241022
   openhands:
-    default-provider: ${OPENHANDS_DEFAULT_PROVIDER:ollama}
-    default-model: ${OPENHANDS_DEFAULT_MODEL:qwen3-coder-tool:30b}
-    paid-provider: ${OPENHANDS_PAID_PROVIDER:anthropic}
-    paid-model: ${OPENHANDS_PAID_MODEL:claude-3-5-sonnet-20241022}
-    ollama-base-url: ${OPENHANDS_OLLAMA_BASE_URL}
+    default-provider: ollama
+    default-model: qwen3-coder-tool:30b
+    paid-provider: anthropic
+    paid-model: claude-3-5-sonnet-20241022
+    ollama-base-url: http://192.168.100.117:11434
 
 endpoints:
   searxng:
-    baseUrl: ${SEARXNG_BASE_URL}
+    baseUrl: http://192.168.100.117:30053/
   joern:
-    baseUrl: ${JOERN_BASE_URL}
+    baseUrl: http://localhost:8082/
   tika:
-    baseUrl: ${TIKA_BASE_URL}
+    baseUrl: http://localhost:8081/
   whisper:
-    baseUrl: ${WHISPER_BASE_URL}
+    baseUrl: http://localhost:8083/
   atlassian:
-    baseUrl: ${ATLASSIAN_BASE_URL}
+    baseUrl: http://localhost:8084/
   aider:
-    baseUrl: ${AIDER_BASE_URL}
+    baseUrl: http://localhost:3100/
   coding:
-    baseUrl: ${CODING_BASE_URL}
+    baseUrl: http://localhost:3200/
   junie:
-    baseUrl: ${JUNIE_BASE_URL}
+    baseUrl: http://localhost:3300/

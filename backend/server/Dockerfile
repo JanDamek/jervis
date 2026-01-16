@@ -15,14 +15,14 @@ RUN apt-get update && \
     curl && \
     rm -rf /var/lib/apt/lists/*
 
-WORKDIR /opt/jervis
+WORKDIR /opt/jervis/server
 
 # Kopírování JAR aplikace
-COPY --from=builder /app/backend/server/build/libs/*.jar app.jar
+COPY --from=builder /app/backend/server/build/libs/*.jar jervis-server.jar
 
-ENV SERVER_PORT=5500 JAVA_OPTS="-Xmx4g -Xms1g" DATA_ROOT_DIR=/opt/jervis/data WORK_DATA=/opt/jervis/work
+ENV JAVA_OPTS="-Xmx4g -Xms1g"
 EXPOSE 5500
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:5500/health || exit 1
 VOLUME ["/opt/jervis/data"]
-ENTRYPOINT ["sh", "-c", "WD=${WORK_DATA}; if [ -z \"$WD\" ]; then WD=$(printenv WORK-DATA || true); fi; if [ -z \"$WD\" ]; then WD=/opt/jervis/work; fi; mkdir -p ${DATA_ROOT_DIR} $WD && java ${JAVA_OPTS} -Ddata.root.dir=${DATA_ROOT_DIR} -Djava.io.tmpdir=$WD -jar /opt/jervis/app.jar"]
+ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /opt/jervis/server/jervis-server.jar --spring.config.additional-location=optional:file:/opt/jervis/server/config/"]

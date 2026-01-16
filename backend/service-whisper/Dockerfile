@@ -16,10 +16,10 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 RUN python -m pip install --upgrade pip setuptools wheel && \
     pip install --no-cache-dir faster-whisper
 
-WORKDIR /opt/jervis
-COPY --from=builder /app/backend/service-whisper/build/libs/*.jar app.jar
-ENV SERVER_PORT=8080 JAVA_OPTS="-Xmx2g -Xms512m" WORK_DATA=/opt/jervis/work
-EXPOSE 8080
+WORKDIR /opt/jervis/whisper
+COPY --from=builder /app/backend/service-whisper/build/libs/*.jar jervis-whisper.jar
+ENV JAVA_OPTS="-Xmx2g -Xms512m"
+EXPOSE 8083
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:${SERVER_PORT}/actuator/health || exit 1
-ENTRYPOINT ["sh", "-c", "mkdir -p ${WORK_DATA} && java ${JAVA_OPTS} -Djava.io.tmpdir=${WORK_DATA} -jar /opt/jervis/app.jar"]
+    CMD curl -f http://localhost:8083/actuator/health || exit 1
+ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /opt/jervis/whisper/jervis-whisper.jar --spring.config.additional-location=optional:file:/opt/jervis/whisper/config/"]

@@ -1,98 +1,293 @@
+---
+# ConfigMap pro jervis-server
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: jervis-server-config
   namespace: jervis
 data:
-  # Logging configuration
-  LOG_LEVEL_ROOT: "INFO"
-  LOG_LEVEL_JERVIS: "INFO"
-  LOG_LEVEL_KTOR: "INFO"
-  LOG_LEVEL_SPRING: "INFO"
-  LOG_LEVEL_KOOG: "INFO"
+  application.yml: |
+    logging:
+      level:
+        root: INFO
+        com.jervis: INFO
+        io.ktor: INFO
+        org.springframework: INFO
+        com.arangodb.internal.serde.SerdeUtils: INFO
+        ai.koog: INFO
+        com.jervis.koog: INFO
+        org.springframework.web: WARN
+        org.springframework.web.reactive.socket: WARN
+        org.springframework.web.reactive.handler: WARN
+        org.springframework.data.mongodb.core.convert.QueryMapper: WARN
+      pattern:
+        console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+        file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+      file:
+        name: /opt/jervis/data/logs/jervis-server.log
+      logback:
+        rollingpolicy:
+          max-history: 7
+          max-file-size: 10MB
 
-  # Server configuration
-  SERVER_PORT: "5500"
-  DATA_ROOT_DIR: "/opt/jervis/data"
-  WORK_DATA: "/opt/jervis/work"
+    spring:
+      main:
+        web-application-type: none
+      mongodb:
+        host: 192.168.100.117
+        port: 27017
+        database: jervis
+        username: root
+        password: ${MONGODB_PASSWORD}
+        authentication-database: admin
+      data:
+        mongodb:
+          auto-index-creation: false
 
-  # MongoDB configuration
-  MONGODB_HOST: "192.168.100.117"
-  MONGODB_PORT: "27017"
-  MONGODB_DATABASE: "jervis"
-  MONGODB_USERNAME: "root"
-  MONGODB_AUTH_DATABASE: "admin"
+    weaviate:
+      host: 192.168.100.117
+      port: 8080
+      scheme: http
+      grpc-port: 50051
+      hybrid-search:
+        enabled: true
+        alpha: 0.85
+      auto-migrate:
+        countdown-seconds: 10
 
-  # Weaviate configuration
-  WEAVIATE_HOST: "192.168.100.117"
-  WEAVIATE_PORT: "8080"
-  WEAVIATE_SCHEME: "http"
-  WEAVIATE_GRPC_PORT: "50051"
-  WEAVIATE_HYBRID_ALPHA: "0.85"
-  WEAVIATE_AUTO_MIGRATE_COUNTDOWN: "10"
+    ktor:
+      connection-pool:
+        max-connections: 500
+        max-connections-per-route: 100
+        keep-alive-time-millis: 300000
+      timeouts:
+        connect-timeout-millis: 60000
+        request-timeout-millis: 1800000
+        socket-timeout-millis: 1800000
+      api-versions:
+        anthropic-version: "2023-06-01"
+      logging:
+        enabled: false
+        level: INFO
 
-  # ArangoDB configuration
-  ARANGO_SCHEME: "http"
-  ARANGO_HOST: "192.168.100.117"
-  ARANGO_PORT: "8529"
-  ARANGO_DATABASE: "jervis"
-  ARANGO_USERNAME: "root"
-  ARANGO_TIMEOUT_MS: "5000"
+    retry:
+      ktor:
+        max-attempts: 5
+        initial-backoff-millis: 1000
+        max-backoff-millis: 30000
 
-  # Ktor client configuration
-  KTOR_CONNECTION_POOL_MAX_CONNECTIONS: "500"
-  KTOR_CONNECTION_POOL_MAX_CONNECTIONS_PER_ROUTE: "100"
-  KTOR_CONNECTION_POOL_KEEP_ALIVE_TIME_MILLIS: "300000"
-  KTOR_TIMEOUTS_CONNECT_TIMEOUT_MILLIS: "60000"
-  KTOR_TIMEOUTS_REQUEST_TIMEOUT_MILLIS: "1800000"
-  KTOR_TIMEOUTS_SOCKET_TIMEOUT_MILLIS: "1800000"
-  KTOR_API_VERSIONS_ANTHROPIC_VERSION: "2023-06-01"
-  KTOR_LOGGING_ENABLED: "false"
-  KTOR_LOGGING_LEVEL: "INFO"
+    data:
+      root-dir: /opt/jervis/data
 
-  # Retry configuration
-  RETRY_MAX_ATTEMPTS: "5"
-  RETRY_INITIAL_BACKOFF_MILLIS: "1000"
-  RETRY_MAX_BACKOFF_MILLIS: "30000"
+    arango:
+      scheme: http
+      host: 192.168.100.117
+      port: 8529
+      database: jervis
+      username: root
+      password: ${ARANGO_PASSWORD}
+      timeout-ms: 5000
 
-  # Jervis configuration
-  JERVIS_CLIENT_TOKEN: "a7f3c9e2-4b8d-11ef-9a1c-0242ac120002"
-  JERVIS_SSL_ENABLED: "false"
-  JERVIS_KOOG_MAX_ITERATIONS: "50"
-  JERVIS_KOOG_QUALIFIER_MAX_RETRIES: "5"
-  JERVIS_BACKGROUND_WAIT_ON_STARTUP: "PT10S"
-  JERVIS_BACKGROUND_WAIT_ON_ERROR: "PT1M"
-  JERVIS_BACKGROUND_WAIT_INTERVAL: "PT30S"
+    jervis:
+      security:
+        client-token: a7f3c9e2-4b8d-11ef-9a1c-0242ac120002
+      koog:
+        max-iterations: 50
+        qualifier-max-retries: 5
+      background:
+        wait-on-startup: 10s
+        wait-on-error: 1m
+        wait-interval: 30s
 
-  # Link indexing configuration
-  LINK_INDEXING_SKIP_IF_INDEXED_WITHIN: "PT720H"
+    link:
+      indexing:
+        skip-if-indexed-within: 30d
 
-  # Ollama preload configuration
-  OLLAMA_GPU_CONCURRENCY: "2"
-  OLLAMA_CPU_CONCURRENCY: "6"
-  OLLAMA_LLM_KEEP_ALIVE: "1h"
-  OLLAMA_LLM_REFRESH_SAFETY_FACTOR: "0.9"
-  OLLAMA_EMBED_CONCURRENCY: "6"
-  OLLAMA_EMBED_KEEP_ALIVE: "1h"
-  OLLAMA_EMBED_REFRESH_SAFETY_FACTOR: "0.9"
+    preload:
+      ollama:
+        gpu:
+          concurrency: 2
+        cpu:
+          concurrency: 6
+        llm:
+          keep-alive: 1h
+          refresh-safety-factor: 0.9
+        embed:
+          concurrency: 6
+          keep-alive: 1h
+          refresh-safety-factor: 0.9
 
-  # Coding tools configuration
-  AIDER_DEFAULT_PROVIDER: "ollama"
-  AIDER_DEFAULT_MODEL: "qwen3-coder-tool:30b"
-  AIDER_PAID_PROVIDER: "anthropic"
-  AIDER_PAID_MODEL: "claude-3-5-sonnet-20241022"
-  OPENHANDS_DEFAULT_PROVIDER: "ollama"
-  OPENHANDS_DEFAULT_MODEL: "qwen3-coder-tool:30b"
-  OPENHANDS_PAID_PROVIDER: "anthropic"
-  OPENHANDS_PAID_MODEL: "claude-3-5-sonnet-20241022"
-  OPENHANDS_OLLAMA_BASE_URL: "http://192.168.100.117:11434"
+    coding-tools:
+      aider:
+        default-provider: ollama
+        default-model: "qwen3-coder-tool:30b"
+        paid-provider: anthropic
+        paid-model: "claude-3-5-sonnet-20241022"
+      openhands:
+        default-provider: ollama
+        default-model: "qwen3-coder-tool:30b"
+        paid-provider: anthropic
+        paid-model: "claude-3-5-sonnet-20241022"
+        ollama-base-url: http://192.168.100.117:11434
 
-  # Service endpoints
-  SEARXNG_BASE_URL: "http://192.168.100.117:30053/"
-  JOERN_BASE_URL: "http://jervis-joern:8080/"
-  TIKA_BASE_URL: "http://jervis-tika:8080/"
-  WHISPER_BASE_URL: "http://jervis-whisper:8080/"
-  ATLASSIAN_BASE_URL: "http://jervis-atlassian:8080/"
-  AIDER_BASE_URL: "http://jervis-aider:3100/"
-  CODING_BASE_URL: "http://jervis-coding-engine:3200/"
-  JUNIE_BASE_URL: "http://jervis-junie:3300/"
+    endpoints:
+      searxng:
+        baseUrl: http://192.168.100.117:30053/
+      joern:
+        baseUrl: http://jervis-joern:8082/
+      tika:
+        baseUrl: http://jervis-tika:8081/
+      whisper:
+        baseUrl: http://jervis-whisper:8083/
+      atlassian:
+        baseUrl: http://jervis-atlassian:8084/
+      aider:
+        baseUrl: http://jervis-aider:3100/
+      coding:
+        baseUrl: http://jervis-coding-engine:3200/
+      junie:
+        baseUrl: http://jervis-junie:3300/
+
+---
+# ConfigMap pro jervis-tika
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jervis-tika-config
+  namespace: jervis
+data:
+  application.yml: |
+    server:
+      port: 8081
+      compression:
+        enabled: true
+        mime-types: application/json,application/*+json
+        min-response-size: 1024
+      max-http-request-header-size: 1GB
+      tomcat:
+        max-swallow-size: -1
+        max-http-form-post-size: -1
+
+    spring:
+      codec:
+        max-in-memory-size: 512MB
+      servlet:
+        multipart:
+          max-file-size: 10GB
+          max-request-size: 10GB
+
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: "health"
+      endpoint:
+        health:
+          probes:
+            enabled: true
+
+---
+# ConfigMap pro jervis-joern
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jervis-joern-config
+  namespace: jervis
+data:
+  application.yml: |
+    server:
+      port: 8082
+      max-http-request-header-size: 1GB
+      tomcat:
+        max-swallow-size: -1
+        max-http-form-post-size: -1
+
+    spring:
+      codec:
+        max-in-memory-size: 512MB
+      servlet:
+        multipart:
+          max-file-size: 10GB
+          max-request-size: 10GB
+
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: "health"
+      endpoint:
+        health:
+          probes:
+            enabled: true
+
+---
+# ConfigMap pro jervis-whisper
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jervis-whisper-config
+  namespace: jervis
+data:
+  application.yml: |
+    server:
+      port: 8083
+      max-http-request-header-size: 1GB
+      tomcat:
+        max-swallow-size: -1
+        max-http-form-post-size: -1
+
+    spring:
+      codec:
+        max-in-memory-size: 512MB
+      servlet:
+        multipart:
+          max-file-size: 10GB
+          max-request-size: 10GB
+
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: "health"
+      endpoint:
+        health:
+          probes:
+            enabled: true
+
+---
+# ConfigMap pro jervis-atlassian
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jervis-atlassian-config
+  namespace: jervis
+data:
+  application.yml: |
+    server:
+      port: 8084
+      compression:
+        enabled: true
+        mime-types: application/json,application/*+json
+        min-response-size: 1024
+      max-http-request-header-size: 1GB
+      tomcat:
+        max-swallow-size: -1
+        max-http-form-post-size: -1
+
+    spring:
+      codec:
+        max-in-memory-size: 512MB
+      servlet:
+        multipart:
+          max-file-size: 10GB
+          max-request-size: 10GB
+
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: "health"
+      endpoint:
+        health:
+          probes:
+            enabled: true

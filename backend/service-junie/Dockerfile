@@ -25,12 +25,11 @@ RUN mkdir -p /opt/junie && \
     ln -s /opt/junie/junie /usr/local/bin/junie && \
     rm /tmp/junie.zip
 
-WORKDIR /opt/jervis
-COPY --from=builder /app/backend/service-junie/build/libs/*.jar app.jar
-ENV SERVER_PORT=3300 \
-    JAVA_OPTS="-Xmx1g -Xms256m" \
-    DATA_ROOT_DIR=/opt/jervis/data
+WORKDIR /opt/jervis/junie
+COPY --from=builder /app/backend/service-junie/build/libs/*.jar jervis-junie.jar
+ENV PORT=3300 \
+    JAVA_OPTS="-Xmx1g -Xms256m"
 EXPOSE 3300
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:${SERVER_PORT}/.well-known/agent-card.json || exit 1
-ENTRYPOINT ["sh", "-c", "mkdir -p ${DATA_ROOT_DIR} && java ${JAVA_OPTS} -Ddata.root.dir=${DATA_ROOT_DIR} -jar /opt/jervis/app.jar"]
+    CMD curl -f http://localhost:3300/.well-known/agent-card.json || exit 1
+ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /opt/jervis/junie/jervis-junie.jar"]

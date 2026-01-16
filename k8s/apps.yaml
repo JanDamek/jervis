@@ -17,24 +17,27 @@ spec:
       - name: tika
         image: registry.damek-soft.eu/jandamek/jervis-tika:latest
         ports:
-        - containerPort: 8080
-        env:
-        - name: SERVER_PORT
-          value: "8080"
-        - name: WORK_DATA
-          value: "/opt/jervis/work"
+        - containerPort: 8081
+        volumeMounts:
+        - name: config
+          mountPath: /opt/jervis/tika/config
+          readOnly: true
         livenessProbe:
           httpGet:
             path: /actuator/health
-            port: 8080
+            port: 8081
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
             path: /actuator/health
-            port: 8080
+            port: 8081
           initialDelaySeconds: 15
           periodSeconds: 10
+      volumes:
+      - name: config
+        configMap:
+          name: jervis-tika-config
 ---
 apiVersion: v1
 kind: Service
@@ -45,8 +48,8 @@ spec:
   selector:
     app: jervis-tika
   ports:
-  - port: 8080
-    targetPort: 8080
+  - port: 8081
+    targetPort: 8081
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -67,24 +70,27 @@ spec:
       - name: joern
         image: registry.damek-soft.eu/jandamek/jervis-joern:latest
         ports:
-        - containerPort: 8080
-        env:
-        - name: SERVER_PORT
-          value: "8080"
-        - name: WORK_DATA
-          value: "/opt/jervis/work"
+        - containerPort: 8082
+        volumeMounts:
+        - name: config
+          mountPath: /opt/jervis/joern/config
+          readOnly: true
         livenessProbe:
           httpGet:
             path: /actuator/health
-            port: 8080
+            port: 8082
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
             path: /actuator/health
-            port: 8080
+            port: 8082
           initialDelaySeconds: 15
           periodSeconds: 10
+      volumes:
+      - name: config
+        configMap:
+          name: jervis-joern-config
 ---
 apiVersion: v1
 kind: Service
@@ -95,8 +101,8 @@ spec:
   selector:
     app: jervis-joern
   ports:
-  - port: 8080
-    targetPort: 8080
+  - port: 8082
+    targetPort: 8082
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -117,24 +123,27 @@ spec:
       - name: whisper
         image: registry.damek-soft.eu/jandamek/jervis-whisper:latest
         ports:
-        - containerPort: 8080
-        env:
-        - name: SERVER_PORT
-          value: "8080"
-        - name: WORK_DATA
-          value: "/opt/jervis/work"
+        - containerPort: 8083
+        volumeMounts:
+        - name: config
+          mountPath: /opt/jervis/whisper/config
+          readOnly: true
         livenessProbe:
           httpGet:
             path: /actuator/health
-            port: 8080
+            port: 8083
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
             path: /actuator/health
-            port: 8080
+            port: 8083
           initialDelaySeconds: 15
           periodSeconds: 10
+      volumes:
+      - name: config
+        configMap:
+          name: jervis-whisper-config
 ---
 apiVersion: v1
 kind: Service
@@ -145,8 +154,8 @@ spec:
   selector:
     app: jervis-whisper
   ports:
-  - port: 8080
-    targetPort: 8080
+  - port: 8083
+    targetPort: 8083
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -169,10 +178,8 @@ spec:
         ports:
         - containerPort: 3100
         env:
-        - name: SERVER_PORT
+        - name: PORT
           value: "3100"
-        - name: DATA_ROOT_DIR
-          value: "/opt/jervis/data"
         livenessProbe:
           httpGet:
             path: /health
@@ -232,10 +239,8 @@ spec:
         ports:
         - containerPort: 3200
         env:
-        - name: SERVER_PORT
+        - name: PORT
           value: "3200"
-        - name: DATA_ROOT_DIR
-          value: "/opt/jervis/data"
         livenessProbe:
           httpGet:
             path: /health
@@ -293,24 +298,27 @@ spec:
       - name: atlassian
         image: registry.damek-soft.eu/jandamek/jervis-atlassian:latest
         ports:
-        - containerPort: 8080
-        env:
-        - name: SERVER_PORT
-          value: "8080"
-        - name: WORK_DATA
-          value: "/opt/jervis/work"
+        - containerPort: 8084
+        volumeMounts:
+        - name: config
+          mountPath: /opt/jervis/atlassian/config
+          readOnly: true
         livenessProbe:
           httpGet:
             path: /actuator/health
-            port: 8080
+            port: 8084
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
             path: /actuator/health
-            port: 8080
+            port: 8084
           initialDelaySeconds: 15
           periodSeconds: 10
+      volumes:
+      - name: config
+        configMap:
+          name: jervis-atlassian-config
 ---
 apiVersion: v1
 kind: Service
@@ -321,8 +329,8 @@ spec:
   selector:
     app: jervis-atlassian
   ports:
-  - port: 8080
-    targetPort: 8080
+  - port: 8084
+    targetPort: 8084
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -344,9 +352,6 @@ spec:
         image: registry.damek-soft.eu/jandamek/jervis-server:latest
         ports:
         - containerPort: 5500
-        envFrom:
-        - configMapRef:
-            name: jervis-server-config
         env:
         # Secrets (passwords, API keys)
         - name: MONGODB_PASSWORD
@@ -387,6 +392,9 @@ spec:
         volumeMounts:
         - name: jervis-data
           mountPath: /opt/jervis/data
+        - name: config
+          mountPath: /opt/jervis/server/config
+          readOnly: true
         livenessProbe:
           httpGet:
             path: /health
@@ -413,6 +421,9 @@ spec:
       - name: jervis-data
         persistentVolumeClaim:
           claimName: jervis-data-pvc
+      - name: config
+        configMap:
+          name: jervis-server-config
 ---
 apiVersion: v1
 kind: Service
@@ -448,10 +459,8 @@ spec:
         ports:
         - containerPort: 3300
         env:
-        - name: SERVER_PORT
+        - name: PORT
           value: "3300"
-        - name: DATA_ROOT_DIR
-          value: "/opt/jervis/data"
         - name: JUNIE_API_KEY
           valueFrom:
             secretKeyRef:

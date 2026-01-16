@@ -46,10 +46,10 @@ ENV TIKA_OCR_ENABLED=true
 ENV TIKA_OCR_LANG=eng+ces+spa+slk+fin+nor+dan+pol+deu+hun
 ENV TIKA_OCR_TIMEOUT_MS=120000
 
-WORKDIR /opt/jervis
-COPY --from=builder /app/backend/service-tika/build/libs/*.jar app.jar
-ENV SERVER_PORT=8080 JAVA_OPTS="-Xmx2g -Xms512m" WORK_DATA=/opt/jervis/work
-EXPOSE 8080
+WORKDIR /opt/jervis/tika
+COPY --from=builder /app/backend/service-tika/build/libs/*.jar jervis-tika.jar
+ENV JAVA_OPTS="-Xmx2g -Xms512m"
+EXPOSE 8081
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:${SERVER_PORT}/actuator/health || exit 1
-ENTRYPOINT ["sh", "-c", "WD=${WORK_DATA}; if [ -z \"$WD\" ]; then WD=$(printenv WORK-DATA || true); fi; if [ -z \"$WD\" ]; then WD=/opt/jervis/work; fi; mkdir -p $WD && java ${JAVA_OPTS} -Djava.io.tmpdir=$WD -jar /opt/jervis/app.jar"]
+    CMD curl -f http://localhost:8081/actuator/health || exit 1
+ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /opt/jervis/tika/jervis-tika.jar --spring.config.additional-location=optional:file:/opt/jervis/tika/config/"]

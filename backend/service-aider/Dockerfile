@@ -23,13 +23,12 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir aider-chat
 
-WORKDIR /opt/jervis
-COPY --from=builder /app/backend/service-aider/build/libs/*.jar app.jar
-ENV SERVER_PORT=3100 \
+WORKDIR /opt/jervis/aider
+COPY --from=builder /app/backend/service-aider/build/libs/*.jar jervis-aider.jar
+ENV PORT=3100 \
     JAVA_OPTS="-Xmx1g -Xms256m" \
-    DATA_ROOT_DIR=/opt/jervis/data \
     PYTHONIOENCODING=utf-8
 EXPOSE 3100
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:${SERVER_PORT}/.well-known/agent-card.json || exit 1
-ENTRYPOINT ["sh", "-c", "mkdir -p ${DATA_ROOT_DIR} && java ${JAVA_OPTS} -Ddata.root.dir=${DATA_ROOT_DIR} -jar /opt/jervis/app.jar"]
+    CMD curl -f http://localhost:3100/.well-known/agent-card.json || exit 1
+ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /opt/jervis/aider/jervis-aider.jar"]
