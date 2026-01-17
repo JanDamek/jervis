@@ -1,5 +1,7 @@
 package com.jervis.ui
 
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -7,10 +9,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.jervis.di.NetworkModule
-import com.jervis.di.createJervisServices
 import com.jervis.repository.JervisRepository
-import kotlinx.rpc.krpc.ktor.client.KtorRpcClient
+import io.ktor.client.request.get
 
 /**
  * Main Jervis Application Composable
@@ -33,11 +37,28 @@ fun JervisApp(
 
     LaunchedEffect(serverBaseUrl) {
         try {
+            println("=== Jervis App: Initializing connection to $serverBaseUrl ===")
             val httpClient = NetworkModule.createHttpClient()
+            println("=== Jervis App: HTTP client created ===")
+
+            // Test basic HTTPS connection first
+            try {
+                println("=== Jervis App: Testing HTTPS connection to $serverBaseUrl ===")
+                val testResponse = httpClient.get("$serverBaseUrl/actuator/health")
+                println("=== Jervis App: HTTPS test successful, status: ${testResponse.status} ===")
+            } catch (e: Exception) {
+                println("=== Jervis App: HTTPS test FAILED: ${e::class.simpleName}: ${e.message} ===")
+                e.printStackTrace()
+                throw e
+            }
+
             val rpcClient = NetworkModule.createRpcClient(serverBaseUrl, httpClient)
-            services = NetworkModule.createServices(rpcClient = rpcClient)
+            println("=== Jervis App: RPC client created ===")
+            services = NetworkModule.createServices(rpcClient)
+            println("=== Jervis App: Services initialized successfully ===")
         } catch (e: Exception) {
-            println("Error connecting to server: ${e.message}")
+            println("=== Jervis App ERROR: ${e::class.simpleName}: ${e.message} ===")
+            e.printStackTrace()
             // Fallback or show error
         }
     }
@@ -45,7 +66,24 @@ fun JervisApp(
     // Create repository only when services are ready
     val currentServices = services
     if (currentServices == null) {
-        // Show loading or splash screen while connecting
+        // Show loading screen while connecting
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                CircularProgressIndicator()
+                Text("Connecting to server...")
+                Text(
+                    text = serverBaseUrl,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
         return
     }
 

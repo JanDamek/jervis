@@ -11,14 +11,12 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import mu.KotlinLogging
-import org.springframework.stereotype.Service
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Base64
 import java.util.concurrent.TimeUnit
 
-@Service
 class SimpleWhisperService : WhisperService {
     private val logger = KotlinLogging.logger {}
 

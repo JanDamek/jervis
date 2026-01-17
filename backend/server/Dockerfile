@@ -1,12 +1,3 @@
-# --- Build Stage ---
-FROM gradle:9.2.1-jdk21-jammy AS builder
-WORKDIR /app
-COPY . .
-RUN DOCKER_BUILD=true GRADLE_OPTS="-Xmx512m -XX:MaxMetaspaceSize=256m" \
-    gradle clean && \
-    gradle -x test --no-daemon :backend:common-services:jar && \
-    gradle -x test --no-daemon :backend:server:bootJar
-
 # --- Run Stage ---
 FROM eclipse-temurin:21-jre-jammy
 
@@ -17,8 +8,8 @@ RUN apt-get update && \
 
 WORKDIR /opt/jervis/server
 
-# Kopírování JAR aplikace
-COPY --from=builder /app/backend/server/build/libs/*.jar jervis-server.jar
+# Kopírování JAR aplikace (předpokládá se build hostitelem)
+COPY backend/server/build/libs/*.jar jervis-server.jar
 
 ENV JAVA_OPTS="-Xmx4g -Xms1g"
 EXPOSE 5500

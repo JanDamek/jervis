@@ -63,6 +63,7 @@ kotlin {
             }
 
             iosMain.dependencies {
+                // Darwin engine is the native iOS engine
                 implementation(libs.ktor.client.darwin)
             }
         }

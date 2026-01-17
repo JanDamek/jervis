@@ -71,11 +71,10 @@ class ConnectionManager(
             try {
                 status = ConnectionStatus.Connecting
 
-                // Try to create services
+                // Try to create services - Desktop UI uses ONLY RPC
                 val httpClient = NetworkModule.createHttpClient()
-                val a2aClient = NetworkModule.createA2AClient(serverBaseUrl, httpClient)
                 val rpcClient = NetworkModule.createRpcClient(serverBaseUrl, httpClient)
-                services = NetworkModule.createServices(a2aClient, rpcClient)
+                services = NetworkModule.createServices(rpcClient)
 
                 // Create repository
                 repository =

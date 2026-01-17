@@ -1,6 +1,11 @@
-# --- Run Stage ---
-FROM gradle:9.2.1-jdk21-jammy
+# --- Build Stage ---
+FROM gradle:9.2.1-jdk21-jammy AS builder
+WORKDIR /app
+COPY . .
+RUN DOCKER_BUILD=true GRADLE_OPTS="-Xmx512m -XX:MaxMetaspaceSize=256m" gradle :backend:service-coding-engine:jar --no-daemon
 
+# --- Run Stage ---
+FROM eclipse-temurin:21-jre-jammy
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     software-properties-common git curl ca-certificates gnupg && \
@@ -28,7 +33,7 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir openhands-ai
 
 WORKDIR /opt/jervis/coding-engine
-COPY backend/service-coding-engine/build/libs/*.jar jervis-coding-engine.jar
+COPY --from=builder /app/backend/service-coding-engine/build/libs/*.jar jervis-coding-engine.jar
 ENV PORT=3200 \
     JAVA_OPTS="-Xmx2g -Xms512m" \
     DOCKER_HOST=tcp://localhost:2375

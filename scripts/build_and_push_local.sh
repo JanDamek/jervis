@@ -1,8 +1,9 @@
 #!/bin/bash
 set -e
 
-# Tento skript sestaví a nasadí všechny obrazy do registru.
-# Sestavení probíhá uvnitř Dockeru (včetně Gradle buildu).
+# Sestavení všech JAR souborů lokálně předem
+echo "===> Čištění a sestavování všech backend projektů..."
+./gradlew clean bootJar jar -x test
 
 MODULES=(
   "server:backend/server"

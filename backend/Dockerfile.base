@@ -1,0 +1,33 @@
+# Base image with pre-built common modules
+# Build once, use in all service images
+FROM gradle:9.2.1-jdk21-jammy AS common-builder
+
+# Set environment for Docker build (excludes mobile apps)
+ENV DOCKER_BUILD=true
+
+WORKDIR /app
+
+# Copy only files needed for dependency resolution first (better caching)
+COPY gradle gradle
+COPY gradlew gradlew
+COPY settings.gradle.kts settings.gradle.kts
+COPY gradle.properties gradle.properties
+COPY build.gradle.kts build.gradle.kts
+COPY libs.versions.toml gradle/libs.versions.toml
+
+# Copy shared modules
+COPY shared shared
+
+# Copy backend common-services
+COPY backend/common-services backend/common-services
+
+# Build common modules with adequate memory
+RUN GRADLE_OPTS="-Xmx2g -XX:MaxMetaspaceSize=512m" \
+    gradle --no-daemon \
+    :shared:common-dto:jar \
+    :shared:common-api:jar \
+    :shared:domain:jar \
+    :backend:common-services:jar
+
+# This creates a base layer with all common dependencies built
+# Individual services can now build much faster by copying from this stage

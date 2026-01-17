@@ -23,6 +23,12 @@ import org.springframework.stereotype.Component
 class KtorRpcServer(
     private val clientRpcImpl: ClientRpcImpl,
     private val projectRpcImpl: ProjectRpcImpl,
+    private val userTaskRpcImpl: UserTaskRpcImpl,
+    private val ragSearchRpcImpl: RagSearchRpcImpl,
+    private val taskSchedulingRpcImpl: TaskSchedulingRpcImpl,
+    private val agentOrchestratorRpcImpl: AgentOrchestratorRpcImpl,
+    private val errorLogRpcImpl: ErrorLogRpcImpl,
+    private val connectionRpcImpl: ConnectionRpcImpl,
     private val properties: KtorClientProperties,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -64,6 +70,12 @@ class KtorRpcServer(
 
                                 registerService<com.jervis.service.IClientService> { clientRpcImpl }
                                 registerService<com.jervis.service.IProjectService> { projectRpcImpl }
+                                registerService<com.jervis.service.IUserTaskService> { userTaskRpcImpl }
+                                registerService<com.jervis.service.IRagSearchService> { ragSearchRpcImpl }
+                                registerService<com.jervis.service.ITaskSchedulingService> { taskSchedulingRpcImpl }
+                                registerService<com.jervis.service.IAgentOrchestratorService> { agentOrchestratorRpcImpl }
+                                registerService<com.jervis.service.IErrorLogService> { errorLogRpcImpl }
+                                registerService<com.jervis.service.IConnectionService> { connectionRpcImpl }
                             }
                         }
                     }

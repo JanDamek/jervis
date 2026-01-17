@@ -107,7 +107,7 @@ class JiraPollingHandler(
             }
         } catch (e: Exception) {
             logger.error(e) { "Failed to fetch Jira issues from ${connectionDocument.baseUrl}: ${e.message}" }
-            return emptyList()
+            throw e
         }
     }
 

@@ -96,12 +96,20 @@ object NetworkModule {
         baseUrl: String,
         httpClient: HttpClient = createHttpClient()
     ): KtorRpcClient {
-        val url = io.ktor.http.Url(baseUrl)
+        // Clean URL - remove trailing slash
+        val cleanBaseUrl = baseUrl.trimEnd('/')
+        val url = io.ktor.http.Url(cleanBaseUrl)
+
         return httpClient.rpc {
             url {
                 protocol = url.protocol
                 host = url.host
-                port = if (url.port != -1) url.port else protocol.defaultPort
+                // Only set port if explicitly specified and different from default
+                // For HTTPS (443) and HTTP (80), don't set port - use protocol default
+                val defaultPort = if (url.protocol == URLProtocol.HTTPS) 443 else 80
+                if (url.port != -1 && url.port != defaultPort) {
+                    port = url.port
+                }
                 encodedPath = "rpc"
             }
         }
@@ -131,41 +139,22 @@ object NetworkModule {
     }
 
     /**
-     * Create all service instances
+     * Create all service instances from RPC client
+     * UI applications (Desktop/iOS/Android) MUST use RPC only
      */
-    fun createServices(
-        a2aClient: A2AClient? = null,
-        rpcClient: KtorRpcClient? = null,
-    ): Services {
-        val a2aRpcClient = a2aClient?.let { A2ARPCClient(it, Json { ignoreUnknownKeys = true }) }
-
+    fun createServices(rpcClient: KtorRpcClient): Services {
         return Services(
-            projectService = rpcClient?.withService<IProjectService>()
-                ?: a2aRpcClient?.ProjectServiceProxy()
-                ?: error("IProjectService implementation not found"),
-            clientService = rpcClient?.withService<IClientService>()
-                ?: a2aRpcClient?.ClientServiceProxy()
-                ?: error("IClientService implementation not found"),
-            clientProjectLinkService = rpcClient?.withService<IClientProjectLinkService>()
-                ?: error("IClientProjectLinkService implementation not found"),
-            userTaskService = rpcClient?.withService<IUserTaskService>()
-                ?: a2aRpcClient?.UserTaskServiceProxy()
-                ?: error("IUserTaskService implementation not found"),
-            ragSearchService = rpcClient?.withService<IRagSearchService>()
-                ?: a2aRpcClient?.RagSearchServiceProxy()
-                ?: error("IRagSearchService implementation not found"),
-            taskSchedulingService = rpcClient?.withService<ITaskSchedulingService>()
-                ?: error("ITaskSchedulingService implementation not found"),
-            agentOrchestratorService = rpcClient?.withService<IAgentOrchestratorService>()
-                ?: error("IAgentOrchestratorService implementation not found"),
-            errorLogService = rpcClient?.withService<IErrorLogService>()
-                ?: error("IErrorLogService implementation not found"),
-            gitConfigurationService = rpcClient?.withService<IGitConfigurationService>()
-                ?: error("IGitConfigurationService implementation not found"),
-            pendingTaskService = rpcClient?.withService<IPendingTaskService>()
-                ?: error("IPendingTaskService implementation not found"),
-            connectionService = rpcClient?.withService<IConnectionService>()
-                ?: error("IConnectionService implementation not found"),
+            projectService = rpcClient.withService<IProjectService>(),
+            clientService = rpcClient.withService<IClientService>(),
+            clientProjectLinkService = rpcClient.withService<IClientProjectLinkService>(),
+            userTaskService = rpcClient.withService<IUserTaskService>(),
+            ragSearchService = rpcClient.withService<IRagSearchService>(),
+            taskSchedulingService = rpcClient.withService<ITaskSchedulingService>(),
+            agentOrchestratorService = rpcClient.withService<IAgentOrchestratorService>(),
+            errorLogService = rpcClient.withService<IErrorLogService>(),
+            gitConfigurationService = rpcClient.withService<IGitConfigurationService>(),
+            pendingTaskService = rpcClient.withService<IPendingTaskService>(),
+            connectionService = rpcClient.withService<IConnectionService>(),
         )
     }
 
@@ -187,17 +176,3 @@ object NetworkModule {
     )
 }
 
-fun createJervisServices(baseUrl: String): NetworkModule.Services {
-    val httpClient = NetworkModule.createHttpClient()
-    val a2aClient = NetworkModule.createA2AClient(baseUrl, httpClient)
-    return NetworkModule.createServices(a2aClient = a2aClient, rpcClient = null)
-}
-
-/**
- * Extension to easily create all services (blocking version for legacy use)
- */
-fun createJervisServicesBlocking(baseUrl: String): NetworkModule.Services {
-    val httpClient = NetworkModule.createHttpClient()
-    val a2aClient = NetworkModule.createA2AClient(baseUrl, httpClient)
-    return NetworkModule.createServices(a2aClient = a2aClient, rpcClient = null)
-}

@@ -1,4 +1,11 @@
+# --- Build Stage ---
+FROM gradle:9.2.1-jdk21-jammy AS builder
+WORKDIR /app
+COPY . .
+RUN DOCKER_BUILD=true gradle :backend:service-tika:jar --no-daemon
+
 # --- Run Stage ---
+# Dockerfile pro jervis-tika (optimized - lokální JAR)
 FROM eclipse-temurin:21-jdk-jammy
 
 # Install required tools and TiKa dependencies
@@ -40,7 +47,7 @@ ENV TIKA_OCR_LANG=eng+ces+spa+slk+fin+nor+dan+pol+deu+hun
 ENV TIKA_OCR_TIMEOUT_MS=120000
 
 WORKDIR /opt/jervis/tika
-COPY backend/service-tika/build/libs/*.jar jervis-tika.jar
+COPY --from=builder /app/backend/service-tika/build/libs/*.jar jervis-tika.jar
 ENV JAVA_OPTS="-Xmx2g -Xms512m"
 EXPOSE 8081
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \

@@ -2,19 +2,22 @@
 set -e
 
 # Tento skript sestaví image pro server a nasadí ho do k8s.
-# Dockerfile nyní obsahuje i gradle build modulu.
+# Předpokládá se, že JAR byl sestaven lokálně.
 
 SERVICE_NAME="server"
 IMAGE_NAME="jervis-server"
 REGISTRY="registry.damek-soft.eu/jandamek"
 NAMESPACE="jervis"
 
-echo "===> Sestavuji image $IMAGE_NAME:latest (včetně Gradle buildu)..."
 # Skript musí být spouštěn z kořene projektu.
 if [ ! -f "settings.gradle.kts" ]; then
   cd ../..
 fi
 
+echo "===> Sestavuji JAR pro $SERVICE_NAME..."
+./gradlew :backend:$SERVICE_NAME:clean :backend:$SERVICE_NAME:bootJar -x test
+
+echo "===> Sestavuji image $IMAGE_NAME:latest..."
 docker buildx build --platform linux/amd64 \
   -f "backend/$SERVICE_NAME/Dockerfile" \
   -t "$REGISTRY/$IMAGE_NAME:latest" \

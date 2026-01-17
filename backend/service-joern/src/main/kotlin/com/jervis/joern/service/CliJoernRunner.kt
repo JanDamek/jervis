@@ -5,10 +5,8 @@ import com.jervis.joern.domain.RunResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
-import org.springframework.stereotype.Service
 import java.nio.file.Files
 
-@Service
 class CliJoernRunner : JoernRunner {
     private val logger = KotlinLogging.logger {}
 

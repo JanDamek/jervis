@@ -4,21 +4,22 @@ import com.jervis.common.dto.TikaMetadata
 import com.jervis.common.dto.TikaProcessRequest
 import com.jervis.common.dto.TikaProcessResult
 import com.jervis.common.dto.TikaSourceLocation
-import com.jervis.ocr.configuration.TikaProperties
 import com.jervis.ocr.service.TikaDocumentProcessor
 import io.ktor.serialization.kotlinx.json.json
-import io.ktor.server.application.*
-import io.ktor.server.engine.*
-import io.ktor.server.netty.*
+import io.ktor.server.application.install
+import io.ktor.server.engine.embeddedServer
+import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
-import io.ktor.server.routing.*
-import io.ktor.server.websocket.*
+import io.ktor.server.routing.get
+import io.ktor.server.routing.post
+import io.ktor.server.routing.routing
+import io.ktor.server.websocket.WebSockets
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.rpc.krpc.ktor.server.*
+import kotlinx.rpc.krpc.ktor.server.rpc
 import kotlinx.rpc.krpc.serialization.cbor.cbor
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
@@ -30,13 +31,12 @@ object TikaKtorServer {
 
     @JvmStatic
     fun main(args: Array<String>) {
-        val port = System.getenv("SERVER_PORT")?.toIntOrNull() ?: 3400
+        val port = System.getenv("PORT")?.toIntOrNull() ?: 8081
         val host = System.getenv("HOST") ?: "0.0.0.0"
         val timeoutMs = System.getenv("TIKA_OCR_TIMEOUT_MS")?.toLongOrNull() ?: 120000L
-        logger.info { "Starting Tika Ktor server on $host:$port (timeoutMs=$timeoutMs)" }
+        logger.info { "Starting Tika RPC Server on $host:$port (timeoutMs=$timeoutMs)" }
 
-        val properties = TikaProperties(timeoutMs)
-        val processor = TikaDocumentProcessor(properties)
+        val processor = TikaDocumentProcessor(timeoutMs)
 
         embeddedServer(Netty, port = port, host = host) {
             install(WebSockets)
@@ -80,7 +80,8 @@ object TikaKtorServer {
                                             is TikaProcessRequest.Source.FileBytes -> {
                                                 val bytes = Base64.getDecoder().decode(source.dataBase64)
                                                 val inputStream = bytes.inputStream()
-                                                val sourceLocation = TikaDocumentProcessor.SourceLocation(source.fileName)
+                                                val sourceLocation =
+                                                    TikaDocumentProcessor.SourceLocation(source.fileName)
                                                 processor
                                                     .processDocumentStream(inputStream, source.fileName, sourceLocation)
                                                     .let { convertToDto(it, request.includeMetadata) }

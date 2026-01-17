@@ -21,7 +21,6 @@ class JunieService {
 
             logger.info { "JUNIE_JOB_START: jobId=$jobId, cid=${request.correlationId}" }
 
-            // Execute Junie job
             runCatching {
                 executeJunieJob(jobId, request)
             }.fold(
@@ -42,21 +41,16 @@ class JunieService {
     ): CodingExecuteResponse {
         logger.info { "JUNIE_EXECUTE: jobId=$jobId, taskDescription=${req.taskDescription.take(50)}..." }
 
-        // Build Junie command (headless mode as per instructions)
-        // junie --auth="$JUNIE_API_KEY" "Prompt"
         val command =
             buildList {
                 add("junie")
-                // Auth is handled via environment variable JUNIE_API_KEY
                 add(req.taskDescription)
             }
 
         logger.info { "JUNIE_COMMAND: ${command.joinToString(" ")}" }
 
-        // Execute Junie process
         val result = executeProcess(command)
 
-        // Build response based on exit code
         return when (result.exitCode) {
             null -> {
                 logger.error { "JUNIE_TIMEOUT: jobId=$jobId" }
@@ -91,7 +85,6 @@ class JunieService {
                 .apply {
                     redirectErrorStream(true)
                     environment().putAll(System.getenv())
-                    // Ensure the process runs in the data root directory if provided
                     val dataRootDir = System.getenv("DATA_ROOT_DIR")
                     if (!dataRootDir.isNullOrBlank()) {
                         directory(java.io.File(dataRootDir))
@@ -108,7 +101,6 @@ class JunieService {
      * Extract a concise error summary from Junie output.
      */
     private fun extractErrorSummary(output: String): String {
-        // Take the last few lines that might contain an error message
         val lines = output.lines().filter { it.isNotBlank() }.takeLast(3)
         return if (lines.isNotEmpty()) {
             "Last output: ${lines.joinToString(" | ").take(200)}"

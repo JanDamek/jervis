@@ -125,16 +125,16 @@ endpoints:
   searxng:
     baseUrl: http://192.168.100.117:30053/
   joern:
-    baseUrl: http://localhost:8082/
+    baseUrl: http://jervis-joern:8082/
   tika:
-    baseUrl: http://localhost:8081/
+    baseUrl: http://jervis-tika:8081/
   whisper:
-    baseUrl: http://localhost:8083/
+    baseUrl: http://jervis-whisper:8083/
   atlassian:
-    baseUrl: http://localhost:8084/
+    baseUrl: http://jervis-atlassian:8084/
   aider:
-    baseUrl: http://localhost:3100/
+    baseUrl: http://jervis-aider:3100/
   coding:
-    baseUrl: http://localhost:3200/
+    baseUrl: http://jervis-coding-engine:3200/
   junie:
-    baseUrl: http://localhost:3300/
+    baseUrl: http://jervis-junie:3300/

@@ -6,6 +6,8 @@ import com.jervis.repository.TaskRepository
 import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
 import com.jervis.types.SourceUrn
+import com.jervis.types.TaskId
+import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
@@ -64,4 +66,13 @@ class UserTaskService(
         )
         logger.info { "TASK_FAILED_ESCALATED:  reason=$reason" }
     }
+
+    suspend fun findActiveTasksByClient(clientId: ClientId): List<TaskDocument> =
+        userTaskRepository.findByClientIdAndType(clientId, TaskTypeEnum.USER_TASK).toList()
+
+    fun cancelTask(fromString: TaskId): TaskDocument {
+        TODO("Not yet implemented")
+    }
+
+    suspend fun getTaskById(fromString: TaskId) = userTaskRepository.findById(fromString)
 }

@@ -1,6 +1,7 @@
 package com.jervis.ocr.service
 
-import com.jervis.ocr.configuration.TikaProperties
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.apache.tika.exception.TikaException
 import org.apache.tika.metadata.Metadata
@@ -20,7 +21,7 @@ import kotlin.io.path.pathString
  * Provides text extraction with metadata preservation for source location tracking.
  */
 class TikaDocumentProcessor(
-    private val ocr: TikaProperties,
+    private val timeoutMs: Long,
 ) {
     private val logger = KotlinLogging.logger {}
     private val parser = AutoDetectParser()
@@ -71,7 +72,9 @@ class TikaDocumentProcessor(
         try {
             logger.debug { "Processing document: ${documentPath.pathString}" }
 
-            Files.newInputStream(documentPath).use { inputStream ->
+            withContext(Dispatchers.IO) {
+                Files.newInputStream(documentPath)
+            }.use { inputStream ->
                 processDocumentStream(
                     inputStream = inputStream,
                     fileName = documentPath.fileName.toString(),
@@ -91,7 +94,7 @@ class TikaDocumentProcessor(
     /**
      * Process document from input stream with custom source location
      */
-    suspend fun processDocumentStream(
+    fun processDocumentStream(
         inputStream: InputStream,
         fileName: String,
         sourceLocation: SourceLocation? = null,
@@ -166,8 +169,6 @@ class TikaDocumentProcessor(
         val tess = TesseractOCRConfig()
         // Configure timeout: prefer env var TIKA_OCR_TIMEOUT_MS, fallback to properties
         runCatching {
-            val envTimeout = System.getenv("TIKA_OCR_TIMEOUT_MS")?.toLongOrNull()
-            val timeoutMs = envTimeout ?: ocr.timeoutMs
             setTesseractTimeout(tess, timeoutMs)
         }.onFailure { e ->
             logger.warn(e) { "Failed to configure Tesseract timeout; proceeding with defaults" }
@@ -201,7 +202,7 @@ class TikaDocumentProcessor(
     private fun createPdfConfig(): PDFParserConfig {
         val pdf = PDFParserConfig()
         runCatching {
-            val enumClass = Class.forName("org.apache.tika.parser.pdf.PDFParserConfig\$OCR_STRATEGY")
+            val enumClass = Class.forName($$"org.apache.tika.parser.pdf.PDFParserConfig$OCR_STRATEGY")
             val constants = enumClass.enumConstants?.filterIsInstance<Enum<*>>() ?: emptyList()
             val ocrAndText = constants.firstOrNull { it.name == "OCR_AND_TEXT" }
             val setOcrMethod =
@@ -271,26 +272,6 @@ class TikaDocumentProcessor(
      * Extract title from filename if no title metadata is available
      */
     private fun extractTitleFromFileName(fileName: String): String = fileName.substringBeforeLast('.').replace("[_-]".toRegex(), " ").trim()
-
-    private fun isOcrImageFile(fileName: String): Boolean {
-        val ext = fileName.substringAfterLast('.', "").lowercase()
-        return ext in setOf("png", "jpg", "jpeg", "bmp", "tif", "tiff", "gif", "webp", "heic", "heif")
-    }
-
-    private fun guessMimeTypeFromFileName(fileName: String): String =
-        when (fileName.substringAfterLast('.', "").lowercase()) {
-            "png" -> "image/png"
-            "jpg", "jpeg" -> "image/jpeg"
-            "bmp" -> "image/bmp"
-            "tif", "tiff" -> "image/tiff"
-            "gif" -> "image/gif"
-            "webp" -> "image/webp"
-            "heic", "heif" -> "image/heic"
-            "pdf" -> "application/pdf"
-            else -> "application/octet-stream"
-        }
-
-    private fun isPdfFile(fileName: String): Boolean = fileName.substringAfterLast('.', "").equals("pdf", ignoreCase = true)
 }
 
 /**

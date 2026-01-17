@@ -63,6 +63,12 @@ class ErrorLogService(
         withContext(Dispatchers.IO) {
             repository.deleteById(id)
         }
+
+    suspend fun listAll(limit: Int) = repository.findAll().toList().map { it.toDomain() }
+
+    suspend fun deleteAll(objectId: ObjectId) {
+        repository.deleteAllByClientId(objectId)
+    }
 }
 
 private fun Throwable.toStackTraceString(): String =

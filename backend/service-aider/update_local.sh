@@ -2,7 +2,7 @@
 set -e
 
 # Tento skript sestaví image pro service-aider a nasadí ho do k8s.
-# Dockerfile nyní obsahuje i gradle build modulu.
+# Předpokládá se, že JAR byl sestaven lokálně.
 
 SERVICE_DIR="service-aider"
 IMAGE_NAME="jervis-aider"
@@ -14,7 +14,10 @@ if [ ! -f "settings.gradle.kts" ]; then
   cd ../..
 fi
 
-echo "===> Sestavuji image $IMAGE_NAME:latest (včetně Gradle buildu)..."
+echo "===> Sestavuji JAR pro $SERVICE_DIR..."
+./gradlew :backend:$SERVICE_DIR:clean :backend:$SERVICE_DIR:jar -x test
+
+echo "===> Sestavuji image $IMAGE_NAME:latest..."
 docker buildx build --platform linux/amd64 \
   -f "backend/$SERVICE_DIR/Dockerfile" \
   -t "$REGISTRY/$IMAGE_NAME:latest" \

@@ -18,26 +18,6 @@ spec:
         image: registry.damek-soft.eu/jandamek/jervis-tika:latest
         ports:
         - containerPort: 8081
-        volumeMounts:
-        - name: config
-          mountPath: /opt/jervis/tika/config
-          readOnly: true
-        livenessProbe:
-          httpGet:
-            path: /actuator/health
-            port: 8081
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /actuator/health
-            port: 8081
-          initialDelaySeconds: 15
-          periodSeconds: 10
-      volumes:
-      - name: config
-        configMap:
-          name: jervis-tika-config
 ---
 apiVersion: v1
 kind: Service
@@ -89,26 +69,6 @@ spec:
           periodSeconds: 10
       volumes:
       - name: config
-        configMap:
-          name: jervis-joern-config
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: jervis-joern
-  namespace: jervis
-spec:
-  selector:
-    app: jervis-joern
-  ports:
-  - port: 8082
-    targetPort: 8082
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: jervis-whisper
-  namespace: jervis
 spec:
   replicas: 1
   selector:
@@ -160,26 +120,6 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: jervis-aider
-  namespace: jervis
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: jervis-aider
-  template:
-    metadata:
-      labels:
-        app: jervis-aider
-    spec:
-      containers:
-      - name: aider
-        image: registry.damek-soft.eu/jandamek/jervis-aider:latest
-        ports:
-        - containerPort: 3100
-        env:
-        - name: PORT
-          value: "3100"
         livenessProbe:
           httpGet:
             path: /health
@@ -231,26 +171,6 @@ spec:
   template:
     metadata:
       labels:
-        app: jervis-coding-engine
-    spec:
-      containers:
-      - name: coding-engine
-        image: registry.damek-soft.eu/jandamek/jervis-coding-engine:latest
-        ports:
-        - containerPort: 3200
-        env:
-        - name: PORT
-          value: "3200"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 3200
-          initialDelaySeconds: 45
-          periodSeconds: 15
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 3200
           initialDelaySeconds: 30
           periodSeconds: 10
         startupProbe:
