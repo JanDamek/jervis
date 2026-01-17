@@ -98,4 +98,13 @@ interface IGitConfigurationService {
         projectId: String,
         request: ProjectGitOverrideRequestDto,
     ): ProjectDto
+
+    /**
+     * Clear Git override configuration for a project.
+     * Project will revert to using client's Git configuration.
+     *
+     * @param projectId The project ID
+     * @return Updated ProjectDto without Git overrides
+     */
+    suspend fun clearGitOverrideForProject(projectId: String): ProjectDto
 }

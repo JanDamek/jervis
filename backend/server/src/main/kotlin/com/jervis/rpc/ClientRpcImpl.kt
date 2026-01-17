@@ -1,5 +1,8 @@
 package com.jervis.rpc
 
+import com.jervis.service.error.ErrorLogService
+import mu.KotlinLogging
+
 import com.jervis.dto.ClientDto
 import com.jervis.mapper.toDocument
 import com.jervis.mapper.toDto
@@ -8,9 +11,9 @@ import com.jervis.service.client.ClientService
 import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
 import org.bson.types.ObjectId
-import org.springframework.stereotype.Service
+import org.springframework.stereotype.Component
 
-@Service
+@Component
 class ClientRpcImpl(
     private val clientService: ClientService
 ) : IClientService {

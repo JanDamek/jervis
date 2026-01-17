@@ -178,15 +178,18 @@ fun main() =
         }
 
         // Debug Window - desktop-only feature for monitoring LLM calls
+        // TODO: Restore debug window functionality
+        /*
         if (showDebug) {
             Window(
                 onCloseRequest = { showDebug = false },
                 title = "Debug Console - LLM Calls",
                 state = rememberWindowState(width = 1000.dp, height = 700.dp),
             ) {
-                com.jervis.ui.DebugWindow(eventsProvider = connectionManager)
+                // DebugWindow removed - needs reimplementation
             }
         }
+        */
 
         // Error notification popup - show immediately when new error arrives
         if (lastError != null && lastError.timestamp != dismissedErrorId) {

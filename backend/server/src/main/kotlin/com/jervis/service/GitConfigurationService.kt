@@ -53,4 +53,8 @@ class GitConfigurationService : IGitConfigurationService {
     ): ProjectDto {
         TODO("Not yet implemented")
     }
+
+    override suspend fun clearGitOverrideForProject(projectId: String): ProjectDto {
+        TODO("Not yet implemented")
+    }
 }

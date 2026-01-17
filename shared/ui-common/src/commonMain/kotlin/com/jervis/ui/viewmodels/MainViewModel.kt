@@ -4,9 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
-import com.jervis.service.IClientProjectLinkService
-import com.jervis.service.IClientService
-import com.jervis.service.IProjectService
+import com.jervis.repository.JervisRepository
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,38 +13,48 @@ import kotlinx.coroutines.launch
 
 /**
  * Main ViewModel - Simplified for initial setup
- * TODO: Add full chat functionality after testing
+ * Uses repository with built-in error handling to prevent crashes
  */
 class MainViewModel(
-    private val projectService: IProjectService,
-    private val clientService: IClientService,
-    private val clientProjectLinkService: IClientProjectLinkService
+    private val repository: JervisRepository,
 ) : ViewModel() {
-
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
+
+    // Global exception handler to prevent app crashes
+    private val exceptionHandler =
+        CoroutineExceptionHandler { _, exception ->
+            println("Uncaught exception in MainViewModel: ${exception.message}")
+            exception.printStackTrace()
+            _uiState.value = _uiState.value.copy(
+                isLoading = false,
+                error = "Failed to load data: ${exception.message}",
+            )
+        }
 
     init {
         loadData()
     }
 
     fun loadData() {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
 
             try {
-                val clients = clientService.getAllClients()
-                val projects = projectService.getAllProjects()
+                val clients = repository.clients.listClients()
+                val projects = repository.projects.getAllProjects()
 
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     clients = clients,
-                    projects = projects
+                    projects = projects,
                 )
             } catch (e: Exception) {
+                println("Error in loadData: ${e.message}")
+                e.printStackTrace()
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = e.message ?: "Unknown error"
+                    error = e.message ?: "Unknown error",
                 )
             }
         }

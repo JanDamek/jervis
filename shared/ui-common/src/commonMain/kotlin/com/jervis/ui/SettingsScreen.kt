@@ -78,8 +78,8 @@ import kotlinx.coroutines.launch
  * Note: Standalone "Connections" screen/tab has been removed. Connection management lives inside
  * Client/Project edit per guidelines (exclusive ownership, duplicate when needed).
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 fun SettingsScreen(
     repository: JervisRepository,
     onBack: () -> Unit,

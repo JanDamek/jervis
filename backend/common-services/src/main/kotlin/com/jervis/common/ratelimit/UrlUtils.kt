@@ -33,6 +33,7 @@ object UrlUtils {
     fun isInternalUrl(url: String): Boolean {
         val domain = extractDomain(url)
         return domain.startsWith("localhost") ||
+            domain.startsWith("jervis-") ||
             domain.startsWith("127.0.0.1") ||
             domain.startsWith("0.0.0.0") ||
             domain.startsWith("10.") ||

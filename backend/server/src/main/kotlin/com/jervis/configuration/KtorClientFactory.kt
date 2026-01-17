@@ -105,7 +105,7 @@ class KtorClientFactory(
             // Base URL
             defaultRequest {
                 url {
-                    val protocolStr = if (uri.scheme == "https") "https" else "http"
+                    val protocolStr = if (uri.scheme == "https" || uri.scheme == "wss") "https" else "http"
                     takeFrom(
                         "$protocolStr://${uri.host}${if (uri.port != -1) ":${uri.port}" else ""}${
                             uri.path.trimEnd(
@@ -196,7 +196,7 @@ class KtorClientFactory(
             // Base URL and authentication
             defaultRequest {
                 url {
-                    val protocolStr = if (uri.scheme == "https") "https" else "http"
+                    val protocolStr = if (uri.scheme == "https" || uri.scheme == "wss") "https" else "http"
                     takeFrom(
                         "$protocolStr://${uri.host}${if (uri.port != -1) ":${uri.port}" else ""}${
                             uri.path.trimEnd(

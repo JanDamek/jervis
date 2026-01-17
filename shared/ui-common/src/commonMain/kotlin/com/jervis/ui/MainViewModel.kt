@@ -4,6 +4,7 @@ import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ui.ChatMessage
 import com.jervis.repository.JervisRepository
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -19,7 +20,14 @@ class MainViewModel(
     defaultClientId: String? = null,
     defaultProjectId: String? = null,
 ) {
-    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    // Global exception handler to prevent app crashes
+    private val exceptionHandler = CoroutineExceptionHandler { _, exception ->
+        println("Uncaught exception in MainViewModel: ${exception.message}")
+        exception.printStackTrace()
+        _errorMessage.value = "An unexpected error occurred: ${exception.message}"
+    }
+
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob() + exceptionHandler)
 
     // UI State
     private val _clients = MutableStateFlow<List<ClientDto>>(emptyList())
@@ -46,6 +54,8 @@ class MainViewModel(
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
+    private var chatJob: kotlinx.coroutines.Job? = null
+
     init {
         // Load initial data
         loadClients()
@@ -53,6 +63,43 @@ class MainViewModel(
         // Auto-load projects if client is pre-selected
         _selectedClientId.value?.let { clientId ->
             selectClient(clientId)
+        }
+
+        // Subscribe to chat stream when both client and project are selected
+        scope.launch {
+            combine(_selectedClientId, _selectedProjectId) { clientId, projectId ->
+                clientId to projectId
+            }.collect { (clientId, projectId) ->
+                if (clientId != null && projectId != null) {
+                    subscribeToChatStream(clientId, projectId)
+                }
+            }
+        }
+    }
+
+    private fun subscribeToChatStream(clientId: String, projectId: String) {
+        // Cancel previous chat subscription
+        chatJob?.cancel()
+
+        // Subscribe to long-lived chat stream
+        chatJob = scope.launch {
+            println("=== Subscribing to chat stream for client=$clientId, project=$projectId ===")
+            repository.agentChat.subscribeToChat(clientId, projectId)
+                .catch { e ->
+                    println("Chat stream error: ${e.message}")
+                    e.printStackTrace()
+                    _errorMessage.value = "Chat connection error: ${e.message}"
+                }
+                .collect { response ->
+                    println("=== Received chat message: ${response.message} ===")
+                    // Add each response to chat messages
+                    _chatMessages.value = _chatMessages.value +
+                        ChatMessage(
+                            from = ChatMessage.Sender.Assistant,
+                            text = response.message,
+                            contextId = projectId,
+                        )
+                }
         }
     }
 
@@ -106,11 +153,13 @@ class MainViewModel(
             scope.launch {
                 try {
                     val updatedClient = repository.clients.updateLastSelectedProject(clientId, projectId)
-                    // Update local cache
-                    _clients.value =
-                        _clients.value.map {
-                            if (it.id == clientId) updatedClient else it
-                        }
+                    // Update local cache if successful
+                    if (updatedClient != null) {
+                        _clients.value =
+                            _clients.value.map {
+                                if (it.id == clientId) updatedClient else it
+                            }
+                    }
                 } catch (e: Exception) {
                     // Silent fail - not critical
                 }
@@ -142,27 +191,22 @@ class MainViewModel(
                 contextId = projectId,
             )
 
+        // Send message - responses will arrive via subscribeToChat stream
         scope.launch {
             _isLoading.value = true
             _inputText.value = "" // Clear input immediately
 
             try {
-                // Send message to agent orchestrator and wait for final answer
-                val response = repository.agentChat.sendAndWaitForAnswer(
+                repository.agentChat.sendMessage(
                     text = text,
                     clientId = clientId,
                     projectId = projectId,
                 )
-
-                // Show assistant's final answer prepared by finalizer
-                _chatMessages.value = _chatMessages.value +
-                    ChatMessage(
-                        from = ChatMessage.Sender.Assistant,
-                        text = response.message,
-                        contextId = projectId,
-                    )
+                println("=== Message sent successfully ===")
             } catch (e: Exception) {
-                _errorMessage.value = "Failed to get answer: ${e.message}"
+                println("Error sending message: ${e.message}")
+                e.printStackTrace()
+                _errorMessage.value = "Failed to send message: ${e.message}"
             } finally {
                 _isLoading.value = false
             }

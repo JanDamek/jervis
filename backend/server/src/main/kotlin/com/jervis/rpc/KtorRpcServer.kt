@@ -29,6 +29,10 @@ class KtorRpcServer(
     private val agentOrchestratorRpcImpl: AgentOrchestratorRpcImpl,
     private val errorLogRpcImpl: ErrorLogRpcImpl,
     private val connectionRpcImpl: ConnectionRpcImpl,
+    private val gitConfigurationRpcImpl: GitConfigurationRpcImpl,
+    private val clientProjectLinkRpcImpl: ClientProjectLinkRpcImpl,
+    private val pendingTaskRpcImpl: PendingTaskRpcImpl,
+    private val notificationRpcImpl: NotificationRpcImpl,
     private val properties: KtorClientProperties,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -76,6 +80,10 @@ class KtorRpcServer(
                                 registerService<com.jervis.service.IAgentOrchestratorService> { agentOrchestratorRpcImpl }
                                 registerService<com.jervis.service.IErrorLogService> { errorLogRpcImpl }
                                 registerService<com.jervis.service.IConnectionService> { connectionRpcImpl }
+                                registerService<com.jervis.service.IGitConfigurationService> { gitConfigurationRpcImpl }
+                                registerService<com.jervis.service.IClientProjectLinkService> { clientProjectLinkRpcImpl }
+                                registerService<com.jervis.service.IPendingTaskService> { pendingTaskRpcImpl }
+                                registerService<com.jervis.service.INotificationService> { notificationRpcImpl }
                             }
                         }
                     }

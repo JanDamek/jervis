@@ -1,5 +1,8 @@
 package com.jervis.rpc
 
+import com.jervis.service.error.ErrorLogService
+import mu.KotlinLogging
+
 import com.jervis.dto.user.TaskRoutingMode
 import com.jervis.dto.user.UserTaskCountDto
 import com.jervis.dto.user.UserTaskDto
@@ -10,10 +13,10 @@ import com.jervis.types.ClientId
 import com.jervis.types.TaskId
 import kotlinx.coroutines.flow.toList
 import org.bson.types.ObjectId
-import org.springframework.stereotype.Service
+import org.springframework.stereotype.Component
 import java.time.Instant
 
-@Service
+@Component
 class UserTaskRpcImpl(
     private val userTaskService: UserTaskService,
 ) : IUserTaskService {

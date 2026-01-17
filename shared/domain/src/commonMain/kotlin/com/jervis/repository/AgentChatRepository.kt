@@ -4,6 +4,7 @@ import com.jervis.dto.ChatRequestContextDto
 import com.jervis.dto.ChatRequestDto
 import com.jervis.dto.ChatResponseDto
 import com.jervis.service.IAgentOrchestratorService
+import kotlinx.coroutines.flow.Flow
 
 /**
  * Repository for Agent Chat operations
@@ -11,9 +12,23 @@ import com.jervis.service.IAgentOrchestratorService
  */
 class AgentChatRepository(
     private val agentOrchestratorService: IAgentOrchestratorService,
-) {
+) : BaseRepository() {
     /**
-     * Fire-and-forget: send a chat message to the agent orchestrator (202 Accepted path)
+     * Subscribe to long-lived chat stream for given client and project.
+     * Returns Flow of all responses - can receive multiple messages per send.
+     * Wrapped with error handling to prevent app crashes.
+     */
+    fun subscribeToChat(
+        clientId: String,
+        projectId: String,
+    ): Flow<ChatResponseDto> =
+        agentOrchestratorService
+            .subscribeToChat(clientId, projectId)
+            .safeFlow("subscribeToChat")
+
+    /**
+     * Send a chat message.
+     * Responses arrive via subscribeToChat() Flow, not as return value.
      */
     suspend fun sendMessage(
         text: String,
@@ -22,20 +37,9 @@ class AgentChatRepository(
         quick: Boolean = false,
     ) {
         val request = buildRequest(text, clientId, projectId, quick)
-        agentOrchestratorService.handle(request)
-    }
-
-    /**
-     * Synchronous chat: send message and wait for final agent answer.
-     */
-    suspend fun sendAndWaitForAnswer(
-        text: String,
-        clientId: String,
-        projectId: String,
-        quick: Boolean = false,
-    ): ChatResponseDto {
-        val request = buildRequest(text, clientId, projectId, quick)
-        return agentOrchestratorService.chat(request)
+        safeRpcCall("sendMessage", returnNull = true) {
+            agentOrchestratorService.sendMessage(request)
+        }
     }
 
     private fun buildRequest(
@@ -53,14 +57,14 @@ class AgentChatRepository(
     }
 
     /**
-     * Send a user task instruction to the agent orchestrator
+     * Send a user task instruction to the agent orchestrator.
+     * Responses arrive via subscribeToChat() Flow.
      */
     suspend fun sendUserTaskInstruction(
         instruction: String,
         taskId: String,
         clientId: String,
         projectId: String,
-        wsSessionId: String? = null,
     ) {
         // Prefix with task ID for traceability
         val enrichedInstruction = "User task $taskId: $instruction"

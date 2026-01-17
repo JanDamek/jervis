@@ -1,13 +1,14 @@
 package com.jervis.rpc
 
+
 import com.jervis.dto.error.ErrorLogCreateRequestDto
 import com.jervis.dto.error.ErrorLogDto
 import com.jervis.service.IErrorLogService
 import com.jervis.service.error.ErrorLogService
 import org.bson.types.ObjectId
-import org.springframework.stereotype.Service
+import org.springframework.stereotype.Component
 
-@Service
+@Component
 class ErrorLogRpcImpl(
     private val service: ErrorLogService,
 ) : IErrorLogService {

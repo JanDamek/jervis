@@ -62,13 +62,13 @@ class ScheduledTaskRepository(
     }
 
     /**
-     * Execute a task immediately through the agent orchestrator
+     * Execute a task immediately through the agent orchestrator.
+     * Sends the message - responses will arrive via subscribeToChat stream.
      */
     suspend fun executeTaskNow(
         content: String,
         clientId: String,
         projectId: String,
-        wsSessionId: String? = null,
     ) {
         val chatRequestContextDto =
             ChatRequestContextDto(
@@ -77,7 +77,7 @@ class ScheduledTaskRepository(
                 quick = false,
             )
 
-        agentOrchestratorService.handle(
+        agentOrchestratorService.sendMessage(
             ChatRequestDto(
                 text = content,
                 context = chatRequestContextDto,

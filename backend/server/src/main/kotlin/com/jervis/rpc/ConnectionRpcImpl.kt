@@ -1,8 +1,8 @@
 package com.jervis.rpc
 
-import org.springframework.stereotype.Service
-
-
+import com.jervis.service.error.ErrorLogService
+import mu.KotlinLogging
+import org.springframework.stereotype.Component
 import com.jervis.common.client.IAtlassianClient
 import com.jervis.common.dto.atlassian.AtlassianMyselfRequest
 import com.jervis.dto.connection.ConnectionCreateRequestDto
@@ -27,7 +27,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withContext
-import mu.KotlinLogging
 import java.util.Properties
 
 /**
@@ -37,7 +36,7 @@ import java.util.Properties
  * UI uses this to configure connections from first application start.
  */
 
-@Service
+@Component
 class ConnectionRpcImpl(
     private val connectionService: ConnectionService,
     private val httpClient: HttpClient,

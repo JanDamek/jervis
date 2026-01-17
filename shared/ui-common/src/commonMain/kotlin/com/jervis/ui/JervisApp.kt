@@ -3,7 +3,6 @@ package com.jervis.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,17 +19,15 @@ import io.ktor.client.request.get
  * Main Jervis Application Composable
  * Shared across Desktop, Android, iOS
  *
- * @param serverBaseUrl Base URL of the Jervis server (e.g., "http://localhost:5500")
+ * @param serverBaseUrl Base URL of the Jervis server (e.g., "https://jervis.damek-soft.eu")
  * @param defaultClientId Optional default client ID
  * @param defaultProjectId Optional default project ID
- * @param debugEventsProvider Optional DebugEventsProvider for Debug Console (mobile provides lifecycle-aware version)
  */
 @Composable
 fun JervisApp(
     serverBaseUrl: String,
     defaultClientId: String? = null,
     defaultProjectId: String? = null,
-    debugEventsProvider: DebugEventsProvider? = null,
 ) {
     // Initialize services
     var services by remember { mutableStateOf<NetworkModule.Services?>(null) }
@@ -52,9 +49,7 @@ fun JervisApp(
                 throw e
             }
 
-            val rpcClient = NetworkModule.createRpcClient(serverBaseUrl, httpClient)
-            println("=== Jervis App: RPC client created ===")
-            services = NetworkModule.createServices(rpcClient)
+            services = NetworkModule.createServicesFromUrl(serverBaseUrl, httpClient)
             println("=== Jervis App: Services initialized successfully ===")
         } catch (e: Exception) {
             println("=== Jervis App ERROR: ${e::class.simpleName}: ${e.message} ===")
@@ -103,13 +98,10 @@ fun JervisApp(
             )
         }
 
-    // Provide debug events provider via CompositionLocal (if provided by platform)
-    CompositionLocalProvider(LocalDebugEventsProvider provides debugEventsProvider) {
-        // Launch main app
-        App(
-            repository = repository,
-            defaultClientId = defaultClientId,
-            defaultProjectId = defaultProjectId,
-        )
-    }
+    // Launch main app
+    App(
+        repository = repository,
+        defaultClientId = defaultClientId,
+        defaultProjectId = defaultProjectId,
+    )
 }

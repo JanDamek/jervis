@@ -141,16 +141,6 @@ fun MainScreen(
                                 onNavigate(com.jervis.ui.navigation.Screen.ErrorLogs)
                             },
                         )
-                        HorizontalDivider()
-
-                        // Debug Console (WebSocket)
-                        DropdownMenuItem(
-                            text = { Text("Debug Console") },
-                            onClick = {
-                                showMenu = false
-                                onNavigate(com.jervis.ui.navigation.Screen.DebugConsole)
-                            },
-                        )
                     }
                 },
             )

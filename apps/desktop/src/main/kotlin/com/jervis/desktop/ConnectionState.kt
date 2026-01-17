@@ -7,7 +7,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.jervis.di.NetworkModule
-import com.jervis.dto.events.DebugEventDto
 import com.jervis.dto.events.ErrorNotificationEventDto
 import com.jervis.repository.JervisRepository
 import kotlinx.coroutines.CoroutineScope
@@ -37,7 +36,7 @@ sealed class ConnectionStatus {
  */
 class ConnectionManager(
     private val serverBaseUrl: String,
-) : com.jervis.ui.DebugEventsProvider {
+) {
     var status by mutableStateOf<ConnectionStatus>(ConnectionStatus.Connecting)
         private set
 
@@ -50,17 +49,8 @@ class ConnectionManager(
     var errorNotifications by mutableStateOf<List<ErrorNotificationEventDto>>(emptyList())
         private set
 
-    // Expose debug events as Flow instead of accumulated list to avoid duplicates
-    val debugWebSocketFlow: kotlinx.coroutines.flow.SharedFlow<DebugEventDto>?
-        get() = debugWebSocketClient?.debugEvents
-
-    // Implement DebugEventsProvider interface
-    override val debugEventsFlow: kotlinx.coroutines.flow.Flow<com.jervis.dto.events.DebugEventDto>?
-        get() = debugWebSocketFlow
-
     private var services: NetworkModule.Services? = null
     private var webSocketClient: WebSocketClient? = null
-    private var debugWebSocketClient: DebugWebSocketClient? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     /**
@@ -123,10 +113,6 @@ class ConnectionManager(
         webSocketClient = WebSocketClient(serverBaseUrl)
         webSocketClient?.start()
 
-        // Start separate debug WebSocket client
-        debugWebSocketClient = DebugWebSocketClient(serverBaseUrl)
-        debugWebSocketClient?.start()
-
         // User dialog manager (single instance)
         val dialogManager = UserDialogManager(webSocketClient!!, scope)
 
@@ -155,9 +141,6 @@ class ConnectionManager(
                 MacOSUtils.showNotification("Error", event.message)
             }
         }
-
-        // Debug events are now consumed directly by DebugWindow via debugWebSocketFlow
-        // No need to accumulate them here
 
         // Listen for user dialog requests
         scope.launch {
@@ -204,8 +187,6 @@ class ConnectionManager(
         status = ConnectionStatus.Offline
         webSocketClient?.stop()
         webSocketClient = null
-        debugWebSocketClient?.stop()
-        debugWebSocketClient = null
         repository = null
         services = null
     }

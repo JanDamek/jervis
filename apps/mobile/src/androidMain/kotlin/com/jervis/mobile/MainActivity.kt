@@ -6,7 +6,6 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import com.jervis.ui.JervisApp
-import com.jervis.ui.rememberLifecycleAwareDebugProvider
 
 /**
  * Android Application Entry Point
@@ -16,12 +15,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-            val serverBaseUrl = "https://jervis.damek-soft.eu/"
-            val debugProvider = rememberLifecycleAwareDebugProvider(serverBaseUrl)
+            val serverBaseUrl = "https://jervis.damek-soft.eu"
 
             JervisApp(
                 serverBaseUrl = serverBaseUrl,
-                debugEventsProvider = debugProvider,
             )
         }
     }

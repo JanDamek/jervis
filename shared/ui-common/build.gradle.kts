@@ -41,13 +41,6 @@ kotlin {
             // Kotlinx serialization
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.datetime)
-
-            // Ktor client for WebSocket
-            implementation(libs.ktor.client.core)
-            implementation(libs.ktor.client.websocket)
-
-            // AtomicFU for multiplatform atomic operations
-            implementation("org.jetbrains.kotlinx:atomicfu:0.26.1")
         }
 
         commonTest.dependencies {

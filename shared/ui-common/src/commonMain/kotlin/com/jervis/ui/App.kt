@@ -125,16 +125,12 @@ fun App(
                 )
             }
 
-            // Connections screen removed – connections are managed within Settings under Client/Project edit
+            // Debug console removed - server does not publish debug WebSocket
             Screen.DebugConsole -> {
-                val provider = LocalDebugEventsProvider.current
-                requireNotNull(
-                    provider,
-                ) { "DebugEventsProvider is not available. Provide it via LocalDebugEventsProvider at the app root." }
-                DebugWindow(
-                    eventsProvider = provider,
-                    onBack = { appNavigator.navigateTo(Screen.Main) },
-                )
+                // No debug window - navigate back to main
+                LaunchedEffect(Unit) {
+                    appNavigator.navigateTo(Screen.Main)
+                }
             }
         }
 

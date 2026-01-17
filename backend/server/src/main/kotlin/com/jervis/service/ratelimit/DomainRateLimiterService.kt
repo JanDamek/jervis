@@ -197,6 +197,11 @@ class DomainRateLimiterService(
             return true
         }
 
+        // K8s internal services
+        if (domain.startsWith("jervis-")) {
+            return true
+        }
+
         // Private IPv4 ranges (RFC 1918)
         if (domain.startsWith("192.168.") || domain.startsWith("10.")) {
             return true

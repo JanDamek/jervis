@@ -1,5 +1,8 @@
 package com.jervis.rpc
 
+import com.jervis.service.error.ErrorLogService
+import mu.KotlinLogging
+
 import com.jervis.dto.rag.RagSearchItemDto
 import com.jervis.dto.rag.RagSearchRequestDto
 import com.jervis.dto.rag.RagSearchResponseDto
@@ -9,9 +12,9 @@ import com.jervis.service.IRagSearchService
 import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
 import org.bson.types.ObjectId
-import org.springframework.stereotype.Service
+import org.springframework.stereotype.Component
 
-@Service
+@Component
 class RagSearchRpcImpl(
     private val knowledgeService: KnowledgeService,
 ) : IRagSearchService {

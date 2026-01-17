@@ -38,6 +38,7 @@ kotlin {
             implementation(libs.ktor.serialization.kotlinx.json)
             implementation(libs.ktor.serialization.kotlinx.cbor)
             implementation(libs.ktor.client.logging)
+            implementation(libs.ktor.client.websocket)
 
             // Serialization
             implementation(libs.kotlinx.serialization.json)

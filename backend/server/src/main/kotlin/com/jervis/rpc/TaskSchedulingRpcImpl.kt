@@ -1,5 +1,8 @@
 package com.jervis.rpc
 
+import com.jervis.service.error.ErrorLogService
+import mu.KotlinLogging
+
 import com.jervis.dto.ScheduledTaskDto
 import com.jervis.mapper.toDto
 import com.jervis.service.ITaskSchedulingService
@@ -8,10 +11,10 @@ import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
 import com.jervis.types.TaskId
 import org.bson.types.ObjectId
-import org.springframework.stereotype.Service
+import org.springframework.stereotype.Component
 import java.time.Instant
 
-@Service
+@Component
 class TaskSchedulingRpcImpl(
     private val taskSchedulingService: TaskSchedulingService,
 ) : ITaskSchedulingService {
