@@ -25,6 +25,7 @@ COPY backend/service-junie/build/libs/*.jar jervis-junie.jar
 ENV PORT=3300 \
     JAVA_OPTS="-Xmx1g -Xms256m"
 EXPOSE 3300
+EXPOSE 3301
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:3300/.well-known/agent-card.json || exit 1
+    CMD curl -f http://localhost:3301/health || exit 1
 ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /opt/jervis/junie/jervis-junie.jar"]

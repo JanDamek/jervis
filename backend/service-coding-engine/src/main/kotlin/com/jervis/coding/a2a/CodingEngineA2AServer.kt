@@ -11,6 +11,7 @@ import io.ktor.server.netty.Netty
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import mu.KotlinLogging
 
@@ -70,27 +71,32 @@ object CodingEngineA2AServer {
         val transport = HttpJSONRPCServerTransport(a2aServer)
         logger.info { "Koog A2A server starting on $publicBaseUrl$a2aPath" }
 
+        val healthPort = port + 1
+        logger.info { "Starting health check server on port $healthPort..." }
+        embeddedServer(Netty, port = healthPort, host = "0.0.0.0") {
+            routing {
+                get("/health") {
+                    call.respondText("""{"status":"UP"}""", io.ktor.http.ContentType.Application.Json)
+                }
+                get("/actuator/health") {
+                    call.respondText("""{"status":"UP"}""", io.ktor.http.ContentType.Application.Json)
+                }
+                get(a2aPath) {
+                    call.respondText(
+                        """{"status":"UP","agent":"${agentCard.name}","capabilities":{"streaming":${agentCard.capabilities.streaming}}}""",
+                        io.ktor.http.ContentType.Application.Json,
+                    )
+                }
+            }
+        }.start(wait = false)
+
         runBlocking {
             transport.start(
                 engineFactory = Netty,
                 port = port,
                 path = a2aPath,
-                wait = false,
+                wait = true,
             )
-
-            io.ktor.server.engine.embeddedServer(Netty, port = port, host = host) {
-                routing {
-                    get("/health") {
-                        call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
-                    }
-                    get("/actuator/health") {
-                        call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
-                    }
-                    get("/") {
-                        call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
-                    }
-                }
-            }.start(wait = true)
         }
     }
 }

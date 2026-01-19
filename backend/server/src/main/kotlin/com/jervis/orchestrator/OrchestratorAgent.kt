@@ -142,7 +142,13 @@ class OrchestratorAgent(
      * Simple tool-calling loop - internal agents are tools.
      */
     suspend fun create(task: TaskDocument): AIAgent<String, String> {
-        val promptExecutor = promptExecutorFactory.getExecutor("OLLAMA")
+        val model =
+            smartModelSelector.selectModel(
+                baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
+                inputContent = task.content,
+            )
+
+        val promptExecutor = promptExecutorFactory.getExecutor(model.provider.name.uppercase())
 
         val aiderBaseUrl =
             endpointProperties.aider.baseUrl.ifBlank {
@@ -187,12 +193,17 @@ class OrchestratorAgent(
                 OrchestratorDecision(
                     type = DecisionType.A2A,
                     agent = A2A_AGENT_AIDER,
-                    payload = "Fix a small localized bug in Foo.kt and adjust unit test if needed.",
+                    payload = "FILES: [src/main/kotlin/com/jervis/Foo.kt]\nINSTRUCTIONS: Fix a small localized bug in Foo.kt and adjust unit test if needed.\nVERIFY: ./gradlew test",
                 ),
                 OrchestratorDecision(
                     type = DecisionType.A2A,
                     agent = A2A_AGENT_OPENHANDS,
-                    payload = "Refactor across multiple modules. Search logs, run tests, and produce a robust fix.",
+                    payload = "FILES: []\nINSTRUCTIONS: Refactor across multiple modules. Search logs, run tests, and produce a robust fix.\nVERIFY: ./gradlew build",
+                ),
+                OrchestratorDecision(
+                    type = DecisionType.A2A,
+                    agent = A2A_AGENT_JUNIE,
+                    payload = "FILES: []\nINSTRUCTIONS: Deep analysis and complex programming for time-critical feature.\nVERIFY: ./gradlew test",
                 ),
                 OrchestratorDecision(
                     type = DecisionType.FINAL,
@@ -233,21 +244,12 @@ class OrchestratorAgent(
                                 decision.payload?.takeIf { it.isNotBlank() }
                                     ?: throw IllegalStateException("OrchestratorDecision: payload is required for type=A2A")
 
-                            val params = Json.decodeFromString<TaskParams>(payload)
-
                             val message =
                                 Message(
                                     messageId = UUID.randomUUID().toString(),
                                     role = Role.User,
                                     parts = listOf(TextPart(payload)),
                                     contextId = task.correlationId,
-                                    metadata =
-                                        params?.let {
-                                            Json.encodeToJsonElement(
-                                                TaskParams.serializer(),
-                                                it,
-                                            ) as? JsonObject
-                                        },
                                 )
 
                             NextAction.Delegate(
@@ -321,31 +323,31 @@ class OrchestratorAgent(
                 // === Tool execution routing ===
                 edge(
                     (nodeExecuteTool forwardTo nodeCompressHistory)
-                        .onCondition { llm.readSession { prompt.messages.size > 50 } },
+                        .onCondition { llm.readSession { prompt.messages.size > 50 } }
                 )
                 edge(nodeCompressHistory forwardTo nodeSendToolResult)
 
                 edge(
                     (nodeExecuteTool forwardTo nodeSendToolResult)
-                        .onCondition { llm.readSession { prompt.messages.size <= 50 } },
+                        .onCondition { llm.readSession { prompt.messages.size <= 50 } }
                 )
 
                 // === After sending tool result, route again ===
                 edge(
                     (nodeSendToolResult forwardTo nodeTransformToDecision)
-                        .onAssistantMessage { true },
+                        .onAssistantMessage { true }
                 )
 
                 // Route based on structured decision
                 edge(
                     (nodeMapNextAction forwardTo nodeA2ASendMessage)
                         .onIsInstance(NextAction.Delegate::class)
-                        .transformed { it.request },
+                        .transformed { it.request }
                 )
                 edge(
                     (nodeMapNextAction forwardTo nodeFinish)
                         .onIsInstance(NextAction.Final::class)
-                        .transformed { it.answer },
+                        .transformed { it.answer }
                 )
 
                 edge((nodeSendToolResult forwardTo nodeExecuteTool).onToolCall { true })
@@ -355,11 +357,6 @@ class OrchestratorAgent(
                 edge(nodeProcessA2AResponse forwardTo nodeLLMRequest)
             }
 
-        val model =
-            smartModelSelector.selectModel(
-                baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
-                inputContent = task.content,
-            )
 
         logger.info {
             "ORCHESTRATOR_CREATE | correlationId=${task.correlationId} | " +
@@ -384,7 +381,7 @@ class OrchestratorAgent(
                             2. ARCHITECT PHASE (Mandatory for coding/verify):
                                - Before delegating any "coding" or "verify" step, you MUST call proposeTechnicalSpecification(step, context, evidence)
                                - This tool designers the technical solution and returns A2ADelegationSpec.
-                               - The spec tells you WHICH agent to use (Aider vs OpenHands) and WHAT exactly to do.
+                               - The spec tells you WHICH agent to use (Aider vs OpenHands vs Junie) and WHAT exactly to do.
 
                             3. EXECUTION PHASE:
                                - Execute plan steps in order using appropriate tools:
@@ -393,7 +390,7 @@ class OrchestratorAgent(
                                    - Then use the resulting A2ADelegationSpec to make an A2A delegation decision.
                                    - When asked for OrchestratorDecision:
                                      - type=A2A
-                                     - agent = spec.agent
+                                     - agent = spec.agent (aider, openhands or junie)
                                      - payload = "FILES: " + spec.targetFiles + "\nINSTRUCTIONS: " + spec.instructions + "\nVERIFY: " + spec.verifyInstructions
                                  * action=rag_ingest → ingestKnowledge()
                                  * action=rag_lookup → searchKnowledge()
@@ -511,7 +508,6 @@ class OrchestratorAgent(
         userInput: String,
     ): String {
         val startTime = System.currentTimeMillis()
-        val provider = "OLLAMA"
 
         logger.info {
             "🎯 ORCHESTRATOR_START | correlationId=${task.correlationId} | " +
@@ -519,9 +515,16 @@ class OrchestratorAgent(
                 "inputLength=${userInput.length}"
         }
 
-        activeAgents[task.correlationId] = provider
         return try {
             val agent: AIAgent<String, String> = create(task)
+            
+            val model =
+                smartModelSelector.selectModel(
+                    baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
+                    inputContent = task.content,
+                )
+            activeAgents[task.correlationId] = model.provider.name.uppercase()
+
             val output: String = agent.run(userInput)
             val duration = System.currentTimeMillis() - startTime
 
@@ -578,7 +581,7 @@ class OrchestratorAgent(
         Decide the NEXT orchestrator action based on the conversation so far.
 
         - If you need to delegate coding or verification to an external coding agent, choose type=A2A and fill:
-          * agent: 'aider' for small localized edits, 'openhands' for complex/refactor/debug, OR 'junie' for time-critical/complex tasks (expensive but fast).
+          * agent: 'aider' for small localized edits, 'openhands' for complex/refactor/debug, OR 'junie' for complex tasks where user explicitly wants FAST results (expensive but fast).
           * payload: the exact instruction to execute (for verify use: 'VERIFY\n<commands>')
 
         - If you are ready to respond to the user, choose type=FINAL and fill finalAnswer.

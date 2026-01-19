@@ -18,6 +18,18 @@ spec:
         image: registry.damek-soft.eu/jandamek/jervis-tika:latest
         ports:
         - containerPort: 8081
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8081
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 10
 ---
 apiVersion: v1
 kind: Service
@@ -69,6 +81,12 @@ spec:
           periodSeconds: 10
       volumes:
       - name: config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-whisper
+  namespace: jervis
 spec:
   replicas: 1
   selector:
@@ -117,25 +135,55 @@ spec:
   - port: 8083
     targetPort: 8083
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-joern
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-joern
+  ports:
+  - port: 8082
+    targetPort: 8082
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  name: jervis-aider
+  namespace: jervis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jervis-aider
+  template:
+    metadata:
+      labels:
+        app: jervis-aider
+    spec:
+      containers:
+      - name: aider
+        image: registry.damek-soft.eu/jandamek/jervis-aider:latest
+        ports:
+        - containerPort: 3100
+        - containerPort: 3101
         livenessProbe:
           httpGet:
             path: /health
-            port: 3100
+            port: 3101
           initialDelaySeconds: 45
           periodSeconds: 15
         readinessProbe:
           httpGet:
             path: /health
-            port: 3100
+            port: 3101
           initialDelaySeconds: 30
           periodSeconds: 10
         startupProbe:
           httpGet:
             path: /health
-            port: 3100
+            port: 3101
           failureThreshold: 30
           periodSeconds: 10
         volumeMounts:
@@ -155,8 +203,12 @@ spec:
   selector:
     app: jervis-aider
   ports:
-  - port: 3100
+  - name: a2a
+    port: 3100
     targetPort: 3100
+  - name: health
+    port: 3101
+    targetPort: 3101
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -171,12 +223,30 @@ spec:
   template:
     metadata:
       labels:
+        app: jervis-coding-engine
+    spec:
+      containers:
+      - name: coding-engine
+        image: registry.damek-soft.eu/jandamek/jervis-coding-engine:latest
+        ports:
+        - containerPort: 3200
+        - containerPort: 3201
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3201
+          initialDelaySeconds: 45
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3201
           initialDelaySeconds: 30
           periodSeconds: 10
         startupProbe:
           httpGet:
             path: /health
-            port: 3200
+            port: 3201
           failureThreshold: 30
           periodSeconds: 10
         volumeMounts:
@@ -196,8 +266,12 @@ spec:
   selector:
     app: jervis-coding-engine
   ports:
-  - port: 3200
+  - name: a2a
+    port: 3200
     targetPort: 3200
+  - name: health
+    port: 3201
+    targetPort: 3201
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -309,6 +383,14 @@ spec:
             secretKeyRef:
               name: jervis-secrets
               key: JUNIE_API_KEY
+        - name: CODING_TOOLS_JUNIE_DEFAULT_PROVIDER
+          value: "anthropic"
+        - name: CODING_TOOLS_JUNIE_DEFAULT_MODEL
+          value: "claude-3-5-sonnet-20241022"
+        - name: CODING_TOOLS_JUNIE_PAID_PROVIDER
+          value: "anthropic"
+        - name: CODING_TOOLS_JUNIE_PAID_MODEL
+          value: "claude-3-5-sonnet-20241022"
         volumeMounts:
         - name: jervis-data
           mountPath: /opt/jervis/data
@@ -378,6 +460,7 @@ spec:
         image: registry.damek-soft.eu/jandamek/jervis-junie:latest
         ports:
         - containerPort: 3300
+        - containerPort: 3301
         env:
         - name: PORT
           value: "3300"
@@ -389,19 +472,19 @@ spec:
         livenessProbe:
           httpGet:
             path: /health
-            port: 3300
+            port: 3301
           initialDelaySeconds: 45
           periodSeconds: 15
         readinessProbe:
           httpGet:
             path: /health
-            port: 3300
+            port: 3301
           initialDelaySeconds: 30
           periodSeconds: 10
         startupProbe:
           httpGet:
             path: /health
-            port: 3300
+            port: 3301
           failureThreshold: 30
           periodSeconds: 10
         volumeMounts:
@@ -421,5 +504,9 @@ spec:
   selector:
     app: jervis-junie
   ports:
-  - port: 3300
+  - name: a2a
+    port: 3300
     targetPort: 3300
+  - name: health
+    port: 3301
+    targetPort: 3301

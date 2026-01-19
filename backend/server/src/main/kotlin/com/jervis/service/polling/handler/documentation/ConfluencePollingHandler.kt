@@ -34,7 +34,7 @@ class ConfluencePollingHandler(
     ) {
     override fun canHandle(connectionDocument: ConnectionDocument): Boolean =
         connectionDocument.connectionType == ConnectionDocument.ConnectionTypeEnum.HTTP &&
-            connectionDocument.baseUrl?.contains("atlassian.net") == true
+            (connectionDocument.baseUrl?.contains("atlassian.net") == true || connectionDocument.baseUrl?.contains("atlassian") == true)
 
     override fun getSystemName(): String = "Confluence"
 
@@ -89,7 +89,7 @@ class ConfluencePollingHandler(
             }
         } catch (e: Exception) {
             logger.error(e) { "Failed to fetch Confluence pages from ${connectionDocument.baseUrl}: ${e.message}" }
-            return emptyList()
+            throw e
         }
     }
 

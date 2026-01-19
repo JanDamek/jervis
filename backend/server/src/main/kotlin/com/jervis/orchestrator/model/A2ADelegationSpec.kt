@@ -9,7 +9,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class A2ADelegationSpec(
-    @property:LLMDescription("Target A2A agent: 'aider' for small localized edits, 'openhands' for complex/broad tasks")
+    @property:LLMDescription("Target A2A agent: 'aider' for small localized edits, 'openhands' for complex/broad tasks, 'junie' for high-priority/fast/complex analysis and programming (paid service)")
     val agent: String,
     @property:LLMDescription("List of files to modify (specifically for Aider)")
     val targetFiles: List<String> = emptyList(),

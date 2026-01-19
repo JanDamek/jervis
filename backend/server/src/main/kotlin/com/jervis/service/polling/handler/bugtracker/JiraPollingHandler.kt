@@ -50,7 +50,7 @@ class JiraPollingHandler(
     ) {
     override fun canHandle(connectionDocument: ConnectionDocument): Boolean =
         connectionDocument.connectionType == ConnectionDocument.ConnectionTypeEnum.HTTP &&
-            connectionDocument.baseUrl?.contains("atlassian.net") == true
+            (connectionDocument.baseUrl?.contains("atlassian.net") == true || connectionDocument.baseUrl?.contains("atlassian") == true)
 
     override fun getSystemName(): String = "Jira"
 

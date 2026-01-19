@@ -14,7 +14,7 @@ class AtlassianServiceImpl(
 
     override suspend fun getMyself(request: AtlassianMyselfRequest): AtlassianUserDto =
         withContext(Dispatchers.IO) {
-            logger.info { "getMyself request for cloudId=${request.cloudId}" }
+            logger.info { "getMyself request for baseUrl=${request.baseUrl}" }
             atlassianApiClient.getMyself(request)
         }
 
@@ -44,13 +44,13 @@ class AtlassianServiceImpl(
 
     override suspend fun downloadJiraAttachment(request: JiraAttachmentDownloadRequest): ByteArray? =
         withContext(Dispatchers.IO) {
-            logger.info { "downloadJiraAttachment request: attachmentId=${request.attachmentId}" }
+            logger.info { "downloadJiraAttachment request: attachmentUrl=${request.attachmentUrl}" }
             atlassianApiClient.downloadJiraAttachment(request)
         }
 
     override suspend fun downloadConfluenceAttachment(request: ConfluenceAttachmentDownloadRequest): ByteArray? =
         withContext(Dispatchers.IO) {
-            logger.info { "downloadConfluenceAttachment request: attachmentId=${request.attachmentId}" }
+            logger.info { "downloadConfluenceAttachment request: attachmentDownloadUrl=${request.attachmentDownloadUrl}" }
             atlassianApiClient.downloadConfluenceAttachment(request)
         }
 }

@@ -12,6 +12,7 @@ import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
+import io.ktor.server.websocket.WebSockets
 import kotlinx.rpc.krpc.ktor.server.rpc
 import kotlinx.rpc.krpc.serialization.cbor.cbor
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -29,6 +30,7 @@ fun main() {
     val joernService: IJoernClient = JoernServiceImpl(joernRunner)
 
     embeddedServer(Netty, port = port, host = "0.0.0.0") {
+        install(WebSockets)
         install(ContentNegotiation) {
             json(
                 Json {
@@ -50,11 +52,6 @@ fun main() {
             }
 
             rpc("/rpc") {
-                rpcConfig {
-                    serialization {
-                        cbor()
-                    }
-                }
                 registerService<IJoernClient> { joernService }
             }
         }

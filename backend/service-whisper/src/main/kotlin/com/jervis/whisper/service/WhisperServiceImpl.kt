@@ -3,7 +3,6 @@ package com.jervis.whisper.service
 import com.jervis.common.client.IWhisperClient
 import com.jervis.common.dto.WhisperRequestDto
 import com.jervis.common.dto.WhisperResultDto
-import com.jervis.common.dto.WhisperSegmentDto
 import com.jervis.whisper.domain.WhisperJob
 import com.jervis.whisper.domain.WhisperService
 import mu.KotlinLogging
@@ -18,23 +17,22 @@ class WhisperServiceImpl(
         return try {
             logger.info { "Received Whisper transcribe request" }
 
-            val job = when {
-                request.audioUrl != null -> WhisperJob.FromUrl(
-                    url = request.audioUrl,
+            val job = when (val audio = request.audio) {
+                is WhisperRequestDto.Audio.Url -> WhisperJob.FromUrl(
+                    url = audio.url,
                     diarization = request.diarization
                 )
-                request.audioBase64 != null && request.mimeType != null -> WhisperJob.FromBase64(
-                    mimeType = request.mimeType,
-                    data = request.audioBase64,
+                is WhisperRequestDto.Audio.Base64 -> WhisperJob.FromBase64(
+                    mimeType = audio.mimeType,
+                    data = audio.data,
                     diarization = request.diarization
                 )
-                else -> throw IllegalArgumentException("Either audioUrl or audioBase64 with mimeType must be provided")
             }
 
             val transcript = whisperService.transcribe(job)
 
             val segments = transcript.segments.map { seg ->
-                WhisperSegmentDto(
+                WhisperResultDto.Segment(
                     startSec = seg.startSec,
                     endSec = seg.endSec,
                     text = seg.text
@@ -45,17 +43,13 @@ class WhisperServiceImpl(
 
             WhisperResultDto(
                 text = transcript.text,
-                segments = segments,
-                success = true,
-                errorMessage = null
+                segments = segments
             )
         } catch (e: Exception) {
             logger.error(e) { "Whisper transcription failed: ${e.message}" }
             WhisperResultDto(
                 text = "",
-                segments = emptyList(),
-                success = false,
-                errorMessage = e.message
+                segments = emptyList()
             )
         }
     }

@@ -120,6 +120,11 @@ coding-tools:
     paid-provider: anthropic
     paid-model: claude-3-5-sonnet-20241022
     ollama-base-url: http://192.168.100.117:11434
+  junie:
+    default-provider: anthropic
+    default-model: claude-3-5-sonnet-20241022
+    paid-provider: anthropic
+    paid-model: claude-3-5-sonnet-20241022
 
 endpoints:
   searxng:

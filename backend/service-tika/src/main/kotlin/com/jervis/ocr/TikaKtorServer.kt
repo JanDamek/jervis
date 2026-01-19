@@ -51,12 +51,6 @@ object TikaKtorServer {
             }
             routing {
                 rpc("/rpc") {
-                    rpcConfig {
-                        serialization {
-                            cbor()
-                        }
-                    }
-
                     registerService<com.jervis.common.client.ITikaClient> {
                         object : com.jervis.common.client.ITikaClient {
                             override suspend fun process(request: TikaProcessRequest): TikaProcessResult {

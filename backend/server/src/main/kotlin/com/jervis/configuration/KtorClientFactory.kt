@@ -6,6 +6,10 @@ import com.jervis.configuration.properties.KtorClientProperties
 import com.jervis.configuration.properties.RetryProperties
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.websocket.WebSockets
+import io.ktor.client.plugins.websocket.webSocket
+import io.ktor.client.plugins.websocket.webSocketSession
+import io.ktor.serialization.kotlinx.KotlinxWebsocketSerializationConverter
 import io.ktor.client.engine.cio.endpoint
 import io.ktor.client.plugins.DefaultRequest
 import io.ktor.client.plugins.HttpRequestRetry
@@ -78,13 +82,13 @@ class KtorClientFactory(
                 },
             )
             put("searxng", createHttpClient(endpoints.searxng.baseUrl))
-            put("aider", createHttpClient(endpoints.aider.baseUrl))
-            put("coding", createHttpClient(endpoints.coding.baseUrl))
-            put("tika", createHttpClient(endpoints.tika.baseUrl))
-            put("joern", createHttpClient(endpoints.joern.baseUrl))
-            put("whisper", createHttpClient(endpoints.whisper.baseUrl))
-            put("atlassian", createHttpClient(endpoints.atlassian.baseUrl))
-            put("junie", createHttpClient(endpoints.junie.baseUrl))
+            put("aider", createHttpClient(endpoints.aider.baseUrl.replace("ws://", "http://").replace("wss://", "https://").removeSuffix("/a2a")))
+            put("coding", createHttpClient(endpoints.coding.baseUrl.replace("ws://", "http://").replace("wss://", "https://").removeSuffix("/a2a")))
+            put("tika", createHttpClient(endpoints.tika.baseUrl, isRpc = true))
+            put("joern", createHttpClient(endpoints.joern.baseUrl, isRpc = true))
+            put("whisper", createHttpClient(endpoints.whisper.baseUrl, isRpc = true))
+            put("atlassian", createHttpClient(endpoints.atlassian.baseUrl, isRpc = true))
+            put("junie", createHttpClient(endpoints.junie.baseUrl.replace("ws://", "http://").replace("wss://", "https://").removeSuffix("/a2a")))
         }
     }
 
@@ -99,13 +103,13 @@ class KtorClientFactory(
             ?: throw IllegalArgumentException("HttpClient not found for endpoint: $endpointName")
 
     @OptIn(ExperimentalSerializationApi::class)
-    private fun createHttpClient(baseUrl: String): HttpClient =
+    private fun createHttpClient(baseUrl: String, isRpc: Boolean = false): HttpClient =
         HttpClient(CIO) {
             val uri = URI(baseUrl)
             // Base URL
             defaultRequest {
                 url {
-                    val protocolStr = if (uri.scheme == "https" || uri.scheme == "wss") "https" else "http"
+                    val protocolStr = uri.scheme ?: "http"
                     takeFrom(
                         "$protocolStr://${uri.host}${if (uri.port != -1) ":${uri.port}" else ""}${
                             uri.path.trimEnd(
@@ -114,9 +118,12 @@ class KtorClientFactory(
                         }/",
                     )
                 }
-                contentType(ContentType.Application.Json)
-                accept(ContentType.Application.Json)
-                header(SecurityConstants.CLIENT_HEADER, SecurityConstants.CLIENT_TOKEN)
+                // Only for internal communication (not for Atlassian Cloud)
+                if (!uri.host.contains("atlassian.net")) {
+                    contentType(ContentType.Application.Json)
+                    accept(ContentType.Application.Json)
+                    header(SecurityConstants.CLIENT_HEADER, SecurityConstants.CLIENT_TOKEN)
+                }
             }
 
             // JSON serialization
@@ -133,9 +140,13 @@ class KtorClientFactory(
                 cbor()
             }
 
-            installKrpc {
-                serialization {
-                    rpcCbor()
+            install(WebSockets)
+
+            if (isRpc) {
+                installKrpc {
+                    serialization {
+                        rpcCbor()
+                    }
                 }
             }
 
@@ -189,6 +200,7 @@ class KtorClientFactory(
     private fun createHttpClientWithAuth(
         baseUrl: String,
         apiKey: String,
+        isRpc: Boolean = false,
         authHeadersConfig: (DefaultRequest.DefaultRequestBuilder, String) -> Unit,
     ): HttpClient =
         HttpClient(CIO) {
@@ -196,7 +208,7 @@ class KtorClientFactory(
             // Base URL and authentication
             defaultRequest {
                 url {
-                    val protocolStr = if (uri.scheme == "https" || uri.scheme == "wss") "https" else "http"
+                    val protocolStr = uri.scheme ?: "http"
                     takeFrom(
                         "$protocolStr://${uri.host}${if (uri.port != -1) ":${uri.port}" else ""}${
                             uri.path.trimEnd(
@@ -205,12 +217,15 @@ class KtorClientFactory(
                         }/",
                     )
                 }
-                contentType(ContentType.Application.Json)
-                accept(ContentType.Application.Json)
-                header(SecurityConstants.CLIENT_HEADER, SecurityConstants.CLIENT_TOKEN)
+                // Only for internal communication (not for Atlassian Cloud)
+                if (!uri.host.contains("atlassian.net")) {
+                    contentType(ContentType.Application.Json)
+                    accept(ContentType.Application.Json)
+                    header(SecurityConstants.CLIENT_HEADER, SecurityConstants.CLIENT_TOKEN)
 
-                if (apiKey.isNotBlank()) {
-                    authHeadersConfig(this, apiKey)
+                    if (apiKey.isNotBlank()) {
+                        authHeadersConfig(this, apiKey)
+                    }
                 }
             }
 
@@ -228,9 +243,13 @@ class KtorClientFactory(
                 cbor()
             }
 
-            installKrpc {
-                serialization {
-                    rpcCbor()
+            install(WebSockets)
+
+            if (isRpc) {
+                installKrpc {
+                    serialization {
+                        rpcCbor()
+                    }
                 }
             }
 

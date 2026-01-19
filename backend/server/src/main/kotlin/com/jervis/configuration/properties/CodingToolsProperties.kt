@@ -6,6 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 data class CodingToolsProperties(
     val aider: AiderConfig,
     val openhands: OpenHandsConfig,
+    val junie: JunieConfig,
 )
 
 data class AiderConfig(
@@ -21,4 +22,11 @@ data class OpenHandsConfig(
     val paidProvider: String,
     val paidModel: String,
     val ollamaBaseUrl: String,
+)
+
+data class JunieConfig(
+    val defaultProvider: String,
+    val defaultModel: String,
+    val paidProvider: String,
+    val paidModel: String,
 )

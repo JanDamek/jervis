@@ -53,13 +53,13 @@ class ContextAgent(
      * Agent returns ContextPack directly - Koog serializes automatically.
      */
     suspend fun create(task: TaskDocument): AIAgent<String, ContextPack> {
-        val promptExecutor = promptExecutorFactory.getExecutor("OLLAMA")
-
         val model =
             smartModelSelector.selectModel(
                 baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
                 inputContent = task.content,
             )
+
+        val promptExecutor = promptExecutorFactory.getExecutor(model.provider.name.uppercase())
 
         val exampleContextPack =
             ContextPack(

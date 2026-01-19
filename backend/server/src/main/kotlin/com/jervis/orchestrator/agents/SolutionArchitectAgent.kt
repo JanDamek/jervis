@@ -22,7 +22,7 @@ import org.springframework.stereotype.Component
  *
  * Role:
  * - Synthesize evidence and context into a concrete implementation plan
- * - Decide between Aider and OpenHands
+ * - Decide between 'aider', 'openhands' and 'junie'
  * - Specify target files and detailed instructions
  * - Provide verification steps
  *
@@ -43,7 +43,13 @@ class SolutionArchitectAgent(
         evidence: EvidencePack,
         step: PlanStep,
     ): AIAgent<String, A2ADelegationSpec> {
-        val promptExecutor = promptExecutorFactory.getExecutor("OLLAMA")
+        val model =
+            smartModelSelector.selectModel(
+                baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
+                inputContent = task.content,
+            )
+
+        val promptExecutor = promptExecutorFactory.getExecutor(model.provider.name.uppercase())
 
         val exampleSpec =
             A2ADelegationSpec(
@@ -70,12 +76,6 @@ class SolutionArchitectAgent(
                 edge(nodeSpec forwardTo nodeFinish)
             }
 
-        val model =
-            smartModelSelector.selectModel(
-                baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
-                inputContent = task.content,
-            )
-
         val agentConfig =
             AIAgentConfig(
                 prompt =
@@ -100,10 +100,9 @@ class SolutionArchitectAgent(
                                 * Requires running complex builds/tests and debugging from output.
                                 * Involves multiple modules or cross-cutting concerns.
                             - Prefer 'junie' when:
-                                * The task is extremely time-critical (expensive but very fast).
-                                * High-priority status investigation where speed is key.
-                                * Coding tasks where 'openhands' or 'aider' failed after 2 iterations.
-                                * Complex coding where time is a primary factor.
+                                * The task requires high-quality analysis or complex programming and the user explicitly wants it FAST (paid service).
+                                * High-priority status investigation where speed and depth are key.
+                                * Complex coding where time is a primary factor and user accepts higher cost.
                             
                             OUTPUT:
                             - You MUST output a structured A2ADelegationSpec.

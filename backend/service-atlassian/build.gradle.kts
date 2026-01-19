@@ -62,10 +62,10 @@ dependencies {
     // Annotations commonly used by generated sources
     implementation("jakarta.validation:jakarta.validation-api:3.0.2")
     implementation("io.swagger.core.v3:swagger-annotations:2.2.22")
-    implementation("com.fasterxml.jackson.core:jackson-annotations")
+    implementation("com.fasterxml.jackson.core:jackson-annotations:2.18.2")
 
     // Jackson Kotlin module for data class deserialization
-    implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
+    implementation(libs.jackson.module.kotlin)
 
     testImplementation(libs.junit.jupiter)
 }

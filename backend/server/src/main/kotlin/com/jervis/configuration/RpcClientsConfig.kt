@@ -6,8 +6,6 @@ import com.jervis.common.client.ITikaClient
 import com.jervis.common.client.IWhisperClient
 import io.ktor.client.request.url
 import kotlinx.rpc.krpc.ktor.client.rpc
-import kotlinx.rpc.krpc.ktor.client.rpcConfig
-import kotlinx.rpc.krpc.serialization.cbor.cbor
 import kotlinx.rpc.withService
 import kotlinx.serialization.ExperimentalSerializationApi
 import org.springframework.context.annotation.Bean
@@ -22,55 +20,31 @@ class RpcClientsConfig(
     fun tikaClient(): ITikaClient {
         val client = ktorClientFactory.getHttpClient("tika")
         return client
-            .rpc {
-                url("rpc")
-                rpcConfig {
-                    serialization {
-                        cbor()
-                    }
-                }
-            }.withService<ITikaClient>()
+            .rpc()
+            .withService<ITikaClient>()
     }
 
     @Bean
     fun joernClient(): IJoernClient {
         val client = ktorClientFactory.getHttpClient("joern")
         return client
-            .rpc {
-                url("rpc")
-                rpcConfig {
-                    serialization {
-                        cbor()
-                    }
-                }
-            }.withService<IJoernClient>()
+            .rpc()
+            .withService<IJoernClient>()
     }
 
     @Bean
     fun whisperClient(): IWhisperClient {
         val client = ktorClientFactory.getHttpClient("whisper")
         return client
-            .rpc {
-                url("rpc")
-                rpcConfig {
-                    serialization {
-                        cbor()
-                    }
-                }
-            }.withService<IWhisperClient>()
+            .rpc()
+            .withService<IWhisperClient>()
     }
 
     @Bean
     fun atlassianClient(): IAtlassianClient {
         val client = ktorClientFactory.getHttpClient("atlassian")
         return client
-            .rpc {
-                url("rpc")
-                rpcConfig {
-                    serialization {
-                        cbor()
-                    }
-                }
-            }.withService<IAtlassianClient>()
+            .rpc()
+            .withService<IAtlassianClient>()
     }
 }

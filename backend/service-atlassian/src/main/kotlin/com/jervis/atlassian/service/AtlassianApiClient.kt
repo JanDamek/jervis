@@ -34,6 +34,7 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.util.encodeBase64
+import java.nio.charset.StandardCharsets
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.serializer
@@ -314,7 +315,7 @@ class AtlassianApiClient(
 
             is com.jervis.common.dto.atlassian.AtlassianAuth.Basic -> {
                 val basic =
-                    io.ktor.util.encodeBase64("${auth.username}:${auth.password}")
+                    ("${auth.username}:${auth.password}").toByteArray(StandardCharsets.UTF_8).encodeBase64()
                 headers.append(HttpHeaders.Authorization, "Basic $basic")
             }
 
