@@ -34,6 +34,8 @@ junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher
 jupiter-junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 koog-agents = { module = "ai.koog:koog-agents", version.ref = "koogAgents" }
 koog-agents-planner = { module = "ai.koog:agents-planner", version.ref = "koogAgents" }
+koog-agents-features-snapshot = { module = "ai.koog:agents-features-snapshot", version.ref = "koogAgents" }
+koog-agents-features-memory = { module = "ai.koog:agents-features-memory", version.ref = "koogAgents" }
 koog-a2a-client = { module = "ai.koog:a2a-client", version.ref = "koogAgents" }
 koog-a2a-server = { module = "ai.koog:a2a-server", version.ref = "koogAgents" }
 koog-agents-features-a2a-client = { module = "ai.koog:agents-features-a2a-client", version.ref = "koogAgents" }

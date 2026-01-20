@@ -5,10 +5,13 @@ import com.jervis.dto.ChatResponseDto
 import com.jervis.mapper.toDomain
 import com.jervis.service.IAgentOrchestratorService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.launch
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
 import java.util.concurrent.ConcurrentHashMap
@@ -18,6 +21,7 @@ class AgentOrchestratorRpcImpl(
     private val agentOrchestratorService: AgentOrchestratorService,
 ) : IAgentOrchestratorService {
     private val logger = KotlinLogging.logger {}
+    private val backgroundScope = CoroutineScope(Dispatchers.Default)
 
     // Store active chat streams per session (clientId + projectId)
     private val chatStreams = ConcurrentHashMap<String, MutableSharedFlow<ChatResponseDto>>()
@@ -40,36 +44,41 @@ class AgentOrchestratorRpcImpl(
 
     override suspend fun sendMessage(request: ChatRequestDto) {
         val sessionKey = "${request.context.clientId}:${request.context.projectId}"
-        logger.info { "Received message for session $sessionKey: ${request.text}" }
+        logger.info { "RPC_MESSAGE_RECEIVED | session=$sessionKey | text='${request.text.take(100)}'" }
 
-        try {
-            // Ensure stream exists (create if needed)
-            val stream = chatStreams.getOrPut(sessionKey) {
-                logger.info { "Creating new chat stream for session $sessionKey" }
-                MutableSharedFlow(
-                    replay = 10,
-                    extraBufferCapacity = 50,
-                    onBufferOverflow = BufferOverflow.DROP_OLDEST
-                )
-            }
-
-            // Process message through orchestrator
-            val response = agentOrchestratorService.handle(
-                text = request.text,
-                ctx = request.context.toDomain(),
+        // Ensure stream exists (create if needed)
+        val stream = chatStreams.getOrPut(sessionKey) {
+            logger.info { "STREAM_CREATED | session=$sessionKey" }
+            MutableSharedFlow(
+                replay = 10,
+                extraBufferCapacity = 50,
+                onBufferOverflow = BufferOverflow.DROP_OLDEST
             )
+        }
 
-            // Emit response to the session's stream
-            logger.debug { "Emitting response to stream $sessionKey" }
-            stream.emit(ChatResponseDto(message = response.message))
-        } catch (e: Exception) {
-            logger.error(e) { "Error processing message for session $sessionKey" }
-            // Emit error response to stream
-            val stream = chatStreams[sessionKey]
-            if (stream != null) {
+        // CRITICAL FIX: Launch async processing in background to prevent RPC timeout
+        // This allows sendMessage() to return immediately while agent runs in background
+        backgroundScope.launch {
+            try {
+                logger.info { "AGENT_PROCESSING_START | session=$sessionKey" }
+
+                // Process message through orchestrator (can take >60s)
+                val response = agentOrchestratorService.handle(
+                    text = request.text,
+                    ctx = request.context.toDomain(),
+                )
+
+                // Emit response to the session's stream
+                logger.info { "AGENT_PROCESSING_COMPLETE | session=$sessionKey | responseLength=${response.message.length}" }
+                stream.emit(ChatResponseDto(message = response.message))
+            } catch (e: Exception) {
+                logger.error(e) { "AGENT_PROCESSING_FAILED | session=$sessionKey | error=${e.message}" }
+                // Emit error response to stream
                 stream.emit(ChatResponseDto(message = "Error: ${e.message ?: "Unknown error"}"))
             }
-            throw e
         }
+
+        // Return immediately - response will arrive via subscribeToChat() stream
+        logger.info { "RPC_MESSAGE_ACCEPTED | session=$sessionKey (processing in background)" }
     }
 }

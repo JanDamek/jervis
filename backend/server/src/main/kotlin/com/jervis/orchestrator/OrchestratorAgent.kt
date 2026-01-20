@@ -18,8 +18,10 @@ import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.prompt.dsl.Prompt
 import ai.koog.prompt.structure.StructuredResponse
 import com.jervis.configuration.properties.KoogProperties
+import com.jervis.entity.ChatSessionDocument
 import com.jervis.entity.TaskDocument
 import com.jervis.koog.KoogPromptExecutorFactory
+import com.jervis.repository.ChatSessionRepository
 import com.jervis.koog.SmartModelSelector
 import com.jervis.koog.tools.CommunicationTools
 import com.jervis.koog.tools.KnowledgeStorageTools
@@ -95,6 +97,7 @@ class OrchestratorAgent(
     private val confluenceService: ConfluenceService,
     private val emailService: EmailService,
     private val codingTools: CodingTools,
+    private val chatSessionRepository: com.jervis.repository.ChatSessionRepository,
     // Internal agents
     private val contextAgent: ContextAgent,
     private val plannerAgent: PlannerAgent,
@@ -274,6 +277,8 @@ class OrchestratorAgent(
                     },
                 model = model,
                 maxAgentIterations = koogProperties.maxIterations,
+                // TODO: Timeout configuration - need to research Koog 0.6.0 API for execution timeout
+                // Current issue: 60s default timeout causes JobCancellationException
             )
 
         val toolRegistry =
@@ -332,23 +337,54 @@ class OrchestratorAgent(
     }
 
     /**
-     * Run orchestrator agent.
+     * Run orchestrator agent with session persistence support.
+     *
+     * Workflow:
+     * 1. Find or create ChatSession for this clientId+projectId
+     * 2. Create agent instance
+     * 3. (Future: Restore checkpoint if exists)
+     * 4. Run agent with user input
+     * 5. (Future: Save checkpoint)
+     * 6. Update session metadata
      */
     suspend fun run(
         task: TaskDocument,
         userInput: String,
     ): String {
         val startTime = System.currentTimeMillis()
+        val sessionKey = "${task.clientId}:${task.projectId}"
 
         logger.info {
             "🎯 ORCHESTRATOR_START | correlationId=${task.correlationId} | " +
-                "clientId=${task.clientId} | projectId=${task.projectId} | " +
-                "inputLength=${userInput.length}"
+                "sessionKey=$sessionKey | inputLength=${userInput.length}"
         }
 
         return try {
+            // Get or create chat session
+            var session = chatSessionRepository.findByClientIdAndProjectId(task.clientId, task.projectId!!)
+            if (session == null) {
+                session = ChatSessionDocument(
+                    sessionId = sessionKey,
+                    clientId = task.clientId,
+                    projectId = task.projectId,
+                    checkpointId = null,
+                    lastCorrelationId = task.correlationId,
+                )
+                chatSessionRepository.save(session)
+                logger.info { "SESSION_CREATED | sessionKey=$sessionKey" }
+            } else {
+                logger.info { "SESSION_FOUND | sessionKey=$sessionKey | lastCorrelationId=${session.lastCorrelationId}" }
+            }
+
+            // Create agent instance
             val agent: AIAgent<String, String> = create(task)
-            
+
+            // TODO P1.1: Restore checkpoint if exists
+            // if (session.checkpointId != null) {
+            //     agent.context.persistence().rollbackToCheckpoint(session.checkpointId, agent.context)
+            //     logger.info { "CHECKPOINT_RESTORED | checkpointId=${session.checkpointId}" }
+            // }
+
             val model =
                 smartModelSelector.selectModel(
                     baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
@@ -356,8 +392,26 @@ class OrchestratorAgent(
                 )
             activeAgents[task.correlationId] = "OLLAMA"
 
+            // Run agent
             val output: String = agent.run(userInput)
             val duration = System.currentTimeMillis() - startTime
+
+            // TODO P1.2: Save checkpoint
+            // val checkpoint = agent.context.persistence().createCheckpoint(
+            //     agentContext = agent.context,
+            //     nodePath = agent.context.executionInfo.path(),
+            //     lastInput = userInput,
+            //     checkpointId = task.correlationId
+            // )
+
+            // Update session
+            chatSessionRepository.save(
+                session.copy(
+                    // checkpointId = checkpoint.id, // TODO P1.2
+                    lastCorrelationId = task.correlationId,
+                    lastActivityAt = java.time.Instant.now(),
+                ),
+            )
 
             logger.info {
                 "✅ ORCHESTRATOR_SUCCESS | correlationId=${task.correlationId} | " +

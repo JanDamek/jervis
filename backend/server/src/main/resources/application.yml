@@ -85,6 +85,7 @@ jervis:
   koog:
     max-iterations: 50
     qualifier-max-retries: 5
+    data-dir: /Users/damekjan/git/jervis/data
   background:
     wait-on-startup: 10s
     wait-on-error: 1m

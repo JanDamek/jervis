@@ -14,4 +14,9 @@ data class KoogProperties(
      * Default: 2 (first attempt + 1 retry)
      */
     val qualifierMaxRetries: Int = 2,
+    /**
+     * Data directory for persistence and checkpoints.
+     * Defaults to /Users/damekjan/git/jervis/data (from data.root-dir)
+     */
+    val dataDir: String = "/Users/damekjan/git/jervis/data",
 )
