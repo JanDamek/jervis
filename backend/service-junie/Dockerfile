@@ -17,7 +17,8 @@ RUN mkdir -p /opt/junie && \
     rm /tmp/junie.zip
 
 WORKDIR /opt/jervis/junie
-COPY backend/service-junie/build/libs/*.jar jervis-junie.jar
+COPY backend/service-junie/build/libs/service-junie-*.jar jervis-junie.jar
+
 ENV PORT=3300 \
     JAVA_OPTS="-Xmx1g -Xms256m"
 EXPOSE 3300

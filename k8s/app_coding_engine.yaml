@@ -17,6 +17,7 @@ spec:
       containers:
         - name: coding-engine
           image: registry.damek-soft.eu/jandamek/jervis-coding-engine:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 3200
           livenessProbe:

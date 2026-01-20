@@ -17,6 +17,7 @@ spec:
       containers:
         - name: junie
           image: registry.damek-soft.eu/jandamek/jervis-junie:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 3300
           env:

@@ -19,7 +19,7 @@ ENV JOERN_HOME=/opt/joern
 ENV PATH="${JOERN_HOME}/joern-cli:${PATH}"
 
 WORKDIR /opt/jervis/joern
-COPY backend/service-joern/build/libs/*.jar jervis-joern.jar
+COPY backend/service-joern/build/libs/service-joern-*.jar jervis-joern.jar
 
 ENV JAVA_OPTS="-Xmx2g -Xms512m"
 EXPOSE 8082

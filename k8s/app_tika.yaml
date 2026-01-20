@@ -17,6 +17,7 @@ spec:
       containers:
         - name: tika
           image: registry.damek-soft.eu/jandamek/jervis-tika:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8081
           livenessProbe:

@@ -7,9 +7,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/jervis/server
-
-# Kopírování JAR aplikace (předpokládá se build hostitelem)
-COPY backend/server/build/libs/*.jar jervis-server.jar
+COPY backend/server/build/libs/server-*.jar jervis-server.jar
 
 ENV JAVA_OPTS="-Xmx4g -Xms1g"
 EXPOSE 5500

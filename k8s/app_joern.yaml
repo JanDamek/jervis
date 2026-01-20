@@ -17,6 +17,7 @@ spec:
       containers:
         - name: joern
           image: registry.damek-soft.eu/jandamek/jervis-joern:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8082
           livenessProbe:

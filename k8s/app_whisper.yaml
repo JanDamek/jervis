@@ -17,6 +17,7 @@ spec:
       containers:
         - name: whisper
           image: registry.damek-soft.eu/jandamek/jervis-whisper:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8083
           livenessProbe:

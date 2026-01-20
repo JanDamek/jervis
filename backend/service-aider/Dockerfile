@@ -13,7 +13,8 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir aider-chat
 
 WORKDIR /opt/jervis/aider
-COPY backend/service-aider/build/libs/*.jar jervis-aider.jar
+COPY backend/service-aider/build/libs/service-aider-*.jar jervis-aider.jar
+
 ENV PORT=3100 \
     JAVA_OPTS="-Xmx1g -Xms256m" \
     PYTHONIOENCODING=utf-8

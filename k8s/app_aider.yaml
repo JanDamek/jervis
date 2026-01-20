@@ -17,6 +17,7 @@ spec:
       containers:
         - name: aider
           image: registry.damek-soft.eu/jandamek/jervis-aider:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 3100
           livenessProbe:

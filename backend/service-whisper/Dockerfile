@@ -12,7 +12,8 @@ RUN python -m pip install --upgrade pip setuptools wheel && \
     pip install --no-cache-dir faster-whisper
 
 WORKDIR /opt/jervis/whisper
-COPY backend/service-whisper/build/libs/*.jar jervis-whisper.jar
+COPY backend/service-whisper/build/libs/service-whisper-*.jar jervis-whisper.jar
+
 ENV JAVA_OPTS="-Xmx2g -Xms512m"
 EXPOSE 8083
 ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /opt/jervis/whisper/jervis-whisper.jar"]

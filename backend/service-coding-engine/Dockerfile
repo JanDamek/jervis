@@ -24,7 +24,8 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir openhands-ai
 
 WORKDIR /opt/jervis/coding-engine
-COPY backend/service-coding-engine/build/libs/*.jar jervis-coding-engine.jar
+COPY backend/service-coding-engine/build/libs/service-coding-engine-*.jar jervis-coding-engine.jar
+
 ENV PORT=3200 \
     JAVA_OPTS="-Xmx2g -Xms512m" \
     DOCKER_HOST=tcp://localhost:2375

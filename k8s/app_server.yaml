@@ -17,6 +17,7 @@ spec:
       containers:
         - name: server
           image: registry.damek-soft.eu/jandamek/jervis-server:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 5500
           env:

@@ -40,7 +40,8 @@ ENV TIKA_OCR_LANG=eng+ces+spa+slk+fin+nor+dan+pol+deu+hun
 ENV TIKA_OCR_TIMEOUT_MS=120000
 
 WORKDIR /opt/jervis/tika
-COPY backend/service-tika/build/libs/*.jar jervis-tika.jar
+COPY backend/service-tika/build/libs/service-tika-*.jar jervis-tika.jar
+
 ENV JAVA_OPTS="-Xmx2g -Xms512m"
 EXPOSE 8081
 ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /opt/jervis/tika/jervis-tika.jar"]

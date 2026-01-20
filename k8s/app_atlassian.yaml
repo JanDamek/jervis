@@ -17,6 +17,7 @@ spec:
       containers:
         - name: atlassian
           image: registry.damek-soft.eu/jandamek/jervis-atlassian:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8084
           livenessProbe:
