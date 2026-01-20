@@ -1,9 +1,7 @@
-package com.jervis.joern
+package com.jervis.aider
 
-import com.jervis.common.client.IJoernClient
-import com.jervis.joern.domain.JoernRunner
-import com.jervis.joern.service.CliJoernRunner
-import com.jervis.joern.service.JoernServiceImpl
+import com.jervis.aider.service.AiderServiceImpl
+import com.jervis.common.client.ICodingClient
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
@@ -23,12 +21,11 @@ private val logger = KotlinLogging.logger {}
 
 @OptIn(ExperimentalSerializationApi::class)
 fun main() {
-    val port = System.getenv("PORT")?.toIntOrNull() ?: 8082
+    val port = System.getenv("PORT")?.toIntOrNull() ?: 3100
     val host = System.getenv("HOST") ?: "0.0.0.0"
-    logger.info { "Starting Joern RPC Server on $host:$port" }
+    logger.info { "Starting Aider RPC Server on $host:$port" }
 
-    val joernRunner: JoernRunner = CliJoernRunner()
-    val joernService: IJoernClient = JoernServiceImpl(joernRunner)
+    val aiderService: ICodingClient = AiderServiceImpl()
 
     embeddedServer(Netty, port = port, host = host) {
         install(WebSockets)
@@ -55,13 +52,12 @@ fun main() {
                     }
                 }
 
-                registerService<IJoernClient> { joernService }
+                registerService<ICodingClient> { aiderService }
             }
         }
     }.start(wait = false)
 
-    logger.info { "Joern RPC Server started successfully on $host:$port with kRPC endpoint at /rpc" }
+    logger.info { "Aider RPC Server started successfully on $host:$port with kRPC endpoint at /rpc" }
 
-    // Keep the application running
     Thread.currentThread().join()
 }

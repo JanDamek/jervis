@@ -17,6 +17,7 @@ dependencies {
     implementation(project(":backend:common-services"))
 
     implementation(libs.kotlin.logging)
+    implementation(libs.logback.classic)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlin.stdlib)
     implementation(libs.kotlin.reflect)
@@ -32,6 +33,7 @@ dependencies {
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.netty)
     implementation(libs.ktor.server.content.negotiation)
+    implementation(libs.ktor.server.websockets)
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.ktor.serialization.kotlinx.cbor)
 

@@ -25,7 +25,8 @@ private val logger = KotlinLogging.logger {}
 @OptIn(ExperimentalSerializationApi::class)
 fun main() {
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8084
-    logger.info { "Starting Atlassian RPC Server on port $port" }
+    val host = System.getenv("HOST") ?: "0.0.0.0"
+    logger.info { "Starting Atlassian RPC Server on $host:$port" }
 
     val json = Json {
         ignoreUnknownKeys = true
@@ -44,24 +45,30 @@ fun main() {
     val atlassianApiClient = AtlassianApiClient(httpClient)
     val atlassianService: IAtlassianClient = AtlassianServiceImpl(atlassianApiClient)
 
-    embeddedServer(Netty, port = port, host = "0.0.0.0") {
+    embeddedServer(Netty, port = port, host = host) {
         install(WebSockets)
         install(io.ktor.server.plugins.contentnegotiation.ContentNegotiation) {
             json(json)
         }
 
         routing {
-            get("/health") {
-                call.respondText("""{"status":"UP"}""", io.ktor.http.ContentType.Application.Json)
-            }
-
-            get("/actuator/health") {
+            get("/") {
                 call.respondText("""{"status":"UP"}""", io.ktor.http.ContentType.Application.Json)
             }
 
             rpc("/rpc") {
+                rpcConfig {
+                    serialization {
+                        cbor()
+                    }
+                }
+
                 registerService<IAtlassianClient> { atlassianService }
             }
         }
-    }.start(wait = true)
+    }.start(wait = false)
+
+    logger.info { "Atlassian RPC Server started successfully on $host:$port with kRPC endpoint at /rpc" }
+
+    Thread.currentThread().join()
 }

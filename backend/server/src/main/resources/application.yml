@@ -130,16 +130,16 @@ endpoints:
   searxng:
     baseUrl: http://192.168.100.117:30053/
   joern:
-    baseUrl: http://jervis-joern:8082/
+    baseUrl: wss://jervis.damek-soft.eu/joern/
   tika:
-    baseUrl: http://jervis-tika:8081/
+    baseUrl: wss://jervis.damek-soft.eu/tika/
   whisper:
-    baseUrl: http://jervis-whisper:8083/
+    baseUrl: wss://jervis.damek-soft.eu/whisper/
   atlassian:
-    baseUrl: http://jervis-atlassian:8084/
+    baseUrl: wss://jervis.damek-soft.eu/atlassian/
   aider:
-    baseUrl: http://jervis-aider:3100/
+    baseUrl: wss://jervis.damek-soft.eu/aider/
   coding:
-    baseUrl: http://jervis-coding-engine:3200/
+    baseUrl: wss://jervis.damek-soft.eu/coding/
   junie:
-    baseUrl: http://jervis-junie:3300/
+    baseUrl: wss://jervis.damek-soft.eu/junie/

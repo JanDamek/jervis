@@ -1,11 +1,14 @@
 package com.jervis.coding.service
 
 import com.jervis.coding.configuration.CodingEngineProperties
-import com.jervis.common.dto.CodingExecuteRequest
-import com.jervis.common.dto.CodingExecuteResponse
+import com.jervis.common.client.CodingRequest
+import com.jervis.common.client.CodingResult
+import com.jervis.common.client.ICodingClient
+import com.jervis.common.client.VerificationResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
+import java.io.File
 import java.util.UUID
 
 private val logger = KotlinLogging.logger {}
@@ -15,10 +18,10 @@ private data class ProcessResult(
     val exitCode: Int?,
 )
 
-class CodingEngineService(
+class CodingEngineServiceImpl(
     private val properties: CodingEngineProperties,
-) {
-    // Git writes operations that are FORBIDDEN
+) : ICodingClient {
+    // Git write operations that are FORBIDDEN
     private val forbiddenGitCommands =
         setOf(
             "commit",
@@ -32,13 +35,12 @@ class CodingEngineService(
             "reset",
         )
 
-    suspend fun executeOpenHands(request: CodingExecuteRequest): CodingExecuteResponse =
+    override suspend fun execute(request: CodingRequest): CodingResult =
         withContext(Dispatchers.IO) {
             val jobId = UUID.randomUUID().toString()
 
-            logger.info { "OPENHANDS_JOB_START: jobId=$jobId, cid=${request.correlationId}" }
+            logger.info { "OPENHANDS_JOB_START: jobId=$jobId" }
 
-            // Execute OpenHands job
             runCatching {
                 executeOpenHandsJob(jobId, request)
             }.fold(
@@ -46,35 +48,50 @@ class CodingEngineService(
                     when (result.exitCode) {
                         0 -> {
                             logger.info { "OPENHANDS_SUCCESS: jobId=$jobId" }
-                            CodingExecuteResponse(
+                            val verifyCmd = request.verifyCommand
+                            val verificationResult =
+                                if (verifyCmd != null) {
+                                    executeVerification(verifyCmd)
+                                } else {
+                                    null
+                                }
+
+                            CodingResult(
                                 success = true,
                                 summary = "OpenHands completed successfully. " + extractSummary(result.output),
+                                log = result.output.takeLast(2000),
+                                verificationResult = verificationResult,
                             )
                         }
 
                         null -> {
                             logger.error { "OPENHANDS_TIMEOUT: jobId=$jobId" }
-                            CodingExecuteResponse(
+                            CodingResult(
                                 success = false,
                                 summary = "Process timed out after 60 minutes. Check logs for details.",
+                                log = result.output.takeLast(2000),
+                                errorMessage = "Timeout",
                             )
                         }
 
                         else -> {
                             logger.error { "OPENHANDS_FAILED: jobId=$jobId, exitCode=${result.exitCode}" }
                             val errorSummary = extractErrorSummary(result.output)
-                            CodingExecuteResponse(
+                            CodingResult(
                                 success = false,
                                 summary = "OpenHands failed with exit code ${result.exitCode}. $errorSummary",
+                                log = result.output.takeLast(2000),
+                                errorMessage = "Exit code ${result.exitCode}",
                             )
                         }
                     }
                 },
                 onFailure = { e ->
                     logger.error(e) { "OPENHANDS_EXECUTION_ERROR: jobId=$jobId" }
-                    CodingExecuteResponse(
+                    CodingResult(
                         success = false,
                         summary = "Execution failed: ${e.message ?: "Unknown error"}",
+                        errorMessage = e.message,
                     )
                 },
             )
@@ -82,7 +99,7 @@ class CodingEngineService(
 
     private fun executeOpenHandsJob(
         jobId: String,
-        req: CodingExecuteRequest,
+        req: CodingRequest,
     ): ProcessResult {
         logger.info { "OPENHANDS_EXECUTE: jobId=$jobId" }
 
@@ -93,11 +110,11 @@ class CodingEngineService(
                 add("-m")
                 add("openhands.core.main")
                 add("--task")
-                add(req.taskDescription)
+                add(req.instructions)
                 add("--sandbox-image")
                 add(properties.sandboxImage)
                 add("--max-iterations")
-                add(properties.maxIterations.toString())
+                add(req.maxIterations.toString())
             }
 
         logger.info { "OPENHANDS_COMMAND: ${command.joinToString(" ")}" }
@@ -112,16 +129,16 @@ class CodingEngineService(
         // Validate command doesn't contain forbidden git operations
         validateCommand(command)
 
+        val dataRoot = System.getenv("DATA_ROOT_DIR") ?: "/opt/jervis/data"
         val process =
             ProcessBuilder(command)
                 .apply {
+                    directory(File(dataRoot))
                     redirectErrorStream(true)
                     environment().apply {
                         putAll(System.getenv())
                         put("DOCKER_HOST", properties.dockerHost)
                         put("OLLAMA_API_BASE", properties.ollamaBaseUrl)
-                        // Add git hook to prevent write operations (defense in depth)
-                        // Note: OpenHands runs in sandbox, but this adds an extra layer
                     }
                 }.start()
 
@@ -142,6 +159,28 @@ class CodingEngineService(
         process.waitFor()
 
         return ProcessResult(output = output, exitCode = process.exitValue())
+    }
+
+    private fun executeVerification(verifyCommand: String): VerificationResult {
+        logger.info { "OPENHANDS_VERIFY: $verifyCommand" }
+
+        val dataRoot = System.getenv("DATA_ROOT_DIR") ?: "/opt/jervis/data"
+        val process =
+            ProcessBuilder("sh", "-c", verifyCommand)
+                .apply {
+                    directory(File(dataRoot))
+                    redirectErrorStream(true)
+                    environment().putAll(System.getenv())
+                }.start()
+
+        val output = process.inputStream.bufferedReader().use { it.readText() }
+        process.waitFor()
+
+        return VerificationResult(
+            passed = process.exitValue() == 0,
+            output = output.takeLast(500),
+            exitCode = process.exitValue(),
+        )
     }
 
     /**
@@ -169,7 +208,6 @@ class CodingEngineService(
      * Extract a concise summary from OpenHands output.
      */
     private fun extractSummary(output: String): String {
-        // Look for summary patterns in OpenHands output
         val lines = output.lines()
         val summaryLine =
             lines.find { it.contains("Summary:", ignoreCase = true) || it.contains("Completed:", ignoreCase = true) }

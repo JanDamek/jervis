@@ -1,0 +1,21 @@
+PLÁN ODSTRANĚNÍ A2A
+
+Místo složitého git revertu prostě manuálně odstraním A2A kód a nahradím Tools přístupem.
+
+1. OrchestratorAgent.kt - ODSTRANIT:
+   - Řádky 3-15: A2A importy
+   - Řádky 154-190: A2A client inicializace
+   - Řádky v strategy: A2A node + routing
+   - Řádky 596-625: createA2AClient() a toA2aUrl() funkce
+   - A2A constants (A2A_AGENT_AIDER, A2A_AGENT_OPENHANDS, A2A_AGENT_JUNIE, A2A_PATH)
+
+2. Vytvořit CodingTools.kt s kRPC voláním
+
+3. Zaregistrovat CodingTools do ToolRegistry
+
+4. Odstranit z build.gradle:
+   - ai.koog:koog-agents-a2a-client
+   - ai.koog:koog-a2a-client
+   - ai.koog:koog-a2a-transport-client-jsonrpc-http
+
+5. Nechat být A2A services (aider, junie, coding-engine) - můžou zůstat, jen se nebudou používat

@@ -26,11 +26,9 @@ import mu.KotlinLogging
 import java.nio.file.Path
 import java.util.Base64
 
-object TikaKtorServer {
-    private val logger = KotlinLogging.logger {}
+private val logger = KotlinLogging.logger {}
 
-    @JvmStatic
-    fun main(args: Array<String>) {
+fun main() {
         val port = System.getenv("PORT")?.toIntOrNull() ?: 8081
         val host = System.getenv("HOST") ?: "0.0.0.0"
         val timeoutMs = System.getenv("TIKA_OCR_TIMEOUT_MS")?.toLongOrNull() ?: 120000L
@@ -51,6 +49,12 @@ object TikaKtorServer {
             }
             routing {
                 rpc("/rpc") {
+                    rpcConfig {
+                        serialization {
+                            cbor()
+                        }
+                    }
+
                     registerService<com.jervis.common.client.ITikaClient> {
                         object : com.jervis.common.client.ITikaClient {
                             override suspend fun process(request: TikaProcessRequest): TikaProcessResult {
@@ -129,22 +133,18 @@ object TikaKtorServer {
                     }
                 }
 
-                get("/health") {
-                    call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
-                }
-
-                get("/actuator/health") {
-                    call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
-                }
-
                 get("/") {
                     call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
                 }
             }
-        }.start(wait = true)
-    }
+        }.start(wait = false)
 
-    private fun convertToDto(
+        logger.info { "Tika RPC Server started successfully on $host:$port with kRPC endpoint at /rpc" }
+
+        Thread.currentThread().join()
+}
+
+private fun convertToDto(
         result: TikaDocumentProcessor.DocumentProcessingResult,
         includeMetadata: Boolean,
     ): TikaProcessResult {
@@ -180,5 +180,4 @@ object TikaKtorServer {
             success = result.success,
             errorMessage = result.errorMessage,
         )
-    }
 }

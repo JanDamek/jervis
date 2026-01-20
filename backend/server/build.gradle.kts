@@ -65,11 +65,13 @@ dependencies {
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.netty)
     implementation(libs.ktor.server.content.negotiation)
+    implementation(libs.ktor.server.websockets)
 
     // Ktor HTTP client for integrations
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.cio)
     implementation(libs.ktor.client.content.negotiation)
+    implementation(libs.ktor.client.websocket)
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.ktor.serialization.kotlinx.cbor)
 
@@ -132,8 +134,6 @@ dependencies {
 
     // Koog agents
     implementation(libs.koog.agents)
-    implementation(libs.koog.agents.features.a2a.client)
-    implementation(libs.koog.a2a.transport.client.jsonrpc.http)
 
     testImplementation(libs.jupiter.junit.jupiter)
     testImplementation(libs.kotlinx.coroutines.test)

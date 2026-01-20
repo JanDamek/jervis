@@ -1,9 +1,7 @@
-package com.jervis.joern
+package com.jervis.junie
 
-import com.jervis.common.client.IJoernClient
-import com.jervis.joern.domain.JoernRunner
-import com.jervis.joern.service.CliJoernRunner
-import com.jervis.joern.service.JoernServiceImpl
+import com.jervis.common.client.ICodingClient
+import com.jervis.junie.service.JunieServiceImpl
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
@@ -23,12 +21,11 @@ private val logger = KotlinLogging.logger {}
 
 @OptIn(ExperimentalSerializationApi::class)
 fun main() {
-    val port = System.getenv("PORT")?.toIntOrNull() ?: 8082
+    val port = System.getenv("PORT")?.toIntOrNull() ?: 3300
     val host = System.getenv("HOST") ?: "0.0.0.0"
-    logger.info { "Starting Joern RPC Server on $host:$port" }
+    logger.info { "Starting Junie RPC Server on $host:$port" }
 
-    val joernRunner: JoernRunner = CliJoernRunner()
-    val joernService: IJoernClient = JoernServiceImpl(joernRunner)
+    val junieService: ICodingClient = JunieServiceImpl()
 
     embeddedServer(Netty, port = port, host = host) {
         install(WebSockets)
@@ -55,13 +52,12 @@ fun main() {
                     }
                 }
 
-                registerService<IJoernClient> { joernService }
+                registerService<ICodingClient> { junieService }
             }
         }
     }.start(wait = false)
 
-    logger.info { "Joern RPC Server started successfully on $host:$port with kRPC endpoint at /rpc" }
+    logger.info { "Junie RPC Server started successfully on $host:$port with kRPC endpoint at /rpc" }
 
-    // Keep the application running
     Thread.currentThread().join()
 }

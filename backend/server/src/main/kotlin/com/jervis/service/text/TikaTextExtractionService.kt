@@ -41,12 +41,6 @@ class TikaTextExtractionService(
             return content
         }
 
-        // Quick heuristic: if content looks like HTML/XML, process it
-        if (!looksLikeHtmlOrXml(content)) {
-            logger.debug { "Content does not appear to be HTML/XML, returning as-is" }
-            return content
-        }
-
         logger.debug { "Content appears to be HTML/XML (${content.length} chars), processing through Tika" }
 
         return try {
@@ -73,7 +67,9 @@ class TikaTextExtractionService(
                 }
 
                 if (plainText.isBlank() && content.isNotBlank()) {
-                    logger.warn { "Tika returned empty content (100% reduction) for non-empty input for file $fileName. Returning original content to prevent data loss." }
+                    logger.warn {
+                        "Tika returned empty content (100% reduction) for non-empty input for file $fileName. Returning original content to prevent data loss."
+                    }
                     return content
                 }
 
@@ -86,53 +82,5 @@ class TikaTextExtractionService(
             logger.error(e) { "Tika service error, returning original content" }
             content
         }
-    }
-
-    /**
-     * Heuristic to detect if content contains HTML/XML tags.
-     *
-     * Checks for:
-     * - HTML tags (<div>, <p>, <span>, <a>, etc.)
-     * - XML tags (ac:link, ri:page, etc.)
-     * - High density of < and > characters
-     */
-    private fun looksLikeHtmlOrXml(content: String): Boolean {
-        // Common HTML/XML indicators
-        val htmlXmlPatterns =
-            listOf(
-                "<div",
-                "<p>",
-                "<span",
-                "<a ",
-                "<br",
-                "<table",
-                "<ul",
-                "<li",
-                "<h1",
-                "<h2",
-                "<h3",
-                "ac:link",
-                "ri:page",
-                "ri:content-title",
-                "<ac:",
-                "<ri:",
-                "xmlns",
-                "<!DOCTYPE",
-                "<html",
-            )
-
-        val lowerContent = content.lowercase()
-        if (htmlXmlPatterns.any { lowerContent.contains(it) }) {
-            return true
-        }
-
-        // Check tag density: if > 5% of characters are < or >, likely HTML/XML
-        val tagCharCount = content.count { it == '<' || it == '>' }
-        val tagDensity = tagCharCount.toDouble() / content.length
-        if (tagDensity > 0.05) {
-            return true
-        }
-
-        return false
     }
 }

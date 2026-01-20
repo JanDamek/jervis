@@ -11,6 +11,7 @@ import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
 import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.prompt.dsl.Prompt
+import ai.koog.prompt.llm.LLModel
 import com.jervis.entity.TaskDocument
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.SmartModelSelector
@@ -59,7 +60,7 @@ class ContextAgent(
                 inputContent = task.content,
             )
 
-        val promptExecutor = promptExecutorFactory.getExecutor(model.provider.name.uppercase())
+        val promptExecutor = promptExecutorFactory.getExecutor("OLLAMA")
 
         val exampleContextPack =
             ContextPack(

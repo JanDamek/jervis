@@ -9,17 +9,66 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
 spec:
   tls:
-  - hosts:
-    - jervis.damek-soft.eu
-    secretName: jervis-tls-cert
+    - hosts:
+        - jervis.damek-soft.eu
+      secretName: jervis-tls-cert
   rules:
-  - host: jervis.damek-soft.eu
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: jervis-server
-            port:
-              number: 5500
+    - host: jervis.damek-soft.eu
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: jervis-server
+                port:
+                  number: 5500
+          - path: /tika
+            pathType: Prefix
+            backend:
+              service:
+                name: jervis-tika
+                port:
+                  number: 8081
+          - path: /joern
+            pathType: Prefix
+            backend:
+              service:
+                name: jervis-joern
+                port:
+                  number: 8082
+          - path: /whisper
+            pathType: Prefix
+            backend:
+              service:
+                name: jervis-whisper
+                port:
+                  number: 8083
+          - path: /atlassian
+            pathType: Prefix
+            backend:
+              service:
+                name: jervis-atlassian
+                port:
+                  number: 8084
+          - path: /aider
+            pathType: Prefix
+            backend:
+              service:
+                name: jervis-aider
+                port:
+                  number: 3100
+          - path: /coding
+            pathType: Prefix
+            backend:
+              service:
+                name: jervis-coding-engine
+                port:
+                  number: 3200
+          - path: /junie
+            pathType: Prefix
+            backend:
+              service:
+                name: jervis-junie
+                port:
+                  number: 3300

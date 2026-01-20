@@ -1,9 +1,8 @@
-package com.jervis.joern
+package com.jervis.coding
 
-import com.jervis.common.client.IJoernClient
-import com.jervis.joern.domain.JoernRunner
-import com.jervis.joern.service.CliJoernRunner
-import com.jervis.joern.service.JoernServiceImpl
+import com.jervis.coding.configuration.CodingEngineProperties
+import com.jervis.coding.service.CodingEngineServiceImpl
+import com.jervis.common.client.ICodingClient
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
@@ -23,12 +22,20 @@ private val logger = KotlinLogging.logger {}
 
 @OptIn(ExperimentalSerializationApi::class)
 fun main() {
-    val port = System.getenv("PORT")?.toIntOrNull() ?: 8082
+    val port = System.getenv("PORT")?.toIntOrNull() ?: 3200
     val host = System.getenv("HOST") ?: "0.0.0.0"
-    logger.info { "Starting Joern RPC Server on $host:$port" }
+    logger.info { "Starting Coding Engine (OpenHands) RPC Server on $host:$port" }
 
-    val joernRunner: JoernRunner = CliJoernRunner()
-    val joernService: IJoernClient = JoernServiceImpl(joernRunner)
+    // Load configuration from environment
+    val properties =
+        CodingEngineProperties(
+            sandboxImage = System.getenv("OPENHANDS_SANDBOX_IMAGE") ?: "python:3.12-slim",
+            maxIterations = System.getenv("OPENHANDS_MAX_ITERATIONS")?.toIntOrNull() ?: 10,
+            dockerHost = System.getenv("DOCKER_HOST") ?: "tcp://localhost:2375",
+            ollamaBaseUrl = System.getenv("OLLAMA_BASE_URL") ?: "http://192.168.100.117:11434",
+        )
+
+    val codingService: ICodingClient = CodingEngineServiceImpl(properties)
 
     embeddedServer(Netty, port = port, host = host) {
         install(WebSockets)
@@ -55,13 +62,12 @@ fun main() {
                     }
                 }
 
-                registerService<IJoernClient> { joernService }
+                registerService<ICodingClient> { codingService }
             }
         }
     }.start(wait = false)
 
-    logger.info { "Joern RPC Server started successfully on $host:$port with kRPC endpoint at /rpc" }
+    logger.info { "Coding Engine (OpenHands) RPC Server started successfully on $host:$port with kRPC endpoint at /rpc" }
 
-    // Keep the application running
     Thread.currentThread().join()
 }

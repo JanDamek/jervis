@@ -29,12 +29,16 @@ dependencies {
     implementation(libs.kotlin.logging)
     implementation(libs.logback.classic)
 
-    // Koog A2A Server
-    implementation(libs.koog.agents.features.a2a.server)
-    implementation(libs.koog.a2a.transport.server.jsonrpc.http)
+    // Ktor Server for kRPC
     implementation(libs.ktor.server.netty)
     implementation(libs.ktor.server.content.negotiation)
+    implementation(libs.ktor.server.websockets)
     implementation(libs.ktor.serialization.kotlinx.json)
+
+    // kRPC
+    implementation(libs.kotlinx.rpc.krpc.server)
+    implementation(libs.kotlinx.rpc.krpc.serialization.cbor)
+    implementation(libs.kotlinx.rpc.krpc.ktor.server)
 
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlin.stdlib)
@@ -55,12 +59,12 @@ kotlin {
 }
 
 application {
-    mainClass.set("com.jervis.coding.a2a.CodingEngineA2AServer")
+    mainClass.set("com.jervis.coding.CodingEngineApplicationKt")
 }
 
 tasks.jar {
     manifest {
-        attributes["Main-Class"] = "com.jervis.coding.a2a.CodingEngineA2AServer"
+        attributes["Main-Class"] = "com.jervis.coding.CodingEngineApplicationKt"
     }
     val dependencies = configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) }
     from(dependencies)

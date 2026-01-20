@@ -32,6 +32,7 @@ dependencies {
 
     implementation(libs.ktor.server.netty)
     implementation(libs.ktor.server.content.negotiation)
+    implementation(libs.ktor.server.websockets)
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.ktor.serialization.kotlinx.cbor)
 
@@ -66,12 +67,12 @@ kotlin {
 }
 
 application {
-    mainClass.set("com.jervis.ocr.TikaKtorServer")
+    mainClass.set("com.jervis.ocr.TikaKtorServerKt")
 }
 
 tasks.jar {
     manifest {
-        attributes["Main-Class"] = "com.jervis.ocr.TikaKtorServer"
+        attributes["Main-Class"] = "com.jervis.ocr.TikaKtorServerKt"
     }
     val dependencies = configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) }
     from(dependencies) {

@@ -7,6 +7,7 @@ import ai.koog.agents.core.dsl.builder.strategy
 import ai.koog.agents.core.dsl.extension.nodeLLMRequestStructured
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.prompt.dsl.Prompt
+import ai.koog.prompt.llm.LLModel
 import com.jervis.entity.TaskDocument
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.SmartModelSelector
@@ -49,7 +50,7 @@ class SolutionArchitectAgent(
                 inputContent = task.content,
             )
 
-        val promptExecutor = promptExecutorFactory.getExecutor(model.provider.name.uppercase())
+        val promptExecutor = promptExecutorFactory.getExecutor("OLLAMA")
 
         val exampleSpec =
             A2ADelegationSpec(

@@ -1,0 +1,15 @@
+endpoints:
+  joern:
+    baseUrl: ws://localhost:8082/
+  tika:
+    baseUrl: ws://localhost:8081/
+  whisper:
+    baseUrl: ws://localhost:8083/
+  atlassian:
+    baseUrl: ws://localhost:8084/
+  aider:
+    baseUrl: ws://localhost:3100/
+  coding:
+    baseUrl: ws://localhost:3200/
+  junie:
+    baseUrl: ws://localhost:3300/

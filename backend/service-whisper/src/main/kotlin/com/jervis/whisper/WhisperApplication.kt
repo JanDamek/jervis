@@ -22,29 +22,36 @@ private val logger = KotlinLogging.logger {}
 @OptIn(ExperimentalSerializationApi::class)
 fun main() {
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8083
-    logger.info { "Starting Whisper RPC Server on port $port" }
+    val host = System.getenv("HOST") ?: "0.0.0.0"
+    logger.info { "Starting Whisper RPC Server on $host:$port" }
 
     val whisperService: WhisperService = SimpleWhisperService()
     val whisperClient: IWhisperClient = WhisperServiceImpl(whisperService)
 
-    embeddedServer(Netty, port = port, host = "0.0.0.0") {
+    embeddedServer(Netty, port = port, host = host) {
         install(WebSockets)
         install(ContentNegotiation) {
             json()
         }
 
         routing {
-            get("/health") {
-                call.respondText("""{"status":"UP"}""", io.ktor.http.ContentType.Application.Json)
-            }
-
-            get("/actuator/health") {
+            get("/") {
                 call.respondText("""{"status":"UP"}""", io.ktor.http.ContentType.Application.Json)
             }
 
             rpc("/rpc") {
+                rpcConfig {
+                    serialization {
+                        cbor()
+                    }
+                }
+
                 registerService<IWhisperClient> { whisperClient }
             }
         }
-    }.start(wait = true)
+    }.start(wait = false)
+
+    logger.info { "Whisper RPC Server started successfully on $host:$port with kRPC endpoint at /rpc" }
+
+    Thread.currentThread().join()
 }
