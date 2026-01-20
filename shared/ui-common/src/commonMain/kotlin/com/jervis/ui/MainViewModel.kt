@@ -81,6 +81,34 @@ class MainViewModel(
         // Cancel previous chat subscription
         chatJob?.cancel()
 
+        // Clear current chat messages
+        _chatMessages.value = emptyList()
+
+        // Load chat history
+        scope.launch {
+            try {
+                println("=== Loading chat history for client=$clientId, project=$projectId ===")
+                val history = repository.agentChat.getChatHistory(clientId, projectId, limit = 10)
+                _chatMessages.value = history.messages.map { msg ->
+                    ChatMessage(
+                        from = when (msg.role) {
+                            "user" -> ChatMessage.Sender.Me
+                            else -> ChatMessage.Sender.Assistant
+                        },
+                        text = msg.content,
+                        contextId = projectId,
+                        timestamp = msg.timestamp,
+                        messageType = ChatMessage.MessageType.FINAL, // History messages are always FINAL
+                        metadata = emptyMap(),
+                    )
+                }
+                println("=== Loaded ${history.messages.size} messages from history ===")
+            } catch (e: Exception) {
+                println("Failed to load chat history: ${e.message}")
+                e.printStackTrace()
+            }
+        }
+
         // Subscribe to long-lived chat stream
         chatJob = scope.launch {
             println("=== Subscribing to chat stream for client=$clientId, project=$projectId ===")
@@ -91,14 +119,46 @@ class MainViewModel(
                     _errorMessage.value = "Chat connection error: ${e.message}"
                 }
                 .collect { response ->
-                    println("=== Received chat message: ${response.message} ===")
-                    // Add each response to chat messages
-                    _chatMessages.value = _chatMessages.value +
-                        ChatMessage(
+                    val messageType = when (response.type) {
+                        com.jervis.dto.ChatResponseType.PROGRESS -> ChatMessage.MessageType.PROGRESS
+                        com.jervis.dto.ChatResponseType.FINAL -> ChatMessage.MessageType.FINAL
+                    }
+
+                    println("=== Received chat message (${response.type}): ${response.message.take(100)} ===")
+
+                    // For PROGRESS messages, either update last progress or add new
+                    // For FINAL messages, always add new
+                    if (messageType == ChatMessage.MessageType.PROGRESS) {
+                        val messages = _chatMessages.value.toMutableList()
+                        // Replace last progress message if exists, otherwise add
+                        if (messages.lastOrNull()?.messageType == ChatMessage.MessageType.PROGRESS) {
+                            messages[messages.lastIndex] = ChatMessage(
+                                from = ChatMessage.Sender.Assistant,
+                                text = response.message,
+                                contextId = projectId,
+                                messageType = messageType,
+                                metadata = response.metadata,
+                            )
+                        } else {
+                            messages.add(ChatMessage(
+                                from = ChatMessage.Sender.Assistant,
+                                text = response.message,
+                                contextId = projectId,
+                                messageType = messageType,
+                                metadata = response.metadata,
+                            ))
+                        }
+                        _chatMessages.value = messages
+                    } else {
+                        // FINAL message - always add new
+                        _chatMessages.value = _chatMessages.value + ChatMessage(
                             from = ChatMessage.Sender.Assistant,
                             text = response.message,
                             contextId = projectId,
+                            messageType = messageType,
+                            metadata = response.metadata,
                         )
+                    }
                 }
         }
     }

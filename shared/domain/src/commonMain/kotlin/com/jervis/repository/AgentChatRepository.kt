@@ -76,4 +76,17 @@ class AgentChatRepository(
             quick = false,
         )
     }
+
+    /**
+     * Retrieve last N messages from chat history.
+     * Used when loading chat to show previous conversation.
+     */
+    suspend fun getChatHistory(
+        clientId: String,
+        projectId: String?,
+        limit: Int = 10,
+    ): com.jervis.dto.ChatHistoryDto =
+        safeRpcCall("getChatHistory") {
+            agentOrchestratorService.getChatHistory(clientId, projectId, limit)
+        } ?: com.jervis.dto.ChatHistoryDto(messages = emptyList())
 }

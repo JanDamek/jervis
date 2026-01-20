@@ -26,10 +26,13 @@ class AgentOrchestratorService(
     /**
      * Handle incoming chat request by creating a TaskContext and running Koog workflow.
      * This is the main entry point used by controllers.
+     *
+     * @param onProgress Callback for sending progress updates to client
      */
     suspend fun handle(
         text: String,
         ctx: ChatRequestContext,
+        onProgress: suspend (message: String, metadata: Map<String, String>) -> Unit = { _, _ -> },
     ): ChatResponse {
         val normalizedText = czechKeyboardNormalizer.convertIfMistyped(text)
         if (normalizedText != text) {
@@ -47,8 +50,8 @@ class AgentOrchestratorService(
                 sourceUrn = SourceUrn.chat(ctx.clientId),
             )
 
-        // Run Koog workflow
-        val response = run(taskContext, normalizedText)
+        // Run Koog workflow with progress callback
+        val response = run(taskContext, normalizedText, onProgress)
 
         logger.info { "AGENT_HANDLE_COMPLETE: correlationId=${taskContext.correlationId}" }
         return response
@@ -57,14 +60,17 @@ class AgentOrchestratorService(
     /**
      * Run agent workflow for the given taskContext and user input.
      * Simply delegates to KoogWorkflowService, which runs the Koog agent.
+     *
+     * @param onProgress Callback for sending progress updates to client
      */
     suspend fun run(
         task: TaskDocument,
         userInput: String,
+        onProgress: suspend (message: String, metadata: Map<String, String>) -> Unit = { _, _ -> },
     ): ChatResponse {
         logger.info { "AGENT_ORCHESTRATOR_START: correlationId=${task.correlationId}" }
 
-        val response = koogWorkflowService.run(task, userInput)
+        val response = koogWorkflowService.run(task, userInput, onProgress)
 
         logger.info { "AGENT_ORCHESTRATOR_COMPLETE: correlationId=${task.correlationId}" }
         return response

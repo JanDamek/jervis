@@ -171,7 +171,6 @@ fun MainScreen(
             // Chat area
             ChatArea(
                 messages = chatMessages,
-                isLoading = isLoading,
                 modifier =
                     Modifier
                         .weight(1f)
@@ -300,7 +299,6 @@ private fun SelectorsRow(
 @Composable
 private fun ChatArea(
     messages: List<ChatMessage>,
-    isLoading: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -335,22 +333,6 @@ private fun ChatArea(
                 items(messages.size) { index ->
                     ChatMessageItem(messages[index])
                 }
-
-                if (isLoading) {
-                    item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Start,
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 2.dp,
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Assistant is thinking...")
-                        }
-                    }
-                }
             }
         }
     }
@@ -362,54 +344,88 @@ private fun ChatMessageItem(
     modifier: Modifier = Modifier,
 ) {
     val clipboard = rememberClipboardManager()
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement =
-            if (message.from == ChatMessage.Sender.Me) {
-                Arrangement.End
-            } else {
-                Arrangement.Start
-            },
-    ) {
-        Card(
-            colors =
-                CardDefaults.cardColors(
-                    containerColor =
-                        when (message.from) {
-                            ChatMessage.Sender.Me -> MaterialTheme.colorScheme.primaryContainer
-                            ChatMessage.Sender.Assistant -> MaterialTheme.colorScheme.secondaryContainer
-                        },
-                ),
-            modifier = Modifier.widthIn(max = 280.dp),
+
+    // Progress messages are displayed differently (compact, with spinner)
+    if (message.messageType == ChatMessage.MessageType.PROGRESS) {
+        Row(
+            modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.Start,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(
-                modifier = Modifier.padding(12.dp),
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp,
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = message.text,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    } else {
+        // FINAL messages - standard chat bubble
+        Row(
+            modifier = modifier.fillMaxWidth(),
+            horizontalArrangement =
+                if (message.from == ChatMessage.Sender.Me) {
+                    Arrangement.End
+                } else {
+                    Arrangement.Start
+                },
+        ) {
+            Card(
+                colors =
+                    CardDefaults.cardColors(
+                        containerColor =
+                            when (message.from) {
+                                ChatMessage.Sender.Me -> MaterialTheme.colorScheme.primaryContainer
+                                ChatMessage.Sender.Assistant -> MaterialTheme.colorScheme.secondaryContainer
+                            },
+                    ),
+                modifier = Modifier.widthIn(max = 280.dp),
             ) {
-                Text(
-                    text =
-                        when (message.from) {
-                            ChatMessage.Sender.Me -> "You"
-                            ChatMessage.Sender.Assistant -> "JERVIS"
-                        },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // Copy button aligned to the end of the bubble
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = { clipboard.setText(AnnotatedString(message.text)) }) {
-                        Text("Copy")
-                    }
-                }
-
-                // Selectable message text
-                SelectionContainer {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                ) {
                     Text(
-                        text = message.text,
-                        style = MaterialTheme.typography.bodyMedium,
+                        text =
+                            when (message.from) {
+                                ChatMessage.Sender.Me -> "You"
+                                ChatMessage.Sender.Assistant -> "JERVIS"
+                            },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // Copy button aligned to the end of the bubble
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = { clipboard.setText(AnnotatedString(message.text)) }) {
+                            Text("Copy")
+                        }
+                    }
+
+                    // Selectable message text
+                    SelectionContainer {
+                        Text(
+                            text = message.text,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+
+                    // Show timestamp if available
+                    message.timestamp?.let { ts ->
+                        if (ts.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = ts,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            )
+                        }
+                    }
                 }
             }
         }

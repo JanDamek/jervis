@@ -10,12 +10,17 @@ import java.time.Instant
 @Repository
 interface ChatSessionRepository : CoroutineCrudRepository<ChatSessionDocument, String> {
     /**
-     * Find session by client and project.
+     * Find session by client and project (project can be null for general chat).
      */
     suspend fun findByClientIdAndProjectId(
         clientId: ClientId,
-        projectId: ProjectId,
+        projectId: ProjectId?,
     ): ChatSessionDocument?
+
+    /**
+     * Find session by client only (when projectId is null).
+     */
+    suspend fun findByClientId(clientId: ClientId): ChatSessionDocument?
 
     /**
      * Delete sessions inactive for more than specified duration (for cleanup).

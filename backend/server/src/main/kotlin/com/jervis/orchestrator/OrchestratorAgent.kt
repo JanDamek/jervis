@@ -18,6 +18,7 @@ import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.prompt.dsl.Prompt
 import ai.koog.prompt.structure.StructuredResponse
 import com.jervis.configuration.properties.KoogProperties
+import com.jervis.entity.ChatMessageDocument
 import com.jervis.entity.ChatSessionDocument
 import com.jervis.entity.TaskDocument
 import com.jervis.koog.KoogPromptExecutorFactory
@@ -346,10 +347,13 @@ class OrchestratorAgent(
      * 4. Run agent with user input
      * 5. (Future: Save checkpoint)
      * 6. Update session metadata
+     *
+     * @param onProgress Callback for sending progress updates to client
      */
     suspend fun run(
         task: TaskDocument,
         userInput: String,
+        onProgress: suspend (message: String, metadata: Map<String, String>) -> Unit = { _, _ -> },
     ): String {
         val startTime = System.currentTimeMillis()
         val sessionKey = "${task.clientId}:${task.projectId}"
@@ -361,23 +365,40 @@ class OrchestratorAgent(
 
         return try {
             // Get or create chat session
-            var session = chatSessionRepository.findByClientIdAndProjectId(task.clientId, task.projectId!!)
-            if (session == null) {
-                session = ChatSessionDocument(
+            val existingSession = chatSessionRepository.findByClientIdAndProjectId(task.clientId, task.projectId)
+            var session: ChatSessionDocument = if (existingSession == null) {
+                val newSession = ChatSessionDocument(
                     sessionId = sessionKey,
                     clientId = task.clientId,
                     projectId = task.projectId,
                     checkpointId = null,
                     lastCorrelationId = task.correlationId,
                 )
-                chatSessionRepository.save(session)
-                logger.info { "SESSION_CREATED | sessionKey=$sessionKey" }
+                chatSessionRepository.save(newSession)
+                logger.info { "SESSION_CREATED | sessionKey=$sessionKey | projectId=${task.projectId}" }
+                newSession
             } else {
-                logger.info { "SESSION_FOUND | sessionKey=$sessionKey | lastCorrelationId=${session.lastCorrelationId}" }
+                logger.info { "SESSION_FOUND | sessionKey=$sessionKey | messages=${existingSession.messages.size} | lastCorrelationId=${existingSession.lastCorrelationId}" }
+                existingSession
             }
+
+            // Append user message to session
+            val userMessage = ChatMessageDocument(
+                role = "user",
+                content = userInput,
+                timestamp = java.time.Instant.now(),
+                correlationId = task.correlationId,
+            )
+            session = session.copy(messages = session.messages + userMessage)
+
+            // Send progress: Starting analysis
+            onProgress("Zahajuji analýzu požadavku...", mapOf("step" to "init", "agent" to "orchestrator"))
 
             // Create agent instance
             val agent: AIAgent<String, String> = create(task)
+
+            // Send progress: Agent created
+            onProgress("Agent inicializován, připravuji zpracování...", mapOf("step" to "agent_ready", "agent" to "orchestrator"))
 
             // TODO P1.1: Restore checkpoint if exists
             // if (session.checkpointId != null) {
@@ -392,9 +413,24 @@ class OrchestratorAgent(
                 )
             activeAgents[task.correlationId] = "OLLAMA"
 
+            // Send progress: Processing started
+            onProgress("Spouštím AI agenta pro zpracování...", mapOf("step" to "processing", "model" to model.id))
+
             // Run agent
             val output: String = agent.run(userInput)
             val duration = System.currentTimeMillis() - startTime
+
+            // Send progress: Processing complete
+            onProgress("Zpracování dokončeno, finalizuji odpověď...", mapOf("step" to "finalizing", "duration" to "${duration}ms"))
+
+            // Append assistant message to session
+            val assistantMessage = ChatMessageDocument(
+                role = "assistant",
+                content = output,
+                timestamp = java.time.Instant.now(),
+                correlationId = task.correlationId,
+            )
+            session = session.copy(messages = session.messages + assistantMessage)
 
             // TODO P1.2: Save checkpoint
             // val checkpoint = agent.context.persistence().createCheckpoint(
@@ -404,7 +440,7 @@ class OrchestratorAgent(
             //     checkpointId = task.correlationId
             // )
 
-            // Update session
+            // Update session with messages
             chatSessionRepository.save(
                 session.copy(
                     // checkpointId = checkpoint.id, // TODO P1.2
@@ -415,7 +451,7 @@ class OrchestratorAgent(
 
             logger.info {
                 "✅ ORCHESTRATOR_SUCCESS | correlationId=${task.correlationId} | " +
-                    "duration=${duration}ms | outputLength=${output.length}"
+                    "duration=${duration}ms | outputLength=${output.length} | totalMessages=${session.messages.size}"
             }
 
             output
