@@ -43,6 +43,4 @@ WORKDIR /opt/jervis/tika
 COPY backend/service-tika/build/libs/*.jar jervis-tika.jar
 ENV JAVA_OPTS="-Xmx2g -Xms512m"
 EXPOSE 8081
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8081/actuator/health || exit 1
-ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /opt/jervis/tika/jervis-tika.jar --spring.config.additional-location=optional:file:/opt/jervis/tika/config/"]
+ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /opt/jervis/tika/jervis-tika.jar"]

@@ -46,22 +46,10 @@ class KtorRpcServer(
             try {
                 server =
                     embeddedServer(Netty, port = port, host = "0.0.0.0") {
-                        install(WebSockets) {
-                            pingPeriodMillis = 30000
-                            timeoutMillis = 60000
-                            maxFrameSize = Long.MAX_VALUE
-                            masking = false
-                        }
+                        install(WebSockets)
 
                         routing {
                             get("/") {
-                                call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
-                            }
-                            // Health check endpoint pro K8s
-                            get("/health") {
-                                call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
-                            }
-                            get("/actuator/health") {
                                 call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
                             }
 

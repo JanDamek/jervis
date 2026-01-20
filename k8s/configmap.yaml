@@ -147,25 +147,3 @@ data:
         baseUrl: http://jervis-coding-engine:3200/
       junie:
         baseUrl: http://jervis-junie:3300/
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: jervis-atlassian-config
-  namespace: jervis
-data:
-  application.yml: |
-    server:
-      port: 8084
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: jervis-whisper-config
-  namespace: jervis
-data:
-  application.yml: |
-    server:
-      port: 8083
----
-

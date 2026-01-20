@@ -23,6 +23,4 @@ COPY backend/service-joern/build/libs/*.jar jervis-joern.jar
 
 ENV JAVA_OPTS="-Xmx2g -Xms512m"
 EXPOSE 8082
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8082/health || exit 1
 ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /opt/jervis/joern/jervis-joern.jar"]

@@ -1,5 +1,5 @@
 # --- Run Stage ---
-FROM gradle:9.2.1-jdk21-jammy
+FROM eclipse-temurin:21-jre-jammy
 
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -30,6 +30,4 @@ ENV PORT=3200 \
     DOCKER_HOST=tcp://localhost:2375
 EXPOSE 3200
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:3200/health || exit 1
 ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /opt/jervis/coding-engine/jervis-coding-engine.jar"]

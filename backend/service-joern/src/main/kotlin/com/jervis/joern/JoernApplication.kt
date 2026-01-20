@@ -4,11 +4,9 @@ import com.jervis.common.client.IJoernClient
 import com.jervis.joern.domain.JoernRunner
 import com.jervis.joern.service.CliJoernRunner
 import com.jervis.joern.service.JoernServiceImpl
-import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
-import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
@@ -16,7 +14,6 @@ import io.ktor.server.websocket.WebSockets
 import kotlinx.rpc.krpc.ktor.server.rpc
 import kotlinx.rpc.krpc.serialization.cbor.cbor
 import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 
 private val logger = KotlinLogging.logger {}
@@ -32,16 +29,6 @@ fun main() {
 
     embeddedServer(Netty, port = port, host = host) {
         install(WebSockets)
-        install(ContentNegotiation) {
-            json(
-                Json {
-                    ignoreUnknownKeys = true
-                    isLenient = true
-                    explicitNulls = false
-                    prettyPrint = true
-                },
-            )
-        }
 
         routing {
             get("/") {

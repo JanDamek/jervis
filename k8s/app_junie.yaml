@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-junie
+  namespace: jervis
+spec:
+  revisionHistoryLimit: 2
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jervis-junie
+  template:
+    metadata:
+      labels:
+        app: jervis-junie
+    spec:
+      containers:
+        - name: junie
+          image: registry.damek-soft.eu/jandamek/jervis-junie:latest
+          ports:
+            - containerPort: 3300
+          env:
+            - name: JUNIE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: JUNIE_API_KEY
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3300
+            initialDelaySeconds: 45
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3300
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          startupProbe:
+            httpGet:
+              path: /
+              port: 3300
+            failureThreshold: 30
+            periodSeconds: 10
+          volumeMounts:
+            - name: jervis-data
+              mountPath: /opt/jervis/data
+      volumes:
+        - name: jervis-data
+          persistentVolumeClaim:
+            claimName: jervis-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-junie
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-junie
+  ports:
+    - name: krpc
+      port: 3300
+      targetPort: 3300

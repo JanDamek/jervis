@@ -22,6 +22,4 @@ ENV PORT=3300 \
     JAVA_OPTS="-Xmx1g -Xms256m"
 EXPOSE 3300
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:3300/health || exit 1
 ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /opt/jervis/junie/jervis-junie.jar"]

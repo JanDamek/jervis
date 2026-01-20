@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-server
+  namespace: jervis
+spec:
+  revisionHistoryLimit: 2
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jervis-server
+  template:
+    metadata:
+      labels:
+        app: jervis-server
+    spec:
+      containers:
+        - name: server
+          image: registry.damek-soft.eu/jandamek/jervis-server:latest
+          ports:
+            - containerPort: 5500
+          env:
+            # Secrets (passwords, API keys)
+            - name: MONGODB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: MONGODB_PASSWORD
+            - name: ARANGO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: ARANGO_PASSWORD
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: ANTHROPIC_API_KEY
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: OPENAI_API_KEY
+            - name: GOOGLE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: GOOGLE_API_KEY
+            - name: ATLASSIAN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: ATLASSIAN_TOKEN
+            - name: JUNIE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: JUNIE_API_KEY
+            - name: CODING_TOOLS_JUNIE_DEFAULT_PROVIDER
+              value: "anthropic"
+            - name: CODING_TOOLS_JUNIE_DEFAULT_MODEL
+              value: "claude-3-5-sonnet-20241022"
+            - name: CODING_TOOLS_JUNIE_PAID_PROVIDER
+              value: "anthropic"
+            - name: CODING_TOOLS_JUNIE_PAID_MODEL
+              value: "claude-3-5-sonnet-20241022"
+          volumeMounts:
+            - name: jervis-data
+              mountPath: /opt/jervis/data
+            - name: config
+              mountPath: /opt/jervis/server/config
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 5500
+            initialDelaySeconds: 45
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 5500
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /
+              port: 5500
+            failureThreshold: 30
+            periodSeconds: 10
+      volumes:
+        - name: jervis-data
+          persistentVolumeClaim:
+            claimName: jervis-data-pvc
+        - name: config
+          configMap:
+            name: jervis-server-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-server
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-server
+  ports:
+    - name: http
+      port: 5500
+      targetPort: 5500
