@@ -46,12 +46,30 @@ class ConnectionManager(
     var taskBadgeCount by mutableStateOf(0)
         private set
 
-    var errorNotifications by mutableStateOf<List<ErrorNotificationEventDto>>(emptyList())
+    var errorNotifications by mutableStateOf<List<com.jervis.dto.events.JervisEvent.ErrorNotification>>(emptyList())
         private set
 
     private var services: NetworkModule.Services? = null
-    private var webSocketClient: WebSocketClient? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var eventJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Check if the server is still reachable.
+     * If not, it triggers reconnection logic.
+     */
+    fun checkConnectivity() {
+        if (status is ConnectionStatus.Connected) {
+            scope.launch {
+                try {
+                    repository?.clients?.listClients()
+                } catch (e: Exception) {
+                    println("Connectivity check failed: ${e.message}")
+                    // Re-run connect loop
+                    connect()
+                }
+            }
+        }
+    }
 
     /**
      * Initialize connection and start retry loop
@@ -83,11 +101,13 @@ class ConnectionManager(
 
                 // Try a simple test call to verify connectivity
                 try {
-                    repository!!.clients.listClients()
+                    val clients = repository!!.clients.listClients()
                     status = ConnectionStatus.Connected
 
-                    // Start WebSocket client for real-time notifications
-                    startWebSocket()
+                    // Start event stream for the first client (Desktop usually manages one or all)
+                    clients.firstOrNull()?.id?.let { clientId ->
+                        startEventStream(clientId)
+                    }
 
                     // Update badge with initial task count
                     updateTaskBadge()
@@ -107,52 +127,48 @@ class ConnectionManager(
     }
 
     /**
-     * Start WebSocket client and listen for events
+     * Start Event stream via kRPC and listen for events
      */
-    private suspend fun startWebSocket() {
-        webSocketClient = WebSocketClient(serverBaseUrl)
-        webSocketClient?.start()
+    private suspend fun startEventStream(clientId: String) {
+        eventJob?.cancel()
+        val repo = repository ?: return
+        
+        eventJob = scope.launch {
+            repo.connection.subscribeToEvents(clientId)
+                .collect { event ->
+                    handleEvent(event)
+                }
+        }
+    }
 
-        // User dialog manager (single instance)
-        val dialogManager = UserDialogManager(webSocketClient!!, scope)
+    private var dialogManager: UserDialogManager? = null
 
-        // Listen for user task events
-        scope.launch {
-            webSocketClient?.userTaskEvents?.collect { event ->
+    private suspend fun handleEvent(event: com.jervis.dto.events.JervisEvent) {
+        when (event) {
+            is com.jervis.dto.events.JervisEvent.UserTaskCreated -> {
                 println("User task created: ${event.title}")
                 updateTaskBadge()
                 MacOSUtils.showNotification("New Task", event.title)
             }
-        }
-
-        // Listen for user task cancelled events
-        scope.launch {
-            webSocketClient?.userTaskCancelledEvents?.collect { event ->
+            is com.jervis.dto.events.JervisEvent.UserTaskCancelled -> {
                 println("User task cancelled: ${event.title}")
                 updateTaskBadge()
             }
-        }
-
-        // Listen for error notifications
-        scope.launch {
-            webSocketClient?.errorEvents?.collect { event ->
+            is com.jervis.dto.events.JervisEvent.ErrorNotification -> {
                 println("Error: ${event.message}")
                 errorNotifications = errorNotifications + event
                 MacOSUtils.showNotification("Error", event.message)
             }
-        }
-
-        // Listen for user dialog requests
-        scope.launch {
-            webSocketClient?.userDialogRequests?.collect { req ->
-                dialogManager.showRequest(req)
+            is com.jervis.dto.events.JervisEvent.UserDialogRequest -> {
+                if (dialogManager == null) {
+                    dialogManager = UserDialogManager(repository!!, scope)
+                }
+                println("Dialog request: ${event.question}")
+                dialogManager?.showRequest(event)
             }
-        }
-
-        // Listen for user dialog close events (close everywhere)
-        scope.launch {
-            webSocketClient?.userDialogCloses?.collect { closeEvt ->
-                dialogManager.closeIfMatches(closeEvt.dialogId)
+            is com.jervis.dto.events.JervisEvent.UserDialogClose -> {
+                println("Dialog closed: ${event.dialogId}")
+                dialogManager?.closeIfMatches(event.dialogId)
             }
         }
     }
@@ -185,8 +201,6 @@ class ConnectionManager(
      */
     fun disconnect() {
         status = ConnectionStatus.Offline
-        webSocketClient?.stop()
-        webSocketClient = null
         repository = null
         services = null
     }

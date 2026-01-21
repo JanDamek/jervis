@@ -45,7 +45,39 @@ class AgentOrchestratorRpcImpl(
             )
         }
 
-        return sharedFlow.asSharedFlow()
+        // Return flow that FIRST emits history, THEN live updates
+        return kotlinx.coroutines.flow.flow {
+            // 1. Load and emit chat history IMMEDIATELY when client subscribes
+            try {
+                val history = getChatHistory(clientId, projectId, limit = 50)
+                logger.info { "EMITTING_HISTORY | session=$sessionKey | messages=${history.messages.size}" }
+
+                history.messages.forEach { msg ->
+                    val responseType = when (msg.role) {
+                        "user" -> com.jervis.dto.ChatResponseType.USER_MESSAGE
+                        else -> com.jervis.dto.ChatResponseType.FINAL
+                    }
+
+                    emit(ChatResponseDto(
+                        message = msg.content,
+                        type = responseType,
+                        metadata = mapOf(
+                            "sender" to msg.role,
+                            "timestamp" to msg.timestamp,
+                            "correlationId" to (msg.correlationId ?: ""),
+                            "fromHistory" to "true"
+                        )
+                    ))
+                }
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to load history for session=$sessionKey" }
+            }
+
+            // 2. Then emit all LIVE updates from SharedFlow
+            sharedFlow.collect { response ->
+                emit(response)
+            }
+        }
     }
 
     override suspend fun sendMessage(request: ChatRequestDto) {
@@ -60,6 +92,21 @@ class AgentOrchestratorRpcImpl(
                 extraBufferCapacity = 50,
                 onBufferOverflow = BufferOverflow.DROP_OLDEST
             )
+        }
+
+        // IMMEDIATELY emit user message to ALL clients listening on this session (SYNCHRONOUSLY!)
+        // This ensures synchronization across Desktop/iOS/Android
+        kotlinx.coroutines.runBlocking {
+            stream.emit(ChatResponseDto(
+                message = request.text,
+                type = com.jervis.dto.ChatResponseType.USER_MESSAGE,
+                metadata = mapOf(
+                    "sender" to "user",
+                    "clientId" to request.context.clientId,
+                    "timestamp" to java.time.Instant.now().toString()
+                )
+            ))
+            logger.info { "USER_MESSAGE_EMITTED | session=$sessionKey | text='${request.text.take(50)}'" }
         }
 
         // CRITICAL FIX: Launch async processing in background to prevent RPC timeout

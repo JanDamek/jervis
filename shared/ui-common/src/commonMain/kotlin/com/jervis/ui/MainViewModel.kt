@@ -8,8 +8,11 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlin.math.pow
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * ViewModel for MainScreen
@@ -54,7 +57,24 @@ class MainViewModel(
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
+    private val _showReconnectDialog = MutableStateFlow(false)
+    val showReconnectDialog: StateFlow<Boolean> = _showReconnectDialog.asStateFlow()
+
+    private var pendingMessage: String? = null
+
+    // Connection state
+    enum class ConnectionState { DISCONNECTED, CONNECTING, CONNECTED, RECONNECTING }
+    private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
+    val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+
+    private val _notifications = MutableStateFlow<List<com.jervis.dto.events.JervisEvent>>(emptyList())
+    val notifications: StateFlow<List<com.jervis.dto.events.JervisEvent>> = _notifications.asStateFlow()
+
     private var chatJob: kotlinx.coroutines.Job? = null
+    private var eventJob: kotlinx.coroutines.Job? = null
+    private var reconnectAttempts = 0
+    private val maxReconnectAttempts = 10
+    private var isReconnecting = false
 
     init {
         // Load initial data
@@ -75,60 +95,122 @@ class MainViewModel(
                 }
             }
         }
+
+        // Subscribe to global events for the selected client
+        scope.launch {
+            _selectedClientId.collect { clientId ->
+                if (clientId != null) {
+                    subscribeToEventStream(clientId)
+                } else {
+                    eventJob?.cancel()
+                }
+            }
+        }
+    }
+
+    private fun subscribeToEventStream(clientId: String) {
+        eventJob?.cancel()
+        eventJob = scope.launch {
+            repository.connection.subscribeToEvents(clientId)
+                .retryWhen { cause, attempt ->
+                    println("Event stream error: ${cause.message}, retry attempt $attempt")
+                    delay(minOf(2.0.pow(attempt.toInt()).toLong(), 30L).seconds)
+                    true
+                }
+                .collect { event ->
+                    handleGlobalEvent(event)
+                }
+        }
+    }
+
+    private fun handleGlobalEvent(event: com.jervis.dto.events.JervisEvent) {
+        println("Received global event: ${event::class.simpleName}")
+        when (event) {
+            is com.jervis.dto.events.JervisEvent.UserTaskCreated -> {
+                // UI update or notification
+                _notifications.value = _notifications.value + event
+            }
+            is com.jervis.dto.events.JervisEvent.UserDialogRequest -> {
+                // Handle dialog request globally (maybe show a system-wide dialog)
+                // In this simplified version, we just add it to notifications
+                _notifications.value = _notifications.value + event
+            }
+            is com.jervis.dto.events.JervisEvent.ErrorNotification -> {
+                _errorMessage.value = "Server error: ${event.message}"
+            }
+            else -> {
+                // Ignore others or handle as needed
+            }
+        }
     }
 
     private fun subscribeToChatStream(clientId: String, projectId: String) {
         // Cancel previous chat subscription
         chatJob?.cancel()
+        isReconnecting = false
+        reconnectAttempts = 0
 
-        // Clear current chat messages
-        _chatMessages.value = emptyList()
-
-        // Load chat history
-        scope.launch {
-            try {
-                println("=== Loading chat history for client=$clientId, project=$projectId ===")
-                val history = repository.agentChat.getChatHistory(clientId, projectId, limit = 10)
-                _chatMessages.value = history.messages.map { msg ->
-                    ChatMessage(
-                        from = when (msg.role) {
-                            "user" -> ChatMessage.Sender.Me
-                            else -> ChatMessage.Sender.Assistant
-                        },
-                        text = msg.content,
-                        contextId = projectId,
-                        timestamp = msg.timestamp,
-                        messageType = ChatMessage.MessageType.FINAL, // History messages are always FINAL
-                        metadata = emptyMap(),
-                    )
-                }
-                println("=== Loaded ${history.messages.size} messages from history ===")
-            } catch (e: Exception) {
-                println("Failed to load chat history: ${e.message}")
-                e.printStackTrace()
-            }
+        // Clear current chat messages only on first connect
+        if (_chatMessages.value.isEmpty()) {
+            _chatMessages.value = emptyList()
         }
 
-        // Subscribe to long-lived chat stream
+        // Subscribe with auto-reconnect
         chatJob = scope.launch {
-            println("=== Subscribing to chat stream for client=$clientId, project=$projectId ===")
-            repository.agentChat.subscribeToChat(clientId, projectId)
-                .catch { e ->
-                    println("Chat stream error: ${e.message}")
-                    e.printStackTrace()
-                    _errorMessage.value = "Chat connection error: ${e.message}"
-                }
-                .collect { response ->
+            connectWithRetry(clientId, projectId)
+        }
+    }
+
+    private suspend fun connectWithRetry(clientId: String, projectId: String) {
+        while (reconnectAttempts < maxReconnectAttempts) {
+            try {
+                val state = if (reconnectAttempts > 0) ConnectionState.RECONNECTING else ConnectionState.CONNECTING
+                _connectionState.value = state
+                println("=== ${state.name}: attempt ${reconnectAttempts + 1}/$maxReconnectAttempts for client=$clientId, project=$projectId ===")
+
+                repository.agentChat.subscribeToChat(clientId, projectId)
+                    .onStart {
+                        println("=== Flow started, setting CONNECTED ===")
+                        _connectionState.value = ConnectionState.CONNECTED
+                        reconnectAttempts = 0 // Reset on successful connection
+                    }
+                    .catch { e ->
+                        println("Chat stream error: ${e.message}")
+                        e.printStackTrace()
+                        _connectionState.value = ConnectionState.DISCONNECTED
+
+                        // Auto-reconnect with exponential backoff
+                        reconnectAttempts++
+                        if (reconnectAttempts < maxReconnectAttempts) {
+                            val delaySeconds = minOf(2.0.pow(reconnectAttempts).toLong(), 60L)
+                            println("=== Reconnecting in ${delaySeconds}s (attempt $reconnectAttempts/$maxReconnectAttempts) ===")
+                            delay(delaySeconds.seconds)
+                        } else {
+                            _errorMessage.value = "Connection failed after $maxReconnectAttempts attempts: ${e.message}"
+                            println("=== Max reconnect attempts reached ===")
+                        }
+                    }
+                    .collect { response ->
                     val messageType = when (response.type) {
+                        com.jervis.dto.ChatResponseType.USER_MESSAGE -> ChatMessage.MessageType.USER_MESSAGE
                         com.jervis.dto.ChatResponseType.PROGRESS -> ChatMessage.MessageType.PROGRESS
                         com.jervis.dto.ChatResponseType.FINAL -> ChatMessage.MessageType.FINAL
                     }
 
                     println("=== Received chat message (${response.type}): ${response.message.take(100)} ===")
 
-                    // For PROGRESS messages, either update last progress or add new
-                    // For FINAL messages, always add new
-                    if (messageType == ChatMessage.MessageType.PROGRESS) {
+                    // USER_MESSAGE - Always add as user message (for cross-client sync)
+                    if (messageType == ChatMessage.MessageType.USER_MESSAGE) {
+                        _chatMessages.value = _chatMessages.value + ChatMessage(
+                            from = ChatMessage.Sender.Me,
+                            text = response.message,
+                            contextId = projectId,
+                            messageType = ChatMessage.MessageType.USER_MESSAGE,
+                            metadata = response.metadata,
+                            timestamp = response.metadata["timestamp"],
+                        )
+                    } else if (messageType == ChatMessage.MessageType.PROGRESS) {
+                        // For PROGRESS messages, either update last progress or add new
                         val messages = _chatMessages.value.toMutableList()
                         // Replace last progress message if exists, otherwise add
                         if (messages.lastOrNull()?.messageType == ChatMessage.MessageType.PROGRESS) {
@@ -160,6 +242,28 @@ class MainViewModel(
                         )
                     }
                 }
+
+                // Flow completed normally - connection was terminated
+                println("=== Flow completed, connection terminated ===")
+                _connectionState.value = ConnectionState.DISCONNECTED
+                break // Exit retry loop on normal completion
+
+            } catch (e: Exception) {
+                // Unexpected error outside of catch operator
+                println("=== Unexpected error in connectWithRetry: ${e.message} ===")
+                e.printStackTrace()
+                _connectionState.value = ConnectionState.DISCONNECTED
+                reconnectAttempts++
+
+                if (reconnectAttempts < maxReconnectAttempts) {
+                    val delaySeconds = minOf(2.0.pow(reconnectAttempts).toLong(), 60L)
+                    println("=== Reconnecting in ${delaySeconds}s ===")
+                    delay(delaySeconds.seconds)
+                } else {
+                    _errorMessage.value = "Connection failed: ${e.message}"
+                    break
+                }
+            }
         }
     }
 
@@ -243,34 +347,67 @@ class MainViewModel(
             return
         }
 
-        // Add user message to chat
-        _chatMessages.value = _chatMessages.value +
-            ChatMessage(
-                from = ChatMessage.Sender.Me,
-                text = text,
-                contextId = projectId,
-            )
+        // DON'T add user message locally - it will arrive via subscribeToChat stream
+        // This ensures synchronization across all clients (Desktop/iOS/Android)
 
-        // Send message - responses will arrive via subscribeToChat stream
+        // Send message - user message + responses will arrive via subscribeToChat stream
         scope.launch {
             _isLoading.value = true
+            val originalText = text
             _inputText.value = "" // Clear input immediately
 
+            try {
+                repository.agentChat.sendMessage(
+                    text = originalText,
+                    clientId = clientId,
+                    projectId = projectId,
+                )
+                println("=== Message sent successfully ===")
+                pendingMessage = null
+            } catch (e: Exception) {
+                println("Error sending message: ${e.message}")
+                e.printStackTrace()
+                pendingMessage = originalText
+                _showReconnectDialog.value = true
+                _errorMessage.value = "Failed to send message: ${e.message}"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    fun retrySendMessage() {
+        val text = pendingMessage ?: return
+        val clientId = _selectedClientId.value
+        val projectId = _selectedProjectId.value
+
+        if (clientId == null || projectId == null) return
+
+        _showReconnectDialog.value = false
+        
+        scope.launch {
+            _isLoading.value = true
             try {
                 repository.agentChat.sendMessage(
                     text = text,
                     clientId = clientId,
                     projectId = projectId,
                 )
-                println("=== Message sent successfully ===")
+                println("=== Retried message sent successfully ===")
+                pendingMessage = null
             } catch (e: Exception) {
-                println("Error sending message: ${e.message}")
-                e.printStackTrace()
+                println("Error retrying message: ${e.message}")
+                _showReconnectDialog.value = true
                 _errorMessage.value = "Failed to send message: ${e.message}"
             } finally {
                 _isLoading.value = false
             }
         }
+    }
+
+    fun cancelRetry() {
+        pendingMessage = null
+        _showReconnectDialog.value = false
     }
 
     fun clearError() {
@@ -279,5 +416,15 @@ class MainViewModel(
 
     fun onDispose() {
         // Cleanup if needed
+    }
+
+    fun manualReconnect() {
+        val clientId = _selectedClientId.value
+        val projectId = _selectedProjectId.value
+        if (clientId != null && projectId != null) {
+            subscribeToChatStream(clientId, projectId)
+        } else {
+            loadClients()
+        }
     }
 }

@@ -56,6 +56,8 @@ fun App(
         val inputText by viewModel.inputText.collectAsState()
         val isLoading by viewModel.isLoading.collectAsState()
         val currentScreen by appNavigator.currentScreen.collectAsState()
+        val connectionState by viewModel.connectionState.collectAsState()
+        val showReconnectDialog by viewModel.showReconnectDialog.collectAsState()
 
         when (val screen = currentScreen) {
             Screen.Main -> {
@@ -67,6 +69,7 @@ fun App(
                     chatMessages = chatMessages,
                     inputText = inputText,
                     isLoading = isLoading,
+                    connectionState = connectionState.name,
                     onClientSelected = viewModel::selectClient,
                     onProjectSelected = viewModel::selectProject,
                     onInputChanged = viewModel::updateInputText,
@@ -79,6 +82,7 @@ fun App(
                             appNavigator.navigateTo(screen)
                         }
                     },
+                    onReconnectClick = viewModel::manualReconnect,
                     modifier = modifier,
                 )
             }
@@ -135,5 +139,15 @@ fun App(
         }
 
         SnackbarHost(hostState = snackbarHostState)
+
+        com.jervis.ui.util.ConfirmDialog(
+            visible = showReconnectDialog,
+            title = "Odeslání selhalo",
+            message = "Zprávu se nepodařilo odeslat. Chcete to zkusit znovu?",
+            confirmText = "Zkusit znovu",
+            onConfirm = viewModel::retrySendMessage,
+            onDismiss = viewModel::cancelRetry,
+            isDestructive = false
+        )
     }
 }

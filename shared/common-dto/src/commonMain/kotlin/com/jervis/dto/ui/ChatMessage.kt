@@ -17,7 +17,8 @@ data class ChatMessage(
 
     @Serializable
     enum class MessageType {
-        PROGRESS, // Intermediate progress update
-        FINAL     // Final answer
+        USER_MESSAGE, // User's message (for synchronization across clients)
+        PROGRESS,     // Intermediate progress update
+        FINAL         // Final answer
     }
 }

@@ -1,6 +1,8 @@
 package com.jervis.service
 
 import com.jervis.dto.ErrorNotificationDto
+import com.jervis.dto.events.JervisEvent
+import com.jervis.dto.events.UserDialogResponseEventDto
 import kotlinx.coroutines.flow.Flow
 import kotlinx.rpc.annotations.Rpc
 
@@ -11,14 +13,17 @@ import kotlinx.rpc.annotations.Rpc
 @Rpc
 interface INotificationService {
     /**
-     * Subscribe to error notifications for a client.
-     * Returns Flow of error events as they occur.
+     * Main event stream for all real-time notifications (replacing WebSocket).
      */
-    fun subscribeToErrors(clientId: String): Flow<ErrorNotificationDto>
+    fun subscribeToEvents(clientId: String): Flow<JervisEvent>
 
     /**
-     * Subscribe to all notifications for a client.
-     * Includes errors, warnings, and info messages.
+     * Send response to a user dialog request.
      */
-    fun subscribeToAll(clientId: String): Flow<ErrorNotificationDto>
+    suspend fun sendDialogResponse(response: UserDialogResponseEventDto)
+
+    /**
+     * Close/cancel a user dialog.
+     */
+    suspend fun closeDialog(clientId: String, dialogId: String, correlationId: String, reason: String)
 }

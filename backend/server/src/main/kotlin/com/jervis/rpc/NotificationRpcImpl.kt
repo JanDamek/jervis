@@ -1,6 +1,8 @@
 package com.jervis.rpc
 
 import com.jervis.dto.ErrorNotificationDto
+import com.jervis.dto.events.JervisEvent
+import com.jervis.dto.events.UserDialogResponseEventDto
 import com.jervis.service.INotificationService
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
@@ -8,6 +10,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
+import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
 @Component
@@ -15,16 +18,15 @@ class NotificationRpcImpl : INotificationService {
     private val logger = KotlinLogging.logger {}
 
     // Store notification streams per client
-    private val errorStreams = ConcurrentHashMap<String, MutableSharedFlow<ErrorNotificationDto>>()
-    private val allStreams = ConcurrentHashMap<String, MutableSharedFlow<ErrorNotificationDto>>()
+    private val eventStreams = ConcurrentHashMap<String, MutableSharedFlow<JervisEvent>>()
 
-    override fun subscribeToErrors(clientId: String): Flow<ErrorNotificationDto> {
-        logger.info { "Client subscribing to error stream: $clientId" }
+    override fun subscribeToEvents(clientId: String): Flow<JervisEvent> {
+        logger.info { "Client subscribing to event stream: $clientId" }
 
-        val sharedFlow = errorStreams.getOrPut(clientId) {
+        val sharedFlow = eventStreams.getOrPut(clientId) {
             MutableSharedFlow(
-                replay = 10, // Keep last 10 errors for late subscribers
-                extraBufferCapacity = 50,
+                replay = 10,
+                extraBufferCapacity = 100,
                 onBufferOverflow = BufferOverflow.DROP_OLDEST
             )
         }
@@ -32,18 +34,19 @@ class NotificationRpcImpl : INotificationService {
         return sharedFlow.asSharedFlow()
     }
 
-    override fun subscribeToAll(clientId: String): Flow<ErrorNotificationDto> {
-        logger.info { "Client subscribing to all notifications: $clientId" }
+    override suspend fun sendDialogResponse(response: UserDialogResponseEventDto) {
+        logger.info { "Received dialog response: ${response.dialogId}" }
+        // TODO: Propojit s orchestrátorem nebo službou, která na dialog čeká
+    }
 
-        val sharedFlow = allStreams.getOrPut(clientId) {
-            MutableSharedFlow(
-                replay = 10, // Keep last 10 notifications
-                extraBufferCapacity = 100,
-                onBufferOverflow = BufferOverflow.DROP_OLDEST
-            )
-        }
-
-        return sharedFlow.asSharedFlow()
+    override suspend fun closeDialog(clientId: String, dialogId: String, correlationId: String, reason: String) {
+        logger.info { "Closing dialog: $dialogId for client $clientId" }
+        emitEvent(clientId, JervisEvent.UserDialogClose(
+            dialogId = dialogId,
+            correlationId = correlationId,
+            reason = reason,
+            timestamp = Instant.now().toString()
+        ))
     }
 
     /**
@@ -53,10 +56,22 @@ class NotificationRpcImpl : INotificationService {
     suspend fun emitError(clientId: String, error: ErrorNotificationDto) {
         logger.debug { "Emitting error to client $clientId: ${error.message}" }
 
-        // Emit to error-only stream
-        errorStreams[clientId]?.emit(error)
+        // Emit to event stream
+        emitEvent(clientId, JervisEvent.ErrorNotification(
+            id = error.id,
+            severity = error.severity,
+            message = error.message,
+            clientId = error.clientId,
+            projectId = error.projectId,
+            timestamp = error.timestamp
+        ))
+    }
 
-        // Emit to all notifications stream
-        allStreams[clientId]?.emit(error)
+    /**
+     * Emit a generic event to a client.
+     */
+    suspend fun emitEvent(clientId: String, event: JervisEvent) {
+        logger.debug { "Emitting event to client $clientId: ${event::class.simpleName}" }
+        eventStreams[clientId]?.emit(event)
     }
 }

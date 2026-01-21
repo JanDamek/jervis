@@ -17,6 +17,7 @@ data class ChatResponseDto(
 
 @Serializable
 enum class ChatResponseType {
-    PROGRESS, // Intermediate progress update (e.g., "Analyzing code...", "Searching documentation...")
-    FINAL     // Final answer to user
+    USER_MESSAGE, // User's message echoed to all clients for synchronization
+    PROGRESS,     // Intermediate progress update (e.g., "Analyzing code...", "Searching documentation...")
+    FINAL         // Final answer to user
 }

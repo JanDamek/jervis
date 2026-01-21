@@ -70,6 +70,16 @@ fun main() =
         val connectionManager = rememberConnectionManager(serverBaseUrl)
         val repository = connectionManager.repository
 
+        // Background connectivity check
+        LaunchedEffect(connectionManager.status) {
+            if (connectionManager.status is ConnectionStatus.Connected) {
+                while (true) {
+                    delay(30_000) // Check every 30 seconds
+                    connectionManager.checkConnectivity()
+                }
+            }
+        }
+
         // Shared navigator for main window navigation
         val navigator =
             remember {

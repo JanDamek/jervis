@@ -69,11 +69,13 @@ fun MainScreen(
     chatMessages: List<ChatMessage>,
     inputText: String,
     isLoading: Boolean,
+    connectionState: String = "DISCONNECTED", // CONNECTED, CONNECTING, RECONNECTING, DISCONNECTED
     onClientSelected: (String) -> Unit,
     onProjectSelected: (String) -> Unit,
     onInputChanged: (String) -> Unit,
     onSendClick: () -> Unit,
     onNavigate: (com.jervis.ui.navigation.Screen) -> Unit = {},
+    onReconnectClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -84,6 +86,26 @@ fun MainScreen(
             JTopBar(
                 title = "JERVIS Assistant",
                 actions = {
+                    // Connection status indicator
+                    IconButton(
+                        onClick = { onReconnectClick?.invoke() },
+                        enabled = onReconnectClick != null && connectionState != "CONNECTED"
+                    ) {
+                        Text(
+                            text = when (connectionState) {
+                                "CONNECTED" -> "●"
+                                "CONNECTING" -> "⟳"
+                                "RECONNECTING" -> "⟳"
+                                else -> "○"
+                            },
+                            style = MaterialTheme.typography.titleMedium,
+                            color = when (connectionState) {
+                                "CONNECTED" -> MaterialTheme.colorScheme.primary
+                                "CONNECTING", "RECONNECTING" -> MaterialTheme.colorScheme.secondary
+                                else -> MaterialTheme.colorScheme.error
+                            }
+                        )
+                    }
                     IconButton(onClick = { showMenu = true }) {
                         Text("⋮", style = MaterialTheme.typography.headlineMedium)
                     }
@@ -364,7 +386,7 @@ private fun ChatMessageItem(
             )
         }
     } else {
-        // FINAL messages - standard chat bubble
+        // USER_MESSAGE and FINAL messages - standard chat bubble
         Row(
             modifier = modifier.fillMaxWidth(),
             horizontalArrangement =

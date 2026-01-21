@@ -1,8 +1,8 @@
 package com.jervis.desktop
 
-import com.jervis.dto.events.UserDialogCloseEventDto
-import com.jervis.dto.events.UserDialogRequestEventDto
+import com.jervis.dto.events.JervisEvent
 import com.jervis.dto.events.UserDialogResponseEventDto
+import com.jervis.repository.JervisRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -19,11 +19,11 @@ import javax.swing.JTextField
 import javax.swing.SwingUtilities
 
 /**
- * Desktop UI manager for interactive User Dialogs received over WebSocket.
+ * Desktop UI manager for interactive User Dialogs received over kRPC event stream.
  * Ensures a single dialog instance. When one device closes/responds, all close.
  */
 class UserDialogManager(
-    private val wsClient: WebSocketClient,
+    private val repository: JervisRepository,
     private val scope: CoroutineScope,
 ) {
     @Volatile
@@ -32,7 +32,7 @@ class UserDialogManager(
     @Volatile
     private var dialog: JDialog? = null
 
-    fun showRequest(req: UserDialogRequestEventDto) {
+    fun showRequest(req: JervisEvent.UserDialogRequest) {
         // Avoid multiple dialogs: if already showing same dialog, bring to front
         if (activeDialogId == req.dialogId && dialog?.isShowing == true) {
             SwingUtilities.invokeLater { dialog?.toFront() }
@@ -65,7 +65,6 @@ class UserDialogManager(
             content.add(JScrollPane(questionArea).apply { preferredSize = Dimension(620, 180) }, BorderLayout.CENTER)
 
             val answerField = JTextField(req.proposedAnswer ?: "").apply {
-                // 'allowEdit' has been removed from the protocol; input is always editable
                 isEditable = true
             }
             val south = JPanel(BorderLayout(8, 8))
@@ -87,7 +86,7 @@ class UserDialogManager(
                 cancel.isEnabled = false
                 val answerText = answerField.text
                 scope.launch(Dispatchers.IO) {
-                    wsClient.sendUserDialogResponse(
+                    repository.connection.sendDialogResponse(
                         UserDialogResponseEventDto(
                             dialogId = req.dialogId,
                             correlationId = req.correlationId,
@@ -106,13 +105,11 @@ class UserDialogManager(
                 ok.isEnabled = false
                 cancel.isEnabled = false
                 scope.launch(Dispatchers.IO) {
-                    wsClient.sendUserDialogClose(
-                        UserDialogCloseEventDto(
-                            dialogId = req.dialogId,
-                            correlationId = req.correlationId,
-                            reason = "CANCELLED",
-                            timestamp = java.time.Instant.now().toString(),
-                        ),
+                    repository.connection.closeDialog(
+                        clientId = req.clientId,
+                        dialogId = req.dialogId,
+                        correlationId = req.correlationId,
+                        reason = "CANCELLED",
                     )
                 }
                 d.dispose()
