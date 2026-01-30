@@ -31,16 +31,16 @@ class OllamaEmbeddingCpuClient(
         text: String,
     ): List<Float> {
         ensureModelAvailable(model)
-        val body =
-            mapOf(
-                "model" to model,
-                "prompt" to text,
+        val request =
+            OllamaEmbeddingRequest(
+                model = model,
+                prompt = text,
             )
         return try {
             val response =
                 client
                     .post("/api/embeddings") {
-                        setBody(body)
+                        setBody(request)
                     }.body<OllamaEmbeddingResponse>()
             response.embedding
         } catch (error: Exception) {
@@ -65,24 +65,35 @@ class OllamaEmbeddingCpuClient(
 
     private suspend fun ensureModelAvailable(model: String) {
         try {
-            val showBody = mapOf("name" to model)
+            val showRequest = OllamaModelRequest(name = model)
             client
                 .post("/api/show") {
-                    setBody(showBody)
+                    setBody(showRequest)
                 }.bodyAsText() // we don't need structured body here
             logger.debug { "Embedding model available on embedding endpoint: $model" }
         } catch (e: ResponseException) {
             logger.info { "Embedding model '$model' not present (status=${e.response.status}). Pulling..." }
-            val body = mapOf("name" to model)
+            val pullRequest = OllamaModelRequest(name = model)
             client
                 .post("/api/pull") {
-                    setBody(body)
+                    setBody(pullRequest)
                 }.bodyAsText() // ignore body content; just ensure call succeeds
             logger.info { "Ollama pull for embedding model completed on embedding endpoint: $model" }
         } catch (e: Exception) {
             logger.warn(e) { "Failed to ensure embedding model '$model' on embedding endpoint" }
         }
     }
+
+    @Serializable
+    data class OllamaEmbeddingRequest(
+        val model: String,
+        val prompt: String,
+    )
+
+    @Serializable
+    data class OllamaModelRequest(
+        val name: String,
+    )
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @Serializable

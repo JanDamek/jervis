@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-K8S_DIR="$(dirname "$0")"
+K8S_DIR="/Users/damekjan/git/jervis/k8s"
 
 echo "=== Building and deploying all Jervis services ==="
 echo ""

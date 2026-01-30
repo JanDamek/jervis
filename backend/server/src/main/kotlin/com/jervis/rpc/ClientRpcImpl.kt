@@ -44,7 +44,7 @@ class ClientRpcImpl(
     override suspend fun updateLastSelectedProject(id: String, projectId: String?): ClientDto {
         val client = clientService.getClientById(ClientId(ObjectId(id)))
         val updatedClient = client.copy(
-            lastSelectedProjectId = projectId?.let { ProjectId(ObjectId(it)) }
+            lastSelectedProjectId = if (projectId.isNullOrBlank()) null else ProjectId(ObjectId(projectId))
         )
         return clientService.update(updatedClient).toDto()
     }

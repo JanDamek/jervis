@@ -47,6 +47,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
+import com.jervis.dto.ChatMessageDto
 import com.jervis.dto.ui.ChatMessage
 import com.jervis.ui.design.JTopBar
 import com.jervis.ui.util.rememberClipboardManager
@@ -61,7 +62,7 @@ import com.jervis.ui.util.rememberClipboardManager
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(
+fun MainScreenView(
     clients: List<ClientDto>,
     projects: List<ProjectDto>,
     selectedClientId: String?,
@@ -70,8 +71,12 @@ fun MainScreen(
     inputText: String,
     isLoading: Boolean,
     connectionState: String = "DISCONNECTED", // CONNECTED, CONNECTING, RECONNECTING, DISCONNECTED
+    queueSize: Int = 0,
+    runningProjectId: String? = null,
+    runningProjectName: String? = null,
+    runningTaskPreview: String? = null,
     onClientSelected: (String) -> Unit,
-    onProjectSelected: (String) -> Unit,
+    onProjectSelected: (String?) -> Unit,
     onInputChanged: (String) -> Unit,
     onSendClick: () -> Unit,
     onNavigate: (com.jervis.ui.navigation.Screen) -> Unit = {},
@@ -80,6 +85,13 @@ fun MainScreen(
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
+    // Obrazovka "Spojení ztraceno" s možností manuálního obnovení
+    if (connectionState == "DISCONNECTED" && onReconnectClick != null) {
+        // Zde by mohl být speciální UI pro odpojený stav, 
+        // ale my už máme overlay v App.kt. 
+        // Přidáme alespoň tlačítko pro refresh do TopBaru, pokud je potřeba.
+    }
+
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
@@ -87,10 +99,7 @@ fun MainScreen(
                 title = "JERVIS Assistant",
                 actions = {
                     // Connection status indicator
-                    IconButton(
-                        onClick = { onReconnectClick?.invoke() },
-                        enabled = onReconnectClick != null && connectionState != "CONNECTED"
-                    ) {
+                    Box(modifier = Modifier.padding(horizontal = 8.dp)) {
                         Text(
                             text = when (connectionState) {
                                 "CONNECTED" -> "●"
@@ -207,6 +216,11 @@ fun MainScreen(
                 onInputChanged = onInputChanged,
                 onSendClick = onSendClick,
                 enabled = selectedClientId != null && selectedProjectId != null && !isLoading,
+                queueSize = queueSize,
+                runningProjectId = runningProjectId,
+                runningProjectName = runningProjectName,
+                runningTaskPreview = runningTaskPreview,
+                currentProjectId = selectedProjectId,
                 modifier =
                     Modifier
                         .fillMaxWidth()
@@ -223,7 +237,7 @@ private fun SelectorsRow(
     selectedClientId: String?,
     selectedProjectId: String?,
     onClientSelected: (String) -> Unit,
-    onProjectSelected: (String) -> Unit,
+    onProjectSelected: (String?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -366,6 +380,7 @@ private fun ChatMessageItem(
     modifier: Modifier = Modifier,
 ) {
     val clipboard = rememberClipboardManager()
+    val isMe = message.from == ChatMessage.Sender.Me
 
     // Progress messages are displayed differently (compact, with spinner)
     if (message.messageType == ChatMessage.MessageType.PROGRESS) {
@@ -386,11 +401,11 @@ private fun ChatMessageItem(
             )
         }
     } else {
-        // USER_MESSAGE and FINAL messages - standard chat bubble
+        // standard chat bubble
         Row(
             modifier = modifier.fillMaxWidth(),
             horizontalArrangement =
-                if (message.from == ChatMessage.Sender.Me) {
+                if (isMe) {
                     Arrangement.End
                 } else {
                     Arrangement.Start
@@ -400,10 +415,8 @@ private fun ChatMessageItem(
                 colors =
                     CardDefaults.cardColors(
                         containerColor =
-                            when (message.from) {
-                                ChatMessage.Sender.Me -> MaterialTheme.colorScheme.primaryContainer
-                                ChatMessage.Sender.Assistant -> MaterialTheme.colorScheme.secondaryContainer
-                            },
+                            if (isMe) MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.secondaryContainer,
                     ),
                 modifier = Modifier.widthIn(max = 280.dp),
             ) {
@@ -412,22 +425,13 @@ private fun ChatMessageItem(
                 ) {
                     Text(
                         text =
-                            when (message.from) {
-                                ChatMessage.Sender.Me -> "You"
-                                ChatMessage.Sender.Assistant -> "JERVIS"
-                            },
+                            if (isMe) "You"
+                            else "Assistant",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
 
                     Spacer(modifier = Modifier.height(4.dp))
-
-                    // Copy button aligned to the end of the bubble
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = { clipboard.setText(AnnotatedString(message.text)) }) {
-                            Text("Copy")
-                        }
-                    }
 
                     // Selectable message text
                     SelectionContainer {
@@ -460,31 +464,74 @@ private fun InputArea(
     onInputChanged: (String) -> Unit,
     onSendClick: () -> Unit,
     enabled: Boolean,
+    queueSize: Int = 0,
+    runningProjectId: String? = null,
+    runningProjectName: String? = null,
+    runningTaskPreview: String? = null,
+    currentProjectId: String? = null,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.Bottom,
-    ) {
-        OutlinedTextField(
-            value = inputText,
-            onValueChange = onInputChanged,
-            placeholder = { Text("Type your message...") },
-            enabled = enabled,
-            modifier =
-                Modifier
-                    .weight(1f)
-                    .heightIn(min = 56.dp, max = 120.dp),
-            maxLines = 4,
-        )
+    Column(modifier = modifier) {
+        // Show queue info if something is running
+        if (runningProjectId != null && runningProjectId != "none") {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Project name + task preview on single line
+                Text(
+                    text = buildString {
+                        append("⚙️ ${runningProjectName ?: runningProjectId}")
+                        if (runningTaskPreview != null) {
+                            append(": $runningTaskPreview")
+                        }
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f)
+                )
+                if (queueSize > 0) {
+                    Text(
+                        text = "Queue: $queueSize",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
 
-        Button(
-            onClick = onSendClick,
-            enabled = enabled && inputText.isNotBlank(),
-            modifier = Modifier.height(56.dp),
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.Bottom,
         ) {
-            Text("Send")
+            OutlinedTextField(
+                value = inputText,
+                onValueChange = onInputChanged,
+                placeholder = { Text("Type your message...") },
+                enabled = enabled,
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .heightIn(min = 56.dp, max = 120.dp),
+                maxLines = 4,
+            )
+
+            val buttonText = when {
+                runningProjectId == null || runningProjectId == "none" -> "Send"
+                runningProjectId != currentProjectId -> "Add to queue"
+                queueSize > 0 -> "Add to queue (${queueSize + 1})"
+                else -> "Add to queue"
+            }
+
+            Button(
+                onClick = onSendClick,
+                enabled = enabled && inputText.isNotBlank(),
+                modifier = Modifier.height(56.dp),
+            ) {
+                Text(buttonText)
+            }
         }
     }
 }

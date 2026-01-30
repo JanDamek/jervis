@@ -1,18 +1,31 @@
 package com.jervis.ui
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.navigation.AppNavigator
 import com.jervis.ui.navigation.Screen
+import com.jervis.ui.screens.*
 
 /**
  * Root Compose Application
@@ -26,8 +39,9 @@ fun App(
     modifier: Modifier = Modifier,
     navigator: AppNavigator? = null,
     onOpenDebugWindow: (() -> Unit)? = null,
+    onRefreshConnection: (() -> Unit)? = null,
 ) {
-    val viewModel = remember { MainViewModel(repository, defaultClientId, defaultProjectId) }
+    val viewModel = remember { MainViewModel(repository, defaultClientId, defaultProjectId, onRefreshConnection) }
     val snackbarHostState = remember { SnackbarHostState() }
     val appNavigator = navigator ?: remember { AppNavigator() }
 
@@ -58,22 +72,14 @@ fun App(
         val currentScreen by appNavigator.currentScreen.collectAsState()
         val connectionState by viewModel.connectionState.collectAsState()
         val showReconnectDialog by viewModel.showReconnectDialog.collectAsState()
+        val isOverlayVisible by viewModel.isOverlayVisible.collectAsState()
+        val reconnectAttempt by viewModel.reconnectAttemptDisplay.collectAsState()
+        val isInitialLoading by viewModel.isInitialLoading.collectAsState()
 
         when (val screen = currentScreen) {
             Screen.Main -> {
                 MainScreen(
-                    clients = clients,
-                    projects = projects,
-                    selectedClientId = selectedClientId,
-                    selectedProjectId = selectedProjectId,
-                    chatMessages = chatMessages,
-                    inputText = inputText,
-                    isLoading = isLoading,
-                    connectionState = connectionState.name,
-                    onClientSelected = viewModel::selectClient,
-                    onProjectSelected = viewModel::selectProject,
-                    onInputChanged = viewModel::updateInputText,
-                    onSendClick = viewModel::sendMessage,
+                    viewModel = viewModel,
                     onNavigate = { screen ->
                         // Desktop has separate debug window, mobile uses navigation
                         if (screen == Screen.DebugConsole && onOpenDebugWindow != null) {
@@ -81,14 +87,12 @@ fun App(
                         } else {
                             appNavigator.navigateTo(screen)
                         }
-                    },
-                    onReconnectClick = viewModel::manualReconnect,
-                    modifier = modifier,
+                    }
                 )
             }
 
             Screen.Settings -> {
-                SettingsScreen(
+                com.jervis.ui.screens.settings.SettingsScreen(
                     repository = repository,
                     onBack = { appNavigator.navigateTo(Screen.Main) },
                 )
@@ -143,11 +147,54 @@ fun App(
         com.jervis.ui.util.ConfirmDialog(
             visible = showReconnectDialog,
             title = "Odeslání selhalo",
-            message = "Zprávu se nepodařilo odeslat. Chcete to zkusit znovu?",
+            message = "Zprávu se nepodařilo odeslat. Zkontrolujte připojení k internetu a zkuste to znovu.",
             confirmText = "Zkusit znovu",
             onConfirm = viewModel::retrySendMessage,
             onDismiss = viewModel::cancelRetry,
             isDestructive = false
         )
+
+        if (isOverlayVisible) {
+            androidx.compose.ui.window.Dialog(
+                onDismissRequest = { /* Nepovolíme zavření kliknutím mimo */ },
+                properties = androidx.compose.ui.window.DialogProperties(
+                    dismissOnBackPress = false,
+                    dismissOnClickOutside = false,
+                    usePlatformDefaultWidth = false
+                )
+            ) {
+                androidx.compose.material3.Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            modifier = Modifier.size(64.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            strokeWidth = 6.dp
+                        )
+                        Spacer(modifier = Modifier.height(32.dp))
+                        Text(
+                            text = "Spojení ztraceno",
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Server je momentálně nedostupný.\nPokouším se o znovupřipojení..." + 
+                                   if (reconnectAttempt > 0) "\n(Pokus $reconnectAttempt)" else "",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                }
+            }
+        }
     }
 }

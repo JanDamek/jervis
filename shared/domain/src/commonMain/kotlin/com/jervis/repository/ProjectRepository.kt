@@ -16,9 +16,8 @@ class ProjectRepository(
      * Filters projects by clientId
      */
     suspend fun listProjectsForClient(clientId: String): List<ProjectDto> =
-        safeRpcListCall("listProjectsForClient") {
-            val allProjects = projectService.getAllProjects()
-            allProjects.filter { it.clientId == clientId }
+        safeRpcCall("listProjectsForClient") {
+            projectService.listProjectsForClient(clientId)
         }
 
     /**
@@ -32,17 +31,17 @@ class ProjectRepository(
     /**
      * Save project
      */
-    suspend fun saveProject(project: ProjectDto): ProjectDto? =
-        safeRpcCall("saveProject", returnNull = true) {
+    suspend fun saveProject(project: ProjectDto): ProjectDto =
+        safeRpcCall("saveProject") {
             projectService.saveProject(project)
         }
 
     /**
      * Update existing project
      */
-    suspend fun updateProject(project: ProjectDto): ProjectDto? {
+    suspend fun updateProject(project: ProjectDto): ProjectDto {
         require(project.id.isNotBlank()) { "Project id must be provided for update" }
-        return safeRpcCall("updateProject", returnNull = true) {
+        return safeRpcCall("updateProject") {
             projectService.updateProject(project.id, project)
         }
     }
@@ -51,7 +50,7 @@ class ProjectRepository(
      * Delete project
      */
     suspend fun deleteProject(project: ProjectDto) {
-        safeRpcCall("deleteProject", returnNull = true) {
+        safeRpcCall("deleteProject") {
             projectService.deleteProject(project)
         }
     }
@@ -59,8 +58,8 @@ class ProjectRepository(
     /**
      * Get project by name
      */
-    suspend fun getProjectByName(name: String?): ProjectDto? =
-        safeRpcCall("getProjectByName", returnNull = true) {
+    suspend fun getProjectByName(name: String?): ProjectDto =
+        safeRpcCall("getProjectByName") {
             projectService.getProjectByName(name)
         }
 }

@@ -57,6 +57,7 @@ class GraphDBService(
                         put("_key", key)
                         put("type", node.entityType)
                         if (mergedRagChunks.isNotEmpty()) put("ragChunks", mergedRagChunks)
+                        if (node.metadata.isNotEmpty()) put("metadata", node.metadata)
                     }
 
                 if (existed) collection.updateDocument(key, doc) else collection.insertDocument(doc)
@@ -84,15 +85,29 @@ class GraphDBService(
                     db.createCollection(edgeCollection, CollectionCreateOptions().type(CollectionType.EDGES))
                 }
 
+                val key = normalizeKey(edge.edgeType + "::" + fromKey + "->" + toKey)
+                val existed = runCatching { coll.documentExists(key) }.getOrDefault(false)
+
+                val mergedEvidence: List<String> =
+                    if (existed) {
+                        val existing: Map<*, *>? =
+                            runCatching { coll.getDocument(key, Map::class.java) as Map<*, *> }.getOrNull()
+                        val current =
+                            (existing?.get("evidenceChunkIds") as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
+                        (current + edge.evidenceChunkIds).toSet().toList()
+                    } else {
+                        edge.evidenceChunkIds
+                    }
+
                 val edgeDoc =
                     HashMap<String, Any?>().apply {
-                        put("_key", normalizeKey(edge.edgeType + "::" + fromKey + "->" + toKey))
+                        put("_key", key)
                         put("edgeType", edge.edgeType)
                         put("_from", keyToDocumentId(clientId, fromKey))
                         put("_to", keyToDocumentId(clientId, toKey))
+                        if (mergedEvidence.isNotEmpty()) put("evidenceChunkIds", mergedEvidence)
+                        if (edge.metadata.isNotEmpty()) put("metadata", edge.metadata)
                     }
-                val key = edgeDoc["_key"] as String
-                val existed = runCatching { coll.documentExists(key) }.getOrDefault(false)
                 if (existed) coll.updateDocument(key, edgeDoc) else coll.insertDocument(edgeDoc)
 
                 GraphEdgeResult(
@@ -293,7 +308,8 @@ class GraphDBService(
             (doc["ragChunks"] as? List<*>)
                 ?.mapNotNull { it?.toString() }
                 ?: emptyList()
-        return GraphNode(key = key, entityType = type, ragChunks = ragChunks)
+        val metadata = (doc["metadata"] as? Map<*, *>)?.map { (k, v) -> k.toString() to (v ?: "") }?.toMap() ?: emptyMap()
+        return GraphNode(key = key, entityType = type, ragChunks = ragChunks, metadata = metadata)
     }
 
     private fun keyToDocumentId(

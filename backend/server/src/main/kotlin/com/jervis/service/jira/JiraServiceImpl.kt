@@ -3,6 +3,7 @@ package com.jervis.service.jira
 import com.jervis.common.client.IAtlassianClient
 import com.jervis.common.dto.atlassian.JiraIssueRequest
 import com.jervis.common.dto.atlassian.JiraSearchRequest
+import com.jervis.common.rpc.withRpcRetry
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.service.connection.ConnectionService
 import com.jervis.types.ClientId
@@ -14,6 +15,7 @@ class JiraServiceImpl(
     private val atlassianClient: IAtlassianClient,
     private val connectionService: ConnectionService,
     private val clientService: com.jervis.service.client.ClientService,
+    private val reconnectHandler: com.jervis.configuration.RpcReconnectHandler,
 ) : JiraService {
     private val logger = KotlinLogging.logger {}
 
@@ -26,7 +28,10 @@ class JiraServiceImpl(
         val connection = findJiraConnection(clientId) ?: return emptyList()
         val finalQuery = if (project != null) "project = \"$project\" AND ($query)" else query
 
-        val response =
+        val response = withRpcRetry(
+            name = "JiraSearch",
+            reconnect = { reconnectHandler.reconnectAtlassian() }
+        ) {
             atlassianClient.searchJiraIssues(
                 JiraSearchRequest(
                     baseUrl = connection.baseUrl ?: "",
@@ -38,6 +43,7 @@ class JiraServiceImpl(
                     maxResults = maxResults,
                 ),
             )
+        }
 
         return response.issues.map { issue ->
             JiraIssue(
@@ -63,7 +69,10 @@ class JiraServiceImpl(
         val connection =
             findJiraConnection(clientId) ?: throw IllegalStateException("No Jira connection found for client $clientId")
 
-        val response =
+        val response = withRpcRetry(
+            name = "JiraGetIssue",
+            reconnect = { reconnectHandler.reconnectAtlassian() }
+        ) {
             atlassianClient.getJiraIssue(
                 JiraIssueRequest(
                     baseUrl = connection.baseUrl ?: "",
@@ -74,6 +83,7 @@ class JiraServiceImpl(
                     issueKey = issueKey,
                 ),
             )
+        }
 
         val fields = response.fields
         return JiraIssue(
@@ -104,7 +114,10 @@ class JiraServiceImpl(
     ): List<JiraComment> {
         val connection = findJiraConnection(clientId) ?: return emptyList()
 
-        val response =
+        val response = withRpcRetry(
+            name = "JiraGetComments",
+            reconnect = { reconnectHandler.reconnectAtlassian() }
+        ) {
             atlassianClient.getJiraIssue(
                 JiraIssueRequest(
                     baseUrl = connection.baseUrl ?: "",
@@ -115,6 +128,7 @@ class JiraServiceImpl(
                     issueKey = issueKey,
                 ),
             )
+        }
 
         return response.comments?.map { comment ->
             JiraComment(

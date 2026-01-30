@@ -4,12 +4,15 @@ data class GraphNode(
     val key: String,
     val entityType: String,
     val ragChunks: List<String> = emptyList(),
+    val metadata: Map<String, Any> = emptyMap(),
 )
 
 data class GraphEdge(
     val edgeType: String,
     val fromKey: String,
     val toKey: String,
+    val evidenceChunkIds: List<String> = emptyList(),
+    val metadata: Map<String, Any> = emptyMap(),
 )
 
 enum class Direction { INBOUND, OUTBOUND, ANY }

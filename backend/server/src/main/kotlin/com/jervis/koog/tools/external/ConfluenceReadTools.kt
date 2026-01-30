@@ -4,6 +4,7 @@ import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
 import com.jervis.entity.TaskDocument
+import com.jervis.orchestrator.model.EvidencePack
 import com.jervis.service.confluence.ConfluencePage
 import com.jervis.service.confluence.ConfluenceService
 import com.jervis.service.confluence.ConfluenceSpace
@@ -60,6 +61,10 @@ class ConfluenceReadTools(
         try {
             logger.info { "CONFLUENCE_GET_PAGE: pageId=$pageId" }
             val page = confluenceService.getPage(task.clientId, pageId)
+            
+            // Full content is returned without truncation to preserve context.
+            // EvidencePack.MAX_CONTENT_LENGTH is used only as a hint for UI summary.
+            
             ConfluencePageResult(
                 success = true,
                 page = page,

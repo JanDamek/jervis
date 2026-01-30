@@ -20,10 +20,11 @@ class AgentChatRepository(
      */
     fun subscribeToChat(
         clientId: String,
-        projectId: String,
+        projectId: String?,
+        limit: Int? = null,
     ): Flow<ChatResponseDto> =
         agentOrchestratorService
-            .subscribeToChat(clientId, projectId)
+            .subscribeToChat(clientId, projectId ?: "", limit)
             .safeFlow("subscribeToChat")
 
     /**
@@ -33,11 +34,11 @@ class AgentChatRepository(
     suspend fun sendMessage(
         text: String,
         clientId: String,
-        projectId: String,
+        projectId: String?,
         quick: Boolean = false,
     ) {
         val request = buildRequest(text, clientId, projectId, quick)
-        safeRpcCall("sendMessage", returnNull = true) {
+        safeRpcCall("sendMessage") {
             agentOrchestratorService.sendMessage(request)
         }
     }
@@ -45,7 +46,7 @@ class AgentChatRepository(
     private fun buildRequest(
         text: String,
         clientId: String,
-        projectId: String,
+        projectId: String?,
         quick: Boolean,
     ): ChatRequestDto {
         val context = ChatRequestContextDto(
@@ -64,7 +65,7 @@ class AgentChatRepository(
         instruction: String,
         taskId: String,
         clientId: String,
-        projectId: String,
+        projectId: String?,
     ) {
         // Prefix with task ID for traceability
         val enrichedInstruction = "User task $taskId: $instruction"
@@ -88,5 +89,14 @@ class AgentChatRepository(
     ): com.jervis.dto.ChatHistoryDto =
         safeRpcCall("getChatHistory") {
             agentOrchestratorService.getChatHistory(clientId, projectId, limit)
-        } ?: com.jervis.dto.ChatHistoryDto(messages = emptyList())
+        }
+
+    /**
+     * Subscribe to queue status updates for given client.
+     * Returns Flow of queue status messages with running project and queue size.
+     */
+    fun subscribeToQueueStatus(clientId: String): Flow<ChatResponseDto> =
+        agentOrchestratorService
+            .subscribeToQueueStatus(clientId)
+            .safeFlow("subscribeToQueueStatus")
 }

@@ -92,7 +92,7 @@ data:
       security:
         client-token: a7f3c9e2-4b8d-11ef-9a1c-0242ac120002
       koog:
-        max-iterations: 50
+        max-iterations: 100
         qualifier-max-retries: 5
       background:
         wait-on-startup: 10s
@@ -134,16 +134,16 @@ data:
       searxng:
         baseUrl: http://192.168.100.117:30053/
       joern:
-        baseUrl: http://jervis-joern:8082/
+        baseUrl: ws://jervis-joern:8082/
       tika:
-        baseUrl: http://jervis-tika:8081/
+        baseUrl: ws://jervis-tika:8081/
       whisper:
-        baseUrl: http://jervis-whisper:8083/
+        baseUrl: ws://jervis-whisper:8083/
       atlassian:
-        baseUrl: http://jervis-atlassian:8084/
+        baseUrl: ws://jervis-atlassian:8084/
       aider:
-        baseUrl: http://jervis-aider:3100/
+        baseUrl: ws://jervis-aider:3100/
       coding:
-        baseUrl: http://jervis-coding-engine:3200/
+        baseUrl: ws://jervis-coding-engine:3200/
       junie:
-        baseUrl: http://jervis-junie:3300/
+        baseUrl: ws://jervis-junie:3300/

@@ -66,6 +66,9 @@ class BackgroundEngine(
     private val agentOrchestrator: AgentOrchestratorService,
     private val backgroundProperties: BackgroundProperties,
     private val userTaskService: UserTaskService,
+    private val agentOrchestratorRpc: com.jervis.rpc.AgentOrchestratorRpcImpl,
+    private val projectService: com.jervis.service.project.ProjectService,
+    private val taskRepository: com.jervis.repository.TaskRepository,
 ) {
     private val logger = KotlinLogging.logger {}
     private val supervisor = SupervisorJob()
@@ -184,20 +187,43 @@ class BackgroundEngine(
      * Execution loop - processes qualified tasks (needsQualification = false) during idle GPU time.
      * Waits for GPU to be idle before running strong model tasks.
      */
+    /**
+     * Execution loop - processes tasks during idle GPU time.
+     *
+     * Processing order:
+     * 1. FOREGROUND tasks (chat) - ordered by queuePosition (user can reorder in UI)
+     * 2. BACKGROUND tasks (autonomous) - ordered by createdAt (oldest first, FIFO)
+     *
+     * FOREGROUND tasks take precedence over BACKGROUND tasks.
+     */
     private suspend fun runExecutionLoop() {
         while (scope.isActive) {
             try {
-                taskService
-                    .findTasksToRun()
-                    .firstOrNull()
-                    ?.let { task ->
-                        logger.info {
-                            "GPU_TASK_PICKUP: id=${task.id} correlationId=${task.correlationId} type=${task.type} state=${task.state}"
-                        }
+                // 1. Check for FOREGROUND tasks first (chat messages have priority)
+                var task = taskService.getNextForegroundTask()
 
-                        executeTask(task)
-                        logger.info { "GPU_TASK_FINISHED: id=${task.id} correlationId=${task.correlationId}" }
+                // 2. If no FOREGROUND tasks, check for BACKGROUND tasks
+                if (task == null) {
+                    task = taskService.getNextBackgroundTask()
+                }
+
+                if (task != null) {
+                    logger.info {
+                        "GPU_TASK_PICKUP: id=${task.id} correlationId=${task.correlationId} " +
+                            "type=${task.type} state=${task.state} processingMode=${task.processingMode} " +
+                            "queuePosition=${task.queuePosition}"
                     }
+
+                    executeTask(task)
+
+                    logger.info {
+                        "GPU_TASK_FINISHED: id=${task.id} correlationId=${task.correlationId} " +
+                            "processingMode=${task.processingMode}"
+                    }
+                } else {
+                    // No tasks in either queue, wait before checking again
+                    delay(backgroundProperties.waitOnError)
+                }
             } catch (e: CancellationException) {
                 logger.info { "Execution loop cancelled" }
                 throw e
@@ -213,13 +239,113 @@ class BackgroundEngine(
             scope.launch {
                 logger.info { "GPU_EXECUTION_START: id=${task.id} correlationId=${task.correlationId} type=${task.type}" }
 
+                // Mark task as running and emit queue status
+                taskService.setRunningTask(task)
+                emitQueueStatus(task)
+
                 try {
-                    agentOrchestrator.run(task, "")
+                    // Create progress callback that emits to chat stream
+                    val onProgress: suspend (String, Map<String, String>) -> Unit = { message, metadata ->
+                        try {
+                            agentOrchestratorRpc.emitProgress(
+                                clientId = task.clientId.toString(),
+                                projectId = task.projectId?.toString(),
+                                message = message,
+                                metadata = metadata
+                            )
+                        } catch (e: Exception) {
+                            logger.warn(e) { "Failed to emit progress for task ${task.id}" }
+                        }
+                    }
+
+                    val finalResponse = agentOrchestrator.run(task, task.content, onProgress)
                     logger.info { "GPU_EXECUTION_SUCCESS: id=${task.id} correlationId=${task.correlationId}" }
+
+                    // Emit final response to chat stream for FOREGROUND tasks
+                    if (task.processingMode == com.jervis.entity.ProcessingMode.FOREGROUND) {
+                        try {
+                            agentOrchestratorRpc.emitToChatStream(
+                                clientId = task.clientId.toString(),
+                                projectId = task.projectId?.toString(),
+                                response = finalResponse
+                            )
+                            logger.info { "FINAL_RESPONSE_EMITTED | taskId=${task.id} | messageLength=${finalResponse.message.length}" }
+                        } catch (e: Exception) {
+                            logger.error(e) { "Failed to emit final response for task ${task.id}" }
+                        }
+                    }
+
+                    // Handle task cleanup based on processingMode
+                    when (task.processingMode) {
+                        com.jervis.entity.ProcessingMode.FOREGROUND -> {
+                            // FOREGROUND tasks (chat) are NEVER deleted - they serve as conversation context
+                            // Agent checkpoint is preserved in agentCheckpointJson for future continuations
+                            // BUT: Change state to DISPATCHED_GPU so task is not picked up again
+                            taskService.updateState(task, TaskStateEnum.DISPATCHED_GPU)
+                            logger.info { "FOREGROUND_TASK_COMPLETED | taskId=${task.id} | state=DISPATCHED_GPU | keeping for chat continuation" }
+                        }
+                        com.jervis.entity.ProcessingMode.BACKGROUND -> {
+                            // BACKGROUND tasks are deleted after completion (unless USER_TASK)
+                            if (task.state != com.jervis.dto.TaskStateEnum.USER_TASK) {
+                                taskRepository.delete(task)
+                                logger.info { "BACKGROUND_TASK_DELETED | taskId=${task.id} | task completed and cleaned up" }
+                            } else {
+                                logger.info { "BACKGROUND_TASK_USER_TASK | taskId=${task.id} | keeping until user responds" }
+                            }
+                        }
+                    }
+
+                    // Clear running task and emit updated queue status
+                    val clientIdForStatus = task.clientId
+                    taskService.setRunningTask(null)
+
+                    // Emit empty queue status to client
+                    try {
+                        agentOrchestratorRpc.emitQueueStatus(
+                            clientIdForStatus.toString(),
+                            com.jervis.dto.ChatResponseDto(
+                                message = "Queue is empty",
+                                type = com.jervis.dto.ChatResponseType.QUEUE_STATUS,
+                                metadata = mapOf(
+                                    "runningProjectId" to "none",
+                                    "runningProjectName" to "None",
+                                    "runningTaskPreview" to "",
+                                    "runningTaskType" to "",
+                                    "queueSize" to "0"
+                                )
+                            )
+                        )
+                        logger.info { "QUEUE_STATUS_CLEARED | clientId=$clientIdForStatus" }
+                    } catch (e: Exception) {
+                        logger.warn(e) { "Failed to emit queue status after task completion" }
+                    }
 
                     consecutiveFailures = 0
                 } catch (_: CancellationException) {
                     logger.info { "GPU_EXECUTION_INTERRUPTED: id=${task.id} correlationId=${task.correlationId}" }
+
+                    val clientIdForStatus = task.clientId
+                    taskService.setRunningTask(null)
+
+                    // Emit queue status after cancellation
+                    try {
+                        agentOrchestratorRpc.emitQueueStatus(
+                            clientIdForStatus.toString(),
+                            com.jervis.dto.ChatResponseDto(
+                                message = "Task cancelled",
+                                type = com.jervis.dto.ChatResponseType.QUEUE_STATUS,
+                                metadata = mapOf(
+                                    "runningProjectId" to "none",
+                                    "runningProjectName" to "None",
+                                    "runningTaskPreview" to "",
+                                    "runningTaskType" to "",
+                                    "queueSize" to "0"
+                                )
+                            )
+                        )
+                    } catch (e: Exception) {
+                        logger.warn(e) { "Failed to emit queue status after cancellation" }
+                    }
                 } catch (e: Exception) {
                     val errorType =
                         when {
@@ -290,6 +416,48 @@ class BackgroundEngine(
         currentTaskJob.set(taskJob)
         taskJob.join()
         currentTaskJob.compareAndSet(taskJob, null)
+    }
+
+    /**
+     * Emit queue status to all connected clients for this task's clientId
+     */
+    private suspend fun emitQueueStatus(runningTask: TaskDocument?) {
+        try {
+            if (runningTask != null) {
+                // Task is running - emit status with task details
+                val (_, queueSize) = taskService.getQueueStatus(runningTask.clientId, runningTask.projectId)
+
+                // Get project name
+                val projectName = runningTask.projectId?.let { projectId ->
+                    try {
+                        projectService.getProjectById(projectId)?.name
+                    } catch (e: Exception) {
+                        null
+                    }
+                } ?: "General"
+
+                // Get task text preview (first 50 chars)
+                val taskPreview = runningTask.content.take(50).let {
+                    if (runningTask.content.length > 50) "$it..." else it
+                }
+
+                val response = com.jervis.dto.ChatResponseDto(
+                    message = "Queue status update",
+                    type = com.jervis.dto.ChatResponseType.QUEUE_STATUS,
+                    metadata = mapOf(
+                        "runningProjectId" to (runningTask.projectId?.toString() ?: "none"),
+                        "runningProjectName" to projectName,
+                        "runningTaskPreview" to taskPreview,
+                        "queueSize" to queueSize.toString()
+                    )
+                )
+
+                agentOrchestratorRpc.emitQueueStatus(runningTask.clientId.toString(), response)
+            }
+            // If runningTask is null, the initial queue status from subscribeToQueueStatus() will handle it
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to emit queue status" }
+        }
     }
 
     companion object {

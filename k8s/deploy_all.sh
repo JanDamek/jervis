@@ -2,7 +2,7 @@
 set -e
 
 NAMESPACE="jervis"
-K8S_DIR="$(dirname "$0")"
+K8S_DIR="/Users/damekjan/git/jervis/k8s"
 
 echo "=== Deploying Jervis to Kubernetes ==="
 
@@ -28,14 +28,7 @@ kubectl apply -f "${K8S_DIR}/configmap.yaml"
 
 # 5. Deploy all applications
 echo "Step 5/5: Deploying applications..."
-kubectl apply -f "${K8S_DIR}/app_tika.yaml"
-kubectl apply -f "${K8S_DIR}/app_joern.yaml"
-kubectl apply -f "${K8S_DIR}/app_whisper.yaml"
-kubectl apply -f "${K8S_DIR}/app_atlassian.yaml"
-kubectl apply -f "${K8S_DIR}/app_server.yaml"
-kubectl apply -f "${K8S_DIR}/app_aider.yaml"
-kubectl apply -f "${K8S_DIR}/app_coding_engine.yaml"
-kubectl apply -f "${K8S_DIR}/app_junie.yaml"
+"${K8S_DIR}/redeploy_all.sh"
 
 # 6. Apply Ingress
 echo "Step 6/6: Applying Ingress..."

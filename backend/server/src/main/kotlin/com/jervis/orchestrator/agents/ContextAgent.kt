@@ -55,9 +55,10 @@ class ContextAgent(
      */
     suspend fun create(task: TaskDocument): AIAgent<String, ContextPack> {
         val model =
-            smartModelSelector.selectModel(
+            smartModelSelector.selectModelBlocking(
                 baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
                 inputContent = task.content,
+                projectId = task.projectId
             )
 
         val promptExecutor = promptExecutorFactory.getExecutor("OLLAMA")
@@ -102,12 +103,12 @@ class ContextAgent(
 
                             Rules:
                             1. DATA GATHERING:
-                               - Use getProjectBuildConfig() to get buildCommands, testCommands and projectPath.
-                               - Use getKnownFacts() to get background info from GraphDB.
-                               - Use getTaskMetadata() for correlationId and basic IDs.
+                               - Gather project build configuration (build/test commands and project path).
+                               - Retrieve known facts from the knowledge graph database.
+                               - Collect task metadata (correlationId and identifiers).
 
                             2. INTEGRITY:
-                               - If any tool returns a 'missing' list or indicates chybějící data (like build/test commands), YOU MUST add these items into 'missingInfo' field of ContextPack.
+                               - If any tool returns a 'missing' list or indicates missing data (like build/test commands), YOU MUST add these items into 'missingInfo' field of ContextPack.
                                - projectPath must be an absolute path from the tools.
                                - Do NOT invent values. Do NOT assume defaults like './gradlew build' if the tool doesn't return it.
                                - If projectId is missing, mark it in missingInfo.
@@ -119,7 +120,7 @@ class ContextAgent(
                         )
                     },
                 model = model,
-                maxAgentIterations = 1, // Single pass only
+                maxAgentIterations = 100, // Increased for long-term analysis support
             )
 
         val toolRegistry =
@@ -166,14 +167,16 @@ class ContextGatheringTools(
 ) : ToolSet {
     @Tool
     @LLMDescription("Get project build configuration (build/test commands)")
-    fun getProjectBuildConfig(): Map<String, Any> {
+    suspend fun getProjectBuildConfig(): String {
         val projectId =
-            task.projectId ?: return mapOf(
-                "buildCommands" to emptyList<String>(),
-                "testCommands" to emptyList<String>(),
-                "projectPath" to ".",
-                "missing" to listOf("projectId is null"),
-            )
+            task.projectId ?: return """
+                {
+                  "buildCommands": [],
+                  "testCommands": [],
+                  "projectPath": ".",
+                  "missing": ["projectId is null"]
+                }
+            """.trimIndent()
 
         val project =
             projectService.getProjectById(projectId)
@@ -187,12 +190,14 @@ class ContextGatheringTools(
         if (buildCommands.isEmpty()) missing.add("buildCommands missing in project config")
         if (testCommands.isEmpty()) missing.add("testCommands missing in project config")
 
-        return mapOf(
-            "buildCommands" to buildCommands,
-            "testCommands" to testCommands,
-            "projectPath" to projectPath,
-            "missing" to missing,
-        )
+        return buildString {
+            appendLine("{")
+            appendLine("  \"buildCommands\": ${buildCommands},")
+            appendLine("  \"testCommands\": ${testCommands},")
+            appendLine("  \"projectPath\": \"$projectPath\",")
+            appendLine("  \"missing\": ${missing}")
+            appendLine("}")
+        }
     }
 
     @Tool
@@ -215,7 +220,7 @@ class ContextGatheringTools(
 
     @Tool
     @LLMDescription("Get task metadata")
-    fun getTaskMetadata(): Map<String, String> {
+    suspend fun getTaskMetadata(): Map<String, String> {
         val projectPath =
             task.projectId?.let { projectId ->
                 val project =

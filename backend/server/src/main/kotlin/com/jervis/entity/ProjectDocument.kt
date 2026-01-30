@@ -35,6 +35,17 @@ data class ProjectDocument(
     val confluenceSpaceKey: String? = null,
     val confluenceRootPageId: String? = null,
     val buildConfig: ProjectBuildConfig? = null,
+    val costPolicy: ProjectCostPolicy = ProjectCostPolicy(),
+)
+
+/**
+ * Budget and model routing policy for a project.
+ */
+data class ProjectCostPolicy(
+    val allowCloudModels: Boolean = false,
+    val monthlyBudgetLimit: Double = 0.0, // 0.0 = unlimited or inherited
+    val allowedCloudProviders: List<String> = emptyList(), // e.g. ["anthropic", "openai", "google"]
+    val requireApprovalForCloudSpend: Boolean = true
 )
 
 /**

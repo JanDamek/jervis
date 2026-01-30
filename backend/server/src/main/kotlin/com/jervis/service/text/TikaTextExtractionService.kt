@@ -2,6 +2,7 @@ package com.jervis.service.text
 
 import com.jervis.common.client.ITikaClient
 import com.jervis.common.dto.TikaProcessRequest
+import com.jervis.common.rpc.withRpcRetry
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
@@ -20,19 +21,10 @@ import org.springframework.stereotype.Service
 @Service
 class TikaTextExtractionService(
     private val tikaClient: ITikaClient,
+    private val reconnectHandler: com.jervis.configuration.RpcReconnectHandler,
 ) {
     private val logger = KotlinLogging.logger {}
 
-    /**
-     * Extract plain text from potentially HTML/XML content.
-     *
-     * Detects if content contains HTML/XML tags and processes it through Tika.
-     * If content is already plain text, returns it unchanged.
-     *
-     * @param content Raw content (may contain HTML/XML)
-     * @param fileName Optional filename for better Tika processing (e.g., "content.html")
-     * @return Clean plain text suitable for LLM processing
-     */
     suspend fun extractPlainText(
         content: String,
         fileName: String = "content.html",
@@ -41,14 +33,17 @@ class TikaTextExtractionService(
             return content
         }
 
-        logger.debug { "Content appears to be HTML/XML (${content.length} chars), processing through Tika" }
+        val resolvedFileName = resolveFileName(content, fileName)
+        logger.debug {
+            "Processing content through Tika (${content.length} chars), fileName=$fileName resolvedFileName=$resolvedFileName"
+        }
 
         return try {
             val request =
                 TikaProcessRequest(
                     source =
                         TikaProcessRequest.Source.FileBytes(
-                            fileName = fileName,
+                            fileName = resolvedFileName,
                             dataBase64 =
                                 java.util.Base64
                                     .getEncoder()
@@ -57,23 +52,33 @@ class TikaTextExtractionService(
                     includeMetadata = false,
                 )
 
-            val result = tikaClient.process(request)
+            val result = withRpcRetry(
+                name = "Tika",
+                reconnect = { reconnectHandler.reconnectTika() }
+            ) {
+                tikaClient.process(request)
+            }
 
             if (result.success) {
                 val plainText = result.plainText.trim()
+                val originalLength = content.length
+                val reduction =
+                    if (originalLength > 0) {
+                        ((1.0 - plainText.length.toDouble() / originalLength) * 100).toInt()
+                    } else {
+                        0
+                    }
                 logger.info {
-                    "Tika extraction successful: ${content.length} chars → ${plainText.length} chars " +
-                        "(${((1.0 - plainText.length.toDouble() / content.length) * 100).toInt()}% reduction)"
+                    "Tika extraction successful: $originalLength chars → ${plainText.length} chars " +
+                        "($reduction% reduction)"
                 }
 
                 if (plainText.isBlank() && content.isNotBlank()) {
-                    logger.warn {
-                        "Tika returned empty content (100% reduction) for non-empty input for file $fileName. Returning original content to prevent data loss."
-                    }
-                    return content
+                    logger.warn { "Tika returned empty text for non-empty content, returning original content" }
+                    content
+                } else {
+                    plainText
                 }
-
-                plainText
             } else {
                 logger.warn { "Tika extraction failed: ${result.errorMessage}, returning original content" }
                 content
@@ -83,4 +88,37 @@ class TikaTextExtractionService(
             content
         }
     }
+
+    private fun resolveFileName(
+        content: String,
+        fileName: String,
+    ): String {
+        val trimmed = fileName.trim()
+        if (trimmed.isNotEmpty() && !isGenericContentName(trimmed)) {
+            return trimmed
+        }
+        val sample = content.take(4096).lowercase()
+        return when {
+            looksLikeHtml(sample) -> "content.html"
+            looksLikeXml(sample) -> "content.xml"
+            else -> "content.txt"
+        }
+    }
+
+    private fun isGenericContentName(fileName: String): Boolean =
+        fileName.equals("content.html", ignoreCase = true) ||
+            fileName.equals("content.xml", ignoreCase = true) ||
+            fileName.equals("content.txt", ignoreCase = true) ||
+            fileName.equals("content.bin", ignoreCase = true)
+
+    private fun looksLikeHtml(sample: String): Boolean =
+        sample.contains("<!doctype") ||
+            sample.contains("<html") ||
+            sample.contains("<body") ||
+            sample.contains("</") ||
+            Regex("<\\s*[a-zA-Z][^>]*>").containsMatchIn(sample)
+
+    private fun looksLikeXml(sample: String): Boolean =
+        sample.contains("<?xml") ||
+            (sample.contains("</") && sample.contains(">"))
 }

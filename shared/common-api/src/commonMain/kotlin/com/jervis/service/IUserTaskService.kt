@@ -1,5 +1,6 @@
 package com.jervis.service
 
+import com.jervis.dto.AttachmentDto
 import com.jervis.dto.user.TaskRoutingMode
 import com.jervis.dto.user.UserTaskCountDto
 import com.jervis.dto.user.UserTaskDto
@@ -17,5 +18,6 @@ interface IUserTaskService {
         taskId: String,
         routingMode: TaskRoutingMode,
         additionalInput: String?,
+        attachments: List<AttachmentDto> = emptyList(),
     ): UserTaskDto
 }

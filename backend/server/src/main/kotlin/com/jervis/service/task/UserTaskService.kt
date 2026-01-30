@@ -3,6 +3,7 @@ package com.jervis.service.task
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.TaskDocument
 import com.jervis.repository.TaskRepository
+import com.jervis.rpc.NotificationRpcImpl
 import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
 import com.jervis.types.SourceUrn
@@ -14,33 +15,9 @@ import org.springframework.stereotype.Service
 @Service
 class UserTaskService(
     private val userTaskRepository: TaskRepository,
+    private val notificationRpc: NotificationRpcImpl,
 ) {
     private val logger = KotlinLogging.logger {}
-
-    suspend fun createTask(
-        title: String,
-        description: String,
-        projectId: ProjectId? = null,
-        clientId: ClientId,
-        correlationId: String,
-        sourceUrn: SourceUrn = SourceUrn.unknownSource(),
-    ): TaskDocument {
-        val task =
-            TaskDocument(
-                taskName = title,
-                content = description,
-                projectId = projectId,
-                clientId = clientId,
-                correlationId = correlationId,
-                type = TaskTypeEnum.USER_TASK,
-                sourceUrn = sourceUrn,
-            )
-
-        val saved = userTaskRepository.save(task)
-
-        logger.info { "Created user task: ${saved.id} - $title" }
-        return saved
-    }
 
     suspend fun failAndEscalateToUserTask(
         task: TaskDocument,
@@ -57,22 +34,41 @@ class UserTaskService(
                 appendLine("Task Content:")
                 appendLine(task.content)
             }
-        createTask(
-            title = title,
-            description = description,
-            projectId = task.projectId,
-            clientId = task.clientId,
-            correlationId = task.correlationId,
+        
+        // Update existing task to USER_TASK and refresh its content for UI display.
+        val updatedTask = task.copy(
+            taskName = title,
+            content = description,
+            state = com.jervis.dto.TaskStateEnum.USER_TASK,
+            type = com.jervis.dto.TaskTypeEnum.USER_TASK
         )
-        logger.info { "TASK_FAILED_ESCALATED:  reason=$reason" }
+        userTaskRepository.save(updatedTask)
+        
+        // Notify client via kRPC stream
+        notificationRpc.emitUserTaskCreated(task.clientId.toString(), task.id.toString(), title)
+        
+        logger.info { "TASK_FAILED_ESCALATED: id=${task.id} reason=$reason" }
     }
 
     suspend fun findActiveTasksByClient(clientId: ClientId): List<TaskDocument> =
-        userTaskRepository.findByClientIdAndType(clientId, TaskTypeEnum.USER_TASK).toList()
+        userTaskRepository.findAll().toList().filter { 
+            it.clientId == clientId && it.type == com.jervis.dto.TaskTypeEnum.USER_TASK 
+        }
 
-    fun cancelTask(fromString: TaskId): TaskDocument {
-        TODO("Not yet implemented")
+    suspend fun cancelTask(taskId: TaskId): TaskDocument {
+        val task = getTaskByIdOrNull(taskId) ?: throw IllegalArgumentException("Task not found: $taskId")
+        userTaskRepository.delete(task)
+        notificationRpc.emitUserTaskCancelled(task.clientId.toString(), task.id.toString(), task.taskName)
+        logger.info { "TASK_CANCELLED: id=$taskId" }
+        return task
     }
 
-    suspend fun getTaskById(fromString: TaskId) = userTaskRepository.findById(fromString)
+    suspend fun getTaskById(taskId: TaskId) = getTaskByIdOrNull(taskId)
+
+    suspend fun getTaskByIdOrNull(taskId: TaskId): TaskDocument? =
+        userTaskRepository.findAll().toList().find { it.id == taskId }
+
+    suspend fun deleteTaskById(id: TaskId) {
+        getTaskByIdOrNull(id)?.let { userTaskRepository.delete(it) }
+    }
 }

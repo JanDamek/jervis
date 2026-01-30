@@ -4,9 +4,9 @@ import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
 import com.jervis.entity.TaskDocument
-import com.jervis.rag.HybridSearchRequest
+import com.jervis.rag.IngestRequest
 import com.jervis.rag.KnowledgeService
-import com.jervis.rag.StoreChunkRequest
+import com.jervis.rag.RetrievalRequest
 import com.jervis.rag.internal.graphdb.GraphDBService
 import com.jervis.rag.internal.graphdb.model.Direction
 import com.jervis.rag.internal.graphdb.model.TraversalSpec
@@ -31,33 +31,36 @@ class KnowledgeStorageTools(
 
     @Tool
     @LLMDescription(
-        "Hybrid search combining BM25 (keyword) + Vector (semantic). Use alpha=0.0 for exact matching, 0.5 for balanced, 1.0 for semantic only. 0.8=standard. IMPORTANT: If results are found, always check the graph for context via getRelated(mainNodeKey).",
+        "Search knowledge base (RAG + GraphDB) for relevant information. Use this FIRST before any other research tool!",
+    )
+    suspend fun searchKnowledgeBase(
+        @LLMDescription("Search query - be specific (e.g. 'NTB nákup Alza', 'email purchase notebook')")
+        query: String,
+        @LLMDescription("Max results (10=standard, 20=detailed)")
+        limit: Int = 10,
+    ): SearchResult {
+        val result =
+            knowledgeService.retrieve(
+                RetrievalRequest(
+                    query = query,
+                    clientId = task.clientId,
+                    projectId = task.projectId,
+                ),
+            )
+        logger.info { "SEARCH_KNOWLEDGEBASE_COMPLETE: query='$query' | resultsLength=${result.combinedSummary().length}" }
+        return SearchResult(success = true, results = result.combinedSummary(), query = query)
+    }
+
+    @Tool
+    @LLMDescription(
+        "Alias for searchKnowledgeBase - search for relevant knowledge chunks.",
     )
     suspend fun searchKnowledge(
         @LLMDescription("Search query")
         query: String,
-        @LLMDescription("Balance: 0.0=keywords only, 0.5=balanced, 1.0=semantic only. 0.8=standard")
-        alpha: Float = 0.8f,
         @LLMDescription("Max results> 10=standard")
         limit: Int = 10,
-    ): SearchResult =
-        try {
-            val result =
-                knowledgeService.searchHybrid(
-                    HybridSearchRequest(
-                        query = query,
-                        clientId = task.clientId,
-                        projectId = task.projectId,
-                        maxResults = limit,
-                        alpha = alpha,
-                    ),
-                )
-            logger.info { "SEARCH_COMPLETE: query='$query', alpha=$alpha" }
-            SearchResult(success = true, results = result.text, query = query)
-        } catch (e: Exception) {
-            logger.error(e) { "Search failed" }
-            SearchResult(success = false, results = "", query = query, error = e.message)
-        }
+    ): SearchResult = searchKnowledgeBase(query, limit)
 
     @Tool
     @LLMDescription("Get related nodes via graph relationships")
@@ -70,37 +73,33 @@ class KnowledgeStorageTools(
         direction: String = "ANY",
         @LLMDescription("Max results")
         limit: Int = 20,
-    ): RelatedNodesResult =
-        try {
-            val dir =
-                when (direction.uppercase()) {
-                    "OUTBOUND" -> Direction.OUTBOUND
-                    "INBOUND" -> Direction.INBOUND
-                    else -> Direction.ANY
-                }
+    ): RelatedNodesResult {
+        val dir =
+            when (direction.uppercase()) {
+                "OUTBOUND" -> Direction.OUTBOUND
+                "INBOUND" -> Direction.INBOUND
+                else -> Direction.ANY
+            }
 
-            val nodes =
-                graphDBService.getRelated(
-                    clientId = task.clientId,
-                    nodeKey = nodeKey,
-                    edgeTypes = edgeTypes,
-                    direction = dir,
-                    limit = limit,
-                )
-
-            logger.info { "GET_RELATED: found ${nodes.size} nodes for $nodeKey" }
-            RelatedNodesResult(
-                success = true,
-                sourceNode = nodeKey,
-                relatedNodes = nodes.map { NodeInfo(it.key, it.entityType, it.ragChunks.size) },
+        val nodes =
+            graphDBService.getRelated(
+                clientId = task.clientId,
+                nodeKey = nodeKey,
+                edgeTypes = edgeTypes,
+                direction = dir,
+                limit = limit,
             )
-        } catch (e: Exception) {
-            logger.error(e) { "Failed to get related nodes" }
-            RelatedNodesResult(success = false, sourceNode = nodeKey, relatedNodes = emptyList(), error = e.message)
-        }
+
+        logger.info { "GET_RELATED: found ${nodes.size} nodes for $nodeKey" }
+        return RelatedNodesResult(
+            success = true,
+            sourceNode = nodeKey,
+            relatedNodes = nodes.map { NodeInfo(it.key, it.entityType, it.ragChunks.size) },
+        )
+    }
 
     @Tool
-    @LLMDescription("Traverse graph from starting node to discover connected entities")
+    @LLMDescription("Traverse graph from starting node to discover connected entities. Returns nodes with their basic info.")
     suspend fun traverse(
         @LLMDescription("Starting node key")
         startKey: String,
@@ -110,74 +109,106 @@ class KnowledgeStorageTools(
         edgeTypes: List<String> = emptyList(),
         @LLMDescription("Max total nodes")
         limit: Int = 50,
-    ): TraversalResult =
-        try {
-            val spec =
-                TraversalSpec(
-                    maxDepth = maxDepth.coerceIn(1, 5),
-                    edgeTypes = edgeTypes,
-                )
-
-            val nodes =
-                graphDBService
-                    .traverse(task.clientId, startKey, spec)
-                    .take(limit)
-                    .toList()
-
-            logger.info { "TRAVERSAL: found ${nodes.size} nodes from $startKey" }
-            TraversalResult(
-                success = true,
-                startKey = startKey,
-                nodes = nodes.map { NodeInfo(it.key, it.entityType, it.ragChunks.size) },
-                totalFound = nodes.size,
+    ): TraversalResult {
+        val spec =
+            TraversalSpec(
+                maxDepth = maxDepth.coerceIn(1, 5),
+                edgeTypes = edgeTypes,
             )
-        } catch (e: Exception) {
-            logger.error(e) { "Traversal failed" }
-            TraversalResult(
-                success = false,
-                startKey = startKey,
-                nodes = emptyList(),
-                totalFound = 0,
-                error = e.message,
-            )
-        }
+
+        val nodes =
+            graphDBService
+                .traverse(task.clientId, startKey, spec)
+                .take(limit)
+                .toList()
+
+        logger.info { "TRAVERSAL: found ${nodes.size} nodes from $startKey" }
+        return TraversalResult(
+            success = true,
+            startKey = startKey,
+            nodes = nodes.map { NodeInfo(it.key, it.entityType, it.ragChunks.size) },
+            totalFound = nodes.size,
+        )
+    }
 
     @Tool
-    @LLMDescription("Store knowledge chunk in RAG and create graph structure atomically")
-    suspend fun storeKnowledgeWithGraph(
+    @LLMDescription("Store knowledge in RAG and create graph structure. Use for permanent knowledge.")
+    suspend fun storeKnowledge(
         @LLMDescription("Text content to store")
         content: String,
-        @LLMDescription("Main node key for this content")
-        mainNodeKey: String,
-        @LLMDescription("Graph relationships as triple 'from|edge|to'.")
-        relationships: List<String> = emptyList(),
-    ): CombinedStoreResult =
-        try {
-            val chunkId =
-                knowledgeService.storeChunk(
-                    StoreChunkRequest(
-                        content = content,
-                        clientId = task.clientId,
-                        projectId = task.projectId,
-                        sourceUrn = task.sourceUrn,
-                        mainNodeKey = mainNodeKey,
-                        relationships = relationships,
-                    ),
-                )
+        @LLMDescription("Type of knowledge (e.g. TEXT, TABLE, CODE, PDF_TEXT, IMAGE_OCR, IMAGE_CAPTION)")
+        kind: String = "TEXT",
+        @LLMDescription("Section path for structured sources (e.g. 'Project/Subproject/Section')")
+        sectionPath: String = "",
+        @LLMDescription("Asset ID if this comes from an attachment/image")
+        assetId: String? = null,
+        @LLMDescription("Stable identifier for the source (confluence:123, jira:456, file:abc)")
+        sourceUrn: String? = null,
+        @LLMDescription("Optional graph references to link this chunk to existing entities")
+        graphRefs: List<String> = emptyList(),
+        @LLMDescription("Optional order index for reconstructing the document")
+        orderIndex: Int? = null,
+        @LLMDescription("Optional version identifier")
+        version: String? = null,
+    ): CombinedStoreResult {
+        // JERVIS: Před uložením velkého obsahu (Confluence, logy) provádíme extrakci podstatných faktů.
+        // Do promptu jde jen shrnutí, do RAG/Graph jde plný obsah (EvidencePack komprese).
+        val result =
+            knowledgeService.ingest(
+                IngestRequest(
+                    clientId = task.clientId,
+                    projectId = task.projectId,
+                    sourceUrn = sourceUrn?.let { com.jervis.types.SourceUrn(it) } ?: task.sourceUrn,
+                    kind = kind,
+                    content = content,
+                    metadata =
+                        buildMap {
+                            if (sectionPath.isNotBlank()) put("sectionPath", sectionPath)
+                            assetId?.let { put("assetId", it) }
+                            if (graphRefs.isNotEmpty()) put("graphRefs", graphRefs)
+                            orderIndex?.let { put("orderIndex", it) }
+                            version?.let { put("version", it) }
+                            put("hashNormalized", sha256(content))
+                        },
+                ),
+            )
 
-            logger.info { "STORE_WITH_GRAPH: chunkId=$chunkId, mainNodeKey=$mainNodeKey, relationships=${relationships.size}" }
-            CombinedStoreResult(
-                success = true,
-                chunkId = chunkId,
+        logger.info { "STORE_KNOWLEDGE: success=${result.success}, nodes=${result.ingestedNodes.size}" }
+        return CombinedStoreResult(
+            success = result.success,
+            chunkId = "ingest-batch",
+            error = result.error,
+        )
+    }
+
+    private fun sha256(input: String): String {
+        val bytes =
+            java.security.MessageDigest
+                .getInstance("SHA-256")
+                .digest(input.toByteArray())
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
+
+    @Tool
+    @LLMDescription("Retrieve full evidence pack (RAG + Graph context) for a query.")
+    suspend fun retrieveEvidence(
+        @LLMDescription("Search query")
+        query: String,
+    ): EvidencePackResult {
+        val pack =
+            knowledgeService.retrieve(
+                RetrievalRequest(
+                    query = query,
+                    clientId = task.clientId,
+                    projectId = task.projectId,
+                ),
             )
-        } catch (e: Exception) {
-            logger.error(e) { "Store with graph failed" }
-            CombinedStoreResult(
-                success = false,
-                chunkId = "",
-                error = e.message,
-            )
-        }
+        return EvidencePackResult(
+            success = true,
+            summary = pack.summary,
+            itemsCount = pack.items.size,
+        )
+    }
 
     @Serializable
     data class SearchResult(
@@ -215,6 +246,14 @@ class KnowledgeStorageTools(
     data class CombinedStoreResult(
         val success: Boolean,
         val chunkId: String,
+        val error: String? = null,
+    )
+
+    @Serializable
+    data class EvidencePackResult(
+        val success: Boolean,
+        val summary: String,
+        val itemsCount: Int,
         val error: String? = null,
     )
 }

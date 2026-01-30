@@ -19,4 +19,8 @@ data class KoogProperties(
      * Defaults to /Users/damekjan/git/jervis/data (from data.root-dir)
      */
     val dataDir: String = "/Users/damekjan/git/jervis/data",
+    /**
+     * Global timeout for LLM requests in milliseconds.
+     */
+    val requestTimeoutMs: Long = 900000,
 )

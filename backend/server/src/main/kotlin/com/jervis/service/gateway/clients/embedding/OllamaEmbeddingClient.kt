@@ -4,7 +4,6 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.jervis.configuration.KtorClientFactory
 import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.service.gateway.clients.EmbeddingProviderClient
-import io.ktor.client.call.body
 import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.request.post
@@ -29,16 +28,16 @@ class OllamaEmbeddingClient(
     ): List<Float> {
         ensureModelAvailable(model)
 
-        val body =
-            mapOf(
-                "model" to model,
-                "prompt" to text,
+        val request =
+            OllamaEmbeddingRequest(
+                model = model,
+                prompt = text,
             )
 
         return try {
             val response =
                 client.post("/api/embeddings") {
-                    setBody(body)
+                    setBody(request)
                 }
             val responseText = response.bodyAsText()
             val responseBody = json.decodeFromString<OllamaEmbeddingResponse>(responseText)
@@ -73,25 +72,36 @@ class OllamaEmbeddingClient(
 
     private suspend fun ensureModelAvailable(model: String) {
         try {
-            val showBody = mapOf("name" to model)
+            val showRequest = OllamaModelRequest(name = model)
             client
                 .post("/api/show") {
-                    setBody(showBody)
-                }.body<Map<String, Any>>()
+                    setBody(showRequest)
+                }.bodyAsText()
             logger.debug { "Ollama embedding model available: $model" }
         } catch (e: ResponseException) {
             logger.info { "Embedding model '$model' not present (status=${e.response.status}). Pulling before first use..." }
-            val body = mapOf("name" to model)
+            val pullRequest = OllamaModelRequest(name = model)
             val resp =
                 client
                     .post("/api/pull") {
-                        setBody(body)
-                    }.body<Map<String, Any>>()
+                        setBody(pullRequest)
+                    }.bodyAsText()
             logger.info { "Ollama pull for embedding model completed: $model -> $resp" }
         } catch (e: Exception) {
             logger.warn(e) { "Failed to ensure embedding model '$model' is available (attempted pull if needed)" }
         }
     }
+
+    @kotlinx.serialization.Serializable
+    data class OllamaEmbeddingRequest(
+        val model: String,
+        val prompt: String,
+    )
+
+    @kotlinx.serialization.Serializable
+    data class OllamaModelRequest(
+        val name: String,
+    )
 
     @kotlinx.serialization.Serializable
     @JsonIgnoreProperties(ignoreUnknown = true)

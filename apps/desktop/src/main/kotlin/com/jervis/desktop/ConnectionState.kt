@@ -7,7 +7,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.jervis.di.NetworkModule
-import com.jervis.dto.events.ErrorNotificationEventDto
 import com.jervis.repository.JervisRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -64,9 +63,28 @@ class ConnectionManager(
                     repository?.clients?.listClients()
                 } catch (e: Exception) {
                     println("Connectivity check failed: ${e.message}")
-                    // Re-run connect loop
-                    connect()
+                    // Use NetworkModule reconnect instead of full re-initialization
+                    tryReconnect()
                 }
+            }
+        }
+    }
+
+    /**
+     * Reconnect using NetworkModule's reconnection logic.
+     * Falls back to full connect() if NetworkModule reconnect fails.
+     */
+    private fun tryReconnect() {
+        scope.launch {
+            try {
+                status = ConnectionStatus.Connecting
+                println("Attempting NetworkModule reconnect...")
+                NetworkModule.reconnect()
+                status = ConnectionStatus.Connected
+                println("Reconnection successful via NetworkModule")
+            } catch (e: Exception) {
+                println("NetworkModule reconnect failed: ${e.message}, falling back to full connect()")
+                connect() // Full re-initialization as fallback
             }
         }
     }
@@ -79,10 +97,9 @@ class ConnectionManager(
             try {
                 status = ConnectionStatus.Connecting
 
-                // Try to create services - Desktop UI uses ONLY RPC
+                // Use NetworkModule.createServicesFromUrl() to ensure centralized RPC client management
                 val httpClient = NetworkModule.createHttpClient()
-                val rpcClient = NetworkModule.createRpcClient(serverBaseUrl, httpClient)
-                services = NetworkModule.createServices(rpcClient)
+                services = NetworkModule.createServicesFromUrl(serverBaseUrl, httpClient)
 
                 // Create repository
                 repository =
@@ -97,6 +114,9 @@ class ConnectionManager(
                         gitConfigurationService = services!!.gitConfigurationService,
                         pendingTaskService = services!!.pendingTaskService,
                         connectionService = services!!.connectionService,
+                        notificationService = services!!.notificationService,
+                        atlassianSetupService = services!!.atlassianSetupService,
+                        integrationSettingsService = services!!.integrationSettingsService,
                     )
 
                 // Try a simple test call to verify connectivity
@@ -126,22 +146,19 @@ class ConnectionManager(
         }
     }
 
-    /**
-     * Start Event stream via kRPC and listen for events
-     */
     private suspend fun startEventStream(clientId: String) {
         eventJob?.cancel()
         val repo = repository ?: return
-        
-        eventJob = scope.launch {
-            repo.connection.subscribeToEvents(clientId)
-                .collect { event ->
-                    handleEvent(event)
-                }
-        }
-    }
 
-    private var dialogManager: UserDialogManager? = null
+        eventJob =
+            scope.launch {
+                repo.notifications
+                    .subscribeToEvents(clientId)
+                    .collect { event ->
+                        handleEvent(event)
+                    }
+            }
+    }
 
     private suspend fun handleEvent(event: com.jervis.dto.events.JervisEvent) {
         when (event) {
@@ -150,25 +167,20 @@ class ConnectionManager(
                 updateTaskBadge()
                 MacOSUtils.showNotification("New Task", event.title)
             }
+
             is com.jervis.dto.events.JervisEvent.UserTaskCancelled -> {
                 println("User task cancelled: ${event.title}")
                 updateTaskBadge()
             }
+            
+            is com.jervis.dto.events.JervisEvent.PendingTaskCreated -> {
+                // Ignore for badge
+            }
+
             is com.jervis.dto.events.JervisEvent.ErrorNotification -> {
                 println("Error: ${event.message}")
                 errorNotifications = errorNotifications + event
                 MacOSUtils.showNotification("Error", event.message)
-            }
-            is com.jervis.dto.events.JervisEvent.UserDialogRequest -> {
-                if (dialogManager == null) {
-                    dialogManager = UserDialogManager(repository!!, scope)
-                }
-                println("Dialog request: ${event.question}")
-                dialogManager?.showRequest(event)
-            }
-            is com.jervis.dto.events.JervisEvent.UserDialogClose -> {
-                println("Dialog closed: ${event.dialogId}")
-                dialogManager?.closeIfMatches(event.dialogId)
             }
         }
     }

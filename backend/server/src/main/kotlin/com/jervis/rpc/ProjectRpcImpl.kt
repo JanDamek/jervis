@@ -15,6 +15,11 @@ class ProjectRpcImpl(
     errorLogService: ErrorLogService,
 ) : BaseRpcImpl(errorLogService), IProjectService {
 
+    override suspend fun listProjectsForClient(clientId: String): List<ProjectDto> =
+        executeWithErrorHandling("listProjectsForClient") {
+            projectService.listProjectsForClient(com.jervis.types.ClientId(org.bson.types.ObjectId(clientId))).map { it.toDto() }
+        }
+
     override suspend fun getAllProjects(): List<ProjectDto> =
         executeWithErrorHandling("getAllProjects") {
             projectService.getAllProjects().map { it.toDto() }

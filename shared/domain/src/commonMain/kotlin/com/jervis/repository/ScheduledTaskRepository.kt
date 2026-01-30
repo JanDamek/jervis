@@ -13,7 +13,7 @@ import com.jervis.service.ITaskSchedulingService
 class ScheduledTaskRepository(
     private val taskSchedulingService: ITaskSchedulingService,
     private val agentOrchestratorService: IAgentOrchestratorService,
-) {
+) : BaseRepository() {
     /**
      * Schedule a new task
      */
@@ -24,7 +24,7 @@ class ScheduledTaskRepository(
         content: String,
         cronExpression: String?,
         correlationId: String?,
-    ): ScheduledTaskDto =
+    ): ScheduledTaskDto = safeRpcCall("scheduleTask") {
         taskSchedulingService.scheduleTask(
             clientId = clientId,
             projectId = projectId,
@@ -33,32 +33,43 @@ class ScheduledTaskRepository(
             cronExpression = cronExpression,
             correlationId = correlationId,
         )
+    }
 
     /**
      * Get task by ID
      */
-    suspend fun findById(taskId: String): ScheduledTaskDto? = taskSchedulingService.findById(taskId)
+    suspend fun findById(taskId: String): ScheduledTaskDto? = safeRpcCall("findScheduledTaskById") {
+        taskSchedulingService.findById(taskId)
+    }
 
     /**
      * List all tasks
      */
-    suspend fun listAllTasks(): List<ScheduledTaskDto> = taskSchedulingService.listAllTasks()
+    suspend fun listAllTasks(): List<ScheduledTaskDto> = safeRpcListCall("listAllScheduledTasks") {
+        taskSchedulingService.listAllTasks()
+    }
 
     /**
      * List tasks for a specific project
      */
-    suspend fun listTasksForProject(projectId: String): List<ScheduledTaskDto> = taskSchedulingService.listTasksForProject(projectId)
+    suspend fun listTasksForProject(projectId: String): List<ScheduledTaskDto> = safeRpcListCall("listScheduledTasksForProject") {
+        taskSchedulingService.listTasksForProject(projectId)
+    }
 
     /**
      * List tasks for a specific client
      */
-    suspend fun listTasksForClient(clientId: String): List<ScheduledTaskDto> = taskSchedulingService.listTasksForClient(clientId)
+    suspend fun listTasksForClient(clientId: String): List<ScheduledTaskDto> = safeRpcListCall("listScheduledTasksForClient") {
+        taskSchedulingService.listTasksForClient(clientId)
+    }
 
     /**
      * Cancel a task
      */
     suspend fun cancelTask(taskId: String) {
-        taskSchedulingService.cancelTask(taskId)
+        safeRpcCall("cancelScheduledTask") {
+            taskSchedulingService.cancelTask(taskId)
+        }
     }
 
     /**
@@ -68,7 +79,7 @@ class ScheduledTaskRepository(
     suspend fun executeTaskNow(
         content: String,
         clientId: String,
-        projectId: String,
+        projectId: String?,
     ) {
         val chatRequestContextDto =
             ChatRequestContextDto(
@@ -77,11 +88,13 @@ class ScheduledTaskRepository(
                 quick = false,
             )
 
-        agentOrchestratorService.sendMessage(
-            ChatRequestDto(
-                text = content,
-                context = chatRequestContextDto,
-            ),
-        )
+        safeRpcCall("executeScheduledTaskNow") {
+            agentOrchestratorService.sendMessage(
+                ChatRequestDto(
+                    text = content,
+                    context = chatRequestContextDto,
+                ),
+            )
+        }
     }
 }

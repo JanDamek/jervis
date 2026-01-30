@@ -14,10 +14,13 @@ import ai.koog.agents.core.dsl.extension.onToolCall
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.prompt.dsl.Prompt
+import com.jervis.configuration.RpcReconnectHandler
 import com.jervis.entity.TaskDocument
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.SmartModelSelector
 import com.jervis.koog.tools.KnowledgeStorageTools
+import com.jervis.koog.tools.coding.CodingTools
+import com.jervis.koog.tools.external.IssueTrackerTool
 import com.jervis.koog.tools.external.ConfluenceReadTools
 import com.jervis.koog.tools.external.EmailReadTools
 import com.jervis.koog.tools.external.JiraReadTools
@@ -28,6 +31,12 @@ import com.jervis.rag.internal.graphdb.GraphDBService
 import com.jervis.service.confluence.ConfluenceService
 import com.jervis.service.email.EmailService
 import com.jervis.service.jira.JiraService
+import com.jervis.koog.tools.analysis.JoernTools
+import com.jervis.koog.tools.analysis.LogSearchTools
+import com.jervis.common.client.IJoernClient
+import com.jervis.service.project.ProjectService
+import com.jervis.service.storage.DirectoryStructureService
+import java.nio.file.Paths
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
 
@@ -55,6 +64,10 @@ class ResearchAgent(
     private val jiraService: JiraService,
     private val confluenceService: ConfluenceService,
     private val emailService: EmailService,
+    private val joernClient: IJoernClient,
+    private val projectService: ProjectService,
+    private val directoryStructureService: DirectoryStructureService,
+    private val reconnectHandler: RpcReconnectHandler,
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -70,32 +83,31 @@ class ResearchAgent(
     ): AIAgent<String, EvidencePack> {
         val promptExecutor = promptExecutorFactory.getExecutor("OLLAMA")
 
+        val exampleEvidencePack =
+            EvidencePack(
+                items =
+                    listOf(
+                        com.jervis.orchestrator.model.EvidenceItem(
+                            source = "RAG",
+                            content = "Found implementation of UserService in src/main/UserService.kt",
+                            confidence = 0.9,
+                        ),
+                    ),
+                summary = "Located UserService implementation",
+            )
+
         val agentStrategy =
-            strategy("Research Loop") {
+            strategy<String, EvidencePack>("Research Loop") {
                 // Koog pattern: LLM request → tool execution → send results → repeat or finish
                 val nodeLLMRequest by nodeLLMRequest()
                 val nodeExecuteTool by nodeExecuteTool()
                 val nodeSendToolResult by nodeLLMSendToolResult()
-                val nodeCompressHistory by nodeLLMCompressHistory()
+                val nodeCompressHistory by nodeLLMCompressHistory<ai.koog.agents.core.environment.ReceivedToolResult>()
 
                 // Final node that builds EvidencePack from conversation using structured output
                 val nodeRequestEvidencePack by
                     nodeLLMRequestStructured<EvidencePack>(
-                        name = "request-evidence-pack",
-                        examples =
-                            listOf(
-                                EvidencePack(
-                                    items =
-                                        listOf(
-                                            com.jervis.orchestrator.model.EvidenceItem(
-                                                source = "RAG",
-                                                content = "Found implementation of UserService in src/main/UserService.kt",
-                                                confidence = 0.9,
-                                            ),
-                                        ),
-                                    summary = "Located UserService implementation",
-                                ),
-                            ),
+                        examples = listOf(exampleEvidencePack),
                     ).transform { result ->
                         result
                             .getOrElse { e ->
@@ -112,16 +124,18 @@ class ResearchAgent(
                 // On tool call → execute tool
                 edge((nodeLLMRequest forwardTo nodeExecuteTool).onToolCall { true })
 
-                // Compress history if too large (avoid token overflow)
+                // Compress history if too large to keep core analytical reasoning in context.
+                // Qwen3 handles up to 256k, but we compress to keep performance high 
+                // and focus on current evidence gathering goal.
                 edge(
                     (nodeExecuteTool forwardTo nodeCompressHistory)
-                        .onCondition { llm.readSession { prompt.messages.size > 30 } },
+                        .onCondition { llm.readSession { prompt.messages.size > 50 } },
                 )
                 edge(nodeCompressHistory forwardTo nodeSendToolResult)
 
                 edge(
                     (nodeExecuteTool forwardTo nodeSendToolResult)
-                        .onCondition { llm.readSession { prompt.messages.size <= 30 } },
+                        .onCondition { llm.readSession { prompt.messages.size <= 50 } },
                 )
 
                 // After sending tool result:
@@ -132,9 +146,10 @@ class ResearchAgent(
             }
 
         val model =
-            smartModelSelector.selectModel(
+            smartModelSelector.selectModelBlocking(
                 baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
                 inputContent = task.content,
+                projectId = task.projectId
             )
 
         val agentConfig =
@@ -143,38 +158,36 @@ class ResearchAgent(
                     Prompt.build("research-agent") {
                         system(
                             """
-                            You are Research Agent. Gather evidence by calling tools.
-
-                            Available tools:
-                            - searchKnowledge: Search RAG for relevant documents/code
-                            - queryGraph: Query GraphDB for entities and relationships
-                            - searchIssues / getIssue / getComments: Read from Jira
-                            - searchPages / getPage / getChildren: Read from Confluence
-                            - searchEmails / getEmail / getThread: Read from Email
+                            You are Research Agent. Gather evidence by calling available tools.
 
                             Your goal: Collect enough evidence to answer the research question.
 
-                            When to stop:
-                            1. GATHER EVIDENCE: Use knowledge storage tools (RAG, GraphDB), Jira, Confluence, and Email tools.
-                            2. GRAPH AUGMENTATION: If you find a key entity (ticket ID, file path, user), use 'getRelated' or 'traverse' to discover its context.
-                            3. HYBRID SEARCH: Use 'searchKnowledge' with different alpha values (0.0 for exact, 0.8 for semantic) to find relevant chunks.
-                            4. STOPPING CRITERION: If you have enough information to answer the original request, stop and summarize.
+                            EVIDENCE GATHERING STRATEGY:
+                            1. KNOWLEDGE STORAGE: Use semantic search tools to find relevant documents and code in the knowledge base.
+                            2. GRAPH AUGMENTATION: If you find a key entity (ticket ID, file path, user, product, order), explore its relationships and connections to discover context.
+                            3. ISSUE TRACKING: Search and read from issue tracking systems to understand bugs, tasks, and their history.
+                            4. DOCUMENTATION: Search and read documentation platforms for specifications, decisions, and guidelines.
+                            5. COMMUNICATION: Search email and messaging systems for historical discussions and decisions.
+                            6. CODE ANALYSIS: Use static analysis tools for deep code structure understanding (relationships between functions, data flow).
+                            7. RUNTIME ANALYSIS: Search application logs for debugging and runtime behavior understanding.
                             
                             KNOWLEDGE BASE RULES:
                             - Every RAG chunk is anchored to a GraphNode.
-                            - If a RAG search returns results, follow the 'mainNodeKey' to see its neighbors in the graph.
+                            - When semantic search returns results, explore the mainNodeKey to discover neighboring entities in the graph.
                             - Semantic partitioning in RAG is thematic; look for context headers in chunks.
 
-                            When done, you will be asked to provide an EvidencePack with:
-                            - items: list of evidence items, each with source, content, confidence
-                            - summary: high-level conclusion of your research
+                            STOPPING CRITERION:
+                            - When you have enough information to answer the original request, stop gathering and prepare to summarize.
+                            - You will be asked to provide an EvidencePack with:
+                              * items: list of evidence items, each with source, content, confidence
+                              * summary: high-level conclusion of your research
 
                             Be thorough but efficient. Don't repeat the same query.
                             """.trimIndent(),
                         )
                     },
                 model = model,
-                maxAgentIterations = 10, // Max research iterations
+                maxAgentIterations = 100, // Max research iterations
             )
 
         val toolRegistry =
@@ -187,7 +200,11 @@ class ResearchAgent(
                 tools(ConfluenceReadTools(task, confluenceService))
                 tools(EmailReadTools(task, emailService))
 
-                // TODO: Add Joern tools, log search tools when available
+                // Analysis tools
+                tools(JoernTools(task, joernClient, projectService, directoryStructureService, reconnectHandler))
+                tools(LogSearchTools(task, Paths.get("logs")))
+
+                tools(IssueTrackerTool(task, jiraService, com.jervis.orchestrator.jira.JiraTrackerAdapter(jiraService)))
             }
 
         return AIAgent(
@@ -225,7 +242,7 @@ class ResearchAgent(
                 }
                 appendLine("  environment: ${context.environmentHints}")
                 if (context.knownFacts.isNotEmpty()) {
-                    appendLine("  knownFacts: ${context.knownFacts.take(3).joinToString("; ")}")
+                    appendLine("  knownFacts: ${context.knownFacts.joinToString("; ")}")
                 }
                 if (context.missingInfo.isNotEmpty()) {
                     appendLine("  missingInfo: ${context.missingInfo.joinToString("; ")}")

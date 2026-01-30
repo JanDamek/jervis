@@ -5,10 +5,12 @@ import mu.KotlinLogging
 import org.springframework.stereotype.Component
 import com.jervis.common.client.IAtlassianClient
 import com.jervis.common.dto.atlassian.AtlassianMyselfRequest
+import com.jervis.common.rpc.withRpcRetry
 import com.jervis.dto.connection.ConnectionCreateRequestDto
 import com.jervis.dto.connection.ConnectionResponseDto
 import com.jervis.dto.connection.ConnectionTestResultDto
 import com.jervis.dto.connection.ConnectionUpdateRequestDto
+import com.jervis.dto.events.JervisEvent
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
 import com.jervis.service.IConnectionService
@@ -24,6 +26,8 @@ import jakarta.mail.Folder
 import jakarta.mail.PasswordAuthentication
 import jakarta.mail.Session
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withContext
@@ -41,6 +45,7 @@ class ConnectionRpcImpl(
     private val connectionService: ConnectionService,
     private val httpClient: HttpClient,
     private val atlassianClient: IAtlassianClient,
+    private val reconnectHandler: com.jervis.configuration.RpcReconnectHandler,
 ) : IConnectionService {
     private val logger = KotlinLogging.logger {}
 
@@ -290,10 +295,14 @@ class ConnectionRpcImpl(
 
             // Test Atlassian connectionDocument (if it's Atlassian URL)
             if (connectionDocument.baseUrl.contains("atlassian.net") == true) {
-                val myself =
+                val myself = withRpcRetry(
+                    name = "Atlassian",
+                    reconnect = { reconnectHandler.reconnectAtlassian() }
+                ) {
                     atlassianClient.getMyself(
                         connectionDocument.toAtlassianMyselfRequest(),
                     )
+                }
                 ConnectionTestResultDto(
                     success = true,
                     message = "ConnectionDocument successful! Logged in as: ${myself.displayName}",

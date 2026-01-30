@@ -66,7 +66,7 @@ class ClientService(
 
     suspend fun update(client: ClientDocument): ClientDocument {
         val existing =
-            clientRepository.findById(client.id) ?: throw NoSuchElementException("Client not found: ${client.id}")
+            getClientByIdOrNull(client.id) ?: throw NoSuchElementException("Client not found: ${client.id}")
 
         val mergedGitConfig =
             when {
@@ -124,14 +124,17 @@ class ClientService(
     }
 
     suspend fun delete(id: ClientId) {
-        val existing = clientRepository.findById(id) ?: return
+        val existing = getClientByIdOrNull(id) ?: return
         clientRepository.delete(existing)
         logger.info { "Deleted client ${existing.name}" }
     }
 
     suspend fun list(): List<ClientDocument> = clientRepository.findAll().toList()
 
-    suspend fun getClientById(id: ClientId): ClientDocument = clientRepository.findById(id) ?: throw ClientNotFoundException(id)
+    suspend fun getClientById(id: ClientId): ClientDocument = getClientByIdOrNull(id) ?: throw ClientNotFoundException(id)
+
+    suspend fun getClientByIdOrNull(id: ClientId): ClientDocument? =
+        clientRepository.findAll().toList().find { it.id == id }
 }
 
 class ClientNotFoundException(

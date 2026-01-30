@@ -23,8 +23,11 @@ class ProjectService(
 
     suspend fun getAllProjects(): List<ProjectDocument> = projectRepository.findAll().toList()
 
+    suspend fun listProjectsForClient(clientId: com.jervis.types.ClientId): List<ProjectDocument> = 
+        projectRepository.findByClientId(clientId).toList()
+
     suspend fun saveProject(project: ProjectDocument): ProjectDto {
-        val existing = projectRepository.findById(project.id)
+        val existing = getProjectByIdOrNull(project.id)
         val isNew = existing == null
 
         val savedProject = projectRepository.save(project)
@@ -47,9 +50,15 @@ class ProjectService(
     }
 
     suspend fun getProjectByName(name: String?): ProjectDocument =
-        requireNotNull(name?.let { projectRepository.findByName(it) }) {
+        requireNotNull(name?.let { n -> projectRepository.findAll().toList().find { it.name == n } }) {
             "Project not found with name: $name"
         }
 
-    fun getProjectById(projectId: ProjectId) = projectRepository.getById(projectId)
+    suspend fun getProjectById(projectId: ProjectId): ProjectDocument =
+        requireNotNull(getProjectByIdOrNull(projectId)) {
+            "Project not found with id: $projectId"
+        }
+
+    suspend fun getProjectByIdOrNull(projectId: ProjectId): ProjectDocument? =
+        projectRepository.findAll().toList().find { it.id == projectId }
 }

@@ -8,6 +8,7 @@ import com.jervis.types.ProjectId
 import com.jervis.types.SourceUrn
 import com.jervis.types.TaskId
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -65,7 +66,7 @@ class TaskManagementService(
         newScheduledAt: Instant,
     ): TaskDocument? =
         withContext(Dispatchers.IO) {
-            val task = scheduledTaskRepository.findById(taskId) ?: return@withContext null
+            val task = scheduledTaskRepository.findAll().toList().find { it.id == taskId } ?: return@withContext null
             val updated = task.copy(scheduledAt = newScheduledAt)
             scheduledTaskRepository.save(updated)
         }
@@ -75,9 +76,9 @@ class TaskManagementService(
      */
     suspend fun cancelTask(taskId: TaskId): Boolean =
         withContext(Dispatchers.IO) {
-            val exists = scheduledTaskRepository.existsById(taskId)
-            if (exists) {
-                scheduledTaskRepository.deleteById(taskId)
+            val task = scheduledTaskRepository.findAll().toList().find { it.id == taskId }
+            if (task != null) {
+                scheduledTaskRepository.delete(task)
                 logger.info { "Cancelled/deleted task: $taskId" }
                 true
             } else {

@@ -13,7 +13,13 @@ interface IAgentOrchestratorService {
      * Returns long-lived Flow of all chat responses for this session.
      * Multiple messages can arrive independently of send requests.
      */
-    fun subscribeToChat(clientId: String, projectId: String): Flow<ChatResponseDto>
+    fun subscribeToChat(clientId: String, projectId: String, limit: Int? = null): Flow<ChatResponseDto>
+
+    /**
+     * Subscribe to queue status updates for given client.
+     * Returns Flow of queue status messages with running project and queue size.
+     */
+    fun subscribeToQueueStatus(clientId: String): Flow<ChatResponseDto>
 
     /**
      * Send a chat message. Does not return responses - use subscribeToChat() to receive them.

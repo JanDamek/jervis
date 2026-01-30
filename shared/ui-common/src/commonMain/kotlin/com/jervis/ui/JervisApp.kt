@@ -7,6 +7,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -14,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import com.jervis.di.NetworkModule
 import com.jervis.repository.JervisRepository
 import io.ktor.client.request.get
+import kotlinx.coroutines.launch
 
 /**
  * Main Jervis Application Composable
@@ -29,10 +31,11 @@ fun JervisApp(
     defaultClientId: String? = null,
     defaultProjectId: String? = null,
 ) {
-    // Initialize services
-    var services by remember { mutableStateOf<NetworkModule.Services?>(null) }
+    // Initialize services with refresh counter to force recreation
+    var servicesState by remember { mutableStateOf<Pair<String, NetworkModule.Services>?>(null) }
+    var refreshTrigger by remember { mutableStateOf(0) }
 
-    LaunchedEffect(serverBaseUrl) {
+    LaunchedEffect(serverBaseUrl, refreshTrigger) {
         try {
             println("=== Jervis App: Initializing connection to $serverBaseUrl ===")
             val httpClient = NetworkModule.createHttpClient()
@@ -41,7 +44,7 @@ fun JervisApp(
             // Test basic HTTPS connection first
             try {
                 println("=== Jervis App: Testing HTTPS connection to $serverBaseUrl ===")
-                val testResponse = httpClient.get("$serverBaseUrl/actuator/health")
+                val testResponse = httpClient.get("$serverBaseUrl/")
                 println("=== Jervis App: HTTPS test successful, status: ${testResponse.status} ===")
             } catch (e: Exception) {
                 println("=== Jervis App: HTTPS test FAILED: ${e::class.simpleName}: ${e.message} ===")
@@ -49,7 +52,8 @@ fun JervisApp(
                 throw e
             }
 
-            services = NetworkModule.createServicesFromUrl(serverBaseUrl, httpClient)
+            val services = NetworkModule.createServicesFromUrl(serverBaseUrl, httpClient)
+            servicesState = serverBaseUrl to services
             println("=== Jervis App: Services initialized successfully ===")
         } catch (e: Exception) {
             println("=== Jervis App ERROR: ${e::class.simpleName}: ${e.message} ===")
@@ -59,7 +63,7 @@ fun JervisApp(
     }
 
     // Create repository only when services are ready
-    val currentServices = services
+    val currentServices = servicesState?.second
     if (currentServices == null) {
         // Show loading screen while connecting
         Box(
@@ -95,13 +99,26 @@ fun JervisApp(
                 gitConfigurationService = currentServices.gitConfigurationService,
                 pendingTaskService = currentServices.pendingTaskService,
                 connectionService = currentServices.connectionService,
+                notificationService = currentServices.notificationService,
+                atlassianSetupService = currentServices.atlassianSetupService,
+                integrationSettingsService = currentServices.integrationSettingsService,
             )
         }
+
+    val reconnectScope = rememberCoroutineScope()
 
     // Launch main app
     App(
         repository = repository,
         defaultClientId = defaultClientId,
         defaultProjectId = defaultProjectId,
+        onRefreshConnection = {
+            // Force complete recreation of RPC client and repository
+            reconnectScope.launch {
+                println("=== JervisApp: Full reconnect triggered, clearing services ===")
+                servicesState = null
+                refreshTrigger++
+            }
+        }
     )
 }

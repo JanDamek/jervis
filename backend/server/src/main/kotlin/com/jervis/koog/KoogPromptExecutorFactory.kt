@@ -19,6 +19,10 @@ class KoogPromptExecutorFactory(
 ) {
     private val logger = KotlinLogging.logger {}
 
+    fun create(providerName: String): PromptExecutor {
+        return getExecutor(providerName)
+    }
+
     /**
      * Get PromptExecutor bean for a specified provider.
      * Provider names: OLLAMA, OLLAMA_QUALIFIER, ANTHROPIC, OPENAI, GOOGLE

@@ -18,6 +18,7 @@ import java.time.Instant
 class UserInteractionTools(
     private val task: TaskDocument,
     private val userTaskService: UserTaskService,
+    private val jiraService: com.jervis.service.jira.JiraService? = null,
 ) : ToolSet {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -25,7 +26,58 @@ class UserInteractionTools(
 
     @Tool
     @LLMDescription(
-        """Create a task for a human user to complete.
+        """Request approval for cloud model spend. 
+        Use this when ProjectCostPolicy requires approval for cloud models.""",
+    )
+    suspend fun requestCloudSpendApproval(
+        @LLMDescription("Estimated cost of the operation in USD")
+        estimatedCost: Double,
+        @LLMDescription("Model being requested (e.g., 'claude-3-5-sonnet')")
+        modelId: String,
+        @LLMDescription("Why the cloud model is needed instead of local Qwen3")
+        reason: String,
+    ): UserTaskResult {
+        val title = "Cloud Spend Approval: $modelId"
+        val description = """
+            Agent is requesting approval to use a cloud model.
+            
+            Model: $modelId
+            Estimated Cost: $${String.format("%.4f", estimatedCost)}
+            Reason: $reason
+            
+            By approving this task, you allow the agent to proceed with this model.
+        """.trimIndent()
+
+        return createUserTask(
+            title = title,
+            description = description,
+            priority = "HIGH"
+        )
+    }
+
+    @Tool
+    @LLMDescription(
+        """Ask a question or request information/decision from the user.
+        This will pause the current agent execution and wait for user input.
+        The current TaskDocument will be transitioned to USER_TASK state.""",
+    )
+    suspend fun askUser(
+        @LLMDescription("Specific question or request for information/decision")
+        question: String,
+        @LLMDescription("Optional context why this information is needed")
+        reason: String? = null,
+    ): UserTaskResult {
+        logger.info { "AGENT_ASK_USER: question=$question" }
+        return UserTaskResult(
+            success = true,
+            taskId = task.id.toString(),
+            title = "Waiting for user input",
+        )
+    }
+
+    @Tool
+    @LLMDescription(
+        """Create a task for a human user to complete (non-blocking).
 Use when a decision or action is required from a person (e.g., 'review this document', 'approve this request', 'make a decision').
 This creates a task in the user's task list that they can see and complete in the UI.""",
     )
@@ -40,17 +92,12 @@ This creates a task in the user's task list that they can see and complete in th
         dueDate: String? = null,
     ): UserTaskResult {
         return try {
-            val priorityEnum =
-                priority?.let {
-                    runCatching { TaskPriorityEnum.valueOf(it.uppercase()) }.getOrNull()
-                } ?: TaskPriorityEnum.MEDIUM
-
+            // Validate that due date is in the future if provided
             val dueDateParsed =
                 dueDate?.let {
                     runCatching { Instant.parse(it) }.getOrNull()
                 }
 
-            // Validate that due date is in the future if provided
             if (dueDateParsed != null && dueDateParsed.isBefore(Instant.now())) {
                 return UserTaskResult(
                     success = false,
@@ -69,26 +116,18 @@ This creates a task in the user's task list that they can see and complete in th
                     }
                 }
 
-            val createdTask =
-                userTaskService.createTask(
-                    title = title,
-                    description = combinedDescription,
-                    projectId = task.projectId,
-                    clientId = task.clientId,
-                    correlationId = task.correlationId,
-                )
-
-            logger.info { "USER_TASK_CREATED: taskId=${createdTask.id}, title=$title, priority=$priorityEnum" }
+            // Místo vytváření nového tasku převedeme aktuální task na USER_TASK.
+            // Invariant: jeden objekt pravdy (TaskDocument).
+            userTaskService.failAndEscalateToUserTask(task, "User action required: $title")
 
             UserTaskResult(
                 success = true,
-                taskId = createdTask.id.toString(),
+                taskId = task.id.toString(),
                 title = title,
-                priority = priorityEnum.name,
                 dueDate = dueDateParsed?.toString(),
             )
         } catch (e: Exception) {
-            logger.error(e) { "Failed to create user task: $title" }
+            logger.error(e) { "Failed to transition to user task: $title" }
             UserTaskResult(
                 success = false,
                 taskId = null,

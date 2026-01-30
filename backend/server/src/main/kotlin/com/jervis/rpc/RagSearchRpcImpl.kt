@@ -1,13 +1,11 @@
 package com.jervis.rpc
 
-import com.jervis.service.error.ErrorLogService
-import mu.KotlinLogging
-
+import com.jervis.dto.indexing.IndexingOverviewDto
 import com.jervis.dto.rag.RagSearchItemDto
 import com.jervis.dto.rag.RagSearchRequestDto
 import com.jervis.dto.rag.RagSearchResponseDto
 import com.jervis.rag.KnowledgeService
-import com.jervis.rag.SearchRequest
+import com.jervis.rag.RetrievalRequest
 import com.jervis.service.IRagSearchService
 import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
@@ -19,31 +17,33 @@ class RagSearchRpcImpl(
     private val knowledgeService: KnowledgeService,
 ) : IRagSearchService {
     override suspend fun search(request: RagSearchRequestDto): RagSearchResponseDto {
-        val searchRequest =
-            SearchRequest(
+        val retrievalRequest =
+            RetrievalRequest(
                 query = request.searchText,
                 clientId = ClientId(ObjectId(request.clientId)),
                 projectId = request.projectId?.let { ProjectId(ObjectId(it)) },
-                maxResults = request.maxChunks,
-                minScore = request.minSimilarityThreshold,
             )
 
-        val searchResult = knowledgeService.search(searchRequest)
+        val evidencePack = knowledgeService.retrieve(retrievalRequest)
 
         val items =
-            listOf(
+            evidencePack.items.map { item ->
                 RagSearchItemDto(
-                    content = searchResult.text,
-                    score = 1.0,
-                    metadata = emptyMap(),
-                ),
-            )
+                    content = item.content,
+                    score = item.confidence,
+                    metadata = item.metadata,
+                )
+            }
 
         return RagSearchResponseDto(
             items = items,
             queriesProcessed = 1,
-            totalChunksFound = 1,
-            totalChunksFiltered = 1,
+            totalChunksFound = items.size,
+            totalChunksFiltered = 0,
         )
+    }
+
+    override suspend fun getIndexingOverview(): IndexingOverviewDto {
+        TODO("Not yet implemented")
     }
 }

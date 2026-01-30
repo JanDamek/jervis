@@ -9,6 +9,7 @@ import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import kotlinx.serialization.Serializable
 import org.springframework.stereotype.Service
 
 @Service
@@ -22,13 +23,13 @@ class LmStudioEmbeddingClient(
         model: String,
         text: String,
     ): List<Float> {
-        val body = mapOf("model" to model, "input" to text)
+        val request = LmStudioEmbeddingRequest(model = model, input = text)
 
         return try {
             val response =
                 client
                     .post("/v1/embeddings") {
-                        setBody(body)
+                        setBody(request)
                     }.body<LmStudioEmbeddingResponse>()
 
             response.data
@@ -57,11 +58,19 @@ class LmStudioEmbeddingClient(
         }
     }
 
+    @Serializable
+    data class LmStudioEmbeddingRequest(
+        val model: String,
+        val input: String,
+    )
+
+    @Serializable
     @JsonIgnoreProperties(ignoreUnknown = true)
     data class LmStudioEmbeddingResponse(
         val data: List<LmStudioEmbeddingData> = emptyList(),
     )
 
+    @Serializable
     @JsonIgnoreProperties(ignoreUnknown = true)
     data class LmStudioEmbeddingData(
         val embedding: List<Float> = emptyList(),

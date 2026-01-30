@@ -6,11 +6,17 @@ import ai.koog.agents.core.dsl.builder.forwardTo
 import ai.koog.agents.core.dsl.builder.strategy
 import ai.koog.agents.core.dsl.extension.nodeLLMRequestStructured
 import ai.koog.agents.core.tools.ToolRegistry
+import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.prompt.dsl.Prompt
 import com.jervis.entity.TaskDocument
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.SmartModelSelector
+import com.jervis.koog.tools.KnowledgeStorageTools
+import com.jervis.koog.tools.external.IssueTrackerTool
 import com.jervis.orchestrator.model.*
+import com.jervis.rag.KnowledgeService
+import com.jervis.rag.internal.graphdb.GraphDBService
+import com.jervis.service.jira.JiraService
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
 
@@ -32,6 +38,9 @@ import org.springframework.stereotype.Component
 class ReviewerAgent(
     private val promptExecutorFactory: KoogPromptExecutorFactory,
     private val smartModelSelector: SmartModelSelector,
+    private val knowledgeService: KnowledgeService,
+    private val graphDBService: GraphDBService,
+    private val jiraService: JiraService,
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -78,9 +87,10 @@ class ReviewerAgent(
             }
 
         val model =
-            smartModelSelector.selectModel(
+            smartModelSelector.selectModelBlocking(
                 baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
                 inputContent = task.content,
+                projectId = task.projectId
             )
 
         val agentConfig =
@@ -122,11 +132,13 @@ class ReviewerAgent(
                         )
                     },
                 model = model,
-                maxAgentIterations = 1, // Single review pass
+                maxAgentIterations = 100, // Allow multiple review/fix cycles if needed
             )
 
         val toolRegistry = ToolRegistry {
-            // No tools needed - reviewer just analyzes and outputs structured result
+            // Reviewer can use tools to verify results in tracker or knowledge base
+            tools(KnowledgeStorageTools(task, knowledgeService, graphDBService))
+            tools(IssueTrackerTool(task, jiraService, com.jervis.orchestrator.jira.JiraTrackerAdapter(jiraService)))
         }
 
         return AIAgent(

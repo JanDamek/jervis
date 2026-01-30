@@ -9,7 +9,7 @@ import com.jervis.service.IErrorLogService
  */
 class ErrorLogRepository(
     private val errorLogService: IErrorLogService
-) {
+) : BaseRepository() {
 
     suspend fun recordUiError(
         message: String,
@@ -19,7 +19,7 @@ class ErrorLogRepository(
         projectId: String? = null,
         correlationId: String? = null,
     ) {
-        try {
+        safeRpcCall("recordUiError") {
             errorLogService.add(
                 com.jervis.dto.error.ErrorLogCreateRequestDto(
                     clientId = clientId,
@@ -30,43 +30,45 @@ class ErrorLogRepository(
                     causeType = causeType,
                 ),
             )
-        } catch (_: Throwable) {
-            // Never throw from UI logging – fail fast at origin, not here
         }
     }
 
     /**
      * List all error logs (global, no client filter)
      */
-    suspend fun listAllErrorLogs(limit: Int = 500): List<ErrorLogDto> {
-        return errorLogService.listAll(limit)
+    suspend fun listAllErrorLogs(limit: Int = 500): List<ErrorLogDto> = safeRpcListCall("listAllErrorLogs") {
+        errorLogService.listAll(limit)
     }
 
     /**
      * List error logs for a client
      */
-    suspend fun listErrorLogs(clientId: String, limit: Int = 500): List<ErrorLogDto> {
-        return errorLogService.list(clientId, limit)
+    suspend fun listErrorLogs(clientId: String, limit: Int = 500): List<ErrorLogDto> = safeRpcListCall("listErrorLogs") {
+        errorLogService.list(clientId, limit)
     }
 
     /**
      * Get error log by ID
      */
-    suspend fun getErrorLog(id: String): ErrorLogDto {
-        return errorLogService.get(id)
+    suspend fun getErrorLog(id: String): ErrorLogDto = safeRpcCall("getErrorLog") {
+        errorLogService.get(id)
     }
 
     /**
      * Delete error log
      */
     suspend fun deleteErrorLog(id: String) {
-        errorLogService.delete(id)
+        safeRpcCall("deleteErrorLog") {
+            errorLogService.delete(id)
+        }
     }
 
     /**
      * Delete all error logs for a client
      */
     suspend fun deleteAllForClient(clientId: String) {
-        errorLogService.deleteAll(clientId)
+        safeRpcCall("deleteAllForClient") {
+            errorLogService.deleteAll(clientId)
+        }
     }
 }

@@ -128,57 +128,54 @@ class OllamaClient(
                     setBody(requestBody)
                 }
 
-            val responseBuilder = StringBuilder()
-            var totalPromptTokens: Int
-            var totalCompletionTokens: Int
-            var finalModel: String
-            var finishReason: String
-
             val channel: ByteReadChannel = response.bodyAsChannel()
-            while (!channel.isClosedForRead) {
-                val line = channel.readUTF8Line() ?: break
-                if (line.isNotBlank()) {
-                    try {
-                        val mapper = jacksonObjectMapper()
-                        val jsonNode = mapper.readTree(line)
+            try {
+                while (!channel.isClosedForRead) {
+                    val line = channel.readUTF8Line() ?: break
+                    if (line.isNotBlank()) {
+                        try {
+                            val mapper = jacksonObjectMapper()
+                            val jsonNode = mapper.readTree(line)
 
-                        val content = jsonNode.get("response")?.asText() ?: ""
-                        val isDone = jsonNode.get("done")?.asBoolean() ?: false
+                            val content = jsonNode.get("response")?.asText() ?: ""
+                            val isDone = jsonNode.get("done")?.asBoolean() ?: false
 
-                        if (content.isNotEmpty()) {
-                            responseBuilder.append(content)
+                            if (content.isNotEmpty()) {
+                                emit(StreamChunk(content = content, isComplete = false))
+                            }
 
-                            emit(StreamChunk(content = content, isComplete = false))
+                            if (isDone) {
+                                // Extract final metadata
+                                val totalPromptTokens = jsonNode.get("prompt_eval_count")?.asInt() ?: 0
+                                val totalCompletionTokens = jsonNode.get("eval_count")?.asInt() ?: 0
+                                val finalModel = jsonNode.get("model")?.asText() ?: model
+                                val finishReason = jsonNode.get("done_reason")?.asText() ?: "stop"
+
+                                // Emit final chunk with metadata
+                                emit(
+                                    StreamChunk(
+                                        content = "",
+                                        isComplete = true,
+                                        metadata =
+                                            mapOf(
+                                                "model" to finalModel,
+                                                "prompt_tokens" to totalPromptTokens,
+                                                "completion_tokens" to totalCompletionTokens,
+                                                "total_tokens" to (totalPromptTokens + totalCompletionTokens),
+                                                "finish_reason" to finishReason,
+                                            ),
+                                    ),
+                                )
+                            }
+                        } catch (e: Exception) {
+                            logger.error { "Error parsing Ollama streaming response: ${e.message}" }
+                            // Continue processing other chunks
                         }
-
-                        if (isDone) {
-                            // Extract final metadata
-                            totalPromptTokens = jsonNode.get("prompt_eval_count")?.asInt() ?: 0
-                            totalCompletionTokens = jsonNode.get("eval_count")?.asInt() ?: 0
-                            finalModel = jsonNode.get("model")?.asText() ?: model
-                            finishReason = jsonNode.get("done_reason")?.asText() ?: "stop"
-
-                            // Emit final chunk with metadata
-                            emit(
-                                StreamChunk(
-                                    content = "",
-                                    isComplete = true,
-                                    metadata =
-                                        mapOf(
-                                            "model" to finalModel,
-                                            "prompt_tokens" to totalPromptTokens,
-                                            "completion_tokens" to totalCompletionTokens,
-                                            "total_tokens" to (totalPromptTokens + totalCompletionTokens),
-                                            "finish_reason" to finishReason,
-                                        ),
-                                ),
-                            )
-                        }
-                    } catch (e: Exception) {
-                        logger.error { "Error parsing Ollama streaming response: ${e.message}" }
-                        // Continue processing other chunks
                     }
                 }
+            } finally {
+                // response.close() // Ktor 2.x HttpResponse doesn't have close(), it's closed when body is consumed or connection released
+                logger.debug { "Ollama stream closed for model: $model" }
             }
         }
 

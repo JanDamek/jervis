@@ -1,14 +1,19 @@
 package com.jervis.rag.internal
 
+import com.jervis.orchestrator.model.EvidencePack
+import com.jervis.orchestrator.model.IngestResult
+import com.jervis.orchestrator.model.EvidenceItem
 import com.jervis.rag.HybridSearchRequest
 import com.jervis.rag.KnowledgeService
-import com.jervis.rag.SearchRequest
 import com.jervis.rag.SearchResult
-import com.jervis.rag.StoreChunkRequest
+import com.jervis.rag.IngestRequest
+import com.jervis.rag.RetrievalRequest
+import com.jervis.rag.FactSearchResult
 import com.jervis.rag.internal.entity.GraphEntityRegistryDocument
 import com.jervis.rag.internal.graphdb.GraphDBService
 import com.jervis.rag.internal.graphdb.model.GraphEdge
 import com.jervis.rag.internal.graphdb.model.GraphNode
+import com.jervis.rag.internal.graphdb.model.TraversalSpec
 import com.jervis.rag.internal.model.RagMetadata
 import com.jervis.rag.internal.repository.GraphEntityRegistryRepository
 import com.jervis.rag.internal.repository.VectorDocument
@@ -17,11 +22,14 @@ import com.jervis.rag.internal.repository.VectorQuery
 import com.jervis.rag.internal.repository.WeaviateVectorStore
 import com.jervis.service.gateway.EmbeddingGateway
 import com.jervis.types.ClientId
+import com.jervis.types.SourceUrn
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import mu.KotlinLogging
 import org.springframework.dao.DuplicateKeyException
 import org.springframework.stereotype.Service
+import java.security.MessageDigest
 import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -45,234 +53,164 @@ internal class KnowledgeServiceImpl(
     private val graphRefCache = ConcurrentHashMap<String, String>()
     private val graphRefLocks = ConcurrentHashMap<String, Mutex>()
 
-    override suspend fun storeChunk(request: StoreChunkRequest): String {
-        logger.info {
-            "ATOMIC_STORE_CHUNK: clientId=${request.clientId}, " +
-                "size=${request.content.length} "
-        }
+    override suspend fun ingest(request: IngestRequest): IngestResult {
+        logger.info { "INGEST: clientId=${request.clientId}, sourceUrn=${request.sourceUrn}, kind=${request.kind}" }
 
-        if (request.content.isBlank()) {
-            throw IllegalArgumentException("Content cannot be blank")
-        }
+        val contentHash = sha256(request.content)
+        // Dedupe check: clientId + sourceUrn + contentHash
+        // For simplicity, we'll use Weaviate's ID as clientId+sourceUrn+chunkIndex if we did chunking,
+        // but since we want to be idempotent for the whole ingest:
+        // Let's assume for now we just want to avoid re-ingesting EXACTLY the same content for the same source.
 
-        val graphPayload =
-            buildGraphPayload(
-                mainNodeKey = request.mainNodeKey,
-                relationships = request.relationships,
-            )
+        // 1. Chunking
+        val chunks = simpleChunking(request.content)
+        logger.info { "Ingest: split into ${chunks.size} chunks" }
 
-        val normalizedGraph = normalizeGraphRefs(request.clientId, graphPayload.allNodes)
+        val ingestedNodeKeys = mutableSetOf<String>()
+        var chunkCount = 0
 
-        val canonicalTriples =
-            graphPayload.rawTriples.map { (from, edge, to) ->
-                val cFrom = normalizedGraph.aliasToCanonical[from] ?: resolveCanonicalGraphRef(request.clientId, from)
-                val cTo = normalizedGraph.aliasToCanonical[to] ?: resolveCanonicalGraphRef(request.clientId, to)
-                Triple(cFrom, edge, cTo)
-            }
+        weaviateProvisioner.ensureClientCollections(request.clientId)
+        val className = perClientClassName(request.clientId)
 
-        val canonicalRelationships =
-            canonicalTriples
-                .map { (from, edge, to) -> "$from|$edge|$to" }
-                .distinct()
+        chunks.forEachIndexed { index, chunkContent ->
+            val chunkHash = sha256(chunkContent)
+            // Composite ID for idempotence
+            val chunkId = UUID.nameUUIDFromBytes("${request.clientId}|${request.sourceUrn}|${index}|$chunkHash".toByteArray()).toString()
 
-        val chunkId = UUID.randomUUID().toString()
+            // Check if exists
+            // (We could do a retrieval by ID, but Weaviate's store is often upsert-by-ID)
 
-        val embedding = embeddingGateway.callEmbedding(request.content)
-        val metadata =
-            mutableMapOf<String, Any>(
+            // 2. Extraction & Canonicalization (Placeholder for more advanced logic)
+            // For now, we extract some basic terms as nodes
+            val extractedNodes = extractNodes(chunkContent)
+            val normalizedGraph = normalizeGraphRefs(request.clientId, extractedNodes)
+
+            // 3. Store in RAG
+            val embedding = embeddingGateway.callEmbedding(chunkContent)
+            val metadata = mutableMapOf<String, Any>(
                 "knowledgeId" to chunkId,
-                "content" to request.content,
+                "content" to chunkContent,
+                "contentHash" to chunkHash,
                 "sourceUrn" to request.sourceUrn.value,
                 "clientId" to request.clientId.toString(),
-                "mainNodeKey" to request.mainNodeKey,
-                "kind" to "TEXT",
-                "scope" to if (request.projectId != null) "project" else "client",
+                "kind" to request.kind,
+                "chunkIndex" to index,
+                "totalChunks" to chunks.size,
+                "observedAt" to request.observedAt.toString(),
+                "scope" to if (request.projectId != null) "project" else "client"
             )
-
-        request.projectId?.let { metadata["projectId"] = it.toString() }
-
-        if (normalizedGraph.refs.isNotEmpty()) {
-            metadata["graphRefs"] = normalizedGraph.refs
-            metadata["graphAreas"] = normalizedGraph.areas
-            normalizedGraph.rootRef?.let { metadata["graphRootRef"] = it }
-            normalizedGraph.primaryArea?.let { metadata["graphPrimaryArea"] = it }
-        }
-
-        if (canonicalRelationships.isNotEmpty()) {
-            metadata["graphRelationships"] = canonicalRelationships
-        }
-
-        // 3. Store in Weaviate (with BM25 indexing on the 'content' field)
-        val vectorDoc =
-            VectorDocument(
-                id = chunkId,
-                content = request.content,
-                embedding = embedding,
-                metadata = metadata,
-            )
-
-        weaviateProvisioner.ensureClientCollections(request.clientId)
-
-        val classNameOverride = perClientClassName(request.clientId)
-        weaviateVectorStore.store(vectorDoc, classNameOverride).getOrThrow()
-
-        runCatching {
-            persistGraph(
-                clientId = request.clientId,
-                ragChunkId = chunkId,
-                nodes = normalizedGraph.refs,
-                relationships = canonicalTriples,
-            )
-        }.onFailure { e ->
-            logger.warn(e) { "Graph persistence failed for chunk $chunkId (non-fatal)" }
-        }
-
-        // 5. Cross-link RAG -> Graph (best-effort, legacy hook)
-        runCatching {
-            val meta =
-                RagMetadata(
-                    clientId = request.clientId,
-                    projectId = request.projectId,
-                    sourceUrn = request.sourceUrn,
-                    graphRefs = normalizedGraph.refs,
-                )
-            ragMetadataUpdater.onChunkStored(
-                clientId = request.clientId,
-                ragChunkId = chunkId,
-                meta = meta,
-            )
-        }.onFailure { e ->
-            logger.warn(e) { "Graph cross-link failed for chunk $chunkId (non-fatal)" }
-        }
-
-        logger.info { "CHUNK_STORED: chunkId=$chunkId, sourceUrn=${request.sourceUrn}" }
-        return chunkId
-    }
-
-    override suspend fun searchHybrid(request: HybridSearchRequest): SearchResult {
-        logger.info {
-            "HYBRID_SEARCH: query='${request.query}', " +
-                "alpha=${request.alpha}, " +
-                "clientId=${request.clientId}, " +
-                "maxResults=${request.maxResults}"
-        }
-
-        // For now, delegate to existing vector search
-        // TODO: Implement true hybrid search with BM25 + Vector when Weaviate client supports it
-        // Weaviate v4 Java client may need GraphQL query builder for hybrid argument
-
-        val embedding = embeddingGateway.callEmbedding(request.query)
-
-        val query =
-            VectorQuery(
-                embedding = embedding,
-                limit = request.maxResults,
-                minScore = 0.0f, // Hybrid search uses alpha, not minScore
-                filters =
-                    VectorFilters(
-                        clientId = request.clientId,
-                        projectId = request.projectId,
-                    ),
-            )
-
-        weaviateProvisioner.ensureClientCollections(request.clientId)
-
-        val classNameOverride = perClientClassName(request.clientId)
-        val results =
-            weaviateVectorStore
-                .search(query, classNameOverride)
-                .getOrThrow()
-
-        logger.info { "HYBRID_SEARCH_COMPLETE: found=${results.size} results" }
-
-        val fragments = toFragments(results)
-        return SearchResult(formatFragmentsForLlm(fragments))
-    }
-
-    override suspend fun search(request: SearchRequest): SearchResult {
-        logger.info {
-            "Knowledge search: query='${request.query}', " +
-                "clientId=${request.clientId}, " +
-                "projectId=${request.projectId}"
-        }
-
-        // Generate embedding
-        val embedding = embeddingGateway.callEmbedding(request.query)
-
-        // Build query
-        val query =
-            VectorQuery(
-                embedding = embedding,
-                limit = request.maxResults,
-                minScore = request.minScore.toFloat(),
-                filters =
-                    VectorFilters(
-                        clientId = request.clientId,
-                        projectId = request.projectId,
-                    ),
-            )
-
-        weaviateProvisioner.ensureClientCollections(request.clientId)
-
-        val classNameOverride = perClientClassName(request.clientId)
-        val results =
-            weaviateVectorStore
-                .search(query, classNameOverride)
-                .getOrThrow()
-
-        logger.info { "Search completed: found=${results.size} results" }
-
-        // Map to internal fragments and format as text
-        val fragments = toFragments(results)
-        return SearchResult(formatFragmentsForLlm(fragments))
-    }
-
-    /**
-     * Format fragments as text for LLM.
-     * IMPORTANT: sourceUrn must be visible, so the agent can track sources.
-     */
-    private fun formatFragmentsForLlm(fragments: List<InternalFragment>): String =
-        buildString {
-            fragments.forEachIndexed { index, fragment ->
-                // Header with sourceUrn
-                append("[")
-                append(fragment.sourceUrn)
-                append("]")
-                appendLine()
-
-                // Optional graph hints (keep it compact)
-                if (fragment.graphPrimaryArea != null || fragment.graphAreas.isNotEmpty() || fragment.graphRefs.isNotEmpty()) {
-                    val areas =
-                        buildList {
-                            fragment.graphPrimaryArea?.let { add(it) }
-                            addAll(fragment.graphAreas)
-                        }.distinct().take(6)
-
-                    if (areas.isNotEmpty()) {
-                        append("GraphArea: ")
-                        appendLine(areas.joinToString(", "))
-                    }
-
-                    val refsPreview = fragment.graphRefs.take(6)
-                    if (refsPreview.isNotEmpty()) {
-                        append("GraphRefs: ")
-                        appendLine(refsPreview.joinToString(", "))
-                    }
-
-                    appendLine("---")
-                }
-
-                // Content
-                appendLine(fragment.content)
-
-                // Separator between fragments
-                if (index < fragments.size - 1) {
-                    appendLine()
-                    appendLine("---")
-                    appendLine()
-                }
+            request.projectId?.let { metadata["projectId"] = it.toString() }
+            if (normalizedGraph.refs.isNotEmpty()) {
+                metadata["graphRefs"] = normalizedGraph.refs
+                metadata["graphAreas"] = normalizedGraph.areas
             }
+
+            val vectorDoc = VectorDocument(
+                id = chunkId,
+                content = chunkContent,
+                embedding = embedding,
+                metadata = metadata
+            )
+            weaviateVectorStore.store(vectorDoc, className).getOrThrow()
+            chunkCount++
+
+            // 4. Store in Graph
+            runCatching {
+                persistGraph(
+                    clientId = request.clientId,
+                    ragChunkId = chunkId,
+                    nodes = normalizedGraph.refs,
+                    relationships = emptyList() // No edges extracted yet in simple ingest
+                )
+            }
+            ingestedNodeKeys.addAll(normalizedGraph.refs)
         }
+
+        return IngestResult(
+            success = true,
+            summary = "Ingested $chunkCount chunks from ${request.sourceUrn}",
+            ingestedNodes = ingestedNodeKeys.toList()
+        )
+    }
+
+    override suspend fun retrieve(request: RetrievalRequest): EvidencePack {
+        logger.info { "RETRIEVE: query='${request.query}', clientId=${request.clientId}, asOf=${request.asOf}" }
+
+        // 1. RAG-first search
+        val embedding = embeddingGateway.callEmbedding(request.query)
+        val query = VectorQuery(
+            embedding = embedding,
+            limit = request.maxResults,
+            minScore = request.minConfidence.toFloat(),
+            filters = VectorFilters(
+                clientId = request.clientId,
+                projectId = request.projectId
+            )
+        )
+
+        val className = perClientClassName(request.clientId)
+        val ragResults = weaviateVectorStore.search(query, className).getOrThrow()
+
+        // Filter by observedAt if asOf is provided
+        val filteredRagResults = if (request.asOf != null) {
+            ragResults.filter { res ->
+                val observedAtStr = res.metadata["observedAt"]?.toString()
+                if (observedAtStr != null) {
+                    runCatching { Instant.parse(observedAtStr) }.getOrNull()?.isBefore(request.asOf) ?: true
+                } else true
+            }
+        } else {
+            ragResults
+        }
+
+        // 2. Seed nodes from chunks
+        val seedNodeKeys = filteredRagResults.flatMap {
+            val refs = (it.metadata["graphRefs"] as? List<*>)?.mapNotNull { r -> r?.toString() } ?: emptyList()
+            refs
+        }.distinct()
+
+        // 3. Graph expand
+        val expandedNodes = mutableListOf<GraphNode>()
+        for (seed in seedNodeKeys.take(10)) {
+            graphDBService.traverse(request.clientId, seed, TraversalSpec(maxDepth = 2)).toList(expandedNodes)
+        }
+
+        // 4. Complement evidence (fetch chunks for expanded nodes)
+        // For simplicity, we use the chunks already linked in GraphNode
+        val allEvidenceChunkIds = (filteredRagResults.map { it.id } + expandedNodes.flatMap { it.ragChunks }).distinct()
+
+        // 5. Build EvidencePack
+        val evidenceItems = filteredRagResults.map {
+            EvidenceItem(
+                source = "RAG",
+                content = it.content,
+                confidence = it.score,
+                metadata = it.metadata.mapValues { (_, v) -> v.toString() }
+            )
+        }
+
+        return EvidencePack(
+            items = evidenceItems,
+            summary = "Found ${filteredRagResults.size} RAG results and ${expandedNodes.size} related graph nodes."
+        )
+    }
+
+    private fun sha256(input: String): String {
+        val bytes = MessageDigest.getInstance("SHA-256").digest(input.toByteArray())
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
+
+    private fun simpleChunking(content: String): List<String> {
+        // Very basic chunking by paragraphs or size
+        if (content.length < 1000) return listOf(content)
+        return content.split("\n\n").filter { it.isNotBlank() }
+    }
+
+    private fun extractNodes(content: String): List<String> {
+        // Simple regex-based extraction of "Type:ID" or similar patterns
+        val pattern = Regex("([a-zA-Z0-9]+:[a-zA-Z0-9_-]+)")
+        return pattern.findAll(content).map { it.value }.toList()
+    }
 
     private suspend fun perClientClassName(clientId: ClientId): String = WeaviateClassNameUtil.classFor(clientId)
 

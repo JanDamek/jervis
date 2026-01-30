@@ -267,7 +267,7 @@ class CentralPoller(
         logger.debug { "ConnectionDocument ${connectionDocument.name} (${connectionDocument.id}) set to INVALID state" }
 
         // Check if UserTask already exists for this connectionDocument
-        val clientId =
+        val clientIdVal =
             context.clients.firstOrNull()?.id
                 ?: context.projects.firstOrNull()?.clientId
                 ?: run {
@@ -276,8 +276,7 @@ class CentralPoller(
                 }
 
         val correlationId = "connectionDocument-error-${connectionDocument.id}"
-
-        // Create UserTask for manual fix - UserTaskService handles duplicates
+        
         val taskDescription =
             buildString {
                 appendLine("ConnectionDocument: ${connectionDocument.name}")
@@ -292,15 +291,26 @@ class CentralPoller(
                 appendLine("4. Update connectionDocument settings if needed")
             }
 
-        userTaskService.createTask(
-            title = "Fix ConnectionDocument: ${connectionDocument.name}",
-            description = taskDescription,
-            projectId = null,
-            clientId = clientId,
-            correlationId = correlationId,
-        )
+        // Create task-like context to use failAndEscalateToUserTask
+        val dummyTask = connectionDocumentToTask(invalidConnection, clientIdVal, correlationId, taskDescription)
+        userTaskService.failAndEscalateToUserTask(dummyTask, "Polling failed with ${result.errors} errors")
 
         logger.debug { "Created UserTask for INVALID connectionDocument: ${connectionDocument.name}" }
+    }
+
+    private fun connectionDocumentToTask(
+        connectionDocument: ConnectionDocument,
+        clientId: com.jervis.types.ClientId,
+        correlationId: String,
+        description: String
+    ): com.jervis.entity.TaskDocument {
+        return com.jervis.entity.TaskDocument(
+            content = description,
+            clientId = clientId,
+            correlationId = correlationId,
+            type = com.jervis.dto.TaskTypeEnum.LINK_PROCESSING, // Fallback type
+            sourceUrn = com.jervis.types.SourceUrn.unknownSource()
+        )
     }
 
     private fun getPollingInterval(connectionDocument: ConnectionDocument): Duration =

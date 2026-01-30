@@ -10,12 +10,19 @@ import com.jervis.service.IRagSearchService
  */
 class RagSearchRepository(
     private val ragSearchService: IRagSearchService
-) {
+) : BaseRepository() {
 
     /**
      * Perform RAG search
      */
-    suspend fun search(request: RagSearchRequestDto): RagSearchResponseDto {
-        return ragSearchService.search(request)
+    suspend fun search(request: RagSearchRequestDto): RagSearchResponseDto = safeRpcCall("ragSearch") {
+        ragSearchService.search(request)
+    }
+
+    /**
+     * Get overview of indexing status
+     */
+    suspend fun getIndexingOverview() = safeRpcCall("getIndexingOverview") {
+        ragSearchService.getIndexingOverview()
     }
 }

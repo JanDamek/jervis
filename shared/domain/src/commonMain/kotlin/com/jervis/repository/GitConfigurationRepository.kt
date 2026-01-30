@@ -1,12 +1,13 @@
 package com.jervis.repository
 
 import com.jervis.dto.ClientDto
-import com.jervis.dto.GitCredentialsDto
+import com.jervis.dto.CloneResultDto
 import com.jervis.dto.GitBranchListDto
+import com.jervis.dto.GitCredentialsDto
 import com.jervis.dto.GitSetupRequestDto
+import com.jervis.dto.GitTestConnectionResponseDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ProjectGitOverrideRequestDto
-import com.jervis.dto.GitTestConnectionResponseDto
 import com.jervis.service.IGitConfigurationService
 
 /**
@@ -15,28 +16,28 @@ import com.jervis.service.IGitConfigurationService
  */
 class GitConfigurationRepository(
     private val service: IGitConfigurationService,
-) {
+) : BaseRepository() {
     suspend fun setupGitConfiguration(clientId: String, request: GitSetupRequestDto): ClientDto =
-        service.setupGitConfiguration(clientId, request)
+        safeRpcCall("setupGitConfiguration") { service.setupGitConfiguration(clientId, request) }
 
     suspend fun testConnection(clientId: String, request: GitSetupRequestDto): GitTestConnectionResponseDto =
-        service.testConnection(clientId, request)
+        safeRpcCall("testConnection") { service.testConnection(clientId, request) }
 
-    suspend fun cloneRepository(clientId: String) =
-        service.cloneRepository(clientId)
+    suspend fun cloneRepository(clientId: String): CloneResultDto =
+        safeRpcCall("cloneRepository") { service.cloneRepository(clientId) }
 
     suspend fun inheritGitConfigToProject(projectId: String, clientId: String): Map<String, Any> =
-        service.inheritGitConfig(projectId, clientId)
+        safeRpcCall("inheritGitConfig") { service.inheritGitConfig(projectId, clientId) }
 
     suspend fun getGitCredentials(clientId: String): GitCredentialsDto? =
-        service.getGitCredentials(clientId)
+        safeRpcCall("getGitCredentials") { service.getGitCredentials(clientId) }
 
     suspend fun listRemoteBranches(clientId: String, repoUrl: String? = null): GitBranchListDto =
-        service.listRemoteBranches(clientId, repoUrl)
+        safeRpcCall("listRemoteBranches") { service.listRemoteBranches(clientId, repoUrl) }
 
     suspend fun setDefaultBranch(clientId: String, branch: String): ClientDto =
-        service.setDefaultBranch(clientId, branch)
+        safeRpcCall("setDefaultBranch") { service.setDefaultBranch(clientId, branch) }
 
     suspend fun setupGitOverrideForProject(projectId: String, request: ProjectGitOverrideRequestDto): ProjectDto =
-        service.setupGitOverrideForProject(projectId, request)
+        safeRpcCall("setupGitOverrideForProject") { service.setupGitOverrideForProject(projectId, request) }
 }

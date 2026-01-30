@@ -53,8 +53,8 @@ ktor:
     keep-alive-time-millis: 300000
   timeouts:
     connect-timeout-millis: 60000
-    request-timeout-millis: 1800000
-    socket-timeout-millis: 1800000
+    request-timeout-millis: 660000
+    socket-timeout-millis: 0
   api-versions:
     anthropic-version: "2023-06-01"
   logging:
@@ -86,6 +86,7 @@ jervis:
     max-iterations: 50
     qualifier-max-retries: 5
     data-dir: /Users/damekjan/git/jervis/data
+    request-timeout-ms: 0
   background:
     wait-on-startup: 10s
     wait-on-error: 1m

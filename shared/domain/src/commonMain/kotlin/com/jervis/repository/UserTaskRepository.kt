@@ -11,27 +11,27 @@ import com.jervis.service.IUserTaskService
  */
 class UserTaskRepository(
     private val userTaskService: IUserTaskService
-) {
+) : BaseRepository() {
 
     /**
      * List active user tasks for a client
      */
-    suspend fun listActive(clientId: String): List<UserTaskDto> {
-        return userTaskService.listActive(clientId)
+    suspend fun listActive(clientId: String): List<UserTaskDto> = safeRpcListCall("listActive") {
+        userTaskService.listActive(clientId)
     }
 
     /**
      * Get active task count for a client
      */
-    suspend fun activeCount(clientId: String): UserTaskCountDto {
-        return userTaskService.activeCount(clientId)
+    suspend fun activeCount(clientId: String): UserTaskCountDto = safeRpcCall("activeCount") {
+        userTaskService.activeCount(clientId)
     }
 
     /**
      * Cancel a user task
      */
-    suspend fun cancel(taskId: String): UserTaskDto {
-        return userTaskService.cancel(taskId)
+    suspend fun cancel(taskId: String): UserTaskDto = safeRpcCall("cancel") {
+        userTaskService.cancel(taskId)
     }
 
     /**
@@ -44,7 +44,7 @@ class UserTaskRepository(
         taskId: String,
         routingMode: TaskRoutingMode,
         additionalInput: String? = null
-    ): UserTaskDto {
-        return userTaskService.sendToAgent(taskId, routingMode, additionalInput)
+    ): UserTaskDto = safeRpcCall("sendToAgent") {
+        userTaskService.sendToAgent(taskId, routingMode, additionalInput)
     }
 }

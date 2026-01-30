@@ -6,62 +6,48 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.jervis.ui.viewmodels.MainViewModel
+import com.jervis.ui.MainViewModel
 import com.jervis.ui.design.JTopBar
+import com.jervis.ui.MainScreenView as MainScreenViewInternal
 
 /**
  * Main Screen - Simplified version for initial setup
  * TODO: Copy full implementation from mobile-app after testing
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(viewModel: MainViewModel) {
-    val state by viewModel.uiState.collectAsState()
+fun MainScreen(viewModel: MainViewModel, onNavigate: (com.jervis.ui.navigation.Screen) -> Unit = {}) {
+    val clients by viewModel.clients.collectAsState()
+    val projects by viewModel.projects.collectAsState()
+    val selectedClientId by viewModel.selectedClientId.collectAsState()
+    val selectedProjectId by viewModel.selectedProjectId.collectAsState()
+    val chatMessages by viewModel.chatMessages.collectAsState()
+    val inputText by viewModel.inputText.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsState()
+    val isInitialLoading by viewModel.isInitialLoading.collectAsState()
+    val queueSize by viewModel.queueSize.collectAsState()
+    val runningProjectId by viewModel.runningProjectId.collectAsState()
+    val runningProjectName by viewModel.runningProjectName.collectAsState()
+    val runningTaskPreview by viewModel.runningTaskPreview.collectAsState()
 
-    Scaffold(
-        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
-        topBar = {
-            JTopBar(title = "JERVIS Assistant")
-        }
-    ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            when {
-                state.isLoading -> {
-                    com.jervis.ui.design.JCenteredLoading()
-                }
-                state.error != null -> {
-                    com.jervis.ui.design.JErrorState(
-                        message = "Error: ${state.error}",
-                        onRetry = { viewModel.loadData() }
-                    )
-                }
-                else -> {
-                    Text(
-                        text = "JERVIS is ready!",
-                        style = MaterialTheme.typography.headlineMedium
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Clients: ${state.clients.size}",
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                    Text(
-                        text = "Projects: ${state.projects.size}",
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(onClick = { viewModel.loadData() }) {
-                        Text("Refresh")
-                    }
-                }
-            }
-        }
-    }
+    MainScreenViewInternal(
+        clients = clients,
+        projects = projects,
+        selectedClientId = selectedClientId,
+        selectedProjectId = selectedProjectId,
+        chatMessages = chatMessages,
+        inputText = inputText,
+        isLoading = isLoading || isInitialLoading,
+        connectionState = connectionState.name,
+        queueSize = queueSize,
+        runningProjectId = runningProjectId,
+        runningProjectName = runningProjectName,
+        runningTaskPreview = runningTaskPreview,
+        onClientSelected = viewModel::selectClient,
+        onProjectSelected = { id -> viewModel.selectProject(id ?: "") },
+        onInputChanged = viewModel::updateInputText,
+        onSendClick = viewModel::sendMessage,
+        onNavigate = onNavigate,
+        onReconnectClick = viewModel::manualReconnect
+    )
 }

@@ -1,5 +1,7 @@
 package com.jervis.orchestrator.model
 
+import ai.koog.agents.core.tools.annotations.LLMDescription
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
@@ -9,25 +11,27 @@ import kotlinx.serialization.Serializable
  * Contains only LLM-relevant information - NO system IDs (those are in TaskDocument).
  */
 @Serializable
+@SerialName("ContextPack")
+@LLMDescription("Execution context containing project details, build/test commands, environment information, and known/missing facts. Provided at the start of task execution to inform planning and execution decisions.")
 data class ContextPack(
-    /** Project name (human-readable, for LLM context) */
+    @property:LLMDescription("Project name (human-readable, for LLM context and logging)")
     val projectName: String?,
 
-    /** Project path where code lives (from DirectoryStructureService) */
+    @property:LLMDescription("Absolute path to project directory where code resides (from DirectoryStructureService)")
     val projectPath: String,
 
-    /** Build commands for CODING_VERIFY tasks (from ProjectDocument.buildConfig) */
+    @property:LLMDescription("Build commands for CODING_VERIFY tasks (e.g., ['./gradlew build', 'npm run build'])")
     val buildCommands: List<String>,
 
-    /** Test commands for CODING_VERIFY tasks */
+    @property:LLMDescription("Test commands for CODING_VERIFY tasks (e.g., ['./gradlew test', 'npm test'])")
     val testCommands: List<String>,
 
-    /** Environment hints (e.g., "Kotlin/Gradle project", "Node.js/npm", etc.) */
+    @property:LLMDescription("Environment description and technology stack (e.g., 'Kotlin/Gradle project', 'Node.js/npm with TypeScript')")
     val environmentHints: String,
 
-    /** Facts already known from GraphDB/RAG (avoid redundant research) */
+    @property:LLMDescription("Facts already known from GraphDB/RAG - use this to avoid redundant research and reference established knowledge")
     val knownFacts: List<String> = emptyList(),
 
-    /** Information identified as missing (triggers research tasks) */
+    @property:LLMDescription("Information identified as missing or unclear - triggers research tasks to fill gaps before execution")
     val missingInfo: List<String> = emptyList(),
 )

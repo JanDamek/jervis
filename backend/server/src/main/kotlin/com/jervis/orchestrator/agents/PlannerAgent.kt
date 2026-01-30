@@ -18,11 +18,11 @@ import mu.KotlinLogging
 import org.springframework.stereotype.Component
 
 /**
- * PlannerAgent - Internal agent for task decomposition.
+ * PlannerAgent - Internal agent for task decomposition and management.
  *
  * Role:
  * - Break user query into ordered list of atomic steps
- * - No task IDs, no dependencies - order IS the execution order
+ * - Manage plan lifecycle: creation, execution tracking, and adaptive refinement
  * - Choose executor hint for each step (aider, openhands, internal, research)
  * - If missing info, create "research" step first
  *
@@ -47,6 +47,7 @@ class PlannerAgent(
         task: TaskDocument,
         context: ContextPack,
         evidence: EvidencePack? = null,
+        existingPlan: OrderedPlan? = null,
     ): AIAgent<String, OrderedPlan> {
         val promptExecutor = promptExecutorFactory.getExecutor("OLLAMA")
 
@@ -69,7 +70,7 @@ class PlannerAgent(
             )
 
         val agentStrategy =
-            strategy("Task Planning") {
+            strategy<String, OrderedPlan>("Task Planning") {
                 val nodePlan by
                     nodeLLMRequestStructured<OrderedPlan>(
                         examples = listOf(examplePlan),
@@ -85,9 +86,10 @@ class PlannerAgent(
             }
 
         val model =
-            smartModelSelector.selectModel(
+            smartModelSelector.selectModelBlocking(
                 baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
                 inputContent = task.content,
+                projectId = task.projectId
             )
 
         val agentConfig =
@@ -96,36 +98,68 @@ class PlannerAgent(
                     Prompt.build("planner-agent") {
                         system(
                             """
-                            You are Planner Agent. Break user query into ordered execution steps.
+                            You are Planner Agent. Break user query into ordered execution steps or refine an existing plan.
+
+                            Your main objective is to satisfy the NormalizedRequest goal.
+
+                            PLAN MANAGEMENT:
+                            1. INITIAL PLANNING: If no plan exists, create a complete sequence of steps to satisfy the goal.
+                            2. ADAPTIVE REFINEMENT: If a plan already exists but evidence shows it needs changes, output a REFINED plan.
+                            3. COMPLETION TRACKING: Ensure all steps lead to the final goal. Mark progress in reasoning.
+
+                            CRITICAL REQUEST TYPE RULES:
+                            ❌ If request type is ADVICE → NEVER create 'coding' actions (use search/analysis only)
+                            ❌ If request type is CODE_ANALYSIS → NEVER create 'coding' actions (read-only operations)
+                            ❌ If request type is MESSAGE_DRAFT → NEVER create 'coding' actions
+                            ✅ Only create 'coding' actions for CODE_CHANGE or EPIC request types
+
+                            SEARCH STRATEGY HIERARCHY (for information gathering):
+                            1. FIRST: Search in indexed knowledge base (emails, documents, Confluence, code) - FREE
+                            2. SECOND: Explore code structure via graph relationships - FREE
+                            3. THIRD: Deep static code analysis - FREE
+                            4. LAST RESORT: Paid coding/API services - only if free options insufficient
+
+                            For CODE_ANALYSIS: Plan free search/analysis steps BEFORE considering paid services
+                            For ADVICE (simple questions): ALWAYS start with knowledge base search!
+
+                            SEARCH QUERY GUIDELINES:
+                            - Make step descriptions BROAD and COMPREHENSIVE to find all relevant information in ONE step
+                            - Include synonyms, full terms, related concepts in description
+                            - Example: "najdi NTB na Alze" → action step description: "Search knowledge base for NTB/notebook/laptop purchases from Alza in emails and documents"
+                            - DON'T create multiple search steps for the same topic - ONE comprehensive search is better
+                            - The knowledge base search covers all sources simultaneously
 
                             Rules:
                             1. Each step is atomic (single clear action)
                             2. Order matters - no parallel dependencies
-                            3. Use executor hints:
+                            3. WORKFLOW COMPLIANCE:
+                               - Before planning any 'coding' action, you MUST ensure the work item is in a 'Ready' state.
+                               - If an item is NOT ready (e.g. in DRAFT), you MUST NOT plan coding.
+                               - Instead, plan to add a comment to the tracker explaining why you can't proceed.
+                            4. Use executor hints:
                                - "aider": Fast surgical edits in known files
                                - "openhands": Complex debugging, build/test, unknown files
                                - "internal": RAG, GraphDB, JIRA, Confluence, Email, Slack
                                - "research": Gather more evidence before proceeding
-                            4. RESEARCH FIRST: If the user asks about existing logic, status, or previous decisions, ALWAYS start with a "research" step.
-                            5. CROSS-REFERENCE: If a task involves multiple sources (e.g. "Fix bug mentioned in Jira-123 using docs from Confluence"), plan steps to gather evidence from both before coding.
-                            6. If context shows missingInfo, create "research" step first
-                            7. Always include "verify" step after "coding" steps
+                            5. SEARCH FIRST: If the user asks about existing data, logic, status, purchases, emails, documents, ALWAYS start with knowledge base search steps.
+                            6. CROSS-REFERENCE: If a task involves multiple sources, plan steps to gather evidence from all sources.
+                            7. If context shows missingInfo, create knowledge search steps first
+                            8. Always include "verify" step after "coding" steps
+                            9. PAUSE POLICY: If you reach a point where user input or approval is MANDATORY, the orchestrator will handle the pause.
 
-                            Action types:
-                            - coding: Code changes
-                            - verify: Run build/test
-                            - rag_ingest: Ingest information into RAG and GraphDB via ingestKnowledge()
-                            - rag_lookup: Search RAG via searchKnowledge()
-                            - graph_query: Query GraphDB
-                            - graph_update: Update GraphDB nodes/edges
-                            - jira_read: Read from Jira via searchIssues(), getIssue(), getComments()
-                            - jira_update: Create/update JIRA ticket
-                            - confluence_read: Read from Confluence via searchPages(), getPage(), getChildren()
-                            - confluence_update: Update Confluence page
-                            - email_read: Read from Email via searchEmails(), getEmail(), getThread()
-                            - email_send: Send email
-                            - slack_post: Post to Slack
-                            - research: Gather evidence via tool calls
+                            Action type categories (high-level descriptions for plan steps):
+                            - search: Search indexed data (documents, emails, Confluence, code)
+                            - codeAnalysis: Analyze code structure and relationships
+                            - staticAnalysis: Deep static code analysis
+                            - coding: Code modification (PAID - check budget!)
+                            - verify: Run tests/builds
+                            - ingest: Index new information
+                            - issueTracking: Work item operations (read, update, search)
+                            - documentation: Documentation operations (read, update, search)
+                            - userInteraction: Request user input/confirmation
+
+                            These are PLAN ACTION CATEGORIES, not specific tools.
+                            Executor will select appropriate tools from registry based on these action types.
 
                             Output an OrderedPlan with list of steps.
                             Each step has:
@@ -138,7 +172,7 @@ class PlannerAgent(
                         )
                     },
                 model = model,
-                maxAgentIterations = 2, // Allow minor refinement
+                maxAgentIterations = 100, // Allow more refinement for complex tasks
             )
 
         val toolRegistry =
@@ -161,6 +195,7 @@ class PlannerAgent(
      * @param userQuery Original user query
      * @param context Mandatory context from ContextAgent
      * @param evidence Evidence from previous iteration (null on first run)
+     * @param existingPlan Current plan if refining
      * @return OrderedPlan with steps to execute
      */
     suspend fun run(
@@ -168,8 +203,9 @@ class PlannerAgent(
         userQuery: String,
         context: ContextPack,
         evidence: EvidencePack? = null,
+        existingPlan: OrderedPlan? = null,
     ): OrderedPlan {
-        logger.info { "PLANNER_AGENT_START | correlationId=${task.correlationId} | hasEvidence=${evidence != null}" }
+        logger.info { "PLANNER_AGENT_START | correlationId=${task.correlationId} | hasEvidence=${evidence != null} | refiningPlan=${existingPlan != null}" }
 
         val promptInput =
             buildString {
@@ -192,6 +228,14 @@ class PlannerAgent(
                     context.missingInfo.forEach { appendLine("    - $it") }
                 }
 
+                if (existingPlan != null) {
+                    appendLine()
+                    appendLine("CURRENT_PLAN:")
+                    existingPlan.steps.forEachIndexed { idx, step ->
+                        appendLine("  ${idx + 1}. [${step.action}/${step.executor}] ${step.description}")
+                    }
+                }
+
                 if (evidence != null && evidence.isNotEmpty()) {
                     appendLine()
                     appendLine("EVIDENCE (from previous iteration):")
@@ -199,10 +243,14 @@ class PlannerAgent(
                 }
 
                 appendLine()
-                appendLine("Create OrderedPlan:")
+                if (existingPlan == null) {
+                    appendLine("Create OrderedPlan:")
+                } else {
+                    appendLine("Evaluate and refine OrderedPlan based on evidence:")
+                }
             }
 
-        val agent = create(task, context, evidence)
+        val agent = create(task, context, evidence, existingPlan)
         val result = agent.run(promptInput)
 
         logger.debug { "PLANNER_AGENT_COMPLETE | steps=${result.steps.size}" }

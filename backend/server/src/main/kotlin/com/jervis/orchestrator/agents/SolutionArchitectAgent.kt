@@ -7,12 +7,11 @@ import ai.koog.agents.core.dsl.builder.strategy
 import ai.koog.agents.core.dsl.extension.nodeLLMRequestStructured
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.prompt.dsl.Prompt
-import ai.koog.prompt.llm.LLModel
 import com.jervis.entity.TaskDocument
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.SmartModelSelector
-import com.jervis.orchestrator.model.A2ADelegationSpec
 import com.jervis.orchestrator.model.ContextPack
+import com.jervis.orchestrator.model.DelegationSpec
 import com.jervis.orchestrator.model.EvidencePack
 import com.jervis.orchestrator.model.PlanStep
 import mu.KotlinLogging
@@ -43,7 +42,7 @@ class SolutionArchitectAgent(
         context: ContextPack,
         evidence: EvidencePack,
         step: PlanStep,
-    ): AIAgent<String, A2ADelegationSpec> {
+    ): AIAgent<String, DelegationSpec> {
         val model =
             smartModelSelector.selectModel(
                 baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
@@ -53,7 +52,7 @@ class SolutionArchitectAgent(
         val promptExecutor = promptExecutorFactory.getExecutor("OLLAMA")
 
         val exampleSpec =
-            A2ADelegationSpec(
+            DelegationSpec(
                 agent = "aider",
                 targetFiles = listOf("src/main/kotlin/com/jervis/service/UserService.kt"),
                 instructions = "Add validation to createUser method. Ensure email is unique by checking against DB. Handle DuplicateKeyException.",
@@ -62,9 +61,9 @@ class SolutionArchitectAgent(
             )
 
         val agentStrategy =
-            strategy<String, A2ADelegationSpec>("Solution Architecture") {
+            strategy<String, DelegationSpec>("Solution Architecture") {
                 val nodeSpec by
-                    nodeLLMRequestStructured<A2ADelegationSpec>(
+                    nodeLLMRequestStructured<DelegationSpec>(
                         examples = listOf(exampleSpec),
                     ).transform { result ->
                         result
@@ -106,17 +105,21 @@ class SolutionArchitectAgent(
                                 * Complex coding where time is a primary factor and user accepts higher cost.
                             
                             OUTPUT:
-                            - You MUST output a structured A2ADelegationSpec.
+                            - You MUST output a structured DelegationSpec.
                             - 'instructions' must be precise, covering logic, edge cases, and style.
                             - 'verifyInstructions' must include actual commands to run based on ContextPack.
                             - 'targetFiles' must be absolute or relative to project root (required for Aider).
+                            
+                            DETERMINISM & QUALITY:
+                            - Ensure the specification is self-contained. The coding agent should not need to ask clarifying questions if the evidence is already there.
+                            - If evidence is insufficient for a clear specification, indicate this (which might lead the orchestrator to a research phase or WAITING_FOR_USER).
                             
                             Be professional and technically precise.
                             """.trimIndent(),
                         )
                     },
                 model = model,
-                maxAgentIterations = 1,
+                maxAgentIterations = 100,
             )
 
         return AIAgent(
@@ -132,7 +135,7 @@ class SolutionArchitectAgent(
         context: ContextPack,
         evidence: EvidencePack,
         step: PlanStep,
-    ): A2ADelegationSpec {
+    ): DelegationSpec {
         logger.info { "ARCHITECT_AGENT_START | correlationId=${task.correlationId} | step=${step.action}" }
 
         val promptInput =
@@ -148,7 +151,7 @@ class SolutionArchitectAgent(
                 appendLine("EVIDENCE_SUMMARY:")
                 appendLine(evidence.summary.ifBlank { evidence.combinedSummary() })
                 appendLine()
-                appendLine("Create technical A2ADelegationSpec:")
+                appendLine("Create technical DelegationSpec:")
             }
 
         val agent = create(task, context, evidence, step)

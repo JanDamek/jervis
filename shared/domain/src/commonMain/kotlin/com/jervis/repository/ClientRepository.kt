@@ -23,23 +23,23 @@ class ClientRepository(
      * Get client by ID
      */
     suspend fun getClientById(id: String): ClientDto? =
-        safeRpcCall("getClientById", returnNull = true) {
+        safeRpcCall("getClientById") {
             clientService.getClientById(id)
         }
 
     /**
      * Create new client
      */
-    suspend fun createClient(client: ClientDto): ClientDto? =
-        safeRpcCall("createClient", returnNull = true) {
+    suspend fun createClient(client: ClientDto): ClientDto =
+        safeRpcCall("createClient") {
             clientService.createClient(client)
         }
 
     /**
      * Update existing client
      */
-    suspend fun updateClient(id: String, client: ClientDto): ClientDto? =
-        safeRpcCall("updateClient", returnNull = true) {
+    suspend fun updateClient(id: String, client: ClientDto): ClientDto =
+        safeRpcCall("updateClient") {
             clientService.updateClient(id, client)
         }
 
@@ -47,7 +47,7 @@ class ClientRepository(
      * Delete client
      */
     suspend fun deleteClient(id: String) {
-        safeRpcCall("deleteClient", returnNull = true) {
+        safeRpcCall("deleteClient") {
             clientService.deleteClient(id)
         }
     }
@@ -55,8 +55,8 @@ class ClientRepository(
     /**
      * Update last selected project for client
      */
-    suspend fun updateLastSelectedProject(clientId: String, projectId: String?): ClientDto? =
-        safeRpcCall("updateLastSelectedProject", returnNull = true) {
+    suspend fun updateLastSelectedProject(clientId: String, projectId: String?): ClientDto =
+        safeRpcCall("updateLastSelectedProject") {
             clientService.updateLastSelectedProject(clientId, projectId)
         }
 }

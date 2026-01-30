@@ -4,6 +4,7 @@ import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
 import com.jervis.entity.TaskDocument
+import com.jervis.orchestrator.model.EvidencePack
 import com.jervis.service.jira.JiraIssue
 import com.jervis.service.jira.JiraProject
 import com.jervis.service.jira.JiraService
@@ -60,6 +61,10 @@ class JiraReadTools(
         try {
             logger.info { "JIRA_GET_ISSUE: issueKey=$issueKey" }
             val issue = jiraService.getIssue(task.clientId, issueKey)
+            
+            // Full description is returned without truncation to preserve context.
+            // EvidencePack.MAX_CONTENT_LENGTH is used only as a hint for UI summary.
+            
             JiraIssueResult(
                 success = true,
                 issue = issue,

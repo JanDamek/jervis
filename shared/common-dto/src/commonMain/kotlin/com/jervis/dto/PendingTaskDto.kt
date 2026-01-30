@@ -12,4 +12,5 @@ data class PendingTaskDto(
     val clientId: String,
     val createdAt: String,
     val state: String,
+    val attachments: List<AttachmentDto> = emptyList(),
 )

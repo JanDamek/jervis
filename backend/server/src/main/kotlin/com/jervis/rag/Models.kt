@@ -4,12 +4,31 @@ import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
 import com.jervis.types.SourceUrn
 
-data class SearchRequest(
+import java.time.Instant
+
+/**
+ * Request to ingest new knowledge.
+ */
+data class IngestRequest(
+    val clientId: ClientId,
+    val projectId: ProjectId? = null,
+    val sourceUrn: SourceUrn, // canonical identifier including version
+    val kind: String, // e.g. "text", "code", "ticket", "log", "meeting"
+    val content: String,
+    val metadata: Map<String, Any> = emptyMap(),
+    val observedAt: Instant = Instant.now(),
+)
+
+/**
+ * Request to retrieve knowledge for a query.
+ */
+data class RetrievalRequest(
     val query: String,
     val clientId: ClientId,
     val projectId: ProjectId? = null,
-    val maxResults: Int = 20,
-    val minScore: Double = 0.15,
+    val asOf: Instant? = null, // for historical queries
+    val minConfidence: Double = 0.0,
+    val maxResults: Int = 10,
 )
 
 /**
@@ -28,20 +47,14 @@ data class HybridSearchRequest(
     val alpha: Float = 0.5f,
 )
 
-@JvmInline
-value class SearchResult(
+data class SearchResult(
     val text: String,
+    val facts: List<FactSearchResult> = emptyList(),
 )
 
-/**
- * Atomic chunk storage request.
- * Agent extracts chunk and provides all metadata - service only embeds and stores.
- */
-data class StoreChunkRequest(
-    val clientId: ClientId,
-    val projectId: ProjectId? = null,
+data class FactSearchResult(
     val content: String,
-    val sourceUrn: SourceUrn,
-    val mainNodeKey: String,
-    val relationships: List<String>,
+    val score: Double,
+    val sourceUrn: String,
+    val metadata: Map<String, Any>,
 )

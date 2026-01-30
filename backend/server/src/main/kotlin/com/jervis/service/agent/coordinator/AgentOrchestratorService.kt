@@ -1,10 +1,15 @@
 package com.jervis.service.agent.coordinator
 
-import com.jervis.dto.ChatRequestContext
-import com.jervis.dto.ChatResponse
+import com.jervis.domain.atlassian.AttachmentMetadata
+import com.jervis.dto.ChatResponseDto
+import com.jervis.dto.ChatRequestContextDto
+import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.TaskDocument
+import com.jervis.service.background.TaskService
 import com.jervis.service.text.CzechKeyboardNormalizer
+import com.jervis.types.ClientId
+import com.jervis.types.ProjectId
 import com.jervis.types.SourceUrn
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -20,8 +25,38 @@ import org.springframework.stereotype.Service
 class AgentOrchestratorService(
     private val koogWorkflowService: KoogWorkflowService,
     private val czechKeyboardNormalizer: CzechKeyboardNormalizer,
+    private val taskService: TaskService,
 ) {
     private val logger = KotlinLogging.logger {}
+
+    /**
+     * Enqueue a chat message for background processing.
+     *
+     * NOTE: This creates a NEW TaskDocument each time.
+     * For chat continuation, the RPC layer should find/reuse existing TaskDocument instead.
+     */
+    suspend fun enqueueChatTask(
+        text: String,
+        clientId: ClientId,
+        projectId: ProjectId?,
+        
+        attachments: List<AttachmentMetadata> = emptyList(),
+    ): TaskDocument {
+        val normalizedText = czechKeyboardNormalizer.convertIfMistyped(text)
+
+        // Create TaskDocument - this is the single source of truth
+        return taskService.createTask(
+            taskType = TaskTypeEnum.USER_INPUT_PROCESSING,
+            content = normalizedText,
+            clientId = clientId,
+            projectId = projectId,
+            correlationId = ObjectId().toString(),
+            sourceUrn = SourceUrn.chat(clientId),
+            state = TaskStateEnum.READY_FOR_GPU,
+            attachments = attachments,
+            
+        )
+    }
 
     /**
      * Handle incoming chat request by creating a TaskContext and running Koog workflow.
@@ -31,23 +66,29 @@ class AgentOrchestratorService(
      */
     suspend fun handle(
         text: String,
-        ctx: ChatRequestContext,
+        ctx: ChatRequestContextDto,
         onProgress: suspend (message: String, metadata: Map<String, String>) -> Unit = { _, _ -> },
-    ): ChatResponse {
+    ): ChatResponseDto {
         val normalizedText = czechKeyboardNormalizer.convertIfMistyped(text)
         if (normalizedText != text) {
             logger.info { "AGENT_INPUT_NORMALIZED: original='${text.take(100)}' normalized='${normalizedText.take(100)}'" }
         }
-        logger.info { "AGENT_HANDLE_START: text='${normalizedText.take(100)}' clientId=${ctx.clientId} projectId=${ctx.projectId}" }
+        
+        val clientIdTyped = try { ClientId.fromString(ctx.clientId) } catch (e: Exception) { ClientId(ObjectId(ctx.clientId)) }
+        val projectIdTyped = ctx.projectId?.let { 
+            try { ProjectId.fromString(it) } catch (e: Exception) { ProjectId(ObjectId(it)) }
+        }
+
+        logger.info { "AGENT_HANDLE_START: text='${normalizedText.take(100)}' clientId=${clientIdTyped} projectId=${projectIdTyped}" }
 
         val taskContext =
             TaskDocument(
                 type = TaskTypeEnum.USER_INPUT_PROCESSING,
                 content = normalizedText,
-                projectId = ctx.projectId,
-                clientId = ctx.clientId,
+                projectId = projectIdTyped,
+                clientId = clientIdTyped,
                 correlationId = ObjectId().toString(),
-                sourceUrn = SourceUrn.chat(ctx.clientId),
+                sourceUrn = SourceUrn.chat(clientIdTyped),
             )
 
         // Run Koog workflow with progress callback
@@ -67,7 +108,7 @@ class AgentOrchestratorService(
         task: TaskDocument,
         userInput: String,
         onProgress: suspend (message: String, metadata: Map<String, String>) -> Unit = { _, _ -> },
-    ): ChatResponse {
+    ): ChatResponseDto {
         logger.info { "AGENT_ORCHESTRATOR_START: correlationId=${task.correlationId}" }
 
         val response = koogWorkflowService.run(task, userInput, onProgress)

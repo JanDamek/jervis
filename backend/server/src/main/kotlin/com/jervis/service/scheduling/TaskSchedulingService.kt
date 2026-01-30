@@ -51,7 +51,8 @@ class TaskSchedulingService(
      */
     suspend fun cancelTask(taskId: TaskId): Boolean = taskManagementService.cancelTask(taskId)
 
-    suspend fun findById(taskId: TaskId): TaskDocument? = scheduledTaskRepository.findById(taskId)
+    suspend fun findById(taskId: TaskId): TaskDocument? =
+        scheduledTaskRepository.findAll().toList().find { it.id == taskId }
 
     suspend fun listAllTasks(): List<TaskDocument> = scheduledTaskRepository.findAll().toList()
 

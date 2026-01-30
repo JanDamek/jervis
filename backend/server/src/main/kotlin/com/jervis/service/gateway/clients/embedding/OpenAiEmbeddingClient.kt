@@ -9,6 +9,7 @@ import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import kotlinx.serialization.Serializable
 import org.springframework.stereotype.Service
 
 @Service
@@ -22,13 +23,13 @@ class OpenAiEmbeddingClient(
         model: String,
         text: String,
     ): List<Float> {
-        val body = mapOf("model" to model, "input" to text)
+        val request = OpenAiEmbeddingRequest(model = model, input = text)
 
         return try {
             val response =
                 client
                     .post("/embeddings") {
-                        setBody(body)
+                        setBody(request)
                     }.body<OpenAiEmbeddingResponse>()
 
             response.data
@@ -57,11 +58,19 @@ class OpenAiEmbeddingClient(
         }
     }
 
+    @Serializable
+    data class OpenAiEmbeddingRequest(
+        val model: String,
+        val input: String,
+    )
+
+    @Serializable
     @JsonIgnoreProperties(ignoreUnknown = true)
     data class OpenAiEmbeddingResponse(
         val data: List<OpenAiEmbeddingData> = emptyList(),
     )
 
+    @Serializable
     @JsonIgnoreProperties(ignoreUnknown = true)
     data class OpenAiEmbeddingData(
         val embedding: List<Float> = emptyList(),

@@ -1,6 +1,6 @@
 package com.jervis.service.agent.coordinator
 
-import com.jervis.dto.ChatResponse
+import com.jervis.dto.ChatResponseDto
 import com.jervis.entity.TaskDocument
 import com.jervis.orchestrator.OrchestratorAgent
 import mu.KotlinLogging
@@ -30,10 +30,10 @@ class KoogWorkflowService(
         task: TaskDocument,
         userInput: String,
         onProgress: suspend (message: String, metadata: Map<String, String>) -> Unit = { _, _ -> },
-    ): ChatResponse {
+    ): ChatResponseDto {
         logger.info { "ORCHESTRATOR_WORKFLOW_START: correlationId=${task.correlationId}" }
         val output: String = orchestratorAgent.run(task, userInput, onProgress)
         logger.info { "ORCHESTRATOR_WORKFLOW_COMPLETE: correlationId=${task.correlationId}" }
-        return ChatResponse(output)
+        return ChatResponseDto(output)
     }
 }

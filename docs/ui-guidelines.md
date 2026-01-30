@@ -57,6 +57,84 @@ DeleteIconButton(
 
 ---
 
+## Settings UI Design Standard (Concept)
+
+### Core Philosophy
+The Settings window is a central hub for system configuration. It must remain **clean**, **discoverable**, and **operationally efficient**. We avoid deep nesting of navigation and prefer a "Sidebar + Content" layout for desktop or a "Flat Navigation" layout for mobile.
+
+### Layout Structure
+1.  **Navigation Sidebar (Left)**: Icons + Labels for major categories.
+2.  **Breadcrumbs/Title (Top)**: Indication of where the user is (e.g., `Settings > Clients > Edit Client`).
+3.  **Action Bar (Top Right)**: Contextual actions like "Save", "Refresh", or "Add New".
+4.  **Main Content (Center)**: Scrollable area with cards grouping related settings.
+
+### Navigation Categories
+Settings are organized into 4 logical tiers:
+-   **General**: Application-wide settings (Language, UI theme, Global Defaults).
+-   **Structure**: Hierarchical entities.
+    -   **Clients**: High-level organizational units.
+    -   **Projects**: Specific units belonging to clients.
+-   **Integrations**: External tool connections.
+    -   **Connections**: Technical connectivity (HTTP, SMTP, IMAP, OAuth2).
+    -   **Atlassian**: Jira/Confluence integration states.
+    -   **Git**: Provider configurations.
+-   **System**: Operational status.
+    -   **Indexing**: Status of RAG and background processing.
+    -   **Scheduler**: Cron tasks and background jobs.
+    -   **Logs**: UI and System error logs.
+
+### Settings Window: Detailed Concept
+
+#### 1. Sidebar Navigation (Left)
+- **Compact View**: Icons only.
+- **Expanded View**: Icon + Title.
+- **Visuals**: Use Material Icons or Emoji symbols consistently.
+- **Selection**: High contrast highlight on the active category.
+
+#### 2. Settings Content Area (Right)
+##### A. List View (e.g., Clients, Projects)
+- **Top Row**: Search bar + "Add New" button.
+- **Items**: Horizontal cards with:
+    - Left: Primary name + subtitle (ID/Status).
+    - Center: Tags for active integrations (e.g., [Git][Jira]).
+    - Right: Edit (✏️) and Delete (🗑️) icons.
+
+##### B. Edit View (Form)
+- **Sections**: Use vertical spacing or `Divider` between logical groups.
+- **Headers**: Small bold text for group titles (e.g., "DATABASE SETTINGS", "AUTH").
+- **Fields**: Outlined text fields with clear labels and helper text for validation.
+- **In-place Actions**: "Test Connection" or "Verify Token" buttons placed directly next to the relevant fields.
+
+#### 3. Category Definitions
+
+| Category | Content |
+| :--- | :--- |
+| **General** | Language, Timezone, UI Theme (Light/Dark/Auto), Default Client/Project. |
+| **Clients** | List of organizational units. Edit form includes Git Credentials and Confluence defaults. |
+| **Projects** | List of projects. Edit form includes Jira/Confluence overrides and Project-specific Git settings. |
+| **Connections** | Inventory of technical connections (HTTP, IMAP, etc.). Used as a pool for Clients/Projects. |
+| **Atlassian** | Status of Jira/Confluence links, OAuth status, and Global Tenant settings. |
+| **Git** | Provider configuration (GitHub, GitLab, Bitbucket). |
+| **Indexing** | Status dashboard for background indexers (RAG). Start/Stop controls and error viewing. |
+| **Scheduler** | Management of periodic tasks. View last execution and next scheduled run. |
+| **Logs** | Scrollable table of error logs with filtering by severity and source. |
+
+### UI Components for Settings
+1.  **Setting Card**: Use `Card` with an outline or subtle elevation to group related fields (e.g., "Authentication", "API Configuration").
+2.  **Status Indicator**: Use colored dots or badges:
+    -   🟢 **Connected/Idle**
+    -   🔵 **Running/Syncing**
+    -   🔴 **Error/Disconnected**
+3.  **Action Ribbons**: Floating or pinned bottom bar for "Save/Cancel" in complex edit forms to ensure they are always reachable.
+
+### Interactions & Behavior
+-   **Real-time Validation**: Validate inputs as the user types (e.g., URL format, Port range).
+-   **Direct Test Actions**: "Test Connection" buttons must be adjacent to the credentials they test.
+-   **Deep Linking**: Every settings page/tab should be reachable via a direct navigation state.
+-   **Secrets Visibility**: Per global policy, secrets are visible. Use clear warnings for destructive actions.
+
+---
+
 ## CopyableTextCard Standard
 
 ### Component to Use
@@ -489,6 +567,18 @@ When displaying text content with copy functionality:
 - `com.jervis.ui.util.DeleteIconButton` - For all delete buttons (per-row)
 - `com.jervis.ui.util.ConfirmDialog` - For all delete confirmations
 - `com.jervis.ui.util.CopyableTextCard` - For all text content with copy functionality
+
+### Icon Usage Guidelines (Mandatory)
+
+1.  **Always use standard Compose Material Icons** from the `androidx.compose.material.icons` package.
+2.  **Avoid using generic `icons` package** or custom icon sub-packages.
+3.  **Use fully qualified names** (e.g., `androidx.compose.material.icons.Icons.Default.Add`) to ensure compilation stability and avoid `Unresolved reference 'icons'` errors.
+4.  **Common Icons**:
+    *   `Icons.Default.Add` - Přidání položky.
+    *   `Icons.Default.Edit` - Editace.
+    *   `Icons.Default.Delete` - Mazání.
+    *   `Icons.AutoMirrored.Filled.Refresh` - Refresh.
+    *   `Icons.AutoMirrored.Filled.ArrowBack` - Zpět.
 
 ### Mandatory Pattern
 

@@ -1,5 +1,7 @@
 package com.jervis.orchestrator.model
 
+import ai.koog.agents.core.tools.annotations.LLMDescription
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
@@ -9,11 +11,13 @@ import kotlinx.serialization.Serializable
  * Koog orchestrator executes steps sequentially.
  */
 @Serializable
+@SerialName("OrderedPlan")
+@LLMDescription("Sequential execution plan with ordered steps and reasoning. Steps execute in list order - first to last.")
 data class OrderedPlan(
-    /** Steps to execute (in order) */
+    @property:LLMDescription("Steps to execute in sequential order. Each step is atomic and completes before next begins.")
     val steps: List<PlanStep>,
 
-    /** Reasoning behind plan (for debugging/logging) */
+    @property:LLMDescription("Reasoning behind the plan design and step ordering (for debugging/logging)")
     val reasoning: String = "",
 )
 
@@ -22,13 +26,15 @@ data class OrderedPlan(
  * Order in list determines execution order (no IDs needed).
  */
 @Serializable
+@SerialName("PlanStep")
+@LLMDescription("Single atomic step in execution plan with action category, executor hint, and detailed description")
 data class PlanStep(
-    /** Action type: "coding", "verify", "rag_ingest", "jira_update", "email_send", "research", etc. */
+    @property:LLMDescription("Action category: searchKnowledgeBase, queryGraphDB, analyzeWithJoern, coding, verify, ragIngest, jiraUpdate, emailSend, askUser, etc.")
     val action: String,
 
-    /** Executor hint: "aider", "openhands", "internal" */
+    @property:LLMDescription("Executor hint: aider (fast surgical edits), openhands (complex debugging), internal (research/analysis), junie (AI development)")
     val executor: String,
 
-    /** Clear description of what to do (1-2 sentences) */
+    @property:LLMDescription("Clear description of what to do - be specific and include all necessary context (1-3 sentences)")
     val description: String,
 )

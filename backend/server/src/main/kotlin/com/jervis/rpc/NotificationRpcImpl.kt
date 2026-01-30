@@ -2,7 +2,6 @@ package com.jervis.rpc
 
 import com.jervis.dto.ErrorNotificationDto
 import com.jervis.dto.events.JervisEvent
-import com.jervis.dto.events.UserDialogResponseEventDto
 import com.jervis.service.INotificationService
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
@@ -34,21 +33,6 @@ class NotificationRpcImpl : INotificationService {
         return sharedFlow.asSharedFlow()
     }
 
-    override suspend fun sendDialogResponse(response: UserDialogResponseEventDto) {
-        logger.info { "Received dialog response: ${response.dialogId}" }
-        // TODO: Propojit s orchestrátorem nebo službou, která na dialog čeká
-    }
-
-    override suspend fun closeDialog(clientId: String, dialogId: String, correlationId: String, reason: String) {
-        logger.info { "Closing dialog: $dialogId for client $clientId" }
-        emitEvent(clientId, JervisEvent.UserDialogClose(
-            dialogId = dialogId,
-            correlationId = correlationId,
-            reason = reason,
-            timestamp = Instant.now().toString()
-        ))
-    }
-
     /**
      * Internal method to emit errors to client streams.
      * Called by ErrorLogService when errors are recorded.
@@ -65,6 +49,37 @@ class NotificationRpcImpl : INotificationService {
             projectId = error.projectId,
             timestamp = error.timestamp
         ))
+    }
+
+    suspend fun emitUserTaskCreated(clientId: String, taskId: String, title: String) {
+        emitEvent(clientId, JervisEvent.UserTaskCreated(
+            clientId = clientId,
+            taskId = taskId,
+            title = title,
+            timestamp = java.time.Instant.now().toString()
+        ))
+    }
+
+    suspend fun emitUserTaskCancelled(clientId: String, taskId: String, title: String) {
+        emitEvent(clientId, JervisEvent.UserTaskCancelled(
+            clientId = clientId,
+            taskId = taskId,
+            title = title,
+            timestamp = java.time.Instant.now().toString()
+        ))
+    }
+
+    suspend fun emitPendingTaskCreated(taskId: String, type: String) {
+        // Emit to all connected clients as pending tasks are global
+        val event = JervisEvent.PendingTaskCreated(
+            taskId = taskId,
+            type = type,
+            timestamp = java.time.Instant.now().toString()
+        )
+        // Important: this sends to all clients, which is correct for global pending tasks
+        eventStreams.keys().asSequence().forEach { clientId ->
+            emitEvent(clientId, event)
+        }
     }
 
     /**

@@ -45,8 +45,8 @@ private const val VISION_SYSTEM_PROMPT =
 @Service
 class VisionAnalysisAgent(
     private val promptExecutorFactory: KoogPromptExecutorFactory,
-    private val providerSelector: OllamaProviderSelector,
     private val modelSelector: SmartModelSelector,
+    private val providerSelector: OllamaProviderSelector,
     private val directoryStructureService: DirectoryStructureService,
     private val cacheRepository: AttachmentAnalysisCacheRepository,
 ) {

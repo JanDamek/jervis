@@ -5,6 +5,7 @@ import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
 import com.jervis.common.client.CodingRequest
 import com.jervis.common.client.ICodingClient
+import com.jervis.common.rpc.withRpcRetry
 import mu.KotlinLogging
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
@@ -24,6 +25,7 @@ class CodingTools(
     @Qualifier("aiderClient") private val aiderClient: ICodingClient,
     @Qualifier("codingEngineClient") private val codingEngineClient: ICodingClient,
     @Qualifier("junieClient") private val junieClient: ICodingClient,
+    private val reconnectHandler: com.jervis.configuration.RpcReconnectHandler,
 ) : ToolSet {
     private val logger = KotlinLogging.logger {}
 
@@ -62,7 +64,12 @@ class CodingTools(
                 maxIterations = 3,
             )
 
-            val result = aiderClient.execute(request)
+            val result = withRpcRetry(
+                name = "Aider",
+                reconnect = { reconnectHandler.reconnectAider() }
+            ) {
+                aiderClient.execute(request)
+            }
 
             if (result.success) {
                 buildString {
@@ -142,7 +149,12 @@ class CodingTools(
                 maxIterations = 10, // OpenHands can iterate more
             )
 
-            val result = codingEngineClient.execute(request)
+            val result = withRpcRetry(
+                name = "OpenHands",
+                reconnect = { reconnectHandler.reconnectCodingEngine() }
+            ) {
+                codingEngineClient.execute(request)
+            }
 
             if (result.success) {
                 buildString {
@@ -226,7 +238,12 @@ class CodingTools(
                 maxIterations = 5,
             )
 
-            val result = junieClient.execute(request)
+            val result = withRpcRetry(
+                name = "Junie",
+                reconnect = { reconnectHandler.reconnectJunie() }
+            ) {
+                junieClient.execute(request)
+            }
 
             if (result.success) {
                 buildString {
@@ -262,6 +279,41 @@ class CodingTools(
         } catch (e: Exception) {
             logger.error(e) { "Junie execution failed" }
             "❌ **Junie Error**: ${e.message}"
+        }
+    }
+
+    @Tool
+    @LLMDescription(
+        """Execute a coding task using the most appropriate agent based on task complexity and policy.
+        
+        **When to use:**
+        - This is the preferred generic method for all coding tasks.
+        - Use when you want the system to automatically select between Aider, OpenHands, or Junie.
+        
+        **System logic:**
+        - Small tasks (1-3 files) -> Aider
+        - Complex tasks / Refactorings -> OpenHands
+        - Critical / Repeated failure -> Junie
+        """
+    )
+    suspend fun execute(
+        @LLMDescription("Clear, specific coding instructions") instructions: String,
+        @LLMDescription("Optional list of file paths to modify (if known)") files: List<String> = emptyList(),
+        @LLMDescription("Optional command to verify the changes") verifyCommand: String? = null,
+        @LLMDescription("Strategy hint: 'FAST' (Aider), 'THOROUGH' (OpenHands), 'PREMIUM' (Junie), 'AUTO' (System decides)") strategy: String = "AUTO"
+    ): String {
+        return when(strategy.uppercase()) {
+            "FAST" -> executeAider(instructions, files, verifyCommand)
+            "THOROUGH" -> executeOpenHands(instructions, verifyCommand)
+            "PREMIUM" -> executeJunie(instructions, verifyCommand)
+            else -> {
+                // Heuristic: if many files or no files specified, use OpenHands, otherwise Aider
+                if (files.isEmpty() || files.size > 3) {
+                    executeOpenHands(instructions, verifyCommand)
+                } else {
+                    executeAider(instructions, files, verifyCommand)
+                }
+            }
         }
     }
 }

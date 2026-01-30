@@ -1,11 +1,14 @@
 package com.jervis.repository
 
+import com.jervis.service.IAtlassianSetupService
+import com.jervis.service.IIntegrationSettingsService
 import com.jervis.service.IAgentOrchestratorService
 import com.jervis.service.IClientService
 import com.jervis.service.IConnectionService
 import com.jervis.service.IErrorLogService
 import com.jervis.service.IGitConfigurationService
 import com.jervis.service.IPendingTaskService
+import com.jervis.service.INotificationService
 import com.jervis.service.IProjectService
 import com.jervis.service.IRagSearchService
 import com.jervis.service.ITaskSchedulingService
@@ -26,6 +29,9 @@ class JervisRepository(
     gitConfigurationService: IGitConfigurationService,
     pendingTaskService: IPendingTaskService,
     connectionService: IConnectionService,
+    notificationService: INotificationService,
+    atlassianSetupService: IAtlassianSetupService,
+    integrationSettingsService: IIntegrationSettingsService,
 ) {
     val clients: ClientRepository = ClientRepository(clientService)
     val projects: ProjectRepository = ProjectRepository(projectService)
@@ -38,4 +44,7 @@ class JervisRepository(
     val gitConfiguration: GitConfigurationRepository = GitConfigurationRepository(gitConfigurationService)
     val pendingTasks: PendingTaskRepository = PendingTaskRepository(pendingTaskService)
     val connections: ConnectionRepository = ConnectionRepository(connectionService)
+    val notifications: NotificationRepository = NotificationRepository(notificationService)
+    val atlassianSetup: AtlassianSetupRepository = AtlassianSetupRepository(atlassianSetupService)
+    val integrationSettings: IntegrationSettingsRepository = IntegrationSettingsRepository(integrationSettingsService)
 }

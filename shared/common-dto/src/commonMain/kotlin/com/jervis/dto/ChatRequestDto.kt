@@ -6,4 +6,5 @@ import kotlinx.serialization.Serializable
 data class ChatRequestDto(
     val text: String,
     val context: ChatRequestContextDto,
+    val attachments: List<AttachmentDto> = emptyList(),
 )

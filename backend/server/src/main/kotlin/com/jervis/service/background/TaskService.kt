@@ -3,8 +3,10 @@ package com.jervis.service.background
 import com.jervis.domain.atlassian.AttachmentMetadata
 import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
+import com.jervis.entity.ProcessingMode
 import com.jervis.entity.TaskDocument
 import com.jervis.repository.TaskRepository
+import com.jervis.rpc.NotificationRpcImpl
 import com.jervis.service.text.TikaTextExtractionService
 import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
@@ -12,8 +14,10 @@ import com.jervis.types.SourceUrn
 import com.jervis.types.TaskId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flow
 import mu.KotlinLogging
+import org.springframework.context.annotation.Lazy
 import org.springframework.stereotype.Service
 import java.time.Instant
 
@@ -21,8 +25,13 @@ import java.time.Instant
 class TaskService(
     private val taskRepository: TaskRepository,
     private val tikaTextExtractionService: TikaTextExtractionService,
+    @Lazy private val notificationRpc: NotificationRpcImpl,
 ) {
     private val logger = KotlinLogging.logger {}
+
+    // Track current running task for queue status
+    @Volatile
+    private var currentRunningTask: TaskDocument? = null
 
     suspend fun createTask(
         taskType: TaskTypeEnum,
@@ -33,6 +42,7 @@ class TaskService(
         projectId: ProjectId? = null,
         state: TaskStateEnum = TaskStateEnum.READY_FOR_QUALIFICATION,
         attachments: List<AttachmentMetadata> = emptyList(),
+        
     ): TaskDocument {
         require(content.isNotBlank()) { "PendingTask content must be provided and non-blank" }
 
@@ -48,9 +58,14 @@ class TaskService(
                 correlationId = correlationId,
                 sourceUrn = sourceUrn,
                 attachments = attachments,
+                
             )
 
         val saved = taskRepository.save(task)
+
+        if (saved.type != TaskTypeEnum.USER_TASK) {
+            notificationRpc.emitPendingTaskCreated(saved.id.toString(), saved.type.name)
+        }
 
         logger.info {
             "TASK_CREATED: id=${saved.id} correlationId=${saved.correlationId} type=${taskType.name} state=${task.state} clientId=$clientId projectId=${projectId?.toString() ?: "none"} contentLength=${content.length}"
@@ -71,11 +86,74 @@ class TaskService(
 
     suspend fun findTasksToRun(): Flow<TaskDocument> =
         flow {
-            taskRepository.findOneByScheduledAtLessThanAndTypeOrderByScheduledAtAsc()?.let {
+            taskRepository.findOneByScheduledAtLessThanAndTypeOrderByScheduledAtAsc(
+                Instant.now(),
+                TaskTypeEnum.SCHEDULED_TASK,
+            )?.let {
                 emit(it)
             }
             emitAll(taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.READY_FOR_GPU))
         }
+
+    /**
+     * Get next FOREGROUND task (chat) ordered by queuePosition.
+     * User can reorder tasks in UI by changing queuePosition.
+     *
+     * @return Next FOREGROUND task to process, or null if no tasks
+     */
+    suspend fun getNextForegroundTask(): TaskDocument? {
+        return taskRepository
+            .findByProcessingModeAndStateOrderByQueuePositionAsc(
+                ProcessingMode.FOREGROUND,
+                TaskStateEnum.READY_FOR_GPU,
+            )
+            .firstOrNull()
+    }
+
+    /**
+     * Get next BACKGROUND task (autonomous) ordered by createdAt (oldest first).
+     * Background tasks process in FIFO order (creation time).
+     *
+     * @return Next BACKGROUND task to process, or null if no tasks
+     */
+    suspend fun getNextBackgroundTask(): TaskDocument? {
+        return taskRepository
+            .findByProcessingModeAndStateOrderByCreatedAtAsc(
+                ProcessingMode.BACKGROUND,
+                TaskStateEnum.READY_FOR_GPU,
+            )
+            .firstOrNull()
+    }
+
+    /**
+     * Mark task as currently running (for queue status tracking)
+     */
+    fun setRunningTask(task: TaskDocument?) {
+        currentRunningTask = task
+    }
+
+    /**
+     * Get currently running task (for progress display)
+     */
+    fun getCurrentRunningTask(): TaskDocument? {
+        return currentRunningTask
+    }
+
+    /**
+     * Get queue status: currently running task and queue size
+     */
+    suspend fun getQueueStatus(clientId: ClientId, projectId: ProjectId?): Pair<TaskDocument?, Int> {
+        val queueSize = taskRepository.countByStateAndTypeAndClientId(
+            state = TaskStateEnum.READY_FOR_GPU,
+            type = TaskTypeEnum.USER_INPUT_PROCESSING,
+            clientId = clientId
+        )
+        logger.debug { 
+            "GET_QUEUE_STATUS | clientId=$clientId | projectId=$projectId | " +
+            "queueSize=$queueSize | hasRunningTask=${currentRunningTask != null}"
+        }
+        return currentRunningTask to queueSize.toInt()
+    }
 
     suspend fun updateState(
         task: TaskDocument,

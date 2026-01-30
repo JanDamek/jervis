@@ -31,6 +31,7 @@ echo "✓ Docker image pushed"
 
 # 4. Deploy
 echo "Step 4/4: Deploying to Kubernetes..."
+kubectl apply -f "/Users/damekjan/git/jervis/k8s/app_server.yaml" -n "${NAMESPACE}"
 kubectl rollout restart deployment/${SERVICE_NAME} -n "${NAMESPACE}"
 kubectl get pods -n "${NAMESPACE}" -l "app=${SERVICE_NAME}"
 echo "✓ ${SERVICE_NAME} deployment triggered"

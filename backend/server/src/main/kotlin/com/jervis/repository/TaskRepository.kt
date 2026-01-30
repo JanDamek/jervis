@@ -2,6 +2,7 @@ package com.jervis.repository
 
 import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
+import com.jervis.entity.ProcessingMode
 import com.jervis.entity.TaskDocument
 import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
@@ -14,11 +15,6 @@ import java.time.Instant
 @Repository
 interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
     suspend fun findAllByOrderByCreatedAtAsc(): Flow<TaskDocument>
-
-    suspend fun findOneByScheduledAtLessThanAndTypeOrderByScheduledAtAsc(
-        scheduledAt: Instant = Instant.now(),
-        type: TaskTypeEnum = TaskTypeEnum.SCHEDULED_TASK,
-    ): TaskDocument?
 
     suspend fun findByStateOrderByCreatedAtAsc(state: TaskStateEnum): Flow<TaskDocument>
 
@@ -38,6 +34,11 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
 
     suspend fun countByState(state: TaskStateEnum): Long
 
+    suspend fun findOneByScheduledAtLessThanAndTypeOrderByScheduledAtAsc(
+        scheduledAt: Instant,
+        type: TaskTypeEnum,
+    ): TaskDocument?
+
     suspend fun findByProjectIdAndType(
         projectId: ProjectId,
         type: TaskTypeEnum,
@@ -47,4 +48,48 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
         clientId: ClientId,
         type: TaskTypeEnum,
     ): Flow<TaskDocument>
+
+    suspend fun countByStateAndTypeAndClientId(
+        state: TaskStateEnum,
+        type: TaskTypeEnum,
+        clientId: ClientId,
+    ): Long
+
+    // NEW: Processing mode queries for FOREGROUND/BACKGROUND task processing
+
+    /**
+     * Find FOREGROUND tasks ordered by queuePosition (for chat processing).
+     * User can reorder tasks in UI by changing queuePosition.
+     */
+    suspend fun findByProcessingModeAndStateOrderByQueuePositionAsc(
+        processingMode: ProcessingMode,
+        state: TaskStateEnum,
+    ): Flow<TaskDocument>
+
+    /**
+     * Find BACKGROUND tasks ordered by createdAt (oldest first, FIFO).
+     * Background tasks process in creation order.
+     */
+    suspend fun findByProcessingModeAndStateOrderByCreatedAtAsc(
+        processingMode: ProcessingMode,
+        state: TaskStateEnum,
+    ): Flow<TaskDocument>
+
+    /**
+     * Find FOREGROUND task for specific project/client (for chat reuse).
+     */
+    suspend fun findByProcessingModeAndClientIdAndProjectIdAndType(
+        processingMode: ProcessingMode,
+        clientId: ClientId,
+        projectId: ProjectId?,
+        type: TaskTypeEnum,
+    ): Flow<TaskDocument>
+
+    /**
+     * Count tasks by processing mode and state.
+     */
+    suspend fun countByProcessingModeAndState(
+        processingMode: ProcessingMode,
+        state: TaskStateEnum,
+    ): Long
 }

@@ -4,6 +4,8 @@ import com.jervis.dto.connection.ConnectionCreateRequestDto
 import com.jervis.dto.connection.ConnectionResponseDto
 import com.jervis.dto.connection.ConnectionTestResultDto
 import com.jervis.dto.connection.ConnectionUpdateRequestDto
+import com.jervis.dto.events.JervisEvent
+import kotlinx.coroutines.flow.Flow
 import kotlinx.rpc.annotations.Rpc
 
 @Rpc

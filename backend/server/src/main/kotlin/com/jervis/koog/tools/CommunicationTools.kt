@@ -26,11 +26,7 @@ class CommunicationTools(
     @Tool
     @LLMDescription(
         """Send email to specified recipients.
-NOTE: This is a mock implementation. To enable actual email sending, integrate with:
-- SMTP server configuration
-- SendGrid API
-- Amazon SES
-- Microsoft Graph API""",
+NOTE: Currently using a mock implementation. It logs the email and returns a success message.""",
     )
     suspend fun sendEmail(
         @LLMDescription("Recipient email addresses (comma-separated)")
@@ -71,7 +67,7 @@ NOTE: This is a mock implementation. To enable actual email sending, integrate w
     @Tool
     @LLMDescription(
         """Send message to Slack channel or user.
-NOTE: This is a mock implementation. To enable actual Slack messaging, integrate with Slack Web API.""",
+NOTE: Currently using a mock implementation. It logs the message and returns a success message.""",
     )
     suspend fun sendSlack(
         @LLMDescription("Target channel (#channel-name) or user (@username)")
@@ -100,7 +96,7 @@ NOTE: This is a mock implementation. To enable actual Slack messaging, integrate
     @Tool
     @LLMDescription(
         """Send message to Microsoft Teams channel or user.
-NOTE: This is a mock implementation. To enable actual Teams messaging, integrate with Microsoft Graph API.""",
+NOTE: Currently using a mock implementation. It logs the message and returns a success message.""",
     )
     suspend fun sendTeams(
         @LLMDescription("Target channel or user")

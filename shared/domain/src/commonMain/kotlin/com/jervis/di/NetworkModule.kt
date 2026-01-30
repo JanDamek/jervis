@@ -1,12 +1,15 @@
 package com.jervis.di
 
 import com.jervis.api.SecurityConstants
+import com.jervis.service.IAtlassianSetupService
+import com.jervis.service.IIntegrationSettingsService
 import com.jervis.service.IAgentOrchestratorService
 import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
 import com.jervis.service.IConnectionService
 import com.jervis.service.IErrorLogService
 import com.jervis.service.IGitConfigurationService
+import com.jervis.service.INotificationService
 import com.jervis.service.IPendingTaskService
 import com.jervis.service.IProjectService
 import com.jervis.service.IRagSearchService
@@ -20,6 +23,8 @@ import io.ktor.client.plugins.logging.DEFAULT
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logger
 import io.ktor.client.plugins.logging.Logging
+import io.ktor.client.plugins.websocket.WebSockets
+import io.ktor.client.plugins.websocket.pingInterval
 import io.ktor.http.encodedPath
 import kotlinx.rpc.krpc.ktor.client.KtorRpcClient
 import kotlinx.rpc.krpc.ktor.client.installKrpc
@@ -27,10 +32,17 @@ import kotlinx.rpc.krpc.ktor.client.rpc
 import kotlinx.rpc.krpc.serialization.cbor.cbor
 import kotlinx.rpc.withService
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlin.time.Duration.Companion.seconds
+
+/**
+ * Interface for UI applications to handle RPC reconnection.
+ */
+interface UiRpcReconnectHandler {
+    suspend fun reconnect()
+}
 
 /**
  * Platform-specific HTTP client creation with SSL configuration
- * Each platform implements its own way of handling self-signed certificates
  */
 expect fun createPlatformHttpClient(block: HttpClientConfig<*>.() -> Unit): HttpClient
 
@@ -39,6 +51,11 @@ expect fun createPlatformHttpClient(block: HttpClientConfig<*>.() -> Unit): Http
  * Creates all service instances via RPC or A2A
  */
 object NetworkModule {
+    private var _services: Services? = null
+    private var _rpcClient: KtorRpcClient? = null
+    private var _baseUrl: String? = null
+    private var _httpClient: HttpClient? = null
+
     /**
      * Create HTTP client with common configuration
      * Supports self-signed certificates for all platforms
@@ -52,8 +69,13 @@ object NetworkModule {
             }
 
             install(HttpTimeout) {
-                requestTimeoutMillis = 30_000
-                connectTimeoutMillis = 10_000
+                requestTimeoutMillis = 60_000 // Increased for UI stability
+                connectTimeoutMillis = 20_000
+                socketTimeoutMillis = 60_000
+            }
+
+            install(WebSockets) {
+                pingInterval = 20.seconds
             }
 
             installKrpc {
@@ -70,7 +92,7 @@ object NetworkModule {
 
     fun createRpcClient(
         baseUrl: String,
-        httpClient: HttpClient = createHttpClient(),
+        httpClient: HttpClient,
     ): KtorRpcClient {
         val cleanBaseUrl = baseUrl.trimEnd('/')
 
@@ -99,8 +121,42 @@ object NetworkModule {
         baseUrl: String,
         httpClient: HttpClient = createHttpClient(),
     ): Services {
+        _baseUrl = baseUrl
+        _httpClient = httpClient
+        
         val rpcClient = createRpcClient(baseUrl, httpClient)
-        return createServices(rpcClient)
+        _rpcClient = rpcClient
+        
+        val services = createServices(rpcClient)
+        _services = services
+        return services
+    }
+
+    /**
+     * Reconnect RPC client and refresh all service stubs.
+     */
+    suspend fun reconnect() {
+        val baseUrl = _baseUrl ?: return
+        val httpClient = _httpClient ?: return
+
+        println("NetworkModule: Reconnecting to $baseUrl...")
+        try {
+            // Close old RPC client to release WebSocket resources
+            _rpcClient?.close()
+
+            // Create new RPC client (kRPC manages WebSocket internally)
+            val newRpcClient = createRpcClient(baseUrl, httpClient)
+            _rpcClient = newRpcClient
+
+            // Refresh service stubs in the container
+            _services?.let { current ->
+                current.updateFrom(newRpcClient)
+            }
+            println("NetworkModule: Reconnection successful")
+        } catch (e: Exception) {
+            println("NetworkModule: Reconnection failed: ${e.message}")
+            throw e
+        }
     }
 
     /**
@@ -108,34 +164,65 @@ object NetworkModule {
      * UI applications (Desktop/iOS/Android) MUST use RPC only
      */
     fun createServices(rpcClient: KtorRpcClient): Services =
-        Services(
-            projectService = rpcClient.withService<IProjectService>(),
-            clientService = rpcClient.withService<IClientService>(),
-            clientProjectLinkService = rpcClient.withService<IClientProjectLinkService>(),
-            userTaskService = rpcClient.withService<IUserTaskService>(),
-            ragSearchService = rpcClient.withService<IRagSearchService>(),
-            taskSchedulingService = rpcClient.withService<ITaskSchedulingService>(),
-            agentOrchestratorService = rpcClient.withService<IAgentOrchestratorService>(),
-            errorLogService = rpcClient.withService<IErrorLogService>(),
-            gitConfigurationService = rpcClient.withService<IGitConfigurationService>(),
-            pendingTaskService = rpcClient.withService<IPendingTaskService>(),
-            connectionService = rpcClient.withService<IConnectionService>(),
-        )
+        Services(rpcClient).apply { updateFrom(rpcClient) }
 
     /**
      * Container for all services
      */
-    data class Services(
-        val projectService: IProjectService,
-        val clientService: IClientService,
-        val clientProjectLinkService: IClientProjectLinkService,
-        val userTaskService: IUserTaskService,
-        val ragSearchService: IRagSearchService,
-        val taskSchedulingService: ITaskSchedulingService,
-        val agentOrchestratorService: IAgentOrchestratorService,
-        val errorLogService: IErrorLogService,
-        val gitConfigurationService: IGitConfigurationService,
-        val pendingTaskService: IPendingTaskService,
-        val connectionService: IConnectionService,
-    )
+    class Services(initialRpcClient: KtorRpcClient) {
+        var projectService: IProjectService = initialRpcClient.withService<IProjectService>()
+            private set
+        var clientService: IClientService = initialRpcClient.withService<IClientService>()
+            private set
+        var clientProjectLinkService: IClientProjectLinkService = initialRpcClient.withService<IClientProjectLinkService>()
+            private set
+        var userTaskService: IUserTaskService = initialRpcClient.withService<IUserTaskService>()
+            private set
+        var ragSearchService: IRagSearchService = initialRpcClient.withService<IRagSearchService>()
+            private set
+        var taskSchedulingService: ITaskSchedulingService = initialRpcClient.withService<ITaskSchedulingService>()
+            private set
+        var agentOrchestratorService: IAgentOrchestratorService = initialRpcClient.withService<IAgentOrchestratorService>()
+            private set
+        var errorLogService: IErrorLogService = initialRpcClient.withService<IErrorLogService>()
+            private set
+        var gitConfigurationService: IGitConfigurationService = initialRpcClient.withService<IGitConfigurationService>()
+            private set
+        var pendingTaskService: IPendingTaskService = initialRpcClient.withService<IPendingTaskService>()
+            private set
+        var connectionService: IConnectionService = initialRpcClient.withService<IConnectionService>()
+            private set
+        var notificationService: INotificationService = initialRpcClient.withService<INotificationService>()
+            private set
+        var atlassianSetupService: IAtlassianSetupService = initialRpcClient.withService<IAtlassianSetupService>()
+            private set
+        var integrationSettingsService: IIntegrationSettingsService = initialRpcClient.withService<IIntegrationSettingsService>()
+            private set
+
+        fun updateFrom(rpcClient: KtorRpcClient) {
+            projectService = rpcClient.withService<IProjectService>()
+            clientService = rpcClient.withService<IClientService>()
+            clientProjectLinkService = rpcClient.withService<IClientProjectLinkService>()
+            userTaskService = rpcClient.withService<IUserTaskService>()
+            ragSearchService = rpcClient.withService<IRagSearchService>()
+            taskSchedulingService = rpcClient.withService<ITaskSchedulingService>()
+            agentOrchestratorService = rpcClient.withService<IAgentOrchestratorService>()
+            errorLogService = rpcClient.withService<IErrorLogService>()
+            gitConfigurationService = rpcClient.withService<IGitConfigurationService>()
+            pendingTaskService = rpcClient.withService<IPendingTaskService>()
+            connectionService = rpcClient.withService<IConnectionService>()
+            notificationService = rpcClient.withService<INotificationService>()
+            atlassianSetupService = rpcClient.withService<IAtlassianSetupService>()
+            integrationSettingsService = rpcClient.withService<IIntegrationSettingsService>()
+        }
+    }
+
+    /**
+     * Access to reconnection handler for repositories.
+     */
+    val reconnectHandler = object : UiRpcReconnectHandler {
+        override suspend fun reconnect() {
+            this@NetworkModule.reconnect()
+        }
+    }
 }

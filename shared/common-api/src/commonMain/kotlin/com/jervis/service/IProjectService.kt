@@ -9,6 +9,8 @@ import kotlinx.rpc.annotations.Rpc
  */
 @Rpc
 interface IProjectService {
+    suspend fun listProjectsForClient(clientId: String): List<ProjectDto>
+
     suspend fun getAllProjects(): List<ProjectDto>
 
     suspend fun saveProject(project: ProjectDto): ProjectDto

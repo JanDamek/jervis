@@ -1,0 +1,231 @@
+package com.jervis.koog.tools.chat
+
+import ai.koog.agents.core.tools.Tool
+import ai.koog.agents.core.tools.ToolSet
+import ai.koog.agents.core.tools.annotations.LLMDescription
+import ai.koog.agents.core.tools.annotations.LLMParameterDescription
+import com.jervis.entity.TaskDocument
+import com.jervis.service.chat.ChatMessageService
+import mu.KotlinLogging
+
+/**
+ * ChatHistoryTools - Tools for agent to read conversation history.
+ *
+ * Purpose:
+ * - Agent can read past messages to find information
+ * - Agent can search messages by content
+ * - Agent can load full history when needed
+ * - Prevents information loss due to LLM context compression
+ *
+ * Use Cases:
+ * - User says: "What did I ask you about yesterday?"
+ * - Agent needs to find specific information mentioned earlier
+ * - Agent needs to review full context after UserTask iteration
+ * - Agent needs to check if user already provided certain info
+ */
+class ChatHistoryTools(
+    private val task: TaskDocument,
+    private val chatMessageService: ChatMessageService,
+) : ToolSet {
+    private val logger = KotlinLogging.logger {}
+
+    @Tool
+    @LLMDescription(
+        "Read recent messages from this conversation. Use this when you need to review what was discussed earlier " +
+            "or find specific information mentioned by the user. Default limit is 20 messages.",
+    )
+    suspend fun readRecentMessages(
+        @LLMParameterDescription("Number of recent messages to load. Default: 20. Max: 100.")
+        limit: Int = 20,
+    ): String {
+        val actualLimit = limit.coerceIn(1, 100)
+
+        logger.info {
+            "🔍 TOOL_CALL | tool=readRecentMessages | taskId=${task.id} | limit=$actualLimit | " +
+                "correlationId=${task.correlationId}"
+        }
+
+        val messages = chatMessageService.getLastMessages(task.id, actualLimit)
+
+        if (messages.isEmpty()) {
+            return "No messages found in this conversation."
+        }
+
+        val result =
+            buildString {
+                appendLine("Recent Messages (${messages.size} loaded):")
+                appendLine("="  * 60)
+                appendLine()
+
+                messages.forEach { msg ->
+                    appendLine("[Message #${msg.sequence}] ${msg.role}")
+                    appendLine("Time: ${msg.timestamp}")
+                    appendLine("Content: ${msg.content}")
+                    appendLine("-" * 60)
+                }
+
+                appendLine()
+                appendLine("Total messages: ${messages.size}")
+            }
+
+        logger.info {
+            "✓ TOOL_RESULT | tool=readRecentMessages | taskId=${task.id} | messagesLoaded=${messages.size}"
+        }
+
+        return result
+    }
+
+    @Tool
+    @LLMDescription(
+        "Read ALL messages from this conversation. Use this when you need complete context " +
+            "or when user asks about something from beginning of conversation. " +
+            "WARNING: May be slow for long conversations.",
+    )
+    suspend fun readAllMessages(): String {
+        logger.info {
+            "🔍 TOOL_CALL | tool=readAllMessages | taskId=${task.id} | correlationId=${task.correlationId}"
+        }
+
+        val messages = chatMessageService.getAllMessages(task.id)
+
+        if (messages.isEmpty()) {
+            return "No messages found in this conversation."
+        }
+
+        val result =
+            buildString {
+                appendLine("Complete Conversation History (${messages.size} messages):")
+                appendLine("=" * 60)
+                appendLine()
+
+                messages.forEach { msg ->
+                    appendLine("[#${msg.sequence}] ${msg.role} | ${msg.timestamp}")
+                    appendLine(msg.content)
+                    appendLine("-" * 60)
+                }
+
+                appendLine()
+                appendLine("Total messages: ${messages.size}")
+                appendLine("First message: ${messages.first().timestamp}")
+                appendLine("Last message: ${messages.last().timestamp}")
+            }
+
+        logger.info {
+            "✓ TOOL_RESULT | tool=readAllMessages | taskId=${task.id} | messagesLoaded=${messages.size}"
+        }
+
+        return result
+    }
+
+    @Tool
+    @LLMDescription(
+        "Search messages by content. Use this when you need to find when user mentioned specific topic, " +
+            "word, or concept. Returns all messages containing the search text (case-insensitive).",
+    )
+    suspend fun searchMessages(
+        @LLMParameterDescription("Text to search for in messages (case-insensitive)")
+        searchText: String,
+    ): String {
+        require(searchText.isNotBlank()) { "Search text cannot be blank" }
+
+        logger.info {
+            "🔍 TOOL_CALL | tool=searchMessages | taskId=${task.id} | searchText='$searchText' | " +
+                "correlationId=${task.correlationId}"
+        }
+
+        val messages = chatMessageService.searchMessages(task.id, searchText)
+
+        if (messages.isEmpty()) {
+            return "No messages found containing '$searchText'."
+        }
+
+        val result =
+            buildString {
+                appendLine("Search Results for '$searchText' (${messages.size} found):")
+                appendLine("=" * 60)
+                appendLine()
+
+                messages.forEach { msg ->
+                    appendLine("[#${msg.sequence}] ${msg.role} | ${msg.timestamp}")
+                    // Highlight search text in content (simple approach)
+                    val highlightedContent =
+                        msg.content.replace(
+                            searchText,
+                            "***$searchText***",
+                            ignoreCase = true,
+                        )
+                    appendLine(highlightedContent)
+                    appendLine("-" * 60)
+                }
+
+                appendLine()
+                appendLine("Total matches: ${messages.size}")
+            }
+
+        logger.info {
+            "✓ TOOL_RESULT | tool=searchMessages | taskId=${task.id} | found=${messages.size} | searchText='$searchText'"
+        }
+
+        return result
+    }
+
+    @Tool
+    @LLMDescription(
+        "Get conversation statistics and summary. Use this to understand conversation length, " +
+            "participants, and time span.",
+    )
+    suspend fun getConversationSummary(): String {
+        logger.info {
+            "🔍 TOOL_CALL | tool=getConversationSummary | taskId=${task.id} | correlationId=${task.correlationId}"
+        }
+
+        val messageCount = chatMessageService.getMessageCount(task.id)
+
+        if (messageCount == 0L) {
+            return "No messages in this conversation yet."
+        }
+
+        val messages = chatMessageService.getAllMessages(task.id)
+        val firstMessage = messages.firstOrNull()
+        val lastMessage = messages.lastOrNull()
+
+        val userMessages = messages.count { it.role.name == "USER" }
+        val assistantMessages = messages.count { it.role.name == "ASSISTANT" }
+        val systemMessages = messages.count { it.role.name == "SYSTEM" }
+
+        val result =
+            buildString {
+                appendLine("Conversation Summary:")
+                appendLine("=" * 60)
+                appendLine()
+                appendLine("Task ID: ${task.id}")
+                appendLine("Task Name: ${task.taskName}")
+                appendLine("Created: ${task.createdAt}")
+                appendLine()
+                appendLine("Message Statistics:")
+                appendLine("- Total messages: $messageCount")
+                appendLine("- User messages: $userMessages")
+                appendLine("- Assistant messages: $assistantMessages")
+                appendLine("- System messages: $systemMessages")
+                appendLine()
+
+                if (firstMessage != null && lastMessage != null) {
+                    appendLine("Time Span:")
+                    appendLine("- First message: ${firstMessage.timestamp}")
+                    appendLine("- Last message: ${lastMessage.timestamp}")
+                    val durationMinutes =
+                        (lastMessage.timestamp.toEpochMilli() - firstMessage.timestamp.toEpochMilli()) / 60000
+                    appendLine("- Duration: $durationMinutes minutes")
+                }
+
+                appendLine()
+                appendLine("Agent Checkpoint: ${if (task.agentCheckpointJson != null) "EXISTS" else "NONE"}")
+            }
+
+        logger.info {
+            "✓ TOOL_RESULT | tool=getConversationSummary | taskId=${task.id} | messageCount=$messageCount"
+        }
+
+        return result
+    }
+}

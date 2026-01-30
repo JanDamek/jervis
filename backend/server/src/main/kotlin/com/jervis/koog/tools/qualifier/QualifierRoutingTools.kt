@@ -37,7 +37,7 @@ class QualifierRoutingTools(
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
 
     @Serializable
-    enum class RoutingDecision { DONE, LIFT_UP }
+    enum class RoutingDecision { DONE, LIFT_UP, USER_TASK, NONE }
 
     @Tool
     @LLMDescription(
@@ -45,16 +45,26 @@ class QualifierRoutingTools(
 
 Routing Options:
 - DONE: All information indexed, no further actions needed, task is complete
-- LIFT_UP: Requires complex analysis, coding, or user response from main GPU agent""",
+- LIFT_UP: Requires complex analysis, coding, or user response from main GPU agent
+- USER_TASK: Requires human interaction (info, decision, approval) before proceeding. 
+            NOTE: Only use this if you cannot proceed with indexing due to missing critical info.
+- NONE: No routing action (used for internal ingestion)""",
     )
     suspend fun routeTask(
-        @LLMDescription("Routing decision. Allowed: DONE, LIFT_UP")
+        @LLMDescription("Routing decision. Allowed: DONE, LIFT_UP, USER_TASK, NONE")
         routing: RoutingDecision,
+        @LLMDescription("Reason for routing, especially for USER_TASK or LIFT_UP")
+        reason: String? = null
     ): String {
-        if (routing == RoutingDecision.LIFT_UP) {
-            taskService.updateState(task, TaskStateEnum.DISPATCHED_GPU)
-        } else {
-            taskService.deleteTask(task)
+        when (routing) {
+            RoutingDecision.LIFT_UP -> taskService.updateState(task, TaskStateEnum.READY_FOR_GPU)
+            RoutingDecision.USER_TASK -> {
+                val escalationReason = reason ?: "Qualifier requested user interaction"
+                // Mark as error with reason, BackgroundEngine will escalate to UserTask
+                taskService.markAsError(task, escalationReason)
+            }
+            RoutingDecision.DONE -> taskService.deleteTask(task)
+            RoutingDecision.NONE -> {}
         }
         return "OK-$routing"
     }

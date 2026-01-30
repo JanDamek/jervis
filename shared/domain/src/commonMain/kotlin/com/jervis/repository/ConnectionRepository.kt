@@ -11,29 +11,24 @@ import com.jervis.service.IConnectionService
  * Provides business logic layer over IConnectionService
  */
 class ConnectionRepository(
-    private val service: IConnectionService
-) {
-    suspend fun listConnections(): List<ConnectionResponseDto> {
-        return service.getAllConnections()
-    }
+    private val service: IConnectionService,
+) : BaseRepository() {
+    suspend fun listConnections(): List<ConnectionResponseDto> =
+        safeRpcListCall("listConnections") {
+            service.getAllConnections()
+        }
 
-    suspend fun getConnection(id: String): ConnectionResponseDto? {
-        return service.getConnectionById(id)
-    }
+    suspend fun createConnection(request: ConnectionCreateRequestDto): ConnectionResponseDto =
+        safeRpcCall("createConnection") { service.createConnection(request) }
 
-    suspend fun createConnection(request: ConnectionCreateRequestDto): ConnectionResponseDto {
-        return service.createConnection(request)
-    }
-
-    suspend fun updateConnection(id: String, request: ConnectionUpdateRequestDto): ConnectionResponseDto {
-        return service.updateConnection(id, request)
-    }
+    suspend fun updateConnection(
+        id: String,
+        request: ConnectionUpdateRequestDto,
+    ): ConnectionResponseDto = safeRpcCall("updateConnection") { service.updateConnection(id, request) }
 
     suspend fun deleteConnection(id: String) {
-        service.deleteConnection(id)
+        safeRpcCall("deleteConnection") { service.deleteConnection(id) }
     }
 
-    suspend fun testConnection(id: String): ConnectionTestResultDto {
-        return service.testConnection(id)
-    }
+    suspend fun testConnection(id: String): ConnectionTestResultDto = safeRpcCall("testConnection") { service.testConnection(id) }
 }

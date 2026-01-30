@@ -33,21 +33,9 @@ sealed class JervisEvent {
     ) : JervisEvent()
 
     @Serializable
-    data class UserDialogRequest(
-        val dialogId: String,
-        val correlationId: String,
-        val clientId: String,
-        val projectId: String? = null,
-        val question: String,
-        val proposedAnswer: String? = null,
-        override val timestamp: String,
-    ) : JervisEvent()
-
-    @Serializable
-    data class UserDialogClose(
-        val dialogId: String,
-        val correlationId: String,
-        val reason: String = "CLOSED",
+    data class PendingTaskCreated(
+        val taskId: String,
+        val type: String,
         override val timestamp: String,
     ) : JervisEvent()
 }
