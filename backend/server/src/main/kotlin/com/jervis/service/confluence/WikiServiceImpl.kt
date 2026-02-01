@@ -13,7 +13,7 @@ import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
 @Service
-class ConfluenceServiceImpl(
+class WikiServiceImpl(
     private val atlassianClient: IAtlassianClient,
     private val clientService: ClientService,
     private val connectionService: ConnectionService,

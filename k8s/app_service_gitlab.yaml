@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-service-gitlab
+  namespace: jervis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jervis-service-gitlab
+  template:
+    metadata:
+      labels:
+        app: jervis-service-gitlab
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      containers:
+        - name: service-gitlab
+          image: registry.damek-soft.eu/jandamek/jervis-service-gitlab:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8086
+              name: rpc
+          env:
+            - name: PORT
+              value: "8086"
+            - name: HOST
+              value: "0.0.0.0"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8086
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8086
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /
+              port: 8086
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-service-gitlab
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-service-gitlab
+  ports:
+    - name: rpc
+      protocol: TCP
+      port: 8086
+      targetPort: 8086
+  type: ClusterIP

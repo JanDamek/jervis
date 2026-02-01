@@ -7,7 +7,7 @@ import kotlinx.serialization.Serializable
  * Confluence integration service (READ + WRITE operations).
  * Currently a TODO/mock interface - implementation pending.
  */
-interface ConfluenceService {
+interface WikiService {
     /**
      * Search Confluence pages by CQL query.
      */

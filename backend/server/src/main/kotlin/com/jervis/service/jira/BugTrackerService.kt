@@ -7,7 +7,7 @@ import kotlinx.serialization.Serializable
  * Jira integration service (READ + WRITE operations).
  * Currently a TODO/mock interface - implementation pending.
  */
-interface JiraService {
+interface BugTrackerService {
     // ==================== READ OPERATIONS ====================
 
     /**
