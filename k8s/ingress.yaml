@@ -72,3 +72,17 @@ spec:
                 name: jervis-junie
                 port:
                   number: 3300
+          - path: /github
+            pathType: Prefix
+            backend:
+              service:
+                name: jervis-service-github
+                port:
+                  number: 8085
+          - path: /gitlab
+            pathType: Prefix
+            backend:
+              service:
+                name: jervis-service-gitlab
+                port:
+                  number: 8086

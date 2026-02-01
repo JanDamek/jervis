@@ -18,7 +18,7 @@ class WikiServiceImpl(
     private val clientService: ClientService,
     private val connectionService: ConnectionService,
     private val reconnectHandler: com.jervis.configuration.RpcReconnectHandler,
-) : ConfluenceService {
+) : WikiService {
     private val logger = KotlinLogging.logger {}
 
     override suspend fun searchPages(
@@ -26,29 +26,30 @@ class WikiServiceImpl(
         query: String,
         spaceKey: String?,
         maxResults: Int,
-    ): List<ConfluencePage> {
+    ): List<WikiPage> {
         val connection = findConfluenceConnection(clientId) ?: return emptyList()
 
-        val response = withRpcRetry(
-            name = "ConfluenceSearch",
-            reconnect = { reconnectHandler.reconnectAtlassian() }
-        ) {
-            atlassianClient.searchConfluencePages(
-                ConfluenceSearchRequest(
-                    baseUrl = connection.baseUrl,
-                    authType = getAuthType(connection),
-                    basicUsername = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.username,
-                    basicPassword = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.password,
-                    bearerToken = (connection.credentials as? ConnectionDocument.HttpCredentials.Bearer)?.token,
-                    spaceKey = spaceKey,
-                    cql = query,
-                    maxResults = maxResults,
-                ),
-            )
-        }
+        val response =
+            withRpcRetry(
+                name = "ConfluenceSearch",
+                reconnect = { reconnectHandler.reconnectAtlassian() },
+            ) {
+                atlassianClient.searchConfluencePages(
+                    ConfluenceSearchRequest(
+                        baseUrl = connection.baseUrl,
+                        authType = getAuthType(connection),
+                        basicUsername = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.username,
+                        basicPassword = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.password,
+                        bearerToken = (connection.credentials as? ConnectionDocument.HttpCredentials.Bearer)?.token,
+                        spaceKey = spaceKey,
+                        cql = query,
+                        maxResults = maxResults,
+                    ),
+                )
+            }
 
         return response.pages.map { page ->
-            ConfluencePage(
+            WikiPage(
                 id = page.id,
                 title = page.title,
                 content = "", // Only summary in search results
@@ -64,28 +65,29 @@ class WikiServiceImpl(
     override suspend fun getPage(
         clientId: ClientId,
         pageId: String,
-    ): ConfluencePage {
+    ): WikiPage {
         val connection =
             findConfluenceConnection(clientId)
                 ?: throw IllegalStateException("No Confluence connection found for client $clientId")
 
-        val response = withRpcRetry(
-            name = "ConfluenceGetPage",
-            reconnect = { reconnectHandler.reconnectAtlassian() }
-        ) {
-            atlassianClient.getConfluencePage(
-                ConfluencePageRequest(
-                    baseUrl = connection.baseUrl,
-                    authType = getAuthType(connection),
-                    basicUsername = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.username,
-                    basicPassword = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.password,
-                    bearerToken = (connection.credentials as? ConnectionDocument.HttpCredentials.Bearer)?.token,
-                    pageId = pageId,
-                ),
-            )
-        }
+        val response =
+            withRpcRetry(
+                name = "ConfluenceGetPage",
+                reconnect = { reconnectHandler.reconnectAtlassian() },
+            ) {
+                atlassianClient.getConfluencePage(
+                    ConfluencePageRequest(
+                        baseUrl = connection.baseUrl,
+                        authType = getAuthType(connection),
+                        basicUsername = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.username,
+                        basicPassword = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.password,
+                        bearerToken = (connection.credentials as? ConnectionDocument.HttpCredentials.Bearer)?.token,
+                        pageId = pageId,
+                    ),
+                )
+            }
 
-        return ConfluencePage(
+        return WikiPage(
             id = response.id,
             title = response.title,
             content = response.body?.storage?.value ?: response.body?.view?.value ?: "",
@@ -97,7 +99,7 @@ class WikiServiceImpl(
         )
     }
 
-    override suspend fun listSpaces(clientId: ClientId): List<ConfluenceSpace> {
+    override suspend fun listSpaces(clientId: ClientId): List<WikiSpace> {
         // NOTE: IAtlassianClient doesn't have listSpaces yet.
         return emptyList()
     }
@@ -105,7 +107,7 @@ class WikiServiceImpl(
     override suspend fun getChildren(
         clientId: ClientId,
         pageId: String,
-    ): List<ConfluencePage> {
+    ): List<WikiPage> {
         // NOTE: IAtlassianClient doesn't have getChildren yet.
         return emptyList()
     }
@@ -113,13 +115,13 @@ class WikiServiceImpl(
     override suspend fun createPage(
         clientId: ClientId,
         request: CreatePageRequest,
-    ): ConfluencePage = throw UnsupportedOperationException("Write operations are not allowed yet (Read-only mode)")
+    ): WikiPage = throw UnsupportedOperationException("Write operations are not allowed yet (Read-only mode)")
 
     override suspend fun updatePage(
         clientId: ClientId,
         pageId: String,
         request: UpdatePageRequest,
-    ): ConfluencePage = throw UnsupportedOperationException("Write operations are not allowed yet (Read-only mode)")
+    ): WikiPage = throw UnsupportedOperationException("Write operations are not allowed yet (Read-only mode)")
 
     private suspend fun findConfluenceConnection(clientId: ClientId): ConnectionDocument? {
         val client = clientService.getClientById(clientId) ?: return null

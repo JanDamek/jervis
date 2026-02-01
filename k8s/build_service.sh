@@ -40,10 +40,36 @@ docker build --platform linux/amd64 \
   -f "${DOCKERFILE}" "$PROJECT_ROOT"
 echo "✓ Docker images built: ${VERSION_TAG} and latest"
 
-# 3. Docker Push (both tags)
+# 3. Docker Push (both tags) with retry
 echo "Step 3/4: Pushing Docker images..."
-docker push "${IMAGE_VERSIONED}"
-docker push "${IMAGE_LATEST}"
+
+# Function to push with retry
+push_with_retry() {
+    local image=$1
+    local max_attempts=3
+    local attempt=1
+
+    while [ $attempt -le $max_attempts ]; do
+        echo "Pushing ${image} (attempt ${attempt}/${max_attempts})..."
+        if docker push "${image}"; then
+            echo "✓ Successfully pushed ${image}"
+            return 0
+        else
+            echo "⚠ Push failed (attempt ${attempt}/${max_attempts})"
+            if [ $attempt -lt $max_attempts ]; then
+                echo "Retrying in 10 seconds..."
+                sleep 10
+            fi
+            attempt=$((attempt + 1))
+        fi
+    done
+
+    echo "✗ Failed to push ${image} after ${max_attempts} attempts"
+    return 1
+}
+
+push_with_retry "${IMAGE_VERSIONED}" || exit 1
+push_with_retry "${IMAGE_LATEST}" || exit 1
 echo "✓ Docker images pushed"
 
 # 4. Deploy to Kubernetes

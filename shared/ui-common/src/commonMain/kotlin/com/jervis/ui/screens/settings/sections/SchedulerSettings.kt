@@ -8,16 +8,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ScheduledTaskDto
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import com.jervis.repository.JervisRepository
-import com.jervis.ui.components.StatusIndicator
+import com.jervis.ui.design.JActionBar
+import com.jervis.ui.design.JCenteredLoading
+import com.jervis.ui.design.JEmptyState
+import com.jervis.ui.design.JTableRowCard
+import com.jervis.ui.util.RefreshIconButton
+import com.jervis.ui.util.DeleteIconButton
+import com.jervis.ui.util.ConfirmDialog
 import kotlinx.coroutines.launch
 
 @Composable
@@ -25,6 +25,7 @@ fun SchedulerSettings(repository: JervisRepository) {
     var tasks by remember { mutableStateOf<List<ScheduledTaskDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    var taskToDelete by remember { mutableStateOf<ScheduledTaskDto?>(null) }
 
     fun loadData() {
         scope.launch {
@@ -41,21 +42,21 @@ fun SchedulerSettings(repository: JervisRepository) {
     LaunchedEffect(Unit) { loadData() }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            Button(onClick = { loadData() }) {
-                Text("⟳ Načíst")
-            }
+        JActionBar {
+            RefreshIconButton(onClick = { loadData() })
         }
 
+        Spacer(Modifier.height(8.dp))
+
         if (isLoading && tasks.isEmpty()) {
-            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
+            JCenteredLoading()
+        } else if (tasks.isEmpty()) {
+            JEmptyState(message = "Žádné naplánované úlohy")
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(tasks) { task ->
-                    Card(modifier = Modifier.fillMaxWidth(), border = CardDefaults.outlinedCardBorder()) {
-                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    JTableRowCard(selected = false) {
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(task.taskName, style = MaterialTheme.typography.titleSmall)
                                 task.cronExpression?.let {
@@ -63,23 +64,31 @@ fun SchedulerSettings(repository: JervisRepository) {
                                 }
                                 Text("Naplánováno: ${task.scheduledAt}", style = MaterialTheme.typography.bodySmall)
                             }
-                            Button(
-                                onClick = {
-                                    scope.launch {
-                                        try {
-                                            repository.scheduledTasks.cancelTask(task.id)
-                                            loadData()
-                                        } catch (e: Exception) {}
-                                    }
-                                },
-                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                            ) {
-                                Text("🗑")
-                            }
+                            DeleteIconButton(onClick = { taskToDelete = task })
                         }
                     }
                 }
             }
         }
     }
+
+    ConfirmDialog(
+        visible = taskToDelete != null,
+        title = "Zrušit úlohu",
+        message = "Opravdu chcete zrušit naplánovanou úlohu '${taskToDelete?.taskName}'?",
+        confirmText = "Zrušit",
+        onConfirm = {
+            val task = taskToDelete
+            taskToDelete = null
+            if (task != null) {
+                scope.launch {
+                    try {
+                        repository.scheduledTasks.cancelTask(task.id)
+                        loadData()
+                    } catch (e: Exception) {}
+                }
+            }
+        },
+        onDismiss = { taskToDelete = null }
+    )
 }

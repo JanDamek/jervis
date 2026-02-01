@@ -124,7 +124,7 @@ fun MainScreenView(
                     ) {
                         // Configuration (mirrors Desktop: Settings window)
                         DropdownMenuItem(
-                            text = { Text("Settings") },
+                            text = { Text("Nastavení") },
                             onClick = {
                                 showMenu = false
                                 onNavigate(com.jervis.ui.navigation.Screen.Settings)
@@ -135,21 +135,21 @@ fun MainScreenView(
 
                         // Tasks & Scheduling (mirrors Desktop: UserTasks/Scheduler windows)
                         DropdownMenuItem(
-                            text = { Text("User Tasks") },
+                            text = { Text("Uživatelské úlohy") },
                             onClick = {
                                 showMenu = false
                                 onNavigate(com.jervis.ui.navigation.Screen.UserTasks)
                             },
                         )
                         DropdownMenuItem(
-                            text = { Text("Pending Tasks") },
+                            text = { Text("Fronta úloh") },
                             onClick = {
                                 showMenu = false
                                 onNavigate(com.jervis.ui.navigation.Screen.PendingTasks)
                             },
                         )
                         DropdownMenuItem(
-                            text = { Text("Scheduler") },
+                            text = { Text("Plánovač") },
                             onClick = {
                                 showMenu = false
                                 onNavigate(com.jervis.ui.navigation.Screen.Scheduler)
@@ -159,14 +159,14 @@ fun MainScreenView(
 
                         // Search & Logs (mirrors Desktop: RAGSearch/ErrorLogs windows)
                         DropdownMenuItem(
-                            text = { Text("RAG Search") },
+                            text = { Text("RAG Hledání") },
                             onClick = {
                                 showMenu = false
                                 onNavigate(com.jervis.ui.navigation.Screen.RagSearch)
                             },
                         )
                         DropdownMenuItem(
-                            text = { Text("Error Logs") },
+                            text = { Text("Chybové logy") },
                             onClick = {
                                 showMenu = false
                                 onNavigate(com.jervis.ui.navigation.Screen.ErrorLogs)
@@ -194,7 +194,7 @@ fun MainScreenView(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
             )
 
             Divider()
@@ -240,26 +240,20 @@ private fun SelectorsRow(
     onProjectSelected: (String?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier) {
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         // Client selector
         var clientExpanded by remember { mutableStateOf(false) }
-
-        Text(
-            text = "Client",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        Spacer(modifier = Modifier.height(4.dp))
 
         ExposedDropdownMenuBox(
             expanded = clientExpanded,
             onExpandedChange = { clientExpanded = it },
+            modifier = Modifier.weight(1f)
         ) {
             OutlinedTextField(
-                value = clients.find { it.id == selectedClientId }?.name ?: "Select client...",
+                value = clients.find { it.id == selectedClientId }?.name ?: "Vyberte klienta...",
                 onValueChange = {},
                 readOnly = true,
+                label = { Text("Klient") },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = clientExpanded) },
                 modifier =
                     Modifier
@@ -284,27 +278,19 @@ private fun SelectorsRow(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
         // Project selector
         var projectExpanded by remember { mutableStateOf(false) }
-
-        Text(
-            text = "Project",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        Spacer(modifier = Modifier.height(4.dp))
 
         ExposedDropdownMenuBox(
             expanded = projectExpanded,
             onExpandedChange = { projectExpanded = it },
+            modifier = Modifier.weight(1f)
         ) {
             OutlinedTextField(
-                value = projects.find { it.id == selectedProjectId }?.name ?: "Select project...",
+                value = projects.find { it.id == selectedProjectId }?.name ?: "Vyberte projekt...",
                 onValueChange = {},
                 readOnly = true,
+                label = { Text("Projekt") },
                 enabled = selectedClientId != null,
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = projectExpanded) },
                 modifier =
@@ -425,8 +411,8 @@ private fun ChatMessageItem(
                 ) {
                     Text(
                         text =
-                            if (isMe) "You"
-                            else "Assistant",
+                            if (isMe) "Já"
+                            else "Asistent",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -494,7 +480,7 @@ private fun InputArea(
                 )
                 if (queueSize > 0) {
                     Text(
-                        text = "Queue: $queueSize",
+                        text = "Fronta: $queueSize",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -509,7 +495,7 @@ private fun InputArea(
             OutlinedTextField(
                 value = inputText,
                 onValueChange = onInputChanged,
-                placeholder = { Text("Type your message...") },
+                placeholder = { Text("Napište zprávu...") },
                 enabled = enabled,
                 modifier =
                     Modifier
@@ -519,10 +505,10 @@ private fun InputArea(
             )
 
             val buttonText = when {
-                runningProjectId == null || runningProjectId == "none" -> "Send"
-                runningProjectId != currentProjectId -> "Add to queue"
-                queueSize > 0 -> "Add to queue (${queueSize + 1})"
-                else -> "Add to queue"
+                runningProjectId == null || runningProjectId == "none" -> "Odeslat"
+                runningProjectId != currentProjectId -> "Do fronty"
+                queueSize > 0 -> "Do fronty (${queueSize + 1})"
+                else -> "Do fronty"
             }
 
             Button(

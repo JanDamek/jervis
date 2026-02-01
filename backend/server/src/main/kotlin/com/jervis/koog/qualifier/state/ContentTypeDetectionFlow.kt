@@ -38,8 +38,8 @@ data class DetectionWorkItem(
         val contentType =
             when (detection.contentType.uppercase()) {
                 "EMAIL" -> ContentType.EMAIL
-                "JIRA" -> ContentType.JIRA
-                "CONFLUENCE" -> ContentType.CONFLUENCE
+                "JIRA", "BUGTRACKER_ISSUE", "BUGTRACKER", "ISSUE" -> ContentType.BUGTRACKER_ISSUE
+                "CONFLUENCE", "WIKI_PAGE", "WIKI" -> ContentType.WIKI_PAGE
                 "LOG" -> ContentType.LOG
                 else -> ContentType.GENERIC
             }

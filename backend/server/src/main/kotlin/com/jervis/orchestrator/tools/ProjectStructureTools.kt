@@ -4,11 +4,10 @@ import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
 import com.jervis.entity.TaskDocument
-import com.jervis.service.storage.DirectoryStructureService
 import com.jervis.service.project.ProjectService
+import com.jervis.service.storage.DirectoryStructureService
 import mu.KotlinLogging
 import java.nio.file.Files
-import kotlin.io.path.isDirectory
 
 /**
  * Tools for accessing project directory structure.
@@ -32,18 +31,19 @@ class ProjectStructureTools(
         Use this tool BEFORE any file operations or code analysis.
 
         Returns: Absolute path string like '/workspace/clients/{clientId}/projects/{projectId}/git'
-        """
+        """,
     )
-    suspend fun getProjectGitPath(): String {
+    fun getProjectGitPath(): String {
         val clientId = task.clientId
-        val projectId = task.projectId
-            ?: throw IllegalStateException("No project ID in task - cannot determine project path")
+        val projectId =
+            task.projectId
+                ?: throw IllegalStateException("No project ID in task - cannot determine project path")
 
         val gitPath = directoryStructureService.projectGitDir(clientId, projectId)
 
         logger.info {
             "📁 PROJECT_GIT_PATH | path=$gitPath | " +
-            "clientId=$clientId | projectId=$projectId | correlationId=${task.correlationId}"
+                "clientId=$clientId | projectId=$projectId | correlationId=${task.correlationId}"
         }
 
         return gitPath.toString()
@@ -55,18 +55,19 @@ class ProjectStructureTools(
         This contains git/, documents/, uploads/, audio/, meetings/ subdirectories.
 
         Returns: Absolute path string like '/workspace/clients/{clientId}/projects/{projectId}'
-        """
+        """,
     )
-    suspend fun getProjectRootPath(): String {
+    fun getProjectRootPath(): String {
         val clientId = task.clientId
-        val projectId = task.projectId
-            ?: throw IllegalStateException("No project ID in task - cannot determine project path")
+        val projectId =
+            task.projectId
+                ?: throw IllegalStateException("No project ID in task - cannot determine project path")
 
         val rootPath = directoryStructureService.projectDir(clientId, projectId)
 
         logger.info {
             "📁 PROJECT_ROOT_PATH | path=$rootPath | " +
-            "clientId=$clientId | projectId=$projectId | correlationId=${task.correlationId}"
+                "clientId=$clientId | projectId=$projectId | correlationId=${task.correlationId}"
         }
 
         return rootPath.toString()
@@ -78,18 +79,19 @@ class ProjectStructureTools(
         This is where documentation files, PDFs, and other documents are stored.
 
         Returns: Absolute path string like '/workspace/clients/{clientId}/projects/{projectId}/documents'
-        """
+        """,
     )
-    suspend fun getProjectDocumentsPath(): String {
+    fun getProjectDocumentsPath(): String {
         val clientId = task.clientId
-        val projectId = task.projectId
-            ?: throw IllegalStateException("No project ID in task - cannot determine project path")
+        val projectId =
+            task.projectId
+                ?: throw IllegalStateException("No project ID in task - cannot determine project path")
 
         val docsPath = directoryStructureService.projectDocumentsDir(clientId, projectId)
 
         logger.info {
             "📁 PROJECT_DOCUMENTS_PATH | path=$docsPath | " +
-            "clientId=$clientId | projectId=$projectId | correlationId=${task.correlationId}"
+                "clientId=$clientId | projectId=$projectId | correlationId=${task.correlationId}"
         }
 
         return docsPath.toString()
@@ -101,32 +103,32 @@ class ProjectStructureTools(
         Use this to understand what project you're working with.
 
         Returns: JSON with projectName, projectDescription, hasGitRepo, gitRemoteUrl
-        """
+        """,
     )
     suspend fun getProjectInfo(): String {
-        val projectId = task.projectId
-            ?: return """{"error": "No project context - this is a general chat without specific project"}"""
+        val projectId =
+            task.projectId
+                ?: return """{"error": "No project context - this is a general chat without specific project"}"""
 
-        val project = projectService.getProjectById(projectId)
-            ?: return """{"error": "Project not found in database"}"""
+        val project =
+            projectService.getProjectById(projectId)
 
         val gitPath = directoryStructureService.projectGitDir(task.clientId, projectId)
         val hasGitRepo = Files.exists(gitPath) && Files.isDirectory(gitPath)
 
         logger.info {
             "ℹ️ PROJECT_INFO | name=${project.name} | hasGit=$hasGitRepo | " +
-            "projectId=$projectId | correlationId=${task.correlationId}"
+                "projectId=$projectId | correlationId=${task.correlationId}"
         }
 
         return """
-        {
-            "projectName": "${project.name}",
-            "projectDescription": "${project.description ?: "No description"}",
-            "hasGitRepo": $hasGitRepo,
-            "gitRemoteUrl": "${project.gitRemoteUrl ?: "none"}",
-            "projectId": "$projectId"
-        }
-        """.trimIndent()
+            { 
+                "projectName": "${project.name}",
+                "projectDescription": "${project.description ?: "No description"}",
+                "hasGitRepo": $hasGitRepo,
+                "projectId": "$projectId"
+            }
+            """.trimIndent()
     }
 
     @Tool
@@ -135,19 +137,21 @@ class ProjectStructureTools(
         Shows which directories exist: git, documents, uploads, audio, meetings.
 
         Returns: JSON array of existing subdirectory names
-        """
+        """,
     )
-    suspend fun listProjectSubdirectories(): String {
-        val projectId = task.projectId
-            ?: return """{"error": "No project context"}"""
+    fun listProjectSubdirectories(): String {
+        val projectId =
+            task.projectId
+                ?: return """{"error": "No project context"}"""
 
         val projectRoot = directoryStructureService.projectDir(task.clientId, projectId)
-        val subdirs = listOf("git", "documents", "uploads", "audio", "meetings")
-            .filter { Files.exists(projectRoot.resolve(it)) && Files.isDirectory(projectRoot.resolve(it)) }
+        val subdirs =
+            listOf("git", "documents", "uploads", "audio", "meetings")
+                .filter { Files.exists(projectRoot.resolve(it)) && Files.isDirectory(projectRoot.resolve(it)) }
 
         logger.info {
             "📂 PROJECT_SUBDIRS | subdirs=$subdirs | " +
-            "projectId=$projectId | correlationId=${task.correlationId}"
+                "projectId=$projectId | correlationId=${task.correlationId}"
         }
 
         return """{"subdirectories": ${subdirs.joinToString(",") { "\"$it\"" }}}"""

@@ -82,6 +82,24 @@ arango:
 jervis:
   security:
     client-token: a7f3c9e2-4b8d-11ef-9a1c-0242ac120002
+  oauth2:
+    redirect-uri: https://jervis.damek-soft.eu/oauth2/callback
+    github:
+      client-id: ${GITHUB_CLIENT_ID}
+      client-secret: ${GITHUB_CLIENT_SECRET}
+      scopes: repo,read:user,read:org
+    gitlab:
+      client-id: ${GITLAB_CLIENT_ID}
+      client-secret: ${GITLAB_CLIENT_SECRET}
+      scopes: api,read_user,read_repository
+    bitbucket:
+      client-id: ${BITBUCKET_CLIENT_ID}
+      client-secret: ${BITBUCKET_CLIENT_SECRET}
+      scopes: repository,account
+    atlassian:
+      client-id: ${ATLASSIAN_CLIENT_ID}
+      client-secret: ${ATLASSIAN_CLIENT_SECRET}
+      scopes: read:jira-work,read:jira-user,read:confluence-space.summary,read:confluence-content.all
   koog:
     max-iterations: 50
     qualifier-max-retries: 5
@@ -145,3 +163,7 @@ endpoints:
     baseUrl: wss://jervis.damek-soft.eu/coding/
   junie:
     baseUrl: wss://jervis.damek-soft.eu/junie/
+  github:
+    baseUrl: wss://jervis.damek-soft.eu/github/
+  gitlab:
+    baseUrl: wss://jervis.damek-soft.eu/gitlab/

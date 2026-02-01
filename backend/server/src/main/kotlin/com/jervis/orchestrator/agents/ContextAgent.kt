@@ -11,13 +11,12 @@ import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
 import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.prompt.dsl.Prompt
-import ai.koog.prompt.llm.LLModel
 import com.jervis.entity.TaskDocument
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.SmartModelSelector
 import com.jervis.orchestrator.model.ContextPack
-import com.jervis.rag.internal.graphdb.GraphDBService
-import com.jervis.rag.internal.graphdb.model.Direction
+import com.jervis.knowledgebase.internal.graphdb.GraphDBService
+import com.jervis.knowledgebase.internal.graphdb.model.Direction
 import com.jervis.service.project.ProjectService
 import com.jervis.service.storage.DirectoryStructureService
 import mu.KotlinLogging
@@ -58,7 +57,7 @@ class ContextAgent(
             smartModelSelector.selectModelBlocking(
                 baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
                 inputContent = task.content,
-                projectId = task.projectId
+                projectId = task.projectId,
             )
 
         val promptExecutor = promptExecutorFactory.getExecutor("OLLAMA")
@@ -176,11 +175,10 @@ class ContextGatheringTools(
                   "projectPath": ".",
                   "missing": ["projectId is null"]
                 }
-            """.trimIndent()
+                """.trimIndent()
 
         val project =
             projectService.getProjectById(projectId)
-                ?: throw IllegalStateException("Project not found for projectId=$projectId")
 
         val buildCommands = project.buildConfig?.buildCommands ?: emptyList<String>()
         val testCommands = project.buildConfig?.testCommands ?: emptyList<String>()
@@ -192,10 +190,10 @@ class ContextGatheringTools(
 
         return buildString {
             appendLine("{")
-            appendLine("  \"buildCommands\": ${buildCommands},")
-            appendLine("  \"testCommands\": ${testCommands},")
+            appendLine("  \"buildCommands\": $buildCommands,")
+            appendLine("  \"testCommands\": $testCommands,")
             appendLine("  \"projectPath\": \"$projectPath\",")
-            appendLine("  \"missing\": ${missing}")
+            appendLine("  \"missing\": $missing")
             appendLine("}")
         }
     }
@@ -225,7 +223,6 @@ class ContextGatheringTools(
             task.projectId?.let { projectId ->
                 val project =
                     projectService.getProjectById(projectId)
-                        ?: throw IllegalStateException("Project not found for projectId=$projectId")
                 directoryStructureService.projectDir(project).toString()
             } ?: ""
 

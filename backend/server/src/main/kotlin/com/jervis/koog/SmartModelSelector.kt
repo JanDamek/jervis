@@ -3,12 +3,10 @@ package com.jervis.koog
 import ai.koog.prompt.llm.LLMCapability
 import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.llm.LLModel
-import com.jervis.entity.ProjectCostPolicy
+import com.jervis.koog.cost.CostTrackingService
 import com.jervis.service.project.ProjectService
 import com.jervis.service.token.TokenCountingService
 import com.jervis.types.ProjectId
-import com.jervis.koog.cost.LlmPriceService
-import com.jervis.koog.cost.CostTrackingService
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
@@ -50,7 +48,6 @@ import org.springframework.stereotype.Service
 class SmartModelSelector(
     private val tokenCountingService: TokenCountingService,
     private val projectService: ProjectService,
-    private val llmPriceService: LlmPriceService,
     private val costTrackingService: CostTrackingService,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -117,7 +114,7 @@ class SmartModelSelector(
     fun selectModelBlocking(
         baseModelName: BaseModelTypeEnum,
         inputContent: String = "",
-        projectId: ProjectId? = null
+        projectId: ProjectId? = null,
     ): LLModel =
         kotlinx.coroutines.runBlocking {
             selectModel(baseModelName, inputContent, projectId)
@@ -126,16 +123,15 @@ class SmartModelSelector(
     suspend fun selectModel(
         baseModelName: BaseModelTypeEnum,
         inputContent: String = "",
-        projectId: ProjectId? = null
+        projectId: ProjectId? = null,
     ): LLModel {
         val inputTokens = if (inputContent.isNotBlank()) tokenCountingService.countTokens(inputContent) else 8192
 
         if (projectId != null) {
             val project = projectService.getProjectById(projectId)
-            val policy = project?.costPolicy ?: ProjectCostPolicy()
+            val policy = project.costPolicy
 
-            if (policy.allowCloudModels && inputTokens > 32000) { // Example threshold for cloud escalation
-                // Decision logic for cloud escalation
+            if (policy.allowCloudModels && inputTokens > 32000) {
                 val cloudProvider = policy.allowedCloudProviders.firstOrNull() ?: "anthropic"
                 val cloudModelId =
                     when (cloudProvider.lowercase()) {
@@ -158,7 +154,9 @@ class SmartModelSelector(
                     logger.warn { "BUDGET_EXCEEDED_OR_NOT_ALLOWED | projectId=$projectId | model=$cloudModelId" }
                 }
 
-                logger.info { "ESCALATING_TO_CLOUD | projectId=$projectId | tokens=$inputTokens | provider=$cloudProvider | model=$cloudModelId" }
+                logger.info {
+                    "ESCALATING_TO_CLOUD | projectId=$projectId | tokens=$inputTokens | provider=$cloudProvider | model=$cloudModelId"
+                }
 
                 return LLModel(
                     provider =
@@ -176,7 +174,7 @@ class SmartModelSelector(
                             LLMCapability.ToolChoice,
                             LLMCapability.Document,
                         ),
-                    contextLength = 200000, // Standard for high-end cloud models
+                    contextLength = 200000,
                 )
             }
         }

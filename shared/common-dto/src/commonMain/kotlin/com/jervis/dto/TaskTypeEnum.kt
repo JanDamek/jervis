@@ -5,6 +5,7 @@ enum class TaskTypeEnum {
     JIRA_PROCESSING,
     LINK_PROCESSING,
     CONFLUENCE_PROCESSING,
+    GIT_PROCESSING,
 
     // Direct input from a user
     USER_INPUT_PROCESSING,

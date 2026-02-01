@@ -14,6 +14,7 @@ mongosh "mongodb://root:REDACTED_MONGODB_PASSWORD@192.168.100.117:27017/jervis?a
 ```
 
 This will:
+
 1. Add `_class` discriminator to all sealed class documents
 2. Fix missing/null `projectKey` fields in Jira documents
 3. Fix missing/null List fields (labels, comments, attachments, linkedIssues)
@@ -26,11 +27,13 @@ This will:
 
 ## What Was Fixed in Code
 
-✅ **JiraIssueIndexDocument.kt**
+✅ **BugTrackerIssueIndexDocument.kt**
+
 - Made `projectKey` nullable
 - Added default empty lists for `labels`, `comments`, `attachments`, `linkedIssues`
 
-✅ **JiraPollingHandler.kt**
+✅ **BugTrackerPollingHandler.kt**
+
 - Changed from `repository.save()` to `mongoTemplate.findAndReplace()` with upsert
 - Fixes DuplicateKeyException with sealed classes
 

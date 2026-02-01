@@ -9,14 +9,16 @@ import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.prompt.dsl.Prompt
 import com.jervis.entity.TaskDocument
+import com.jervis.integration.bugtracker.BugTrackerService
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.SmartModelSelector
 import com.jervis.koog.tools.KnowledgeStorageTools
 import com.jervis.koog.tools.external.IssueTrackerTool
-import com.jervis.orchestrator.model.*
-import com.jervis.rag.KnowledgeService
-import com.jervis.rag.internal.graphdb.GraphDBService
-import com.jervis.service.jira.JiraService
+import com.jervis.orchestrator.model.EvidencePack
+import com.jervis.orchestrator.model.PlanStep
+import com.jervis.orchestrator.model.ReviewResult
+import com.jervis.knowledgebase.KnowledgeService
+import com.jervis.knowledgebase.internal.graphdb.GraphDBService
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
 
@@ -40,7 +42,7 @@ class ReviewerAgent(
     private val smartModelSelector: SmartModelSelector,
     private val knowledgeService: KnowledgeService,
     private val graphDBService: GraphDBService,
-    private val jiraService: JiraService,
+    private val jiraService: BugTrackerService,
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -57,12 +59,13 @@ class ReviewerAgent(
     ): AIAgent<String, ReviewResult> {
         val promptExecutor = promptExecutorFactory.getExecutor("OLLAMA")
 
-        val exampleReview = ReviewResult(
-            complete = true,
-            missingParts = emptyList(),
-            violations = emptyList(),
-            reasoning = "All parts of query addressed, verify step present after coding"
-        )
+        val exampleReview =
+            ReviewResult(
+                complete = true,
+                missingParts = emptyList(),
+                violations = emptyList(),
+                reasoning = "All parts of query addressed, verify step present after coding",
+            )
 
         val agentStrategy =
             strategy("Completeness Review") {
@@ -70,9 +73,11 @@ class ReviewerAgent(
                     nodeLLMRequestStructured<ReviewResult>(
                         examples = listOf(exampleReview),
                     ).transform { result ->
-                        val reviewResult = result.getOrElse { e ->
-                            throw IllegalStateException("ReviewerAgent: structured output parsing failed", e)
-                        }.data
+                        val reviewResult =
+                            result
+                                .getOrElse { e ->
+                                    throw IllegalStateException("ReviewerAgent: structured output parsing failed", e)
+                                }.data
 
                         // Force complete at max iterations
                         if (currentIteration >= maxIterations) {
@@ -90,7 +95,7 @@ class ReviewerAgent(
             smartModelSelector.selectModelBlocking(
                 baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
                 inputContent = task.content,
-                projectId = task.projectId
+                projectId = task.projectId,
             )
 
         val agentConfig =
@@ -135,11 +140,19 @@ class ReviewerAgent(
                 maxAgentIterations = 100, // Allow multiple review/fix cycles if needed
             )
 
-        val toolRegistry = ToolRegistry {
-            // Reviewer can use tools to verify results in tracker or knowledge base
-            tools(KnowledgeStorageTools(task, knowledgeService, graphDBService))
-            tools(IssueTrackerTool(task, jiraService, com.jervis.orchestrator.jira.JiraTrackerAdapter(jiraService)))
-        }
+        val toolRegistry =
+            ToolRegistry {
+                // Reviewer can use tools to verify results in tracker or knowledge base
+                tools(KnowledgeStorageTools(task, knowledgeService, graphDBService))
+                tools(
+                    IssueTrackerTool(
+                        task,
+                        jiraService,
+                        com.jervis.orchestrator.bugtracker
+                            .BugTrackerAdapter(jiraService),
+                    ),
+                )
+            }
 
         return AIAgent(
             promptExecutor = promptExecutor,
@@ -201,5 +214,4 @@ class ReviewerAgent(
 
         return result
     }
-
 }

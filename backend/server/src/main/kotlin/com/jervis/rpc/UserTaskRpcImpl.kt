@@ -104,22 +104,37 @@ class UserTaskRpcImpl(
                         state = TaskStateEnum.READY_FOR_GPU,
                         processingMode = com.jervis.entity.ProcessingMode.FOREGROUND,
                         queuePosition = maxPosition + 1,
-                        content = additionalInput ?: "User response: ${task.taskName}"
+                        content = additionalInput ?: "User response: ${task.taskName}",
+                        pendingUserQuestion = null,  // Clear question after user responds
+                        userQuestionContext = null
                     )
                     taskRepository.save(updatedTask)
 
                     // Add user response to ChatMessageDocument (conversation history)
+                    // Include question context if this was answering a pending question
+                    val messageContent = buildString {
+                        if (task.pendingUserQuestion != null) {
+                            appendLine("Original Question: ${task.pendingUserQuestion}")
+                            if (task.userQuestionContext != null) {
+                                appendLine("Context: ${task.userQuestionContext}")
+                            }
+                            appendLine()
+                            appendLine("User Answer:")
+                        }
+                        append(additionalInput ?: "Uživatel pokračuje v úloze: ${task.taskName}")
+                    }
+
                     val messageSequence = chatMessageRepository.countByTaskId(task.id) + 1
                     val userMessage = com.jervis.entity.ChatMessageDocument(
                         taskId = task.id,
                         correlationId = task.correlationId,
                         role = com.jervis.entity.MessageRole.USER,
-                        content = additionalInput ?: "Uživatel pokračuje v úloze: ${task.taskName}",
+                        content = messageContent,
                         sequence = messageSequence,
                         timestamp = Instant.now(),
                     )
                     chatMessageRepository.save(userMessage)
-                    logger.info { "USER_TASK_RESPONSE_SAVED | taskId=${task.id} | sequence=$messageSequence | processingMode=FOREGROUND | queuePosition=${updatedTask.queuePosition}" }
+                    logger.info { "USER_TASK_RESPONSE_SAVED | taskId=${task.id} | sequence=$messageSequence | processingMode=FOREGROUND | queuePosition=${updatedTask.queuePosition} | answeredQuestion=${task.pendingUserQuestion != null}" }
 
                     // Notify client that task was removed from user task list
                     notificationRpc.emitUserTaskCancelled(task.clientId.toString(), task.id.toString(), task.taskName)
@@ -132,7 +147,9 @@ class UserTaskRpcImpl(
                         state = TaskStateEnum.READY_FOR_GPU,
                         processingMode = com.jervis.entity.ProcessingMode.BACKGROUND,
                         queuePosition = null, // BACKGROUND tasks don't use queuePosition
-                        content = additionalInput ?: task.content
+                        content = additionalInput ?: task.content,
+                        pendingUserQuestion = null,  // Clear question after user responds
+                        userQuestionContext = null
                     )
                     taskRepository.save(updatedTask)
 

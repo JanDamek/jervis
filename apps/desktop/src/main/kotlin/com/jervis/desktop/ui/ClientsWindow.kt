@@ -3,6 +3,8 @@ package com.jervis.desktop.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -11,7 +13,11 @@ import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.jervis.domain.git.GitAuthTypeEnum
+import com.jervis.domain.git.GitProviderEnum
 import com.jervis.dto.ClientDto
+import com.jervis.dto.GitConfigDto
+import com.jervis.dto.GitCredentialsDto
 import com.jervis.repository.JervisRepository
 import kotlinx.coroutines.launch
 
@@ -233,9 +239,9 @@ private fun ClientDialog(
     onSave: (ClientDto) -> Unit
 ) {
     var name by remember { mutableStateOf(client?.name ?: "") }
+    var description by remember { mutableStateOf(client?.description ?: "") }
     var connections by remember { mutableStateOf<List<com.jervis.dto.connection.ConnectionResponseDto>>(emptyList()) }
-    var selectedConnectionId by remember { mutableStateOf(client?.connectionIds?.firstOrNull()) }
-    var expanded by remember { mutableStateOf(false) }
+    var selectedConnectionIds by remember { mutableStateOf(client?.connectionIds ?: emptyList()) }
 
     val scope = rememberCoroutineScope()
 
@@ -253,68 +259,43 @@ private fun ClientDialog(
         title = { Text(if (client == null) "Create Client" else "Edit Client") },
         text = {
             Column(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp).padding(8.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(max = 600.dp).padding(8.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                Text("Basic Settings", style = MaterialTheme.typography.titleSmall)
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Client Name") },
                     modifier = Modifier.fillMaxWidth()
                 )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description") },
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-                Text("Connection (optional):", style = MaterialTheme.typography.labelMedium)
+                HorizontalDivider()
+                Text("Connections", style = MaterialTheme.typography.titleSmall)
 
-                if (connections.isEmpty()) {
-                    Text(
-                        "No connections available. Create connections first.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                } else {
-                    ExposedDropdownMenuBox(
-                        expanded = expanded,
-                        onExpandedChange = { expanded = it },
-                        modifier = Modifier.fillMaxWidth()
+                // Multi-select connections
+                connections.forEach { conn ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        OutlinedTextField(
-                            value = connections.firstOrNull { it.id == selectedConnectionId }?.name ?: "None",
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Select Connection") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                            modifier = Modifier.fillMaxWidth().menuAnchor()
-                        )
-                        ExposedDropdownMenu(
-                            expanded = expanded,
-                            onDismissRequest = { expanded = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("None") },
-                                onClick = {
-                                    selectedConnectionId = null
-                                    expanded = false
+                        Checkbox(
+                            checked = selectedConnectionIds.contains(conn.id),
+                            onCheckedChange = { checked ->
+                                selectedConnectionIds = if (checked) {
+                                    selectedConnectionIds + conn.id
+                                } else {
+                                    selectedConnectionIds - conn.id
                                 }
-                            )
-                            connections.forEach { conn ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(conn.name, style = MaterialTheme.typography.bodyMedium)
-                                            Text(
-                                                "${conn.type} - ${conn.state.name}",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    },
-                                    onClick = {
-                                        selectedConnectionId = conn.id
-                                        expanded = false
-                                    }
-                                )
                             }
-                        }
+                        )
+                        Text("${conn.name} (${conn.type})")
                     }
                 }
             }
@@ -324,7 +305,8 @@ private fun ClientDialog(
                 onClick = {
                     val newClient = (client ?: ClientDto(name = "")).copy(
                         name = name,
-                        connectionIds = listOfNotNull(selectedConnectionId),
+                        description = description.takeIf { it.isNotBlank() },
+                        connectionIds = selectedConnectionIds
                     )
                     onSave(newClient)
                 },

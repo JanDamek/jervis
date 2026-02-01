@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.Flow
 
 /**
  * Base repository for RPC calls with reconnect-aware retries.
+ * Uses StateFlow-based connection management for proper reconnection handling.
  */
 abstract class BaseRepository {
     /**
@@ -38,15 +39,4 @@ abstract class BaseRepository {
         maxRetries: Int = Int.MAX_VALUE,
         block: suspend () -> List<T>,
     ): List<T> = safeRpcCall(operation, maxRetries = maxRetries, block = block)
-
-    /**
-     * Wrap Flow with reconnect-aware retry for network failures.
-     * Non-network errors propagate immediately.
-     */
-    protected fun <T> Flow<T>.safeFlow(
-        operation: String,
-    ): Flow<T> = withRpcFlowRetry(
-        name = operation,
-        reconnect = { reconnectHandler.reconnect() },
-    ) { this }
 }

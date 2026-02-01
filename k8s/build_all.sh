@@ -28,6 +28,12 @@ echo ""
 "${K8S_DIR}/build_junie.sh"
 echo ""
 
+"${K8S_DIR}/build_github.sh"
+echo ""
+
+"${K8S_DIR}/build_gitlab.sh"
+echo ""
+
 "${K8S_DIR}/build_server.sh"
 echo ""
 

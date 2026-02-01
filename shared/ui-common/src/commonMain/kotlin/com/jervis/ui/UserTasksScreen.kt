@@ -1,5 +1,6 @@
 package com.jervis.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,8 +44,8 @@ import androidx.compose.ui.unit.dp
 import com.jervis.dto.user.TaskRoutingMode
 import com.jervis.dto.user.UserTaskDto
 import com.jervis.repository.JervisRepository
-import com.jervis.ui.design.JTopBar
-import com.jervis.ui.util.rememberClipboardManager
+import com.jervis.ui.design.*
+import com.jervis.ui.util.*
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -146,11 +147,10 @@ fun UserTasksScreen(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
             JTopBar(
-                title = "User Tasks",
+                title = "Uživatelské úlohy",
                 onBack = onBack,
                 actions = {
-                    com.jervis.ui.util
-                        .RefreshIconButton(onClick = { loadTasks() })
+                    RefreshIconButton(onClick = { loadTasks() })
                 },
             )
         },
@@ -163,14 +163,16 @@ fun UserTasksScreen(
                     .padding(16.dp),
         ) {
             // Filter field
-            OutlinedTextField(
-                value = filterText,
-                onValueChange = { filterText = it },
-                label = { Text("Filter") },
-                placeholder = { Text("Search by title, description, source, or project...") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
+            JSection {
+                OutlinedTextField(
+                    value = filterText,
+                    onValueChange = { filterText = it },
+                    label = { Text("Filtr") },
+                    placeholder = { Text("Hledat podle názvu, popisu, zdroje nebo projektu...") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -180,55 +182,44 @@ fun UserTasksScreen(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 // Tasks list (left side)
-                Card(
-                    modifier = Modifier.weight(0.6f).fillMaxHeight(),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                ) {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        // Header with action buttons
-                        Text(
-                            text = "Tasks (${tasks.size})",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(16.dp),
-                        )
+                Column(modifier = Modifier.weight(0.6f).fillMaxHeight()) {
+                    Text(
+                        text = "Úlohy (${tasks.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
 
-                        HorizontalDivider()
+                    when {
+                        isLoading -> {
+                            JCenteredLoading()
+                        }
 
-                        when {
-                            isLoading -> {
-                                com.jervis.ui.design
-                                    .JCenteredLoading()
-                            }
+                        errorMessage != null -> {
+                            JErrorState(
+                                message = errorMessage!!,
+                                onRetry = { loadTasks() },
+                            )
+                        }
 
-                            errorMessage != null -> {
-                                com.jervis.ui.design.JErrorState(
-                                    message = errorMessage!!,
-                                    onRetry = { loadTasks() },
-                                )
-                            }
+                        tasks.isEmpty() -> {
+                            JEmptyState(message = "Žádné úlohy nenalezeny")
+                        }
 
-                            tasks.isEmpty() -> {
-                                com.jervis.ui.design
-                                    .JEmptyState(message = "No tasks found")
-                            }
-
-                            else -> {
-                                LazyColumn(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentPadding = PaddingValues(8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                                ) {
-                                    items(tasks) { task ->
-                                        UserTaskRow(
-                                            task = task,
-                                            isSelected = selectedTask?.id == task.id,
-                                            onClick = { selectedTask = task },
-                                            onDelete = {
-                                                selectedTask = task
-                                                showDeleteConfirm = true
-                                            },
-                                        )
-                                    }
+                        else -> {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                items(tasks) { task ->
+                                    UserTaskRow(
+                                        task = task,
+                                        isSelected = selectedTask?.id == task.id,
+                                        onClick = { selectedTask = task },
+                                        onDelete = {
+                                            selectedTask = task
+                                            showDeleteConfirm = true
+                                        },
+                                    )
                                 }
                             }
                         }
@@ -236,50 +227,42 @@ fun UserTasksScreen(
                 }
 
                 // Task details (right side)
-                Card(
-                    modifier = Modifier.weight(0.4f).fillMaxHeight(),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                ) {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        Text(
-                            text = "Task Details",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(16.dp),
-                        )
-                        HorizontalDivider()
+                Column(modifier = Modifier.weight(0.4f).fillMaxHeight()) {
+                    Text(
+                        text = "Detaily úlohy",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
 
-                        if (selectedTask != null) {
+                    if (selectedTask != null) {
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            // Scrollable details
                             Column(
-                                modifier = Modifier.fillMaxSize(),
+                                modifier =
+                                    Modifier
+                                        .weight(1f)
+                                        .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
                             ) {
-                                // Scrollable details
-                                Column(
-                                    modifier =
-                                        Modifier
-                                            .weight(1f)
-                                            .padding(16.dp)
-                                            .verticalScroll(rememberScrollState()),
-                                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                                ) {
-                                    TaskDetailField("Title", selectedTask!!.title)
-                                    TaskDetailField("Status", selectedTask!!.state)
-                                    TaskDetailField("Project", selectedTask!!.projectId ?: "-")
+                                JSection {
+                                    TaskDetailField("Název", selectedTask!!.title)
+                                    TaskDetailField("Stav", selectedTask!!.state)
+                                    TaskDetailField("Projekt", selectedTask!!.projectId ?: "-")
+                                }
 
-                                    if (!selectedTask!!.sourceUri.isNullOrBlank()) {
+                                if (!selectedTask!!.sourceUri.isNullOrBlank()) {
+                                    JSection(title = "Odkaz na zdroj") {
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            horizontalArrangement = Arrangement.End,
                                             verticalAlignment = Alignment.CenterVertically,
                                         ) {
-                                            Text(
-                                                text = "Source Link:",
-                                                style = MaterialTheme.typography.labelMedium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
                                             TextButton(onClick = {
                                                 clipboard.setText(AnnotatedString(selectedTask!!.sourceUri!!))
                                             }) {
-                                                Text("Copy")
+                                                Text("Kopírovat")
                                             }
                                         }
                                         SelectionContainer {
@@ -289,23 +272,19 @@ fun UserTasksScreen(
                                             )
                                         }
                                     }
+                                }
 
-                                    if (!selectedTask!!.description.isNullOrBlank()) {
-                                        Spacer(modifier = Modifier.height(8.dp))
+                                if (!selectedTask!!.description.isNullOrBlank()) {
+                                    JSection(title = "Popis") {
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            horizontalArrangement = Arrangement.End,
                                             verticalAlignment = Alignment.CenterVertically,
                                         ) {
-                                            Text(
-                                                text = "Description:",
-                                                style = MaterialTheme.typography.labelMedium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
                                             TextButton(onClick = {
                                                 clipboard.setText(AnnotatedString(selectedTask!!.description!!))
                                             }) {
-                                                Text("Copy")
+                                                Text("Kopírovat")
                                             }
                                         }
                                         SelectionContainer {
@@ -316,104 +295,92 @@ fun UserTasksScreen(
                                         }
                                     }
                                 }
+                            }
 
-                                // Input area for additional instructions
-                                HorizontalDivider()
-                                Column(
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .padding(16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    Text(
-                                        text = "Additional Instructions (optional):",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                    OutlinedTextField(
-                                        value = additionalInput,
-                                        onValueChange = { additionalInput = it },
-                                        modifier = Modifier.fillMaxWidth().height(100.dp),
-                                        placeholder = { Text("Add any additional context or instructions...") },
-                                        maxLines = 4,
+                            // Input area for additional instructions
+                            Spacer(Modifier.height(16.dp))
+                            JSection(title = "Dodatečné instrukce (volitelné)") {
+                                OutlinedTextField(
+                                    value = additionalInput,
+                                    onValueChange = { additionalInput = it },
+                                    modifier = Modifier.fillMaxWidth().height(100.dp),
+                                    placeholder = { Text("Přidejte kontext nebo instrukce...") },
+                                    maxLines = 4,
+                                    enabled = !isSending,
+                                )
+
+                                Spacer(Modifier.height(8.dp))
+
+                                // Direct send buttons
+                                JActionBar {
+                                    Button(
+                                        onClick = {
+                                            scope.launch {
+                                                isSending = true
+                                                try {
+                                                    repository.userTasks.sendToAgent(
+                                                        selectedTask!!.id,
+                                                        TaskRoutingMode.BACK_TO_PENDING,
+                                                        additionalInput.takeIf { it.isNotBlank() },
+                                                    )
+                                                    additionalInput = ""
+                                                    loadTasks()
+                                                } catch (e: Exception) {
+                                                    errorMessage = e.message ?: "Selhalo odeslání do fronty"
+                                                } finally {
+                                                    isSending = false
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f),
                                         enabled = !isSending,
-                                    )
-
-                                    // Direct send buttons
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        colors =
+                                            ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.secondary,
+                                            ),
                                     ) {
-                                        Button(
-                                            onClick = {
-                                                scope.launch {
-                                                    isSending = true
-                                                    try {
-                                                        repository.userTasks.sendToAgent(
-                                                            selectedTask!!.id,
-                                                            TaskRoutingMode.DIRECT_TO_AGENT,
-                                                            additionalInput.takeIf { it.isNotBlank() },
-                                                        )
-                                                        additionalInput = ""
-                                                        loadTasks()
-                                                    } catch (e: Exception) {
-                                                        errorMessage = e.message ?: "Failed to send to agent"
-                                                    } finally {
-                                                        isSending = false
-                                                    }
+                                        Text("📋 Do fronty")
+                                    }
+                                    Button(
+                                        onClick = {
+                                            scope.launch {
+                                                isSending = true
+                                                try {
+                                                    repository.userTasks.sendToAgent(
+                                                        selectedTask!!.id,
+                                                        TaskRoutingMode.DIRECT_TO_AGENT,
+                                                        additionalInput.takeIf { it.isNotBlank() },
+                                                    )
+                                                    additionalInput = ""
+                                                    loadTasks()
+                                                } catch (e: Exception) {
+                                                    errorMessage = e.message ?: "Selhalo odeslání agentovi"
+                                                } finally {
+                                                    isSending = false
                                                 }
-                                            },
-                                            modifier = Modifier.weight(1f),
-                                            enabled = !isSending,
-                                            colors =
-                                                ButtonDefaults.buttonColors(
-                                                    containerColor = MaterialTheme.colorScheme.primary,
-                                                ),
-                                        ) {
-                                            Text("⚡ To Agent")
-                                        }
-                                        Button(
-                                            onClick = {
-                                                scope.launch {
-                                                    isSending = true
-                                                    try {
-                                                        repository.userTasks.sendToAgent(
-                                                            selectedTask!!.id,
-                                                            TaskRoutingMode.BACK_TO_PENDING,
-                                                            additionalInput.takeIf { it.isNotBlank() },
-                                                        )
-                                                        additionalInput = ""
-                                                        loadTasks()
-                                                    } catch (e: Exception) {
-                                                        errorMessage = e.message ?: "Failed to send to pending"
-                                                    } finally {
-                                                        isSending = false
-                                                    }
-                                                }
-                                            },
-                                            modifier = Modifier.weight(1f),
-                                            enabled = !isSending,
-                                            colors =
-                                                ButtonDefaults.buttonColors(
-                                                    containerColor = MaterialTheme.colorScheme.secondary,
-                                                ),
-                                        ) {
-                                            Text("📋 To Pending")
-                                        }
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        enabled = !isSending,
+                                        colors =
+                                            ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.primary,
+                                            ),
+                                    ) {
+                                        Text("⚡ Agentovi")
                                     }
                                 }
                             }
-                        } else {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    "Select a task to view details",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                "Vyberte úlohu pro zobrazení detailů",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 }
@@ -422,11 +389,11 @@ fun UserTasksScreen(
     }
 
     // Delete confirmation dialog
-    com.jervis.ui.util.ConfirmDialog(
+    ConfirmDialog(
         visible = showDeleteConfirm && selectedTask != null,
-        title = "Delete User Task",
-        message = "Are you sure you want to delete this task? This action cannot be undone.",
-        confirmText = "Delete",
+        title = "Smazat uživatelskou úlohu",
+        message = "Opravdu chcete smazat tuto úlohu? Tuto akci nelze vrátit.",
+        confirmText = "Smazat",
         onConfirm = { handleDelete() },
         onDismiss = { showDeleteConfirm = false },
     )
@@ -439,28 +406,15 @@ private fun UserTaskRow(
     onClick: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        onClick = onClick,
-        colors =
-            CardDefaults.cardColors(
-                containerColor =
-                    if (isSelected) {
-                        MaterialTheme.colorScheme.primaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.surface
-                    },
-            ),
-        elevation =
-            CardDefaults.cardElevation(
-                defaultElevation = if (isSelected) 4.dp else 1.dp,
-            ),
+    JTableRowCard(
+        selected = isSelected,
+        modifier = Modifier.clickable { onClick() }
     ) {
         Row(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(12.dp),
+                    .padding(4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.Top,
         ) {
@@ -496,7 +450,7 @@ private fun UserTaskRow(
 
                 if (!task.projectId.isNullOrBlank()) {
                     Text(
-                        text = "Project: ${task.projectId}",
+                        text = "Projekt: ${task.projectId}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp),
@@ -504,9 +458,7 @@ private fun UserTaskRow(
                 }
             }
 
-            com.jervis.ui.util.DeleteIconButton(
-                onClick = { onDelete() },
-            )
+            DeleteIconButton(onClick = onDelete)
         }
     }
 }
@@ -516,11 +468,11 @@ private fun TaskDetailField(
     label: String,
     value: String,
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
         Text(
             text = "$label:",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
         )
         Text(
             text = value,

@@ -765,29 +765,57 @@ val docs = changedCode.flatMap { code ->
 }
 ```
 
-## Implementační úkoly
+## Implementační status
+
+### ✅ Hotovo (2026-02-01)
+
+1. **KnowledgeServiceImpl - Relationship extraction & storage:**
+   - ✅ `extractRelationships()` - Podpora pipe/arrow/bracket formátů
+   - ✅ `buildGraphPayload()` - Parsing a normalizace relationships
+   - ✅ `persistGraph()` - Evidence-based edge storage
+   - ✅ Short-hand node expansion (TASK-123 → jira:TASK-123)
+   - ✅ Bidirectional linking (RAG ↔ Graph)
+
+2. **GraphTools - Basic operations:**
+   - ✅ `searchKnowledgeBase()` - Hybrid RAG + Graph search
+   - ✅ `getRelated()` - Direct neighbor lookup
+   - ✅ `traverse()` - Multi-hop graph traversal
+   - ✅ `storeRelationship()` - Manual edge creation
+
+3. **Indexery pro jednotlivé zdroje:**
+   - ✅ `JiraContinuousIndexer` - issues + comments → PendingTasks
+   - ✅ `ConfluenceContinuousIndexer` - pages → PendingTasks
+   - ✅ `EmailContinuousIndexer` - emails → PendingTasks
+   - ✅ `GitContinuousIndexer` - commits → PendingTasks
+   - ⚠️ **Qualifier Agent zodpovídá za graph indexing** (ne indexery!)
+
+4. **Canonicalization & Alias resolution:**
+   - ✅ Per-client MongoDB registry (GraphEntityRegistryDocument)
+   - ✅ Conservative canonicalization (order:order_X → order:X)
+   - ✅ Cache + mutex pro race condition prevention
+
+### 🚧 TODO
 
 1. **Rozšířit GraphTools:**
-   - `semanticSearch()` - RAG + Graph
-   - `findRelatedWithContext()` - kombinace traversal + semantic
-   - `analyzeImpact()` - impact analysis pro změny
-   - `traceRequirement()` - od požadavku (Jira/Confluence) k implementaci (code)
+   - ⏳ `semanticSearch()` - RAG + Graph combined ranking
+   - ⏳ `findRelatedWithContext()` - Traversal s semantic filtering
+   - ⏳ `analyzeImpact()` - Impact analysis pro změny
+   - ⏳ `traceRequirement()` - Od požadavku k implementaci
 
-2. **Indexery pro jednotlivé zdroje:**
-   - `GitIndexer` - commits → graph nodes + RAG chunks
-   - `JiraIndexer` - issues + comments → graph + RAG
-   - `ConfluenceIndexer` - pages → graph + RAG
-   - `EmailIndexer` - emails → graph + RAG
-   - `JoernIndexer` - CPG → graph nodes
+2. **Link discovery (automatická detekce):**
+   - ⏳ Regex patterns v textech (JERV-123, @user, file paths)
+   - ⏳ Semantic similarity pro soft links (podobné tickets/docs)
+   - ⏳ LLM agent pro odvození relationship type
+   - ⏳ Joern CPG integration (code structure → graph)
 
-3. **Link discovery:**
-   - Automatické hledání vazeb mezi entitami
-   - Regex patterns v textech (JERV-123, @user, file paths)
-   - Semantic similarity pro soft links
-   - LLM agent pro odvození relationship type
+3. **Graph maintenance:**
+   - ⏳ Garbage collection - staré nodes (TTL policy)
+   - ⏳ Deduplication - merge nodes from different sources
+   - ⏳ Consistency checks - detect broken edges
+   - ⏳ Statistics - graph metrics dashboard
 
-4. **Graph maintenance:**
-   - Garbage collection - staré nodes
-   - Deduplication - stejné entity z různých zdrojů
-   - Consistency checks - broken edges
-   - Statistics - graph metrics pro monitoring
+4. **Advanced features:**
+   - ⏳ Relationship confidence scores
+   - ⏳ Temporal relationships (validFrom/validTo)
+   - ⏳ Relationship suggestions (RAG-based)
+   - ⏳ Graph diff (změny v čase)

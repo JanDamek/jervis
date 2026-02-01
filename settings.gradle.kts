@@ -48,6 +48,8 @@ include(
     ":backend:service-aider",
     ":backend:service-coding-engine",
     ":backend:service-atlassian",
+    ":backend:service-github",
+    ":backend:service-gitlab",
     ":backend:service-junie",
 )
 

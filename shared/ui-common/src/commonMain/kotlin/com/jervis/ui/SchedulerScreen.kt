@@ -1,5 +1,6 @@
 package com.jervis.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -14,8 +15,9 @@ import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ScheduledTaskDto
 import com.jervis.repository.JervisRepository
+import com.jervis.ui.design.*
+import com.jervis.ui.util.*
 import kotlinx.coroutines.launch
-import com.jervis.ui.design.JTopBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -160,10 +162,10 @@ fun SchedulerScreen(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
             JTopBar(
-                title = "Task Scheduler",
+                title = "Plánovač úloh",
                 onBack = onBack,
                 actions = {
-                    com.jervis.ui.util.RefreshIconButton(onClick = { loadTasks() })
+                    RefreshIconButton(onClick = { loadTasks() })
                 }
             )
         }
@@ -178,122 +180,115 @@ fun SchedulerScreen(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("Create Scheduled Task", style = MaterialTheme.typography.titleMedium)
-
-                // Client dropdown
-                ExposedDropdownMenuBox(
-                    expanded = clientDropdownExpanded,
-                    onExpandedChange = { clientDropdownExpanded = !clientDropdownExpanded }
-                ) {
-                    OutlinedTextField(
-                        value = selectedClient?.name ?: "Select Client",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Client") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = clientDropdownExpanded) },
-                        modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true).fillMaxWidth(),
-                        enabled = !isLoading
-                    )
-                    ExposedDropdownMenu(
+                JSection(title = "Naplánovat novou úlohu") {
+                    // Client dropdown
+                    ExposedDropdownMenuBox(
                         expanded = clientDropdownExpanded,
-                        onDismissRequest = { clientDropdownExpanded = false }
+                        onExpandedChange = { clientDropdownExpanded = !clientDropdownExpanded }
                     ) {
-                        clients.forEach { client ->
-                            DropdownMenuItem(
-                                text = { Text(client.name) },
-                                onClick = {
-                                    selectedClient = client
-                                    loadProjectsForClient(client.id)
-                                    clientDropdownExpanded = false
-                                }
-                            )
+                        OutlinedTextField(
+                            value = selectedClient?.name ?: "Vyberte klienta",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Klient") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = clientDropdownExpanded) },
+                            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true).fillMaxWidth(),
+                            enabled = !isLoading
+                        )
+                        ExposedDropdownMenu(
+                            expanded = clientDropdownExpanded,
+                            onDismissRequest = { clientDropdownExpanded = false }
+                        ) {
+                            clients.forEach { client ->
+                                DropdownMenuItem(
+                                    text = { Text(client.name) },
+                                    onClick = {
+                                        selectedClient = client
+                                        loadProjectsForClient(client.id)
+                                        clientDropdownExpanded = false
+                                    }
+                                )
+                            }
                         }
                     }
-                }
 
-                // Project dropdown
-                ExposedDropdownMenuBox(
-                    expanded = projectDropdownExpanded,
-                    onExpandedChange = { projectDropdownExpanded = !projectDropdownExpanded }
-                ) {
+                    Spacer(Modifier.height(8.dp))
+
+                    // Project dropdown
+                    ExposedDropdownMenuBox(
+                        expanded = projectDropdownExpanded,
+                        onExpandedChange = { projectDropdownExpanded = !projectDropdownExpanded }
+                    ) {
+                        OutlinedTextField(
+                            value = selectedProject?.name ?: "Vyberte projekt",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Projekt") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = projectDropdownExpanded) },
+                            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true).fillMaxWidth(),
+                            enabled = !isLoading
+                        )
+                        ExposedDropdownMenu(
+                            expanded = projectDropdownExpanded,
+                            onDismissRequest = { projectDropdownExpanded = false }
+                        ) {
+                            projects.filter { it.clientId == selectedClient?.id }.forEach { project ->
+                                DropdownMenuItem(
+                                    text = { Text(project.name) },
+                                    onClick = {
+                                        selectedProject = project
+                                        projectDropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
                     OutlinedTextField(
-                        value = selectedProject?.name ?: "Select Project",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Project") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = projectDropdownExpanded) },
-                        modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true).fillMaxWidth(),
+                        value = taskName,
+                        onValueChange = { taskName = it },
+                        label = { Text("Název úlohy (volitelné)") },
+                        modifier = Modifier.fillMaxWidth(),
                         enabled = !isLoading
                     )
-                    ExposedDropdownMenu(
-                        expanded = projectDropdownExpanded,
-                        onDismissRequest = { projectDropdownExpanded = false }
+
+                    OutlinedTextField(
+                        value = taskInstruction,
+                        onValueChange = { taskInstruction = it },
+                        label = { Text("Instrukce pro agenta") },
+                        modifier = Modifier.fillMaxWidth().height(120.dp),
+                        minLines = 4,
+                        enabled = !isLoading
+                    )
+
+                    OutlinedTextField(
+                        value = cronExpression,
+                        onValueChange = { cronExpression = it },
+                        label = { Text("Cron výraz (volitelné)") },
+                        placeholder = { Text("např. 0 0 * * *") },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isLoading
+                    )
+
+                    Spacer(Modifier.height(8.dp))
+
+                    Button(
+                        onClick = { scheduleTask() },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isLoading && selectedProject != null && taskInstruction.isNotBlank()
                     ) {
-                        projects.filter { it.clientId == selectedClient?.id }.forEach { project ->
-                            DropdownMenuItem(
-                                text = { Text(project.name) },
-                                onClick = {
-                                    selectedProject = project
-                                    projectDropdownExpanded = false
-                                }
-                            )
+                        if (isLoading) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
                         }
+                        Text(if (isLoading) "Plánuji..." else "📅 Naplánovat úlohu")
                     }
-                }
-
-                OutlinedTextField(
-                    value = taskName,
-                    onValueChange = { taskName = it },
-                    label = { Text("Task Name (optional)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isLoading
-                )
-
-                OutlinedTextField(
-                    value = taskInstruction,
-                    onValueChange = { taskInstruction = it },
-                    label = { Text("Task Instruction") },
-                    modifier = Modifier.fillMaxWidth().height(120.dp),
-                    minLines = 4,
-                    enabled = !isLoading
-                )
-
-                OutlinedTextField(
-                    value = cronExpression,
-                    onValueChange = { cronExpression = it },
-                    label = { Text("Cron Expression (optional)") },
-                    placeholder = { Text("e.g. 0 0 * * *") },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isLoading
-                )
-
-
-
-                Button(
-                    onClick = { scheduleTask() },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isLoading && selectedProject != null && taskInstruction.isNotBlank()
-                ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                    }
-                    Text(if (isLoading) "Scheduling..." else "📅 Schedule Task")
                 }
 
                 errorMessage?.let { error ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer
-                        )
-                    ) {
-                        Text(
-                            text = error,
-                            modifier = Modifier.padding(12.dp),
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                    }
+                    JErrorState(message = error)
                 }
             }
 
@@ -308,7 +303,7 @@ fun SchedulerScreen(
                     modifier = Modifier.weight(0.6f).fillMaxHeight()
                 ) {
                     Text(
-                        text = "Scheduled Tasks (${tasks.size})",
+                        text = "Naplánované úlohy (${tasks.size})",
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(16.dp)
                     )
@@ -316,10 +311,10 @@ fun SchedulerScreen(
 
                     when {
                         isLoadingTasks -> {
-                            com.jervis.ui.design.JCenteredLoading()
+                            JCenteredLoading()
                         }
                         tasks.isEmpty() -> {
-                            com.jervis.ui.design.JEmptyState(message = "No scheduled tasks")
+                            JEmptyState(message = "Žádné naplánované úlohy")
                         }
                         else -> {
                             LazyColumn(
@@ -328,7 +323,7 @@ fun SchedulerScreen(
                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 items(tasks) { task ->
-                                    ScheduledTaskCard(
+                                    ScheduledTaskRow(
                                         task = task,
                                         isSelected = selectedTask == task,
                                         onClick = { selectedTask = task },
@@ -350,7 +345,7 @@ fun SchedulerScreen(
                     modifier = Modifier.weight(0.4f).fillMaxHeight()
                 ) {
                     Text(
-                        text = "Task Details",
+                        text = "Detaily úlohy",
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(16.dp)
                     )
@@ -364,29 +359,26 @@ fun SchedulerScreen(
                                 .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            SchedulerDetailField("Task Name", selectedTask!!.task.taskName)
-                            SchedulerDetailField("Client", selectedTask!!.clientName)
-                            SchedulerDetailField("Project", selectedTask!!.projectName)
-                            selectedTask!!.task.cronExpression?.let {
-                                SchedulerDetailField("Cron", it)
-                            }
-                            SchedulerDetailField("Scheduled", formatInstant(selectedTask!!.task.scheduledAt))
-                            selectedTask!!.task.correlationId?.let {
-                                SchedulerDetailField("Correlation ID", it)
+                            JSection {
+                                SchedulerDetailField("Název úlohy", selectedTask!!.task.taskName)
+                                SchedulerDetailField("Klient", selectedTask!!.clientName)
+                                SchedulerDetailField("Projekt", selectedTask!!.projectName)
+                                selectedTask!!.task.cronExpression?.let {
+                                    SchedulerDetailField("Cron", it)
+                                }
+                                SchedulerDetailField("Naplánováno", formatInstant(selectedTask!!.task.scheduledAt))
+                                selectedTask!!.task.correlationId?.let {
+                                    SchedulerDetailField("Correlation ID", it)
+                                }
                             }
 
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Content:",
+                                text = "Instrukce:",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                                )
-                            ) {
+                            JTableRowCard(selected = false) {
                                 Text(
                                     text = selectedTask!!.task.content,
                                     style = MaterialTheme.typography.bodySmall,
@@ -400,7 +392,7 @@ fun SchedulerScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                "Select a task to view details",
+                                "Vyberte úlohu pro zobrazení detailů",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -411,11 +403,11 @@ fun SchedulerScreen(
     }
 
     // Delete confirmation dialog
-    com.jervis.ui.util.ConfirmDialog(
+    ConfirmDialog(
         visible = showDeleteConfirm && selectedTask != null,
-        title = "Delete Scheduled Task",
-        message = "Are you sure you want to delete this scheduled task? This action cannot be undone.",
-        confirmText = "Delete",
+        title = "Smazat naplánovanou úlohu",
+        message = "Opravdu chcete smazat naplánovanou úlohu '${selectedTask?.task?.taskName}'? Tuto akci nelze vrátit.",
+        confirmText = "Smazat",
         onConfirm = { deleteTask() },
         onDismiss = { showDeleteConfirm = false }
     )
@@ -428,30 +420,20 @@ data class EnhancedScheduledTask(
 )
 
 @Composable
-private fun ScheduledTaskCard(
+private fun ScheduledTaskRow(
     task: EnhancedScheduledTask,
     isSelected: Boolean,
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        onClick = onClick,
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.surface
-            }
-        ),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = if (isSelected) 4.dp else 1.dp
-        )
+    JTableRowCard(
+        selected = isSelected,
+        modifier = Modifier.clickable { onClick() }
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.Top
         ) {
@@ -484,20 +466,18 @@ private fun ScheduledTaskCard(
                 )
             }
 
-            com.jervis.ui.util.DeleteIconButton(
-                onClick = { onDelete() }
-            )
+            DeleteIconButton(onClick = onDelete)
         }
     }
 }
 
 @Composable
 private fun SchedulerDetailField(label: String, value: String) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
         Text(
             text = "$label:",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary
         )
         Text(
             text = value,

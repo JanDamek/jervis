@@ -4,8 +4,8 @@ import com.jervis.types.ClientId
 import kotlinx.serialization.Serializable
 
 /**
- * Jira integration service (READ + WRITE operations).
- * Currently a TODO/mock interface - implementation pending.
+ * Bug tracker integration service (READ + WRITE operations).
+ * Generic interface for bug tracking systems (Jira, GitHub Issues, GitLab Issues, etc.).
  */
 interface BugTrackerService {
     // ==================== READ OPERATIONS ====================
@@ -18,7 +18,7 @@ interface BugTrackerService {
         query: String,
         project: String? = null,
         maxResults: Int = 20,
-    ): List<JiraIssue>
+    ): List<BugTrackerIssue>
 
     /**
      * Get specific Jira issue by key (e.g., PROJ-123).
@@ -26,12 +26,12 @@ interface BugTrackerService {
     suspend fun getIssue(
         clientId: ClientId,
         issueKey: String,
-    ): JiraIssue
+    ): BugTrackerIssue
 
     /**
      * List all Jira projects for client.
      */
-    suspend fun listProjects(clientId: ClientId): List<JiraProject>
+    suspend fun listProjects(clientId: ClientId): List<BugTrackerProject>
 
     /**
      * Get comments for specific issue.
@@ -39,7 +39,7 @@ interface BugTrackerService {
     suspend fun getComments(
         clientId: ClientId,
         issueKey: String,
-    ): List<JiraComment>
+    ): List<BugTrackerComment>
 
     // ==================== WRITE OPERATIONS (Future) ====================
 
@@ -49,8 +49,8 @@ interface BugTrackerService {
      */
     suspend fun createIssue(
         clientId: ClientId,
-        request: CreateJiraIssueRequest,
-    ): JiraIssue
+        request: CreateBugTrackerIssueRequest,
+    ): BugTrackerIssue
 
     /**
      * Update existing Jira issue.
@@ -59,8 +59,8 @@ interface BugTrackerService {
     suspend fun updateIssue(
         clientId: ClientId,
         issueKey: String,
-        request: UpdateJiraIssueRequest,
-    ): JiraIssue
+        request: UpdateBugTrackerIssueRequest,
+    ): BugTrackerIssue
 
     /**
      * Add comment to Jira issue.
@@ -70,13 +70,13 @@ interface BugTrackerService {
         clientId: ClientId,
         issueKey: String,
         comment: String,
-    ): JiraComment
+    ): BugTrackerComment
 }
 
 // ==================== DATA MODELS ====================
 
 @Serializable
-data class JiraIssue(
+data class BugTrackerIssue(
     val key: String,
     val summary: String,
     val description: String?,
@@ -91,14 +91,14 @@ data class JiraIssue(
 )
 
 @Serializable
-data class JiraProject(
+data class BugTrackerProject(
     val key: String,
     val name: String,
     val description: String?,
 )
 
 @Serializable
-data class JiraComment(
+data class BugTrackerComment(
     val id: String,
     val author: String,
     val body: String,
@@ -106,7 +106,7 @@ data class JiraComment(
 )
 
 @Serializable
-data class CreateJiraIssueRequest(
+data class CreateBugTrackerIssueRequest(
     val projectKey: String,
     val summary: String,
     val description: String?,
@@ -117,7 +117,7 @@ data class CreateJiraIssueRequest(
 )
 
 @Serializable
-data class UpdateJiraIssueRequest(
+data class UpdateBugTrackerIssueRequest(
     val summary: String? = null,
     val description: String? = null,
     val status: String? = null,

@@ -8,15 +8,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.error.ErrorLogDto
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import com.jervis.repository.JervisRepository
+import com.jervis.ui.design.JActionBar
+import com.jervis.ui.design.JCenteredLoading
+import com.jervis.ui.design.JEmptyState
+import com.jervis.ui.design.JTableRowCard
+import com.jervis.ui.util.RefreshIconButton
 import kotlinx.coroutines.launch
 
 @Composable
@@ -40,39 +39,37 @@ fun LogsSettings(repository: JervisRepository) {
     LaunchedEffect(Unit) { loadData() }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            Button(onClick = { loadData() }) {
-                Text("⟳ Načíst")
-            }
+        JActionBar {
+            RefreshIconButton(onClick = { loadData() })
         }
 
+        Spacer(Modifier.height(8.dp))
+
         if (isLoading && logs.isEmpty()) {
-            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
+            JCenteredLoading()
+        } else if (logs.isEmpty()) {
+            JEmptyState(message = "Žádné chybové logy nenalezeny")
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(logs) { log ->
-                    Card(modifier = Modifier.fillMaxWidth(), border = CardDefaults.outlinedCardBorder()) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                    JTableRowCard(selected = false) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                log.createdAt,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            log.causeType?.let {
                                 Text(
-                                    log.createdAt,
+                                    it.substringAfterLast('.'),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.error
                                 )
-                                Spacer(Modifier.width(8.dp))
-                                log.causeType?.let {
-                                    Text(
-                                        it.substringAfterLast('.'),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.error
-                                    )
-                                }
                             }
-                            Spacer(Modifier.height(4.dp))
-                            Text(log.message, style = MaterialTheme.typography.bodyMedium)
                         }
+                        Spacer(Modifier.height(4.dp))
+                        Text(log.message, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             }

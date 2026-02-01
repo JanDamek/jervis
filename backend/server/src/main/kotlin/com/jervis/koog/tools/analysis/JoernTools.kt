@@ -17,7 +17,6 @@ import java.nio.file.Path
 import java.util.Base64
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
-import kotlin.io.path.name
 import kotlin.io.path.relativeTo
 
 /**
@@ -46,39 +45,46 @@ class JoernTools(
         - Find data flow from source to sink: "val source = cpg.parameter.name(\"input\"); val sink = cpg.call(\"exec\"); sink.reachableByFlows(source).p"
         
         This tool will package the project, send it to the Joern service, and return the result.
-        """
+        """,
     )
     suspend fun query(
         @LLMDescription("Joern query in Scala DSL")
-        query: String
+        query: String,
     ): JoernQueryResult {
-        val projectId = task.projectId ?: return JoernQueryResult(success = false, error = "ProjectId is required for Joern analysis")
-        
-        return try {
-            val project = projectService.getProjectById(projectId) ?: throw IllegalStateException("Project not found: $projectId")
-            val projectPath = directoryStructureService.projectDir(project)
-            
-            logger.info { "Preparing Joern query for project ${project.name} (path: $projectPath)" }
-            
-            val zipBase64 = packageProject(projectPath)
-            
-            val request = JoernQueryDto(
-                query = query,
-                projectZipBase64 = zipBase64
+        val projectId =
+            task.projectId ?: return JoernQueryResult(
+                success = false,
+                error = "ProjectId is required for Joern analysis",
             )
-            
-            val result = withRpcRetry(
-                name = "Joern",
-                reconnect = { reconnectHandler.reconnectJoern() }
-            ) {
-                joernClient.run(request)
-            }
-            
+
+        return try {
+            val project =
+                projectService.getProjectById(projectId)
+            val projectPath = directoryStructureService.projectDir(project)
+
+            logger.info { "Preparing Joern query for project ${project.name} (path: $projectPath)" }
+
+            val zipBase64 = packageProject(projectPath)
+
+            val request =
+                JoernQueryDto(
+                    query = query,
+                    projectZipBase64 = zipBase64,
+                )
+
+            val result =
+                withRpcRetry(
+                    name = "Joern",
+                    reconnect = { reconnectHandler.reconnectJoern() },
+                ) {
+                    joernClient.run(request)
+                }
+
             JoernQueryResult(
                 success = result.exitCode == 0,
                 stdout = result.stdout,
                 stderr = result.stderr,
-                exitCode = result.exitCode
+                exitCode = result.exitCode,
             )
         } catch (e: Exception) {
             logger.error(e) { "Joern query failed" }
@@ -91,7 +97,6 @@ class JoernTools(
         ZipOutputStream(outputStream).use { zos ->
             Files.walk(projectPath).forEach { path ->
                 if (Files.isRegularFile(path)) {
-                    // Skip common binary/heavy folders
                     val relativePath = path.relativeTo(projectPath)
                     if (!shouldSkip(relativePath)) {
                         val entry = ZipEntry(relativePath.toString())
@@ -107,12 +112,12 @@ class JoernTools(
 
     private fun shouldSkip(path: Path): Boolean {
         val name = path.toString().lowercase()
-        return name.contains(".git/") || 
-               name.contains("build/") || 
-               name.contains("target/") || 
-               name.contains("node_modules/") ||
-               name.endsWith(".jar") ||
-               name.endsWith(".bin")
+        return name.contains(".git/") ||
+            name.contains("build/") ||
+            name.contains("target/") ||
+            name.contains("node_modules/") ||
+            name.endsWith(".jar") ||
+            name.endsWith(".bin")
     }
 
     @Serializable
@@ -121,6 +126,6 @@ class JoernTools(
         val stdout: String? = null,
         val stderr: String? = null,
         val exitCode: Int? = null,
-        val error: String? = null
+        val error: String? = null,
     )
 }

@@ -11,8 +11,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.error.ErrorLogDto
 import com.jervis.repository.JervisRepository
+import com.jervis.ui.design.*
+import com.jervis.ui.util.*
 import kotlinx.coroutines.launch
-import com.jervis.ui.design.JTopBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,10 +50,10 @@ fun ErrorLogsScreen(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
             JTopBar(
-                title = "Error Logs",
+                title = "Chybové logy",
                 onBack = onBack,
                 actions = {
-                    com.jervis.ui.util.RefreshIconButton(onClick = { loadErrorLogs() })
+                    RefreshIconButton(onClick = { loadErrorLogs() })
                 }
             )
         },
@@ -60,20 +61,16 @@ fun ErrorLogsScreen(
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when {
                 isLoading -> {
-                    Box(modifier = Modifier.fillMaxSize()) { com.jervis.ui.design.JCenteredLoading() }
+                    JCenteredLoading()
                 }
                 errorMessage != null -> {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        com.jervis.ui.design.JErrorState(
-                            message = errorMessage!!,
-                            onRetry = { loadErrorLogs() }
-                        )
-                    }
+                    JErrorState(
+                        message = errorMessage!!,
+                        onRetry = { loadErrorLogs() }
+                    )
                 }
                 errorLogs.isEmpty() -> {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        com.jervis.ui.design.JEmptyState(message = "No errors recorded")
-                    }
+                    JEmptyState(message = "Žádné chyby nezaznamenány")
                 }
                 else -> {
                     Column(modifier = Modifier.fillMaxSize()) {
@@ -92,8 +89,8 @@ fun ErrorLogsScreen(
                         val selected = errorLogs.firstOrNull { it.id == selectedLogId }
                         if (selected != null) {
                             Spacer(Modifier.height(8.dp))
-                            com.jervis.ui.util.CopyableTextCard(
-                                title = "Error details (copy)",
+                            CopyableTextCard(
+                                title = "Detaily chyby (kopírovat)",
                                 content = buildString {
                                     appendLine(selected.message)
                                     selected.stackTrace?.let {
@@ -111,11 +108,11 @@ fun ErrorLogsScreen(
     }
 
     // Delete confirmation dialog
-    com.jervis.ui.util.ConfirmDialog(
+    ConfirmDialog(
         visible = showDeleteDialog && selectedLogId != null,
-        title = "Delete Error Log",
-        message = "Are you sure you want to delete this error log? This action cannot be undone.",
-        confirmText = "Delete",
+        title = "Smazat log",
+        message = "Opravdu chcete smazat tento záznam o chybě? Tuto akci nelze vrátit.",
+        confirmText = "Smazat",
         onConfirm = {
             scope.launch {
                 try {
@@ -124,7 +121,7 @@ fun ErrorLogsScreen(
                     showDeleteDialog = false
                     loadErrorLogs()
                 } catch (e: Exception) {
-                    errorMessage = "Failed to delete: ${e.message}"
+                    errorMessage = "Smazání selhalo: ${e.message}"
                     showDeleteDialog = false
                 }
             }
@@ -147,20 +144,20 @@ private fun ErrorLogsTable(
     ) {
         // Header
         item {
-            com.jervis.ui.design.JTableHeaderRow(
+            JTableHeaderRow(
                 modifier = Modifier.padding(horizontal = 0.dp)
             ) {
-                com.jervis.ui.design.JTableHeaderCell("Timestamp", modifier = Modifier.weight(0.25f))
-                com.jervis.ui.design.JTableHeaderCell("Message", modifier = Modifier.weight(0.55f))
-                com.jervis.ui.design.JTableHeaderCell("Type", modifier = Modifier.weight(0.15f))
-                com.jervis.ui.design.JTableHeaderCell("Actions", modifier = Modifier.weight(0.05f))
+                JTableHeaderCell("Čas", modifier = Modifier.weight(0.25f))
+                JTableHeaderCell("Zpráva", modifier = Modifier.weight(0.55f))
+                JTableHeaderCell("Typ", modifier = Modifier.weight(0.15f))
+                JTableHeaderCell("Akce", modifier = Modifier.weight(0.05f))
             }
         }
 
         // Rows
         items(errorLogs) { log ->
             val isSelected = selectedLogId == log.id
-            com.jervis.ui.design.JTableRowCard(
+            JTableRowCard(
                 selected = isSelected,
                 modifier = Modifier.fillMaxWidth().clickable {
                     onRowSelected(if (isSelected) null else log.id)
@@ -196,7 +193,7 @@ private fun ErrorLogsTable(
 
                     // Delete action
                     Box(modifier = Modifier.weight(0.05f), contentAlignment = Alignment.CenterEnd) {
-                        com.jervis.ui.util.DeleteIconButton(
+                        DeleteIconButton(
                             onClick = { onDeleteClick(log.id) }
                         )
                     }

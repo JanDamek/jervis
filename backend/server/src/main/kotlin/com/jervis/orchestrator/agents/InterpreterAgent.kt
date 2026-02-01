@@ -15,6 +15,7 @@ import com.jervis.orchestrator.model.RequestType
 import com.jervis.orchestrator.model.TaskDocument
 import com.jervis.orchestrator.model.MultiGoalRequest
 import com.jervis.orchestrator.model.GoalSpec
+import com.jervis.orchestrator.prompts.NoGuessingDirectives
 import com.jervis.types.ProjectId
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
@@ -55,50 +56,50 @@ class InterpreterAgent(
                 )
             ),
 
-            // Example 2: Simple search - SINGLE goal with comprehensive search
+            // Example 2: Simple search - SINGLE goal with comprehensive search (CZECH!)
             MultiGoalRequest(
                 originalQuery = "najdi které NTB jsem koupil na Alze",
                 goals = listOf(
                     GoalSpec(
                         id = "g1",
                         type = RequestType.ADVICE,
-                        outcome = "Find all NTB (notebook) purchases from Alza",
-                        description = "Comprehensive search in knowledge base for laptop purchases from Alza vendor",
+                        outcome = "Najít všechny nákupy NTB (notebooků) z Alzy",
+                        description = "Komplexní vyhledávání v knowledge base pro nákupy notebooků od prodejce Alza",
                         entities = listOf(
                             EntityRef(id = "NTB", type = "product", source = "query"),
                             EntityRef(id = "Alza", type = "vendor", source = "query")
                         ),
                         checklist = listOf(
-                            "Search knowledge base with comprehensive query including synonyms",
-                            "Query should include: NTB, notebook, laptop, nákup, purchase, Alza, email, objednávka"
+                            "Prohledat knowledge base s komplexním dotazem včetně synonym",
+                            "Dotaz by měl obsahovat: NTB, notebook, laptop, nákup, purchase, Alza, email, objednávka"
                         ),
                         priority = 0
                     )
                 )
             ),
             
-            // Example 2b: Multiple independent goals (different topics)
+            // Example 2b: Multiple independent goals (different topics) - CZECH!
             MultiGoalRequest(
                 originalQuery = "prohledej historii nákupů NTB z Alzy a analyzuj architekturu kódu",
                 goals = listOf(
                     GoalSpec(
                         id = "g1",
                         type = RequestType.ADVICE,
-                        outcome = "Find NTB purchases from Alza",
-                        description = "Search purchase history in emails and documents",
+                        outcome = "Najít nákupy NTB z Alzy",
+                        description = "Prohledat historii nákupů v emailech a dokumentech",
                         entities = listOf(
                             EntityRef(id = "NTB", type = "product", source = "query"),
                             EntityRef(id = "Alza", type = "vendor", source = "query")
                         ),
-                        checklist = listOf("Search in knowledge base: NTB notebook laptop Alza purchase email"),
+                        checklist = listOf("Prohledat knowledge base: NTB notebook laptop Alza nákup purchase email"),
                         priority = 0
                     ),
                     GoalSpec(
                         id = "g2",
                         type = RequestType.CODE_ANALYSIS,
-                        outcome = "Analyze code architecture",
-                        description = "Analyze overall code structure and architecture",
-                        checklist = listOf("Search architectural documentation", "Analyze relationships between code components"),
+                        outcome = "Analyzovat architekturu kódu",
+                        description = "Analyzovat celkovou strukturu a architekturu kódu",
+                        checklist = listOf("Prohledat architektonickou dokumentaci", "Analyzovat vztahy mezi komponentami kódu"),
                         priority = 0
                     )
                 )
@@ -166,6 +167,33 @@ You are Multi-Goal Interpreter Agent for JERVIS Orchestrator.
 
 Decompose complex user requests into multiple discrete, executable goals.
 
+═══════════════════════════════════════════════════════════════════════════════
+CRITICAL: LANGUAGE PRESERVATION
+═══════════════════════════════════════════════════════════════════════════════
+
+Goals MUST preserve the original query language:
+- If originalQuery is Czech → outcome, description, checklist in Czech
+- If originalQuery is English → outcome, description, checklist in English
+- NEVER translate user's language to English automatically
+
+Examples:
+✅ CORRECT:
+Czech query: "najdi které NTB jsem koupil na Alze"
+  → outcome: "Najít všechny nákupy NTB z Alzy"
+  → description: "Komplexní vyhledávání v knowledge base pro nákupy notebooků z Alzy"
+  → checklist: ["Prohledat knowledge base s komplexním dotazem včetně synonym"]
+
+English query: "find which NTB I bought on Alza"
+  → outcome: "Find all NTB purchases from Alza"
+  → description: "Comprehensive search in knowledge base for notebook purchases from Alza"
+  → checklist: ["Search knowledge base with comprehensive query including synonyms"]
+
+❌ WRONG:
+Czech query: "najdi NTB na Alze"
+  → outcome: "Find all NTB purchases from Alza"  (ENGLISH - FORBIDDEN!)
+
+═══════════════════════════════════════════════════════════════════════════════
+
 RULES:
 1. **Identify Multiple Goals**: Look for keywords like "AND", "také", "potom", "a", commas, multiple sentences with different intents
 2. **Assign Correct Types**:
@@ -186,7 +214,7 @@ RULES:
 
 5. **Extract Entities**: Jira IDs (UFO-123), file names, class names, product names, years, vendors, etc.
 
-6. **Create Checklist**: Risk mitigation steps per goal type
+6. **Create Checklist**: Risk mitigation steps per goal type (IN ORIGINAL LANGUAGE!)
    - CODE_ANALYSIS: "RAG first", "GraphDB", "Joern", "NO coding tools"
    - CODE_CHANGE: "Find code first", "Check budget", "Create tech spec"
    - ADVICE: "Check data sources", "Search emails/RAG"
@@ -202,7 +230,7 @@ RULES:
    - If request needs data from multiple independent sources → create parallel goals
    - Example: "najdi purchases on Alza AND code using HType" → 2 independent goals
    - Example: "najdi NTB na Alze" → 1 goal (single search covers emails, documents, confluence)
-   
+
 IMPORTANT:
 - Even simple requests may have implicit multi-goals
 - "prohledej X a oprav Y" = 2 goals minimum (ADVICE/CODE_ANALYSIS + CODE_CHANGE)
@@ -210,6 +238,8 @@ IMPORTANT:
 - Single straightforward request = 1 goal (but check for hidden questions!)
 - If request contains unknown terms/abbreviations → CREATE CLARIFICATION GOALS FIRST
 - Up to 10+ goals is normal for complex requests
+
+${NoGuessingDirectives.CRITICAL_RULES}
 
 Output valid MultiGoalRequest with goals array and dependencyGraph map.
                 """.trimIndent())

@@ -11,9 +11,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.jervis.dto.ClientDto
 import com.jervis.repository.JervisRepository
-import com.jervis.ui.components.SettingCard
+import com.jervis.ui.design.*
+import com.jervis.ui.util.RefreshIconButton
 import kotlinx.coroutines.launch
 
 @Composable
@@ -36,23 +36,23 @@ fun GitSettings(repository: JervisRepository) {
 
     LaunchedEffect(Unit) { loadData() }
 
-    if (isLoading && clients.isEmpty()) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
+    Column(modifier = Modifier.fillMaxSize()) {
+        JActionBar {
+            RefreshIconButton(onClick = { loadData() })
         }
-    } else {
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            items(clients) { client ->
-                SettingCard(title = "Klient: ${client.name}") {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Provider: ${client.gitProvider ?: "Nenastaveno"}", style = MaterialTheme.typography.bodyMedium)
-                        Text("Auth Type: ${client.gitAuthType ?: "Nenastaveno"}", style = MaterialTheme.typography.bodySmall)
-                        
-                        val config = client.gitConfig
-                        if (config != null) {
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                            val userNameValue = config.gitUserName ?: "N/A"
-                            Text("User: $userNameValue", style = MaterialTheme.typography.bodySmall)
+
+        Spacer(Modifier.height(8.dp))
+
+        if (isLoading && clients.isEmpty()) {
+            JCenteredLoading()
+        } else if (clients.isEmpty()) {
+            JEmptyState(message = "Žádní klienti nenalezeni", icon = "🏢")
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                items(clients) { client ->
+                    JSection(title = "Klient: ${client.name}") {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Přiřazená připojení: ${client.connectionIds.size}", style = MaterialTheme.typography.bodyMedium)
                         }
                     }
                 }

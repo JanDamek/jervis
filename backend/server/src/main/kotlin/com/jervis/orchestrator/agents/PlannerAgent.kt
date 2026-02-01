@@ -14,6 +14,7 @@ import com.jervis.orchestrator.model.ContextPack
 import com.jervis.orchestrator.model.EvidencePack
 import com.jervis.orchestrator.model.OrderedPlan
 import com.jervis.orchestrator.model.PlanStep
+import com.jervis.orchestrator.prompts.NoGuessingDirectives
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
 
@@ -161,11 +162,36 @@ class PlannerAgent(
                             These are PLAN ACTION CATEGORIES, not specific tools.
                             Executor will select appropriate tools from registry based on these action types.
 
+                            ═══════════════════════════════════════════════════════════════════════════════
+                            CRITICAL: LANGUAGE MATCHING
+                            ═══════════════════════════════════════════════════════════════════════════════
+
+                            Plan step descriptions MUST match the user query language:
+                            - If userQuery is Czech → step descriptions in Czech
+                            - If userQuery is English → step descriptions in English
+                            - NEVER translate user's language to English automatically
+
+                            Examples:
+                            ✅ CORRECT:
+                            Czech userQuery: "najdi které NTB jsem koupil na Alze"
+                              → step description: "Prohledat knowledge base pro NTB/notebook/laptop nákupy z Alzy"
+
+                            English userQuery: "find which NTB I bought on Alza"
+                              → step description: "Search knowledge base for NTB/notebook/laptop purchases from Alza"
+
+                            ❌ WRONG:
+                            Czech userQuery: "najdi NTB na Alze"
+                              → step description: "Search knowledge base for NTB purchases"  (ENGLISH - FORBIDDEN!)
+
+                            ═══════════════════════════════════════════════════════════════════════════════
+
+                            ${NoGuessingDirectives.CRITICAL_RULES}
+
                             Output an OrderedPlan with list of steps.
                             Each step has:
                             - action: type of action
                             - executor: who executes it
-                            - description: what to do
+                            - description: what to do (IN USER'S LANGUAGE!)
 
                             Be concise and specific.
                             """.trimIndent(),

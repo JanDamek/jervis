@@ -16,7 +16,7 @@ interface WikiService {
         query: String,
         spaceKey: String? = null,
         maxResults: Int = 20,
-    ): List<ConfluencePage>
+    ): List<WikiPage>
 
     /**
      * Get specific Confluence page by ID.
@@ -24,12 +24,12 @@ interface WikiService {
     suspend fun getPage(
         clientId: ClientId,
         pageId: String,
-    ): ConfluencePage
+    ): WikiPage
 
     /**
      * List all Confluence spaces for client.
      */
-    suspend fun listSpaces(clientId: ClientId): List<ConfluenceSpace>
+    suspend fun listSpaces(clientId: ClientId): List<WikiSpace>
 
     /**
      * Get child pages of specific page.
@@ -37,7 +37,7 @@ interface WikiService {
     suspend fun getChildren(
         clientId: ClientId,
         pageId: String,
-    ): List<ConfluencePage>
+    ): List<WikiPage>
 
     /**
      * Create new Confluence page.
@@ -46,7 +46,7 @@ interface WikiService {
     suspend fun createPage(
         clientId: ClientId,
         request: CreatePageRequest,
-    ): ConfluencePage
+    ): WikiPage
 
     /**
      * Update existing Confluence page.
@@ -56,11 +56,11 @@ interface WikiService {
         clientId: ClientId,
         pageId: String,
         request: UpdatePageRequest,
-    ): ConfluencePage
+    ): WikiPage
 }
 
 @Serializable
-data class ConfluencePage(
+data class WikiPage(
     val id: String,
     val title: String,
     val content: String,
@@ -72,7 +72,7 @@ data class ConfluencePage(
 )
 
 @Serializable
-data class ConfluenceSpace(
+data class WikiSpace(
     val key: String,
     val name: String,
     val description: String?,

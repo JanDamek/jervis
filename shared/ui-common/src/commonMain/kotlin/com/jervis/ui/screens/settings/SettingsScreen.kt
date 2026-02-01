@@ -15,7 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.repository.JervisRepository
-import com.jervis.ui.components.SettingCard
+import com.jervis.ui.design.*
 import com.jervis.ui.screens.settings.sections.*
 
 @Composable
@@ -54,11 +54,7 @@ enum class SettingsCategory(
     GENERAL("Obecné", "⚙️", "Základní nastavení aplikace a vzhledu."),
     CLIENTS("Klienti", "🏢", "Správa organizačních jednotek."),
     PROJECTS("Projekty", "📁", "Správa projektů přiřazených klientům."),
-    CONNECTIONS("Připojení", "🔌", "Technické parametry připojení (Jira, Confluence, Git)."),
-    ATLASSIAN("Atlassian", "🅰️", "Konfigurace Jira a Confluence."),
-    GIT("Git", "🌿", "Nastavení verzovacích systémů."),
-    INDEXING("Indexace", "🔍", "Stav RAG a prohledávání dat."),
-    SCHEDULER("Plánovač", "⏰", "Naplánované úlohy a automatizace."),
+    CONNECTIONS("Připojení", "🔌", "Technické parametry připojení (Atlassian, Git, Email)."),
     LOGS("Logy", "📜", "Chybové logy a diagnostika."),
 }
 
@@ -127,14 +123,14 @@ private fun SidebarItem(
 @Composable
 private fun GeneralSettings(repository: JervisRepository) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        SettingCard(title = "Vzhled") {
+        JSection(title = "Vzhled") {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Téma aplikace")
                 Spacer(modifier = Modifier.weight(1f))
                 Text("Systémové", style = MaterialTheme.typography.bodySmall)
             }
         }
-        SettingCard(title = "Lokalizace") {
+        JSection(title = "Lokalizace") {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Jazyk")
                 Spacer(modifier = Modifier.weight(1f))
@@ -178,22 +174,6 @@ private fun SettingsContent(
 
                     SettingsCategory.CONNECTIONS -> {
                         ConnectionsSettings(repository)
-                    }
-
-                    SettingsCategory.ATLASSIAN -> {
-                        AtlassianSettings(repository)
-                    }
-
-                    SettingsCategory.GIT -> {
-                        GitSettings(repository)
-                    }
-
-                    SettingsCategory.INDEXING -> {
-                        IndexingSettings(repository)
-                    }
-
-                    SettingsCategory.SCHEDULER -> {
-                        SchedulerSettings(repository)
                     }
 
                     SettingsCategory.LOGS -> {

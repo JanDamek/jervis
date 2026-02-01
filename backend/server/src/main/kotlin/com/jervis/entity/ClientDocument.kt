@@ -4,6 +4,7 @@ import com.jervis.domain.git.GitAuthTypeEnum
 import com.jervis.domain.git.GitConfig
 import com.jervis.domain.git.GitProviderEnum
 import com.jervis.domain.language.LanguageEnum
+import com.jervis.entity.connection.ConnectionDocument.ConnectionCapability
 import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
 import org.bson.types.ObjectId
@@ -26,13 +27,27 @@ data class ClientDocument(
     val id: ClientId = ClientId.generate(),
     @Indexed(unique = true)
     val name: String,
-    val gitProvider: GitProviderEnum? = null,
-    val gitAuthType: GitAuthTypeEnum? = null,
-    val gitConfig: GitConfig? = null,
     val description: String? = null,
-    val confluenceSpaceKey: String? = null,
-    val confluenceRootPageId: String? = null,
     val defaultLanguageEnum: LanguageEnum = LanguageEnum.getDefault(),
     val lastSelectedProjectId: ProjectId? = null,
     val connectionIds: List<ObjectId> = emptyList(),
+    val gitCommitConfig: GitCommitConfig? = null,
+    /**
+     * Connection capabilities assigned at client level (defaults for all projects).
+     * Projects can override these with their own capability assignments.
+     */
+    val connectionCapabilities: List<ClientConnectionCapability> = emptyList(),
+)
+
+/**
+ * Represents a capability assignment from a specific connection at client level.
+ * Serves as default for all projects under this client.
+ */
+data class ClientConnectionCapability(
+    /** The connection providing this capability */
+    val connectionId: ObjectId,
+    /** The capability type (BUGTRACKER, WIKI, REPOSITORY, EMAIL, GIT) */
+    val capability: ConnectionCapability,
+    /** Default resource identifier (can be overridden at project level) */
+    val resourceIdentifier: String? = null,
 )

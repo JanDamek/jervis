@@ -19,7 +19,9 @@ interface ProjectRepository : CoroutineCrudRepository<ProjectDocument, ProjectId
     fun findByClientId(clientId: ClientId): Flow<ProjectDocument>
 
     /**
-     * Find all projects that have this connection ID in their connectionIds list.
+     * Find all projects that use this connection ID in any of their resource references.
      */
-    fun findByConnectionIdsContaining(connectionId: ConnectionId): Flow<ProjectDocument>
+    fun findByGitRepositoryConnectionId(connectionId: ConnectionId): Flow<ProjectDocument>
+    fun findByJiraProjectConnectionId(connectionId: ConnectionId): Flow<ProjectDocument>
+    fun findByConfluenceSpaceConnectionId(connectionId: ConnectionId): Flow<ProjectDocument>
 }

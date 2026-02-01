@@ -26,6 +26,27 @@ class ExecutionMemoryTools(
 
         // In-memory storage per correlationId
         private val executionMemory = ConcurrentHashMap<String, MutableMap<String, String>>()
+
+        /**
+         * Restore execution memory from checkpoint.
+         * Called by OrchestratorAgent on session resume.
+         */
+        fun restoreMemory(correlationId: String, memory: Map<String, String>) {
+            if (memory.isNotEmpty()) {
+                executionMemory[correlationId] = memory.toMutableMap()
+                logger.info {
+                    "EXECUTION_MEMORY_RESTORED | correlationId=$correlationId | entries=${memory.size}"
+                }
+            }
+        }
+
+        /**
+         * Get current execution memory for checkpoint serialization.
+         * Called by OrchestratorAgent when saving checkpoint.
+         */
+        fun getMemory(correlationId: String): Map<String, String> {
+            return executionMemory[correlationId]?.toMap() ?: emptyMap()
+        }
     }
 
     @Tool

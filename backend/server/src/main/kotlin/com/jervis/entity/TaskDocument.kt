@@ -134,6 +134,20 @@ data class TaskDocument(
 
     // NEW: Agent session persistence for continuous conversation
     val agentCheckpointJson: String? = null,
+
+    // NEW (2026-01): User interaction state for async USER_TASK workflow
+    /**
+     * Question agent is waiting for user to answer (when state = USER_TASK).
+     * On resume, agent knows: "user is answering THIS question".
+     * Cleared when user responds and task returns to READY_FOR_GPU.
+     */
+    val pendingUserQuestion: String? = null,
+
+    /**
+     * Context explaining WHY agent asked the question.
+     * Helps user understand what agent needs and why.
+     */
+    val userQuestionContext: String? = null,
 )
 
 /**

@@ -23,4 +23,5 @@ data class GitConfig(
     val gpgPrivateKey: String? = null,
     val gpgPublicKey: String? = null,
     val gpgPassphrase: String? = null,
+    val joernGraphPath: String? = null,
 )

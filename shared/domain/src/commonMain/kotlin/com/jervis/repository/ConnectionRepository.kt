@@ -1,6 +1,8 @@
 package com.jervis.repository
 
+import com.jervis.dto.ProjectDto
 import com.jervis.dto.connection.ConnectionCreateRequestDto
+import com.jervis.dto.connection.ConnectionImportProjectDto
 import com.jervis.dto.connection.ConnectionResponseDto
 import com.jervis.dto.connection.ConnectionTestResultDto
 import com.jervis.dto.connection.ConnectionUpdateRequestDto
@@ -31,4 +33,12 @@ class ConnectionRepository(
     }
 
     suspend fun testConnection(id: String): ConnectionTestResultDto = safeRpcCall("testConnection") { service.testConnection(id) }
+
+    suspend fun listImportableProjects(connectionId: String): List<ConnectionImportProjectDto> =
+        safeRpcListCall("listImportableProjects") {
+            service.listImportableProjects(connectionId)
+        }
+
+    suspend fun importProject(connectionId: String, externalId: String): ProjectDto =
+        safeRpcCall("importProject") { service.importProject(connectionId, externalId) }
 }

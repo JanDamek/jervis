@@ -25,7 +25,7 @@ class AgentChatRepository(
     ): Flow<ChatResponseDto> =
         agentOrchestratorService
             .subscribeToChat(clientId, projectId ?: "", limit)
-            .safeFlow("subscribeToChat")
+            
 
     /**
      * Send a chat message.
@@ -98,5 +98,5 @@ class AgentChatRepository(
     fun subscribeToQueueStatus(clientId: String): Flow<ChatResponseDto> =
         agentOrchestratorService
             .subscribeToQueueStatus(clientId)
-            .safeFlow("subscribeToQueueStatus")
+            
 }

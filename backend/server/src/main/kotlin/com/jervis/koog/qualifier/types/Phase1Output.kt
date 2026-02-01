@@ -14,13 +14,13 @@ data class ContentTypeDetection(
         """
 Content type classification:
 - EMAIL: Email message
-- JIRA: JIRA ticket/issue
-- CONFLUENCE: Confluence page
+- BUGTRACKER_ISSUE: Bug tracker issue/ticket (Jira, GitHub Issues, GitLab Issues, etc.)
+- WIKI_PAGE: Wiki/documentation page (Confluence, MediaWiki, Notion, etc.)
 - LOG: Log file (requires summarization, not chunking)
 - GENERIC: Generic text content
         """,
     )
-    val contentType: String, // EMAIL, JIRA, CONFLUENCE, LOG, GENERIC
+    val contentType: String, // EMAIL, BUGTRACKER_ISSUE, WIKI_PAGE, LOG, GENERIC
     @LLMDescription("Brief explanation why you classified it as this type")
     val reason: String,
 )
@@ -43,37 +43,37 @@ data class EmailExtractionOutput(
 )
 
 /**
- * JIRA-specific extraction output.
- * LLM extracts structured information from JIRA ticket.
+ * Bug tracker issue extraction output.
+ * LLM extracts structured information from issue/ticket (Jira, GitHub, GitLab, etc.).
  */
 @Serializable
-@LLMDescription("JIRA ticket information extraction")
-data class JiraExtractionOutput(
-    @LLMDescription("JIRA ticket key (e.g., 'SDB-2080')")
+@LLMDescription("Bug tracker issue information extraction")
+data class BugTrackerIssueExtractionOutput(
+    @LLMDescription("Issue key or number (e.g., 'SDB-2080', 'GH-123', '#456')")
     val key: String,
-    @LLMDescription("Ticket status (e.g., 'Open', 'In Progress', 'Done')")
+    @LLMDescription("Issue status (e.g., 'Open', 'In Progress', 'Done', 'Closed')")
     val status: String,
-    @LLMDescription("Ticket type (e.g., 'Bug', 'Story', 'Task')")
+    @LLMDescription("Issue type (e.g., 'Bug', 'Story', 'Task', 'Enhancement', 'Feature Request')")
     val type: String,
     @LLMDescription("Assignee name (or 'Unassigned')")
     val assignee: String,
-    @LLMDescription("Reporter name")
+    @LLMDescription("Reporter/Author name")
     val reporter: String,
-    @LLMDescription("Epic name or key (or null if not in epic)")
-    val epic: String?,
-    @LLMDescription("Sprint name (or null if not in sprint)")
-    val sprint: String?,
+    @LLMDescription("Parent issue (Epic in Jira, parent issue in GitHub/GitLab) or null")
+    val parentIssue: String?,
+    @LLMDescription("Milestone (Sprint in Jira, milestone in GitHub/GitLab) or null")
+    val milestone: String?,
     @LLMDescription("Brief description of what changed in this update")
     val changeDescription: String,
 )
 
 /**
- * Confluence-specific extraction output.
- * LLM extracts structured information from Confluence page.
+ * Wiki page extraction output.
+ * LLM extracts structured information from wiki/documentation page (Confluence, MediaWiki, Notion, etc.).
  */
 @Serializable
-@LLMDescription("Confluence page information extraction")
-data class ConfluenceExtractionOutput(
+@LLMDescription("Wiki page information extraction")
+data class WikiPageExtractionOutput(
     @LLMDescription("Page author name")
     val author: String,
     @LLMDescription("Page title")

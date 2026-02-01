@@ -53,6 +53,27 @@ data class ConnectionDocument(
     val redirectUri: String? = null,
     val connectionType: ConnectionTypeEnum,
     val useTls: Boolean? = null,
+    val projectKey: String? = null,
+    val boardId: Long? = null,
+    val spaceKey: String? = null,
+    val rootPageId: String? = null,
+    val gitRemoteUrl: String? = null,
+    val gitProvider: com.jervis.domain.git.GitProviderEnum? = null,
+    val gitConfig: com.jervis.domain.git.GitConfig? = null,
+    // Atlassian multi-purpose connection fields
+    val jiraProjectKey: String? = null,
+    val confluenceSpaceKey: String? = null,
+    val bitbucketRepoSlug: String? = null,
+    /**
+     * Capabilities this connection provides.
+     * A connection can support multiple capabilities:
+     * - BUGTRACKER: Issue tracking (Jira, GitHub Issues, GitLab Issues)
+     * - WIKI: Documentation/wiki pages (Confluence, GitHub Wiki, GitLab Wiki)
+     * - REPOSITORY: Source code repository (GitHub, GitLab, Bitbucket)
+     * - EMAIL: Email capabilities (IMAP, SMTP, POP3)
+     * - GIT: Git operations
+     */
+    val availableCapabilities: Set<ConnectionCapability> = emptySet(),
 ) {
     enum class ConnectionTypeEnum {
         HTTP,
@@ -60,6 +81,15 @@ data class ConnectionDocument(
         POP3,
         SMTP,
         OAUTH2,
+        GIT,
+    }
+
+    enum class ConnectionCapability {
+        BUGTRACKER,
+        WIKI,
+        REPOSITORY,
+        EMAIL,
+        GIT,
     }
 
     /**

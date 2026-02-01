@@ -13,8 +13,8 @@ import com.jervis.koog.SmartModelSelector
 import com.jervis.koog.tools.KnowledgeStorageTools
 import com.jervis.orchestrator.model.EvidencePack
 import com.jervis.orchestrator.model.TaskDocument
-import com.jervis.rag.KnowledgeService
-import com.jervis.rag.internal.graphdb.GraphDBService
+import com.jervis.knowledgebase.KnowledgeService
+import com.jervis.knowledgebase.internal.graphdb.GraphDBService
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
 

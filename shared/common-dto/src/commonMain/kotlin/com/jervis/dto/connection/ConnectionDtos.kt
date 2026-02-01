@@ -3,6 +3,19 @@ package com.jervis.dto.connection
 import kotlinx.serialization.Serializable
 
 /**
+ * Connection capability - what functionality does this connection provide.
+ * Generic capability types (vendor-agnostic).
+ */
+@Serializable
+enum class ConnectionCapability {
+    BUGTRACKER,  // Bug tracker (Jira, GitHub Issues, GitLab Issues, etc.)
+    WIKI,        // Wiki/documentation (Confluence, MediaWiki, Notion, etc.)
+    REPOSITORY,  // Code repository (GitHub, GitLab, Bitbucket, etc.)
+    EMAIL,       // Email (IMAP, POP3, SMTP)
+    GIT,         // Git operations
+}
+
+/**
  * Connection response DTO - returned from REST API
  */
 @Serializable
@@ -96,4 +109,15 @@ data class ConnectionTestResultDto(
     val success: Boolean,
     val message: String? = null,
     val details: Map<String, String>? = null,
+)
+
+/**
+ * Importable project from external connection (GitHub, GitLab, etc.)
+ */
+@Serializable
+data class ConnectionImportProjectDto(
+    val id: String,
+    val name: String,
+    val description: String? = null,
+    val url: String? = null,
 )

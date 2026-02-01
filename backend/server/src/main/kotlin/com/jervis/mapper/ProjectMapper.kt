@@ -1,6 +1,9 @@
 package com.jervis.mapper
 
+import com.jervis.dto.ProjectConnectionCapabilityDto
 import com.jervis.dto.ProjectDto
+import com.jervis.entity.GitCommitConfig
+import com.jervis.entity.ProjectConnectionCapability
 import com.jervis.entity.ProjectDocument
 import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
@@ -13,18 +16,66 @@ fun ProjectDocument.toDto(): ProjectDto =
         name = this.name,
         description = this.description,
         communicationLanguageEnum = this.communicationLanguageEnum,
-        connectionIds = this.connectionIds.map { it.toString() },
+        gitRepositoryConnectionId = this.gitRepositoryConnectionId?.toString(),
+        gitRepositoryIdentifier = this.gitRepositoryIdentifier,
+        jiraProjectConnectionId = this.jiraProjectConnectionId?.toString(),
+        jiraProjectKey = this.jiraProjectKey,
+        confluenceSpaceConnectionId = this.confluenceSpaceConnectionId?.toString(),
+        confluenceSpaceKey = this.confluenceSpaceKey,
+        gitCommitMessageFormat = this.gitCommitConfig?.messageFormat,
+        gitCommitAuthorName = this.gitCommitConfig?.authorName,
+        gitCommitAuthorEmail = this.gitCommitConfig?.authorEmail,
+        gitCommitCommitterName = this.gitCommitConfig?.committerName,
+        gitCommitCommitterEmail = this.gitCommitConfig?.committerEmail,
+        gitCommitGpgSign = this.gitCommitConfig?.gpgSign,
+        gitCommitGpgKeyId = this.gitCommitConfig?.gpgKeyId,
+        connectionCapabilities = this.connectionCapabilities.map { it.toDto() },
     )
 
 fun ProjectDto.toDocument(): ProjectDocument {
     val resolvedId = if (ObjectId.isValid(this.id)) ObjectId(this.id) else ObjectId.get()
     val resolvedClientId = requireNotNull(this.clientId) { "clientId is required" }
+
+    val gitCommitConfig = if (gitCommitMessageFormat != null || gitCommitAuthorName != null ||
+                               gitCommitAuthorEmail != null || gitCommitGpgSign != null) {
+        GitCommitConfig(
+            messageFormat = gitCommitMessageFormat,
+            authorName = gitCommitAuthorName,
+            authorEmail = gitCommitAuthorEmail,
+            committerName = gitCommitCommitterName,
+            committerEmail = gitCommitCommitterEmail,
+            gpgSign = gitCommitGpgSign ?: false,
+            gpgKeyId = gitCommitGpgKeyId,
+        )
+    } else null
+
     return ProjectDocument(
         id = ProjectId(resolvedId),
         clientId = ClientId(ObjectId(resolvedClientId)),
         name = this.name,
         description = this.description,
         communicationLanguageEnum = this.communicationLanguageEnum,
-        connectionIds = this.connectionIds.map { ObjectId(it) },
+        gitRepositoryConnectionId = gitRepositoryConnectionId?.let { ObjectId(it) },
+        gitRepositoryIdentifier = gitRepositoryIdentifier,
+        jiraProjectConnectionId = jiraProjectConnectionId?.let { ObjectId(it) },
+        jiraProjectKey = jiraProjectKey,
+        confluenceSpaceConnectionId = confluenceSpaceConnectionId?.let { ObjectId(it) },
+        confluenceSpaceKey = confluenceSpaceKey,
+        gitCommitConfig = gitCommitConfig,
+        connectionCapabilities = this.connectionCapabilities.map { it.toEntity() },
     )
 }
+
+fun ProjectConnectionCapability.toDto(): ProjectConnectionCapabilityDto =
+    ProjectConnectionCapabilityDto(
+        connectionId = this.connectionId.toString(),
+        capability = com.jervis.dto.connection.ConnectionCapability.valueOf(this.capability.name),
+        resourceIdentifier = this.resourceIdentifier,
+    )
+
+fun ProjectConnectionCapabilityDto.toEntity(): ProjectConnectionCapability =
+    ProjectConnectionCapability(
+        connectionId = ObjectId(this.connectionId),
+        capability = com.jervis.entity.connection.ConnectionDocument.ConnectionCapability.valueOf(this.capability.name),
+        resourceIdentifier = this.resourceIdentifier,
+    )

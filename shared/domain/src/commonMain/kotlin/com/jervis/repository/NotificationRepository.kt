@@ -15,5 +15,5 @@ class NotificationRepository(
      * Subscribe to real-time events for a client
      */
     fun subscribeToEvents(clientId: String): Flow<JervisEvent> = 
-        service.subscribeToEvents(clientId).safeFlow("subscribeToEvents")
+        service.subscribeToEvents(clientId)
 }

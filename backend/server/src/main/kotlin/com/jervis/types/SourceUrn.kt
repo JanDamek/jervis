@@ -38,6 +38,17 @@ value class SourceUrn(
 
         fun document(documentId: String): SourceUrn = SourceUrn("doc::id:${encodeValue(documentId)}")
 
+        fun git(
+            projectId: ProjectId,
+            commitHash: String,
+            filePath: String? = null,
+        ): SourceUrn =
+            SourceUrn(
+                "git::proj:${projectId.value.toHexString()},hash:$commitHash${
+                    filePath?.let { ",path:${encodeValue(it)}" } ?: ""
+                }",
+            )
+
         private fun encodeValue(value: String): String =
             value
                 .replace(",", "%2C")

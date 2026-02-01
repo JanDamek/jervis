@@ -2,12 +2,13 @@
 
 ## Problem Overview
 
-Jira polling handler fails with multiple related errors stemming from sealed class refactoring and missing MongoDB fields.
+Jira polling handler fails with multiple related errors stemming from sealed class refactoring and missing MongoDB
+fields.
 
 ## Error 1: BeanInstantiationException
 
 ```
-Failed to instantiate [com.jervis.entity.jira.JiraIssueIndexDocument]: Is it an abstract class?
+Failed to instantiate [com.jervis.entity.jira.BugTrackerIssueIndexDocument]: Is it an abstract class?
 ```
 
 **Root Cause**: Sealed classes require `_class` discriminator field in MongoDB.
@@ -22,11 +23,13 @@ Failed to instantiate [com.jervis.entity.jira.JiraIssueIndexDocument]: Is it an 
 E11000 duplicate key error collection: jervis.jira_issues index: _id_
 ```
 
-**Root Cause**: Spring Data `repository.save()` incorrectly tries to INSERT instead of UPDATE when working with sealed classes.
+**Root Cause**: Spring Data `repository.save()` incorrectly tries to INSERT instead of UPDATE when working with sealed
+classes.
 
 **Solution**: Use `ReactiveMongoTemplate.findAndReplace()` with upsert instead.
 
 **Code Fix** (already implemented):
+
 ```kotlin
 override suspend fun saveIssue(issue: JiraIssueIndexDocument) {
     val query = Query.query(Criteria.where("_id").`is`(issue.id))
@@ -43,16 +46,18 @@ override suspend fun saveIssue(issue: JiraIssueIndexDocument) {
 ## Error 3: MappingInstantiationException - NullPointerException
 
 ```
-Parameter specified as non-null is null: method com.jervis.entity.jira.JiraIssueIndexDocument$New.<init>, parameter projectKey
+Parameter specified as non-null is null: method com.jervis.entity.jira.BugTrackerIssueIndexDocument$New.<init>, parameter projectKey
 ```
 
 **Root Cause**: Old MongoDB documents have `null` or missing values in fields defined as non-nullable.
 
 **Fields affected**:
+
 - `projectKey: String` (was non-nullable, now nullable)
 - `labels`, `comments`, `attachments`, `linkedIssues` (were `List` without defaults, now have `emptyList()`)
 
 **Solution**:
+
 1. Make fields nullable in Kotlin code (already done)
 2. Run migration to fix existing MongoDB documents
 
@@ -69,17 +74,17 @@ mongosh mongodb://localhost:27017/jervis scripts/mongodb/fix-all-issues.js
 This script performs:
 
 1. ✅ **Add `_class` discriminator** to all documents
-   - `state='NEW'` → `_class='JiraNew'`
-   - `state='INDEXED'` → `_class='JiraIndexed'`
-   - `state='FAILED'` → `_class='JiraFailed'`
+    - `state='NEW'` → `_class='JiraNew'`
+    - `state='INDEXED'` → `_class='JiraIndexed'`
+    - `state='FAILED'` → `_class='JiraFailed'`
 
 2. ✅ **Fix missing/null `projectKey`**
-   - Extracts from `issueKey`: "TPR-134" → `projectKey="TPR"`
-   - Handles both missing field and `null` value
+    - Extracts from `issueKey`: "TPR-134" → `projectKey="TPR"`
+    - Handles both missing field and `null` value
 
 3. ✅ **Fix missing/null List fields**
-   - Sets `labels=[]`, `comments=[]`, `attachments=[]`, `linkedIssues=[]`
-   - Handles both missing fields and `null` values
+    - Sets `labels=[]`, `comments=[]`, `attachments=[]`, `linkedIssues=[]`
+    - Handles both missing fields and `null` values
 
 ### Step 2: Restart Jervis Server
 
@@ -98,6 +103,7 @@ Check that polling works:
 ```
 
 No more errors:
+
 ```
 ❌ BeanInstantiationException
 ❌ DuplicateKeyException
@@ -109,7 +115,7 @@ No more errors:
 
 ## Code Changes Already Applied
 
-### 1. JiraIssueIndexDocument.kt
+### 1. BugTrackerIssueIndexDocument.kt
 
 **Made fields nullable/with defaults**:
 
@@ -137,7 +143,7 @@ data class Failed(
 )
 ```
 
-### 2. JiraPollingHandler.kt
+### 2. BugTrackerPollingHandler.kt
 
 **Use findAndReplace instead of save**:
 
@@ -166,16 +172,21 @@ class JiraPollingHandler(
 ## Migration Scripts
 
 ### Complete Migration (Recommended)
+
 **File**: `scripts/mongodb/fix-all-issues.js`
+
 - Adds `_class` discriminator
 - Fixes missing/null `projectKey`
 - Fixes missing/null List fields
 
 ### Partial Migrations
+
 **File**: `scripts/mongodb/fix-all-sealed-classes.js`
+
 - Only adds `_class` discriminator
 
 **File**: `scripts/mongodb/fix-jira-missing-fields.js`
+
 - Only fixes missing/null fields in JiraNew
 
 ---
@@ -223,19 +234,19 @@ db.jira_issues.findOne({ _class: 'JiraNew' })
 ### Root Cause Analysis
 
 1. **Sealed Class Refactoring**
-   - Changed from single class to sealed class hierarchy
-   - Spring Data MongoDB requires `_class` discriminator for sealed classes
-   - Old documents in MongoDB didn't have this field
+    - Changed from single class to sealed class hierarchy
+    - Spring Data MongoDB requires `_class` discriminator for sealed classes
+    - Old documents in MongoDB didn't have this field
 
 2. **Field Definition Changes**
-   - Added new required fields: `projectKey`
-   - Changed List fields from nullable to non-nullable
-   - Old documents missing these fields
+    - Added new required fields: `projectKey`
+    - Changed List fields from nullable to non-nullable
+    - Old documents missing these fields
 
 3. **Spring Data Bug**
-   - `repository.save()` doesn't work correctly with sealed classes
-   - Tries INSERT instead of UPDATE → duplicate key error
-   - Fixed by using `findAndReplace()` directly
+    - `repository.save()` doesn't work correctly with sealed classes
+    - Tries INSERT instead of UPDATE → duplicate key error
+    - Fixed by using `findAndReplace()` directly
 
 ### Why Nullable Fields?
 
@@ -277,6 +288,7 @@ val labels: List<String> = emptyList()  // MongoDB missing → empty list (OK)
 ### When Using Sealed Classes
 
 Always use `ReactiveMongoTemplate` operations directly:
+
 - ✅ `mongoTemplate.findAndReplace()` with upsert
 - ✅ `mongoTemplate.insert()`
 - ✅ `mongoTemplate.findOne()`
@@ -287,17 +299,21 @@ Always use `ReactiveMongoTemplate` operations directly:
 ## Related Files
 
 ### Entity
-- `backend/server/src/main/kotlin/com/jervis/entity/jira/JiraIssueIndexDocument.kt`
+
+- `backend/server/src/main/kotlin/com/jervis/entity/jira/BugTrackerIssueIndexDocument.kt`
 
 ### Handler
-- `backend/server/src/main/kotlin/com/jervis/service/polling/handler/bugtracker/JiraPollingHandler.kt`
+
+- `backend/server/src/main/kotlin/com/jervis/service/polling/handler/bugtracker/BugTrackerPollingHandler.kt`
 
 ### Migration Scripts
+
 - `scripts/mongodb/fix-all-issues.js` - Complete migration (recommended)
 - `scripts/mongodb/fix-all-sealed-classes.js` - Only _class discriminator
 - `scripts/mongodb/fix-jira-missing-fields.js` - Only missing fields
 
 ### Documentation
+
 - `docs/troubleshooting/sealed-class-mongodb-errors.md` - Sealed class issues
 - `docs/troubleshooting/jira-duplicate-key-fix.md` - DuplicateKeyException fix
 - `docs/troubleshooting/jira-polling-complete-fix.md` - This file (complete guide)

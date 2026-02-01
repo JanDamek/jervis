@@ -4,8 +4,8 @@ import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
 import com.jervis.entity.TaskDocument
-import com.jervis.rag.KnowledgeService
-import com.jervis.rag.internal.graphdb.GraphDBService
+import com.jervis.knowledgebase.KnowledgeService
+import com.jervis.knowledgebase.internal.graphdb.GraphDBService
 import mu.KotlinLogging
 
 /**
@@ -61,7 +61,7 @@ class ValidationTools(
         try {
             // 1. Search knowledge base for our technology usage
             val evidencePack = knowledgeService.retrieve(
-                com.jervis.rag.RetrievalRequest(
+                com.jervis.knowledgebase.RetrievalRequest(
                     query = "technology stack $concernedTechnology version dependencies",
                     clientId = task.clientId,
                     projectId = task.projectId,
@@ -179,7 +179,7 @@ class ValidationTools(
         try {
             // Search for related existing knowledge
             val evidencePack = knowledgeService.retrieve(
-                com.jervis.rag.RetrievalRequest(
+                com.jervis.knowledgebase.RetrievalRequest(
                     query = topic,
                     clientId = task.clientId,
                     projectId = task.projectId,

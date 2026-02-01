@@ -37,7 +37,7 @@ private val logger = KotlinLogging.logger {}
  * - FAILED: Same as NEW + error field (for retry)
  */
 @Service
-@Order(11) // Start after JiraContinuousIndexer
+@Order(11) // Start after BugTrackerContinuousIndexer
 @Profile("!cli")
 class EmailContinuousIndexer(
     private val repository: EmailMessageIndexRepository,
@@ -162,7 +162,7 @@ class EmailContinuousIndexer(
                 sourceUrn =
                     SourceUrn.email(
                         connectionId = doc.connectionId,
-                        messageId = doc.messageId,
+                        messageId = doc.messageId ?: doc.messageUid,
                         subject = doc.subject ?: "",
                     ),
                 projectId = doc.projectId,

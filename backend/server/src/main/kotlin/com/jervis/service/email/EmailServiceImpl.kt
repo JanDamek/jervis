@@ -43,7 +43,7 @@ class EmailServiceImpl(
         emailId: String,
     ): Email {
         val doc =
-            repository.findAll().toList().find { it.clientId == clientId && it.messageId == emailId }
+            repository.findAll().toList().find { it.clientId == clientId && (it.messageId == emailId || it.messageUid == emailId) }
                 ?: throw NoSuchElementException("Email not found: $emailId")
         return doc.toEmail()
     }
@@ -57,7 +57,7 @@ class EmailServiceImpl(
             repository
                 .findAll()
                 .toList()
-                .filter { it.clientId == clientId && it.messageId.contains(threadId) } // Mock thread logic
+                .filter { it.clientId == clientId && (it.messageId?.contains(threadId) == true || it.messageUid.contains(threadId)) } // Mock thread logic
                 .map { it.toEmail() }
 
         return EmailThread(
@@ -85,8 +85,8 @@ class EmailServiceImpl(
 
     private fun com.jervis.entity.email.EmailMessageIndexDocument.toEmail() =
         Email(
-            id = messageId,
-            threadId = messageId, // Mock
+            id = messageId ?: messageUid,
+            threadId = messageId ?: messageUid, // Mock
             from = from ?: "unknown",
             to = to,
             cc = emptyList(),

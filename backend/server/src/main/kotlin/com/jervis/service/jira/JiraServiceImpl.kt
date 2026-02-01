@@ -16,7 +16,7 @@ class JiraServiceImpl(
     private val connectionService: ConnectionService,
     private val clientService: com.jervis.service.client.ClientService,
     private val reconnectHandler: com.jervis.configuration.RpcReconnectHandler,
-) : JiraService {
+) : BugTrackerService {
     private val logger = KotlinLogging.logger {}
 
     override suspend fun searchIssues(
@@ -24,29 +24,30 @@ class JiraServiceImpl(
         query: String,
         project: String?,
         maxResults: Int,
-    ): List<JiraIssue> {
+    ): List<BugTrackerIssue> {
         val connection = findJiraConnection(clientId) ?: return emptyList()
         val finalQuery = if (project != null) "project = \"$project\" AND ($query)" else query
 
-        val response = withRpcRetry(
-            name = "JiraSearch",
-            reconnect = { reconnectHandler.reconnectAtlassian() }
-        ) {
-            atlassianClient.searchJiraIssues(
-                JiraSearchRequest(
-                    baseUrl = connection.baseUrl ?: "",
-                    authType = getAuthType(connection),
-                    basicUsername = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.username,
-                    basicPassword = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.password,
-                    bearerToken = (connection.credentials as? ConnectionDocument.HttpCredentials.Bearer)?.token,
-                    jql = finalQuery,
-                    maxResults = maxResults,
-                ),
-            )
-        }
+        val response =
+            withRpcRetry(
+                name = "JiraSearch",
+                reconnect = { reconnectHandler.reconnectAtlassian() },
+            ) {
+                atlassianClient.searchJiraIssues(
+                    JiraSearchRequest(
+                        baseUrl = connection.baseUrl ?: "",
+                        authType = getAuthType(connection),
+                        basicUsername = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.username,
+                        basicPassword = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.password,
+                        bearerToken = (connection.credentials as? ConnectionDocument.HttpCredentials.Bearer)?.token,
+                        jql = finalQuery,
+                        maxResults = maxResults,
+                    ),
+                )
+            }
 
         return response.issues.map { issue ->
-            JiraIssue(
+            BugTrackerIssue(
                 key = issue.key,
                 summary = issue.fields.summary ?: "",
                 description = null, // Summary only for search results
@@ -65,28 +66,29 @@ class JiraServiceImpl(
     override suspend fun getIssue(
         clientId: ClientId,
         issueKey: String,
-    ): JiraIssue {
+    ): BugTrackerIssue {
         val connection =
             findJiraConnection(clientId) ?: throw IllegalStateException("No Jira connection found for client $clientId")
 
-        val response = withRpcRetry(
-            name = "JiraGetIssue",
-            reconnect = { reconnectHandler.reconnectAtlassian() }
-        ) {
-            atlassianClient.getJiraIssue(
-                JiraIssueRequest(
-                    baseUrl = connection.baseUrl ?: "",
-                    authType = getAuthType(connection),
-                    basicUsername = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.username,
-                    basicPassword = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.password,
-                    bearerToken = (connection.credentials as? ConnectionDocument.HttpCredentials.Bearer)?.token,
-                    issueKey = issueKey,
-                ),
-            )
-        }
+        val response =
+            withRpcRetry(
+                name = "JiraGetIssue",
+                reconnect = { reconnectHandler.reconnectAtlassian() },
+            ) {
+                atlassianClient.getJiraIssue(
+                    JiraIssueRequest(
+                        baseUrl = connection.baseUrl ?: "",
+                        authType = getAuthType(connection),
+                        basicUsername = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.username,
+                        basicPassword = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.password,
+                        bearerToken = (connection.credentials as? ConnectionDocument.HttpCredentials.Bearer)?.token,
+                        issueKey = issueKey,
+                    ),
+                )
+            }
 
         val fields = response.fields
-        return JiraIssue(
+        return BugTrackerIssue(
             key = response.key,
             summary = fields.summary ?: "",
             description = response.renderedDescription ?: fields.description?.toString(),
@@ -101,7 +103,7 @@ class JiraServiceImpl(
         )
     }
 
-    override suspend fun listProjects(clientId: ClientId): List<JiraProject> {
+    override suspend fun listProjects(clientId: ClientId): List<BugTrackerProject> {
         // NOTE: IAtlassianClient doesn't have listProjects yet.
         // For now, return empty or implement via search if possible.
         // Actually, AtlassianApiClient might have it. Let's check.
@@ -111,27 +113,28 @@ class JiraServiceImpl(
     override suspend fun getComments(
         clientId: ClientId,
         issueKey: String,
-    ): List<JiraComment> {
+    ): List<BugTrackerComment> {
         val connection = findJiraConnection(clientId) ?: return emptyList()
 
-        val response = withRpcRetry(
-            name = "JiraGetComments",
-            reconnect = { reconnectHandler.reconnectAtlassian() }
-        ) {
-            atlassianClient.getJiraIssue(
-                JiraIssueRequest(
-                    baseUrl = connection.baseUrl ?: "",
-                    authType = getAuthType(connection),
-                    basicUsername = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.username,
-                    basicPassword = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.password,
-                    bearerToken = (connection.credentials as? ConnectionDocument.HttpCredentials.Bearer)?.token,
-                    issueKey = issueKey,
-                ),
-            )
-        }
+        val response =
+            withRpcRetry(
+                name = "JiraGetComments",
+                reconnect = { reconnectHandler.reconnectAtlassian() },
+            ) {
+                atlassianClient.getJiraIssue(
+                    JiraIssueRequest(
+                        baseUrl = connection.baseUrl ?: "",
+                        authType = getAuthType(connection),
+                        basicUsername = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.username,
+                        basicPassword = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.password,
+                        bearerToken = (connection.credentials as? ConnectionDocument.HttpCredentials.Bearer)?.token,
+                        issueKey = issueKey,
+                    ),
+                )
+            }
 
         return response.comments?.map { comment ->
-            JiraComment(
+            BugTrackerComment(
                 id = comment.id,
                 author = comment.author?.displayName ?: "Unknown",
                 body = comment.body?.toString() ?: "",
@@ -142,20 +145,20 @@ class JiraServiceImpl(
 
     override suspend fun createIssue(
         clientId: ClientId,
-        request: CreateJiraIssueRequest,
-    ): JiraIssue = throw UnsupportedOperationException("Write operations are not allowed yet (Read-only mode)")
+        request: CreateBugTrackerIssueRequest,
+    ): BugTrackerIssue = throw UnsupportedOperationException("Write operations are not allowed yet (Read-only mode)")
 
     override suspend fun updateIssue(
         clientId: ClientId,
         issueKey: String,
-        request: UpdateJiraIssueRequest,
-    ): JiraIssue = throw UnsupportedOperationException("Write operations are not allowed yet (Read-only mode)")
+        request: UpdateBugTrackerIssueRequest,
+    ): BugTrackerIssue = throw UnsupportedOperationException("Write operations are not allowed yet (Read-only mode)")
 
     override suspend fun addComment(
         clientId: ClientId,
         issueKey: String,
         comment: String,
-    ): JiraComment = throw UnsupportedOperationException("Write operations are not allowed yet (Read-only mode)")
+    ): BugTrackerComment = throw UnsupportedOperationException("Write operations are not allowed yet (Read-only mode)")
 
     private suspend fun findJiraConnection(clientId: ClientId): ConnectionDocument? {
         val client = clientService.getClientById(clientId) ?: return null

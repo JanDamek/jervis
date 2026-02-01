@@ -1,33 +1,69 @@
 package com.jervis.mapper
 
+import com.jervis.dto.ClientConnectionCapabilityDto
 import com.jervis.dto.ClientDto
 import com.jervis.dto.GitCredentialsDto
+import com.jervis.entity.ClientConnectionCapability
 import com.jervis.entity.ClientDocument
+import com.jervis.entity.GitCommitConfig
 import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
 import org.bson.types.ObjectId
 
-fun ClientDocument.toDto(gitCredentials: GitCredentialsDto? = null): ClientDto =
+fun ClientDocument.toDto(): ClientDto =
     ClientDto(
         id = this.id.toString(),
         name = this.name,
-        gitProvider = this.gitProvider,
-        gitAuthType = this.gitAuthType,
-        gitConfig = this.gitConfig?.toDto(),
-        gitCredentials = gitCredentials,
+        description = this.description,
         defaultLanguageEnum = this.defaultLanguageEnum,
         lastSelectedProjectId = this.lastSelectedProjectId?.toString(),
         connectionIds = this.connectionIds.map { it.toString() },
+        gitCommitMessageFormat = this.gitCommitConfig?.messageFormat,
+        gitCommitAuthorName = this.gitCommitConfig?.authorName,
+        gitCommitAuthorEmail = this.gitCommitConfig?.authorEmail,
+        gitCommitCommitterName = this.gitCommitConfig?.committerName,
+        gitCommitCommitterEmail = this.gitCommitConfig?.committerEmail,
+        gitCommitGpgSign = this.gitCommitConfig?.gpgSign ?: false,
+        gitCommitGpgKeyId = this.gitCommitConfig?.gpgKeyId,
+        connectionCapabilities = this.connectionCapabilities.map { it.toDto() },
     )
 
-fun ClientDto.toDocument(): ClientDocument =
-    ClientDocument(
+fun ClientDto.toDocument(): ClientDocument {
+    val gitCommitConfig = if (gitCommitMessageFormat != null || gitCommitAuthorName != null ||
+                               gitCommitAuthorEmail != null || gitCommitGpgSign) {
+        GitCommitConfig(
+            messageFormat = gitCommitMessageFormat,
+            authorName = gitCommitAuthorName,
+            authorEmail = gitCommitAuthorEmail,
+            committerName = gitCommitCommitterName,
+            committerEmail = gitCommitCommitterEmail,
+            gpgSign = gitCommitGpgSign,
+            gpgKeyId = gitCommitGpgKeyId,
+        )
+    } else null
+
+    return ClientDocument(
         id = ClientId(ObjectId(this.id)),
         name = this.name,
-        gitProvider = this.gitProvider,
-        gitAuthType = this.gitAuthType,
-        gitConfig = this.gitConfig?.toDomain(),
+        description = this.description,
         defaultLanguageEnum = this.defaultLanguageEnum,
         lastSelectedProjectId = this.lastSelectedProjectId?.let { ProjectId(ObjectId(it)) },
         connectionIds = this.connectionIds.map { ObjectId(it) },
+        gitCommitConfig = gitCommitConfig,
+        connectionCapabilities = this.connectionCapabilities.map { it.toEntity() },
+    )
+}
+
+fun ClientConnectionCapability.toDto(): ClientConnectionCapabilityDto =
+    ClientConnectionCapabilityDto(
+        connectionId = this.connectionId.toString(),
+        capability = com.jervis.dto.connection.ConnectionCapability.valueOf(this.capability.name),
+        resourceIdentifier = this.resourceIdentifier,
+    )
+
+fun ClientConnectionCapabilityDto.toEntity(): ClientConnectionCapability =
+    ClientConnectionCapability(
+        connectionId = ObjectId(this.connectionId),
+        capability = com.jervis.entity.connection.ConnectionDocument.ConnectionCapability.valueOf(this.capability.name),
+        resourceIdentifier = this.resourceIdentifier,
     )

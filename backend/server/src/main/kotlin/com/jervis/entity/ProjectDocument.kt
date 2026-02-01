@@ -3,6 +3,7 @@ package com.jervis.entity
 import com.jervis.domain.git.GitAuthTypeEnum
 import com.jervis.domain.git.GitConfig
 import com.jervis.domain.language.LanguageEnum
+import com.jervis.entity.connection.ConnectionDocument.ConnectionCapability
 import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
 import org.bson.types.ObjectId
@@ -26,16 +27,22 @@ data class ProjectDocument(
     val name: String,
     val description: String? = null,
     val communicationLanguageEnum: LanguageEnum = LanguageEnum.getDefault(),
-    val connectionIds: List<ObjectId> = emptyList(),
-    val gitRemoteUrl: String? = null,
-    val gitAuthType: GitAuthTypeEnum? = null,
-    val gitConfig: GitConfig? = null,
+    // Project-specific resource identifiers within client's connections
+    val gitRepositoryConnectionId: ObjectId? = null,
+    val gitRepositoryIdentifier: String? = null,
+    val jiraProjectConnectionId: ObjectId? = null,
     val jiraProjectKey: String? = null,
-    val jiraBoardId: Long? = null,
+    val confluenceSpaceConnectionId: ObjectId? = null,
     val confluenceSpaceKey: String? = null,
-    val confluenceRootPageId: String? = null,
     val buildConfig: ProjectBuildConfig? = null,
     val costPolicy: ProjectCostPolicy = ProjectCostPolicy(),
+    val gitCommitConfig: GitCommitConfig? = null, // Overrides client's config
+    /**
+     * Connection capabilities assigned to this project.
+     * Allows mixing capabilities from different connections.
+     * Example: GitHub for repository, Atlassian for bugtracker, GitLab for wiki
+     */
+    val connectionCapabilities: List<ProjectConnectionCapability> = emptyList(),
 )
 
 /**
@@ -61,4 +68,39 @@ data class ProjectBuildConfig(
     val testCommands: List<String> = emptyList(),
     /** Maximum time to wait for verification (in seconds) */
     val verifyTimeoutSeconds: Long = 600, // 10 minutes default
+)
+
+/**
+ * Git commit configuration for a project.
+ *
+ * Defines how commits should be formatted and signed when the agent makes changes.
+ */
+data class GitCommitConfig(
+    /** Template for commit messages, e.g., "[{project}] {message}" */
+    val messageFormat: String? = null,
+    /** Git author name for commits */
+    val authorName: String? = null,
+    /** Git author email for commits */
+    val authorEmail: String? = null,
+    /** Git committer name (if different from author) */
+    val committerName: String? = null,
+    /** Git committer email (if different from author) */
+    val committerEmail: String? = null,
+    /** Whether to GPG sign commits */
+    val gpgSign: Boolean = false,
+    /** GPG key ID to use for signing */
+    val gpgKeyId: String? = null,
+)
+
+/**
+ * Represents a capability assignment from a specific connection to a project.
+ * Allows projects to use specific capabilities from different connections.
+ */
+data class ProjectConnectionCapability(
+    /** The connection providing this capability */
+    val connectionId: ObjectId,
+    /** The capability type (BUGTRACKER, WIKI, REPOSITORY, EMAIL, GIT) */
+    val capability: ConnectionCapability,
+    /** Resource identifier specific to this capability (e.g., project key, repo name, space key) */
+    val resourceIdentifier: String? = null,
 )

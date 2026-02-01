@@ -1,7 +1,7 @@
 package com.jervis.bootstrap
 
-import com.jervis.rag.internal.WeaviatePerClientProvisioner
-import com.jervis.rag.internal.graphdb.GraphDBService
+import com.jervis.knowledgebase.internal.WeaviatePerClientProvisioner
+import com.jervis.knowledgebase.internal.graphdb.GraphDBService
 import com.jervis.repository.ClientRepository
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.onEach

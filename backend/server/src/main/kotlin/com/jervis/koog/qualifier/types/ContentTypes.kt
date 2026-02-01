@@ -7,11 +7,14 @@ import kotlinx.serialization.Serializable
  * Content type classification for appropriate processing strategy.
  *
  * Each content type requires different key information extraction and processing approach.
+ *
+ * Note: These are GENERIC types - specific implementations (Jira, GitHub, Confluence, etc.)
+ * are handled by connection-specific services via microservices.
  */
 enum class ContentType {
     EMAIL,
-    JIRA,
-    CONFLUENCE,
+    BUGTRACKER_ISSUE,  // Generic: Jira, GitHub Issues, GitLab Issues, etc.
+    WIKI_PAGE,         // Generic: Confluence, MediaWiki, Notion, etc.
     LOG,
     GENERIC,
 }
@@ -40,25 +43,27 @@ data class EmailExtraction(
 )
 
 /**
- * JIRA-specific extracted information.
+ * Bug tracker issue extracted information.
+ * Generic structure for Jira, GitHub Issues, GitLab Issues, etc.
  */
 @Serializable
-data class JiraExtraction(
-    val key: String, // e.g., "SDB-2080"
+data class BugTrackerIssueExtraction(
+    val key: String, // e.g., "SDB-2080", "GH-123", "GL-456"
     val status: String,
-    val type: String, // Bug, Story, Task, etc.
+    val type: String, // Bug, Story, Task, Enhancement, etc.
     val assignee: String?,
     val reporter: String,
-    val epic: String?,
-    val sprint: String?,
+    val parentIssue: String?, // Epic in Jira, parent issue in GitHub/GitLab
+    val milestone: String?,   // Sprint in Jira, milestone in GitHub/GitLab
     val changeDescription: String, // What changed in this update
-    val classification: JiraClassification,
+    val classification: IssueClassification,
 )
 
 /**
- * JIRA classification for user task routing.
+ * Issue classification for user task routing.
+ * Applies to all bug tracker systems.
  */
-enum class JiraClassification {
+enum class IssueClassification {
     /** Informational - no action needed */
     INFO,
 
@@ -70,9 +75,10 @@ enum class JiraClassification {
 }
 
 /**
- * Confluence-specific extracted information.
+ * Wiki page extracted information.
+ * Generic structure for Confluence, MediaWiki, Notion, etc.
  */
-data class ConfluenceExtraction(
+data class WikiPageExtraction(
     val author: String,
     val title: String,
     val topic: String, // Main topic/focus of the page
@@ -96,12 +102,12 @@ sealed class ExtractionResult {
         val data: EmailExtraction,
     ) : ExtractionResult()
 
-    data class Jira(
-        val data: JiraExtraction,
+    data class BugTrackerIssue(
+        val data: BugTrackerIssueExtraction,
     ) : ExtractionResult()
 
-    data class Confluence(
-        val data: ConfluenceExtraction,
+    data class WikiPage(
+        val data: WikiPageExtraction,
     ) : ExtractionResult()
 
     data class Log(

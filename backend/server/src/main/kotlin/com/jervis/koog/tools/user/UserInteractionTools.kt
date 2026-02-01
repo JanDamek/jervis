@@ -4,7 +4,6 @@ import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
 import com.jervis.entity.TaskDocument
-import com.jervis.service.task.TaskPriorityEnum
 import com.jervis.service.task.UserTaskService
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
@@ -18,7 +17,7 @@ import java.time.Instant
 class UserInteractionTools(
     private val task: TaskDocument,
     private val userTaskService: UserTaskService,
-    private val jiraService: com.jervis.service.jira.JiraService? = null,
+    private val jiraService: com.jervis.integration.bugtracker.BugTrackerService? = null,
 ) : ToolSet {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -38,7 +37,8 @@ class UserInteractionTools(
         reason: String,
     ): UserTaskResult {
         val title = "Cloud Spend Approval: $modelId"
-        val description = """
+        val description =
+            """
             Agent is requesting approval to use a cloud model.
             
             Model: $modelId
@@ -46,12 +46,12 @@ class UserInteractionTools(
             Reason: $reason
             
             By approving this task, you allow the agent to proceed with this model.
-        """.trimIndent()
+            """.trimIndent()
 
         return createUserTask(
             title = title,
             description = description,
-            priority = "HIGH"
+            priority = "HIGH",
         )
     }
 
@@ -59,7 +59,12 @@ class UserInteractionTools(
     @LLMDescription(
         """Ask a question or request information/decision from the user.
         This will pause the current agent execution and wait for user input.
-        The current TaskDocument will be transitioned to USER_TASK state.""",
+        The current TaskDocument will be transitioned to USER_TASK state.
+
+        IMPORTANT: Use this when you CANNOT proceed without user clarification.
+        Examples: "Which backend framework to use?", "What is the database schema?", "Approve this action?"
+
+        The agent will be paused and resumed when user responds.""",
     )
     suspend fun askUser(
         @LLMDescription("Specific question or request for information/decision")
@@ -67,11 +72,22 @@ class UserInteractionTools(
         @LLMDescription("Optional context why this information is needed")
         reason: String? = null,
     ): UserTaskResult {
-        logger.info { "AGENT_ASK_USER: question=$question" }
+        logger.info { "AGENT_ASK_USER | question='$question' | reason='$reason'" }
+
+        // Transition to USER_TASK + save question
+        // Question will be stored in TaskDocument.pendingUserQuestion
+        // On resume, agent will know "user is answering THIS question"
+        userTaskService.failAndEscalateToUserTask(
+            task = task,
+            reason = "Agent needs user input: $question",
+            pendingQuestion = question,
+            questionContext = reason,
+        )
+
         return UserTaskResult(
             success = true,
             taskId = task.id.toString(),
-            title = "Waiting for user input",
+            title = "Waiting for user input: $question",
         )
     }
 

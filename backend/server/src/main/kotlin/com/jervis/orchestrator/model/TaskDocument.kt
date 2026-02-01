@@ -32,7 +32,7 @@ data class TaskDocument(
     val createdAt: String,
     
     // Orchestrator Extensions
-    val resumePoint: ResumePoint? = null,
+    val resumePoint: TaskResumePoint? = null,
     val stmSummary: String = "",
     val rollingSummary: String = "", // Added for progressive compression
     val evidence: List<EvidenceItem> = emptyList(),
@@ -58,7 +58,7 @@ data class PendingUserQuestion(
 )
 
 @Serializable
-data class ResumePoint(
+data class TaskResumePoint(
     val phase: String,
     val cursor: String,
     val subCursor: String? = null

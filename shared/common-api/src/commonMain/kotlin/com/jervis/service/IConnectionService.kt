@@ -24,4 +24,8 @@ interface IConnectionService {
     suspend fun deleteConnection(id: String)
 
     suspend fun testConnection(id: String): ConnectionTestResultDto
+
+    suspend fun listImportableProjects(connectionId: String): List<com.jervis.dto.connection.ConnectionImportProjectDto>
+
+    suspend fun importProject(connectionId: String, externalId: String): com.jervis.dto.ProjectDto
 }

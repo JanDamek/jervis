@@ -147,3 +147,7 @@ data:
         baseUrl: ws://jervis-coding-engine:3200/
       junie:
         baseUrl: ws://jervis-junie:3300/
+      github:
+        baseUrl: ws://jervis-service-github:8085/
+      gitlab:
+        baseUrl: ws://jervis-service-gitlab:8086/

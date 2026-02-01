@@ -4,8 +4,8 @@ import com.jervis.dto.indexing.IndexingOverviewDto
 import com.jervis.dto.rag.RagSearchItemDto
 import com.jervis.dto.rag.RagSearchRequestDto
 import com.jervis.dto.rag.RagSearchResponseDto
-import com.jervis.rag.KnowledgeService
-import com.jervis.rag.RetrievalRequest
+import com.jervis.knowledgebase.KnowledgeService
+import com.jervis.knowledgebase.RetrievalRequest
 import com.jervis.service.IRagSearchService
 import com.jervis.types.ClientId
 import com.jervis.types.ProjectId

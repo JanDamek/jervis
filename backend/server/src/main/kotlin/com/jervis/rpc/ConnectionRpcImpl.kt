@@ -233,6 +233,13 @@ class ConnectionRpcImpl(
                         state = request.state ?: existing.state,
                     )
                 }
+
+                ConnectionDocument.ConnectionTypeEnum.GIT -> {
+                    existing.copy(
+                        name = request.name ?: existing.name,
+                        state = request.state ?: existing.state,
+                    )
+                }
             }
 
         val saved = connectionService.save(updated)
@@ -245,6 +252,17 @@ class ConnectionRpcImpl(
     ) {
         connectionService.delete(ConnectionId.fromString(id))
         logger.info { "Deleted connection: $id" }
+    }
+
+    override suspend fun listImportableProjects(connectionId: String): List<com.jervis.dto.connection.ConnectionImportProjectDto> {
+        // TODO: Implement project import from GitHub/GitLab/etc
+        logger.warn { "listImportableProjects not yet implemented for connection $connectionId" }
+        return emptyList()
+    }
+
+    override suspend fun importProject(connectionId: String, externalId: String): com.jervis.dto.ProjectDto {
+        // TODO: Implement project import from GitHub/GitLab/etc
+        throw UnsupportedOperationException("importProject not yet implemented")
     }
 
     override suspend fun testConnection(
@@ -277,6 +295,13 @@ class ConnectionRpcImpl(
                     ConnectionTestResultDto(
                         success = true,
                         message = "OAuth2 test not yet implemented",
+                    )
+                }
+
+                ConnectionDocument.ConnectionTypeEnum.GIT -> {
+                    ConnectionTestResultDto(
+                        success = true,
+                        message = "GIT test not yet implemented",
                     )
                 }
             }
@@ -656,6 +681,16 @@ private fun ConnectionDocument.toDto(): ConnectionResponseDto =
                 redirectUri = redirectUri,
                 scope = scopes.joinToString(" "),
                 hasCredentials = true,
+            )
+        }
+
+        ConnectionDocument.ConnectionTypeEnum.GIT -> {
+            ConnectionResponseDto(
+                id = id.toString(),
+                type = "GIT",
+                name = name,
+                state = state,
+                hasCredentials = false,
             )
         }
     }

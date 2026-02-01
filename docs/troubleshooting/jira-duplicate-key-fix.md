@@ -51,14 +51,14 @@ override suspend fun saveIssue(issue: JiraIssueIndexDocument) {
 
 1. **Explicit Query**: `findAndReplace()` targets document explicitly by `_id` field
 2. **Upsert Semantics**: `upsert=true` means:
-   - If document with `_id` **exists** → **REPLACE** it (update)
-   - If document with `_id` **doesn't exist** → **INSERT** new one
+    - If document with `_id` **exists** → **REPLACE** it (update)
+    - If document with `_id` **doesn't exist** → **INSERT** new one
 3. **No Entity Metadata**: Bypasses Spring Data's broken metadata analysis for sealed classes
 4. **Guaranteed Correctness**: MongoDB's native upsert logic handles the decision
 
 ## Implementation
 
-**File**: `backend/server/src/main/kotlin/com/jervis/service/polling/handler/bugtracker/JiraPollingHandler.kt`
+**File**: `backend/server/src/main/kotlin/com/jervis/service/polling/handler/bugtracker/BugTrackerPollingHandler.kt`
 
 **Changes**:
 
@@ -87,18 +87,21 @@ override suspend fun saveIssue(issue: JiraIssueIndexDocument) {
 ## Testing
 
 **Before fix:**
+
 ```
 ERROR - Error polling Jira for client Tepsivo
 org.springframework.dao.DuplicateKeyException: E11000 duplicate key error collection: jervis.jira_issues index: _id_
 ```
 
 **After fix:**
+
 ```
 DEBUG - Saved Jira issue: issueKey=PROJ-123, _id=ObjectId('...'), state=NEW
 INFO  - Jira polling for Tepsivo: created/updated=5, skipped=12
 ```
 
 **Verification**:
+
 1. Restart server after code changes
 2. Wait for next Jira polling cycle
 3. Check logs - should see `Saved Jira issue` debug messages
@@ -126,6 +129,7 @@ override suspend fun saveIssue(issue: JiraIssueIndexDocument) {
 ```
 
 **Problems:**
+
 - Still uses broken `repository.save()` in catch block
 - Adds unnecessary database roundtrip (find + save again)
 - Masks the root cause instead of fixing it
@@ -144,6 +148,7 @@ override suspend fun saveIssue(issue: JiraIssueIndexDocument) {
 ```
 
 **Benefits:**
+
 - Single database operation (atomic upsert)
 - Uses MongoDB's native replace logic
 - No reliance on Spring Data's broken metadata
@@ -173,6 +178,7 @@ The same issue affects:
 - **Email**: `EmailMessageIndexDocument` (sealed class)
 
 Apply same fix to:
+
 - `ConfluencePollingHandler.saveIssue()`
 - `ImapPollingHandler.saveMessage()` / `Pop3PollingHandler.saveMessage()`
 

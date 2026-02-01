@@ -23,31 +23,48 @@ class UserTaskService(
         task: TaskDocument,
         reason: String,
         error: Throwable? = null,
+        pendingQuestion: String? = null,
+        questionContext: String? = null,
     ) {
-        val title = "Background task failed: ${task.type}"
+        val title = pendingQuestion ?: "Background task failed: ${task.type}"
         val description =
             buildString {
-                appendLine("Pending task ${task.id} failed in state ${task.state}")
-                appendLine("Reason: $reason")
-                error?.message?.let { appendLine("Error: $it") }
-                appendLine()
-                appendLine("Task Content:")
-                appendLine(task.content)
+                if (pendingQuestion != null) {
+                    appendLine("Agent Question:")
+                    appendLine(pendingQuestion)
+                    appendLine()
+                    if (questionContext != null) {
+                        appendLine("Context:")
+                        appendLine(questionContext)
+                        appendLine()
+                    }
+                    appendLine("Original Task:")
+                    appendLine(task.content)
+                } else {
+                    appendLine("Pending task ${task.id} failed in state ${task.state}")
+                    appendLine("Reason: $reason")
+                    error?.message?.let { appendLine("Error: $it") }
+                    appendLine()
+                    appendLine("Task Content:")
+                    appendLine(task.content)
+                }
             }
-        
+
         // Update existing task to USER_TASK and refresh its content for UI display.
         val updatedTask = task.copy(
             taskName = title,
             content = description,
             state = com.jervis.dto.TaskStateEnum.USER_TASK,
-            type = com.jervis.dto.TaskTypeEnum.USER_TASK
+            type = com.jervis.dto.TaskTypeEnum.USER_TASK,
+            pendingUserQuestion = pendingQuestion,
+            userQuestionContext = questionContext
         )
         userTaskRepository.save(updatedTask)
-        
+
         // Notify client via kRPC stream
         notificationRpc.emitUserTaskCreated(task.clientId.toString(), task.id.toString(), title)
-        
-        logger.info { "TASK_FAILED_ESCALATED: id=${task.id} reason=$reason" }
+
+        logger.info { "TASK_FAILED_ESCALATED: id=${task.id} reason=$reason pendingQuestion=${pendingQuestion != null}" }
     }
 
     suspend fun findActiveTasksByClient(clientId: ClientId): List<TaskDocument> =

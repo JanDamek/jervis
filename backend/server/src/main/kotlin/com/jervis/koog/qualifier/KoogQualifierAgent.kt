@@ -17,15 +17,21 @@ import com.jervis.entity.TaskDocument
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.SmartModelSelector
 import com.jervis.koog.tools.KnowledgeStorageTools
+import com.jervis.koog.tools.analysis.JoernTools
+import com.jervis.koog.tools.indexing.GitIndexingTools
 import com.jervis.koog.tools.qualifier.QualifierRoutingTools
 import com.jervis.koog.vision.VisionAnalysisAgent
-import com.jervis.rag.KnowledgeService
-import com.jervis.rag.internal.graphdb.GraphDBService
+import com.jervis.knowledgebase.KnowledgeService
+import com.jervis.knowledgebase.internal.graphdb.GraphDBService
 import com.jervis.service.background.TaskService
 import com.jervis.service.connection.ConnectionService
 import com.jervis.service.link.IndexedLinkService
 import com.jervis.service.link.LinkContentService
+import com.jervis.service.project.ProjectService
+import com.jervis.service.storage.DirectoryStructureService
 import com.jervis.service.text.TikaTextExtractionService
+import com.jervis.configuration.RpcReconnectHandler
+import com.jervis.common.client.IJoernClient
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
@@ -47,6 +53,10 @@ class KoogQualifierAgent(
     private val indexedLinkService: IndexedLinkService,
     private val connectionService: ConnectionService,
     private val tikaTextExtractionService: TikaTextExtractionService,
+    private val projectService: ProjectService,
+    private val directoryStructureService: DirectoryStructureService,
+    private val joernClient: IJoernClient,
+    private val reconnectHandler: RpcReconnectHandler,
 ) {
     private val logger = KotlinLogging.logger {}
     private val activeJobs = ConcurrentHashMap<String, Job>()
@@ -110,6 +120,26 @@ class KoogQualifierAgent(
                         ),
                     )
                     tools(KnowledgeStorageTools(task, knowledgeService, graphDBService))
+                    tools(
+                        JoernTools(
+                            task,
+                            joernClient,
+                            projectService,
+                            directoryStructureService,
+                            reconnectHandler,
+                        ),
+                    )
+                    tools(
+                        GitIndexingTools(
+                            task,
+                            joernClient,
+                            projectService,
+                            directoryStructureService,
+                            knowledgeService,
+                            graphDBService,
+                            promptExecutorFactory.create("OLLAMA_QUALIFIER"),
+                        )
+                    )
                 }
 
             val planner =
@@ -139,9 +169,13 @@ class KoogQualifierAgent(
 Analyze the following content and prepare it for structured indexing into RAG and GraphDB.
 
 PHASE 1: Acquisition & Normalization
-- Identify the Source (EMAIL, CONFLUENCE, JIRA, FILE, LINK, or CHAT).
-- Pick one stable mainNodeKey for the primary document (format <type>:<id>, e.g., jira:TLIT-822, confluence:2056421411).
+- Identify the Source (EMAIL, CONFLUENCE, JIRA, FILE, LINK, CHAT, or GIT).
+- Pick one stable mainNodeKey for the primary document (format <type>:<id>, e.g., jira:TLIT-822, confluence:2056421411, git:commitHash).
 - Identify 'sourceUrn' (stable URI for the whole document).
+- If source is GIT:
+    a) Summarize the commit message and changes.
+    b) Identify affected files.
+    c) Plan Joern analysis for the whole project to update the code structure in GraphDB.
 - If source is Confluence, produce a 'PageBrief': goal, requirements, decisions, open questions, and outline.
 - If critical information is missing or permissions are needed, prepare to set finalAction=USER_TASK.
 
@@ -152,19 +186,21 @@ Split the content into logical blocks while preserving hierarchy:
 - CODE: Treat code blocks as separate blocks.
 - ASSETS: Treat images/attachments as blocks with their descriptions.
 - EMAIL: Split into Subject, Body, Signature blocks where it makes sense.
+- GIT DIFF: Split into per-file change blocks.
 
 PHASE 3: Metadata EXTRACTION (STRICT SCHEMA)
 For each block, you MUST identify:
-- chunkId: A stable identifier (e.g., "chunk:1", "section:intro").
-- kind: ONE OF [TEXT, TABLE, CODE, PDF_TEXT, IMAGE_OCR, IMAGE_CAPTION].
-- sectionPath: Full path (e.g., "Documentation/UserGuide/Installation").
+- chunkId: A stable identifier (e.g., "chunk:1", "section:intro", "file:Main.kt:diff").
+- kind: ONE OF [TEXT, TABLE, CODE, PDF_TEXT, IMAGE_OCR, IMAGE_CAPTION, GIT_DIFF].
+- sectionPath: Full path (e.g., "Documentation/UserGuide/Installation" or "src/main/kotlin/com/example/Main.kt").
 - assetId: Reference to attachment if applicable.
 - orderIndex: Position in the document (0, 1, 2...).
 
 PHASE 4: Semantic Linking (GraphDB)
-- Identify entities (e.g., 'user:jandamek', 'jira:TASK-1').
-- Define relationships: MENTIONS, AFFECTS, DEPENDS_ON.
+- Identify entities (e.g., 'user:jandamek', 'jira:TASK-1', 'class:com.example.Service').
+- Define relationships: MENTIONS, AFFECTS, DEPENDS_ON, IMPLEMENTS, CALLS.
 - EVIDENCE: Every relationship MUST link to a specific chunkId.
+- JOERN: For code changes, use Joern to find impacted classes/methods and link them to the commit node.
 
 What to produce:
 1) basicInfo: 1–2 sentences summarizing the whole input.
@@ -172,7 +208,7 @@ What to produce:
 3) sourceUrn: stable URN.
 4) groups: list of group texts. Each group starts with a metadata header (JSON-like: chunkId, kind, sectionPath, assetId, orderIndex) then verbatim portions.
 5) finalAction: instruction for routing (DONE, LIFT_UP, USER_TASK, or NONE). DONE if just knowledge, LIFT_UP if it's a task for the main agent, USER_TASK if human input is needed, NONE if called internally as Ingest tool.
-6) pageBrief: (Optional) for Confluence/Docs: goals, outline, etc.
+6) pageBrief: (Optional) for Confluence/Docs/Git: goals, outline, change summary, etc.
 
 Content:
 ${state.content}
@@ -234,11 +270,16 @@ Mandatory Schema Rules (No "generic tags" allowed):
    - graphRefs: Extract entities (e.g., 'user:jandamek', 'jira:TASK-1') for linking.
 2. Build the document structure in GraphDB:
    - Create nodes: SourceNode (mainNodeKey), SectionNode (sectionPath), ChunkNode (chunkId), AssetNode (assetId).
-   - Create edges: HAS_SECTION, HAS_CHUNK, HAS_ASSET.
-   - Resolve entities against known registry.
-   - Create semantic edges: MENTIONS, AFFECTS, DEPENDS_ON.
+   - If GIT: Create CommitNode, link to RepositoryNode, and link to impacted ClassNode/MethodNode (found via Joern).
+   - Create edges: HAS_SECTION, HAS_CHUNK, HAS_ASSET, MODIFIED, IMPACTS.
+   - Resolve entities against known registry (e.g. classes, methods from Joern graph).
+   - Create semantic edges: MENTIONS, AFFECTS, DEPENDS_ON, CALLS, IMPLEMENTS.
    - CRITICAL: Every relationship MUST have evidence (link to specific chunkId).
-3. If this is a Confluence page, ensure PageBrief is created as a summary node in GraphDB.
+3. If this is a GIT commit:
+   - Use 'joernQuery' to find the structure of the classes changed in this commit.
+   - For each class/method, create a SectionNode in GraphDB and a RAG entry describing its purpose.
+   - Generate a RAG description for the whole change.
+4. If this is a Confluence page, ensure PageBrief is created as a summary node in GraphDB.
                                 """.trimIndent()
 
                             ctx.requestLLM(indexPrompt)

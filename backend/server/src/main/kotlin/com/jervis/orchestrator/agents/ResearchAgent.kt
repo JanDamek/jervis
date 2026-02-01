@@ -14,31 +14,31 @@ import ai.koog.agents.core.dsl.extension.onToolCall
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.prompt.dsl.Prompt
+import com.jervis.common.client.IJoernClient
 import com.jervis.configuration.RpcReconnectHandler
 import com.jervis.entity.TaskDocument
+import com.jervis.integration.bugtracker.BugTrackerService
+import com.jervis.integration.wiki.WikiService
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.SmartModelSelector
 import com.jervis.koog.tools.KnowledgeStorageTools
-import com.jervis.koog.tools.coding.CodingTools
-import com.jervis.koog.tools.external.IssueTrackerTool
-import com.jervis.koog.tools.external.ConfluenceReadTools
-import com.jervis.koog.tools.external.EmailReadTools
-import com.jervis.koog.tools.external.JiraReadTools
-import com.jervis.orchestrator.model.ContextPack
-import com.jervis.orchestrator.model.EvidencePack
-import com.jervis.rag.KnowledgeService
-import com.jervis.rag.internal.graphdb.GraphDBService
-import com.jervis.service.confluence.ConfluenceService
-import com.jervis.service.email.EmailService
-import com.jervis.service.jira.JiraService
 import com.jervis.koog.tools.analysis.JoernTools
 import com.jervis.koog.tools.analysis.LogSearchTools
-import com.jervis.common.client.IJoernClient
+import com.jervis.koog.tools.external.BugTrackerReadTools
+import com.jervis.koog.tools.external.EmailReadTools
+import com.jervis.koog.tools.external.IssueTrackerTool
+import com.jervis.koog.tools.external.WikiReadTools
+import com.jervis.orchestrator.model.ContextPack
+import com.jervis.orchestrator.model.EvidencePack
+import com.jervis.orchestrator.prompts.NoGuessingDirectives
+import com.jervis.knowledgebase.KnowledgeService
+import com.jervis.knowledgebase.internal.graphdb.GraphDBService
+import com.jervis.service.email.EmailService
 import com.jervis.service.project.ProjectService
 import com.jervis.service.storage.DirectoryStructureService
-import java.nio.file.Paths
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
+import java.nio.file.Paths
 
 /**
  * ResearchAgent - Internal agent for evidence gathering.
@@ -61,8 +61,8 @@ class ResearchAgent(
     private val smartModelSelector: SmartModelSelector,
     private val knowledgeService: KnowledgeService,
     private val graphDBService: GraphDBService,
-    private val jiraService: JiraService,
-    private val confluenceService: ConfluenceService,
+    private val jiraService: BugTrackerService,
+    private val confluenceService: WikiService,
     private val emailService: EmailService,
     private val joernClient: IJoernClient,
     private val projectService: ProjectService,
@@ -125,7 +125,7 @@ class ResearchAgent(
                 edge((nodeLLMRequest forwardTo nodeExecuteTool).onToolCall { true })
 
                 // Compress history if too large to keep core analytical reasoning in context.
-                // Qwen3 handles up to 256k, but we compress to keep performance high 
+                // Qwen3 handles up to 256k, but we compress to keep performance high
                 // and focus on current evidence gathering goal.
                 edge(
                     (nodeExecuteTool forwardTo nodeCompressHistory)
@@ -149,7 +149,7 @@ class ResearchAgent(
             smartModelSelector.selectModelBlocking(
                 baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
                 inputContent = task.content,
-                projectId = task.projectId
+                projectId = task.projectId,
             )
 
         val agentConfig =
@@ -162,6 +162,8 @@ class ResearchAgent(
 
                             Your goal: Collect enough evidence to answer the research question.
 
+                            ${NoGuessingDirectives.CRITICAL_RULES}
+
                             EVIDENCE GATHERING STRATEGY:
                             1. KNOWLEDGE STORAGE: Use semantic search tools to find relevant documents and code in the knowledge base.
                             2. GRAPH AUGMENTATION: If you find a key entity (ticket ID, file path, user, product, order), explore its relationships and connections to discover context.
@@ -170,7 +172,7 @@ class ResearchAgent(
                             5. COMMUNICATION: Search email and messaging systems for historical discussions and decisions.
                             6. CODE ANALYSIS: Use static analysis tools for deep code structure understanding (relationships between functions, data flow).
                             7. RUNTIME ANALYSIS: Search application logs for debugging and runtime behavior understanding.
-                            
+
                             KNOWLEDGE BASE RULES:
                             - Every RAG chunk is anchored to a GraphNode.
                             - When semantic search returns results, explore the mainNodeKey to discover neighboring entities in the graph.
@@ -196,15 +198,22 @@ class ResearchAgent(
                 tools(KnowledgeStorageTools(task, knowledgeService, graphDBService))
 
                 // External read tools
-                tools(JiraReadTools(task, jiraService))
-                tools(ConfluenceReadTools(task, confluenceService))
+                tools(BugTrackerReadTools(task, jiraService))
+                tools(WikiReadTools(task, confluenceService))
                 tools(EmailReadTools(task, emailService))
 
                 // Analysis tools
                 tools(JoernTools(task, joernClient, projectService, directoryStructureService, reconnectHandler))
                 tools(LogSearchTools(task, Paths.get("logs")))
 
-                tools(IssueTrackerTool(task, jiraService, com.jervis.orchestrator.jira.JiraTrackerAdapter(jiraService)))
+                tools(
+                    IssueTrackerTool(
+                        task,
+                        jiraService,
+                        com.jervis.orchestrator.bugtracker
+                            .BugTrackerAdapter(jiraService),
+                    ),
+                )
             }
 
         return AIAgent(

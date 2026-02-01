@@ -51,7 +51,7 @@ data class EmailMessageIndexDocument(
     val clientId: ClientId,
     val projectId: ProjectId? = null,
     val messageUid: String,
-    val messageId: String,
+    val messageId: String? = null,
     val state: PollingStatusEnum = PollingStatusEnum.NEW,
     val receivedDate: Instant,
     val subject: String? = null,

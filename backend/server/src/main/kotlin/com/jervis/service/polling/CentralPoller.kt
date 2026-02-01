@@ -42,7 +42,7 @@ import java.time.Instant
  * Flow:
  * 1. Load all enabled connections
  * 2. For each connection, find clients/projects using it
- * 3. Delegate to the appropriate handler (JiraPollingHandler, ConfluencePollingHandler, etc.)
+ * 3. Delegate to the appropriate handler (BugTrackerPollingHandler, WikiPollingHandler, etc.)
  * 4. Handler discovers new/updated items and creates NEW state documents
  * 5. ContinuousIndexer picks up NEW items and indexes them
  */
@@ -174,7 +174,13 @@ class CentralPoller(
 
             // Find all clients/projects using this connectionDocument
             val clients = clientRepository.findByConnectionIdsContaining(connectionDocument.id).toList()
-            val projects = projectRepository.findByConnectionIdsContaining(connectionDocument.id).toList()
+
+            // Projects can reference connection in multiple fields
+            val projectsByGit = projectRepository.findByGitRepositoryConnectionId(connectionDocument.id).toList()
+            val projectsByJira = projectRepository.findByJiraProjectConnectionId(connectionDocument.id).toList()
+            val projectsByConfluence =
+                projectRepository.findByConfluenceSpaceConnectionId(connectionDocument.id).toList()
+            val projects = (projectsByGit + projectsByJira + projectsByConfluence).distinctBy { it.id }
 
             if (clients.isEmpty() && projects.isEmpty()) {
                 logger.debug {
@@ -276,7 +282,7 @@ class CentralPoller(
                 }
 
         val correlationId = "connectionDocument-error-${connectionDocument.id}"
-        
+
         val taskDescription =
             buildString {
                 appendLine("ConnectionDocument: ${connectionDocument.name}")
@@ -302,16 +308,17 @@ class CentralPoller(
         connectionDocument: ConnectionDocument,
         clientId: com.jervis.types.ClientId,
         correlationId: String,
-        description: String
-    ): com.jervis.entity.TaskDocument {
-        return com.jervis.entity.TaskDocument(
+        description: String,
+    ): com.jervis.entity.TaskDocument =
+        com.jervis.entity.TaskDocument(
             content = description,
             clientId = clientId,
             correlationId = correlationId,
             type = com.jervis.dto.TaskTypeEnum.LINK_PROCESSING, // Fallback type
-            sourceUrn = com.jervis.types.SourceUrn.unknownSource()
+            sourceUrn =
+                com.jervis.types.SourceUrn
+                    .unknownSource(),
         )
-    }
 
     private fun getPollingInterval(connectionDocument: ConnectionDocument): Duration =
         when (connectionDocument.connectionType) {
@@ -325,6 +332,8 @@ class CentralPoller(
 
             // SMTP is for sending only
             ConnectionDocument.ConnectionTypeEnum.OAUTH2 -> pollingProperties.oauth2
+
+            ConnectionDocument.ConnectionTypeEnum.GIT -> pollingProperties.http // Reuse HTTP interval for GIT
         }
 }
 

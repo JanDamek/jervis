@@ -2,12 +2,12 @@ package com.jervis.service.link
 
 import com.jervis.domain.PollingStatusEnum
 import com.jervis.entity.IndexedLinkDocument
-import com.jervis.entity.confluence.ConfluencePageIndexDocument
+import com.jervis.integration.wiki.internal.entity.WikiPageIndexDocument
 import com.jervis.entity.connection.ConnectionDocument
-import com.jervis.entity.jira.JiraIssueIndexDocument
-import com.jervis.repository.ConfluencePageIndexRepository
+import com.jervis.integration.bugtracker.internal.entity.BugTrackerIssueIndexDocument
+import com.jervis.integration.bugtracker.internal.repository.BugTrackerIssueIndexRepository
 import com.jervis.repository.IndexedLinkRepository
-import com.jervis.repository.JiraIssueIndexRepository
+import com.jervis.integration.wiki.internal.repository.WikiPageIndexRepository
 import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
 import com.jervis.types.TaskId
@@ -19,8 +19,8 @@ import java.time.Instant
 @Service
 class IndexedLinkService(
     private val indexedLinkRepository: IndexedLinkRepository,
-    private val jiraIssueIndexRepository: JiraIssueIndexRepository,
-    private val confluencePageIndexRepository: ConfluencePageIndexRepository,
+    private val jiraIssueIndexRepository: BugTrackerIssueIndexRepository,
+    private val confluencePageIndexRepository: WikiPageIndexRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -130,8 +130,8 @@ class IndexedLinkService(
 
     /**
      * Enqueue a Jira issue for indexing from a link.
-     * Creates a minimal JiraIssueIndexDocument with state NEW.
-     * JiraContinuousIndexer will pick it up and fetch full details via API.
+     * Creates a minimal BugTrackerIssueIndexDocument with state NEW.
+     * BugTrackerContinuousIndexer will pick it up and fetch full details via API.
      *
      * @param issueKey Jira issue key (e.g., "SS-191")
      * @param connection Connection to use for fetching
@@ -155,7 +155,7 @@ class IndexedLinkService(
         // Create minimal index document with state NEW
         // ContinuousIndexer will fetch full details via API
         val doc =
-            JiraIssueIndexDocument(
+            BugTrackerIssueIndexDocument(
                 id = ObjectId(),
                 connectionId = connection.id,
                 issueKey = issueKey,
@@ -175,8 +175,8 @@ class IndexedLinkService(
 
     /**
      * Enqueue a Confluence page for indexing from a link.
-     * Creates a minimal ConfluencePageIndexDocument with state NEW.
-     * ConfluenceContinuousIndexer will pick it up and fetch full details via API.
+     * Creates a minimal WikiPageIndexDocument with state NEW.
+     * WikiContinuousIndexer will pick it up and fetch full details via API.
      *
      * @param pageId Confluence page ID (e.g., "2116157441")
      * @param connection Connection to use for fetching
@@ -200,7 +200,7 @@ class IndexedLinkService(
         // Create minimal index document with state NEW
         // ContinuousIndexer will fetch full details via API
         val doc =
-            ConfluencePageIndexDocument(
+            WikiPageIndexDocument(
                 id = ObjectId(),
                 connectionDocumentId = connection.id,
                 pageId = pageId,

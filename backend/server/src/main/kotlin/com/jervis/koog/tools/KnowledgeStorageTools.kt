@@ -4,12 +4,12 @@ import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
 import com.jervis.entity.TaskDocument
-import com.jervis.rag.IngestRequest
-import com.jervis.rag.KnowledgeService
-import com.jervis.rag.RetrievalRequest
-import com.jervis.rag.internal.graphdb.GraphDBService
-import com.jervis.rag.internal.graphdb.model.Direction
-import com.jervis.rag.internal.graphdb.model.TraversalSpec
+import com.jervis.knowledgebase.IngestRequest
+import com.jervis.knowledgebase.KnowledgeService
+import com.jervis.knowledgebase.RetrievalRequest
+import com.jervis.knowledgebase.internal.graphdb.GraphDBService
+import com.jervis.knowledgebase.internal.graphdb.model.Direction
+import com.jervis.knowledgebase.internal.graphdb.model.TraversalSpec
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.Serializable
@@ -208,6 +208,32 @@ class KnowledgeStorageTools(
             summary = pack.summary,
             itemsCount = pack.items.size,
         )
+    }
+
+    @Tool
+    @LLMDescription("Store a relationship between two entities in GraphDB.")
+    suspend fun storeRelationship(
+        @LLMDescription("Source node key (e.g. 'git:hash', 'class:com.example.Service')")
+        from: String,
+        @LLMDescription("Edge type (e.g. 'AFFECTS', 'CALLS', 'IMPLEMENTS', 'MODIFIED')")
+        edgeType: String,
+        @LLMDescription("Target node key")
+        to: String,
+        @LLMDescription("Evidence chunk ID (stable identifier from previous storeKnowledge call)")
+        evidenceChunkId: String,
+    ): CombinedStoreResult {
+        runCatching {
+            graphDBService.upsertEdge(
+                clientId = task.clientId,
+                edge = com.jervis.knowledgebase.internal.graphdb.model.GraphEdge(
+                    edgeType = edgeType.lowercase(),
+                    fromKey = from,
+                    toKey = to,
+                    evidenceChunkIds = listOf(evidenceChunkId)
+                )
+            )
+        }
+        return CombinedStoreResult(success = true, chunkId = evidenceChunkId)
     }
 
     @Serializable

@@ -30,7 +30,26 @@ class ProjectService(
         val existing = getProjectByIdOrNull(project.id)
         val isNew = existing == null
 
-        val savedProject = projectRepository.save(project)
+        val merged = if (!isNew) {
+            existing!!.copy(
+                name = project.name,
+                description = project.description,
+                communicationLanguageEnum = project.communicationLanguageEnum,
+                gitRepositoryConnectionId = project.gitRepositoryConnectionId,
+                gitRepositoryIdentifier = project.gitRepositoryIdentifier,
+                jiraProjectConnectionId = project.jiraProjectConnectionId,
+                jiraProjectKey = project.jiraProjectKey,
+                confluenceSpaceConnectionId = project.confluenceSpaceConnectionId,
+                confluenceSpaceKey = project.confluenceSpaceKey,
+                buildConfig = project.buildConfig,
+                costPolicy = project.costPolicy,
+                gitCommitConfig = project.gitCommitConfig
+            )
+        } else {
+            project
+        }
+
+        val savedProject = projectRepository.save(merged)
 
         directoryStructureService.ensureProjectDirectories(savedProject.clientId, savedProject.id)
 

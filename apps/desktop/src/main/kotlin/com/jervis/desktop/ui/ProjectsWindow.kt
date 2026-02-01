@@ -20,6 +20,8 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.platform.LocalFocusManager
+import com.jervis.domain.git.GitAuthTypeEnum
+import com.jervis.dto.GitConfigDto
 import com.jervis.dto.ProjectDto
 import com.jervis.repository.JervisRepository
 import kotlinx.coroutines.launch
@@ -269,6 +271,13 @@ private fun ProjectDialog(
 ) {
     var name by remember { mutableStateOf(project?.name ?: "") }
     var clientId by remember { mutableStateOf(project?.clientId ?: "") }
+    var description by remember { mutableStateOf(project?.description ?: "") }
+
+    // Resource identifiers from client's connections
+    var gitRepositoryConnectionId by remember { mutableStateOf(project?.gitRepositoryConnectionId ?: "") }
+    var gitRepositoryIdentifier by remember { mutableStateOf(project?.gitRepositoryIdentifier ?: "") }
+    var jiraProjectConnectionId by remember { mutableStateOf(project?.jiraProjectConnectionId ?: "") }
+    var jiraProjectKey by remember { mutableStateOf(project?.jiraProjectKey ?: "") }
 
     val scope = rememberCoroutineScope()
 
@@ -297,6 +306,46 @@ private fun ProjectDialog(
                     modifier = Modifier.fillMaxWidth(),
                     enabled = project == null // Don't allow changing client after creation
                 )
+
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2
+                )
+
+                HorizontalDivider()
+                Text("Resources from Client Connections", style = MaterialTheme.typography.titleSmall)
+
+                Text("Git Repository", style = MaterialTheme.typography.labelMedium)
+                OutlinedTextField(
+                    value = gitRepositoryConnectionId,
+                    onValueChange = { gitRepositoryConnectionId = it },
+                    label = { Text("Connection ID") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = gitRepositoryIdentifier,
+                    onValueChange = { gitRepositoryIdentifier = it },
+                    label = { Text("Repository identifier (e.g., owner/repo)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(Modifier.height(8.dp))
+                Text("Jira Project (optional)", style = MaterialTheme.typography.labelMedium)
+                OutlinedTextField(
+                    value = jiraProjectConnectionId,
+                    onValueChange = { jiraProjectConnectionId = it },
+                    label = { Text("Connection ID") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = jiraProjectKey,
+                    onValueChange = { jiraProjectKey = it },
+                    label = { Text("Jira Project Key") },
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         },
         confirmButton = {
@@ -304,11 +353,16 @@ private fun ProjectDialog(
                 onClick = {
                     val newProject = (project ?: ProjectDto(name = "", clientId = null)).copy(
                         name = name,
-                        clientId = clientId
+                        clientId = clientId,
+                        description = description.ifBlank { null },
+                        gitRepositoryConnectionId = gitRepositoryConnectionId.ifBlank { null },
+                        gitRepositoryIdentifier = gitRepositoryIdentifier.ifBlank { null },
+                        jiraProjectConnectionId = jiraProjectConnectionId.ifBlank { null },
+                        jiraProjectKey = jiraProjectKey.ifBlank { null }
                     )
                     onSave(newProject)
                 },
-                enabled = name.isNotBlank()
+                enabled = name.isNotBlank() && clientId.isNotBlank()
             ) {
                 Text("Save")
             }

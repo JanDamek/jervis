@@ -5,6 +5,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.retryWhen
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.filter
 
 /**
  * Executes an RPC call with retry logic for connection-loss errors.
@@ -96,84 +98,95 @@ private fun nextDelay(currentDelay: Long, maxDelay: Long): Long {
 }
 
 /**
- * Robust handling for kRPC Flows.
- * Automatically reconnects and retries the flow if the connection is lost.
- * 
- * IMPORTANT: When RpcClient is cancelled, we MUST NOT propagate the exception
- * after stopping retry, as this creates an infinite retry loop at higher levels.
- * Instead, the flow should complete gracefully and let the UI reconnect handler
- * create a NEW RpcClient instance.
+ * Robust handling for kRPC Flows using flatMapLatest pattern.
+ * Automatically switches to new flow when RpcClient changes.
+ *
+ * This is the CORRECT way to handle kRPC reconnection:
+ * 1. Subscribe to rpcClientState from NetworkModule
+ * 2. When client changes (reconnect), automatically cancel old flow and start new one
+ * 3. Use retryWhen for transient network errors within single client lifetime
+ *
+ * Based on kotlinx-rpc GitHub issue #100 community solution.
  */
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 fun <T> withRpcFlowRetry(
     name: String = "Flow",
+    rpcClientState: kotlinx.coroutines.flow.StateFlow<Any?>,
     reconnect: (suspend () -> Unit)? = null,
     flowProvider: () -> Flow<T>
 ): Flow<T> {
-    return flowProvider()
-        .retryWhen { cause, attempt ->
-            val message = cause.message ?: ""
-            if (cause is CancellationException) return@retryWhen false
+    return rpcClientState
+        .filter { it != null } // Wait for client to be available
+        .flatMapLatest { client ->
+            println("$name: Starting flow with RpcClient instance ${client.hashCode()}")
 
-            if (isRetryableRpcError(message)) {
-                // Special handling for RPC cancellation - trigger reconnect and stop retry
-                val isRpcCancelled = message.contains("RpcClient was cancelled", ignoreCase = true) ||
-                                    message.contains("Client cancelled", ignoreCase = true)
-                if (isRpcCancelled && attempt >= 2) {
-                    println("$name flow: RPC client cancelled after ${attempt + 1} attempts, stopping retry")
-                    // Trigger full reconnect to create NEW RpcClient (this will update all service stubs)
-                    if (reconnect != null) {
-                        try {
-                            println("$name: Triggering NetworkModule.reconnect() to create new RpcClient")
-                            reconnect()
-                            // Wait a moment for reconnection to complete
-                            delay(500)
-                            // After successful reconnect, retry the flow ONE more time with fresh client
-                            println("$name: Reconnection completed, retrying flow with new RpcClient")
-                            return@retryWhen true
-                        } catch (e: Exception) {
-                            println("$name: Reconnect failed: ${e.message}, stopping flow")
+            flowProvider()
+                .retryWhen { cause, attempt ->
+                    val message = cause.message ?: ""
+                    if (cause is CancellationException) {
+                        println("$name: Flow cancelled (likely switching to new client)")
+                        return@retryWhen false
+                    }
+
+                    if (isRetryableRpcError(message)) {
+                        // Check if RPC client was cancelled - this means we need new client
+                        val isRpcCancelled = message.contains("RpcClient was cancelled", ignoreCase = true) ||
+                                            message.contains("Client cancelled", ignoreCase = true)
+
+                        if (isRpcCancelled) {
+                            println("$name: RPC client cancelled, triggering reconnect to get new client")
+                            // Trigger reconnect - this will update rpcClientState
+                            // flatMapLatest will automatically cancel this flow and start new one
+                            if (reconnect != null) {
+                                try {
+                                    reconnect()
+                                } catch (e: Exception) {
+                                    println("$name: Reconnect failed: ${e.message}")
+                                }
+                            }
+                            // Stop retrying this flow - flatMapLatest will start new one
                             return@retryWhen false
                         }
+
+                        // Transient error - retry with backoff
+                        val delayMs = when {
+                            attempt < 3 -> 1000L
+                            attempt < 10 -> 2000L
+                            else -> 5000L
+                        }
+                        println("$name: Transient error (attempt ${attempt + 1}), retrying in ${delayMs}ms...")
+                        delay(delayMs)
+                        true // Retry the flow
+                    } else {
+                        println("$name: Non-retryable error: $message")
+                        false // Other errors propagate
                     }
-                    return@retryWhen false // Stop retry if no reconnect handler
                 }
-
-                println("$name flow lost (attempt ${attempt + 1}), attempting reconnect and retry...")
-
-                if (reconnect != null && (attempt % 5 == 0L)) {
-                    try {
-                        reconnect()
-                    } catch (e: Exception) {
-                        println("Failed to reconnect $name flow: ${e.message}")
+                .catch { cause ->
+                    if (cause is CancellationException) {
+                        println("$name: Flow cancelled in catch block")
+                        throw cause
                     }
-                }
 
-                val delayMs = when {
-                    attempt < 3 -> 1000L
-                    attempt < 10 -> 2000L
-                    else -> 5000L
+                    val message = cause.message ?: ""
+                    val isRpcCancelled = message.contains("RpcClient was cancelled", ignoreCase = true)
+                    if (isRpcCancelled) {
+                        println("$name: RPC client cancelled in catch, triggering reconnect")
+                        // Trigger reconnect to update rpcClientState
+                        reconnect?.let {
+                            try {
+                                it()
+                            } catch (e: Exception) {
+                                println("$name: Reconnect in catch failed: ${e.message}")
+                            }
+                        }
+                        // Complete this flow - flatMapLatest will start new one
+                        return@catch
+                    }
+
+                    // For other errors, propagate normally
+                    println("$name: Flow failed with error: ${cause.message}")
+                    throw cause
                 }
-                delay(delayMs)
-                true // Retry the flow
-            } else {
-                false // Other errors propagate
-            }
-        }
-        .catch { cause ->
-            if (cause is CancellationException) throw cause
-            
-            // CRITICAL FIX: Do NOT propagate RpcClient cancellation after retry stopped
-            // This would create infinite retry loop at higher levels
-            val message = cause.message ?: ""
-            val isRpcCancelled = message.contains("RpcClient was cancelled", ignoreCase = true)
-            if (isRpcCancelled) {
-                println("Flow $name completed after RPC client cancellation (not propagating exception)")
-                // Complete normally - reconnect handler will create new client
-                return@catch
-            }
-            
-            // For other errors, propagate normally
-            println("Flow $name finally failed: ${cause.message}")
-            throw cause
         }
 }

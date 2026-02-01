@@ -1,8 +1,8 @@
 package com.jervis.service.client
 
 import com.jervis.entity.ClientDocument
-import com.jervis.rag.internal.WeaviatePerClientProvisioner
-import com.jervis.rag.internal.graphdb.GraphDBService
+import com.jervis.knowledgebase.internal.WeaviatePerClientProvisioner
+import com.jervis.knowledgebase.internal.graphdb.GraphDBService
 import com.jervis.repository.ClientRepository
 import com.jervis.types.ClientId
 import kotlinx.coroutines.flow.toList
@@ -68,50 +68,9 @@ class ClientService(
         val existing =
             getClientByIdOrNull(client.id) ?: throw NoSuchElementException("Client not found: ${client.id}")
 
-        val mergedGitConfig =
-            when {
-                client.gitConfig != null && existing.gitConfig != null -> {
-                    existing.gitConfig.copy(
-                        gitUserName = client.gitConfig.gitUserName ?: existing.gitConfig.gitUserName,
-                        gitUserEmail = client.gitConfig.gitUserEmail ?: existing.gitConfig.gitUserEmail,
-                        commitMessageTemplate =
-                            client.gitConfig.commitMessageTemplate
-                                ?: existing.gitConfig.commitMessageTemplate,
-                        requireGpgSign = client.gitConfig.requireGpgSign,
-                        gpgKeyId = client.gitConfig.gpgKeyId ?: existing.gitConfig.gpgKeyId,
-                        requireLinearHistory = client.gitConfig.requireLinearHistory,
-                        conventionalCommits = client.gitConfig.conventionalCommits,
-                        commitRules =
-                            client.gitConfig.commitRules.ifEmpty {
-                                existing.gitConfig.commitRules
-                            },
-                        sshPrivateKey = client.gitConfig.sshPrivateKey ?: existing.gitConfig.sshPrivateKey,
-                        sshPublicKey = client.gitConfig.sshPublicKey ?: existing.gitConfig.sshPublicKey,
-                        sshPassphrase = client.gitConfig.sshPassphrase ?: existing.gitConfig.sshPassphrase,
-                        httpsToken = client.gitConfig.httpsToken ?: existing.gitConfig.httpsToken,
-                        httpsUsername = client.gitConfig.httpsUsername ?: existing.gitConfig.httpsUsername,
-                        httpsPassword = client.gitConfig.httpsPassword ?: existing.gitConfig.httpsPassword,
-                        gpgPrivateKey = client.gitConfig.gpgPrivateKey ?: existing.gitConfig.gpgPrivateKey,
-                        gpgPublicKey = client.gitConfig.gpgPublicKey ?: existing.gitConfig.gpgPublicKey,
-                        gpgPassphrase = client.gitConfig.gpgPassphrase ?: existing.gitConfig.gpgPassphrase,
-                    )
-                }
-
-                client.gitConfig != null -> {
-                    client.gitConfig
-                }
-
-                else -> {
-                    existing.gitConfig
-                }
-            }
-
         val merged =
             existing.copy(
                 name = client.name,
-                gitProvider = client.gitProvider,
-                gitAuthType = client.gitAuthType,
-                gitConfig = mergedGitConfig,
                 description = client.description,
                 defaultLanguageEnum = client.defaultLanguageEnum,
                 lastSelectedProjectId = client.lastSelectedProjectId,

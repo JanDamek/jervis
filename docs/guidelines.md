@@ -8,13 +8,13 @@ Všechny ostatní historické „guidelines“ soubory jsou aliasy odkazující 
 ## 1) Cíle a principy
 
 - **FAIL-FAST:** Chyby nezakrývat, žádné tiché fallbacky. Výjimka je lepší než maskovat chybu.
-  - ❌ Try/catch uvnitř business logiky (services, tools, repositories)
-  - ❌ Catching exceptions jen pro logging a re-throw
-  - ❌ Generic Result<T> wrappery všude
-  - ✅ Try/catch POUZE na hranicích: I/O, REST boundary, top-level controller
-  - ✅ Let it crash - exception propaguje do top-level handler
-  - ✅ Pro Tools (Koog): Tools throwují exception, framework je handluje jako tool error
-  - ✅ Validace na vstupu (fail-fast), ne defensive programming všude
+    - ❌ Try/catch uvnitř business logiky (services, tools, repositories)
+    - ❌ Catching exceptions jen pro logging a re-throw
+    - ❌ Generic Result<T> wrappery všude
+    - ✅ Try/catch POUZE na hranicích: I/O, REST boundary, top-level controller
+    - ✅ Let it crash - exception propaguje do top-level handler
+    - ✅ Pro Tools (Koog): Tools throwují exception, framework je handluje jako tool error
+    - ✅ Validace na vstupu (fail-fast), ne defensive programming všude
 - Kotlin‑first, idiomaticky: coroutines + Flow jako základ asynchronní práce. Vyhýbat se „Javě v Kotlinu". Preferuj
   streamování (`Flow`, `Sequence`) před budováním velkých `List`.
 - IF‑LESS pattern: kde hrozí rozšiřování, nahrazuj `if/when` polymorfismem, sealed hierarchiemi, strategy mapami nebo
@@ -23,16 +23,16 @@ Všechny ostatní historické „guidelines“ soubory jsou aliasy odkazující 
   před „utils" třídami).
 - Jazyk v kódu, komentářích a logách: výhradně angličtina. Inline komentáře „co" nepíšeme; „proč" patří do KDoc.
 - **NO DECORATIVE COMMENTS:** NIKDY nepoužívej dekorativní komentáře jako ASCII art separátory nebo section headers:
-  - ❌ `// ════════════`
-  - ❌ `// ───────────`
-  - ❌ `// ==================== RESULT POJO ====================`
-  - ❌ `// ==================== READ OPERATIONS ====================`
-  - ❌ `// === Section Header ===`
-  - ❌ `/* ********** */`
-  - ✅ Píš samopopisující kód - structure speaks for itself
-  - ✅ POUZE KDoc pro public API
-  - ✅ Žádné inline komentáře kromě kritických "proč" poznámek
-  - ✅ Pokud potřebuješ oddělení, použij prázdný řádek nebo package structure
+    - ❌ `// ════════════`
+    - ❌ `// ───────────`
+    - ❌ `// ==================== RESULT POJO ====================`
+    - ❌ `// ==================== READ OPERATIONS ====================`
+    - ❌ `// === Section Header ===`
+    - ❌ `/* ********** */`
+    - ✅ Píš samopopisující kód - structure speaks for itself
+    - ✅ POUZE KDoc pro public API
+    - ✅ Žádné inline komentáře kromě kritických "proč" poznámek
+    - ✅ Pokud potřebuješ oddělení, použij prázdný řádek nebo package structure
 - **NO METADATA MAPS - ANTIPATTERN:** NIKDY nepoužívej `metadata: MutableMap<String, Any>` nebo podobné generické mapy
   pro ukládání strukturovaných dat. VŽDY vytvoř proper data class s typovanými fieldy. Metadata mapy jsou antipattern -
   neumožňují type safety, refactoring, IDE podporu ani čitelnost kódu.
@@ -60,10 +60,11 @@ Všechny ostatní historické „guidelines“ soubory jsou aliasy odkazující 
 
 - Server (Spring Boot WebFlux) je jediný zdroj pravdy; orchestruje procesy, RAG, plánování, integrace a modely.
 - Compute‑only služby:
-  - `backend:service‑joern` - Code analysis
-  - `backend:service‑tika` - Document processing
-  - `backend:service‑whisper` - Audio transcription
-  - `backend:service‑atlassian` - Atlassian Cloud API (Jira, Confluence, Bitbucket, etc.) - samostatný build cycle, future Swagger API integration
+    - `backend:service‑joern` - Code analysis
+    - `backend:service‑tika` - Document processing
+    - `backend:service‑whisper` - Audio transcription
+    - `backend:service‑atlassian` - Atlassian Cloud API (Jira, Confluence, Bitbucket, etc.) - samostatný build cycle,
+      future Swagger API integration
 - Shared KMP: `shared:common‑dto` (DTO), `shared:common‑api` (HttpExchange kontrakty), `shared:domain` (čisté doménové
   typy), `shared:ui‑common` (Compose UI obrazovky).
 - Aplikace: `apps:desktop` (primární), `apps:mobile` (iOS/Android, port z desktopu).
@@ -154,19 +155,19 @@ Všechny ostatní historické „guidelines“ soubory jsou aliasy odkazující 
 **2. Ktor HttpClient (s rate limitem) – integrace třetích stran v microservices**
 
 - **Použití:**
-  - Microservice integrace třetích stran: `backend:service-atlassian` (Jira, Confluence, Bitbucket)
-  - Link scraper v server modulu (user-specified URLs)
+    - Microservice integrace třetích stran: `backend:service-atlassian` (Jira, Confluence, Bitbucket)
+    - Link scraper v server modulu (user-specified URLs)
 - **Implementace:** Ktor HttpClient s `DomainRateLimiter` z `common-services`
 - **Rate limiting:**
-  - Sdílený `DomainRateLimiter` z `com.jervis.common.ratelimit` (common-services modul)
-  - Per-domain rate limiting (automatická extrakce domény z URL)
-  - Konfigurované limity per služba (např. Atlassian: 10 req/sec, 100 req/min)
-  - Interní IP adresy (192.168.x.x, 10.x.x.x, localhost) jsou exempt z rate limitu
+    - Sdílený `DomainRateLimiter` z `com.jervis.common.ratelimit` (common-services modul)
+    - Per-domain rate limiting (automatická extrakce domény z URL)
+    - Konfigurované limity per služba (např. Atlassian: 10 req/sec, 100 req/min)
+    - Interní IP adresy (192.168.x.x, 10.x.x.x, localhost) jsou exempt z rate limitu
 - **Charakteristika:**
-  - Coroutines-first (suspend functions)
-  - Rate limiter v `common-services` je sdílený mezi všemi moduly
-  - Automatické čekání při překročení limitu (sliding window)
-  - Content negotiation, request logging
+    - Coroutines-first (suspend functions)
+    - Rate limiter v `common-services` je sdílený mezi všemi moduly
+    - Automatické čekání při překročení limitu (sliding window)
+    - Content negotiation, request logging
 - **Kdy použít:** Microservices které volají externí API s dynamickými doménami (user-specified URLs)
 - **Příklad použití:**
   ```kotlin
@@ -220,17 +221,20 @@ Všechny ostatní historické „guidelines“ soubory jsou aliasy odkazující 
 
 1. **Interní služby na lokální síti** (Ollama, LM Studio, searxng) → `KtorClientFactory` (bez rate limitu)
 2. **Externí LLM API s vlastním rate limitem** (OpenAI, Anthropic, Google) → `KtorClientFactory` (bez rate limitu)
-3. **Microservice integrace třetích stran** (service-atlassian) → Ktor HttpClient s `DomainRateLimiter` z `common-services`
+3. **Microservice integrace třetích stran** (service-atlassian) → Ktor HttpClient s `DomainRateLimiter` z
+   `common-services`
 4. **Externí compute služby s `@HttpExchange`** (joern, tika, whisper, atlassian) → `WebClientFactory`
 5. **Link scraper v server modulu** → Ktor HttpClient s `DomainRateLimiter` z `common-services`
-6. **Nové služby:** VŽDY Ktor (buď KtorClientFactory nebo s DomainRateLimiter podle potřeby), NIKDY WebClient (kromě `@HttpExchange`)
+6. **Nové služby:** VŽDY Ktor (buď KtorClientFactory nebo s DomainRateLimiter podle potřeby), NIKDY WebClient (kromě
+   `@HttpExchange`)
 7. **Koog agenti:** Preferují Ktor jako connection client (coroutines-first)
 
 **Rozhodovací strom:**
 
 - Je to `@HttpExchange` služba pro komunikaci server → microservice? → WebClientFactory
 - Je to interní služba (192.168.x.x, localhost) nebo LLM API s vlastním rate limitem? → KtorClientFactory
-- Je to microservice integrace s dynamickou doménou (user-specified URL)? → Ktor HttpClient s DomainRateLimiter (v microservice)
+- Je to microservice integrace s dynamickou doménou (user-specified URL)? → Ktor HttpClient s DomainRateLimiter (v
+  microservice)
 - Je to link scraper v server modulu? → Ktor HttpClient s DomainRateLimiter
 - Nová služba bez `@HttpExchange`? → KtorClientFactory (default)
 
@@ -1008,7 +1012,7 @@ fun loadTaskContext(): String
 - Memory: `backend/server/src/main/kotlin/com/jervis/service/agent/TaskMemoryService.kt`
 - Indexers: `backend/server/src/main/kotlin/com/jervis/service/`
     - `email/EmailContinuousIndexer.kt`
-    - `jira/JiraContinuousIndexer.kt`
+    - `jira/BugTrackerContinuousIndexer.kt`
     - `listener/git/GitContinuousIndexer.kt`
 - Background: `backend/server/src/main/kotlin/com/jervis/service/background/BackgroundEngine.kt`
 

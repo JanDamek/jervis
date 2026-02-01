@@ -2,15 +2,18 @@
 
 ## Problem: Sealed Class Deserialization Errors
 
-When IndexDocument entities (`JiraIssueIndexDocument`, `ConfluencePageIndexDocument`, `EmailMessageIndexDocument`) were refactored to sealed classes, Spring Data MongoDB requires a `_class` discriminator field to know which subclass to instantiate.
+When IndexDocument entities (`JiraIssueIndexDocument`, `ConfluencePageIndexDocument`, `EmailMessageIndexDocument`) were
+refactored to sealed classes, Spring Data MongoDB requires a `_class` discriminator field to know which subclass to
+instantiate.
 
 ### Error Symptoms
 
 ```
-org.springframework.beans.BeanInstantiationException: Failed to instantiate [com.jervis.entity.jira.JiraIssueIndexDocument]: Is it an abstract class?
+org.springframework.beans.BeanInstantiationException: Failed to instantiate [com.jervis.entity.jira.BugTrackerIssueIndexDocument]: Is it an abstract class?
 ```
 
 This happens when:
+
 - Existing MongoDB documents don't have `_class` field
 - Spring Data tries to deserialize sealed class without knowing the concrete type
 
@@ -27,6 +30,7 @@ mongosh mongodb://localhost:27017/jervis scripts/mongodb/fix-all-sealed-classes.
 ```
 
 This will migrate:
+
 - `jira_issues` → Add `_class` field (JiraNew, JiraIndexed, JiraFailed)
 - `confluence_pages` → Add `_class` field (ConfluenceNew, ConfluenceIndexed, ConfluenceFailed)
 - `email_message_index` → Add `_class` field (EmailNew, EmailIndexed, EmailFailed)
@@ -48,17 +52,17 @@ mongosh mongodb://localhost:27017/jervis scripts/mongodb/fix-email-sealed-class.
 
 The scripts use the existing `state` field to determine the correct `_class` value:
 
-| Collection | State | `_class` Value |
-|------------|-------|----------------|
-| `jira_issues` | `NEW` | `JiraNew` |
-| `jira_issues` | `INDEXED` | `JiraIndexed` |
-| `jira_issues` | `FAILED` | `JiraFailed` |
-| `confluence_pages` | `NEW` | `ConfluenceNew` |
-| `confluence_pages` | `INDEXED` | `ConfluenceIndexed` |
-| `confluence_pages` | `FAILED` | `ConfluenceFailed` |
-| `email_message_index` | `NEW` | `EmailNew` |
-| `email_message_index` | `INDEXED` | `EmailIndexed` |
-| `email_message_index` | `FAILED` | `EmailFailed` |
+| Collection            | State     | `_class` Value      |
+|-----------------------|-----------|---------------------|
+| `jira_issues`         | `NEW`     | `JiraNew`           |
+| `jira_issues`         | `INDEXED` | `JiraIndexed`       |
+| `jira_issues`         | `FAILED`  | `JiraFailed`        |
+| `confluence_pages`    | `NEW`     | `ConfluenceNew`     |
+| `confluence_pages`    | `INDEXED` | `ConfluenceIndexed` |
+| `confluence_pages`    | `FAILED`  | `ConfluenceFailed`  |
+| `email_message_index` | `NEW`     | `EmailNew`          |
+| `email_message_index` | `INDEXED` | `EmailIndexed`      |
+| `email_message_index` | `FAILED`  | `EmailFailed`       |
 
 ## Safety Features
 
@@ -141,6 +145,7 @@ db.email_message_index.drop()
 ```
 
 **Solution**: Investigate these documents manually:
+
 ```javascript
 db.jira_issues.find({ _class: { $exists: false }, state: { $nin: ['NEW', 'INDEXED', 'FAILED'] } })
 ```
@@ -150,6 +155,7 @@ Fix manually or contact dev team.
 ### Migration succeeded but errors persist
 
 **Possible causes**:
+
 1. Server was running during migration → Restart server
 2. Different MongoDB instance → Run script against correct DB
 3. Documents added after migration → Run script again (idempotent)
@@ -157,11 +163,11 @@ Fix manually or contact dev team.
 ## Related Files
 
 - Entity classes:
-  - `backend/server/src/main/kotlin/com/jervis/entity/jira/JiraIssueIndexDocument.kt`
-  - `backend/server/src/main/kotlin/com/jervis/entity/confluence/ConfluencePageIndexDocument.kt`
-  - `backend/server/src/main/kotlin/com/jervis/entity/email/EmailMessageIndexDocument.kt`
+    - `backend/server/src/main/kotlin/com/jervis/entity/jira/BugTrackerIssueIndexDocument.kt`
+    - `backend/server/src/main/kotlin/com/jervis/entity/confluence/WikiPageIndexDocument.kt`
+    - `backend/server/src/main/kotlin/com/jervis/entity/email/EmailMessageIndexDocument.kt`
 
 - Polling handlers:
-  - `backend/server/src/main/kotlin/com/jervis/service/polling/handler/bugtracker/JiraPollingHandler.kt`
-  - `backend/server/src/main/kotlin/com/jervis/service/polling/handler/documentation/ConfluencePollingHandler.kt`
-  - `backend/server/src/main/kotlin/com/jervis/service/polling/handler/email/ImapPollingHandler.kt`
+    - `backend/server/src/main/kotlin/com/jervis/service/polling/handler/bugtracker/BugTrackerPollingHandler.kt`
+    - `backend/server/src/main/kotlin/com/jervis/service/polling/handler/documentation/WikiPollingHandler.kt`
+    - `backend/server/src/main/kotlin/com/jervis/service/polling/handler/email/ImapPollingHandler.kt`
