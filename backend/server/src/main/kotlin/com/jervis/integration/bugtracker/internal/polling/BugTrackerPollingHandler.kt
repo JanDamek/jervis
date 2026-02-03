@@ -1,6 +1,6 @@
 package com.jervis.integration.bugtracker.internal.polling
 
-import com.jervis.common.client.IAtlassianClient
+import com.jervis.common.client.IBugTrackerClient
 import com.jervis.common.dto.bugtracker.BugTrackerSearchRequest
 import com.jervis.domain.PollingStatusEnum
 import com.jervis.entity.ClientDocument
@@ -41,7 +41,7 @@ private val logger = KotlinLogging.logger {}
 @Component
 class BugTrackerPollingHandler(
     private val repository: BugTrackerIssueIndexRepository,
-    private val atlassianClient: IAtlassianClient,
+    private val bugTrackerClient: IBugTrackerClient,
     clientService: ClientService,
     pollingStateService: PollingStateService,
 ) : BugTrackerPollingHandlerBase<BugTrackerIssueIndexDocument>(
