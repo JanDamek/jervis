@@ -1,6 +1,7 @@
 package com.jervis.gitlab.service
 
 import com.jervis.common.client.IBugTrackerClient
+import com.jervis.common.client.IGitLabClient
 import com.jervis.common.dto.bugtracker.*
 import mu.KotlinLogging
 
@@ -9,7 +10,7 @@ import mu.KotlinLogging
  */
 class GitLabBugTrackerService(
     private val apiClient: GitLabApiClient
-) : IBugTrackerClient {
+) : IBugTrackerClient, IGitLabClient {
     private val log = KotlinLogging.logger {}
 
     override suspend fun getUser(request: BugTrackerUserRequest): BugTrackerUserDto {

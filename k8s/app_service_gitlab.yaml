@@ -1,17 +1,17 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: jervis-service-gitlab
+  name: jervis-gitlab
   namespace: jervis
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: jervis-service-gitlab
+      app: jervis-gitlab
   template:
     metadata:
       labels:
-        app: jervis-service-gitlab
+        app: jervis-gitlab
     spec:
       imagePullSecrets:
         - name: registry-credentials
@@ -62,11 +62,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: jervis-service-gitlab
+  name: jervis-gitlab
   namespace: jervis
 spec:
   selector:
-    app: jervis-service-gitlab
+    app: jervis-gitlab
   ports:
     - name: rpc
       protocol: TCP

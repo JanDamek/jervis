@@ -1,9 +1,9 @@
-package com.jervis.dto.atlassian
+package com.jervis.dto.bugtracker
 
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class AtlassianSetupStatusDto(
+data class BugTrackerSetupStatusDto(
     val clientId: String,
     val connected: Boolean,
     val tenant: String? = null,
@@ -11,6 +11,6 @@ data class AtlassianSetupStatusDto(
     val tokenPresent: Boolean = false,
     val apiToken: String? = null,
     val primaryProject: String? = null,
-    val mainBoard: Long? = null,
+    val mainBoardId: String? = null,
     val preferredUser: String? = null,
 )

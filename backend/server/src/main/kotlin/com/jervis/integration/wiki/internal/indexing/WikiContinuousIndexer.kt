@@ -6,11 +6,11 @@ import com.jervis.common.dto.atlassian.ConfluencePageRequest
 import com.jervis.domain.atlassian.AttachmentMetadata
 import com.jervis.domain.atlassian.AttachmentType
 import com.jervis.dto.TaskTypeEnum
-import com.jervis.integration.wiki.internal.entity.WikiPageIndexDocument
 import com.jervis.entity.connection.ConnectionDocument
+import com.jervis.integration.wiki.internal.entity.WikiPageIndexDocument
+import com.jervis.integration.wiki.internal.state.WikiStateManager
 import com.jervis.service.background.TaskService
 import com.jervis.service.connection.ConnectionService
-import com.jervis.integration.wiki.internal.state.WikiStateManager
 import com.jervis.service.storage.DirectoryStructureService
 import com.jervis.types.SourceUrn
 import jakarta.annotation.PostConstruct
@@ -257,9 +257,9 @@ class WikiContinuousIndexer(
                     }
                 } ?: emptyList()
 
-            // Create CONFLUENCE_PROCESSING task with attachments
+            // Create WIKI_PROCESSING task with attachments
             taskService.createTask(
-                taskType = TaskTypeEnum.CONFLUENCE_PROCESSING,
+                taskType = TaskTypeEnum.WIKI_PROCESSING,
                 content = pageContent,
                 projectId = doc.projectId,
                 clientId = doc.clientId,

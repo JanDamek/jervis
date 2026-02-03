@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service
 private val logger = KotlinLogging.logger {}
 
 /**
- * Manages Confluence page indexing state transitions with a sealed class pattern.
+ * Manages Wiki page indexing state transitions with a sealed class pattern.
  *
  * State transitions:
  * - NEW → INDEXED (success, delete full content)
@@ -33,13 +33,13 @@ class WikiStateManager(
     /**
      * Continuous flow of NEW pages across ALL accounts (newest first).
      * Single indexer instance processes pages from all accounts,
-     * ordered by confluenceUpdatedAt descending (newest pages prioritized).
+     * ordered by wikiUpdatedAt descending (newest pages prioritized).
      */
     fun continuousNewPagesAllAccounts(): Flow<WikiPageIndexDocument> =
         flow {
             while (true) {
                 val pages =
-                    repository.findAllByStatusOrderByConfluenceUpdatedAtDesc()
+                    repository.findAllByStatusOrderByWikiUpdatedAtDesc()
 
                 var emittedAny = false
                 pages.collect { page ->
@@ -48,7 +48,7 @@ class WikiStateManager(
                 }
 
                 if (!emittedAny) {
-                    logger.debug { "No NEW Confluence pages across all accounts, sleeping ${POLL_DELAY_MS}ms" }
+                    logger.debug { "No NEW wiki pages across all accounts, sleeping ${POLL_DELAY_MS}ms" }
                     delay(POLL_DELAY_MS)
                 } else {
                     logger.debug { "Processed NEW pages across all accounts, immediately checking for more..." }

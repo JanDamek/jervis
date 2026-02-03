@@ -110,10 +110,10 @@ private fun ProjectEditForm(
     // Resource identifiers from client's connections
     var gitRepositoryConnectionId by remember { mutableStateOf(project.gitRepositoryConnectionId) }
     var gitRepositoryIdentifier by remember { mutableStateOf(project.gitRepositoryIdentifier ?: "") }
-    var jiraProjectConnectionId by remember { mutableStateOf(project.jiraProjectConnectionId) }
-    var jiraProjectKey by remember { mutableStateOf(project.jiraProjectKey ?: "") }
-    var confluenceSpaceConnectionId by remember { mutableStateOf(project.confluenceSpaceConnectionId) }
-    var confluenceSpaceKey by remember { mutableStateOf(project.confluenceSpaceKey ?: "") }
+    var bugtrackerConnectionId by remember { mutableStateOf(project.bugtrackerConnectionId) }
+    var bugtrackerProjectKey by remember { mutableStateOf(project.bugtrackerProjectKey ?: "") }
+    var wikiConnectionId by remember { mutableStateOf(project.wikiConnectionId) }
+    var wikiSpaceKey by remember { mutableStateOf(project.wikiSpaceKey ?: "") }
 
     // Git commit configuration (can override client's config)
     var useCustomGitConfig by remember { mutableStateOf(
@@ -213,9 +213,9 @@ private fun ProjectEditForm(
 
                 Spacer(Modifier.height(12.dp))
 
-                Text("Jira Project", style = MaterialTheme.typography.labelLarge)
+                Text("BugTracker Project", style = MaterialTheme.typography.labelLarge)
                 Spacer(Modifier.height(8.dp))
-                if (jiraProjectConnectionId != null) {
+                if (bugtrackerConnectionId != null) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -226,20 +226,20 @@ private fun ProjectEditForm(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    "Connection: $jiraProjectConnectionId",
+                                    "Connection: $bugtrackerConnectionId",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Text(
-                                    "Project Key: ${jiraProjectKey.ifBlank { "neuvedeno" }}",
+                                    "Project Key: ${bugtrackerProjectKey.ifBlank { "neuvedeno" }}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                 )
                             }
                             IconButton(
                                 onClick = {
-                                    jiraProjectConnectionId = null
-                                    jiraProjectKey = ""
+                                    bugtrackerConnectionId = null
+                                    bugtrackerProjectKey = ""
                                 },
                                 modifier = Modifier.size(32.dp)
                             ) {
@@ -249,15 +249,15 @@ private fun ProjectEditForm(
                     }
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
-                        value = jiraProjectKey,
-                        onValueChange = { jiraProjectKey = it },
-                        label = { Text("Jira Project Key") },
+                        value = bugtrackerProjectKey,
+                        onValueChange = { bugtrackerProjectKey = it },
+                        label = { Text("BugTracker Project Key") },
                         placeholder = { Text("např. PROJ") },
                         modifier = Modifier.fillMaxWidth()
                     )
                 } else {
                     Text(
-                        "Žádný Jira Project nepřiřazen (volitelné).",
+                        "Žádný BugTracker Project nepřiřazen (volitelné).",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -265,9 +265,9 @@ private fun ProjectEditForm(
 
                 Spacer(Modifier.height(12.dp))
 
-                Text("Confluence Space", style = MaterialTheme.typography.labelLarge)
+                Text("Wiki Space", style = MaterialTheme.typography.labelLarge)
                 Spacer(Modifier.height(8.dp))
-                if (confluenceSpaceConnectionId != null) {
+                if (wikiConnectionId != null) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -278,20 +278,20 @@ private fun ProjectEditForm(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    "Connection: $confluenceSpaceConnectionId",
+                                    "Connection: $wikiConnectionId",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Text(
-                                    "Space Key: ${confluenceSpaceKey.ifBlank { "neuvedeno" }}",
+                                    "Space Key: ${wikiSpaceKey.ifBlank { "neuvedeno" }}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                 )
                             }
                             IconButton(
                                 onClick = {
-                                    confluenceSpaceConnectionId = null
-                                    confluenceSpaceKey = ""
+                                    wikiConnectionId = null
+                                    wikiSpaceKey = ""
                                 },
                                 modifier = Modifier.size(32.dp)
                             ) {
@@ -301,15 +301,15 @@ private fun ProjectEditForm(
                     }
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
-                        value = confluenceSpaceKey,
-                        onValueChange = { confluenceSpaceKey = it },
-                        label = { Text("Confluence Space Key") },
+                        value = wikiSpaceKey,
+                        onValueChange = { wikiSpaceKey = it },
+                        label = { Text("Wiki Space Key") },
                         placeholder = { Text("např. DOCS") },
                         modifier = Modifier.fillMaxWidth()
                     )
                 } else {
                     Text(
-                        "Žádný Confluence Space nepřiřazen (volitelné).",
+                        "Žádný Wiki Space nepřiřazen (volitelné).",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -443,10 +443,10 @@ private fun ProjectEditForm(
                             description = description.ifBlank { null },
                             gitRepositoryConnectionId = gitRepositoryConnectionId?.ifBlank { null },
                             gitRepositoryIdentifier = gitRepositoryIdentifier.ifBlank { null },
-                            jiraProjectConnectionId = jiraProjectConnectionId?.ifBlank { null },
-                            jiraProjectKey = jiraProjectKey.ifBlank { null },
-                            confluenceSpaceConnectionId = confluenceSpaceConnectionId?.ifBlank { null },
-                            confluenceSpaceKey = confluenceSpaceKey.ifBlank { null },
+                            bugtrackerConnectionId = bugtrackerConnectionId?.ifBlank { null },
+                            bugtrackerProjectKey = bugtrackerProjectKey.ifBlank { null },
+                            wikiConnectionId = wikiConnectionId?.ifBlank { null },
+                            wikiSpaceKey = wikiSpaceKey.ifBlank { null },
                             gitCommitMessageFormat = if (useCustomGitConfig) gitCommitMessageFormat.ifBlank { null } else null,
                             gitCommitAuthorName = if (useCustomGitConfig) gitCommitAuthorName.ifBlank { null } else null,
                             gitCommitAuthorEmail = if (useCustomGitConfig) gitCommitAuthorEmail.ifBlank { null } else null,

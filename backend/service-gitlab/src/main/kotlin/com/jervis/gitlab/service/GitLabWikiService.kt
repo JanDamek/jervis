@@ -1,5 +1,6 @@
 package com.jervis.gitlab.service
 
+import com.jervis.common.client.IGitLabClient
 import com.jervis.common.client.IWikiClient
 import com.jervis.common.dto.wiki.*
 import mu.KotlinLogging
@@ -9,7 +10,7 @@ import mu.KotlinLogging
  */
 class GitLabWikiService(
     private val apiClient: GitLabApiClient
-) : IWikiClient {
+) : IWikiClient, IGitLabClient {
     private val log = KotlinLogging.logger {}
 
     override suspend fun getUser(request: WikiUserRequest): WikiUserDto {

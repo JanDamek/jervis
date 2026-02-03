@@ -13,7 +13,7 @@ import mu.KotlinLogging
 import java.time.Instant
 
 /**
- * Base class for documentation/wiki polling handlers (Confluence, Notion, GitBook, etc.).
+ * Base class for documentation/wiki polling handlers (Atlassian Confluence, Notion, GitBook, etc.).
  *
  * Provides shared logic:
  * - Poll orchestration across multiple clients
@@ -22,7 +22,7 @@ import java.time.Instant
  * - Space/workspace filtering support
  * - Generic page processing and deduplication
  *
- * System-specific implementations (Confluence, Notion, etc.) only handle:
+ * System-specific implementations (Atlassian Confluence, Notion, etc.) only handle:
  * - API client calls
  * - Query building (CQL, Notion filters, etc.)
  * - Page data transformation to common format
@@ -153,12 +153,12 @@ abstract class WikiPollingHandlerBase<TPage : Any>(
     }
 
     /**
-     * Get documentation system name for logging (Confluence, Notion, etc.)
+     * Get documentation system name for logging (Atlassian Confluence, Notion, etc.)
      */
     protected abstract fun getSystemName(): String
 
     /**
-     * Get tool name for polling state storage (CONFLUENCE, NOTION, etc.)
+     * Get tool name for polling state storage (BUGTRACKER, WIKI, etc.)
      */
     protected abstract fun getToolName(): String
 
@@ -191,7 +191,7 @@ abstract class WikiPollingHandlerBase<TPage : Any>(
 
     /**
      * Find existing page in repository by full unique key.
-     * For Confluence: must use (connectionId, pageId, versionNumber)
+     * For Atlassian Confluence: must use (connectionId, pageId, versionNumber)
      * because each page version is a separate record.
      */
     protected abstract suspend fun findExisting(

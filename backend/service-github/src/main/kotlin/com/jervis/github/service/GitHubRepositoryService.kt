@@ -1,12 +1,13 @@
 package com.jervis.github.service
 
+import com.jervis.common.client.IGitHubClient
 import com.jervis.common.client.IRepositoryClient
 import com.jervis.common.dto.repository.*
 import mu.KotlinLogging
 
 class GitHubRepositoryService(
     private val apiClient: GitHubApiClient
-) : IRepositoryClient {
+) : IRepositoryClient, IGitHubClient {
     private val log = KotlinLogging.logger {}
 
     override suspend fun getUser(request: RepositoryUserRequest): RepositoryUserDto {

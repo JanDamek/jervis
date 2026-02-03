@@ -13,9 +13,9 @@ import com.jervis.entity.connection.basicUsername
 import com.jervis.entity.connection.bearerToken
 import com.jervis.entity.connection.toAuthType
 import com.jervis.integration.bugtracker.internal.entity.BugTrackerIssueIndexDocument
+import com.jervis.integration.bugtracker.internal.state.BugTrackerStateManager
 import com.jervis.service.background.TaskService
 import com.jervis.service.connection.ConnectionService
-import com.jervis.integration.bugtracker.internal.state.BugTrackerStateManager
 import com.jervis.service.storage.DirectoryStructureService
 import com.jervis.types.SourceUrn
 import com.jervis.util.toAttachmentType
@@ -219,9 +219,9 @@ class BugTrackerContinuousIndexer(
                     }
                     ?: emptyList()
 
-            // Create JIRA_PROCESSING task with attachments
+            // Create BUGTRACKER_PROCESSING task with attachments
             taskService.createTask(
-                taskType = TaskTypeEnum.JIRA_PROCESSING,
+                taskType = TaskTypeEnum.BUGTRACKER_PROCESSING,
                 content = issueContent,
                 projectId = doc.projectId,
                 clientId = doc.clientId,

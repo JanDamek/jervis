@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class AtlassianAuthPromptEventDto(
-    val eventType: String = "JIRA_AUTH_PROMPT",
+    val eventType: String = "BUGTRACKER_AUTH_PROMPT",
     val clientId: String,
     val correlationId: String,
     val authUrl: String,

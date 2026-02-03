@@ -3,22 +3,21 @@ package com.jervis.ui.screens.settings.sections
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.jervis.dto.atlassian.AtlassianSetupStatusDto
+import com.jervis.dto.bugtracker.BugTrackerSetupStatusDto
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.components.SettingCard
 import com.jervis.ui.components.StatusIndicator
 import kotlinx.coroutines.launch
 
 @Composable
-fun AtlassianSettings(repository: JervisRepository) {
-    var clientsWithStatus by remember { mutableStateOf<List<Pair<String, AtlassianSetupStatusDto>>>(emptyList()) }
+fun BugTrackerSettings(repository: JervisRepository) {
+    var clientsWithStatus by remember { mutableStateOf<List<Pair<String, BugTrackerSetupStatusDto>>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -28,7 +27,7 @@ fun AtlassianSettings(repository: JervisRepository) {
             try {
                 val clients = repository.clients.listClients()
                 clientsWithStatus = clients.map { client ->
-                    client.name to repository.atlassianSetup.getStatus(client.id)
+                    client.name to repository.bugTrackerSetup.getStatus(client.id)
                 }
             } catch (e: Exception) {
             } finally {
@@ -50,7 +49,7 @@ fun AtlassianSettings(repository: JervisRepository) {
                 SettingCard(title = "Klient: $clientName") {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Atlassian Status:", style = MaterialTheme.typography.bodyMedium)
+                            Text("BugTracker Status:", style = MaterialTheme.typography.bodyMedium)
                             Spacer(Modifier.width(8.dp))
                             StatusIndicator(if (status.connected) "CONNECTED" else "DISCONNECTED")
                         }

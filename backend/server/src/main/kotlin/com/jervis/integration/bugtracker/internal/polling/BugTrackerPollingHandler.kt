@@ -1,7 +1,7 @@
 package com.jervis.integration.bugtracker.internal.polling
 
 import com.jervis.common.client.IAtlassianClient
-import com.jervis.common.dto.atlassian.JiraSearchRequest
+import com.jervis.common.dto.bugtracker.BugTrackerSearchRequest
 import com.jervis.domain.PollingStatusEnum
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.ConnectionDocument
@@ -61,16 +61,16 @@ class BugTrackerPollingHandler(
         connectionDocument: ConnectionDocument,
         lastSeenUpdatedAt: Instant?,
     ): String {
-        val jql =
+        val query =
             lastSeenUpdatedAt?.let {
                 val fmt = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm").withZone(ZoneOffset.UTC)
                 "updated >= \"${fmt.format(it)}\""
             } ?: "status NOT IN (Closed, Done, Resolved)"
 
-        return if (!connectionDocument.projectKey.isNullOrBlank()) {
-            "project = \"${connectionDocument.projectKey}\" AND ($jql)"
+        return if (!connectionDocument.jiraProjectKey.isNullOrBlank()) {
+            "project = \"${connectionDocument.jiraProjectKey}\" AND ($query)"
         } else {
-            jql
+            query
         }
     }
 
@@ -84,37 +84,36 @@ class BugTrackerPollingHandler(
     ): List<BugTrackerIssueIndexDocument> {
         try {
             val searchRequest =
-                JiraSearchRequest(
+                BugTrackerSearchRequest(
                     baseUrl = connectionDocument.baseUrl,
                     authType = credentials.toAuthType(),
                     basicUsername = credentials.basicUsername(),
                     basicPassword = credentials.basicPassword(),
                     bearerToken = credentials.bearerToken(),
-                    jql = query,
+                    query = query,
                 )
 
-            val response = atlassianClient.searchJiraIssues(searchRequest)
+            val response = bugTrackerClient.searchIssues(searchRequest)
 
             return response.issues.map { issue ->
-                val fields = issue.fields
-                val syntheticChangelogId = "${issue.id}-${fields.updated ?: ""}"
+                val syntheticChangelogId = "${issue.id}-${issue.updated}"
 
-                val jiraIssueIndexDocument =
+                val bugtrackerIssueIndexDocument =
                     BugTrackerIssueIndexDocument(
                         id = ObjectId.get(),
                         clientId = clientId,
                         connectionId = connectionDocument.id,
                         issueKey = issue.key,
                         latestChangelogId = syntheticChangelogId,
-                        summary = fields.summary ?: "",
+                        summary = issue.title,
                         status = PollingStatusEnum.NEW,
-                        jiraUpdatedAt = parseInstant(fields.updated),
+                        bugtrackerUpdatedAt = parseInstant(issue.updated),
                         projectId = projectId,
                     )
-                jiraIssueIndexDocument
+                bugtrackerIssueIndexDocument
             }
         } catch (e: Exception) {
-            logger.error(e) { "Failed to fetch Jira issues from ${connectionDocument.baseUrl}: ${e.message}" }
+            logger.error(e) { "Failed to fetch BugTracker issues from ${connectionDocument.baseUrl}: ${e.message}" }
             throw e
         }
     }
@@ -143,7 +142,7 @@ class BugTrackerPollingHandler(
             Instant.now()
         }
 
-    override fun getIssueUpdatedAt(issue: BugTrackerIssueIndexDocument): Instant = issue.jiraUpdatedAt
+    override fun getIssueUpdatedAt(issue: BugTrackerIssueIndexDocument): Instant = issue.bugtrackerUpdatedAt
 
     override suspend fun findExisting(
         connectionId: ConnectionId,

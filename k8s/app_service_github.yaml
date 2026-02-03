@@ -1,17 +1,17 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: jervis-service-github
+  name: jervis-github
   namespace: jervis
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: jervis-service-github
+      app: jervis-github
   template:
     metadata:
       labels:
-        app: jervis-service-github
+        app: jervis-github
     spec:
       imagePullSecrets:
         - name: registry-credentials
@@ -62,11 +62,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: jervis-service-github
+  name: jervis-github
   namespace: jervis
 spec:
   selector:
-    app: jervis-service-github
+    app: jervis-github
   ports:
     - name: rpc
       protocol: TCP

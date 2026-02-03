@@ -53,16 +53,13 @@ data class ConnectionDocument(
     val redirectUri: String? = null,
     val connectionType: ConnectionTypeEnum,
     val useTls: Boolean? = null,
-    val projectKey: String? = null,
-    val boardId: Long? = null,
-    val spaceKey: String? = null,
-    val rootPageId: String? = null,
     val gitRemoteUrl: String? = null,
     val gitProvider: com.jervis.domain.git.GitProviderEnum? = null,
     val gitConfig: com.jervis.domain.git.GitConfig? = null,
-    // Atlassian multi-purpose connection fields
+    // Atlassian multi-purpose connection fields (internal to provider layer if possible, but kept here for schema compatibility)
     val jiraProjectKey: String? = null,
     val confluenceSpaceKey: String? = null,
+    val confluenceRootPageId: String? = null,
     val bitbucketRepoSlug: String? = null,
     /**
      * Capabilities this connection provides.

@@ -1,9 +1,9 @@
-package com.jervis.dto.atlassian
+package com.jervis.dto.bugtracker
 
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class AtlassianProjectSelectionDto(
+data class BugTrackerProjectSelectionDto(
     val clientId: String,
     val projectKey: String,
 )

@@ -1,16 +1,13 @@
 package com.jervis.rpc
 
-import com.jervis.service.error.ErrorLogService
-import mu.KotlinLogging
-import org.springframework.stereotype.Component
-import com.jervis.common.client.IAtlassianClient
-import com.jervis.common.dto.atlassian.AtlassianMyselfRequest
+import com.jervis.common.client.IBugTrackerClient
+import com.jervis.common.client.IWikiClient
+import com.jervis.common.dto.bugtracker.BugTrackerUserRequest
 import com.jervis.common.rpc.withRpcRetry
 import com.jervis.dto.connection.ConnectionCreateRequestDto
 import com.jervis.dto.connection.ConnectionResponseDto
 import com.jervis.dto.connection.ConnectionTestResultDto
 import com.jervis.dto.connection.ConnectionUpdateRequestDto
-import com.jervis.dto.events.JervisEvent
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
 import com.jervis.service.IConnectionService
@@ -26,11 +23,11 @@ import jakarta.mail.Folder
 import jakarta.mail.PasswordAuthentication
 import jakarta.mail.Session
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withContext
+import mu.KotlinLogging
+import org.springframework.stereotype.Component
 import java.util.Properties
 
 /**
@@ -44,20 +41,18 @@ import java.util.Properties
 class ConnectionRpcImpl(
     private val connectionService: ConnectionService,
     private val httpClient: HttpClient,
-    private val atlassianClient: IAtlassianClient,
+    private val bugTrackerClient: IBugTrackerClient,
+    private val wikiClient: IWikiClient,
     private val reconnectHandler: com.jervis.configuration.RpcReconnectHandler,
 ) : IConnectionService {
     private val logger = KotlinLogging.logger {}
 
     override suspend fun getAllConnections(): List<ConnectionResponseDto> = connectionService.findAll().map { it.toDto() }.toList()
 
-    override suspend fun getConnectionById(
-        id: String,
-    ): ConnectionResponseDto? = connectionService.findById(ConnectionId.fromString(id))?.toDto()
+    override suspend fun getConnectionById(id: String): ConnectionResponseDto? =
+        connectionService.findById(ConnectionId.fromString(id))?.toDto()
 
-    override suspend fun createConnection(
-        request: ConnectionCreateRequestDto,
-    ): ConnectionResponseDto {
+    override suspend fun createConnection(request: ConnectionCreateRequestDto): ConnectionResponseDto {
         val connectionDocument: ConnectionDocument =
             when (request.type.uppercase()) {
                 "HTTP" -> {
@@ -247,9 +242,7 @@ class ConnectionRpcImpl(
         return saved.toDto()
     }
 
-    override suspend fun deleteConnection(
-        id: String,
-    ) {
+    override suspend fun deleteConnection(id: String) {
         connectionService.delete(ConnectionId.fromString(id))
         logger.info { "Deleted connection: $id" }
     }
@@ -260,14 +253,15 @@ class ConnectionRpcImpl(
         return emptyList()
     }
 
-    override suspend fun importProject(connectionId: String, externalId: String): com.jervis.dto.ProjectDto {
+    override suspend fun importProject(
+        connectionId: String,
+        externalId: String,
+    ): com.jervis.dto.ProjectDto {
         // TODO: Implement project import from GitHub/GitLab/etc
         throw UnsupportedOperationException("importProject not yet implemented")
     }
 
-    override suspend fun testConnection(
-        id: String,
-    ): ConnectionTestResultDto {
+    override suspend fun testConnection(id: String): ConnectionTestResultDto {
         val connectionDocument =
             connectionService.findById(ConnectionId.fromString(id))
                 ?: throw IllegalArgumentException("ConnectionDocument not found: $id")
@@ -320,21 +314,22 @@ class ConnectionRpcImpl(
 
             // Test Atlassian connectionDocument (if it's Atlassian URL)
             if (connectionDocument.baseUrl.contains("atlassian.net") == true) {
-                val myself = withRpcRetry(
-                    name = "Atlassian",
-                    reconnect = { reconnectHandler.reconnectAtlassian() }
-                ) {
-                    atlassianClient.getMyself(
-                        connectionDocument.toAtlassianMyselfRequest(),
-                    )
-                }
+                val myself =
+                    withRpcRetry(
+                        name = "Atlassian",
+                        reconnect = { reconnectHandler.reconnectAtlassian() },
+                    ) {
+                        bugTrackerClient.getUser(
+                            connectionDocument.toBugTrackerUserRequest(),
+                        )
+                    }
                 ConnectionTestResultDto(
                     success = true,
                     message = "ConnectionDocument successful! Logged in as: ${myself.displayName}",
                     details =
                         mapOf(
-                            "accountId" to (myself.accountId ?: "N/A"),
-                            "email" to (myself.emailAddress ?: "N/A"),
+                            "id" to myself.id,
+                            "email" to (myself.email ?: "N/A"),
                             "displayName" to (myself.displayName ?: "N/A"),
                         ),
                 )
@@ -385,10 +380,10 @@ class ConnectionRpcImpl(
             )
         }
 
-    private fun ConnectionDocument.toAtlassianMyselfRequest(): AtlassianMyselfRequest =
+    private fun ConnectionDocument.toBugTrackerUserRequest(): BugTrackerUserRequest =
         when (val creds = this.credentials) {
             is HttpCredentials.Basic -> {
-                AtlassianMyselfRequest(
+                BugTrackerUserRequest(
                     baseUrl = this.baseUrl,
                     authType = "BASIC",
                     basicUsername = creds.username,
@@ -397,7 +392,7 @@ class ConnectionRpcImpl(
             }
 
             is HttpCredentials.Bearer -> {
-                AtlassianMyselfRequest(
+                BugTrackerUserRequest(
                     baseUrl = this.baseUrl,
                     authType = "BEARER",
                     bearerToken = creds.token,
@@ -405,7 +400,7 @@ class ConnectionRpcImpl(
             }
 
             null -> {
-                AtlassianMyselfRequest(
+                BugTrackerUserRequest(
                     baseUrl = this.baseUrl,
                     authType = "NONE",
                 )

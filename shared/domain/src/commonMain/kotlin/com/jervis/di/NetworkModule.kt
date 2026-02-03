@@ -1,7 +1,7 @@
 package com.jervis.di
 
 import com.jervis.api.SecurityConstants
-import com.jervis.service.IAtlassianSetupService
+import com.jervis.service.IBugTrackerSetupService
 import com.jervis.service.IIntegrationSettingsService
 import com.jervis.service.IAgentOrchestratorService
 import com.jervis.service.IClientProjectLinkService
@@ -194,7 +194,7 @@ object NetworkModule {
             private set
         var notificationService: INotificationService = initialRpcClient.withService<INotificationService>()
             private set
-        var atlassianSetupService: IAtlassianSetupService = initialRpcClient.withService<IAtlassianSetupService>()
+        var bugTrackerSetupService: IBugTrackerSetupService = initialRpcClient.withService<IBugTrackerSetupService>()
             private set
         var integrationSettingsService: IIntegrationSettingsService = initialRpcClient.withService<IIntegrationSettingsService>()
             private set
@@ -212,7 +212,7 @@ object NetworkModule {
             pendingTaskService = rpcClient.withService<IPendingTaskService>()
             connectionService = rpcClient.withService<IConnectionService>()
             notificationService = rpcClient.withService<INotificationService>()
-            atlassianSetupService = rpcClient.withService<IAtlassianSetupService>()
+            bugTrackerSetupService = rpcClient.withService<IBugTrackerSetupService>()
             integrationSettingsService = rpcClient.withService<IIntegrationSettingsService>()
         }
     }

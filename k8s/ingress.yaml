@@ -76,13 +76,13 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: jervis-service-github
+                name: jervis-github
                 port:
                   number: 8085
           - path: /gitlab
             pathType: Prefix
             backend:
               service:
-                name: jervis-service-gitlab
+                name: jervis-gitlab
                 port:
                   number: 8086

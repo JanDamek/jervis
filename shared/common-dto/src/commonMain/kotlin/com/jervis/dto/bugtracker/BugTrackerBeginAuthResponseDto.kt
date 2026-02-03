@@ -1,9 +1,9 @@
-package com.jervis.dto.atlassian
+package com.jervis.dto.bugtracker
 
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class AtlassianBeginAuthResponseDto(
+data class BugTrackerBeginAuthResponseDto(
     val correlationId: String,
     val authUrl: String,
 )

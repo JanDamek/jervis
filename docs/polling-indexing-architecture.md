@@ -306,7 +306,7 @@ stateManager.continuousNewIssuesAllAccounts().collect { doc ->
 
     // 5. Create PendingTask (s deduplication)
     pendingTaskService.createTask(
-        taskType = JIRA_PROCESSING,
+        taskType = BUGTRACKER_PROCESSING,
         content = content,
         projectId = doc.projectId,
         clientId = doc.clientId,
@@ -317,7 +317,7 @@ stateManager.continuousNewIssuesAllAccounts().collect { doc ->
     // 6. Mark jako INDEXED → content cleanup
     stateManager.markAsIndexed(doc)
 
-    logger.info { "Created JIRA_PROCESSING task for Jira issue: ${doc.issueKey}" }
+    logger.info { "Created BUGTRACKER_PROCESSING task for Jira issue: ${doc.issueKey}" }
 }
 ```
 
@@ -556,7 +556,7 @@ INFO  c.j.s.p.h.b.BugTrackerPollingHandlerBase - ← Jira handler completed | To
 
 ```
 INFO  c.j.s.jira.JiraContinuousIndexer - Processing Jira issue SDB-1821 (Create new PMDA Report Generator)
-INFO  c.j.s.jira.JiraContinuousIndexer - Created JIRA_PROCESSING task for Jira issue: SDB-1821
+INFO  c.j.s.jira.JiraContinuousIndexer - Created BUGTRACKER_PROCESSING task for Jira issue: SDB-1821
 DEBUG c.j.s.jira.state.JiraStateManager - Marked Jira issue SDB-1821 as INDEXED (no chunks created)
 ```
 

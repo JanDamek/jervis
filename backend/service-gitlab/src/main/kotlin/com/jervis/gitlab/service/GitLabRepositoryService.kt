@@ -1,12 +1,13 @@
 package com.jervis.gitlab.service
 
+import com.jervis.common.client.IGitLabClient
 import com.jervis.common.client.IRepositoryClient
 import com.jervis.common.dto.repository.*
 import mu.KotlinLogging
 
 class GitLabRepositoryService(
     private val apiClient: GitLabApiClient
-) : IRepositoryClient {
+) : IRepositoryClient, IGitLabClient {
     private val log = KotlinLogging.logger {}
 
     override suspend fun getUser(request: RepositoryUserRequest): RepositoryUserDto {

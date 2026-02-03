@@ -16,7 +16,7 @@ interface WikiPageIndexRepository : CoroutineCrudRepository<WikiPageIndexDocumen
         versionNumber: Int?,
     ): Boolean
 
-    fun findAllByStatusOrderByConfluenceUpdatedAtDesc(status: PollingStatusEnum = PollingStatusEnum.NEW): Flow<WikiPageIndexDocument>
+    fun findAllByStatusOrderByWikiUpdatedAtDesc(status: PollingStatusEnum = PollingStatusEnum.NEW): Flow<WikiPageIndexDocument>
 
     suspend fun findByConnectionDocumentIdAndPageId(
         connectionDocumentId: ConnectionId,

@@ -30,10 +30,10 @@ data class ProjectDocument(
     // Project-specific resource identifiers within client's connections
     val gitRepositoryConnectionId: ObjectId? = null,
     val gitRepositoryIdentifier: String? = null,
-    val jiraProjectConnectionId: ObjectId? = null,
-    val jiraProjectKey: String? = null,
-    val confluenceSpaceConnectionId: ObjectId? = null,
-    val confluenceSpaceKey: String? = null,
+    val bugtrackerConnectionId: ObjectId? = null,
+    val bugtrackerProjectKey: String? = null,
+    val wikiConnectionId: ObjectId? = null,
+    val wikiSpaceKey: String? = null,
     val buildConfig: ProjectBuildConfig? = null,
     val costPolicy: ProjectCostPolicy = ProjectCostPolicy(),
     val gitCommitConfig: GitCommitConfig? = null, // Overrides client's config

@@ -1,11 +1,10 @@
 package com.jervis.integration.bugtracker.internal.state
 
 /**
- * Indexing state for Jira issues.
- * Tracks the lifecycle from discovery to indexing completion.
+ * Indexing state for BugTracker issues.
  */
 enum class BugTrackerIssueState {
-    /** Issue discovered from Jira API, not yet indexed */
+    /** Issue discovered from BugTracker API, not yet indexed */
     NEW,
 
     /** Currently being indexed (prevents concurrent processing) */

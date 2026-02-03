@@ -88,7 +88,7 @@ class IndexedLinkService(
             val domain = extractDomain(url)
 
             return KnownServiceDetection(
-                serviceType = "CONFLUENCE",
+                serviceType = "WIKI",
                 identifier = identifier,
                 domain = domain,
             )
@@ -101,7 +101,7 @@ class IndexedLinkService(
             val domain = extractDomain(url)
 
             return KnownServiceDetection(
-                serviceType = "JIRA",
+                serviceType = "BUGTRACKER",
                 identifier = identifier,
                 domain = domain,
             )
@@ -148,7 +148,7 @@ class IndexedLinkService(
         // Check if issue already exists (any version)
         val existing = jiraIssueIndexRepository.findByConnectionIdAndIssueKey(connection.id, issueKey)
         if (existing != null) {
-            logger.info { "Jira issue $issueKey already exists in index (connectionId=${connection.id}), skipping" }
+            logger.info { "BugTracker issue $issueKey already exists in index (connectionId=${connection.id}), skipping" }
             return false
         }
 
@@ -160,7 +160,7 @@ class IndexedLinkService(
                 connectionId = connection.id,
                 issueKey = issueKey,
                 latestChangelogId = "from-link", // Placeholder - will be updated by indexer
-                jiraUpdatedAt = Instant.now(),
+                bugtrackerUpdatedAt = Instant.now(),
                 clientId = clientId,
                 projectId = projectId,
                 summary = null, // Will be fetched by indexer
@@ -169,7 +169,7 @@ class IndexedLinkService(
             )
 
         jiraIssueIndexRepository.save(doc)
-        logger.info { "✓ Enqueued Jira issue $issueKey for indexing (connectionId=${connection.id})" }
+        logger.info { "✓ Enqueued BugTracker issue $issueKey for indexing (connectionId=${connection.id})" }
         return true
     }
 
@@ -193,7 +193,7 @@ class IndexedLinkService(
         // Check if page already exists (any version)
         val existing = confluencePageIndexRepository.findByConnectionDocumentIdAndPageId(connection.id, pageId)
         if (existing != null) {
-            logger.info { "Confluence page $pageId already exists in index (connectionId=${connection.id}), skipping" }
+            logger.info { "Wiki page $pageId already exists in index (connectionId=${connection.id}), skipping" }
             return false
         }
 
@@ -205,7 +205,7 @@ class IndexedLinkService(
                 connectionDocumentId = connection.id,
                 pageId = pageId,
                 versionNumber = null, // Will be fetched by indexer
-                confluenceUpdatedAt = Instant.now(),
+                wikiUpdatedAt = Instant.now(),
                 clientId = clientId,
                 projectId = projectId,
                 title = "From Link", // Placeholder - will be updated by indexer
@@ -214,7 +214,7 @@ class IndexedLinkService(
             )
 
         confluencePageIndexRepository.save(doc)
-        logger.info { "✓ Enqueued Confluence page $pageId for indexing (connectionId=${connection.id})" }
+        logger.info { "✓ Enqueued Wiki page $pageId for indexing (connectionId=${connection.id})" }
         return true
     }
 }

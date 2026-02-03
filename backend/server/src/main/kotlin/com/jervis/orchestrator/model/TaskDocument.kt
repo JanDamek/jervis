@@ -1,7 +1,6 @@
 package com.jervis.orchestrator.model
 
 import com.jervis.dto.TaskStateEnum
-import com.jervis.dto.TaskTypeEnum
 import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
 import com.jervis.types.SourceUrn

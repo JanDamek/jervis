@@ -418,8 +418,8 @@ class AgentOrchestratorRpcImpl(
                         val taskTypeLabel =
                             when (runningTask.type) {
                                 com.jervis.dto.TaskTypeEnum.USER_INPUT_PROCESSING -> "Chat"
-                                com.jervis.dto.TaskTypeEnum.CONFLUENCE_PROCESSING -> "Confluence"
-                                com.jervis.dto.TaskTypeEnum.JIRA_PROCESSING -> "JIRA"
+                                com.jervis.dto.TaskTypeEnum.WIKI_PROCESSING -> "Wiki"
+                                com.jervis.dto.TaskTypeEnum.BUGTRACKER_PROCESSING -> "BugTracker"
                                 com.jervis.dto.TaskTypeEnum.EMAIL_PROCESSING -> "Email"
                                 else -> runningTask.type.toString()
                             }

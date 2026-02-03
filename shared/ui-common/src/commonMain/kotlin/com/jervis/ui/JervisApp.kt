@@ -100,7 +100,7 @@ fun JervisApp(
                 pendingTaskService = currentServices.pendingTaskService,
                 connectionService = currentServices.connectionService,
                 notificationService = currentServices.notificationService,
-                atlassianSetupService = currentServices.atlassianSetupService,
+                bugTrackerSetupService = currentServices.bugTrackerSetupService,
                 integrationSettingsService = currentServices.integrationSettingsService,
             )
         }

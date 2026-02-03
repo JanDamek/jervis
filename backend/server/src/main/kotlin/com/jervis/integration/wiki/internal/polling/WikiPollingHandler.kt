@@ -1,11 +1,11 @@
 package com.jervis.integration.wiki.internal.polling
 
-import com.jervis.common.client.IAtlassianClient
-import com.jervis.common.dto.atlassian.ConfluenceSearchRequest
+import com.jervis.common.client.IWikiClient
+import com.jervis.common.dto.wiki.WikiSearchRequest
 import com.jervis.entity.ClientDocument
-import com.jervis.integration.wiki.internal.entity.WikiPageIndexDocument
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
+import com.jervis.integration.wiki.internal.entity.WikiPageIndexDocument
 import com.jervis.integration.wiki.internal.repository.WikiPageIndexRepository
 import com.jervis.service.polling.PollingStateService
 import com.jervis.types.ClientId
@@ -27,7 +27,7 @@ import java.time.Instant
 @Component
 class WikiPollingHandler(
     private val repository: WikiPageIndexRepository,
-    private val atlassianClient: IAtlassianClient,
+    private val wikiClient: IWikiClient,
     pollingStateService: PollingStateService,
 ) : WikiPollingHandlerBase<WikiPageIndexDocument>(
         pollingStateService = pollingStateService,
@@ -36,9 +36,9 @@ class WikiPollingHandler(
         connectionDocument.connectionType == ConnectionDocument.ConnectionTypeEnum.HTTP &&
             (connectionDocument.baseUrl?.contains("atlassian.net") == true || connectionDocument.baseUrl?.contains("atlassian") == true)
 
-    override fun getSystemName(): String = "Confluence"
+    override fun getSystemName(): String = "Wiki"
 
-    override fun getToolName(): String = "CONFLUENCE"
+    override fun getToolName(): String = "WIKI"
 
     override fun getSpaceKey(client: ClientDocument): String? = null // Inherited from connection
 
@@ -59,20 +59,20 @@ class WikiPollingHandler(
                 }
 
             val searchRequest =
-                ConfluenceSearchRequest(
+                WikiSearchRequest(
                     baseUrl = connectionDocument.baseUrl,
                     authType = authInfo.authType,
                     basicUsername = authInfo.username,
                     basicPassword = authInfo.password,
                     bearerToken = authInfo.bearerToken,
-                    spaceKey = spaceKey ?: connectionDocument.spaceKey,
-                    cql = null,
+                    spaceKey = spaceKey ?: connectionDocument.confluenceSpaceKey,
+                    query = null,
                     lastModifiedSince = lastSeenUpdatedAt?.toString(),
                     maxResults = maxResults,
                     startAt = startAt,
                 )
 
-            val response = atlassianClient.searchConfluencePages(searchRequest)
+            val response = wikiClient.searchPages(searchRequest)
 
             return response.pages.map { page ->
                 WikiPageIndexDocument(
@@ -80,9 +80,9 @@ class WikiPollingHandler(
                     clientId = clientId,
                     connectionDocumentId = connectionDocument.id,
                     pageId = page.id,
-                    versionNumber = page.version?.number ?: -1,
+                    versionNumber = -1,
                     title = page.title,
-                    confluenceUpdatedAt = parseInstant(page.lastModified),
+                    wikiUpdatedAt = parseInstant(page.updated),
                     indexingError = null,
                     status = com.jervis.domain.PollingStatusEnum.NEW,
                 )
@@ -111,7 +111,7 @@ class WikiPollingHandler(
         val bearerToken: String?,
     )
 
-    override fun getPageUpdatedAt(page: WikiPageIndexDocument): Instant = page.confluenceUpdatedAt
+    override fun getPageUpdatedAt(page: WikiPageIndexDocument): Instant = page.wikiUpdatedAt
 
     override suspend fun findExisting(
         connectionId: ConnectionId,

@@ -276,8 +276,8 @@ private fun ProjectDialog(
     // Resource identifiers from client's connections
     var gitRepositoryConnectionId by remember { mutableStateOf(project?.gitRepositoryConnectionId ?: "") }
     var gitRepositoryIdentifier by remember { mutableStateOf(project?.gitRepositoryIdentifier ?: "") }
-    var jiraProjectConnectionId by remember { mutableStateOf(project?.jiraProjectConnectionId ?: "") }
-    var jiraProjectKey by remember { mutableStateOf(project?.jiraProjectKey ?: "") }
+    var bugtrackerConnectionId by remember { mutableStateOf(project?.bugtrackerConnectionId ?: "") }
+    var bugtrackerProjectKey by remember { mutableStateOf(project?.bugtrackerProjectKey ?: "") }
 
     val scope = rememberCoroutineScope()
 
@@ -333,17 +333,17 @@ private fun ProjectDialog(
                 )
 
                 Spacer(Modifier.height(8.dp))
-                Text("Jira Project (optional)", style = MaterialTheme.typography.labelMedium)
+                Text("Bug Tracker (optional)", style = MaterialTheme.typography.labelMedium)
                 OutlinedTextField(
-                    value = jiraProjectConnectionId,
-                    onValueChange = { jiraProjectConnectionId = it },
+                    value = bugtrackerConnectionId,
+                    onValueChange = { bugtrackerConnectionId = it },
                     label = { Text("Connection ID") },
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
-                    value = jiraProjectKey,
-                    onValueChange = { jiraProjectKey = it },
-                    label = { Text("Jira Project Key") },
+                    value = bugtrackerProjectKey,
+                    onValueChange = { bugtrackerProjectKey = it },
+                    label = { Text("Bug Tracker Project Key") },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -357,8 +357,8 @@ private fun ProjectDialog(
                         description = description.ifBlank { null },
                         gitRepositoryConnectionId = gitRepositoryConnectionId.ifBlank { null },
                         gitRepositoryIdentifier = gitRepositoryIdentifier.ifBlank { null },
-                        jiraProjectConnectionId = jiraProjectConnectionId.ifBlank { null },
-                        jiraProjectKey = jiraProjectKey.ifBlank { null }
+                        bugtrackerConnectionId = bugtrackerConnectionId.ifBlank { null },
+                        bugtrackerProjectKey = bugtrackerProjectKey.ifBlank { null }
                     )
                     onSave(newProject)
                 },

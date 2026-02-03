@@ -17,10 +17,10 @@ data class ProjectDto(
     // These refer to resources in the parent client's connections
     val gitRepositoryConnectionId: String? = null, // Which connection has the Git repo
     val gitRepositoryIdentifier: String? = null, // repo name, URL, or path within that connection
-    val jiraProjectConnectionId: String? = null,
-    val jiraProjectKey: String? = null,
-    val confluenceSpaceConnectionId: String? = null,
-    val confluenceSpaceKey: String? = null,
+    val bugtrackerConnectionId: String? = null,
+    val bugtrackerProjectKey: String? = null,
+    val wikiConnectionId: String? = null,
+    val wikiSpaceKey: String? = null,
     // Git commit configuration override (inherits from client if null)
     val gitCommitMessageFormat: String? = null,
     val gitCommitAuthorName: String? = null,

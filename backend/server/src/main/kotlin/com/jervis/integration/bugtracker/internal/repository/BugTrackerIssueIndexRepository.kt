@@ -16,7 +16,7 @@ interface BugTrackerIssueIndexRepository : CoroutineCrudRepository<BugTrackerIss
         latestChangelogId: String,
     ): Boolean
 
-    suspend fun findAllByStatusIs(status: PollingStatusEnum = PollingStatusEnum.NEW): Flow<BugTrackerIssueIndexDocument>
+    suspend fun findAllByStatusOrderByBugtrackerUpdatedAtDesc(status: PollingStatusEnum = PollingStatusEnum.NEW): Flow<BugTrackerIssueIndexDocument>
 
     suspend fun findByConnectionIdAndIssueKey(
         connectionId: ConnectionId,

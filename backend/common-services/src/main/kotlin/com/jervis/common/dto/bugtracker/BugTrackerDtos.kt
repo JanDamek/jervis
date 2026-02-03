@@ -8,7 +8,7 @@ data class BugTrackerUserRequest(
     val authType: String, // BASIC, BEARER, OAUTH2
     val basicUsername: String? = null,
     val basicPassword: String? = null,
-    val bearerToken: String? = null
+    val bearerToken: String? = null,
 )
 
 @Serializable
@@ -17,7 +17,7 @@ data class BugTrackerUserDto(
     val username: String,
     val displayName: String,
     val email: String? = null,
-    val avatarUrl: String? = null
+    val avatarUrl: String? = null,
 )
 
 @Serializable
@@ -29,13 +29,13 @@ data class BugTrackerSearchRequest(
     val bearerToken: String? = null,
     val projectKey: String? = null,
     val query: String? = null,
-    val maxResults: Int = 100
+    val maxResults: Int = 100,
 )
 
 @Serializable
 data class BugTrackerSearchResponse(
     val issues: List<BugTrackerIssueDto>,
-    val total: Int
+    val total: Int,
 )
 
 @Serializable
@@ -45,12 +45,12 @@ data class BugTrackerIssueRequest(
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
-    val issueKey: String
+    val issueKey: String,
 )
 
 @Serializable
 data class BugTrackerIssueResponse(
-    val issue: BugTrackerIssueDto
+    val issue: BugTrackerIssueDto,
 )
 
 @Serializable
@@ -66,7 +66,17 @@ data class BugTrackerIssueDto(
     val created: String,
     val updated: String,
     val url: String,
-    val projectKey: String? = null
+    val projectKey: String? = null,
+    val attachments: List<BugTrackerAttachmentDto> = emptyList(),
+)
+
+@Serializable
+data class BugTrackerAttachmentDto(
+    val id: String,
+    val filename: String,
+    val mimeType: String? = null,
+    val size: Long? = null,
+    val contentUrl: String? = null,
 )
 
 @Serializable
@@ -75,12 +85,12 @@ data class BugTrackerProjectsRequest(
     val authType: String,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
-    val bearerToken: String? = null
+    val bearerToken: String? = null,
 )
 
 @Serializable
 data class BugTrackerProjectsResponse(
-    val projects: List<BugTrackerProjectDto>
+    val projects: List<BugTrackerProjectDto>,
 )
 
 @Serializable
@@ -89,7 +99,7 @@ data class BugTrackerProjectDto(
     val key: String,
     val name: String,
     val description: String? = null,
-    val url: String? = null
+    val url: String? = null,
 )
 
 @Serializable
@@ -100,5 +110,5 @@ data class BugTrackerAttachmentRequest(
     val basicPassword: String? = null,
     val bearerToken: String? = null,
     val attachmentId: String,
-    val attachmentUrl: String
+    val attachmentUrl: String,
 )

@@ -10,7 +10,7 @@ import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
 /**
- * Manages Jira issue indexing state transitions with a sealed class pattern.
+ * Manages BugTracker issue indexing state transitions with a sealed class pattern.
  *
  * State transitions:
  * - NEW → INDEXED (success, delete full content)
@@ -32,12 +32,12 @@ class BugTrackerStateManager(
     /**
      * Continuous flow of NEW issues across ALL accounts (newest first).
      * Single indexer instance processes issues from all accounts,
-     * ordered by jiraUpdatedAt descending (newest issues prioritized).
+     * ordered by bugtrackerUpdatedAt descending (newest issues prioritized).
      */
     fun continuousNewIssuesAllAccounts(): Flow<BugTrackerIssueIndexDocument> =
         flow {
             while (true) {
-                val issues = repository.findAllByStatusIs()
+                val issues = repository.findAllByStatusOrderByBugtrackerUpdatedAtDesc()
 
                 var emittedAny = false
                 issues.collect { issue ->
@@ -46,7 +46,7 @@ class BugTrackerStateManager(
                 }
 
                 if (!emittedAny) {
-                    logger.debug { "No NEW Jira issues across all accounts, sleeping ${POLL_DELAY_MS}ms" }
+                    logger.debug { "No NEW BugTracker issues across all accounts, sleeping ${POLL_DELAY_MS}ms" }
                     delay(POLL_DELAY_MS)
                 } else {
                     logger.debug { "Processed NEW issues across all accounts, immediately checking for more..." }

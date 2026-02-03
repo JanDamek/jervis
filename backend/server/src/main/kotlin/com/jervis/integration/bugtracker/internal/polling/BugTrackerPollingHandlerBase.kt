@@ -16,7 +16,7 @@ import mu.KotlinLogging
 import java.time.Instant
 
 /**
- * Base class for bug tracker polling handlers (Jira, YouTrack, Mantis, GitHub Issues, GitLab Issues, etc.).
+ * Base class for bug tracker polling handlers (Atlassian Jira, YouTrack, Mantis, GitHub Issues, GitLab Issues, etc.).
  *
  * Provides shared logic:
  * - Poll orchestration across multiple clients
@@ -24,7 +24,7 @@ import java.time.Instant
  * - Incremental polling using lastSeenUpdatedAt state
  * - Generic issue processing and deduplication
  *
- * System-specific implementations (Jira, YouTrack, etc.) only handle:
+ * System-specific implementations (Atlassian Jira, YouTrack, etc.) only handle:
  * - API client calls
  * - Query building (JQL, YouTrack query, etc.)
  * - Issue data transformation to common format
@@ -167,17 +167,17 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
     }
 
     /**
-     * Get bug tracker system name for logging (Jira, YouTrack, etc.)
+     * Get bug tracker system name for logging (Atlassian Jira, YouTrack, etc.)
      */
     protected abstract fun getSystemName(): String
 
     /**
-     * Get tool name for polling state storage (JIRA, CONFLUENCE, etc.)
+     * Get tool name for polling state storage (BUGTRACKER, WIKI, etc.)
      */
     protected abstract fun getToolName(): String
 
     /**
-     * Build query for fetching issues (JQL for Jira, YouTrack query, etc.)
+     * Build query for fetching issues (JQL for Atlassian Jira, YouTrack query, etc.)
      */
     protected abstract fun buildQuery(
         client: ClientDocument?,
@@ -207,7 +207,7 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
 
     /**
      * Find existing issue in repository by full unique key.
-     * For Jira: must use (connectionId, issueKey, latestChangelogId)
+     * For Atlassian Jira: must use (connectionId, issueKey, latestChangelogId)
      * because each changelog entry is a separate record.
      */
     protected abstract suspend fun findExisting(

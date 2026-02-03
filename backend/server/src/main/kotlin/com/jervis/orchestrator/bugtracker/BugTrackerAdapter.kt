@@ -33,7 +33,7 @@ class BugTrackerAdapter(
         clientId: ClientId,
         parentId: String,
     ): List<WorkItem> {
-        // V Jira se děti hledají přes JQL (parent = key nebo "Epic Link")
+        // Children are searched via bug tracker query language (parent = key or Epic Link)
         val issues = jiraService.searchIssues(clientId, "parent = $parentId OR \"Epic Link\" = $parentId")
         return issues.map { issue ->
             WorkItem(
@@ -84,7 +84,7 @@ class BugTrackerAdapter(
         clientId: ClientId,
         itemId: String,
     ): List<WorkItem> {
-        // Hledání linků typu "is blocked by"
+        // Search for links of type "is blocked by"
         val issues =
             jiraService.searchIssues(
                 clientId,

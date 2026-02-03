@@ -274,8 +274,8 @@ class TaskService(
     ): String {
         val fileName =
             when (taskType) {
-                TaskTypeEnum.CONFLUENCE_PROCESSING -> "confluence-$correlationId.xml"
-                TaskTypeEnum.JIRA_PROCESSING -> "jira-$correlationId.html"
+                TaskTypeEnum.WIKI_PROCESSING -> "wiki-$correlationId.xml"
+                TaskTypeEnum.BUGTRACKER_PROCESSING -> "bugtracker-$correlationId.html"
                 else -> "content-$correlationId.txt"
             }
 

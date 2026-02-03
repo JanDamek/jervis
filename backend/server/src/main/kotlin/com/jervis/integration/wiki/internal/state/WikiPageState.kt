@@ -1,7 +1,7 @@
 package com.jervis.integration.wiki.internal.state
 
 /**
- * Confluence page indexing states.
+ * Wiki page indexing states.
  * Mirrors EmailMessageState and BugTrackerIssueState.
  */
 enum class WikiPageState {

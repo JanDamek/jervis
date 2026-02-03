@@ -169,8 +169,8 @@ class OAuth2Service(
     private suspend fun fetchScopesFromService(provider: String): String {
         return try {
             val serviceUrl = when (provider) {
-                "github" -> "http://jervis-service-github:8085/oauth2/scopes"
-                "gitlab" -> "http://jervis-service-gitlab:8086/oauth2/scopes"
+                "github" -> "http://jervis-github:8085/oauth2/scopes"
+                "gitlab" -> "http://jervis-gitlab:8086/oauth2/scopes"
                 "atlassian" -> "http://jervis-atlassian:8084/oauth2/scopes"
                 "bitbucket" -> {
                     // Bitbucket doesn't have a dedicated service yet, use default scopes

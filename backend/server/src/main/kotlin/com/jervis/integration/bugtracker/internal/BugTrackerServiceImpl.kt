@@ -1,8 +1,8 @@
 package com.jervis.integration.bugtracker.internal
 
-import com.jervis.common.client.IAtlassianClient
-import com.jervis.common.dto.atlassian.JiraIssueRequest
-import com.jervis.common.dto.atlassian.JiraSearchRequest
+import com.jervis.common.client.IBugTrackerClient
+import com.jervis.common.dto.bugtracker.BugTrackerIssueRequest
+import com.jervis.common.dto.bugtracker.BugTrackerSearchRequest
 import com.jervis.common.rpc.withRpcRetry
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.integration.bugtracker.BugTrackerComment
@@ -18,7 +18,7 @@ import org.springframework.stereotype.Service
 
 @Service
 class BugTrackerServiceImpl(
-    private val atlassianClient: IAtlassianClient,
+    private val bugTrackerClient: IBugTrackerClient,
     private val connectionService: ConnectionService,
     private val clientService: com.jervis.service.client.ClientService,
     private val reconnectHandler: com.jervis.configuration.RpcReconnectHandler,
@@ -31,22 +31,22 @@ class BugTrackerServiceImpl(
         project: String?,
         maxResults: Int,
     ): List<BugTrackerIssue> {
-        val connection = findJiraConnection(clientId) ?: return emptyList()
+        val connection = findBugTrackerConnection(clientId) ?: return emptyList()
         val finalQuery = if (project != null) "project = \"$project\" AND ($query)" else query
 
         val response =
             withRpcRetry(
-                name = "JiraSearch",
+                name = "BugTrackerSearch",
                 reconnect = { reconnectHandler.reconnectAtlassian() },
             ) {
-                atlassianClient.searchJiraIssues(
-                    JiraSearchRequest(
+                bugTrackerClient.searchIssues(
+                    BugTrackerSearchRequest(
                         baseUrl = connection.baseUrl ?: "",
                         authType = getAuthType(connection),
                         basicUsername = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.username,
                         basicPassword = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.password,
                         bearerToken = (connection.credentials as? ConnectionDocument.HttpCredentials.Bearer)?.token,
-                        jql = finalQuery,
+                        query = finalQuery,
                         maxResults = maxResults,
                     ),
                 )
@@ -55,16 +55,16 @@ class BugTrackerServiceImpl(
         return response.issues.map { issue ->
             BugTrackerIssue(
                 key = issue.key,
-                summary = issue.fields.summary ?: "",
-                description = null, // Summary only for search results
-                status = issue.fields.status?.name ?: "Unknown",
-                assignee = issue.fields.assignee?.displayName,
-                reporter = issue.fields.reporter?.displayName ?: "Unknown",
-                created = issue.fields.created ?: "",
-                updated = issue.fields.updated ?: "",
-                issueType = issue.fields.issueType?.name ?: "Unknown",
-                priority = issue.fields.priority?.name,
-                labels = issue.fields.labels ?: emptyList(),
+                summary = issue.title,
+                description = issue.description,
+                status = issue.status,
+                assignee = issue.assignee,
+                reporter = issue.reporter ?: "Unknown",
+                created = issue.created,
+                updated = issue.updated,
+                issueType = "Task", // Defaulting as not available in generic DTO
+                priority = issue.priority,
+                labels = emptyList(),
             )
         }
     }
@@ -74,15 +74,15 @@ class BugTrackerServiceImpl(
         issueKey: String,
     ): BugTrackerIssue {
         val connection =
-            findJiraConnection(clientId) ?: throw IllegalStateException("No Jira connection found for client $clientId")
+            findBugTrackerConnection(clientId) ?: throw IllegalStateException("No BugTracker connection found for client $clientId")
 
         val response =
             withRpcRetry(
-                name = "JiraGetIssue",
+                name = "BugTrackerGetIssue",
                 reconnect = { reconnectHandler.reconnectAtlassian() },
             ) {
-                atlassianClient.getJiraIssue(
-                    JiraIssueRequest(
+                bugTrackerClient.getIssue(
+                    BugTrackerIssueRequest(
                         baseUrl = connection.baseUrl ?: "",
                         authType = getAuthType(connection),
                         basicUsername = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.username,
@@ -91,21 +91,20 @@ class BugTrackerServiceImpl(
                         issueKey = issueKey,
                     ),
                 )
-            }
+            }.issue
 
-        val fields = response.fields
         return BugTrackerIssue(
             key = response.key,
-            summary = fields.summary ?: "",
-            description = response.renderedDescription ?: fields.description?.toString(),
-            status = fields.status?.name ?: "Unknown",
-            assignee = fields.assignee?.displayName,
-            reporter = fields.reporter?.displayName ?: "Unknown",
-            created = fields.created ?: "",
-            updated = fields.updated ?: "",
-            issueType = fields.issueType?.name ?: "Unknown",
-            priority = fields.priority?.name,
-            labels = fields.labels ?: emptyList(),
+            summary = response.title,
+            description = response.description,
+            status = response.status,
+            assignee = response.assignee,
+            reporter = response.reporter ?: "Unknown",
+            created = response.created,
+            updated = response.updated,
+            issueType = "Task",
+            priority = response.priority,
+            labels = emptyList(),
         )
     }
 
@@ -120,33 +119,9 @@ class BugTrackerServiceImpl(
         clientId: ClientId,
         issueKey: String,
     ): List<BugTrackerComment> {
-        val connection = findJiraConnection(clientId) ?: return emptyList()
-
-        val response =
-            withRpcRetry(
-                name = "JiraGetComments",
-                reconnect = { reconnectHandler.reconnectAtlassian() },
-            ) {
-                atlassianClient.getJiraIssue(
-                    JiraIssueRequest(
-                        baseUrl = connection.baseUrl ?: "",
-                        authType = getAuthType(connection),
-                        basicUsername = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.username,
-                        basicPassword = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.password,
-                        bearerToken = (connection.credentials as? ConnectionDocument.HttpCredentials.Bearer)?.token,
-                        issueKey = issueKey,
-                    ),
-                )
-            }
-
-        return response.comments?.map { comment ->
-            BugTrackerComment(
-                id = comment.id,
-                author = comment.author?.displayName ?: "Unknown",
-                body = comment.body?.toString() ?: "",
-                created = comment.created ?: "",
-            )
-        } ?: emptyList()
+        // Jira comments are currently not supported by generic BugTrackerClient.
+        // Needs addition to IBugTrackerClient if required.
+        return emptyList()
     }
 
     override suspend fun createIssue(
@@ -166,7 +141,7 @@ class BugTrackerServiceImpl(
         comment: String,
     ): BugTrackerComment = throw UnsupportedOperationException("Write operations are not allowed yet (Read-only mode)")
 
-    private suspend fun findJiraConnection(clientId: ClientId): ConnectionDocument? {
+    private suspend fun findBugTrackerConnection(clientId: ClientId): ConnectionDocument? {
         val client = clientService.getClientById(clientId) ?: return null
         val connectionIds = client.connectionIds.map { com.jervis.types.ConnectionId(it) }
 

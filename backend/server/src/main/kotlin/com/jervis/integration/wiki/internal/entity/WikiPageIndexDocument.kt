@@ -12,7 +12,7 @@ import org.springframework.data.mongodb.core.mapping.Document
 import java.time.Instant
 
 /**
- * Confluence page index - tracking which pages have been processed.
+ * Wiki page index - tracking which pages have been processed.
  *
  * STATE MACHINE: NEW -> INDEXED (or FAILED)
  *
@@ -24,11 +24,11 @@ import java.time.Instant
  * FLOW:
  * 1. CentralPoller fetches minimal data → saves as NEW (pageId, versionNumber, title, updatedAt)
  * 2. WikiContinuousIndexer:
- *    - Fetches FULL page details from Confluence API (getConfluencePage)
+ *    - Fetches FULL page details from Wiki API
  *    - Creates PendingTask with complete content
  *    - Converts to INDEXED (minimal)
  * 3. KoogQualifierAgent stores to RAG/Graph with sourceUrn
- * 4. Future lookups use sourceUrn to find original in Confluence
+ * 4. Future lookups use sourceUrn to find original in Wiki
  *
  * MONGODB STORAGE (minimal for all states):
  * - NEW: pageId, versionNumber, title, updatedAt (enough to fetch full details)
@@ -40,11 +40,11 @@ import java.time.Instant
  * Old documents without _class will FAIL deserialization (fail-fast design).
  *
  * MIGRATION: Drop a collection before starting the server:
- *   db.confluence_pages.drop()
+ *   db.wiki_pages.drop()
  *
- * All pages will be re-indexed from Confluence in the next polling cycle.
+ * All pages will be re-indexed from Wiki in the next polling cycle.
  */
-@Document(collection = "confluence_pages")
+@Document(collection = "wiki_pages")
 @CompoundIndexes(
     CompoundIndex(
         name = "connection_page_version_idx",
@@ -58,7 +58,7 @@ data class WikiPageIndexDocument(
     val connectionDocumentId: ConnectionId,
     val pageId: String,
     val versionNumber: Int?,
-    val confluenceUpdatedAt: Instant,
+    val wikiUpdatedAt: Instant,
     val clientId: ClientId,
     val projectId: ProjectId? = null,
     val title: String,

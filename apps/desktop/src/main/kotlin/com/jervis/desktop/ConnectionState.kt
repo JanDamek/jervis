@@ -115,7 +115,7 @@ class ConnectionManager(
                         pendingTaskService = services!!.pendingTaskService,
                         connectionService = services!!.connectionService,
                         notificationService = services!!.notificationService,
-                        atlassianSetupService = services!!.atlassianSetupService,
+                        bugTrackerSetupService = services!!.bugTrackerSetupService,
                         integrationSettingsService = services!!.integrationSettingsService,
                     )
 

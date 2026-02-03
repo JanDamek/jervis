@@ -123,7 +123,7 @@ Background processing: Returns immediately, download happens asynchronously""",
                 if (knownService != null && connection != null) {
                     val enqueued =
                         when (knownService.serviceType) {
-                            "JIRA" -> {
+                            "BUGTRACKER" -> {
                                 indexedLinkService.enqueueJiraIssueFromLink(
                                     issueKey = knownService.identifier,
                                     connection = connection,
@@ -132,7 +132,7 @@ Background processing: Returns immediately, download happens asynchronously""",
                                 )
                             }
 
-                            "CONFLUENCE" -> {
+                            "WIKI" -> {
                                 indexedLinkService.enqueueConfluencePageFromLink(
                                     pageId = knownService.identifier,
                                     connection = connection,
@@ -149,8 +149,8 @@ Background processing: Returns immediately, download happens asynchronously""",
                     if (enqueued) {
                         val correlationId =
                             when (knownService.serviceType) {
-                                "JIRA" -> "jira:${knownService.identifier}"
-                                "CONFLUENCE" -> "confluence:${knownService.identifier}"
+                                "BUGTRACKER" -> "bugtracker:${knownService.identifier}"
+                                "WIKI" -> "wiki:${knownService.identifier}"
                                 else -> "link:${ObjectId()}"
                             }
 

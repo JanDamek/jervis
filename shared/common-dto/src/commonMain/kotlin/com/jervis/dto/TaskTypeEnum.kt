@@ -2,9 +2,9 @@ package com.jervis.dto
 
 enum class TaskTypeEnum {
     EMAIL_PROCESSING,
-    JIRA_PROCESSING,
+    BUGTRACKER_PROCESSING,
     LINK_PROCESSING,
-    CONFLUENCE_PROCESSING,
+    WIKI_PROCESSING,
     GIT_PROCESSING,
 
     // Direct input from a user

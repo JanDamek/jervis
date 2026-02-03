@@ -8,8 +8,8 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class ConnectionFilterDto(
     val connectionId: String,
-    val jiraProjects: List<String> = emptyList(),
-    val jiraBoardIds: List<String> = emptyList(),
-    val confluenceSpaces: List<String> = emptyList(),
+    val bugtrackerProjects: List<String> = emptyList(),
+    val bugtrackerBoardIds: List<String> = emptyList(),
+    val wikiSpaces: List<String> = emptyList(),
     val emailFolders: List<String> = emptyList(),
 )

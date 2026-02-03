@@ -1,6 +1,7 @@
 package com.jervis.github
 
 import com.jervis.common.client.IBugTrackerClient
+import com.jervis.common.client.IGitHubClient
 import com.jervis.common.client.IRepositoryClient
 import com.jervis.github.service.GitHubApiClient
 import com.jervis.github.service.GitHubBugTrackerService
@@ -46,8 +47,8 @@ fun main() {
         }
 
     val githubApiClient = GitHubApiClient(httpClient)
-    val repositoryService: IRepositoryClient = GitHubRepositoryService(githubApiClient)
-    val bugTrackerService: IBugTrackerClient = GitHubBugTrackerService(githubApiClient)
+    val repositoryService = GitHubRepositoryService(githubApiClient)
+    val bugTrackerService = GitHubBugTrackerService(githubApiClient)
 
     embeddedServer(Netty, port = port, host = host) {
         install(WebSockets)
@@ -73,6 +74,7 @@ fun main() {
 
                 registerService<IRepositoryClient> { repositoryService }
                 registerService<IBugTrackerClient> { bugTrackerService }
+                registerService<IGitHubClient> { repositoryService }
             }
         }
     }.start(wait = false)

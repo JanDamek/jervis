@@ -12,10 +12,10 @@ enum class RagSourceType {
     EMAIL,
     EMAIL_LINK_CONTENT,
 
-    // Confluence integration
-    CONFLUENCE_LINK_CONTENT,
+    // Wiki integration
+    WIKI_LINK_CONTENT,
 
     // Web documentation
     DOCUMENTATION,
-    JIRA_LINK_CONTENT,
+    BUGTRACKER_LINK_CONTENT,
 }

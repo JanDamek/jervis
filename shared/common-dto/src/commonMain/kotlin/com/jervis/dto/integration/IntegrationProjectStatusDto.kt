@@ -7,12 +7,10 @@ data class IntegrationProjectStatusDto(
     val projectId: String,
     val clientId: String,
     // Effective settings resolved from client defaults + overrides
-    val effectiveJiraProjectKey: String? = null,
-    val overrideJiraProjectKey: String? = null,
-    val effectiveJiraBoardId: Long? = null,
-    val overrideJiraBoardId: Long? = null,
-    val effectiveConfluenceSpaceKey: String? = null,
-    val overrideConfluenceSpaceKey: String? = null,
-    val effectiveConfluenceRootPageId: String? = null,
-    val overrideConfluenceRootPageId: String? = null,
+    val effectiveBugtrackerProjectKey: String? = null,
+    val overrideBugtrackerProjectKey: String? = null,
+    val effectiveWikiSpaceKey: String? = null,
+    val overrideWikiSpaceKey: String? = null,
+    val effectiveWikiRootPageId: String? = null,
+    val overrideWikiRootPageId: String? = null,
 )

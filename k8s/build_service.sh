@@ -5,11 +5,12 @@ set -e
 SERVICE_NAME=$1
 MODULE=$2
 DOCKERFILE=$3
+DEPLOY_NAME=${4:-$SERVICE_NAME}
 REGISTRY="registry.damek-soft.eu/jandamek"
 NAMESPACE="jervis"
 
 if [ -z "$SERVICE_NAME" ] || [ -z "$MODULE" ] || [ -z "$DOCKERFILE" ]; then
-    echo "Usage: $0 <service-name> <gradle-module> <dockerfile-path>"
+    echo "Usage: $0 <service-name> <gradle-module> <dockerfile-path> [deploy-name]"
     exit 1
 fi
 
@@ -21,7 +22,7 @@ VERSION_TAG="${GIT_HASH}-${TIMESTAMP}"
 IMAGE_VERSIONED="${REGISTRY}/${SERVICE_NAME}:${VERSION_TAG}"
 IMAGE_LATEST="${REGISTRY}/${SERVICE_NAME}:latest"
 
-echo "=== Building and deploying ${SERVICE_NAME} ==="
+echo "=== Building and deploying ${SERVICE_NAME} (deploy as ${DEPLOY_NAME}) ==="
 echo "Version: ${VERSION_TAG}"
 
 # 1. Gradle Build (local build with cache for speed)
@@ -75,13 +76,13 @@ echo "✓ Docker images pushed"
 # 4. Deploy to Kubernetes
 echo "Step 4/4: Deploying to Kubernetes..."
 # Fix for service names like jervis-coding-engine -> app_coding_engine.yaml
-CLEAN_NAME=${SERVICE_NAME#jervis-}
+CLEAN_NAME=${DEPLOY_NAME#jervis-}
 CLEAN_NAME=${CLEAN_NAME//-/_}
 YAML_FILE="/Users/damekjan/git/jervis/k8s/app_${CLEAN_NAME}.yaml"
 
 # Apply deployment - kubectl will decide if update is needed
 kubectl apply -f "$YAML_FILE" -n "${NAMESPACE}"
-kubectl rollout restart deployment/${SERVICE_NAME} -n "${NAMESPACE}"
-kubectl get pods -n "${NAMESPACE}" -l "app=${SERVICE_NAME}"
-echo "✓ ${SERVICE_NAME} deployment applied"
+kubectl rollout restart deployment/${DEPLOY_NAME} -n "${NAMESPACE}"
+kubectl get pods -n "${NAMESPACE}" -l "app=${DEPLOY_NAME}"
+echo "✓ ${DEPLOY_NAME} deployment applied"
 echo "=== ✓ ${SERVICE_NAME} complete (version: ${VERSION_TAG}) ==="
