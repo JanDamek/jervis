@@ -30,8 +30,8 @@ class ProjectService(
         val existing = getProjectByIdOrNull(project.id)
         val isNew = existing == null
 
-        val merged = if (!isNew) {
-            existing!!.copy(
+        val merged = if (existing != null) {
+            existing.copy(
                 name = project.name,
                 description = project.description,
                 communicationLanguageEnum = project.communicationLanguageEnum,

@@ -97,8 +97,8 @@ class WikiServiceImpl(
             title = response.title,
             content = response.content ?: "",
             spaceKey = response.spaceKey ?: "",
-            created = response.created ?: "",
-            updated = response.updated ?: "",
+            created = response.created,
+            updated = response.updated,
             version = 1,
             parentId = null,
         )
@@ -129,7 +129,7 @@ class WikiServiceImpl(
     ): WikiPage = throw UnsupportedOperationException("Write operations are not allowed yet (Read-only mode)")
 
     private suspend fun findWikiConnection(clientId: ClientId): ConnectionDocument? {
-        val client = clientService.getClientById(clientId) ?: return null
+        val client = clientService.getClientById(clientId)
         val connectionIds = client.connectionIds.map { ConnectionId(it) }
 
         for (id in connectionIds) {

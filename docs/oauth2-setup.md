@@ -1,6 +1,6 @@
 # OAuth2 Setup for GitHub, GitLab, and Bitbucket
 
-Poslední aktualizace: 2026-01-31
+Poslední aktualizace: 2026-02-03
 
 Tento dokument popisuje, jak nastavit OAuth2 připojení pro GitHub, GitLab a Bitbucket v aplikaci Jervis.
 
@@ -121,14 +121,20 @@ jervis:
 V **Settings → Connections**:
 
 1. Klikněte na **"Přidat připojení"**
-2. Vyberte typ: **GITHUB** / **GITLAB** / **BITBUCKET**
+2. Vyberte typ: **OAUTH2**
 3. Zadejte **název** connection (např. "GitHub Organization")
-4. V sekci **"Autentizace"** vyberte **"OAUTH2"**
-5. Klikněte **"Uložit"**
+4. Vyplňte **Base URL** (např. `https://api.github.com`)
+5. Vyplňte OAuth2 specifická pole:
+   - **Authorization URL**: URL pro zahájení autorizace (např. `https://github.com/login/oauth/authorize`)
+   - **Token URL**: URL pro výměnu kódu za token (např. `https://github.com/login/oauth/access_token`)
+   - **Client Secret**: Secret získaný z nastavení poskytovatele
+   - **Redirect URI**: Musí odpovídat nastavení u poskytovatele (např. `http://localhost:8080/oauth2/callback`)
+   - **Scope**: Volitelné scopes oddělené mezerou (např. `repo read:user`)
+6. Klikněte **"Vytvořit"**
 
 Connection je vytvořené ve stavu `NEW` (není ještě autorizované).
 
-**Poznámka**: OAuth2 Client ID a Secret jsou již nakonfigurované globálně v application.yml, nemusíte je zadávat pro každé connection.
+**Poznámka**: Ačkoliv lze OAuth2 konfigurovat globálně v `application.yml`, UI nyní umožňuje plnou konfiguraci per-connection pro maximální flexibilitu.
 
 ### 2. OAuth2 Autorizace
 

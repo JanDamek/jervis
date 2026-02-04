@@ -670,7 +670,7 @@ private fun toFragments(results: List<Any>): List<InternalFragment> =
             }
 
         val content = doc?.content ?: item.readStringProperty("content") ?: return@mapNotNull null
-        val metadata = doc?.metadata ?: item.readMapProperty("metadata") ?: emptyMap()
+        val metadata = doc?.metadata ?: item.readMapProperty("metadata")
 
         InternalFragment(
             sourceUrn = metadata["sourceUrn"]?.toString() ?: "",

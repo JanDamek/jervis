@@ -8,12 +8,21 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 enum class ConnectionCapability {
-    BUGTRACKER,  // Bug tracker (Jira, GitHub Issues, GitLab Issues, etc.)
-    WIKI,        // Wiki/documentation (Confluence, MediaWiki, Notion, etc.)
-    REPOSITORY,  // Code repository (GitHub, GitLab, Bitbucket, etc.)
-    EMAIL,       // Email (IMAP, POP3, SMTP)
-    GIT,         // Git operations
+    BUGTRACKER, // Bug tracker (Jira, GitHub Issues, GitLab Issues, etc.)
+    WIKI, // Wiki/documentation (Confluence, MediaWiki, Notion, etc.)
+    REPOSITORY, // Code repository (GitHub, GitLab, Bitbucket, etc.)
+    EMAIL, // Email (IMAP, POP3, SMTP)
+    GIT, // Git operations
 }
+
+/**
+ * Rate limit configuration DTO.
+ */
+@Serializable
+data class RateLimitConfigDto(
+    val maxRequestsPerSecond: Int,
+    val maxRequestsPerMinute: Int,
+)
 
 /**
  * Connection response DTO - returned from REST API
@@ -45,6 +54,19 @@ data class ConnectionResponseDto(
     val useSsl: Boolean? = null,
     val useTls: Boolean? = null,
     val hasCredentials: Boolean = false,
+    // Connection capabilities - what functionality does this connection provide
+    val capabilities: Set<ConnectionCapability> = emptySet(),
+    val folderName: String? = null,
+    // Rate limiting
+    val rateLimitConfig: RateLimitConfigDto? = null,
+    // Atlassian specific
+    val jiraProjectKey: String? = null,
+    val confluenceSpaceKey: String? = null,
+    val confluenceRootPageId: String? = null,
+    val bitbucketRepoSlug: String? = null,
+    // Git specific
+    val gitRemoteUrl: String? = null,
+    val gitProvider: String? = null,
 )
 
 /**
@@ -75,6 +97,17 @@ data class ConnectionCreateRequestDto(
     val clientSecret: String? = null, // Plain text
     val redirectUri: String? = null,
     val scope: String? = null,
+    val folderName: String? = null,
+    // Rate limiting
+    val rateLimitConfig: RateLimitConfigDto? = null,
+    // Atlassian specific
+    val jiraProjectKey: String? = null,
+    val confluenceSpaceKey: String? = null,
+    val confluenceRootPageId: String? = null,
+    val bitbucketRepoSlug: String? = null,
+    // Git specific
+    val gitRemoteUrl: String? = null,
+    val gitProvider: String? = null,
 )
 
 /**
@@ -97,8 +130,25 @@ data class ConnectionUpdateRequestDto(
     val port: Int? = null,
     val username: String? = null,
     val password: String? = null,
+    val scope: String? = null,
     // OAuth2 specific
+    val authorizationUrl: String? = null,
+    val tokenUrl: String? = null,
     val clientSecret: String? = null,
+    val redirectUri: String? = null,
+    val useSsl: Boolean? = null,
+    val useTls: Boolean? = null,
+    val folderName: String? = null,
+    // Rate limiting
+    val rateLimitConfig: RateLimitConfigDto? = null,
+    // Atlassian specific
+    val jiraProjectKey: String? = null,
+    val confluenceSpaceKey: String? = null,
+    val confluenceRootPageId: String? = null,
+    val bitbucketRepoSlug: String? = null,
+    // Git specific
+    val gitRemoteUrl: String? = null,
+    val gitProvider: String? = null,
 )
 
 /**

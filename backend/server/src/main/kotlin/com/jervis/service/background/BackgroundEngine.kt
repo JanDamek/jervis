@@ -430,7 +430,7 @@ class BackgroundEngine(
                 // Get project name
                 val projectName = runningTask.projectId?.let { projectId ->
                     try {
-                        projectService.getProjectById(projectId)?.name
+                        projectService.getProjectById(projectId).name
                     } catch (e: Exception) {
                         null
                     }

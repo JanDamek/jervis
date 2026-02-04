@@ -3,7 +3,6 @@ package com.jervis.service.ratelimit
 import com.jervis.configuration.properties.RateLimitProperties
 import io.github.bucket4j.Bandwidth
 import io.github.bucket4j.Bucket
-import io.github.bucket4j.Refill
 import kotlinx.coroutines.delay
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -161,10 +160,10 @@ class DomainRateLimiterService(
         }
 
         val bandwidth =
-            Bandwidth.classic(
-                capacity,
-                Refill.intervally(refillTokens, refillPeriod),
-            )
+            Bandwidth.builder()
+                .capacity(capacity)
+                .refillIntervally(refillTokens, refillPeriod)
+                .build()
 
         return Bucket.builder()
             .addLimit(bandwidth)

@@ -4,16 +4,19 @@ import com.jervis.common.client.IBugTrackerClient
 import com.jervis.common.client.IWikiClient
 import com.jervis.common.dto.bugtracker.BugTrackerUserRequest
 import com.jervis.common.rpc.withRpcRetry
+import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionCreateRequestDto
 import com.jervis.dto.connection.ConnectionResponseDto
 import com.jervis.dto.connection.ConnectionTestResultDto
 import com.jervis.dto.connection.ConnectionUpdateRequestDto
+import com.jervis.dto.connection.RateLimitConfigDto
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
 import com.jervis.service.IConnectionService
 import com.jervis.service.connection.ConnectionService
 import com.jervis.types.ConnectionId
 import io.ktor.client.HttpClient
+import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.http.HttpHeaders
@@ -26,6 +29,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
 import java.util.Properties
@@ -56,6 +61,7 @@ class ConnectionRpcImpl(
         val connectionDocument: ConnectionDocument =
             when (request.type.uppercase()) {
                 "HTTP" -> {
+                    val type = ConnectionDocument.ConnectionTypeEnum.HTTP
                     ConnectionDocument(
                         name = request.name,
                         baseUrl = request.baseUrl ?: error("baseUrl required for HTTP connection"),
@@ -67,11 +73,22 @@ class ConnectionRpcImpl(
                                 bearer = request.httpBearerToken,
                             ),
                         timeoutMs = request.timeoutMs ?: 30000,
-                        connectionType = ConnectionDocument.ConnectionTypeEnum.HTTP,
+                        connectionType = type,
+                        availableCapabilities = detectCapabilities(type, request.baseUrl),
+                        rateLimitConfig =
+                            request.rateLimitConfig?.toEntity() ?: ConnectionDocument.RateLimitConfig(
+                                10,
+                                100,
+                            ),
+                        jiraProjectKey = request.jiraProjectKey,
+                        confluenceSpaceKey = request.confluenceSpaceKey,
+                        confluenceRootPageId = request.confluenceRootPageId,
+                        bitbucketRepoSlug = request.bitbucketRepoSlug,
                     )
                 }
 
                 "IMAP" -> {
+                    val type = ConnectionDocument.ConnectionTypeEnum.IMAP
                     ConnectionDocument(
                         name = request.name,
                         host = request.host ?: error("host required for IMAP connection"),
@@ -79,11 +96,19 @@ class ConnectionRpcImpl(
                         username = request.username ?: error("username required for IMAP connection"),
                         password = request.password ?: error("password required for IMAP connection"),
                         useSsl = request.useSsl ?: true,
-                        connectionType = ConnectionDocument.ConnectionTypeEnum.IMAP,
+                        folderName = request.folderName ?: "INBOX",
+                        connectionType = type,
+                        availableCapabilities = detectCapabilities(type, request.host),
+                        rateLimitConfig =
+                            request.rateLimitConfig?.toEntity() ?: ConnectionDocument.RateLimitConfig(
+                                10,
+                                100,
+                            ),
                     )
                 }
 
                 "POP3" -> {
+                    val type = ConnectionDocument.ConnectionTypeEnum.POP3
                     ConnectionDocument(
                         name = request.name,
                         host = request.host ?: error("host required for POP3 connection"),
@@ -91,11 +116,18 @@ class ConnectionRpcImpl(
                         username = request.username ?: error("username required for POP3 connection"),
                         password = request.password ?: error("password required for POP3 connection"),
                         useSsl = request.useSsl ?: true,
-                        connectionType = ConnectionDocument.ConnectionTypeEnum.POP3,
+                        connectionType = type,
+                        availableCapabilities = detectCapabilities(type, request.host),
+                        rateLimitConfig =
+                            request.rateLimitConfig?.toEntity() ?: ConnectionDocument.RateLimitConfig(
+                                10,
+                                100,
+                            ),
                     )
                 }
 
                 "SMTP" -> {
+                    val type = ConnectionDocument.ConnectionTypeEnum.SMTP
                     ConnectionDocument(
                         name = request.name,
                         host = request.host ?: error("host required for SMTP connection"),
@@ -103,7 +135,13 @@ class ConnectionRpcImpl(
                         username = request.username ?: error("username required for SMTP connection"),
                         password = request.password ?: error("password required for SMTP connection"),
                         useTls = request.useTls ?: true,
-                        connectionType = ConnectionDocument.ConnectionTypeEnum.SMTP,
+                        connectionType = type,
+                        availableCapabilities = detectCapabilities(type, request.host),
+                        rateLimitConfig =
+                            request.rateLimitConfig?.toEntity() ?: ConnectionDocument.RateLimitConfig(
+                                10,
+                                100,
+                            ),
                     )
                 }
 
@@ -115,9 +153,32 @@ class ConnectionRpcImpl(
                                 ?: error("authorizationUrl required for OAuth2 connection"),
                         tokenUrl = request.tokenUrl ?: error("tokenUrl required for OAuth2 connection"),
                         clientSecret = request.clientSecret ?: error("clientSecret required for OAuth2 connection"),
-                        scopes = listOfNotNull(request.scope),
+                        scopes = request.scope?.split(" ")?.filter { it.isNotBlank() } ?: emptyList(),
                         redirectUri = request.redirectUri ?: error("redirectUri required for OAuth2 connection"),
                         connectionType = ConnectionDocument.ConnectionTypeEnum.OAUTH2,
+                        rateLimitConfig =
+                            request.rateLimitConfig?.toEntity() ?: ConnectionDocument.RateLimitConfig(
+                                10,
+                                100,
+                            ),
+                        jiraProjectKey = request.jiraProjectKey,
+                        confluenceSpaceKey = request.confluenceSpaceKey,
+                        confluenceRootPageId = request.confluenceRootPageId,
+                        bitbucketRepoSlug = request.bitbucketRepoSlug,
+                    )
+                }
+
+                "GIT" -> {
+                    ConnectionDocument(
+                        name = request.name,
+                        gitRemoteUrl = request.gitRemoteUrl ?: error("gitRemoteUrl required for GIT connection"),
+                        gitProvider =
+                            request.gitProvider?.let {
+                                com.jervis.domain.git.GitProviderEnum
+                                    .valueOf(it.uppercase())
+                            },
+                        connectionType = ConnectionDocument.ConnectionTypeEnum.GIT,
+                        availableCapabilities = setOf(ConnectionCapability.GIT),
                     )
                 }
 
@@ -179,12 +240,19 @@ class ConnectionRpcImpl(
                             }
                         }
 
+                    val newBaseUrl = request.baseUrl ?: existing.baseUrl
                     existing.copy(
                         name = request.name ?: existing.name,
-                        baseUrl = request.baseUrl ?: existing.baseUrl,
+                        baseUrl = newBaseUrl,
                         credentials = updatedCreds,
                         timeoutMs = request.timeoutMs ?: existing.timeoutMs,
                         state = request.state ?: existing.state,
+                        availableCapabilities = detectCapabilities(existing.connectionType, newBaseUrl),
+                        rateLimitConfig = request.rateLimitConfig?.toEntity() ?: existing.rateLimitConfig,
+                        jiraProjectKey = request.jiraProjectKey ?: existing.jiraProjectKey,
+                        confluenceSpaceKey = request.confluenceSpaceKey ?: existing.confluenceSpaceKey,
+                        confluenceRootPageId = request.confluenceRootPageId ?: existing.confluenceRootPageId,
+                        bitbucketRepoSlug = request.bitbucketRepoSlug ?: existing.bitbucketRepoSlug,
                     )
                 }
 
@@ -195,7 +263,11 @@ class ConnectionRpcImpl(
                         port = request.port ?: existing.port,
                         username = request.username ?: existing.username,
                         password = request.password ?: existing.password,
+                        useSsl = request.useSsl ?: existing.useSsl,
+                        folderName = request.folderName ?: existing.folderName,
+                        timeoutMs = request.timeoutMs ?: existing.timeoutMs,
                         state = request.state ?: existing.state,
+                        rateLimitConfig = request.rateLimitConfig?.toEntity() ?: existing.rateLimitConfig,
                     )
                 }
 
@@ -206,7 +278,10 @@ class ConnectionRpcImpl(
                         port = request.port ?: existing.port,
                         username = request.username ?: existing.username,
                         password = request.password ?: existing.password,
+                        useSsl = request.useSsl ?: existing.useSsl,
+                        timeoutMs = request.timeoutMs ?: existing.timeoutMs,
                         state = request.state ?: existing.state,
+                        rateLimitConfig = request.rateLimitConfig?.toEntity() ?: existing.rateLimitConfig,
                     )
                 }
 
@@ -217,15 +292,28 @@ class ConnectionRpcImpl(
                         port = request.port ?: existing.port,
                         username = request.username ?: existing.username,
                         password = request.password ?: existing.password,
+                        useTls = request.useTls ?: existing.useTls,
+                        timeoutMs = request.timeoutMs ?: existing.timeoutMs,
                         state = request.state ?: existing.state,
+                        rateLimitConfig = request.rateLimitConfig?.toEntity() ?: existing.rateLimitConfig,
                     )
                 }
 
                 ConnectionDocument.ConnectionTypeEnum.OAUTH2 -> {
                     existing.copy(
                         name = request.name ?: existing.name,
+                        authorizationUrl = request.authorizationUrl ?: existing.authorizationUrl,
+                        tokenUrl = request.tokenUrl ?: existing.tokenUrl,
                         clientSecret = request.clientSecret ?: existing.clientSecret,
+                        redirectUri = request.redirectUri ?: existing.redirectUri,
+                        scopes = request.scope?.split(" ")?.filter { it.isNotBlank() } ?: existing.scopes,
+                        timeoutMs = request.timeoutMs ?: existing.timeoutMs,
                         state = request.state ?: existing.state,
+                        rateLimitConfig = request.rateLimitConfig?.toEntity() ?: existing.rateLimitConfig,
+                        jiraProjectKey = request.jiraProjectKey ?: existing.jiraProjectKey,
+                        confluenceSpaceKey = request.confluenceSpaceKey ?: existing.confluenceSpaceKey,
+                        confluenceRootPageId = request.confluenceRootPageId ?: existing.confluenceRootPageId,
+                        bitbucketRepoSlug = request.bitbucketRepoSlug ?: existing.bitbucketRepoSlug,
                     )
                 }
 
@@ -233,6 +321,13 @@ class ConnectionRpcImpl(
                     existing.copy(
                         name = request.name ?: existing.name,
                         state = request.state ?: existing.state,
+                        gitRemoteUrl = request.gitRemoteUrl ?: existing.gitRemoteUrl,
+                        gitProvider =
+                            request.gitProvider?.let {
+                                com.jervis.domain.git.GitProviderEnum
+                                    .valueOf(it.uppercase())
+                            }
+                                ?: existing.gitProvider,
                     )
                 }
             }
@@ -325,14 +420,24 @@ class ConnectionRpcImpl(
                     }
                 ConnectionTestResultDto(
                     success = true,
-                    message = "ConnectionDocument successful! Logged in as: ${myself.displayName}",
+                    message = "Připojení úspěšné! Přihlášen jako: ${myself.displayName}",
                     details =
                         mapOf(
                             "id" to myself.id,
                             "email" to (myself.email ?: "N/A"),
-                            "displayName" to (myself.displayName ?: "N/A"),
+                            "displayName" to myself.displayName,
                         ),
                 )
+            }
+            // GitHub API test
+            else if (connectionDocument.baseUrl.contains("github.com", ignoreCase = true)) {
+                testGitHubConnection(connectionDocument)
+            }
+            // GitLab API test
+            else if (connectionDocument.baseUrl.contains("gitlab.com", ignoreCase = true) ||
+                connectionDocument.baseUrl.contains("gitlab", ignoreCase = true)
+            ) {
+                testGitLabConnection(connectionDocument)
             } else {
                 // Generic HTTP test - just try to connect
                 val response =
@@ -356,9 +461,9 @@ class ConnectionRpcImpl(
                     success = response.status.isSuccess(),
                     message =
                         if (response.status.isSuccess()) {
-                            "ConnectionDocument successful! Status: ${response.status}"
+                            "Připojení úspěšné! Status: ${response.status}"
                         } else {
-                            "ConnectionDocument failed! Status: ${response.status}"
+                            "Připojení selhalo! Status: ${response.status}"
                         },
                     details =
                         mapOf(
@@ -379,6 +484,130 @@ class ConnectionRpcImpl(
                     ),
             )
         }
+
+    private suspend fun testGitHubConnection(connectionDocument: ConnectionDocument): ConnectionTestResultDto =
+        try {
+            val credentials = connectionDocument.credentials
+            val response =
+                httpClient.get("https://api.github.com/user") {
+                    when (credentials) {
+                        is HttpCredentials.Bearer -> {
+                            header(HttpHeaders.Authorization, credentials.toAuthHeader())
+                        }
+
+                        else -> {
+                            // GitHub requires Bearer token
+                        }
+                    }
+                    header(HttpHeaders.Accept, "application/vnd.github+json")
+                }
+
+            if (response.status.isSuccess()) {
+                val json = Json { ignoreUnknownKeys = true }
+                val userResponse = json.decodeFromString(GitHubUserResponse.serializer(), response.body<String>())
+                ConnectionTestResultDto(
+                    success = true,
+                    message = "Připojení k GitHub úspěšné! Uživatel: ${userResponse.login}",
+                    details =
+                        mapOf(
+                            "login" to userResponse.login,
+                            "id" to userResponse.id.toString(),
+                            "url" to "https://api.github.com/user",
+                        ),
+                )
+            } else {
+                ConnectionTestResultDto(
+                    success = false,
+                    message = "GitHub připojení selhalo! Status: ${response.status}",
+                    details =
+                        mapOf(
+                            "status" to response.status.toString(),
+                            "url" to "https://api.github.com/user",
+                        ),
+                )
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "GitHub connection test failed for ${connectionDocument.name}" }
+            ConnectionTestResultDto(
+                success = false,
+                message = "GitHub connection test failed: ${e.message}",
+                details =
+                    mapOf(
+                        "error" to (e.message ?: "Unknown error"),
+                        "errorType" to e::class.simpleName!!,
+                    ),
+            )
+        }
+
+    private suspend fun testGitLabConnection(connectionDocument: ConnectionDocument): ConnectionTestResultDto =
+        try {
+            val credentials = connectionDocument.credentials
+            val baseUrl = connectionDocument.baseUrl.removeSuffix("/")
+            val response =
+                httpClient.get("$baseUrl/api/v4/user") {
+                    when (credentials) {
+                        is HttpCredentials.Basic -> {
+                            header(HttpHeaders.Authorization, credentials.toAuthHeader())
+                        }
+
+                        is HttpCredentials.Bearer -> {
+                            header(HttpHeaders.Authorization, credentials.toAuthHeader())
+                        }
+
+                        else -> {
+                            // No authentication
+                        }
+                    }
+                }
+
+            if (response.status.isSuccess()) {
+                val json = Json { ignoreUnknownKeys = true }
+                val userResponse = json.decodeFromString(GitLabUserResponse.serializer(), response.body<String>())
+                ConnectionTestResultDto(
+                    success = true,
+                    message = "Připojení k GitLab úspěšné! Uživatel: ${userResponse.username}",
+                    details =
+                        mapOf(
+                            "username" to userResponse.username,
+                            "id" to userResponse.id.toString(),
+                            "url" to "$baseUrl/api/v4/user",
+                        ),
+                )
+            } else {
+                ConnectionTestResultDto(
+                    success = false,
+                    message = "GitLab připojení selhalo! Status: ${response.status}",
+                    details =
+                        mapOf(
+                            "status" to response.status.toString(),
+                            "url" to "$baseUrl/api/v4/user",
+                        ),
+                )
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "GitLab connection test failed for ${connectionDocument.name}" }
+            ConnectionTestResultDto(
+                success = false,
+                message = "GitLab connection test failed: ${e.message}",
+                details =
+                    mapOf(
+                        "error" to (e.message ?: "Unknown error"),
+                        "errorType" to e::class.simpleName!!,
+                    ),
+            )
+        }
+
+    @Serializable
+    private data class GitHubUserResponse(
+        val login: String,
+        val id: Long,
+    )
+
+    @Serializable
+    private data class GitLabUserResponse(
+        val username: String,
+        val id: Long,
+    )
 
     private fun ConnectionDocument.toBugTrackerUserRequest(): BugTrackerUserRequest =
         when (val creds = this.credentials) {
@@ -444,13 +673,13 @@ class ConnectionRpcImpl(
                     success = true,
                     message = "IMAP connectionDocument successful! Found $messageCount messages in ${connectionDocument.folderName}",
                     details =
-                        mapOf(
-                            "host" to connectionDocument.host,
+                        listOfNotNull(
+                            connectionDocument.host?.let { "host" to it },
                             "port" to connectionDocument.port.toString(),
-                            "username" to connectionDocument.username,
-                            "folder" to connectionDocument.folderName,
+                            connectionDocument.username?.let { "username" to it },
+                            connectionDocument.folderName.let { "folder" to it },
                             "messageCount" to messageCount.toString(),
-                        ) as Map<String, String>?,
+                        ).toMap(),
                 )
             } catch (e: Exception) {
                 logger.error(e) { "IMAP connectionDocument test failed for ${connectionDocument.name}" }
@@ -458,12 +687,12 @@ class ConnectionRpcImpl(
                     success = false,
                     message = "IMAP connectionDocument failed: ${e.message}",
                     details =
-                        mapOf(
+                        listOfNotNull(
                             "error" to (e.message ?: "Unknown error"),
                             "errorType" to e::class.simpleName!!,
-                            "host" to connectionDocument.host,
+                            connectionDocument.host?.let { "host" to it },
                             "port" to connectionDocument.port.toString(),
-                        ) as Map<String, String>?,
+                        ).toMap(),
                 )
             }
         }
@@ -505,12 +734,12 @@ class ConnectionRpcImpl(
                     success = true,
                     message = "POP3 connectionDocument successful! Found $messageCount messages",
                     details =
-                        mapOf(
-                            "host" to connectionDocument.host,
+                        listOfNotNull(
+                            connectionDocument.host?.let { "host" to it },
                             "port" to connectionDocument.port.toString(),
-                            "username" to connectionDocument.username,
+                            connectionDocument.username?.let { "username" to it },
                             "messageCount" to messageCount.toString(),
-                        ) as Map<String, String>?,
+                        ).toMap(),
                 )
             } catch (e: Exception) {
                 logger.error(e) { "POP3 connectionDocument test failed for ${connectionDocument.name}" }
@@ -518,12 +747,12 @@ class ConnectionRpcImpl(
                     success = false,
                     message = "POP3 connectionDocument failed: ${e.message}",
                     details =
-                        mapOf(
+                        listOfNotNull(
                             "error" to (e.message ?: "Unknown error"),
                             "errorType" to e::class.simpleName!!,
-                            "host" to connectionDocument.host,
+                            connectionDocument.host?.let { "host" to it },
                             "port" to connectionDocument.port.toString(),
-                        ) as Map<String, String>?,
+                        ).toMap(),
                 )
             }
         }
@@ -569,12 +798,12 @@ class ConnectionRpcImpl(
                     success = true,
                     message = "SMTP connectionDocument successful! Server is ready to send emails",
                     details =
-                        mapOf(
-                            "host" to connectionDocument.host,
+                        listOfNotNull(
+                            connectionDocument.host?.let { "host" to it },
                             "port" to connectionDocument.port.toString(),
-                            "username" to connectionDocument.username,
+                            connectionDocument.username?.let { "username" to it },
                             "tls" to connectionDocument.useTls.toString(),
-                        ) as Map<String, String>?,
+                        ).toMap(),
                 )
             } catch (e: Exception) {
                 logger.error(e) { "SMTP connectionDocument test failed for ${connectionDocument.name}" }
@@ -582,12 +811,12 @@ class ConnectionRpcImpl(
                     success = false,
                     message = "SMTP connectionDocument failed: ${e.message}",
                     details =
-                        mapOf(
+                        listOfNotNull(
                             "error" to (e.message ?: "Unknown error"),
                             "errorType" to e::class.simpleName!!,
-                            "host" to connectionDocument.host,
+                            connectionDocument.host?.let { "host" to it },
                             "port" to connectionDocument.port.toString(),
-                        ) as Map<String, String>?,
+                        ).toMap(),
                 )
             }
         }
@@ -616,6 +845,12 @@ private fun ConnectionDocument.toDto(): ConnectionResponseDto =
                 httpBearerToken = (credentials as? HttpCredentials.Bearer)?.token,
                 timeoutMs = timeoutMs,
                 hasCredentials = credentials != null,
+                capabilities = availableCapabilities,
+                rateLimitConfig = rateLimitConfig.toDto(),
+                jiraProjectKey = jiraProjectKey,
+                confluenceSpaceKey = confluenceSpaceKey,
+                confluenceRootPageId = confluenceRootPageId,
+                bitbucketRepoSlug = bitbucketRepoSlug,
             )
         }
 
@@ -630,7 +865,10 @@ private fun ConnectionDocument.toDto(): ConnectionResponseDto =
                 username = username,
                 password = password,
                 useSsl = useSsl,
+                folderName = folderName,
                 hasCredentials = true,
+                capabilities = availableCapabilities,
+                rateLimitConfig = rateLimitConfig.toDto(),
             )
         }
 
@@ -646,6 +884,8 @@ private fun ConnectionDocument.toDto(): ConnectionResponseDto =
                 password = password,
                 useSsl = useSsl,
                 hasCredentials = true,
+                capabilities = availableCapabilities,
+                rateLimitConfig = rateLimitConfig.toDto(),
             )
         }
 
@@ -659,8 +899,10 @@ private fun ConnectionDocument.toDto(): ConnectionResponseDto =
                 port = port,
                 username = username,
                 password = password,
-                useTls = useTls,
+                useSsl = useSsl,
                 hasCredentials = true,
+                capabilities = availableCapabilities,
+                rateLimitConfig = rateLimitConfig.toDto(),
             )
         }
 
@@ -676,6 +918,12 @@ private fun ConnectionDocument.toDto(): ConnectionResponseDto =
                 redirectUri = redirectUri,
                 scope = scopes.joinToString(" "),
                 hasCredentials = true,
+                capabilities = availableCapabilities,
+                rateLimitConfig = rateLimitConfig.toDto(),
+                jiraProjectKey = jiraProjectKey,
+                confluenceSpaceKey = confluenceSpaceKey,
+                confluenceRootPageId = confluenceRootPageId,
+                bitbucketRepoSlug = bitbucketRepoSlug,
             )
         }
 
@@ -686,9 +934,67 @@ private fun ConnectionDocument.toDto(): ConnectionResponseDto =
                 name = name,
                 state = state,
                 hasCredentials = false,
+                capabilities = availableCapabilities,
+                rateLimitConfig = rateLimitConfig.toDto(),
             )
         }
     }
+
+/**
+ * Detect capabilities based on connection type and URL patterns.
+ * This is called when creating or updating connections to auto-detect capabilities.
+ */
+private fun detectCapabilities(
+    connectionType: ConnectionDocument.ConnectionTypeEnum,
+    baseUrl: String?,
+): Set<ConnectionCapability> {
+    val capabilities = mutableSetOf<ConnectionCapability>()
+    val url = baseUrl?.lowercase() ?: ""
+
+    when (connectionType) {
+        ConnectionDocument.ConnectionTypeEnum.HTTP -> {
+            // GitHub
+            if (url.contains("github.com") || url.contains("github")) {
+                capabilities.add(ConnectionCapability.REPOSITORY)
+                capabilities.add(ConnectionCapability.BUGTRACKER)
+                capabilities.add(ConnectionCapability.WIKI)
+            }
+            // GitLab
+            else if (url.contains("gitlab.com") || url.contains("gitlab")) {
+                capabilities.add(ConnectionCapability.REPOSITORY)
+                capabilities.add(ConnectionCapability.BUGTRACKER)
+                capabilities.add(ConnectionCapability.WIKI)
+            }
+            // Atlassian (Jira/Confluence)
+            else if (url.contains("atlassian.net") || url.contains("jira") || url.contains("confluence")) {
+                capabilities.add(ConnectionCapability.BUGTRACKER)
+                capabilities.add(ConnectionCapability.WIKI)
+            }
+            // Bitbucket
+            else if (url.contains("bitbucket")) {
+                capabilities.add(ConnectionCapability.REPOSITORY)
+                capabilities.add(ConnectionCapability.BUGTRACKER)
+            }
+        }
+
+        ConnectionDocument.ConnectionTypeEnum.IMAP,
+        ConnectionDocument.ConnectionTypeEnum.POP3,
+        ConnectionDocument.ConnectionTypeEnum.SMTP,
+        -> {
+            capabilities.add(ConnectionCapability.EMAIL)
+        }
+
+        ConnectionDocument.ConnectionTypeEnum.GIT -> {
+            capabilities.add(ConnectionCapability.GIT)
+        }
+
+        ConnectionDocument.ConnectionTypeEnum.OAUTH2 -> {
+            // OAuth2 capabilities depend on the service - detected during connection test
+        }
+    }
+
+    return capabilities
+}
 
 private fun mapHttpCredentials(
     authType: String?,
@@ -727,3 +1033,15 @@ private fun inferAuthType(
         !basicUser.isNullOrBlank() || !basicPass.isNullOrBlank() -> "BASIC"
         else -> "NONE"
     }
+
+private fun ConnectionDocument.RateLimitConfig.toDto(): RateLimitConfigDto =
+    RateLimitConfigDto(
+        maxRequestsPerSecond = maxRequestsPerSecond,
+        maxRequestsPerMinute = maxRequestsPerMinute,
+    )
+
+private fun RateLimitConfigDto.toEntity(): ConnectionDocument.RateLimitConfig =
+    ConnectionDocument.RateLimitConfig(
+        maxRequestsPerSecond = maxRequestsPerSecond,
+        maxRequestsPerMinute = maxRequestsPerMinute,
+    )

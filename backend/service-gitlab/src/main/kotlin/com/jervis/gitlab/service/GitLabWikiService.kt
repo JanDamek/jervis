@@ -9,8 +9,9 @@ import mu.KotlinLogging
  * GitLab Wiki implementation
  */
 class GitLabWikiService(
-    private val apiClient: GitLabApiClient
-) : IWikiClient, IGitLabClient {
+    private val apiClient: GitLabApiClient,
+) : IWikiClient,
+    IGitLabClient {
     private val log = KotlinLogging.logger {}
 
     override suspend fun getUser(request: WikiUserRequest): WikiUserDto {
@@ -21,7 +22,7 @@ class GitLabWikiService(
             id = user.id.toString(),
             username = user.username,
             displayName = user.name,
-            email = user.email
+            email = user.email,
         )
     }
 
@@ -33,18 +34,19 @@ class GitLabWikiService(
         val pages = apiClient.listWikis(request.baseUrl, token, projectKey)
 
         return WikiSearchResponse(
-            pages = pages.map { page ->
-                WikiPageDto(
-                    id = page.slug,
-                    title = page.title,
-                    content = page.content,
-                    spaceKey = projectKey,
-                    url = "", // GitLab wiki pages don't have a direct URL in API response
-                    created = "", // Not available in list response
-                    updated = "" // Not available in list response
-                )
-            },
-            total = pages.size
+            pages =
+                pages.map { page ->
+                    WikiPageDto(
+                        id = page.slug,
+                        title = page.title,
+                        content = page.content,
+                        spaceKey = projectKey,
+                        url = "", // GitLab wiki pages don't have a direct URL in API response
+                        created = "", // Not available in list response
+                        updated = "", // Not available in list response
+                    )
+                },
+            total = pages.size,
         )
     }
 
@@ -61,39 +63,16 @@ class GitLabWikiService(
         val page = apiClient.getWikiPage(request.baseUrl, token, projectPath, slug)
 
         return WikiPageResponse(
-            page = WikiPageDto(
-                id = page.slug,
-                title = page.title,
-                content = page.content,
-                spaceKey = projectPath,
-                url = "",
-                created = "",
-                updated = ""
-            )
+            page =
+                WikiPageDto(
+                    id = page.slug,
+                    title = page.title,
+                    content = page.content,
+                    spaceKey = projectPath,
+                    url = "",
+                    created = "",
+                    updated = "",
+                ),
         )
-    }
-
-    override suspend fun listSpaces(request: WikiSpacesRequest): WikiSpacesResponse {
-        val token = request.bearerToken ?: throw IllegalArgumentException("Bearer token required for GitLab")
-
-        // GitLab wikis are per-project, so we list projects as "spaces"
-        val projects = apiClient.listProjects(request.baseUrl, token)
-
-        return WikiSpacesResponse(
-            spaces = projects.map { project ->
-                WikiSpaceDto(
-                    id = project.id.toString(),
-                    key = project.path_with_namespace,
-                    name = project.name,
-                    description = project.description,
-                    url = project.web_url
-                )
-            }
-        )
-    }
-
-    override suspend fun downloadAttachment(request: WikiAttachmentRequest): ByteArray? {
-        // GitLab wiki attachments would need specific handling
-        return null
     }
 }

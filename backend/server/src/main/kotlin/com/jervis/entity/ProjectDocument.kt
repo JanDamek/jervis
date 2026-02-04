@@ -3,7 +3,7 @@ package com.jervis.entity
 import com.jervis.domain.git.GitAuthTypeEnum
 import com.jervis.domain.git.GitConfig
 import com.jervis.domain.language.LanguageEnum
-import com.jervis.entity.connection.ConnectionDocument.ConnectionCapability
+import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.types.ClientId
 import com.jervis.types.ProjectId
 import org.bson.types.ObjectId

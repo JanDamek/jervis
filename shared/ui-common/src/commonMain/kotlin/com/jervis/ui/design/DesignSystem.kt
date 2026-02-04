@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -29,7 +31,6 @@ import androidx.compose.ui.unit.dp
  *
  * Keep these components lightweight wrappers around Material 3 and reuse them everywhere.
  */
-
 object JervisSpacing {
     val outerPadding: Dp = 10.dp
     val sectionPadding: Dp = 12.dp
@@ -49,11 +50,12 @@ fun JTopBar(
     onBack: (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
-    val navIcon: @Composable () -> Unit = if (onBack != null) {
-        { TextButton(onClick = onBack) { Text("← Back") } }
-    } else {
-        {}
-    }
+    val navIcon: @Composable () -> Unit =
+        if (onBack != null) {
+            { TextButton(onClick = onBack) { Text("← Back") } }
+        } else {
+            {}
+        }
     TopAppBar(
         title = { Text(title) },
         navigationIcon = navIcon,
@@ -116,7 +118,11 @@ fun JEmptyState(
 }
 
 @Composable
-fun JRunTextButton(onClick: () -> Unit, enabled: Boolean = true, text: String = "Run") {
+fun JRunTextButton(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    text: String = "Run",
+) {
     TextButton(onClick = onClick, enabled = enabled) { Text("▶ $text") }
 }
 
@@ -129,11 +135,12 @@ fun JSection(
     val bg = MaterialTheme.colorScheme.surfaceVariant
     val shape = MaterialTheme.shapes.medium
     Column(
-        modifier = modifier
-            .padding(JervisSpacing.outerPadding)
-            .clip(shape)
-            .background(bg)
-            .padding(JervisSpacing.sectionPadding)
+        modifier =
+            modifier
+                .padding(JervisSpacing.outerPadding)
+                .clip(shape)
+                .background(bg)
+                .padding(JervisSpacing.sectionPadding),
     ) {
         if (title != null) {
             Text(
@@ -148,7 +155,10 @@ fun JSection(
 }
 
 @Composable
-fun JActionBar(modifier: Modifier = Modifier, content: @Composable RowScope.() -> Unit) {
+fun JActionBar(
+    modifier: Modifier = Modifier,
+    content: @Composable RowScope.() -> Unit,
+) {
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.End,
@@ -157,17 +167,21 @@ fun JActionBar(modifier: Modifier = Modifier, content: @Composable RowScope.() -
             Row(horizontalArrangement = Arrangement.spacedBy(JervisSpacing.itemGap)) {
                 content()
             }
-        }
+        },
     )
 }
 
 @Composable
-fun JTableHeaderRow(modifier: Modifier = Modifier, content: @Composable RowScope.() -> Unit) {
+fun JTableHeaderRow(
+    modifier: Modifier = Modifier,
+    content: @Composable RowScope.() -> Unit,
+) {
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
         content = content,
@@ -175,7 +189,10 @@ fun JTableHeaderRow(modifier: Modifier = Modifier, content: @Composable RowScope
 }
 
 @Composable
-fun JTableHeaderCell(text: String, modifier: Modifier = Modifier) {
+fun JTableHeaderCell(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
     Text(
         text = text,
         modifier = modifier,
@@ -198,5 +215,26 @@ fun JTableRowCard(
         elevation = CardDefaults.cardElevation(defaultElevation = elevation),
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(12.dp), content = content)
+    }
+}
+
+/**
+ * Primary button with consistent Material3 primary color styling.
+ */
+@Composable
+fun JPrimaryButton(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier,
+        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        content()
     }
 }

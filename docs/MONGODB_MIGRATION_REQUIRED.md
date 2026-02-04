@@ -1,5 +1,8 @@
 # ⚠️ MongoDB Migration Required
 
+**Status:** Production Documentation
+**Last updated:** 2026-02-04
+
 ## Current Issue
 
 Jira polling handler is failing due to sealed class refactoring and missing MongoDB fields.

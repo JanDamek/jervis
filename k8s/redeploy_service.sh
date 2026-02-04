@@ -25,7 +25,9 @@ fi
 
 # Determine deployment name (usually jervis-<service_name>)
 # but for server it might be jervis-server
-DEPLOYMENT_NAME="jervis-${SERVICE_NAME}"
+# Replace underscores with dashes for deployment name
+DEPLOY_SUFFIX=${SERVICE_NAME//_/-}
+DEPLOYMENT_NAME="jervis-${DEPLOY_SUFFIX}"
 
 echo "Applying $YAML_FILE..."
 kubectl apply -f "$YAML_FILE" -n "${NAMESPACE}"

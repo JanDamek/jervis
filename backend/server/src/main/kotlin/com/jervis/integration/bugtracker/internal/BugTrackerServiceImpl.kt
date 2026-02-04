@@ -41,7 +41,7 @@ class BugTrackerServiceImpl(
             ) {
                 bugTrackerClient.searchIssues(
                     BugTrackerSearchRequest(
-                        baseUrl = connection.baseUrl ?: "",
+                        baseUrl = connection.baseUrl,
                         authType = getAuthType(connection),
                         basicUsername = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.username,
                         basicPassword = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.password,
@@ -74,7 +74,8 @@ class BugTrackerServiceImpl(
         issueKey: String,
     ): BugTrackerIssue {
         val connection =
-            findBugTrackerConnection(clientId) ?: throw IllegalStateException("No BugTracker connection found for client $clientId")
+            findBugTrackerConnection(clientId)
+                ?: throw IllegalStateException("No BugTracker connection found for client $clientId")
 
         val response =
             withRpcRetry(
@@ -83,7 +84,7 @@ class BugTrackerServiceImpl(
             ) {
                 bugTrackerClient.getIssue(
                     BugTrackerIssueRequest(
-                        baseUrl = connection.baseUrl ?: "",
+                        baseUrl = connection.baseUrl,
                         authType = getAuthType(connection),
                         basicUsername = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.username,
                         basicPassword = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.password,
@@ -142,7 +143,7 @@ class BugTrackerServiceImpl(
     ): BugTrackerComment = throw UnsupportedOperationException("Write operations are not allowed yet (Read-only mode)")
 
     private suspend fun findBugTrackerConnection(clientId: ClientId): ConnectionDocument? {
-        val client = clientService.getClientById(clientId) ?: return null
+        val client = clientService.getClientById(clientId)
         val connectionIds = client.connectionIds.map { com.jervis.types.ConnectionId(it) }
 
         for (id in connectionIds) {

@@ -2,7 +2,6 @@ package com.jervis.mapper
 
 import com.jervis.dto.ClientConnectionCapabilityDto
 import com.jervis.dto.ClientDto
-import com.jervis.dto.GitCredentialsDto
 import com.jervis.entity.ClientConnectionCapability
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.GitCommitConfig
@@ -29,18 +28,22 @@ fun ClientDocument.toDto(): ClientDto =
     )
 
 fun ClientDto.toDocument(): ClientDocument {
-    val gitCommitConfig = if (gitCommitMessageFormat != null || gitCommitAuthorName != null ||
-                               gitCommitAuthorEmail != null || gitCommitGpgSign) {
-        GitCommitConfig(
-            messageFormat = gitCommitMessageFormat,
-            authorName = gitCommitAuthorName,
-            authorEmail = gitCommitAuthorEmail,
-            committerName = gitCommitCommitterName,
-            committerEmail = gitCommitCommitterEmail,
-            gpgSign = gitCommitGpgSign,
-            gpgKeyId = gitCommitGpgKeyId,
-        )
-    } else null
+    val gitCommitConfig =
+        if (gitCommitMessageFormat != null || gitCommitAuthorName != null ||
+            gitCommitAuthorEmail != null || gitCommitGpgSign
+        ) {
+            GitCommitConfig(
+                messageFormat = gitCommitMessageFormat,
+                authorName = gitCommitAuthorName,
+                authorEmail = gitCommitAuthorEmail,
+                committerName = gitCommitCommitterName,
+                committerEmail = gitCommitCommitterEmail,
+                gpgSign = gitCommitGpgSign,
+                gpgKeyId = gitCommitGpgKeyId,
+            )
+        } else {
+            null
+        }
 
     return ClientDocument(
         id = ClientId(ObjectId(this.id)),
@@ -57,13 +60,13 @@ fun ClientDto.toDocument(): ClientDocument {
 fun ClientConnectionCapability.toDto(): ClientConnectionCapabilityDto =
     ClientConnectionCapabilityDto(
         connectionId = this.connectionId.toString(),
-        capability = com.jervis.dto.connection.ConnectionCapability.valueOf(this.capability.name),
+        capability = this.capability,
         resourceIdentifier = this.resourceIdentifier,
     )
 
 fun ClientConnectionCapabilityDto.toEntity(): ClientConnectionCapability =
     ClientConnectionCapability(
         connectionId = ObjectId(this.connectionId),
-        capability = com.jervis.entity.connection.ConnectionDocument.ConnectionCapability.valueOf(this.capability.name),
+        capability = this.capability,
         resourceIdentifier = this.resourceIdentifier,
     )

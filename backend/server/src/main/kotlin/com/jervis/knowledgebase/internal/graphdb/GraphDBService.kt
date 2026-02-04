@@ -175,8 +175,8 @@ class GraphDBService(
                     }
 
                 val cursor = db.query(aql, Map::class.java, bindVars, AqlQueryOptions())
-                val rows = cursor.asListRemaining()
-                rows.mapNotNull { (it as? Map<*, *>)?.let(::mapToGraphNode) }
+                val rows: List<Map<*, *>> = cursor.asListRemaining()
+                rows.mapNotNull { it.let(::mapToGraphNode) }
             }.getOrElse { e ->
                 logger.error(e) {
                     "getRelated failed: clientId=$clientId, nodeKey=$nodeKey, edgeTypes=$edgeTypes, direction=$direction, limit=$limit"
@@ -224,8 +224,8 @@ class GraphDBService(
                             }
 
                         val cursor = db.query(aql, Map::class.java, bindVars, AqlQueryOptions())
-                        val rows = cursor.asListRemaining()
-                        rows.mapNotNull { (it as? Map<*, *>)?.let(::mapToGraphNode) }
+                        val rows: List<Map<*, *>> = cursor.asListRemaining()
+                        rows.mapNotNull { it.let(::mapToGraphNode) }
                     }.getOrElse { e ->
                         logger.error(e) { "traverse failed: clientId=$clientId, startKey=$startKey, spec=$spec" }
                         emptyList()

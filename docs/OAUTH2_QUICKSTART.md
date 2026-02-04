@@ -1,5 +1,8 @@
 # OAuth2 Quick Start
 
+**Status:** Production Documentation
+**Last updated:** 2026-02-04
+
 Rychlý průvodce pro nastavení OAuth2 v Jervis.
 
 ---

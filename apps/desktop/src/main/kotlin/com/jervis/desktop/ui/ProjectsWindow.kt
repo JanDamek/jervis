@@ -237,7 +237,7 @@ private fun ProjectCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = project.name ?: "Unnamed Project",
+                    text = project.name,
                     style = MaterialTheme.typography.titleMedium
                 )
                 if (project.clientId != null) {

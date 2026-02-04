@@ -177,9 +177,9 @@ class CentralPoller(
 
             // Projects can reference connection in multiple fields
             val projectsByGit = projectRepository.findByGitRepositoryConnectionId(connectionDocument.id).toList()
-            val projectsByJira = projectRepository.findByJiraProjectConnectionId(connectionDocument.id).toList()
+            val projectsByJira = projectRepository.findByBugtrackerConnectionId(connectionDocument.id).toList()
             val projectsByConfluence =
-                projectRepository.findByConfluenceSpaceConnectionId(connectionDocument.id).toList()
+                projectRepository.findByWikiConnectionId(connectionDocument.id).toList()
             val projects = (projectsByGit + projectsByJira + projectsByConfluence).distinctBy { it.id }
 
             if (clients.isEmpty() && projects.isEmpty()) {

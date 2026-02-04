@@ -78,6 +78,6 @@ fun ProjectConnectionCapability.toDto(): ProjectConnectionCapabilityDto =
 fun ProjectConnectionCapabilityDto.toEntity(): ProjectConnectionCapability =
     ProjectConnectionCapability(
         connectionId = ObjectId(this.connectionId),
-        capability = com.jervis.entity.connection.ConnectionDocument.ConnectionCapability.valueOf(this.capability.name),
+        capability = com.jervis.dto.connection.ConnectionCapability.valueOf(this.capability.name),
         resourceIdentifier = this.resourceIdentifier,
     )

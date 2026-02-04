@@ -1,12 +1,12 @@
 package com.jervis.entity.connection
 
+import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionStateEnum
 import com.jervis.types.ConnectionId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.CompoundIndex
 import org.springframework.data.mongodb.core.index.CompoundIndexes
 import org.springframework.data.mongodb.core.mapping.Document
-import java.time.Instant
 
 /**
  * Sealed class hierarchy for all external service connections.
@@ -78,14 +78,6 @@ data class ConnectionDocument(
         POP3,
         SMTP,
         OAUTH2,
-        GIT,
-    }
-
-    enum class ConnectionCapability {
-        BUGTRACKER,
-        WIKI,
-        REPOSITORY,
-        EMAIL,
         GIT,
     }
 

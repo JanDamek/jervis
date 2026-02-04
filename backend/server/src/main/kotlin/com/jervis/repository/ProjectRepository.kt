@@ -22,6 +22,6 @@ interface ProjectRepository : CoroutineCrudRepository<ProjectDocument, ProjectId
      * Find all projects that use this connection ID in any of their resource references.
      */
     fun findByGitRepositoryConnectionId(connectionId: ConnectionId): Flow<ProjectDocument>
-    fun findByJiraProjectConnectionId(connectionId: ConnectionId): Flow<ProjectDocument>
-    fun findByConfluenceSpaceConnectionId(connectionId: ConnectionId): Flow<ProjectDocument>
+    fun findByBugtrackerConnectionId(connectionId: ConnectionId): Flow<ProjectDocument>
+    fun findByWikiConnectionId(connectionId: ConnectionId): Flow<ProjectDocument>
 }

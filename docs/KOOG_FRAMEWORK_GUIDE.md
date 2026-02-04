@@ -1,5 +1,8 @@
 # Koog Framework 0.6.0 - Best Practices Guide
 
+**Version:** 0.6.0
+**Status:** Production Documentation
+
 ## Overview
 
 Koog is an open-source Kotlin framework for building AI agents with type-safe DSL. This guide outlines best practices for using Koog 0.6.0 in the JERVIS project.

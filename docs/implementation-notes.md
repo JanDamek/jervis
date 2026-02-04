@@ -1,7 +1,7 @@
 # Implementation Notes - Technical Design Decisions
 
-**Last updated:** 2026-02-02  
-**Status:** Technical Reference  
+**Last updated:** 2026-02-03
+**Status:** Technical Reference
 **Purpose:** Technical decisions, problem solving, and architecture rationale
 
 ---
@@ -498,6 +498,45 @@ data class ConnectionDocument(
 
 1. **State Token Security**
    - ✓ Random & unique (UUID)
+
+---
+
+## Connection Management & RPC Clients Fix
+
+### Problem: Missing RPC Clients & Incomplete Connection Editing
+
+During development, several issues were identified in the connection management module:
+1. **Missing Interfaces**: `IBugTrackerClient` and `IWikiClient` were used in the code but their definitions were missing from `backend/common-services`, causing build failures.
+2. **Incomplete DTOs**: `ConnectionUpdateRequestDto` lacked fields for OAuth2 configuration (`authorizationUrl`, `tokenUrl`, `redirectUri`) and IMAP settings (`folderName`).
+3. **UI Limitations**: The settings UI didn't allow editing all connection properties, especially for OAuth2 and IMAP.
+
+### Solution
+
+#### 1. RPC Clients Restoration
+Restored missing RPC interfaces in `backend/common-services/src/main/kotlin/com/jervis/common/client/`:
+- `IBugTrackerClient`: Added `getUser`, `searchIssues`, and `getIssue`.
+- `IWikiClient`: Added `getUser`, `searchPages`, and `getPage`.
+
+Updated `RpcClientsConfig.kt` to properly register these clients as Spring Beans and handle their reconnection logic.
+
+#### 2. Enhanced Connection DTOs
+Updated `ConnectionDtos.kt` to include all necessary fields for full CRUD operations:
+- Added `authorizationUrl`, `tokenUrl`, `redirectUri` to `ConnectionUpdateRequestDto`.
+- Added `folderName` to `ConnectionResponseDto`, `ConnectionCreateRequestDto`, and `ConnectionUpdateRequestDto`.
+- Ensured `timeoutMs` is available for all connection types.
+
+#### 3. Backend Logic Improvements
+Updated `ConnectionRpcImpl.kt`:
+- Implemented full field updates in `updateConnection`.
+- Added automatic capability detection when a connection's URL is changed.
+- Fixed OAuth2 `scope` parsing (now correctly splits by space).
+- Ensured all fields are correctly mapped between `ConnectionDocument` and DTOs.
+
+#### 4. UI Settings Update
+Updated `ConnectionsSettings.kt`:
+- Expanded `ConnectionCreateDialog` and `ConnectionEditDialog` to include all configuration fields.
+- Added validation for required fields based on connection type.
+- Improved UX by showing placeholders and ensuring sensitive data (passwords/tokens) is only sent when modified.
    - ✓ Short-lived (10 minutes)
    - ✓ Single-use (delete after use)
    - ✓ HTTPS only

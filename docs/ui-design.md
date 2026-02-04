@@ -1,6 +1,7 @@
 # Jervis – UI Design System (Compose Multiplatform) – SSOT
 
-Poslední aktualizace: 2026‑01‑31
+**Last updated:** 2026-01-31
+**Status:** Production Documentation
 
 Tento dokument je jediný zdroj pravdy (SSOT) pro UI zásady a sdílené komponenty.
 

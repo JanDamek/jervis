@@ -194,11 +194,9 @@ class ConnectionManager(
             val clients = repo.clients.listClients()
             var total = 0
             for (client in clients) {
-                client.id?.let { clientId ->
-                    runCatching {
-                        val countDto = repo.userTasks.activeCount(clientId)
-                        total += countDto.activeCount
-                    }
+                runCatching {
+                    val countDto = repo.userTasks.activeCount(client.id)
+                    total += countDto.activeCount
                 }
             }
             taskBadgeCount = total

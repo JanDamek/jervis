@@ -37,9 +37,7 @@ class ProviderConcurrencyManager(
         provider: ModelProviderEnum,
         block: suspend () -> T,
     ): T {
-        val capabilities =
-            providerCapabilitiesService.getProviderCapabilities(provider)
-                ?: return block()
+        val capabilities = providerCapabilitiesService.getProviderCapabilities(provider)
 
         val maxConcurrent = capabilities.maxConcurrentRequests
         val semaphore =
