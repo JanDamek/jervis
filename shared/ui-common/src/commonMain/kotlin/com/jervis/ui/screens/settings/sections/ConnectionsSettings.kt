@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -31,16 +33,12 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SuggestionChip
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import com.jervis.ui.design.JPrimaryButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -50,16 +48,21 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionCreateRequestDto
 import com.jervis.dto.connection.ConnectionResponseDto
-import com.jervis.dto.connection.ConnectionStateEnum
+import com.jervis.dto.connection.ConnectionTypeEnum
 import com.jervis.dto.connection.ConnectionUpdateRequestDto
+import com.jervis.dto.connection.HttpAuthTypeEnum
+import com.jervis.dto.connection.ProviderEnum
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.components.StatusIndicator
+import com.jervis.ui.design.JPrimaryButton
 import kotlinx.coroutines.launch
+import com.jervis.ui.util.openUrlInBrowser
 
 @Composable
 fun ConnectionsSettings(repository: JervisRepository) {
@@ -75,21 +78,26 @@ fun ConnectionsSettings(repository: JervisRepository) {
     var showEditDialog by remember { mutableStateOf<ConnectionResponseDto?>(null) }
     var showDeleteDialog by remember { mutableStateOf<ConnectionResponseDto?>(null) }
 
-    fun loadData() {
-        scope.launch {
-            isLoading = true
-            try {
-                connections = repository.connections.listConnections()
-                clients = repository.clients.listClients()
-            } catch (e: Exception) {
-                snackbarHostState.showSnackbar("Chyba načítání: ${e.message}")
-            } finally {
-                isLoading = false
-            }
+    // Function to reload connections
+    suspend fun loadConnections() {
+        try {
+            connections = repository.connections.getAllConnections()
+        } catch (e: Exception) {
+            snackbarHostState.showSnackbar("Chyba načítání připojení: ${e.message}")
         }
     }
 
-    LaunchedEffect(Unit) { loadData() }
+    // Load connections and clients initially
+    LaunchedEffect(Unit) {
+        isLoading = true
+        try {
+            connections = repository.connections.getAllConnections()
+            clients = repository.clients.getAllClients()
+        } catch (e: Exception) {
+            snackbarHostState.showSnackbar("Chyba načítání: ${e.message}")
+        }
+        isLoading = false
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -97,10 +105,6 @@ fun ConnectionsSettings(repository: JervisRepository) {
                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                 horizontalArrangement = Arrangement.End,
             ) {
-                IconButton(onClick = { loadData() }) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Načíst")
-                }
-                Spacer(Modifier.width(8.dp))
                 JPrimaryButton(onClick = { showCreateDialog = true }) {
                     Icon(Icons.Default.Add, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
@@ -108,7 +112,7 @@ fun ConnectionsSettings(repository: JervisRepository) {
                 }
             }
 
-            if (isLoading && connections.isEmpty()) {
+            if (connections.isEmpty() && isLoading) {
                 Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
@@ -158,9 +162,15 @@ fun ConnectionsSettings(repository: JervisRepository) {
             onCreate = { request ->
                 scope.launch {
                     try {
-                        repository.connections.createConnection(request)
-                        snackbarHostState.showSnackbar("Připojení vytvořeno")
-                        loadData()
+                        val created = repository.connections.createConnection(request)
+                        if (request.type == ConnectionTypeEnum.OAUTH2) {
+                            val authUrl = repository.connections.initiateOAuth2(created.id)
+                            openUrlInBrowser(authUrl)
+                            snackbarHostState.showSnackbar("OAuth2 autorizace byla spuštěna. Dokončete ji v prohlížeči.")
+                        } else {
+                            snackbarHostState.showSnackbar("Připojení vytvořeno")
+                        }
+                        loadConnections()
                         showCreateDialog = false
                     } catch (e: Exception) {
                         snackbarHostState.showSnackbar("Chyba: ${e.message}")
@@ -180,7 +190,7 @@ fun ConnectionsSettings(repository: JervisRepository) {
                     try {
                         repository.connections.updateConnection(id, request)
                         snackbarHostState.showSnackbar("Připojení aktualizováno")
-                        loadData()
+                        loadConnections()
                         showEditDialog = null
                     } catch (e: Exception) {
                         snackbarHostState.showSnackbar("Chyba: ${e.message}")
@@ -203,7 +213,7 @@ fun ConnectionsSettings(repository: JervisRepository) {
                             try {
                                 repository.connections.deleteConnection(connection.id)
                                 snackbarHostState.showSnackbar("Připojení smazáno")
-                                loadData()
+                                loadConnections()
                                 showDeleteDialog = null
                             } catch (e: Exception) {
                                 snackbarHostState.showSnackbar("Chyba: ${e.message}")
@@ -251,7 +261,7 @@ private fun ConnectionItemCard(
                         Spacer(Modifier.width(8.dp))
                         SuggestionChip(
                             onClick = {},
-                            label = { Text(connection.type, style = MaterialTheme.typography.labelSmall) },
+                            label = { Text(connection.type.name, style = MaterialTheme.typography.labelSmall) },
                         )
                         Spacer(Modifier.width(8.dp))
                         StatusIndicator(connection.state.name)
@@ -335,7 +345,7 @@ private fun CapabilityChip(capability: ConnectionCapability) {
 }
 
 private val ConnectionResponseDto.displayUrl: String
-    get() = baseUrl ?: gitRemoteUrl ?: host?.let { "$it${port?.let { port -> ":$port" } ?: ""}" } ?: "Bez adresy"
+    get() = baseUrl ?: host?.let { "$it${port?.let { port -> ":$port" } ?: ""}" } ?: "Bez adresy"
 
 @Composable
 private fun ConnectionCreateDialog(
@@ -343,22 +353,27 @@ private fun ConnectionCreateDialog(
     onCreate: (ConnectionCreateRequestDto) -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
-    var type by remember { mutableStateOf("HTTP") }
+    // Provider is the primary selector
+    var provider by remember { mutableStateOf(ProviderEnum.GITHUB) }
+    // Auth method for non-email providers
+    var authMethod by remember { mutableStateOf("OAUTH2") }
+    // Common fields
     var baseUrl by remember { mutableStateOf("") }
-    var authType by remember { mutableStateOf("NONE") }
-    var httpBearerToken by remember { mutableStateOf("") }
-    var httpBasicUsername by remember { mutableStateOf("") }
-    var httpBasicPassword by remember { mutableStateOf("") }
-
+    // Cloud flag for OAuth2 providers (GitHub, GitLab, Atlassian)
+    var isCloud by remember { mutableStateOf(true) }
     // OAuth2 fields
+    var expandedProvider by remember { mutableStateOf(false) }
+    var expandedGitAuthMethod by remember { mutableStateOf(false) }
+    var expandedState by remember { mutableStateOf(false) }
+
     var authorizationUrl by remember { mutableStateOf("") }
     var tokenUrl by remember { mutableStateOf("") }
     var clientSecret by remember { mutableStateOf("") }
     var redirectUri by remember { mutableStateOf("") }
     var scope by remember { mutableStateOf("") }
-    var timeoutMs by remember { mutableStateOf("30000") }
-
-    // Email fields
+    // API Token field (for HTTP)
+    var httpBearerToken by remember { mutableStateOf("") }
+    // Email fields (IMAP, POP3, SMTP)
     var host by remember { mutableStateOf("") }
     var port by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
@@ -366,321 +381,252 @@ private fun ConnectionCreateDialog(
     var folderName by remember { mutableStateOf("INBOX") }
     var useSsl by remember { mutableStateOf(true) }
     var useTls by remember { mutableStateOf(true) }
+    // Basic Auth fields for Atlassian API token
+    var httpBasicUsername by remember { mutableStateOf("") }
+    var httpBasicPassword by remember { mutableStateOf("") }
 
-    // Git fields
-    var gitRemoteUrl by remember { mutableStateOf("") }
-    var gitProvider by remember { mutableStateOf("GITHUB") }
+    val enabled =
+        name.isNotBlank() &&
+            when (provider) {
+                ProviderEnum.IMAP -> {
+                    host.isNotBlank() && username.isNotBlank() && password.isNotBlank()
+                }
 
-    // Rate limit
-    var maxRequestsPerSecond by remember { mutableStateOf("10") }
-    var maxRequestsPerMinute by remember { mutableStateOf("100") }
-
-    // Atlassian
-    var jiraProjectKey by remember { mutableStateOf("") }
-    var confluenceSpaceKey by remember { mutableStateOf("") }
-    var confluenceRootPageId by remember { mutableStateOf("") }
-    var bitbucketRepoSlug by remember { mutableStateOf("") }
-
-    var expandedType by remember { mutableStateOf(false) }
-    var expandedAuth by remember { mutableStateOf(false) }
+                else -> {
+                    if (authMethod == "OAUTH2") {
+                        // For OAuth2 cloud: only name required; for on-premise: name and baseUrl required
+                        name.isNotBlank() && (isCloud || baseUrl.isNotBlank())
+                    } else {
+                        // API TOKEN
+                        if (provider == ProviderEnum.ATLASSIAN) {
+                            baseUrl.isNotBlank() && httpBasicUsername.isNotBlank() && httpBasicPassword.isNotBlank()
+                        } else {
+                            baseUrl.isNotBlank() && httpBearerToken.isNotBlank()
+                        }
+                    }
+                }
+            }
 
     var selectedTab by remember { mutableStateOf(0) }
-    val tabTitles = listOf("Obecné", "Autentizace", "Integrace", "Limity")
+    val tabTitles = listOf("Obecné", "Autentizace")
 
-    val connectionTypes = listOf("HTTP", "OAUTH2", "IMAP", "POP3", "SMTP", "GIT")
-    val authTypes = listOf("NONE", "BEARER", "BASIC")
+    val providerOptions = ProviderEnum.entries
+    val authMethodOptions = listOf("OAUTH2", "API TOKEN")
+    val isOAuth2 = provider != ProviderEnum.IMAP && authMethod == "OAUTH2"
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Vytvořit nové připojení") },
         text = {
             Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
             ) {
-                TabRow(selectedTabIndex = selectedTab) {
-                    tabTitles.forEachIndexed { index, title ->
-                        Tab(
-                            selected = selectedTab == index,
-                            onClick = { selectedTab = index },
-                            text = { Text(title, style = MaterialTheme.typography.labelSmall) },
-                        )
+                // Connection name
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Název připojení") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Provider dropdown (primary selector)
+                ExposedDropdownMenuBox(
+                    expanded = expandedProvider,
+                    onExpandedChange = { expandedProvider = !expandedProvider },
+                ) {
+                    OutlinedTextField(
+                        value = provider?.name ?: "",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Provider") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedProvider) },
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(),
+                    )
+                    ExposedDropdownMenu(
+                        expanded = expandedProvider,
+                        onDismissRequest = { expandedProvider = false },
+                    ) {
+                        providerOptions.forEach { selectionOption ->
+                            DropdownMenuItem(
+                                text = { Text(selectionOption.name) },
+                                onClick = {
+                                    provider = selectionOption
+                                    expandedProvider = false
+                                },
+                            )
+                        }
                     }
                 }
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                Column(
-                    modifier = Modifier.fillMaxWidth().height(400.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    when (selectedTab) {
-                        0 -> {
-                            // Obecné
-                            OutlinedTextField(
-                                value = name,
-                                onValueChange = { name = it },
-                                label = { Text("Název připojení") },
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-
-                            // Type dropdown
-                            ExposedDropdownMenuBox(
-                                expanded = expandedType,
-                                onExpandedChange = { expandedType = it },
-                            ) {
-                                OutlinedTextField(
-                                    value = type,
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    label = { Text("Typ připojení") },
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedType) },
-                                    modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
-                                )
-                                ExposedDropdownMenu(
-                                    expanded = expandedType,
-                                    onDismissRequest = { expandedType = false },
-                                ) {
-                                    connectionTypes.forEach { option ->
-                                        DropdownMenuItem(
-                                            text = { Text(option) },
-                                            onClick = {
-                                                type = option
-                                                expandedType = false
-                                            },
-                                        )
-                                    }
-                                }
-                            }
-
-                            if (type == "HTTP" || type == "OAUTH2") {
-                                OutlinedTextField(
-                                    value = baseUrl,
-                                    onValueChange = { baseUrl = it },
-                                    label = { Text("Base URL") },
-                                    placeholder = { Text("https://api.github.com") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = timeoutMs,
-                                    onValueChange = { timeoutMs = it },
-                                    label = { Text("Timeout (ms)") },
-                                    modifier = Modifier.fillMaxWidth(),
+                // Auth method dropdown (only for non-email providers)
+                if (provider != ProviderEnum.IMAP) {
+                    ExposedDropdownMenuBox(
+                        expanded = expandedGitAuthMethod,
+                        onExpandedChange = { expandedGitAuthMethod = !expandedGitAuthMethod },
+                    ) {
+                        OutlinedTextField(
+                            value = authMethod,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Metoda autentizace") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedGitAuthMethod) },
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(),
+                        )
+                        ExposedDropdownMenu(
+                            expanded = expandedGitAuthMethod,
+                            onDismissRequest = { expandedGitAuthMethod = false },
+                        ) {
+                            authMethodOptions.forEach { selectionOption ->
+                                DropdownMenuItem(
+                                    text = { Text(selectionOption) },
+                                    onClick = {
+                                        authMethod = selectionOption
+                                        expandedGitAuthMethod = false
+                                    },
                                 )
                             }
-
-                            if (type == "GIT") {
-                                OutlinedTextField(
-                                    value = gitRemoteUrl,
-                                    onValueChange = { gitRemoteUrl = it },
-                                    label = { Text("Git Remote URL") },
-                                    placeholder = { Text("https://github.com/user/repo.git") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = gitProvider,
-                                    onValueChange = { gitProvider = it },
-                                    label = { Text("Git Provider (GITHUB, GITLAB, BITBUCKET, CUSTOM)") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            }
-
-                            if (type == "IMAP" || type == "POP3" || type == "SMTP") {
-                                OutlinedTextField(
-                                    value = host,
-                                    onValueChange = { host = it },
-                                    label = { Text("Server (host)") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = port,
-                                    onValueChange = { port = it },
-                                    label = { Text("Port") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                if (type == "IMAP") {
-                                    OutlinedTextField(
-                                        value = folderName,
-                                        onValueChange = { folderName = it },
-                                        label = { Text("Složka (např. INBOX)") },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                }
-                            }
-                        }
-
-                        1 -> {
-                            // Autentizace
-                            if (type == "HTTP") {
-                                // Auth type dropdown
-                                ExposedDropdownMenuBox(
-                                    expanded = expandedAuth,
-                                    onExpandedChange = { expandedAuth = it },
-                                ) {
-                                    OutlinedTextField(
-                                        value = authType,
-                                        onValueChange = {},
-                                        readOnly = true,
-                                        label = { Text("Typ autentizace") },
-                                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedAuth) },
-                                        modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
-                                    )
-                                    ExposedDropdownMenu(
-                                        expanded = expandedAuth,
-                                        onDismissRequest = { expandedAuth = false },
-                                    ) {
-                                        authTypes.forEach { option ->
-                                            DropdownMenuItem(
-                                                text = { Text(option) },
-                                                onClick = {
-                                                    authType = option
-                                                    expandedAuth = false
-                                                },
-                                            )
-                                        }
-                                    }
-                                }
-
-                                if (authType == "BEARER") {
-                                    OutlinedTextField(
-                                        value = httpBearerToken,
-                                        onValueChange = { httpBearerToken = it },
-                                        label = { Text("Bearer Token") },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                }
-
-                                if (authType == "BASIC") {
-                                    OutlinedTextField(
-                                        value = httpBasicUsername,
-                                        onValueChange = { httpBasicUsername = it },
-                                        label = { Text("Uživatelské jméno") },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                    OutlinedTextField(
-                                        value = httpBasicPassword,
-                                        onValueChange = { httpBasicPassword = it },
-                                        label = { Text("Heslo") },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                }
-                            }
-
-                            if (type == "OAUTH2") {
-                                OutlinedTextField(
-                                    value = authorizationUrl,
-                                    onValueChange = { authorizationUrl = it },
-                                    label = { Text("Authorization URL") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = tokenUrl,
-                                    onValueChange = { tokenUrl = it },
-                                    label = { Text("Token URL") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = clientSecret,
-                                    onValueChange = { clientSecret = it },
-                                    label = { Text("Client Secret") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = redirectUri,
-                                    onValueChange = { redirectUri = it },
-                                    label = { Text("Redirect URI") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = scope,
-                                    onValueChange = { scope = it },
-                                    label = { Text("Scope (volitelné)") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            }
-
-                            if (type == "IMAP" || type == "POP3" || type == "SMTP") {
-                                OutlinedTextField(
-                                    value = username,
-                                    onValueChange = { username = it },
-                                    label = { Text("Uživatelské jméno") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = password,
-                                    onValueChange = { password = it },
-                                    label = { Text("Heslo") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-
-                                if (type == "IMAP" || type == "POP3") {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Checkbox(checked = useSsl, onCheckedChange = { useSsl = it })
-                                        Spacer(Modifier.width(4.dp))
-                                        Text("Použít SSL")
-                                    }
-                                }
-
-                                if (type == "SMTP") {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Checkbox(checked = useTls, onCheckedChange = { useTls = it })
-                                        Spacer(Modifier.width(4.dp))
-                                        Text("Použít TLS")
-                                    }
-                                }
-                            }
-                        }
-
-                        2 -> {
-                            // Integrace
-                            if (type == "HTTP" || type == "OAUTH2") {
-                                OutlinedTextField(
-                                    value = jiraProjectKey,
-                                    onValueChange = { jiraProjectKey = it },
-                                    label = { Text("Jira Project Key") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = confluenceSpaceKey,
-                                    onValueChange = { confluenceSpaceKey = it },
-                                    label = { Text("Confluence Space Key") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = confluenceRootPageId,
-                                    onValueChange = { confluenceRootPageId = it },
-                                    label = { Text("Confluence Root Page ID") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = bitbucketRepoSlug,
-                                    onValueChange = { bitbucketRepoSlug = it },
-                                    label = { Text("Bitbucket Repo Slug") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            } else {
-                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    Text("Integrace nejsou pro tento typ připojení k dispozici.", style = MaterialTheme.typography.bodyMedium)
-                                }
-                            }
-                        }
-
-                        3 -> {
-                            // Limity
-                            OutlinedTextField(
-                                value = maxRequestsPerSecond,
-                                onValueChange = { maxRequestsPerSecond = it },
-                                label = { Text("Max požadavků za sekundu") },
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                            OutlinedTextField(
-                                value = maxRequestsPerMinute,
-                                onValueChange = { maxRequestsPerMinute = it },
-                                label = { Text("Max požadavků za minutu") },
-                                modifier = Modifier.fillMaxWidth(),
-                            )
                         }
                     }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // Cloud checkbox for OAuth2
+                if (provider != ProviderEnum.IMAP && authMethod == "OAUTH2") {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Checkbox(
+                            checked = isCloud,
+                            onCheckedChange = { isCloud = it },
+                        )
+                        Text("Cloud (veřejný GitHub/GitLab/Atlassian)", modifier = Modifier.weight(1f))
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // Base URL (for GITHUB, GITLAB, ATLASSIAN) - hidden for cloud OAuth2
+                if (provider != ProviderEnum.IMAP && (authMethod != "OAUTH2" || !isCloud)) {
+                    OutlinedTextField(
+                        value = baseUrl,
+                        onValueChange = { baseUrl = it },
+                        label = { Text("Base URL") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+
+                // API Token or Basic Auth field (for non-email providers with API TOKEN)
+                if (provider != ProviderEnum.IMAP && authMethod == "API TOKEN") {
+                    if (provider == ProviderEnum.ATLASSIAN) {
+                        // Show basic auth fields for Atlassian
+                        OutlinedTextField(
+                            value = httpBasicUsername,
+                            onValueChange = { httpBasicUsername = it },
+                            label = { Text("Uživatelské jméno (email)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = httpBasicPassword,
+                            onValueChange = { httpBasicPassword = it },
+                            label = { Text("API Token") },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        // Show bearer token for GitHub/GitLab
+                        OutlinedTextField(
+                            value = httpBearerToken,
+                            onValueChange = { httpBearerToken = it },
+                            label = { Text("API Token") },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // Email fields (for IMAP)
+                if (provider == ProviderEnum.IMAP) {
+                    OutlinedTextField(
+                        value = host,
+                        onValueChange = { host = it },
+                        label = { Text("Host") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = port,
+                        onValueChange = { port = it },
+                        label = { Text("Port") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = username,
+                        onValueChange = { username = it },
+                        label = { Text("Uživatelské jméno") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("Heslo") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Checkbox(
+                            checked = useSsl,
+                            onCheckedChange = { useSsl = it },
+                        )
+                        Text("Použít SSL", modifier = Modifier.weight(1f))
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = folderName,
+                        onValueChange = { folderName = it },
+                        label = { Text("Název složky (volitelné)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
             }
         },
@@ -688,53 +634,63 @@ private fun ConnectionCreateDialog(
             Button(
                 onClick = {
                     val request =
-                        ConnectionCreateRequestDto(
-                            type = type,
-                            name = name,
-                            state = ConnectionStateEnum.NEW,
-                            baseUrl = baseUrl.takeIf { it.isNotBlank() },
-                            authType = if (type == "HTTP") authType else null,
-                            httpBearerToken = if (authType == "BEARER") httpBearerToken.takeIf { it.isNotBlank() } else null,
-                            httpBasicUsername = if (authType == "BASIC") httpBasicUsername.takeIf { it.isNotBlank() } else null,
-                            httpBasicPassword = if (authType == "BASIC") httpBasicPassword.takeIf { it.isNotBlank() } else null,
-                            authorizationUrl = if (type == "OAUTH2") authorizationUrl.takeIf { it.isNotBlank() } else null,
-                            tokenUrl = if (type == "OAUTH2") tokenUrl.takeIf { it.isNotBlank() } else null,
-                            clientSecret = if (type == "OAUTH2") clientSecret.takeIf { it.isNotBlank() } else null,
-                            redirectUri = if (type == "OAUTH2") redirectUri.takeIf { it.isNotBlank() } else null,
-                            scope = if (type == "OAUTH2") scope.takeIf { it.isNotBlank() } else null,
-                            // Email fields
-                            host = host.takeIf { it.isNotBlank() },
-                            port = port.toIntOrNull(),
-                            username = username.takeIf { it.isNotBlank() },
-                            password = password.takeIf { it.isNotBlank() },
-                            useSsl = useSsl,
-                            useTls = useTls,
-                            timeoutMs = timeoutMs.toLongOrNull(),
-                            folderName = folderName.takeIf { it.isNotBlank() },
-                            rateLimitConfig = com.jervis.dto.connection.RateLimitConfigDto(
-                                maxRequestsPerSecond = maxRequestsPerSecond.toIntOrNull() ?: 10,
-                                maxRequestsPerMinute = maxRequestsPerMinute.toIntOrNull() ?: 100
-                            ),
-                            jiraProjectKey = jiraProjectKey.takeIf { it.isNotBlank() },
-                            confluenceSpaceKey = confluenceSpaceKey.takeIf { it.isNotBlank() },
-                            confluenceRootPageId = confluenceRootPageId.takeIf { it.isNotBlank() },
-                            bitbucketRepoSlug = bitbucketRepoSlug.takeIf { it.isNotBlank() },
-                            gitRemoteUrl = gitRemoteUrl.takeIf { it.isNotBlank() },
-                            gitProvider = gitProvider.takeIf { it.isNotBlank() },
-                        )
+                        when (provider) {
+                            ProviderEnum.IMAP -> {
+                                ConnectionCreateRequestDto(
+                                    type = ConnectionTypeEnum.IMAP,
+                                    provider = provider,
+                                    name = name,
+                                    host = host,
+                                    port = port.toIntOrNull(),
+                                    username = username,
+                                    password = password,
+                                    useSsl = useSsl,
+                                    folderName = folderName,
+                                )
+                            }
+
+                            else -> {
+                                if (isOAuth2) {
+                                    // OAuth2 connections: only name, provider, isCloud; credentials managed by server
+                                    ConnectionCreateRequestDto(
+                                        type = ConnectionTypeEnum.OAUTH2,
+                                        provider = provider,
+                                        name = name,
+                                        isCloud = isCloud,
+                                        baseUrl = if (isCloud) null else baseUrl,
+                                        gitProvider = provider.name,
+                                    )
+                                } else {
+                                    if (provider == ProviderEnum.ATLASSIAN) {
+                                        ConnectionCreateRequestDto(
+                                            type = ConnectionTypeEnum.HTTP,
+                                            provider = provider,
+                                            name = name,
+                                            baseUrl = baseUrl,
+                                            authType = HttpAuthTypeEnum.BASIC,
+                                            httpBasicUsername = httpBasicUsername,
+                                            httpBasicPassword = httpBasicPassword,
+                                            gitProvider = provider.name,
+                                        )
+                                    } else {
+                                        ConnectionCreateRequestDto(
+                                            type = ConnectionTypeEnum.HTTP,
+                                            provider = provider,
+                                            name = name,
+                                            baseUrl = baseUrl,
+                                            authType = HttpAuthTypeEnum.BEARER,
+                                            httpBearerToken = httpBearerToken,
+                                            gitProvider = provider.name,
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     onCreate(request)
                 },
-                enabled =
-                    name.isNotBlank() &&
-                        when (type) {
-                            "HTTP" -> baseUrl.isNotBlank()
-                            "OAUTH2" -> baseUrl.isNotBlank() && authorizationUrl.isNotBlank() && tokenUrl.isNotBlank() && clientSecret.isNotBlank() && redirectUri.isNotBlank()
-                            "IMAP", "POP3", "SMTP" -> host.isNotBlank() && username.isNotBlank() && password.isNotBlank()
-                            "GIT" -> gitRemoteUrl.isNotBlank()
-                            else -> true
-                        },
+                enabled = enabled,
             ) {
-                Text("Vytvořit")
+                Text(if (isOAuth2) "Authorizovat" else "Vytvořit")
             }
         },
         dismissButton = {
@@ -753,384 +709,439 @@ private fun ConnectionEditDialog(
 ) {
     var name by remember { mutableStateOf(connection.name) }
     var state by remember { mutableStateOf(connection.state) }
-    var baseUrl by remember { mutableStateOf(connection.baseUrl ?: "") }
-    var authType by remember { mutableStateOf(connection.authType ?: "NONE") }
-    var httpBearerToken by remember { mutableStateOf("") }
-    var httpBasicUsername by remember { mutableStateOf(connection.httpBasicUsername ?: "") }
-    var httpBasicPassword by remember { mutableStateOf("") }
-    var timeoutMs by remember { mutableStateOf(connection.timeoutMs?.toString() ?: "30000") }
-
+    // Provider and auth method
+    var provider by remember { mutableStateOf<ProviderEnum?>(null) }
+    var authMethod by remember { mutableStateOf("OAUTH2") }
+    // Common fields
+    var baseUrl by remember { mutableStateOf("") }
+    // Cloud flag for OAuth2 providers
+    var isCloud by remember { mutableStateOf(false) }
     // OAuth2 fields
-    var authorizationUrl by remember { mutableStateOf(connection.authorizationUrl ?: "") }
-    var tokenUrl by remember { mutableStateOf(connection.tokenUrl ?: "") }
-    var clientSecret by remember { mutableStateOf("") }
-    var redirectUri by remember { mutableStateOf(connection.redirectUri ?: "") }
-    var scope by remember { mutableStateOf(connection.scope ?: "") }
-
-    // Email fields
-    var host by remember { mutableStateOf(connection.host ?: "") }
-    var port by remember { mutableStateOf(connection.port?.toString() ?: "") }
-    var username by remember { mutableStateOf(connection.username ?: "") }
-    var password by remember { mutableStateOf("") }
-    var folderName by remember { mutableStateOf(connection.folderName ?: "INBOX") }
-    var useSsl by remember { mutableStateOf(connection.useSsl ?: true) }
-    var useTls by remember { mutableStateOf(connection.useTls ?: true) }
-
-    // Git fields
-    var gitRemoteUrl by remember { mutableStateOf(connection.gitRemoteUrl ?: "") }
-    var gitProvider by remember { mutableStateOf(connection.gitProvider ?: "GITHUB") }
-
-    // Rate limit
-    var maxRequestsPerSecond by remember { mutableStateOf(connection.rateLimitConfig?.maxRequestsPerSecond?.toString() ?: "10") }
-    var maxRequestsPerMinute by remember { mutableStateOf(connection.rateLimitConfig?.maxRequestsPerMinute?.toString() ?: "100") }
-
-    // Atlassian
-    var jiraProjectKey by remember { mutableStateOf(connection.jiraProjectKey ?: "") }
-    var confluenceSpaceKey by remember { mutableStateOf(connection.confluenceSpaceKey ?: "") }
-    var confluenceRootPageId by remember { mutableStateOf(connection.confluenceRootPageId ?: "") }
-    var bitbucketRepoSlug by remember { mutableStateOf(connection.bitbucketRepoSlug ?: "") }
-
-    var expandedAuth by remember { mutableStateOf(false) }
+    var expandedProvider by remember { mutableStateOf(false) }
+    var expandedGitAuthMethod by remember { mutableStateOf(false) }
     var expandedState by remember { mutableStateOf(false) }
 
-    var selectedTab by remember { mutableStateOf(0) }
-    val tabTitles = listOf("Obecné", "Autentizace", "Integrace", "Limity")
+    var authorizationUrl by remember { mutableStateOf("") }
+    var tokenUrl by remember { mutableStateOf("") }
+    var clientSecret by remember { mutableStateOf("") }
+    var redirectUri by remember { mutableStateOf("") }
+    var scope by remember { mutableStateOf("") }
+    // API Token
+    var httpBearerToken by remember { mutableStateOf("") }
+    // Basic Auth fields for Atlassian API token
+    var httpBasicUsername by remember { mutableStateOf("") }
+    var httpBasicPassword by remember { mutableStateOf("") }
+    // Email fields
+    var host by remember { mutableStateOf("") }
+    var port by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var folderName by remember { mutableStateOf("INBOX") }
+    var useSsl by remember { mutableStateOf(true) }
+    var useTls by remember { mutableStateOf(true) }
 
-    val authTypes = listOf("NONE", "BEARER", "BASIC")
-    val states = ConnectionStateEnum.entries
+    // Initialize from connection
+    LaunchedEffect(connection) {
+        when (connection.type) {
+            ConnectionTypeEnum.IMAP -> {
+                provider = connection.provider
+                authMethod = "IMAP"
+                host = connection.host ?: ""
+                port = connection.port?.toString() ?: ""
+                username = connection.username ?: ""
+                password = connection.password ?: ""
+                useSsl = connection.useSsl ?: true
+                folderName = connection.folderName ?: "INBOX"
+            }
+
+            ConnectionTypeEnum.OAUTH2 -> {
+                provider = connection.provider
+                authMethod = "OAUTH2"
+                baseUrl = connection.baseUrl ?: ""
+                isCloud = connection.baseUrl.isNullOrEmpty()
+                authorizationUrl = connection.authorizationUrl ?: ""
+                tokenUrl = connection.tokenUrl ?: ""
+                clientSecret = connection.clientSecret ?: ""
+                redirectUri = connection.redirectUri ?: ""
+                scope = connection.scope ?: ""
+            }
+
+            ConnectionTypeEnum.HTTP -> {
+                val base = connection.baseUrl ?: ""
+                provider = connection.provider
+                // Determine authMethod based on authType and fields
+                when (connection.authType) {
+                    HttpAuthTypeEnum.BASIC -> {
+                        if (provider == ProviderEnum.ATLASSIAN) {
+                            authMethod = "API TOKEN"
+                            httpBasicUsername = connection.httpBasicUsername ?: ""
+                            httpBasicPassword = connection.httpBasicPassword ?: ""
+                        } else {
+                            authMethod = "API TOKEN"
+                        }
+                    }
+
+                    HttpAuthTypeEnum.BEARER -> {
+                        authMethod = "API TOKEN"
+                        httpBearerToken = connection.httpBearerToken ?: ""
+                    }
+
+                    else -> {
+                        // Fallback: check fields
+                        if (connection.httpBearerToken?.isNotBlank() == true) {
+                            authMethod = "API TOKEN"
+                            httpBearerToken = connection.httpBearerToken ?: ""
+                        } else if (connection.authorizationUrl?.isNotBlank() == true || connection.tokenUrl?.isNotBlank() == true) {
+                            authMethod = "OAUTH2"
+                            authorizationUrl = connection.authorizationUrl ?: ""
+                            tokenUrl = connection.tokenUrl ?: ""
+                            clientSecret = connection.clientSecret ?: ""
+                            redirectUri = connection.redirectUri ?: ""
+                            scope = connection.scope ?: ""
+                        } else {
+                            authMethod = "API TOKEN"
+                        }
+                    }
+                }
+                baseUrl = base
+            }
+
+            else -> {
+                provider = connection.provider
+                authMethod = "OAUTH2"
+            }
+        }
+    }
+
+    val enabled =
+        name.isNotBlank() &&
+            when (provider) {
+                ProviderEnum.IMAP -> {
+                    host.isNotBlank() && username.isNotBlank() && password.isNotBlank()
+                }
+
+                else -> {
+                    if (authMethod == "OAUTH2") {
+                        // For OAuth2 cloud: only name required; for on-premise: name and baseUrl required
+                        name.isNotBlank() && (isCloud || baseUrl.isNotBlank())
+                    } else {
+                        // API TOKEN
+                        if (provider == ProviderEnum.ATLASSIAN) {
+                            baseUrl.isNotBlank() && httpBasicUsername.isNotBlank() && httpBasicPassword.isNotBlank()
+                        } else {
+                            baseUrl.isNotBlank() && httpBearerToken.isNotBlank()
+                        }
+                    }
+                }
+            }
+
+    var selectedTab by remember { mutableStateOf(0) }
+    val tabTitles = listOf("Obecné", "Autentizace")
+
+    val providerOptions = ProviderEnum.entries
+    val authMethodOptions = listOf("OAUTH2", "API TOKEN")
+    val isOAuth2 = (provider == ProviderEnum.GITHUB || provider == ProviderEnum.GITLAB || provider == ProviderEnum.ATLASSIAN) && authMethod == "OAUTH2"
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Upravit připojení") },
         text = {
             Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
             ) {
-                TabRow(selectedTabIndex = selectedTab) {
-                    tabTitles.forEachIndexed { index, title ->
-                        Tab(
-                            selected = selectedTab == index,
-                            onClick = { selectedTab = index },
-                            text = { Text(title, style = MaterialTheme.typography.labelSmall) },
-                        )
+                // Connection name
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Název připojení") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Provider dropdown (primary selector)
+                ExposedDropdownMenuBox(
+                    expanded = expandedProvider,
+                    onExpandedChange = { expandedProvider = !expandedProvider },
+                ) {
+                    OutlinedTextField(
+                        value = provider?.name ?: "",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Provider") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedProvider) },
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(),
+                    )
+                    ExposedDropdownMenu(
+                        expanded = expandedProvider,
+                        onDismissRequest = { expandedProvider = false },
+                    ) {
+                        providerOptions.forEach { selectionOption ->
+                            DropdownMenuItem(
+                                text = { Text(selectionOption.name) },
+                                onClick = {
+                                    provider = selectionOption
+                                    expandedProvider = false
+                                },
+                            )
+                        }
                     }
                 }
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                Column(
-                    modifier = Modifier.fillMaxWidth().height(400.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    when (selectedTab) {
-                        0 -> {
-                            // Obecné
-                            OutlinedTextField(
-                                value = name,
-                                onValueChange = { name = it },
-                                label = { Text("Název připojení") },
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-
-                            // State dropdown
-                            ExposedDropdownMenuBox(
-                                expanded = expandedState,
-                                onExpandedChange = { expandedState = it },
-                            ) {
-                                OutlinedTextField(
-                                    value = state.name,
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    label = { Text("Stav připojení") },
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedState) },
-                                    modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
-                                )
-                                ExposedDropdownMenu(
-                                    expanded = expandedState,
-                                    onDismissRequest = { expandedState = false },
-                                ) {
-                                    states.forEach { option ->
-                                        DropdownMenuItem(
-                                            text = { Text(option.name) },
-                                            onClick = {
-                                                state = option
-                                                expandedState = false
-                                            },
-                                        )
-                                    }
-                                }
-                            }
-
-                            if (connection.type == "HTTP" || connection.type == "OAUTH2") {
-                                OutlinedTextField(
-                                    value = baseUrl,
-                                    onValueChange = { baseUrl = it },
-                                    label = { Text("Base URL") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = timeoutMs,
-                                    onValueChange = { timeoutMs = it },
-                                    label = { Text("Timeout (ms)") },
-                                    modifier = Modifier.fillMaxWidth(),
+                // Auth method dropdown (only for non-email providers, hidden for OAuth2)
+                if (provider != ProviderEnum.IMAP && !isOAuth2) {
+                    ExposedDropdownMenuBox(
+                        expanded = expandedGitAuthMethod,
+                        onExpandedChange = { expandedGitAuthMethod = !expandedGitAuthMethod },
+                    ) {
+                        OutlinedTextField(
+                            value = authMethod,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Metoda autentizace") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedGitAuthMethod) },
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(),
+                        )
+                        ExposedDropdownMenu(
+                            expanded = expandedGitAuthMethod,
+                            onDismissRequest = { expandedGitAuthMethod = false },
+                        ) {
+                            authMethodOptions.forEach { selectionOption ->
+                                DropdownMenuItem(
+                                    text = { Text(selectionOption) },
+                                    onClick = {
+                                        authMethod = selectionOption
+                                        expandedGitAuthMethod = false
+                                    },
                                 )
                             }
-
-                            if (connection.type == "GIT") {
-                                OutlinedTextField(
-                                    value = gitRemoteUrl,
-                                    onValueChange = { gitRemoteUrl = it },
-                                    label = { Text("Git Remote URL") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = gitProvider,
-                                    onValueChange = { gitProvider = it },
-                                    label = { Text("Git Provider (GITHUB, GITLAB, BITBUCKET, CUSTOM)") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            }
-
-                            if (connection.type == "IMAP" || connection.type == "POP3" || connection.type == "SMTP") {
-                                OutlinedTextField(
-                                    value = host,
-                                    onValueChange = { host = it },
-                                    label = { Text("Server (host)") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = port,
-                                    onValueChange = { port = it },
-                                    label = { Text("Port") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                if (connection.type == "IMAP") {
-                                    OutlinedTextField(
-                                        value = folderName,
-                                        onValueChange = { folderName = it },
-                                        label = { Text("Složka (např. INBOX)") },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                }
-                            }
-                        }
-
-                        1 -> {
-                            // Autentizace
-                            if (connection.type == "HTTP") {
-                                // Auth type dropdown
-                                ExposedDropdownMenuBox(
-                                    expanded = expandedAuth,
-                                    onExpandedChange = { expandedAuth = it },
-                                ) {
-                                    OutlinedTextField(
-                                        value = authType,
-                                        onValueChange = {},
-                                        readOnly = true,
-                                        label = { Text("Typ autentizace") },
-                                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedAuth) },
-                                        modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
-                                    )
-                                    ExposedDropdownMenu(
-                                        expanded = expandedAuth,
-                                        onDismissRequest = { expandedAuth = false },
-                                    ) {
-                                        authTypes.forEach { option ->
-                                            DropdownMenuItem(
-                                                text = { Text(option) },
-                                                onClick = {
-                                                    authType = option
-                                                    expandedAuth = false
-                                                },
-                                            )
-                                        }
-                                    }
-                                }
-
-                                if (authType == "BEARER") {
-                                    OutlinedTextField(
-                                        value = httpBearerToken,
-                                        onValueChange = { httpBearerToken = it },
-                                        label = { Text("Bearer Token (nechte prázdné pro zachování)") },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                }
-
-                                if (authType == "BASIC") {
-                                    OutlinedTextField(
-                                        value = httpBasicUsername,
-                                        onValueChange = { httpBasicUsername = it },
-                                        label = { Text("Uživatelské jméno") },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                    OutlinedTextField(
-                                        value = httpBasicPassword,
-                                        onValueChange = { httpBasicPassword = it },
-                                        label = { Text("Heslo (nechte prázdné pro zachování)") },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                }
-                            }
-
-                            if (connection.type == "OAUTH2") {
-                                OutlinedTextField(
-                                    value = authorizationUrl,
-                                    onValueChange = { authorizationUrl = it },
-                                    label = { Text("Authorization URL") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = tokenUrl,
-                                    onValueChange = { tokenUrl = it },
-                                    label = { Text("Token URL") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = clientSecret,
-                                    onValueChange = { clientSecret = it },
-                                    label = { Text("Client Secret (nechte prázdné pro zachování)") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = redirectUri,
-                                    onValueChange = { redirectUri = it },
-                                    label = { Text("Redirect URI") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = scope,
-                                    onValueChange = { scope = it },
-                                    label = { Text("Scope (volitelné)") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            }
-
-                            if (connection.type == "IMAP" || connection.type == "POP3" || connection.type == "SMTP") {
-                                OutlinedTextField(
-                                    value = username,
-                                    onValueChange = { username = it },
-                                    label = { Text("Uživatelské jméno") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = password,
-                                    onValueChange = { password = it },
-                                    label = { Text("Heslo (nechte prázdné pro zachování)") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-
-                                if (connection.type == "IMAP" || connection.type == "POP3") {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Checkbox(checked = useSsl, onCheckedChange = { useSsl = it })
-                                        Spacer(Modifier.width(4.dp))
-                                        Text("Použít SSL")
-                                    }
-                                }
-
-                                if (connection.type == "SMTP") {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Checkbox(checked = useTls, onCheckedChange = { useTls = it })
-                                        Spacer(Modifier.width(4.dp))
-                                        Text("Použít TLS")
-                                    }
-                                }
-                            }
-                        }
-
-                        2 -> {
-                            // Integrace
-                            if (connection.type == "HTTP" || connection.type == "OAUTH2") {
-                                OutlinedTextField(
-                                    value = jiraProjectKey,
-                                    onValueChange = { jiraProjectKey = it },
-                                    label = { Text("Jira Project Key") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = confluenceSpaceKey,
-                                    onValueChange = { confluenceSpaceKey = it },
-                                    label = { Text("Confluence Space Key") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = confluenceRootPageId,
-                                    onValueChange = { confluenceRootPageId = it },
-                                    label = { Text("Confluence Root Page ID") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                OutlinedTextField(
-                                    value = bitbucketRepoSlug,
-                                    onValueChange = { bitbucketRepoSlug = it },
-                                    label = { Text("Bitbucket Repo Slug") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            } else {
-                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    Text("Integrace nejsou pro tento typ připojení k dispozici.", style = MaterialTheme.typography.bodyMedium)
-                                }
-                            }
-                        }
-
-                        3 -> {
-                            // Limity
-                            OutlinedTextField(
-                                value = maxRequestsPerSecond,
-                                onValueChange = { maxRequestsPerSecond = it },
-                                label = { Text("Max požadavků za sekundu") },
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                            OutlinedTextField(
-                                value = maxRequestsPerMinute,
-                                onValueChange = { maxRequestsPerMinute = it },
-                                label = { Text("Max požadavků za minutu") },
-                                modifier = Modifier.fillMaxWidth(),
-                            )
                         }
                     }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // Cloud checkbox for OAuth2
+                if (provider != ProviderEnum.IMAP && authMethod == "OAUTH2") {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Checkbox(
+                            checked = isCloud,
+                            onCheckedChange = { isCloud = it },
+                        )
+                        Text("Cloud (veřejný GitHub/GitLab/Atlassian)", modifier = Modifier.weight(1f))
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // Base URL (for GITHUB, GITLAB, ATLASSIAN) - hidden for cloud OAuth2
+                if (provider != ProviderEnum.IMAP && (authMethod != "OAUTH2" || !isCloud)) {
+                    OutlinedTextField(
+                        value = baseUrl,
+                        onValueChange = { baseUrl = it },
+                        label = { Text("Base URL") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // OAuth2 info message (for OAuth2 connections)
+                if (isOAuth2) {
+                    Text(
+                        "Přihlašovací údaje pro OAuth2 jsou spravovány automaticky serverem a zde se nedají upravovat.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // API Token / Basic Auth fields (for non-email providers with API TOKEN)
+                if (provider != ProviderEnum.IMAP && authMethod == "API TOKEN") {
+                    if (provider == ProviderEnum.ATLASSIAN) {
+                        // Atlassian uses Basic Auth (username + token)
+                        OutlinedTextField(
+                            value = httpBasicUsername,
+                            onValueChange = { httpBasicUsername = it },
+                            label = { Text("Username") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = httpBasicPassword,
+                            onValueChange = { httpBasicPassword = it },
+                            label = { Text("API Token") },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    } else {
+                        // GitHub/GitLab use Bearer Token
+                        OutlinedTextField(
+                            value = httpBearerToken,
+                            onValueChange = { httpBearerToken = it },
+                            label = { Text("API Token") },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
+
+                // Email fields (for IMAP)
+                if (provider == ProviderEnum.IMAP) {
+                    OutlinedTextField(
+                        value = host,
+                        onValueChange = { host = it },
+                        label = { Text("Host") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = port,
+                        onValueChange = { port = it },
+                        label = { Text("Port") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = username,
+                        onValueChange = { username = it },
+                        label = { Text("Uživatelské jméno") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("Heslo") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Checkbox(
+                            checked = useSsl,
+                            onCheckedChange = { useSsl = it },
+                        )
+                        Text("Použít SSL", modifier = Modifier.weight(1f))
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = folderName,
+                        onValueChange = { folderName = it },
+                        label = { Text("Název složky (volitelné)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    val request =
-                        ConnectionUpdateRequestDto(
-                            name = name.takeIf { it.isNotBlank() },
-                            state = state,
-                            baseUrl = baseUrl.takeIf { it.isNotBlank() },
-                            authType = if (connection.type == "HTTP") authType else null,
-                            httpBearerToken = if (authType == "BEARER" && httpBearerToken.isNotBlank()) httpBearerToken else null,
-                            httpBasicUsername = if (authType == "BASIC" && httpBasicUsername.isNotBlank()) httpBasicUsername else null,
-                            httpBasicPassword = if (authType == "BASIC" && httpBasicPassword.isNotBlank()) httpBasicPassword else null,
-                            authorizationUrl = if (connection.type == "OAUTH2") authorizationUrl.takeIf { it.isNotBlank() } else null,
-                            tokenUrl = if (connection.type == "OAUTH2") tokenUrl.takeIf { it.isNotBlank() } else null,
-                            clientSecret = if (connection.type == "OAUTH2" && clientSecret.isNotBlank()) clientSecret else null,
-                            redirectUri = if (connection.type == "OAUTH2") redirectUri.takeIf { it.isNotBlank() } else null,
-                            scope = if (connection.type == "OAUTH2" && scope.isNotBlank()) scope else null,
-                            // Email fields
-                            host = host.takeIf { it.isNotBlank() },
-                            port = port.toIntOrNull(),
-                            username = username.takeIf { it.isNotBlank() },
-                            password = password.takeIf { it.isNotBlank() },
-                            useSsl = useSsl,
-                            useTls = useTls,
-                            timeoutMs = timeoutMs.toLongOrNull(),
-                            folderName = folderName.takeIf { it.isNotBlank() },
-                            rateLimitConfig = com.jervis.dto.connection.RateLimitConfigDto(
-                                maxRequestsPerSecond = maxRequestsPerSecond.toIntOrNull() ?: 10,
-                                maxRequestsPerMinute = maxRequestsPerMinute.toIntOrNull() ?: 100
-                            ),
-                            jiraProjectKey = jiraProjectKey.takeIf { it.isNotBlank() },
-                            confluenceSpaceKey = confluenceSpaceKey.takeIf { it.isNotBlank() },
-                            confluenceRootPageId = confluenceRootPageId.takeIf { it.isNotBlank() },
-                            bitbucketRepoSlug = bitbucketRepoSlug.takeIf { it.isNotBlank() },
-                            gitRemoteUrl = gitRemoteUrl.takeIf { it.isNotBlank() },
-                            gitProvider = gitProvider.takeIf { it.isNotBlank() },
-                        )
-                    onSave(connection.id, request)
+                    provider?.let { prov ->
+                        val request =
+                            when (prov) {
+                                ProviderEnum.IMAP -> {
+                                    ConnectionUpdateRequestDto(
+                                        name = name,
+                                        provider = prov,
+                                        host = host,
+                                        port = port.toIntOrNull(),
+                                        username = username,
+                                        password = password,
+                                        useSsl = useSsl,
+                                        folderName = folderName,
+                                    )
+                                }
+
+                                else -> {
+                                    if (authMethod == "OAUTH2") {
+                                        // OAuth2 connections: only name, baseUrl, state, isCloud are editable; credentials managed by server
+                                        ConnectionUpdateRequestDto(
+                                            name = name,
+                                            isCloud = isCloud,
+                                            baseUrl = if (isCloud) null else baseUrl,
+                                            state = state,
+                                            gitProvider =
+                                                if (prov in listOf(ProviderEnum.GITHUB, ProviderEnum.GITLAB)) {
+                                                    prov.name
+                                                } else {
+                                                    null
+                                                },
+                                        )
+                                    } else {
+                                        // API TOKEN
+                                        if (prov == ProviderEnum.ATLASSIAN) {
+                                            ConnectionUpdateRequestDto(
+                                                name = name,
+                                                provider = prov,
+                                                baseUrl = baseUrl,
+                                                authType = HttpAuthTypeEnum.BASIC,
+                                                httpBasicUsername = httpBasicUsername,
+                                                httpBasicPassword = httpBasicPassword,
+                                                state = state,
+                                                gitProvider = null,
+                                            )
+                                        } else {
+                                            ConnectionUpdateRequestDto(
+                                                name = name,
+                                                provider = prov,
+                                                baseUrl = baseUrl,
+                                                authType = HttpAuthTypeEnum.BEARER,
+                                                httpBearerToken = httpBearerToken,
+                                                state = state,
+                                                gitProvider =
+                                                    if (prov in
+                                                        listOf(
+                                                            ProviderEnum.GITHUB,
+                                                            ProviderEnum.GITLAB,
+                                                        )
+                                                    ) {
+                                                        prov.name
+                                                    } else {
+                                                        null
+                                                    },
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        onSave(connection.id, request)
+                    }
                 },
-                enabled = name.isNotBlank(),
+                enabled = enabled && provider != null,
             ) {
                 Text("Uložit")
             }
