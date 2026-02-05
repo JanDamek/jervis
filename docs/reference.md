@@ -89,36 +89,93 @@ enum class ConnectionCapability {
     BUGTRACKER,    // Capability: provides issues/tickets
     WIKI,          // Capability: provides wiki pages
     REPOSITORY,    // Capability: provides git repos
-    EMAIL,         // Capability: provides emails
+    EMAIL_READ,    // Capability: read emails (IMAP, POP3)
+    EMAIL_SEND,    // Capability: send emails (SMTP, IMAP with relay)
     GIT            // Capability: provides git operations
 }
 
 // Connection determines WHERE data is, NOT what specific system it is
 data class ConnectionDocument(
+    val id: ConnectionId,
     val name: String,
-    val baseUrl: String,
-    val availableCapabilities: Set<ConnectionCapability>
+    val provider: ProviderEnum,  // ← Determines which handler to use
+    val state: ConnectionStateEnum,
+    val config: Map<String, String>,  // ← Flexible configuration
+    val availableCapabilities: Set<ConnectionCapability>,
+    val rateLimitConfig: RateLimitConfig,
 )
 ```
 
-### Layer 3: Microservices (Vendor-specific)
+### Layer 3: Polling & Handlers (Provider-based)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      CentralPoller                           │
+│                                                               │
+│  FOR EACH connection:                                        │
+│    1. Load connection + determine clients/projects          │
+│    2. Get provider from connection.provider                  │
+│    3. Get capabilities from connection.availableCapabilities│
+│    4. FOR EACH capability:                                   │
+│         - Find handler by provider + capability              │
+│         - Call handler.poll(connection, context)             │
+└───────────────────────────┬─────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│                     PollingHandler                           │
+│                  (by Provider Type)                          │
+│                                                               │
+│  ┌─────────────────┐  ┌─────────────────┐                  │
+│  │ GitHubHandler   │  │ GitLabHandler   │  ...              │
+│  │ provider: GITHUB│  │ provider: GITLAB│                   │
+│  └─────────────────┘  └─────────────────┘                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Layer 4: Microservices (Vendor-specific)
 
 ```kotlin
 // service-atlassian
 interface IAtlassianClient : IBugTrackerClient, IWikiClient {
     // Implementation specific to Atlassian Cloud API
+    suspend fun getCapabilities(): ServiceCapabilitiesDto
 }
 
 // service-github
 interface IGitHubClient : IBugTrackerClient, IRepositoryClient {
     // Implementation specific to GitHub API
+    suspend fun getCapabilities(): ServiceCapabilitiesDto
 }
 
 // service-gitlab
 interface IGitLabClient : IBugTrackerClient, IRepositoryClient {
     // Implementation specific to GitLab API
+    suspend fun getCapabilities(): ServiceCapabilitiesDto
 }
 ```
+
+### Provider × Capability Mapping
+
+| Provider   | Capabilities                                  |
+|------------|-----------------------------------------------|
+| GITHUB     | REPOSITORY, BUGTRACKER, WIKI, GIT            |
+| GITLAB     | REPOSITORY, BUGTRACKER, WIKI, GIT            |
+| ATLASSIAN  | BUGTRACKER (Jira), WIKI (Confluence), REPO   |
+| IMAP       | EMAIL_READ, EMAIL_SEND                        |
+| POP3       | EMAIL_READ                                    |
+| SMTP       | EMAIL_SEND                                    |
+| OAUTH2     | (determined after auth flow)                  |
+
+### Adding New Provider
+
+To add a new provider (e.g., Azure DevOps):
+
+1. Add `AZURE_DEVOPS` to `ProviderEnum`
+2. Create `service-azure-devops` microservice implementing capability interfaces
+3. Create `AzureDevOpsPollingHandler` with `provider = ProviderEnum.AZURE_DEVOPS`
+4. Add to UI for configuration
+
+**No changes to ConnectionDocument or database are needed!**
 
 ---
 

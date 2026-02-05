@@ -1174,6 +1174,89 @@ fun `test full orchestrator workflow`() = runBlocking {
 
 ---
 
+## Vision Processing
+
+### Vision Architecture
+
+**Problem**: Apache Tika is blind - extracts text, but doesn't see **meaning** of screenshots, graphs, diagrams, and scanned PDFs.
+
+**Solution**: Integration of **Qwen2.5-VL** (vision model) into Qualifier Agent as **LLM node**, not as Tool.
+
+#### ❌ What NOT TO DO (Anti-patterns)
+
+```kotlin
+// ❌ WRONG - Vision as Tool
+@Tool
+suspend fun analyzeAttachment(attachmentId: String): String {
+    val model = selectVisionModel(...)
+    return llmGateway.call(model, image) // LLM call in Tool!
+}
+```
+
+**Why is it wrong:**
+- Tool API is for **actions** (save to DB, create task), not for LLM calls
+- We lose type-safety of Koog graph
+- Cannot use Koog multimodal (different models per node)
+- Complicated testing
+
+#### ✅ What TO DO (Correct approach)
+
+```kotlin
+// ✅ CORRECT - Vision as LLM node
+val nodeVision by node<QualifierPipelineState, QualifierPipelineState>("Vision Analysis") { state ->
+    val model = selectVisionModel(state.attachments)
+    val visionResult = llmGateway.call(model, image)
+    state.withVision(visionResult)
+}
+```
+
+### Vision Context Management
+
+```kotlin
+data class QualifierPipelineState(
+    val originalText: String,
+    val attachments: List<Attachment>,
+    val visionContext: VisionContext? = null,
+    val processingPlan: ProcessingPlan? = null,
+    val metrics: PipelineMetrics = PipelineMetrics()
+) {
+    fun withVision(visionResult: VisionResult): QualifierPipelineState {
+        return copy(
+            visionContext = VisionContext(
+                extractedText = visionResult.extractedText,
+                detectedObjects = visionResult.detectedObjects,
+                confidenceScores = visionResult.confidenceScores
+            ),
+            metrics = metrics.copy(visionDuration = visionResult.duration)
+        )
+    }
+}
+```
+
+### Vision Fail-Fast Design
+
+Vision Augmentation follows **FAIL-FAST design**:
+
+- If ANY step in the vision processing pipeline fails, the ENTIRE task fails immediately
+- FAILED tasks are retried, ensuring eventual consistency
+- Every error is visible and logged
+
+```kotlin
+// FAIL-FAST: If any attachment download/storage fails, exception propagates
+for (att in visualAttachments) {
+    try {
+        val image = downloadAttachment(att)
+        val dimensions = extractImageDimensions(image)
+        storeAttachment(att, image, dimensions)
+    } catch (e: Exception) {
+        log.error("Attachment processing failed", e)
+        throw e  // Fail-fast: propagate exception
+    }
+}
+```
+
+---
+
 ## Performance Optimization
 
 ### Model Selection
@@ -1187,6 +1270,15 @@ val model = smartModelSelector.selectModelBlocking(
     projectId = task.projectId
 )
 ```
+
+### Smart Model Selection Logic
+
+| Content Length | Model | Context | Use Case |
+|----------------|-------|---------|----------|
+| 0-4,000 tokens | qwen3-coder-tool-4k:30b | 4k | Small tasks, quick queries |
+| 4,001-16,000 tokens | qwen3-coder-tool-16k:30b | 16k | Medium tasks, documents |
+| 16,001-64,000 tokens | qwen3-coder-tool-64k:30b | 64k | Large documents, codebases |
+| 64,001+ tokens | qwen3-coder-tool-256k:30b | 256k | Very large documents |
 
 ### Parallel Tool Calls
 
