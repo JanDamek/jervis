@@ -3,6 +3,7 @@ package com.jervis.service.connection
 import com.jervis.common.types.ConnectionId
 import com.jervis.dto.connection.ConnectionStateEnum
 import com.jervis.dto.connection.ConnectionTestResultDto
+import com.jervis.dto.connection.ProtocolEnum
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.repository.ConnectionRepository
 import io.ktor.client.HttpClient
@@ -87,45 +88,18 @@ class ConnectionService(
     }
 
     /**
-     * Test connection based on its type and URL.
+     * Test connection based on its protocol.
      *
      * @param connectionDocument connection to test
      * @return ConnectionTestResultDto with success status and message
      */
     suspend fun testConnection(connectionDocument: ConnectionDocument): ConnectionTestResultDto =
         try {
-            when (connectionDocument.connectionType) {
-                ConnectionDocument.ConnectionTypeEnum.HTTP -> {
-                    testHttpConnection(connectionDocument)
-                }
-
-                ConnectionDocument.ConnectionTypeEnum.IMAP -> {
-                    testImapConnection(connectionDocument)
-                }
-
-                ConnectionDocument.ConnectionTypeEnum.POP3 -> {
-                    testPop3Connection(connectionDocument)
-                }
-
-                ConnectionDocument.ConnectionTypeEnum.SMTP -> {
-                    testSmtpConnection(connectionDocument)
-                }
-
-                ConnectionDocument.ConnectionTypeEnum.OAUTH2 -> {
-                    // OAuth2 test is more complex, so return success for now
-                    ConnectionTestResultDto(
-                        success = true,
-                        message = "OAuth2 test not yet implemented",
-                    )
-                }
-
-                ConnectionDocument.ConnectionTypeEnum.GIT -> {
-                    // Git test not implemented yet
-                    ConnectionTestResultDto(
-                        success = true,
-                        message = "Git test not yet implemented",
-                    )
-                }
+            when (connectionDocument.protocol) {
+                ProtocolEnum.HTTP -> testHttpConnection(connectionDocument)
+                ProtocolEnum.IMAP -> testImapConnection(connectionDocument)
+                ProtocolEnum.POP3 -> testPop3Connection(connectionDocument)
+                ProtocolEnum.SMTP -> testSmtpConnection(connectionDocument)
             }
         } catch (e: Exception) {
             logger.error(e) { "Connection test failed for ${connectionDocument.name}" }
@@ -139,16 +113,8 @@ class ConnectionService(
         try {
             val response =
                 httpClient.get(connectionDocument.baseUrl) {
-                    connectionDocument.credentials?.let { creds ->
-                        when (creds) {
-                            is ConnectionDocument.HttpCredentials.Basic -> {
-                                header(HttpHeaders.Authorization, creds.toAuthHeader())
-                            }
-
-                            is ConnectionDocument.HttpCredentials.Bearer -> {
-                                header(HttpHeaders.Authorization, creds.toAuthHeader())
-                            }
-                        }
+                    connectionDocument.toAuthHeader()?.let { authHeader ->
+                        header(HttpHeaders.Authorization, authHeader)
                     }
                 }
 

@@ -884,7 +884,6 @@ private fun getCapabilityLabel(capability: ConnectionCapability): String {
         ConnectionCapability.REPOSITORY -> "Repository"
         ConnectionCapability.EMAIL_READ -> "Email (Read)"
         ConnectionCapability.EMAIL_SEND -> "Email (Send)"
-        ConnectionCapability.GIT -> "Git"
     }
 }
 
@@ -895,7 +894,6 @@ private fun getIndexAllLabel(capability: ConnectionCapability): String {
         ConnectionCapability.EMAIL_READ -> "Indexovat celou schránku"
         ConnectionCapability.EMAIL_SEND -> "Použít všechny odesílatele"
         ConnectionCapability.REPOSITORY -> "Indexovat všechny repozitáře"
-        ConnectionCapability.GIT -> "Indexovat všechny repozitáře"
     }
 }
 

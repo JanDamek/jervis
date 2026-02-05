@@ -81,18 +81,18 @@ class ConnectionCapabilityMigrationService(
         if (project.gitRepositoryConnectionId != null) {
             hasLegacyFields = true
             val existing = project.connectionCapabilities.find {
-                it.capability == ConnectionCapability.GIT || it.capability == ConnectionCapability.REPOSITORY
+                it.capability == ConnectionCapability.REPOSITORY
             }
             if (existing == null) {
                 newCapabilities.add(
                     ProjectConnectionCapability(
                         connectionId = project.gitRepositoryConnectionId,
-                        capability = ConnectionCapability.GIT,
+                        capability = ConnectionCapability.REPOSITORY,
                         enabled = true,
                         resourceIdentifier = project.gitRepositoryIdentifier,
                     ),
                 )
-                logger.debug { "  Adding GIT capability for project ${project.name}" }
+                logger.debug { "  Adding REPOSITORY capability for project ${project.name}" }
             }
         }
 

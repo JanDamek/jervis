@@ -5,6 +5,7 @@ import com.jervis.common.types.SourceUrn
 import com.jervis.configuration.properties.PollingProperties
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.dto.connection.ConnectionStateEnum
+import com.jervis.dto.connection.ProtocolEnum
 import com.jervis.dto.connection.ProviderEnum
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.repository.ClientRepository
@@ -306,19 +307,11 @@ class CentralPoller(
         )
 
     private fun getPollingInterval(connectionDocument: ConnectionDocument): Duration =
-        when (connectionDocument.connectionType) {
-            ConnectionDocument.ConnectionTypeEnum.HTTP -> pollingProperties.http
-
-            ConnectionDocument.ConnectionTypeEnum.IMAP -> pollingProperties.imap
-
-            ConnectionDocument.ConnectionTypeEnum.POP3 -> pollingProperties.pop3
-
-            ConnectionDocument.ConnectionTypeEnum.SMTP -> Duration.ofDays(365)
-
-            // SMTP is for sending only
-            ConnectionDocument.ConnectionTypeEnum.OAUTH2 -> pollingProperties.oauth2
-
-            ConnectionDocument.ConnectionTypeEnum.GIT -> pollingProperties.http // Reuse HTTP interval for GIT
+        when (connectionDocument.protocol) {
+            ProtocolEnum.HTTP -> pollingProperties.http
+            ProtocolEnum.IMAP -> pollingProperties.imap
+            ProtocolEnum.POP3 -> pollingProperties.pop3
+            ProtocolEnum.SMTP -> Duration.ofDays(365) // SMTP is for sending only
         }
 }
 

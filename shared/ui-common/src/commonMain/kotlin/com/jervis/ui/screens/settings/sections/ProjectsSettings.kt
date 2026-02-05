@@ -631,7 +631,6 @@ private fun getCapabilityLabel(capability: ConnectionCapability): String {
         ConnectionCapability.REPOSITORY -> "Repository"
         ConnectionCapability.EMAIL_READ -> "Email (Read)"
         ConnectionCapability.EMAIL_SEND -> "Email (Send)"
-        ConnectionCapability.GIT -> "Git"
     }
 }
 
@@ -642,6 +641,5 @@ private fun getResourceLabel(capability: ConnectionCapability): String {
         ConnectionCapability.REPOSITORY -> "Repozitář"
         ConnectionCapability.EMAIL_READ -> "Složka"
         ConnectionCapability.EMAIL_SEND -> "Odesílatel"
-        ConnectionCapability.GIT -> "Repozitář"
     }
 }

@@ -31,7 +31,7 @@ class GitHubPollingHandler(
         var totalSkipped = 0
         var totalErrors = 0
 
-        if (connectionDocument.availableCapabilities.contains(ConnectionCapability.GIT)) {
+        if (connectionDocument.availableCapabilities.contains(ConnectionCapability.REPOSITORY)) {
             try {
                 val result = gitPollingHandler.poll(connectionDocument, context)
                 totalDiscovered += result.itemsDiscovered

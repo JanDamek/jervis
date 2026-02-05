@@ -21,7 +21,7 @@ class GitHubBugTrackerService(
             ConnectionCapability.REPOSITORY,
             ConnectionCapability.BUGTRACKER,
             ConnectionCapability.WIKI,
-            ConnectionCapability.GIT,
+            ConnectionCapability.REPOSITORY,
         )
     )
 

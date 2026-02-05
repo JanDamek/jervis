@@ -51,12 +51,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
+import com.jervis.dto.connection.AuthTypeEnum
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionCreateRequestDto
 import com.jervis.dto.connection.ConnectionResponseDto
-import com.jervis.dto.connection.ConnectionTypeEnum
 import com.jervis.dto.connection.ConnectionUpdateRequestDto
-import com.jervis.dto.connection.HttpAuthTypeEnum
+import com.jervis.dto.connection.ProtocolEnum
+import com.jervis.dto.connection.ProviderCapabilities
 import com.jervis.dto.connection.ProviderEnum
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.components.StatusIndicator
@@ -163,7 +164,7 @@ fun ConnectionsSettings(repository: JervisRepository) {
                 scope.launch {
                     try {
                         val created = repository.connections.createConnection(request)
-                        if (request.type == ConnectionTypeEnum.OAUTH2) {
+                        if (request.authType == AuthTypeEnum.OAUTH2) {
                             val authUrl = repository.connections.initiateOAuth2(created.id)
                             openUrlInBrowser(authUrl)
                             snackbarHostState.showSnackbar("OAuth2 autorizace byla spuštěna. Dokončete ji v prohlížeči.")
@@ -261,7 +262,7 @@ private fun ConnectionItemCard(
                         Spacer(Modifier.width(8.dp))
                         SuggestionChip(
                             onClick = {},
-                            label = { Text(connection.type.name, style = MaterialTheme.typography.labelSmall) },
+                            label = { Text(connection.provider.name, style = MaterialTheme.typography.labelSmall) },
                         )
                         Spacer(Modifier.width(8.dp))
                         StatusIndicator(connection.state.name)
@@ -330,7 +331,6 @@ private fun CapabilityChip(capability: ConnectionCapability) {
             ConnectionCapability.REPOSITORY -> "Repo" to MaterialTheme.colorScheme.primary
             ConnectionCapability.EMAIL_READ -> "Email Read" to MaterialTheme.colorScheme.secondary
             ConnectionCapability.EMAIL_SEND -> "Email Send" to MaterialTheme.colorScheme.secondary
-            ConnectionCapability.GIT -> "Git" to MaterialTheme.colorScheme.primary
         }
 
     SuggestionChip(
@@ -356,64 +356,68 @@ private fun ConnectionCreateDialog(
     var name by remember { mutableStateOf("") }
     // Provider is the primary selector
     var provider by remember { mutableStateOf(ProviderEnum.GITHUB) }
-    // Auth method for non-email providers
-    var authMethod by remember { mutableStateOf("OAUTH2") }
+    // Auth type determined by provider selection
+    var authType by remember { mutableStateOf(AuthTypeEnum.OAUTH2) }
     // Common fields
     var baseUrl by remember { mutableStateOf("") }
     // Cloud flag for OAuth2 providers (GitHub, GitLab, Atlassian)
     var isCloud by remember { mutableStateOf(true) }
-    // OAuth2 fields
+    // UI state
     var expandedProvider by remember { mutableStateOf(false) }
-    var expandedGitAuthMethod by remember { mutableStateOf(false) }
-    var expandedState by remember { mutableStateOf(false) }
+    var expandedAuthType by remember { mutableStateOf(false) }
 
+    // OAuth2 fields
     var authorizationUrl by remember { mutableStateOf("") }
     var tokenUrl by remember { mutableStateOf("") }
     var clientSecret by remember { mutableStateOf("") }
     var redirectUri by remember { mutableStateOf("") }
     var scope by remember { mutableStateOf("") }
-    // API Token field (for HTTP)
-    var httpBearerToken by remember { mutableStateOf("") }
-    // Email fields (IMAP, POP3, SMTP)
-    var host by remember { mutableStateOf("") }
-    var port by remember { mutableStateOf("") }
+    // Bearer token field
+    var bearerToken by remember { mutableStateOf("") }
+    // Basic auth fields
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    // Email fields
+    var host by remember { mutableStateOf("") }
+    var port by remember { mutableStateOf("") }
     var folderName by remember { mutableStateOf("INBOX") }
     var useSsl by remember { mutableStateOf(true) }
     var useTls by remember { mutableStateOf(true) }
-    // Basic Auth fields for Atlassian API token
-    var httpBasicUsername by remember { mutableStateOf("") }
-    var httpBasicPassword by remember { mutableStateOf("") }
+
+    // Determine if this is a DevOps or Email provider
+    val isDevOpsProvider = ProviderCapabilities.isDevOpsProvider(provider)
+    val isEmailProvider = ProviderCapabilities.isEmailProvider(provider)
+
+    // Get available auth types for this provider
+    val availableAuthTypes = ProviderCapabilities.authTypesForProvider(provider)
+    val availableProtocols = ProviderCapabilities.protocolsForProvider(provider)
+
+    // Protocol (derived from provider for DevOps, selectable for email)
+    var protocol by remember { mutableStateOf(ProtocolEnum.HTTP) }
+    var expandedProtocol by remember { mutableStateOf(false) }
+
+    // Update protocol when provider changes
+    LaunchedEffect(provider) {
+        protocol = availableProtocols.firstOrNull() ?: ProtocolEnum.HTTP
+        authType = availableAuthTypes.firstOrNull() ?: AuthTypeEnum.NONE
+    }
 
     val enabled =
         name.isNotBlank() &&
-            when (provider) {
-                ProviderEnum.IMAP -> {
+            when {
+                isEmailProvider -> {
                     host.isNotBlank() && username.isNotBlank() && password.isNotBlank()
                 }
-
-                else -> {
-                    if (authMethod == "OAUTH2") {
-                        // For OAuth2 cloud: only name required; for on-premise: name and baseUrl required
-                        name.isNotBlank() && (isCloud || baseUrl.isNotBlank())
-                    } else {
-                        // API TOKEN
-                        if (provider == ProviderEnum.ATLASSIAN) {
-                            baseUrl.isNotBlank() && httpBasicUsername.isNotBlank() && httpBasicPassword.isNotBlank()
-                        } else {
-                            baseUrl.isNotBlank() && httpBearerToken.isNotBlank()
-                        }
+                isDevOpsProvider -> {
+                    when (authType) {
+                        AuthTypeEnum.OAUTH2 -> name.isNotBlank() && (isCloud || baseUrl.isNotBlank())
+                        AuthTypeEnum.BEARER -> baseUrl.isNotBlank() && bearerToken.isNotBlank()
+                        AuthTypeEnum.BASIC -> baseUrl.isNotBlank() && username.isNotBlank() && password.isNotBlank()
+                        AuthTypeEnum.NONE -> baseUrl.isNotBlank()
                     }
                 }
+                else -> false
             }
-
-    var selectedTab by remember { mutableStateOf(0) }
-    val tabTitles = listOf("Obecné", "Autentizace")
-
-    val providerOptions = ProviderEnum.entries
-    val authMethodOptions = listOf("OAUTH2", "API TOKEN")
-    val isOAuth2 = provider != ProviderEnum.IMAP && authMethod == "OAUTH2"
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -443,7 +447,7 @@ private fun ConnectionCreateDialog(
                     onExpandedChange = { expandedProvider = !expandedProvider },
                 ) {
                     OutlinedTextField(
-                        value = provider?.name ?: "",
+                        value = provider.name,
                         onValueChange = {},
                         readOnly = true,
                         label = { Text("Provider") },
@@ -457,7 +461,7 @@ private fun ConnectionCreateDialog(
                         expanded = expandedProvider,
                         onDismissRequest = { expandedProvider = false },
                     ) {
-                        providerOptions.forEach { selectionOption ->
+                        ProviderEnum.entries.forEach { selectionOption ->
                             DropdownMenuItem(
                                 text = { Text(selectionOption.name) },
                                 onClick = {
@@ -471,33 +475,68 @@ private fun ConnectionCreateDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Auth method dropdown (only for non-email providers)
-                if (provider != ProviderEnum.IMAP) {
+                // Protocol dropdown (for email providers only)
+                if (isEmailProvider && availableProtocols.size > 1) {
                     ExposedDropdownMenuBox(
-                        expanded = expandedGitAuthMethod,
-                        onExpandedChange = { expandedGitAuthMethod = !expandedGitAuthMethod },
+                        expanded = expandedProtocol,
+                        onExpandedChange = { expandedProtocol = !expandedProtocol },
                     ) {
                         OutlinedTextField(
-                            value = authMethod,
+                            value = protocol.name,
                             onValueChange = {},
                             readOnly = true,
-                            label = { Text("Metoda autentizace") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedGitAuthMethod) },
+                            label = { Text("Protokol") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedProtocol) },
                             modifier =
                                 Modifier
                                     .fillMaxWidth()
                                     .menuAnchor(),
                         )
                         ExposedDropdownMenu(
-                            expanded = expandedGitAuthMethod,
-                            onDismissRequest = { expandedGitAuthMethod = false },
+                            expanded = expandedProtocol,
+                            onDismissRequest = { expandedProtocol = false },
                         ) {
-                            authMethodOptions.forEach { selectionOption ->
+                            availableProtocols.forEach { selectionOption ->
                                 DropdownMenuItem(
-                                    text = { Text(selectionOption) },
+                                    text = { Text(selectionOption.name) },
                                     onClick = {
-                                        authMethod = selectionOption
-                                        expandedGitAuthMethod = false
+                                        protocol = selectionOption
+                                        expandedProtocol = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // Auth type dropdown (for DevOps providers with multiple auth options)
+                if (isDevOpsProvider && availableAuthTypes.size > 1) {
+                    ExposedDropdownMenuBox(
+                        expanded = expandedAuthType,
+                        onExpandedChange = { expandedAuthType = !expandedAuthType },
+                    ) {
+                        OutlinedTextField(
+                            value = authType.name,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Metoda autentizace") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedAuthType) },
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(),
+                        )
+                        ExposedDropdownMenu(
+                            expanded = expandedAuthType,
+                            onDismissRequest = { expandedAuthType = false },
+                        ) {
+                            availableAuthTypes.forEach { selectionOption ->
+                                DropdownMenuItem(
+                                    text = { Text(selectionOption.name) },
+                                    onClick = {
+                                        authType = selectionOption
+                                        expandedAuthType = false
                                     },
                                 )
                             }
@@ -507,7 +546,7 @@ private fun ConnectionCreateDialog(
                 }
 
                 // Cloud checkbox for OAuth2
-                if (provider != ProviderEnum.IMAP && authMethod == "OAUTH2") {
+                if (isDevOpsProvider && authType == AuthTypeEnum.OAUTH2) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth(),
@@ -521,8 +560,8 @@ private fun ConnectionCreateDialog(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // Base URL (for GITHUB, GITLAB, ATLASSIAN) - hidden for cloud OAuth2
-                if (provider != ProviderEnum.IMAP && (authMethod != "OAUTH2" || !isCloud)) {
+                // Base URL (for DevOps providers) - hidden for cloud OAuth2
+                if (isDevOpsProvider && (authType != AuthTypeEnum.OAUTH2 || !isCloud)) {
                     OutlinedTextField(
                         value = baseUrl,
                         onValueChange = { baseUrl = it },
@@ -533,44 +572,43 @@ private fun ConnectionCreateDialog(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-
-                // API Token or Basic Auth field (for non-email providers with API TOKEN)
-                if (provider != ProviderEnum.IMAP && authMethod == "API TOKEN") {
-                    if (provider == ProviderEnum.ATLASSIAN) {
-                        // Show basic auth fields for Atlassian
-                        OutlinedTextField(
-                            value = httpBasicUsername,
-                            onValueChange = { httpBasicUsername = it },
-                            label = { Text("Uživatelské jméno (email)") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        OutlinedTextField(
-                            value = httpBasicPassword,
-                            onValueChange = { httpBasicPassword = it },
-                            label = { Text("API Token") },
-                            singleLine = true,
-                            visualTransformation = PasswordVisualTransformation(),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    } else {
-                        // Show bearer token for GitHub/GitLab
-                        OutlinedTextField(
-                            value = httpBearerToken,
-                            onValueChange = { httpBearerToken = it },
-                            label = { Text("API Token") },
-                            singleLine = true,
-                            visualTransformation = PasswordVisualTransformation(),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
+                // Bearer token field
+                if (isDevOpsProvider && authType == AuthTypeEnum.BEARER) {
+                    OutlinedTextField(
+                        value = bearerToken,
+                        onValueChange = { bearerToken = it },
+                        label = { Text("API Token") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // Email fields (for IMAP)
-                if (provider == ProviderEnum.IMAP) {
+                // Basic auth fields
+                if ((isDevOpsProvider && authType == AuthTypeEnum.BASIC) || isEmailProvider) {
+                    OutlinedTextField(
+                        value = username,
+                        onValueChange = { username = it },
+                        label = { Text(if (provider == ProviderEnum.ATLASSIAN) "Email" else "Uživatelské jméno") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text(if (provider == ProviderEnum.ATLASSIAN) "API Token" else "Heslo") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // Email-specific fields
+                if (isEmailProvider) {
                     OutlinedTextField(
                         value = host,
                         onValueChange = { host = it },
@@ -589,25 +627,6 @@ private fun ConnectionCreateDialog(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    OutlinedTextField(
-                        value = username,
-                        onValueChange = { username = it },
-                        label = { Text("Uživatelské jméno") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = { Text("Heslo") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth(),
@@ -620,78 +639,42 @@ private fun ConnectionCreateDialog(
                     }
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    OutlinedTextField(
-                        value = folderName,
-                        onValueChange = { folderName = it },
-                        label = { Text("Název složky (volitelné)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    if (protocol == ProtocolEnum.IMAP) {
+                        OutlinedTextField(
+                            value = folderName,
+                            onValueChange = { folderName = it },
+                            label = { Text("Název složky (volitelné)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
                 }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    val request =
-                        when (provider) {
-                            ProviderEnum.IMAP -> {
-                                ConnectionCreateRequestDto(
-                                    type = ConnectionTypeEnum.IMAP,
-                                    provider = provider,
-                                    name = name,
-                                    host = host,
-                                    port = port.toIntOrNull(),
-                                    username = username,
-                                    password = password,
-                                    useSsl = useSsl,
-                                    folderName = folderName,
-                                )
-                            }
-
-                            else -> {
-                                if (isOAuth2) {
-                                    // OAuth2 connections: only name, provider, isCloud; credentials managed by server
-                                    ConnectionCreateRequestDto(
-                                        type = ConnectionTypeEnum.OAUTH2,
-                                        provider = provider,
-                                        name = name,
-                                        isCloud = isCloud,
-                                        baseUrl = if (isCloud) null else baseUrl,
-                                        gitProvider = provider.name,
-                                    )
-                                } else {
-                                    if (provider == ProviderEnum.ATLASSIAN) {
-                                        ConnectionCreateRequestDto(
-                                            type = ConnectionTypeEnum.HTTP,
-                                            provider = provider,
-                                            name = name,
-                                            baseUrl = baseUrl,
-                                            authType = HttpAuthTypeEnum.BASIC,
-                                            httpBasicUsername = httpBasicUsername,
-                                            httpBasicPassword = httpBasicPassword,
-                                            gitProvider = provider.name,
-                                        )
-                                    } else {
-                                        ConnectionCreateRequestDto(
-                                            type = ConnectionTypeEnum.HTTP,
-                                            provider = provider,
-                                            name = name,
-                                            baseUrl = baseUrl,
-                                            authType = HttpAuthTypeEnum.BEARER,
-                                            httpBearerToken = httpBearerToken,
-                                            gitProvider = provider.name,
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                    val request = ConnectionCreateRequestDto(
+                        provider = provider,
+                        protocol = protocol,
+                        authType = authType,
+                        name = name,
+                        isCloud = isCloud,
+                        baseUrl = if (isDevOpsProvider && (authType != AuthTypeEnum.OAUTH2 || !isCloud)) baseUrl else null,
+                        username = if (authType == AuthTypeEnum.BASIC || isEmailProvider) username else null,
+                        password = if (authType == AuthTypeEnum.BASIC || isEmailProvider) password else null,
+                        bearerToken = if (authType == AuthTypeEnum.BEARER) bearerToken else null,
+                        host = if (isEmailProvider) host else null,
+                        port = if (isEmailProvider) port.toIntOrNull() else null,
+                        useSsl = if (isEmailProvider) useSsl else null,
+                        folderName = if (isEmailProvider && protocol == ProtocolEnum.IMAP) folderName else null,
+                    )
                     onCreate(request)
                 },
                 enabled = enabled,
             ) {
-                Text(if (isOAuth2) "Authorizovat" else "Vytvořit")
+                Text(if (authType == AuthTypeEnum.OAUTH2) "Authorizovat" else "Vytvořit")
             }
         },
         dismissButton = {
@@ -710,138 +693,52 @@ private fun ConnectionEditDialog(
 ) {
     var name by remember { mutableStateOf(connection.name) }
     var state by remember { mutableStateOf(connection.state) }
-    // Provider and auth method
-    var provider by remember { mutableStateOf<ProviderEnum?>(null) }
-    var authMethod by remember { mutableStateOf("OAUTH2") }
+    var provider by remember { mutableStateOf(connection.provider) }
+    var protocol by remember { mutableStateOf(connection.protocol) }
+    var authType by remember { mutableStateOf(connection.authType) }
+
     // Common fields
-    var baseUrl by remember { mutableStateOf("") }
-    // Cloud flag for OAuth2 providers
-    var isCloud by remember { mutableStateOf(false) }
-    // OAuth2 fields
+    var baseUrl by remember { mutableStateOf(connection.baseUrl ?: "") }
+    var isCloud by remember { mutableStateOf(connection.baseUrl.isNullOrEmpty()) }
+
+    // UI state
     var expandedProvider by remember { mutableStateOf(false) }
-    var expandedGitAuthMethod by remember { mutableStateOf(false) }
-    var expandedState by remember { mutableStateOf(false) }
+    var expandedAuthType by remember { mutableStateOf(false) }
+    var expandedProtocol by remember { mutableStateOf(false) }
 
-    var authorizationUrl by remember { mutableStateOf("") }
-    var tokenUrl by remember { mutableStateOf("") }
-    var clientSecret by remember { mutableStateOf("") }
-    var redirectUri by remember { mutableStateOf("") }
-    var scope by remember { mutableStateOf("") }
-    // API Token
-    var httpBearerToken by remember { mutableStateOf("") }
-    // Basic Auth fields for Atlassian API token
-    var httpBasicUsername by remember { mutableStateOf("") }
-    var httpBasicPassword by remember { mutableStateOf("") }
+    // Bearer token
+    var bearerToken by remember { mutableStateOf(connection.bearerToken ?: "") }
+    // Basic auth
+    var username by remember { mutableStateOf(connection.username ?: "") }
+    var password by remember { mutableStateOf(connection.password ?: "") }
     // Email fields
-    var host by remember { mutableStateOf("") }
-    var port by remember { mutableStateOf("") }
-    var username by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var folderName by remember { mutableStateOf("INBOX") }
-    var useSsl by remember { mutableStateOf(true) }
-    var useTls by remember { mutableStateOf(true) }
+    var host by remember { mutableStateOf(connection.host ?: "") }
+    var port by remember { mutableStateOf(connection.port?.toString() ?: "") }
+    var folderName by remember { mutableStateOf(connection.folderName ?: "INBOX") }
+    var useSsl by remember { mutableStateOf(connection.useSsl ?: true) }
 
-    // Initialize from connection
-    LaunchedEffect(connection) {
-        when (connection.type) {
-            ConnectionTypeEnum.IMAP -> {
-                provider = connection.provider
-                authMethod = "IMAP"
-                host = connection.host ?: ""
-                port = connection.port?.toString() ?: ""
-                username = connection.username ?: ""
-                password = connection.password ?: ""
-                useSsl = connection.useSsl ?: true
-                folderName = connection.folderName ?: "INBOX"
-            }
-
-            ConnectionTypeEnum.OAUTH2 -> {
-                provider = connection.provider
-                authMethod = "OAUTH2"
-                baseUrl = connection.baseUrl ?: ""
-                isCloud = connection.baseUrl.isNullOrEmpty()
-                authorizationUrl = connection.authorizationUrl ?: ""
-                tokenUrl = connection.tokenUrl ?: ""
-                clientSecret = connection.clientSecret ?: ""
-                redirectUri = connection.redirectUri ?: ""
-                scope = connection.scope ?: ""
-            }
-
-            ConnectionTypeEnum.HTTP -> {
-                val base = connection.baseUrl ?: ""
-                provider = connection.provider
-                // Determine authMethod based on authType and fields
-                when (connection.authType) {
-                    HttpAuthTypeEnum.BASIC -> {
-                        if (provider == ProviderEnum.ATLASSIAN) {
-                            authMethod = "API TOKEN"
-                            httpBasicUsername = connection.httpBasicUsername ?: ""
-                            httpBasicPassword = connection.httpBasicPassword ?: ""
-                        } else {
-                            authMethod = "API TOKEN"
-                        }
-                    }
-
-                    HttpAuthTypeEnum.BEARER -> {
-                        authMethod = "API TOKEN"
-                        httpBearerToken = connection.httpBearerToken ?: ""
-                    }
-
-                    else -> {
-                        // Fallback: check fields
-                        if (connection.httpBearerToken?.isNotBlank() == true) {
-                            authMethod = "API TOKEN"
-                            httpBearerToken = connection.httpBearerToken ?: ""
-                        } else if (connection.authorizationUrl?.isNotBlank() == true || connection.tokenUrl?.isNotBlank() == true) {
-                            authMethod = "OAUTH2"
-                            authorizationUrl = connection.authorizationUrl ?: ""
-                            tokenUrl = connection.tokenUrl ?: ""
-                            clientSecret = connection.clientSecret ?: ""
-                            redirectUri = connection.redirectUri ?: ""
-                            scope = connection.scope ?: ""
-                        } else {
-                            authMethod = "API TOKEN"
-                        }
-                    }
-                }
-                baseUrl = base
-            }
-
-            else -> {
-                provider = connection.provider
-                authMethod = "OAUTH2"
-            }
-        }
-    }
+    // Determine if this is a DevOps or Email provider
+    val isDevOpsProvider = ProviderCapabilities.isDevOpsProvider(provider)
+    val isEmailProvider = ProviderCapabilities.isEmailProvider(provider)
+    val availableAuthTypes = ProviderCapabilities.authTypesForProvider(provider)
+    val availableProtocols = ProviderCapabilities.protocolsForProvider(provider)
 
     val enabled =
         name.isNotBlank() &&
-            when (provider) {
-                ProviderEnum.IMAP -> {
+            when {
+                isEmailProvider -> {
                     host.isNotBlank() && username.isNotBlank() && password.isNotBlank()
                 }
-
-                else -> {
-                    if (authMethod == "OAUTH2") {
-                        // For OAuth2 cloud: only name required; for on-premise: name and baseUrl required
-                        name.isNotBlank() && (isCloud || baseUrl.isNotBlank())
-                    } else {
-                        // API TOKEN
-                        if (provider == ProviderEnum.ATLASSIAN) {
-                            baseUrl.isNotBlank() && httpBasicUsername.isNotBlank() && httpBasicPassword.isNotBlank()
-                        } else {
-                            baseUrl.isNotBlank() && httpBearerToken.isNotBlank()
-                        }
+                isDevOpsProvider -> {
+                    when (authType) {
+                        AuthTypeEnum.OAUTH2 -> name.isNotBlank() && (isCloud || baseUrl.isNotBlank())
+                        AuthTypeEnum.BEARER -> baseUrl.isNotBlank() && bearerToken.isNotBlank()
+                        AuthTypeEnum.BASIC -> baseUrl.isNotBlank() && username.isNotBlank() && password.isNotBlank()
+                        AuthTypeEnum.NONE -> baseUrl.isNotBlank()
                     }
                 }
+                else -> false
             }
-
-    var selectedTab by remember { mutableStateOf(0) }
-    val tabTitles = listOf("Obecné", "Autentizace")
-
-    val providerOptions = ProviderEnum.entries
-    val authMethodOptions = listOf("OAUTH2", "API TOKEN")
-    val isOAuth2 = (provider == ProviderEnum.GITHUB || provider == ProviderEnum.GITLAB || provider == ProviderEnum.ATLASSIAN) && authMethod == "OAUTH2"
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -871,7 +768,7 @@ private fun ConnectionEditDialog(
                     onExpandedChange = { expandedProvider = !expandedProvider },
                 ) {
                     OutlinedTextField(
-                        value = provider?.name ?: "",
+                        value = provider.name,
                         onValueChange = {},
                         readOnly = true,
                         label = { Text("Provider") },
@@ -885,7 +782,7 @@ private fun ConnectionEditDialog(
                         expanded = expandedProvider,
                         onDismissRequest = { expandedProvider = false },
                     ) {
-                        providerOptions.forEach { selectionOption ->
+                        ProviderEnum.entries.forEach { selectionOption ->
                             DropdownMenuItem(
                                 text = { Text(selectionOption.name) },
                                 onClick = {
@@ -899,33 +796,68 @@ private fun ConnectionEditDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Auth method dropdown (only for non-email providers, hidden for OAuth2)
-                if (provider != ProviderEnum.IMAP && !isOAuth2) {
+                // Protocol dropdown (for email providers only)
+                if (isEmailProvider && availableProtocols.size > 1) {
                     ExposedDropdownMenuBox(
-                        expanded = expandedGitAuthMethod,
-                        onExpandedChange = { expandedGitAuthMethod = !expandedGitAuthMethod },
+                        expanded = expandedProtocol,
+                        onExpandedChange = { expandedProtocol = !expandedProtocol },
                     ) {
                         OutlinedTextField(
-                            value = authMethod,
+                            value = protocol.name,
                             onValueChange = {},
                             readOnly = true,
-                            label = { Text("Metoda autentizace") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedGitAuthMethod) },
+                            label = { Text("Protokol") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedProtocol) },
                             modifier =
                                 Modifier
                                     .fillMaxWidth()
                                     .menuAnchor(),
                         )
                         ExposedDropdownMenu(
-                            expanded = expandedGitAuthMethod,
-                            onDismissRequest = { expandedGitAuthMethod = false },
+                            expanded = expandedProtocol,
+                            onDismissRequest = { expandedProtocol = false },
                         ) {
-                            authMethodOptions.forEach { selectionOption ->
+                            availableProtocols.forEach { selectionOption ->
                                 DropdownMenuItem(
-                                    text = { Text(selectionOption) },
+                                    text = { Text(selectionOption.name) },
                                     onClick = {
-                                        authMethod = selectionOption
-                                        expandedGitAuthMethod = false
+                                        protocol = selectionOption
+                                        expandedProtocol = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // Auth type dropdown (for DevOps providers with multiple auth options)
+                if (isDevOpsProvider && availableAuthTypes.size > 1) {
+                    ExposedDropdownMenuBox(
+                        expanded = expandedAuthType,
+                        onExpandedChange = { expandedAuthType = !expandedAuthType },
+                    ) {
+                        OutlinedTextField(
+                            value = authType.name,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Metoda autentizace") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedAuthType) },
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(),
+                        )
+                        ExposedDropdownMenu(
+                            expanded = expandedAuthType,
+                            onDismissRequest = { expandedAuthType = false },
+                        ) {
+                            availableAuthTypes.forEach { selectionOption ->
+                                DropdownMenuItem(
+                                    text = { Text(selectionOption.name) },
+                                    onClick = {
+                                        authType = selectionOption
+                                        expandedAuthType = false
                                     },
                                 )
                             }
@@ -935,7 +867,7 @@ private fun ConnectionEditDialog(
                 }
 
                 // Cloud checkbox for OAuth2
-                if (provider != ProviderEnum.IMAP && authMethod == "OAUTH2") {
+                if (isDevOpsProvider && authType == AuthTypeEnum.OAUTH2) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth(),
@@ -947,10 +879,17 @@ private fun ConnectionEditDialog(
                         Text("Cloud (veřejný GitHub/GitLab/Atlassian)", modifier = Modifier.weight(1f))
                     }
                     Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        "Přihlašovací údaje pro OAuth2 jsou spravovány automaticky serverem.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // Base URL (for GITHUB, GITLAB, ATLASSIAN) - hidden for cloud OAuth2
-                if (provider != ProviderEnum.IMAP && (authMethod != "OAUTH2" || !isCloud)) {
+                // Base URL (for DevOps providers) - hidden for cloud OAuth2
+                if (isDevOpsProvider && (authType != AuthTypeEnum.OAUTH2 || !isCloud)) {
                     OutlinedTextField(
                         value = baseUrl,
                         onValueChange = { baseUrl = it },
@@ -961,53 +900,43 @@ private fun ConnectionEditDialog(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // OAuth2 info message (for OAuth2 connections)
-                if (isOAuth2) {
-                    Text(
-                        "Přihlašovací údaje pro OAuth2 jsou spravovány automaticky serverem a zde se nedají upravovat.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                // Bearer token field
+                if (isDevOpsProvider && authType == AuthTypeEnum.BEARER) {
+                    OutlinedTextField(
+                        value = bearerToken,
+                        onValueChange = { bearerToken = it },
+                        label = { Text("API Token") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // API Token / Basic Auth fields (for non-email providers with API TOKEN)
-                if (provider != ProviderEnum.IMAP && authMethod == "API TOKEN") {
-                    if (provider == ProviderEnum.ATLASSIAN) {
-                        // Atlassian uses Basic Auth (username + token)
-                        OutlinedTextField(
-                            value = httpBasicUsername,
-                            onValueChange = { httpBasicUsername = it },
-                            label = { Text("Username") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = httpBasicPassword,
-                            onValueChange = { httpBasicPassword = it },
-                            label = { Text("API Token") },
-                            singleLine = true,
-                            visualTransformation = PasswordVisualTransformation(),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                    } else {
-                        // GitHub/GitLab use Bearer Token
-                        OutlinedTextField(
-                            value = httpBearerToken,
-                            onValueChange = { httpBearerToken = it },
-                            label = { Text("API Token") },
-                            singleLine = true,
-                            visualTransformation = PasswordVisualTransformation(),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
+                // Basic auth fields
+                if ((isDevOpsProvider && authType == AuthTypeEnum.BASIC) || isEmailProvider) {
+                    OutlinedTextField(
+                        value = username,
+                        onValueChange = { username = it },
+                        label = { Text(if (provider == ProviderEnum.ATLASSIAN) "Email" else "Uživatelské jméno") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text(if (provider == ProviderEnum.ATLASSIAN) "API Token" else "Heslo") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // Email fields (for IMAP)
-                if (provider == ProviderEnum.IMAP) {
+                // Email-specific fields
+                if (isEmailProvider) {
                     OutlinedTextField(
                         value = host,
                         onValueChange = { host = it },
@@ -1026,25 +955,6 @@ private fun ConnectionEditDialog(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    OutlinedTextField(
-                        value = username,
-                        onValueChange = { username = it },
-                        label = { Text("Uživatelské jméno") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = { Text("Heslo") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth(),
@@ -1057,92 +967,41 @@ private fun ConnectionEditDialog(
                     }
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    OutlinedTextField(
-                        value = folderName,
-                        onValueChange = { folderName = it },
-                        label = { Text("Název složky (volitelné)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    if (protocol == ProtocolEnum.IMAP) {
+                        OutlinedTextField(
+                            value = folderName,
+                            onValueChange = { folderName = it },
+                            label = { Text("Název složky (volitelné)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
                 }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    provider?.let { prov ->
-                        val request =
-                            when (prov) {
-                                ProviderEnum.IMAP -> {
-                                    ConnectionUpdateRequestDto(
-                                        name = name,
-                                        provider = prov,
-                                        host = host,
-                                        port = port.toIntOrNull(),
-                                        username = username,
-                                        password = password,
-                                        useSsl = useSsl,
-                                        folderName = folderName,
-                                    )
-                                }
-
-                                else -> {
-                                    if (authMethod == "OAUTH2") {
-                                        // OAuth2 connections: only name, baseUrl, state, isCloud are editable; credentials managed by server
-                                        ConnectionUpdateRequestDto(
-                                            name = name,
-                                            isCloud = isCloud,
-                                            baseUrl = if (isCloud) null else baseUrl,
-                                            state = state,
-                                            gitProvider =
-                                                if (prov in listOf(ProviderEnum.GITHUB, ProviderEnum.GITLAB)) {
-                                                    prov.name
-                                                } else {
-                                                    null
-                                                },
-                                        )
-                                    } else {
-                                        // API TOKEN
-                                        if (prov == ProviderEnum.ATLASSIAN) {
-                                            ConnectionUpdateRequestDto(
-                                                name = name,
-                                                provider = prov,
-                                                baseUrl = baseUrl,
-                                                authType = HttpAuthTypeEnum.BASIC,
-                                                httpBasicUsername = httpBasicUsername,
-                                                httpBasicPassword = httpBasicPassword,
-                                                state = state,
-                                                gitProvider = null,
-                                            )
-                                        } else {
-                                            ConnectionUpdateRequestDto(
-                                                name = name,
-                                                provider = prov,
-                                                baseUrl = baseUrl,
-                                                authType = HttpAuthTypeEnum.BEARER,
-                                                httpBearerToken = httpBearerToken,
-                                                state = state,
-                                                gitProvider =
-                                                    if (prov in
-                                                        listOf(
-                                                            ProviderEnum.GITHUB,
-                                                            ProviderEnum.GITLAB,
-                                                        )
-                                                    ) {
-                                                        prov.name
-                                                    } else {
-                                                        null
-                                                    },
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        onSave(connection.id, request)
-                    }
+                    val request = ConnectionUpdateRequestDto(
+                        name = name,
+                        provider = provider,
+                        protocol = protocol,
+                        authType = authType,
+                        state = state,
+                        isCloud = if (authType == AuthTypeEnum.OAUTH2) isCloud else null,
+                        baseUrl = if (isDevOpsProvider && (authType != AuthTypeEnum.OAUTH2 || !isCloud)) baseUrl else null,
+                        username = if (authType == AuthTypeEnum.BASIC || isEmailProvider) username else null,
+                        password = if (authType == AuthTypeEnum.BASIC || isEmailProvider) password else null,
+                        bearerToken = if (authType == AuthTypeEnum.BEARER) bearerToken else null,
+                        host = if (isEmailProvider) host else null,
+                        port = if (isEmailProvider) port.toIntOrNull() else null,
+                        useSsl = if (isEmailProvider) useSsl else null,
+                        folderName = if (isEmailProvider && protocol == ProtocolEnum.IMAP) folderName else null,
+                    )
+                    onSave(connection.id, request)
                 },
-                enabled = enabled && provider != null,
+                enabled = enabled,
             ) {
                 Text("Uložit")
             }

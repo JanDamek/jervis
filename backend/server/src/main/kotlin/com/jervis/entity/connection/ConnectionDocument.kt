@@ -1,8 +1,11 @@
 package com.jervis.entity.connection
 
 import com.jervis.common.types.ConnectionId
+import com.jervis.dto.connection.AuthTypeEnum
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionStateEnum
+import com.jervis.dto.connection.ProtocolEnum
+import com.jervis.dto.connection.ProviderCapabilities
 import com.jervis.dto.connection.ProviderEnum
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.CompoundIndex
@@ -10,70 +13,91 @@ import org.springframework.data.mongodb.core.index.CompoundIndexes
 import org.springframework.data.mongodb.core.mapping.Document
 
 /**
- * Sealed class hierarchy for all external service connections.
+ * Connection document - represents a connection to an external service.
  *
- * Stored directly in MongoDB as a discriminated union.
- * Spring Data MongoDB handles polymorphism automatically.
- *
- * NO domain/entity mappings are needed - entity is used directly in services.
- * Entity stops/starts at the Controller boundary (REST DTOs only there).
- *
- * Supported connection types:
- * - HttpConnectionDocument: REST APIs, Atlassian, Link Scraper
- * - ImapConnectionDocument: Email receiving
- * - Pop3ConnectionDocument: Email receiving (alternative)
- * - SmtpConnectionDocument: Email sending
- * - OAuth2ConnectionDocument: OAuth2 flows
- *
- * Future: SlackConnection, TeamsConnection, DiscordConnection, WebSocketConnection, etc.
+ * Architecture:
+ * - provider: WHERE we connect (GitHub, GitLab, Atlassian, Google, etc.)
+ * - protocol: HOW we communicate (HTTP, IMAP, POP3, SMTP)
+ * - authType: HOW we authenticate (NONE, BASIC, BEARER, OAUTH2)
+ * - capabilities: WHAT the connection can do (derived from provider/protocol)
  */
 @Document(collection = "connections")
 @CompoundIndexes(
     CompoundIndex(name = "name_unique_idx", def = "{'name': 1}", unique = true),
     CompoundIndex(name = "state_idx", def = "{'state': 1}"),
+    CompoundIndex(name = "provider_idx", def = "{'provider': 1}"),
 )
 data class ConnectionDocument(
     @Id
     val id: ConnectionId = ConnectionId.generate(),
     val name: String,
+
+    // Core architecture: provider + protocol + authType
     val provider: ProviderEnum,
+    val protocol: ProtocolEnum = ProtocolEnum.HTTP,
+    val authType: AuthTypeEnum = AuthTypeEnum.NONE,
+
+    // State and rate limiting
     var state: ConnectionStateEnum = ConnectionStateEnum.NEW,
     val rateLimitConfig: RateLimitConfig = RateLimitConfig(maxRequestsPerSecond = 10, maxRequestsPerMinute = 100),
+
+    // Capabilities (derived from provider/protocol, stored for query optimization)
+    val availableCapabilities: Set<ConnectionCapability> = emptySet(),
+
+    // HTTP/API configuration (for DevOps providers)
     val baseUrl: String = "",
-    val credentials: HttpCredentials? = null,
     val timeoutMs: Long = 30000,
-    val host: String? = null,
-    val port: Int = 993,
+
+    // Authentication credentials
     val username: String? = null,
-    val password: String? = null, // Plain text!
-    val useSsl: Boolean = true,
-    val folderName: String = "INBOX",
+    val password: String? = null,       // For BASIC auth or email - Plain text!
+    val bearerToken: String? = null,    // For BEARER auth - Plain text!
+
+    // OAuth2 specific
     val authorizationUrl: String? = null,
     val tokenUrl: String? = null,
-    val clientSecret: String? = null, // Plain text!
+    val clientSecret: String? = null,   // Plain text!
     val scopes: List<String> = emptyList(),
     val redirectUri: String? = null,
-    val connectionType: ConnectionTypeEnum,
+
+    // Email configuration (for email providers)
+    val host: String? = null,
+    val port: Int = 993,
+    val useSsl: Boolean = true,
     val useTls: Boolean? = null,
-    val gitRemoteUrl: String? = null,
-    val gitProvider: com.jervis.domain.git.GitProviderEnum? = null,
-    val gitConfig: com.jervis.domain.git.GitConfig? = null,
-    // Atlassian multi-purpose connection fields (internal to provider layer if possible, but kept here for schema compatibility)
+    val folderName: String = "INBOX",
+
+    // Provider-specific resource identifiers (optional)
     val jiraProjectKey: String? = null,
     val confluenceSpaceKey: String? = null,
     val confluenceRootPageId: String? = null,
     val bitbucketRepoSlug: String? = null,
-    /**
-     * Capabilities this connection provides.
-     * A connection can support multiple capabilities:
-     * - BUGTRACKER: Issue tracking (Jira, GitHub Issues, GitLab Issues)
-     * - WIKI: Documentation/wiki pages (Confluence, GitHub Wiki, GitLab Wiki)
-     * - REPOSITORY: Source code repository (GitHub, GitLab, Bitbucket)
-     * - EMAIL: Email capabilities (IMAP, SMTP, POP3)
-     * - GIT: Git operations
-     */
-    val availableCapabilities: Set<ConnectionCapability> = emptySet(),
+    val gitRemoteUrl: String? = null,
+
+    // Legacy fields (deprecated, kept for backwards compatibility)
+    @Deprecated("Use protocol instead")
+    val connectionType: ConnectionTypeEnum? = null,
+    @Deprecated("Use bearerToken/username/password instead")
+    val credentials: HttpCredentials? = null,
+    @Deprecated("Removed - not needed")
+    val gitProvider: com.jervis.domain.git.GitProviderEnum? = null,
+    @Deprecated("Removed - not needed")
+    val gitConfig: com.jervis.domain.git.GitConfig? = null,
 ) {
+    /**
+     * Get capabilities for this connection.
+     * Uses stored value if available, otherwise derives from provider/protocol.
+     */
+    fun getCapabilities(): Set<ConnectionCapability> {
+        return if (availableCapabilities.isNotEmpty()) {
+            availableCapabilities
+        } else {
+            ProviderCapabilities.forProviderAndProtocol(provider, protocol)
+        }
+    }
+
+    // Legacy enum (deprecated)
+    @Deprecated("Use ProtocolEnum from DTO instead")
     enum class ConnectionTypeEnum {
         HTTP,
         IMAP,
@@ -85,7 +109,6 @@ data class ConnectionDocument(
 
     /**
      * Rate limit configuration.
-     * Applied per domain/host (not per connection).
      */
     data class RateLimitConfig(
         val maxRequestsPerSecond: Int,
@@ -93,8 +116,10 @@ data class ConnectionDocument(
     )
 
     /**
-     * Credentials for HTTP connections (sealed class for type safety).
+     * Legacy credentials for HTTP connections (deprecated).
+     * Use authType + username/password/bearerToken instead.
      */
+    @Deprecated("Use authType + username/password/bearerToken instead")
     sealed class HttpCredentials {
         abstract fun toAuthHeader(): String
 
@@ -104,10 +129,7 @@ data class ConnectionDocument(
         ) : HttpCredentials() {
             override fun toAuthHeader(): String {
                 val credentials = "$username:$password"
-                val encoded =
-                    java.util.Base64
-                        .getEncoder()
-                        .encodeToString(credentials.toByteArray())
+                val encoded = java.util.Base64.getEncoder().encodeToString(credentials.toByteArray())
                 return "Basic $encoded"
             }
         }
@@ -118,16 +140,50 @@ data class ConnectionDocument(
             override fun toAuthHeader(): String = "Bearer $token"
         }
     }
+
+    /**
+     * Generate Authorization header based on authType.
+     */
+    fun toAuthHeader(): String? {
+        // First check new fields
+        return when (authType) {
+            AuthTypeEnum.BASIC -> {
+                val user = username ?: return null
+                val pass = password ?: ""
+                val credentials = "$user:$pass"
+                val encoded = java.util.Base64.getEncoder().encodeToString(credentials.toByteArray())
+                "Basic $encoded"
+            }
+            AuthTypeEnum.BEARER -> {
+                val token = bearerToken ?: return null
+                "Bearer $token"
+            }
+            AuthTypeEnum.OAUTH2 -> {
+                // OAuth2 uses bearer token after authorization
+                val token = bearerToken ?: return null
+                "Bearer $token"
+            }
+            AuthTypeEnum.NONE -> null
+        } ?: credentials?.toAuthHeader() // Fallback to legacy credentials
+    }
 }
 
-fun ConnectionDocument.HttpCredentials.toAuthType(): com.jervis.dto.connection.HttpAuthTypeEnum =
+// Legacy extension functions (deprecated)
+@Deprecated("Use AuthTypeEnum from DTO instead")
+fun ConnectionDocument.HttpCredentials.toAuthType(): AuthTypeEnum =
     when (this) {
-        is ConnectionDocument.HttpCredentials.Basic -> com.jervis.dto.connection.HttpAuthTypeEnum.BASIC
-        is ConnectionDocument.HttpCredentials.Bearer -> com.jervis.dto.connection.HttpAuthTypeEnum.BEARER
+        is ConnectionDocument.HttpCredentials.Basic -> AuthTypeEnum.BASIC
+        is ConnectionDocument.HttpCredentials.Bearer -> AuthTypeEnum.BEARER
     }
 
-fun ConnectionDocument.HttpCredentials.basicUsername(): String? = (this as? ConnectionDocument.HttpCredentials.Basic)?.username
+@Deprecated("Use ConnectionDocument.username instead")
+fun ConnectionDocument.HttpCredentials.basicUsername(): String? =
+    (this as? ConnectionDocument.HttpCredentials.Basic)?.username
 
-fun ConnectionDocument.HttpCredentials.basicPassword(): String? = (this as? ConnectionDocument.HttpCredentials.Basic)?.password
+@Deprecated("Use ConnectionDocument.password instead")
+fun ConnectionDocument.HttpCredentials.basicPassword(): String? =
+    (this as? ConnectionDocument.HttpCredentials.Basic)?.password
 
-fun ConnectionDocument.HttpCredentials.bearerToken(): String? = (this as? ConnectionDocument.HttpCredentials.Bearer)?.token
+@Deprecated("Use ConnectionDocument.bearerToken instead")
+fun ConnectionDocument.HttpCredentials.bearerToken(): String? =
+    (this as? ConnectionDocument.HttpCredentials.Bearer)?.token
