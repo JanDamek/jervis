@@ -1,9 +1,8 @@
 package com.jervis.rpc
 
+import com.jervis.common.types.ConnectionId
 import com.jervis.configuration.properties.KtorClientProperties
-import com.jervis.types.ConnectionId
 import io.ktor.http.HttpStatusCode
-import io.ktor.server.application.call
 import io.ktor.server.application.install
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
@@ -14,13 +13,13 @@ import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
-import org.bson.types.ObjectId
 import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
 import kotlinx.rpc.krpc.ktor.server.rpc
 import kotlinx.rpc.krpc.serialization.cbor.cbor
 import kotlinx.serialization.ExperimentalSerializationApi
 import mu.KotlinLogging
+import org.bson.types.ObjectId
 import org.springframework.stereotype.Component
 
 @Component
@@ -29,7 +28,6 @@ class KtorRpcServer(
     private val clientRpcImpl: ClientRpcImpl,
     private val projectRpcImpl: ProjectRpcImpl,
     private val userTaskRpcImpl: UserTaskRpcImpl,
-    private val ragSearchRpcImpl: RagSearchRpcImpl,
     private val taskSchedulingRpcImpl: TaskSchedulingRpcImpl,
     private val agentOrchestratorRpcImpl: AgentOrchestratorRpcImpl,
     private val errorLogRpcImpl: ErrorLogRpcImpl,
@@ -41,6 +39,7 @@ class KtorRpcServer(
     private val bugTrackerSetupRpcImpl: BugTrackerSetupRpcImpl,
     private val integrationSettingsRpcImpl: IntegrationSettingsRpcImpl,
     private val oauth2Service: com.jervis.service.oauth2.OAuth2Service,
+    private val migrationService: com.jervis.service.migration.ConnectionCapabilityMigrationService,
     private val properties: KtorClientProperties,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -63,15 +62,23 @@ class KtorRpcServer(
 
                             // OAuth2 routes
                             get("/oauth2/authorize/{connectionId}") {
-                                val connectionId = call.parameters["connectionId"]
-                                    ?: return@get call.respondText("Missing connectionId", status = HttpStatusCode.BadRequest)
+                                val connectionId =
+                                    call.parameters["connectionId"]
+                                        ?: return@get call.respondText(
+                                            "Missing connectionId",
+                                            status = HttpStatusCode.BadRequest,
+                                        )
 
                                 try {
-                                    val response = oauth2Service.getAuthorizationUrl(ConnectionId(ObjectId(connectionId)))
+                                    val response =
+                                        oauth2Service.getAuthorizationUrl(ConnectionId(ObjectId(connectionId)))
                                     call.respondRedirect(response.authorizationUrl)
                                 } catch (e: Exception) {
                                     logger.error(e) { "OAuth2 authorization failed" }
-                                    call.respondText("Authorization failed: ${e.message}", status = HttpStatusCode.InternalServerError)
+                                    call.respondText(
+                                        "Authorization failed: ${e.message}",
+                                        status = HttpStatusCode.InternalServerError,
+                                    )
                                 }
                             }
 
@@ -85,7 +92,7 @@ class KtorRpcServer(
                                     return@get call.respondText(
                                         "<html><body><h1>Authorization Failed</h1><p>$error: $errorDescription</p></body></html>",
                                         io.ktor.http.ContentType.Text.Html,
-                                        HttpStatusCode.BadRequest
+                                        HttpStatusCode.BadRequest,
                                     )
                                 }
 
@@ -93,7 +100,7 @@ class KtorRpcServer(
                                     return@get call.respondText(
                                         "<html><body><h1>Invalid Request</h1><p>Missing code or state parameter.</p></body></html>",
                                         io.ktor.http.ContentType.Text.Html,
-                                        HttpStatusCode.BadRequest
+                                        HttpStatusCode.BadRequest,
                                     )
                                 }
 
@@ -113,25 +120,30 @@ class KtorRpcServer(
                                             </body>
                                             </html>
                                             """.trimIndent(),
-                                            io.ktor.http.ContentType.Text.Html
+                                            io.ktor.http.ContentType.Text.Html,
                                         )
                                     }
+
                                     is com.jervis.service.oauth2.OAuth2CallbackResult.InvalidState -> {
                                         call.respondText(
                                             "<html><body><h1>Invalid State</h1><p>Authorization state not found or expired.</p></body></html>",
                                             io.ktor.http.ContentType.Text.Html,
-                                            HttpStatusCode.BadRequest
+                                            HttpStatusCode.BadRequest,
                                         )
                                     }
+
                                     is com.jervis.service.oauth2.OAuth2CallbackResult.Error -> {
                                         call.respondText(
                                             "<html><body><h1>Authorization Failed</h1><p>${result.message}</p></body></html>",
                                             io.ktor.http.ContentType.Text.Html,
-                                            HttpStatusCode.InternalServerError
+                                            HttpStatusCode.InternalServerError,
                                         )
                                     }
                                 }
                             }
+
+                            // Migration routes
+                            migrationRoutes(migrationService)
 
                             rpc("/rpc") {
                                 rpcConfig {
@@ -143,7 +155,6 @@ class KtorRpcServer(
                                 registerService<com.jervis.service.IClientService> { clientRpcImpl }
                                 registerService<com.jervis.service.IProjectService> { projectRpcImpl }
                                 registerService<com.jervis.service.IUserTaskService> { userTaskRpcImpl }
-                                registerService<com.jervis.service.IRagSearchService> { ragSearchRpcImpl }
                                 registerService<com.jervis.service.ITaskSchedulingService> { taskSchedulingRpcImpl }
                                 registerService<com.jervis.service.IAgentOrchestratorService> { agentOrchestratorRpcImpl }
                                 registerService<com.jervis.service.IErrorLogService> { errorLogRpcImpl }

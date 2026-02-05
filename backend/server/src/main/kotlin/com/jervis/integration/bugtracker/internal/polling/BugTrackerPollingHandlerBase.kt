@@ -1,5 +1,9 @@
 package com.jervis.integration.bugtracker.internal.polling
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ConnectionId
+import com.jervis.common.types.ProjectId
+import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.ProjectDocument
 import com.jervis.entity.connection.ConnectionDocument
@@ -9,9 +13,7 @@ import com.jervis.service.polling.PollingResult
 import com.jervis.service.polling.PollingStateService
 import com.jervis.service.polling.handler.PollingContext
 import com.jervis.service.polling.handler.PollingHandler
-import com.jervis.types.ClientId
-import com.jervis.types.ConnectionId
-import com.jervis.types.ProjectId
+import com.jervis.service.polling.handler.ResourceFilter
 import mu.KotlinLogging
 import java.time.Instant
 
@@ -33,10 +35,10 @@ import java.time.Instant
 abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
     protected val pollingStateService: PollingStateService,
     protected val clientService: ClientService,
-) : PollingHandler {
+) {
     protected val logger = KotlinLogging.logger {}
 
-    override suspend fun poll(
+    suspend fun poll(
         connectionDocument: ConnectionDocument,
         context: PollingContext,
     ): PollingResult {
@@ -56,9 +58,26 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
             client: ClientDocument,
             project: ProjectDocument?,
         ) {
+            // Check capability configuration - get resource filter
+            val resourceFilter =
+                if (project != null) {
+                    context.getProjectResourceFilter(project.id, client.id, ConnectionCapability.BUGTRACKER)
+                } else {
+                    context.getResourceFilter(client.id, ConnectionCapability.BUGTRACKER)
+                }
+
+            // Skip if capability is disabled (null filter)
+            if (resourceFilter == null) {
+                logger.debug {
+                    "    Skipping ${getSystemName()} for ${if (project != null) "project ${project.name}" else "client ${client.name}"}: " +
+                        "BUGTRACKER capability disabled"
+                }
+                return
+            }
+
             try {
                 logger.debug { "    Polling ${getSystemName()} for client: ${client.name}" }
-                val result = pollClientIssues(connectionDocument, client, project)
+                val result = pollClientIssues(connectionDocument, client, project, resourceFilter)
                 totalDiscovered += result.itemsDiscovered
                 totalCreated += result.itemsCreated
                 totalSkipped += result.itemsSkipped
@@ -98,18 +117,21 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
 
     /**
      * Poll issues for a single client.
+     *
+     * @param resourceFilter Filter to determine which projects/issues to index
      */
     private suspend fun pollClientIssues(
         connectionDocument: ConnectionDocument,
         client: ClientDocument,
         project: ProjectDocument?,
+        resourceFilter: ResourceFilter,
     ): PollingResult {
         val credentials =
             requireNotNull(connectionDocument.credentials) { "HTTP credentials required for ${getSystemName()} polling" }
 
         // Get last polling state for incremental polling
-        val state = pollingStateService.getState(connectionDocument.id, getToolName())
-        val query = buildQuery(client, connectionDocument, state?.lastSeenUpdatedAt)
+        val state = pollingStateService.getState(connectionDocument.id, connectionDocument.provider)
+        val query = buildQuery(client, connectionDocument, state?.lastSeenUpdatedAt, resourceFilter)
 
         logger.debug { "Polling ${getSystemName()} for client ${client.name} with query: $query" }
 
@@ -145,7 +167,7 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
             // Save progress every 100 items to prevent re-downloading on interruption
             if ((index + 1) % 100 == 0) {
                 val maxUpdated = state?.lastSeenUpdatedAt?.let { maxOf(it, latestUpdatedAt) } ?: latestUpdatedAt
-                pollingStateService.updateWithTimestamp(connectionDocument.id, getToolName(), maxUpdated)
+                pollingStateService.updateWithTimestamp(connectionDocument.id, connectionDocument.provider, maxUpdated)
                 logger.debug { "${getSystemName()} progress saved: processed ${index + 1}/${fullIssues.size}" }
             }
         }
@@ -156,7 +178,7 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
         // Use latest issue timestamp if available, otherwise use current time to mark polling completion
         val finalUpdatedAt = latestUpdatedAt ?: state?.lastSeenUpdatedAt ?: Instant.now()
         val maxUpdated = state?.lastSeenUpdatedAt?.let { maxOf(it, finalUpdatedAt) } ?: finalUpdatedAt
-        pollingStateService.updateWithTimestamp(connectionDocument.id, getToolName(), maxUpdated)
+        pollingStateService.updateWithTimestamp(connectionDocument.id, connectionDocument.provider, maxUpdated)
         logger.debug { "${getSystemName()} polling state saved: lastSeenUpdatedAt=$maxUpdated" }
 
         return PollingResult(
@@ -178,11 +200,14 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
 
     /**
      * Build query for fetching issues (JQL for Atlassian Jira, YouTrack query, etc.)
+     *
+     * @param resourceFilter Filter to restrict which projects to query (if IndexSelected, filter by project keys)
      */
     protected abstract fun buildQuery(
         client: ClientDocument?,
         connectionDocument: ConnectionDocument,
         lastSeenUpdatedAt: Instant?,
+        resourceFilter: ResourceFilter,
     ): String
 
     /**

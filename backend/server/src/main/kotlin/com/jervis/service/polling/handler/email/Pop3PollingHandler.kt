@@ -1,11 +1,12 @@
 package com.jervis.service.polling.handler.email
 
+import com.jervis.common.types.ProjectId
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.repository.EmailMessageIndexRepository
 import com.jervis.service.polling.PollingResult
 import com.jervis.service.polling.PollingStateService
-import com.jervis.types.ProjectId
+import com.jervis.service.polling.handler.ResourceFilter
 import jakarta.mail.Folder
 import jakarta.mail.Session
 import kotlinx.coroutines.Dispatchers
@@ -29,7 +30,7 @@ class Pop3PollingHandler(
     repository: EmailMessageIndexRepository,
     private val pollingStateService: PollingStateService,
 ) : EmailPollingHandlerBase(repository) {
-    override fun canHandle(connectionDocument: ConnectionDocument): Boolean =
+    fun canHandle(connectionDocument: ConnectionDocument): Boolean =
         connectionDocument.connectionType == ConnectionDocument.ConnectionTypeEnum.POP3
 
     override fun getProtocolName(): String = "POP3"
@@ -38,6 +39,7 @@ class Pop3PollingHandler(
         connectionDocument: ConnectionDocument,
         client: ClientDocument,
         projectId: ProjectId?,
+        resourceFilter: ResourceFilter,
     ): PollingResult =
         withContext(Dispatchers.IO) {
             logger.debug { "Polling POP3 ${connectionDocument.name} for client ${client.name}" }
@@ -97,7 +99,7 @@ class Pop3PollingHandler(
                     }
 
                     // Load polling state
-                    val pollingState = pollingStateService.getState(connectionDocument.id, "POP3")
+                    val pollingState = pollingStateService.getState(connectionDocument.id, connectionDocument.provider)
                     val lastFetchedNumber = pollingState?.lastFetchedMessageNumber ?: 0
 
                     logger.debug { "POP3 sync state: lastFetchedMessageNumber=$lastFetchedNumber, currentCount=$messageCount" }
@@ -134,7 +136,7 @@ class Pop3PollingHandler(
 
                     // Save polling state
                     if (maxNumberFetched > lastFetchedNumber) {
-                        pollingStateService.updateWithMessageNumber(connectionDocument.id, "POP3", maxNumberFetched)
+                        pollingStateService.updateWithMessageNumber(connectionDocument.id, connectionDocument.provider, maxNumberFetched)
                         logger.info {
                             "Updated lastFetchedMessageNumber: $lastFetchedNumber -> $maxNumberFetched (processed: created=$created, skipped=$skipped)"
                         }

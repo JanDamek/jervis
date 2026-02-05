@@ -1,5 +1,8 @@
 package com.jervis.integration.wiki.internal.polling
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ConnectionId
+import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
@@ -7,8 +10,7 @@ import com.jervis.service.polling.PollingResult
 import com.jervis.service.polling.PollingStateService
 import com.jervis.service.polling.handler.PollingContext
 import com.jervis.service.polling.handler.PollingHandler
-import com.jervis.types.ClientId
-import com.jervis.types.ConnectionId
+import com.jervis.service.polling.handler.ResourceFilter
 import mu.KotlinLogging
 import java.time.Instant
 
@@ -30,10 +32,10 @@ import java.time.Instant
  */
 abstract class WikiPollingHandlerBase<TPage : Any>(
     protected val pollingStateService: PollingStateService,
-) : PollingHandler {
+) {
     protected val logger = KotlinLogging.logger {}
 
-    override suspend fun poll(
+    suspend fun poll(
         connectionDocument: ConnectionDocument,
         context: PollingContext,
     ): PollingResult {
@@ -50,9 +52,18 @@ abstract class WikiPollingHandlerBase<TPage : Any>(
         var totalErrors = 0
 
         for (client in context.clients) {
+            // Check capability configuration - get resource filter
+            val resourceFilter = context.getResourceFilter(client.id, ConnectionCapability.WIKI)
+
+            // Skip if capability is disabled (null filter)
+            if (resourceFilter == null) {
+                logger.debug { "    Skipping ${getSystemName()} for client ${client.name}: WIKI capability disabled" }
+                continue
+            }
+
             try {
                 logger.debug { "    Polling ${getSystemName()} for client: ${client.name}" }
-                val result = pollClientPages(connectionDocument, client)
+                val result = pollClientPages(connectionDocument, client, resourceFilter)
                 totalDiscovered += result.itemsDiscovered
                 totalCreated += result.itemsCreated
                 totalSkipped += result.itemsSkipped
@@ -85,72 +96,114 @@ abstract class WikiPollingHandlerBase<TPage : Any>(
 
     /**
      * Poll pages for a single client.
+     *
+     * @param resourceFilter Filter to determine which spaces to index
      */
     private suspend fun pollClientPages(
         connectionDocument: ConnectionDocument,
         client: ClientDocument,
+        resourceFilter: ResourceFilter,
     ): PollingResult {
         val credentials =
             requireNotNull(connectionDocument.credentials) { "HTTP credentials required for ${getSystemName()} polling" }
 
         // Get last polling state for incremental polling
-        val state = pollingStateService.getState(connectionDocument.id, getToolName())
-        val spaceKey = getSpaceKey(client)
+        val state = pollingStateService.getState(connectionDocument.id, connectionDocument.provider)
 
-        logger.debug { "Polling ${getSystemName()} for client ${client.name}, space: $spaceKey" }
+        // Determine which spaces to poll based on resource filter
+        val spacesToPoll = getSpacesToPoll(client, resourceFilter, connectionDocument)
 
-        val fullPages =
-            fetchFullPages(
-                connectionDocument = connectionDocument,
-                credentials = credentials,
-                clientId = client.id,
-                spaceKey = spaceKey,
-                lastSeenUpdatedAt = state?.lastSeenUpdatedAt,
-                maxResults = 1000,
-            )
+        logger.debug { "Polling ${getSystemName()} for client ${client.name}, spaces: ${spacesToPoll.joinToString(", ") { it ?: "ALL" }}" }
 
-        logger.info { "Discovered ${fullPages.size} ${getSystemName()} pages for client ${client.name}" }
-
-        var created = 0
-        var skipped = 0
+        var totalDiscovered = 0
+        var totalCreated = 0
+        var totalSkipped = 0
         var latestUpdatedAt: Instant? = null
 
-        for ((index, fullPage) in fullPages.withIndex()) {
-            if (findExisting(connectionDocument.id, fullPage)) {
-                skipped++
-                continue
-            }
+        // Poll each space (or null for all spaces if IndexAll)
+        for (spaceKey in spacesToPoll) {
+            val fullPages =
+                fetchFullPages(
+                    connectionDocument = connectionDocument,
+                    credentials = credentials,
+                    clientId = client.id,
+                    spaceKey = spaceKey,
+                    lastSeenUpdatedAt = state?.lastSeenUpdatedAt,
+                    maxResults = 1000,
+                )
 
-            savePage(fullPage)
-            created++
+            logger.info { "Discovered ${fullPages.size} ${getSystemName()} pages for client ${client.name}, space: ${spaceKey ?: "ALL"}" }
+            totalDiscovered += fullPages.size
 
-            // Track latest updated timestamp
-            val pageUpdated = getPageUpdatedAt(fullPage)
-            latestUpdatedAt = latestUpdatedAt?.let { maxOf(it, pageUpdated) } ?: pageUpdated
+            for ((index, fullPage) in fullPages.withIndex()) {
+                if (findExisting(connectionDocument.id, fullPage)) {
+                    totalSkipped++
+                    continue
+                }
 
-            // Save progress every 100 items to prevent re-downloading on interruption
-            if ((index + 1) % 100 == 0) {
-                val maxUpdated = state?.lastSeenUpdatedAt?.let { maxOf(it, latestUpdatedAt) } ?: latestUpdatedAt
-                pollingStateService.updateWithTimestamp(connectionDocument.id, getToolName(), maxUpdated)
-                logger.debug { "${getSystemName()} progress saved: processed ${index + 1}/${fullPages.size}" }
+                savePage(fullPage)
+                totalCreated++
+
+                // Track latest updated timestamp
+                val pageUpdated = getPageUpdatedAt(fullPage)
+                val newLatest = latestUpdatedAt?.let { maxOf(it, pageUpdated) } ?: pageUpdated
+                latestUpdatedAt = newLatest
+
+                // Save progress every 100 items to prevent re-downloading on interruption
+                if ((totalCreated + totalSkipped) % 100 == 0) {
+                    val maxUpdated = state?.lastSeenUpdatedAt?.let { maxOf(it, newLatest) } ?: newLatest
+                    pollingStateService.updateWithTimestamp(connectionDocument.id, connectionDocument.provider, maxUpdated)
+                    logger.debug { "${getSystemName()} progress saved: processed ${totalCreated + totalSkipped}" }
+                }
             }
         }
 
-        logger.info { "${getSystemName()} polling for ${client.name}: created/updated=$created, skipped=$skipped" }
+        logger.info { "${getSystemName()} polling for ${client.name}: created/updated=$totalCreated, skipped=$totalSkipped" }
 
         // Always update lastSeenUpdatedAt - even if no pages found
         // Use latest page timestamp if available, otherwise use current time to mark polling completion
         val finalUpdatedAt = latestUpdatedAt ?: state?.lastSeenUpdatedAt ?: Instant.now()
         val maxUpdated = state?.lastSeenUpdatedAt?.let { maxOf(it, finalUpdatedAt) } ?: finalUpdatedAt
-        pollingStateService.updateWithTimestamp(connectionDocument.id, getToolName(), maxUpdated)
+        pollingStateService.updateWithTimestamp(connectionDocument.id, connectionDocument.provider, maxUpdated)
         logger.debug { "${getSystemName()} polling state saved: lastSeenUpdatedAt=$maxUpdated" }
 
         return PollingResult(
-            itemsDiscovered = fullPages.size,
-            itemsCreated = created,
-            itemsSkipped = skipped,
+            itemsDiscovered = totalDiscovered,
+            itemsCreated = totalCreated,
+            itemsSkipped = totalSkipped,
         )
     }
+
+    /**
+     * Determine which spaces to poll based on resource filter.
+     * Returns a list of space keys to poll, or listOf(null) to poll all spaces.
+     */
+    private fun getSpacesToPoll(
+        client: ClientDocument,
+        resourceFilter: ResourceFilter,
+        connectionDocument: ConnectionDocument,
+    ): List<String?> =
+        when (resourceFilter) {
+            is ResourceFilter.IndexAll -> {
+                // Legacy fallback: check if client has specific space key configured
+                val legacySpaceKey = getSpaceKey(client)
+                if (legacySpaceKey != null) {
+                    listOf(legacySpaceKey)
+                } else {
+                    // Poll all spaces (null = no space filter)
+                    listOf(null)
+                }
+            }
+            is ResourceFilter.IndexSelected -> {
+                if (resourceFilter.resources.isNotEmpty()) {
+                    resourceFilter.resources
+                } else {
+                    // No specific resources selected - fallback to legacy or all
+                    val legacySpaceKey = getSpaceKey(client)
+                    if (legacySpaceKey != null) listOf(legacySpaceKey) else listOf(null)
+                }
+            }
+        }
 
     /**
      * Get documentation system name for logging (Atlassian Confluence, Notion, etc.)

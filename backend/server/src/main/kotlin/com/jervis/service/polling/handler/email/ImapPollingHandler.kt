@@ -1,14 +1,16 @@
 package com.jervis.service.polling.handler.email
 
+import com.jervis.common.types.ProjectId
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.repository.EmailMessageIndexRepository
 import com.jervis.service.polling.PollingResult
 import com.jervis.service.polling.PollingStateService
-import com.jervis.types.ProjectId
+import com.jervis.service.polling.handler.ResourceFilter
 import jakarta.mail.Folder
 import jakarta.mail.MessagingException
 import jakarta.mail.Session
+import jakarta.mail.Store
 import jakarta.mail.UIDFolder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -31,7 +33,7 @@ class ImapPollingHandler(
     repository: EmailMessageIndexRepository,
     private val pollingStateService: PollingStateService,
 ) : EmailPollingHandlerBase(repository) {
-    override fun canHandle(connectionDocument: ConnectionDocument): Boolean =
+    fun canHandle(connectionDocument: ConnectionDocument): Boolean =
         connectionDocument.connectionType == ConnectionDocument.ConnectionTypeEnum.IMAP
 
     override fun getProtocolName(): String = "IMAP"
@@ -40,22 +42,28 @@ class ImapPollingHandler(
         connectionDocument: ConnectionDocument,
         client: ClientDocument,
         projectId: ProjectId?,
+        resourceFilter: ResourceFilter,
     ): PollingResult {
         if (connectionDocument.connectionType != ConnectionDocument.ConnectionTypeEnum.IMAP) {
             logger.warn { "Invalid connectionDocument type for IMAP polling" }
             return PollingResult(errors = 1)
         }
 
-        return pollImap(connectionDocument, client, projectId)
+        return pollImap(connectionDocument, client, projectId, resourceFilter)
     }
 
     private suspend fun pollImap(
         connectionDocument: ConnectionDocument,
         client: ClientDocument,
         projectId: ProjectId?,
+        resourceFilter: ResourceFilter,
     ): PollingResult =
         withContext(Dispatchers.IO) {
             logger.debug { "Polling IMAP ${connectionDocument.name} for client ${client.name}" }
+
+            // Determine which folders to poll based on resource filter
+            val foldersToIndex = getFoldersToPoll(connectionDocument, resourceFilter)
+            logger.debug { "IMAP folders to poll: ${foldersToIndex.joinToString(", ")}" }
 
             // Connect to IMAP server
             val properties =
@@ -97,116 +105,162 @@ class ImapPollingHandler(
                     }
                 }
 
-                val folder = store.getFolder(connectionDocument.folderName)
-                folder.open(Folder.READ_ONLY)
+                // Poll each folder and aggregate results
+                var totalDiscovered = 0
+                var totalCreated = 0
+                var totalSkipped = 0
 
-                try {
-                    val messageCount = folder.messageCount
-                    logger.debug { "IMAP folder ${connectionDocument.folderName} has $messageCount messages" }
-
-                    if (messageCount == 0) {
-                        logger.debug { "No messages in folder" }
-                        return@withContext PollingResult()
-                    }
-
-                    // Cast to UIDFolder to use UID operations
-                    val uidFolder = folder as? UIDFolder
-                    if (uidFolder == null) {
-                        logger.warn { "Folder does not support UIDs, falling back to message numbers" }
-                        return@withContext PollingResult(errors = 1)
-                    }
-
-                    // Load polling state
-                    val pollingState = pollingStateService.getState(connectionDocument.id, "IMAP")
-                    val lastFetchedUid = pollingState?.lastFetchedUid ?: 0L
-
-                    logger.debug { "IMAP sync state: lastFetchedUid=$lastFetchedUid" }
-
-                    // Fetch only NEW messages since last sync
-                    val newMessages =
-                        if (lastFetchedUid == 0L) {
-                            // First sync - fetch all messages
-                            logger.debug { "First sync - fetching all $messageCount messages" }
-                            folder.getMessages(1, messageCount)
-                        } else {
-                            // Fetch messages with UID > lastFetchedUid
-                            // Note: Use MAXUID instead of LASTUID per JavaMail API documentation
-                            val fromUid = lastFetchedUid + 1
-                            val uids = uidFolder.getMessagesByUID(fromUid, UIDFolder.MAXUID)
-                            logger.debug { "Fetching ${uids.size} new messages (requested UID range: $fromUid-MAXUID)" }
-                            uids
-                        }
-
-                    if (newMessages.isEmpty()) {
-                        logger.debug { "No new messages to process" }
-                        return@withContext PollingResult()
-                    }
-
-                    logger.debug { "Processing ${newMessages.size} new messages" }
-
-                    // Collect all UIDs first (before processing)
-                    val allUids = newMessages.map { uidFolder.getUID(it) }
-
-                    logger.debug {
-                        "IMAP server returned UIDs: [${allUids.joinToString()}] (requested: ${lastFetchedUid + 1}-LASTUID)"
-                    }
-
-                    // Filter out messages with UID <= lastFetchedUid (IMAP server bug workaround)
-                    val filteredMessages =
-                        newMessages.filterIndexed { index, _ ->
-                            allUids[index] > lastFetchedUid
-                        }
-
-                    if (filteredMessages.isEmpty()) {
-                        logger.debug { "All fetched messages already processed (UIDs <= $lastFetchedUid), skipping" }
-                        return@withContext PollingResult()
-                    }
-
-                    val filteredUids = filteredMessages.map { uidFolder.getUID(it) }
-                    val maxUidFetched = filteredUids.maxOrNull() ?: lastFetchedUid
-
-                    logger.debug {
-                        "After filtering: ${filteredMessages.size} messages with UIDs: [${filteredUids.joinToString()}], " +
-                            "maxUidFetched=$maxUidFetched"
-                    }
-
-                    // Process messages using base class logic
-                    val (created, skipped) =
-                        processMessages(
-                            messages = filteredMessages.toTypedArray(),
-                            connectionDocument = connectionDocument,
-                            client = client,
-                            projectId = projectId,
-                            getMessageUid = { message, _ ->
-                                // Return UID as string for deduplication (stored as messageUid in DB)
-                                uidFolder.getUID(message).toString()
-                            },
-                            folderName = connectionDocument.folderName,
-                        )
-
-                    // Save polling state
-                    if (filteredMessages.isNotEmpty() && maxUidFetched > lastFetchedUid) {
-                        pollingStateService.updateWithUid(connectionDocument.id, "IMAP", maxUidFetched)
-                        logger.debug {
-                            "Updated lastFetchedUid: $lastFetchedUid -> $maxUidFetched (processed: created=$created, skipped=$skipped)"
-                        }
-                    } else if (filteredMessages.isNotEmpty()) {
-                        logger.debug {
-                            "Skipped update: maxUidFetched=$maxUidFetched <= lastFetchedUid=$lastFetchedUid " +
-                                "(created=$created, skipped=$skipped)"
-                        }
-                    }
-
-                    return@withContext PollingResult(
-                        itemsDiscovered = filteredMessages.size,
-                        itemsCreated = created,
-                        itemsSkipped = skipped,
-                    )
-                } finally {
-                    folder.close(false)
+                for (folderName in foldersToIndex) {
+                    val folderResult = pollFolder(store, connectionDocument, client, projectId, folderName)
+                    totalDiscovered += folderResult.itemsDiscovered
+                    totalCreated += folderResult.itemsCreated
+                    totalSkipped += folderResult.itemsSkipped
                 }
+
+                return@withContext PollingResult(
+                    itemsDiscovered = totalDiscovered,
+                    itemsCreated = totalCreated,
+                    itemsSkipped = totalSkipped,
+                )
             } finally {
                 store.close()
             }
         }
+
+    /**
+     * Determine which folders to poll based on resource filter.
+     */
+    private fun getFoldersToPoll(
+        connectionDocument: ConnectionDocument,
+        resourceFilter: ResourceFilter,
+    ): List<String> =
+        when (resourceFilter) {
+            is ResourceFilter.IndexAll -> {
+                // Use legacy folder name from connection document
+                listOf(connectionDocument.folderName)
+            }
+            is ResourceFilter.IndexSelected -> {
+                if (resourceFilter.resources.isNotEmpty()) {
+                    resourceFilter.resources
+                } else {
+                    // No specific folders selected - fallback to legacy folder
+                    listOf(connectionDocument.folderName)
+                }
+            }
+        }
+
+    /**
+     * Poll a single IMAP folder.
+     */
+    private suspend fun pollFolder(
+        store: Store,
+        connectionDocument: ConnectionDocument,
+        client: ClientDocument,
+        projectId: ProjectId?,
+        folderName: String,
+    ): PollingResult {
+        val folder = store.getFolder(folderName)
+        folder.open(Folder.READ_ONLY)
+
+        try {
+            val messageCount = folder.messageCount
+            logger.debug { "IMAP folder $folderName has $messageCount messages" }
+
+            if (messageCount == 0) {
+                logger.debug { "No messages in folder $folderName" }
+                return PollingResult()
+            }
+
+            // Cast to UIDFolder to use UID operations
+            val uidFolder = folder as? UIDFolder
+            if (uidFolder == null) {
+                logger.warn { "Folder $folderName does not support UIDs, falling back to message numbers" }
+                return PollingResult(errors = 1)
+            }
+
+            // Load polling state (per folder)
+            val stateKey = "${connectionDocument.id}_$folderName"
+            val pollingState = pollingStateService.getState(connectionDocument.id, connectionDocument.provider)
+            val lastFetchedUid = pollingState?.lastFetchedUid ?: 0L
+
+            logger.debug { "IMAP sync state for $folderName: lastFetchedUid=$lastFetchedUid" }
+
+            // Fetch only NEW messages since last sync
+            val newMessages =
+                if (lastFetchedUid == 0L) {
+                    // First sync - fetch all messages
+                    logger.debug { "First sync for $folderName - fetching all $messageCount messages" }
+                    folder.getMessages(1, messageCount)
+                } else {
+                    // Fetch messages with UID > lastFetchedUid
+                    val fromUid = lastFetchedUid + 1
+                    val uids = uidFolder.getMessagesByUID(fromUid, UIDFolder.MAXUID)
+                    logger.debug { "Fetching ${uids.size} new messages from $folderName (UID range: $fromUid-MAXUID)" }
+                    uids
+                }
+
+            if (newMessages.isEmpty()) {
+                logger.debug { "No new messages to process in $folderName" }
+                return PollingResult()
+            }
+
+            logger.debug { "Processing ${newMessages.size} new messages from $folderName" }
+
+            // Collect all UIDs first (before processing)
+            val allUids = newMessages.map { uidFolder.getUID(it) }
+
+            logger.debug {
+                "IMAP server returned UIDs for $folderName: [${allUids.joinToString()}] (requested: ${lastFetchedUid + 1}-LASTUID)"
+            }
+
+            // Filter out messages with UID <= lastFetchedUid (IMAP server bug workaround)
+            val filteredMessages =
+                newMessages.filterIndexed { index, _ ->
+                    allUids[index] > lastFetchedUid
+                }
+
+            if (filteredMessages.isEmpty()) {
+                logger.debug { "All fetched messages in $folderName already processed (UIDs <= $lastFetchedUid), skipping" }
+                return PollingResult()
+            }
+
+            val filteredUids = filteredMessages.map { uidFolder.getUID(it) }
+            val maxUidFetched = filteredUids.maxOrNull() ?: lastFetchedUid
+
+            logger.debug {
+                "After filtering $folderName: ${filteredMessages.size} messages with UIDs: [${filteredUids.joinToString()}], " +
+                    "maxUidFetched=$maxUidFetched"
+            }
+
+            // Process messages using base class logic
+            val (created, skipped) =
+                processMessages(
+                    messages = filteredMessages.toTypedArray(),
+                    connectionDocument = connectionDocument,
+                    client = client,
+                    projectId = projectId,
+                    getMessageUid = { message, _ ->
+                        // Return UID as string for deduplication (stored as messageUid in DB)
+                        uidFolder.getUID(message).toString()
+                    },
+                    folderName = folderName,
+                )
+
+            // Save polling state
+            if (filteredMessages.isNotEmpty() && maxUidFetched > lastFetchedUid) {
+                pollingStateService.updateWithUid(connectionDocument.id, connectionDocument.provider, maxUidFetched)
+                logger.debug {
+                    "Updated lastFetchedUid for $folderName: $lastFetchedUid -> $maxUidFetched (created=$created, skipped=$skipped)"
+                }
+            }
+
+            return PollingResult(
+                itemsDiscovered = filteredMessages.size,
+                itemsCreated = created,
+                itemsSkipped = skipped,
+            )
+        } finally {
+            folder.close(false)
+        }
+    }
 }

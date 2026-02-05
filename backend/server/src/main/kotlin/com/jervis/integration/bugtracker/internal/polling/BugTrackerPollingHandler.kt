@@ -2,6 +2,9 @@ package com.jervis.integration.bugtracker.internal.polling
 
 import com.jervis.common.client.IBugTrackerClient
 import com.jervis.common.dto.bugtracker.BugTrackerSearchRequest
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ConnectionId
+import com.jervis.common.types.ProjectId
 import com.jervis.domain.PollingStatusEnum
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.ConnectionDocument
@@ -14,9 +17,7 @@ import com.jervis.integration.bugtracker.internal.entity.BugTrackerIssueIndexDoc
 import com.jervis.integration.bugtracker.internal.repository.BugTrackerIssueIndexRepository
 import com.jervis.service.client.ClientService
 import com.jervis.service.polling.PollingStateService
-import com.jervis.types.ClientId
-import com.jervis.types.ConnectionId
-import com.jervis.types.ProjectId
+import com.jervis.service.polling.handler.ResourceFilter
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.dao.DuplicateKeyException
@@ -48,7 +49,7 @@ class BugTrackerPollingHandler(
         pollingStateService = pollingStateService,
         clientService = clientService,
     ) {
-    override fun canHandle(connectionDocument: ConnectionDocument): Boolean =
+    fun canHandle(connectionDocument: ConnectionDocument): Boolean =
         connectionDocument.connectionType == ConnectionDocument.ConnectionTypeEnum.HTTP &&
             (connectionDocument.baseUrl.contains("atlassian.net") || connectionDocument.baseUrl.contains("atlassian"))
 
@@ -60,17 +61,47 @@ class BugTrackerPollingHandler(
         client: ClientDocument?,
         connectionDocument: ConnectionDocument,
         lastSeenUpdatedAt: Instant?,
+        resourceFilter: ResourceFilter,
     ): String {
-        val query =
+        val baseQuery =
             lastSeenUpdatedAt?.let {
                 val fmt = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm").withZone(ZoneOffset.UTC)
                 "updated >= \"${fmt.format(it)}\""
             } ?: "status NOT IN (Closed, Done, Resolved)"
 
-        return if (!connectionDocument.jiraProjectKey.isNullOrBlank()) {
-            "project = \"${connectionDocument.jiraProjectKey}\" AND ($query)"
+        // Determine project filter based on:
+        // 1. ResourceFilter from capability configuration (highest priority)
+        // 2. Legacy jiraProjectKey from connection document (fallback)
+        val projectFilter =
+            when (resourceFilter) {
+                is ResourceFilter.IndexAll -> {
+                    // If IndexAll but legacy project key exists, use it for backward compatibility
+                    if (!connectionDocument.jiraProjectKey.isNullOrBlank()) {
+                        "project = \"${connectionDocument.jiraProjectKey}\""
+                    } else {
+                        null
+                    }
+                }
+                is ResourceFilter.IndexSelected -> {
+                    // Filter by selected project keys from capability config
+                    if (resourceFilter.resources.isNotEmpty()) {
+                        val projectKeys = resourceFilter.resources.joinToString(", ") { "\"$it\"" }
+                        "project IN ($projectKeys)"
+                    } else {
+                        // No specific projects selected - fallback to legacy key or all
+                        if (!connectionDocument.jiraProjectKey.isNullOrBlank()) {
+                            "project = \"${connectionDocument.jiraProjectKey}\""
+                        } else {
+                            null
+                        }
+                    }
+                }
+            }
+
+        return if (projectFilter != null) {
+            "$projectFilter AND ($baseQuery)"
         } else {
-            query
+            baseQuery
         }
     }
 
@@ -86,7 +117,7 @@ class BugTrackerPollingHandler(
             val searchRequest =
                 BugTrackerSearchRequest(
                     baseUrl = connectionDocument.baseUrl,
-                    authType = credentials.toAuthType(),
+                    authType = credentials.toAuthType().name,
                     basicUsername = credentials.basicUsername(),
                     basicPassword = credentials.basicPassword(),
                     bearerToken = credentials.bearerToken(),

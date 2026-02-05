@@ -1,7 +1,11 @@
 package com.jervis.service.polling
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.SourceUrn
 import com.jervis.configuration.properties.PollingProperties
+import com.jervis.dto.TaskTypeEnum
 import com.jervis.dto.connection.ConnectionStateEnum
+import com.jervis.dto.connection.ProviderEnum
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.repository.ClientRepository
 import com.jervis.repository.ProjectRepository
@@ -24,7 +28,6 @@ import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import mu.KotlinLogging
-import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Service
 import java.time.Duration
 import java.time.Instant
@@ -47,7 +50,6 @@ import java.time.Instant
  * 5. ContinuousIndexer picks up NEW items and indexes them
  */
 @Service
-@Profile("!cli")
 class CentralPoller(
     private val connectionService: ConnectionService,
     private val clientRepository: ClientRepository,
@@ -65,9 +67,12 @@ class CentralPoller(
     // Mutex per connection to prevent parallel polling of the same connection
     private val connectionLocks = mutableMapOf<String, Mutex>()
 
+    private lateinit var handlersByProvider: Map<ProviderEnum, PollingHandler>
+
     @PostConstruct
     fun start() {
         logger.debug { "Starting CentralPoller..." }
+        handlersByProvider = handlers.associateBy { it.provider }
 
         scope.launch {
             // Initial delay to let application fully start
@@ -162,12 +167,12 @@ class CentralPoller(
                 return
             }
 
-            // Find ALL handlers for this connectionDocument type (e.g., Atlassian → Jira + Confluence)
-            val matchingHandlers = handlers.filter { it.canHandle(connectionDocument) }
+            // Find handler for this connection provider
+            val handler = handlersByProvider[connectionDocument.provider]
 
-            if (matchingHandlers.isEmpty()) {
+            if (handler == null) {
                 logger.warn {
-                    "No handler found for connectionDocument '${connectionDocument.name}' (type: ${connectionDocument::class.simpleName})"
+                    "No handler found for connection '${connectionDocument.name}' (provider: ${connectionDocument.provider})"
                 }
                 return
             }
@@ -190,10 +195,14 @@ class CentralPoller(
                 return
             }
 
-            // Create polling context
-            val context = PollingContext(clients = clients, projects = projects)
+            // Create a polling context with connection ID for capability config lookups
+            val context = PollingContext(
+                clients = clients,
+                projects = projects,
+                connectionId = connectionDocument.id,
+            )
 
-            val handlerNames = matchingHandlers.joinToString(", ") { it::class.simpleName ?: "Unknown" }
+            val handlerName = handler::class.simpleName ?: "Unknown"
             val clientNames = clients.joinToString(", ") { it.name }
             val projectNames = projects.joinToString(", ") { it.name }
             val scope =
@@ -203,36 +212,15 @@ class CentralPoller(
                     "Clients: [$clientNames]"
                 }
             logger.debug {
-                "Polling '${connectionDocument.name}' (${connectionDocument::class.simpleName}) | $scope | Handlers: [$handlerNames]"
+                "Polling '${connectionDocument.name}' (${connectionDocument::class.simpleName}) | $scope | Handler: $handlerName"
             }
 
-            // Execute all matching handlers in parallel (e.g., Jira + Confluence for Atlassian)
-            val results =
-                coroutineScope {
-                    matchingHandlers
-                        .map { handler ->
-                            async {
-                                try {
-                                    handler.poll(connectionDocument, context)
-                                } catch (e: Exception) {
-                                    logger.error(
-                                        e,
-                                    ) { "Error in handler ${handler::class.simpleName} for connectionDocument ${connectionDocument.name}" }
-                                    PollingResult(errors = 1)
-                                }
-                            }
-                        }.awaitAll()
-                }
-
-            // Aggregate results from all handlers
             val totalResult =
-                results.fold(PollingResult()) { acc, result ->
-                    PollingResult(
-                        itemsDiscovered = acc.itemsDiscovered + result.itemsDiscovered,
-                        itemsCreated = acc.itemsCreated + result.itemsCreated,
-                        itemsSkipped = acc.itemsSkipped + result.itemsSkipped,
-                        errors = acc.errors + result.errors,
-                    )
+                try {
+                    handler.poll(connectionDocument, context)
+                } catch (e: Exception) {
+                    logger.error(e) { "Error in handler $handlerName for connection ${connectionDocument.name}" }
+                    PollingResult(errors = 1)
                 }
 
             val duration = Duration.between(startTime, Instant.now())
@@ -298,15 +286,14 @@ class CentralPoller(
             }
 
         // Create task-like context to use failAndEscalateToUserTask
-        val dummyTask = connectionDocumentToTask(invalidConnection, clientIdVal, correlationId, taskDescription)
+        val dummyTask = connectionDocumentToTask(clientIdVal, correlationId, taskDescription)
         userTaskService.failAndEscalateToUserTask(dummyTask, "Polling failed with ${result.errors} errors")
 
         logger.debug { "Created UserTask for INVALID connectionDocument: ${connectionDocument.name}" }
     }
 
     private fun connectionDocumentToTask(
-        connectionDocument: ConnectionDocument,
-        clientId: com.jervis.types.ClientId,
+        clientId: ClientId,
         correlationId: String,
         description: String,
     ): com.jervis.entity.TaskDocument =
@@ -314,10 +301,8 @@ class CentralPoller(
             content = description,
             clientId = clientId,
             correlationId = correlationId,
-            type = com.jervis.dto.TaskTypeEnum.LINK_PROCESSING, // Fallback type
-            sourceUrn =
-                com.jervis.types.SourceUrn
-                    .unknownSource(),
+            type = TaskTypeEnum.LINK_PROCESSING, // Fallback type
+            sourceUrn = SourceUrn.unknownSource(),
         )
 
     private fun getPollingInterval(connectionDocument: ConnectionDocument): Duration =

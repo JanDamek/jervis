@@ -1,5 +1,9 @@
 package com.jervis.service.polling.handler.email
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ConnectionId
+import com.jervis.common.types.ProjectId
+import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.entity.email.EmailAttachment
@@ -8,9 +12,7 @@ import com.jervis.repository.EmailMessageIndexRepository
 import com.jervis.service.polling.PollingResult
 import com.jervis.service.polling.handler.PollingContext
 import com.jervis.service.polling.handler.PollingHandler
-import com.jervis.types.ClientId
-import com.jervis.types.ConnectionId
-import com.jervis.types.ProjectId
+import com.jervis.service.polling.handler.ResourceFilter
 import jakarta.mail.Message
 import jakarta.mail.Multipart
 import jakarta.mail.Part
@@ -33,10 +35,10 @@ import java.time.Instant
  */
 abstract class EmailPollingHandlerBase(
     protected val repository: EmailMessageIndexRepository,
-) : PollingHandler {
+) {
     protected val logger = KotlinLogging.logger {}
 
-    override suspend fun poll(
+    suspend fun poll(
         connectionDocument: ConnectionDocument,
         context: PollingContext,
     ): PollingResult {
@@ -50,9 +52,18 @@ abstract class EmailPollingHandlerBase(
         // Email connections are always at client level (not project-specific)
         // Process each client
         for (client in context.clients) {
+            // Check capability configuration - get resource filter
+            val resourceFilter = context.getResourceFilter(client.id, ConnectionCapability.EMAIL)
+
+            // Skip if capability is disabled (null filter)
+            if (resourceFilter == null) {
+                logger.debug { "    Skipping ${getProtocolName()} for client ${client.name}: EMAIL capability disabled" }
+                continue
+            }
+
             try {
                 logger.debug { "    Polling ${getProtocolName()} for client: ${client.name}" }
-                val result = pollClient(connectionDocument, client, projectId = null)
+                val result = pollClient(connectionDocument, client, projectId = null, resourceFilter = resourceFilter)
                 totalDiscovered += result.itemsDiscovered
                 totalCreated += result.itemsCreated
                 totalSkipped += result.itemsSkipped
@@ -85,11 +96,14 @@ abstract class EmailPollingHandlerBase(
 
     /**
      * Poll emails for a single client. Protocol-specific implementation.
+     *
+     * @param resourceFilter Filter to determine which folders to index
      */
     protected abstract suspend fun pollClient(
         connectionDocument: ConnectionDocument,
         client: ClientDocument,
         projectId: ProjectId?,
+        resourceFilter: ResourceFilter,
     ): PollingResult
 
     /**
