@@ -6,12 +6,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
+import com.jervis.dto.ProjectConnectionCapabilityDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionResourceDto
@@ -118,21 +122,14 @@ private fun ProjectEditForm(
     var client by remember { mutableStateOf<ClientDto?>(null) }
     var clientConnections by remember { mutableStateOf<List<ConnectionResponseDto>>(emptyList()) }
 
-    // Resource identifiers from client's connections
-    var gitRepositoryConnectionId by remember { mutableStateOf(project.gitRepositoryConnectionId) }
-    var gitRepositoryIdentifier by remember { mutableStateOf(project.gitRepositoryIdentifier ?: "") }
-    var bugtrackerConnectionId by remember { mutableStateOf(project.bugtrackerConnectionId) }
-    var bugtrackerProjectKey by remember { mutableStateOf(project.bugtrackerProjectKey ?: "") }
-    var wikiConnectionId by remember { mutableStateOf(project.wikiConnectionId) }
-    var wikiSpaceKey by remember { mutableStateOf(project.wikiSpaceKey ?: "") }
-
-    // Available resources for each connection type
-    var gitRepositories by remember { mutableStateOf<List<ConnectionResourceDto>>(emptyList()) }
-    var bugtrackerProjects by remember { mutableStateOf<List<ConnectionResourceDto>>(emptyList()) }
-    var wikiSpaces by remember { mutableStateOf<List<ConnectionResourceDto>>(emptyList()) }
-    var loadingGitRepos by remember { mutableStateOf(false) }
-    var loadingBugtrackerProjects by remember { mutableStateOf(false) }
-    var loadingWikiSpaces by remember { mutableStateOf(false) }
+    // Connection capabilities (new approach)
+    var connectionCapabilities by remember {
+        mutableStateOf(project.connectionCapabilities.toMutableList())
+    }
+    var availableResources by remember {
+        mutableStateOf<Map<Pair<String, ConnectionCapability>, List<ConnectionResourceDto>>>(emptyMap())
+    }
+    var loadingResources by remember { mutableStateOf<Set<Pair<String, ConnectionCapability>>>(emptySet()) }
 
     // Git commit configuration (can override client's config)
     var useCustomGitConfig by remember { mutableStateOf(
@@ -165,73 +162,43 @@ private fun ProjectEditForm(
         }
     }
 
-    // Load resources when connection changes
-    fun loadGitRepositories(connectionId: String) {
+    fun loadResourcesForCapability(connectionId: String, capability: ConnectionCapability) {
+        val key = Pair(connectionId, capability)
+        if (key in availableResources || key in loadingResources) return
+
         scope.launch {
-            loadingGitRepos = true
+            loadingResources = loadingResources + key
             try {
-                gitRepositories = repository.connections.listAvailableResources(
-                    connectionId, ConnectionCapability.REPOSITORY
-                )
+                val resources = repository.connections.listAvailableResources(connectionId, capability)
+                availableResources = availableResources + (key to resources)
             } catch (e: Exception) {
-                gitRepositories = emptyList()
+                availableResources = availableResources + (key to emptyList())
             } finally {
-                loadingGitRepos = false
+                loadingResources = loadingResources - key
             }
         }
     }
 
-    fun loadBugtrackerProjects(connectionId: String) {
-        scope.launch {
-            loadingBugtrackerProjects = true
-            try {
-                bugtrackerProjects = repository.connections.listAvailableResources(
-                    connectionId, ConnectionCapability.BUGTRACKER
-                )
-            } catch (e: Exception) {
-                bugtrackerProjects = emptyList()
-            } finally {
-                loadingBugtrackerProjects = false
-            }
-        }
+    fun getCapabilityConfig(connectionId: String, capability: ConnectionCapability): ProjectConnectionCapabilityDto? {
+        return connectionCapabilities.find { it.connectionId == connectionId && it.capability == capability }
     }
 
-    fun loadWikiSpaces(connectionId: String) {
-        scope.launch {
-            loadingWikiSpaces = true
-            try {
-                wikiSpaces = repository.connections.listAvailableResources(
-                    connectionId, ConnectionCapability.WIKI
-                )
-            } catch (e: Exception) {
-                wikiSpaces = emptyList()
-            } finally {
-                loadingWikiSpaces = false
-            }
-        }
+    fun updateCapabilityConfig(config: ProjectConnectionCapabilityDto) {
+        connectionCapabilities = connectionCapabilities
+            .filter { !(it.connectionId == config.connectionId && it.capability == config.capability) }
+            .toMutableList()
+            .apply { add(config) }
     }
 
-    // Load resources when initial connection IDs are set
-    LaunchedEffect(gitRepositoryConnectionId) {
-        gitRepositoryConnectionId?.let { loadGitRepositories(it) }
-    }
-    LaunchedEffect(bugtrackerConnectionId) {
-        bugtrackerConnectionId?.let { loadBugtrackerProjects(it) }
-    }
-    LaunchedEffect(wikiConnectionId) {
-        wikiConnectionId?.let { loadWikiSpaces(it) }
+    fun removeCapabilityConfig(connectionId: String, capability: ConnectionCapability) {
+        connectionCapabilities = connectionCapabilities
+            .filter { !(it.connectionId == connectionId && it.capability == capability) }
+            .toMutableList()
     }
 
-    // Filter connections by capability
-    val gitConnections = clientConnections.filter { conn ->
-        conn.capabilities.any { it == ConnectionCapability.REPOSITORY || it == ConnectionCapability.GIT }
-    }
-    val bugtrackerConnections = clientConnections.filter { conn ->
-        conn.capabilities.contains(ConnectionCapability.BUGTRACKER)
-    }
-    val wikiConnections = clientConnections.filter { conn ->
-        conn.capabilities.contains(ConnectionCapability.WIKI)
-    }
+    // Get client's capability config for inheritance display
+    fun getClientCapabilityConfig(connectionId: String, capability: ConnectionCapability) =
+        client?.connectionCapabilities?.find { it.connectionId == connectionId && it.capability == capability }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -256,339 +223,38 @@ private fun ProjectEditForm(
 
             Spacer(Modifier.height(16.dp))
 
-            JSection(title = "Zdroje projektu") {
+            // Connection capabilities section (new approach)
+            JSection(title = "Konfigurace schopností projektu") {
                 Text(
-                    "Přiřaďte konkrétní zdroje z connections dostupných pro klienta projektu.",
+                    "Nastavte, které zdroje z připojení klienta budou použity pro tento projekt. " +
+                        "Pokud schopnost není nastavena, dědí se z klienta.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
+                Spacer(Modifier.height(12.dp))
+
                 if (clientConnections.isEmpty()) {
-                    Spacer(Modifier.height(8.dp))
                     Text(
                         "Načítám connections klienta...",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
-                    Spacer(Modifier.height(16.dp))
-
-                    // Git Repository Section
-                    Text("Git Repository", style = MaterialTheme.typography.labelLarge)
-                    Spacer(Modifier.height(8.dp))
-
-                    if (gitConnections.isEmpty()) {
-                        Text(
-                            "Klient nemá žádné Git/Repository connections.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        var gitConnectionExpanded by remember { mutableStateOf(false) }
-                        var gitRepoExpanded by remember { mutableStateOf(false) }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            // Connection dropdown
-                            ExposedDropdownMenuBox(
-                                expanded = gitConnectionExpanded,
-                                onExpandedChange = { gitConnectionExpanded = it },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                OutlinedTextField(
-                                    value = gitConnections.find { it.id == gitRepositoryConnectionId }?.name ?: "",
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    label = { Text("Connection") },
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = gitConnectionExpanded) },
-                                    modifier = Modifier.menuAnchor()
-                                )
-                                ExposedDropdownMenu(
-                                    expanded = gitConnectionExpanded,
-                                    onDismissRequest = { gitConnectionExpanded = false }
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text("-- Žádné --") },
-                                        onClick = {
-                                            gitRepositoryConnectionId = null
-                                            gitRepositoryIdentifier = ""
-                                            gitRepositories = emptyList()
-                                            gitConnectionExpanded = false
-                                        }
-                                    )
-                                    gitConnections.forEach { conn ->
-                                        DropdownMenuItem(
-                                            text = { Text(conn.name) },
-                                            onClick = {
-                                                gitRepositoryConnectionId = conn.id
-                                                gitRepositoryIdentifier = ""
-                                                loadGitRepositories(conn.id)
-                                                gitConnectionExpanded = false
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-
-                            // Repository dropdown (when connection selected)
-                            if (gitRepositoryConnectionId != null) {
-                                ExposedDropdownMenuBox(
-                                    expanded = gitRepoExpanded,
-                                    onExpandedChange = { gitRepoExpanded = it },
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    OutlinedTextField(
-                                        value = gitRepositoryIdentifier,
-                                        onValueChange = { gitRepositoryIdentifier = it },
-                                        label = { Text("Repository") },
-                                        trailingIcon = {
-                                            if (loadingGitRepos) {
-                                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                                            } else {
-                                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = gitRepoExpanded)
-                                            }
-                                        },
-                                        modifier = Modifier.menuAnchor()
-                                    )
-                                    ExposedDropdownMenu(
-                                        expanded = gitRepoExpanded && gitRepositories.isNotEmpty(),
-                                        onDismissRequest = { gitRepoExpanded = false }
-                                    ) {
-                                        gitRepositories.forEach { repo ->
-                                            DropdownMenuItem(
-                                                text = {
-                                                    Column {
-                                                        Text(repo.name)
-                                                        repo.description?.let {
-                                                            Text(it, style = MaterialTheme.typography.labelSmall)
-                                                        }
-                                                    }
-                                                },
-                                                onClick = {
-                                                    gitRepositoryIdentifier = repo.id
-                                                    gitRepoExpanded = false
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-
-                    // BugTracker Project Section
-                    Text("BugTracker Project", style = MaterialTheme.typography.labelLarge)
-                    Spacer(Modifier.height(8.dp))
-
-                    if (bugtrackerConnections.isEmpty()) {
-                        Text(
-                            "Klient nemá žádné BugTracker connections.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        var btConnectionExpanded by remember { mutableStateOf(false) }
-                        var btProjectExpanded by remember { mutableStateOf(false) }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            // Connection dropdown
-                            ExposedDropdownMenuBox(
-                                expanded = btConnectionExpanded,
-                                onExpandedChange = { btConnectionExpanded = it },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                OutlinedTextField(
-                                    value = bugtrackerConnections.find { it.id == bugtrackerConnectionId }?.name ?: "",
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    label = { Text("Connection") },
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = btConnectionExpanded) },
-                                    modifier = Modifier.menuAnchor()
-                                )
-                                ExposedDropdownMenu(
-                                    expanded = btConnectionExpanded,
-                                    onDismissRequest = { btConnectionExpanded = false }
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text("-- Žádné --") },
-                                        onClick = {
-                                            bugtrackerConnectionId = null
-                                            bugtrackerProjectKey = ""
-                                            bugtrackerProjects = emptyList()
-                                            btConnectionExpanded = false
-                                        }
-                                    )
-                                    bugtrackerConnections.forEach { conn ->
-                                        DropdownMenuItem(
-                                            text = { Text(conn.name) },
-                                            onClick = {
-                                                bugtrackerConnectionId = conn.id
-                                                bugtrackerProjectKey = ""
-                                                loadBugtrackerProjects(conn.id)
-                                                btConnectionExpanded = false
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-
-                            // Project dropdown (when connection selected)
-                            if (bugtrackerConnectionId != null) {
-                                ExposedDropdownMenuBox(
-                                    expanded = btProjectExpanded,
-                                    onExpandedChange = { btProjectExpanded = it },
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    OutlinedTextField(
-                                        value = bugtrackerProjectKey,
-                                        onValueChange = { bugtrackerProjectKey = it },
-                                        label = { Text("Project Key") },
-                                        trailingIcon = {
-                                            if (loadingBugtrackerProjects) {
-                                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                                            } else {
-                                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = btProjectExpanded)
-                                            }
-                                        },
-                                        modifier = Modifier.menuAnchor()
-                                    )
-                                    ExposedDropdownMenu(
-                                        expanded = btProjectExpanded && bugtrackerProjects.isNotEmpty(),
-                                        onDismissRequest = { btProjectExpanded = false }
-                                    ) {
-                                        bugtrackerProjects.forEach { proj ->
-                                            DropdownMenuItem(
-                                                text = {
-                                                    Column {
-                                                        Text("${proj.id} - ${proj.name}")
-                                                        proj.description?.let {
-                                                            Text(it, style = MaterialTheme.typography.labelSmall)
-                                                        }
-                                                    }
-                                                },
-                                                onClick = {
-                                                    bugtrackerProjectKey = proj.id
-                                                    btProjectExpanded = false
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-
-                    // Wiki Space Section
-                    Text("Wiki Space", style = MaterialTheme.typography.labelLarge)
-                    Spacer(Modifier.height(8.dp))
-
-                    if (wikiConnections.isEmpty()) {
-                        Text(
-                            "Klient nemá žádné Wiki connections.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        var wikiConnectionExpanded by remember { mutableStateOf(false) }
-                        var wikiSpaceExpanded by remember { mutableStateOf(false) }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            // Connection dropdown
-                            ExposedDropdownMenuBox(
-                                expanded = wikiConnectionExpanded,
-                                onExpandedChange = { wikiConnectionExpanded = it },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                OutlinedTextField(
-                                    value = wikiConnections.find { it.id == wikiConnectionId }?.name ?: "",
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    label = { Text("Connection") },
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = wikiConnectionExpanded) },
-                                    modifier = Modifier.menuAnchor()
-                                )
-                                ExposedDropdownMenu(
-                                    expanded = wikiConnectionExpanded,
-                                    onDismissRequest = { wikiConnectionExpanded = false }
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text("-- Žádné --") },
-                                        onClick = {
-                                            wikiConnectionId = null
-                                            wikiSpaceKey = ""
-                                            wikiSpaces = emptyList()
-                                            wikiConnectionExpanded = false
-                                        }
-                                    )
-                                    wikiConnections.forEach { conn ->
-                                        DropdownMenuItem(
-                                            text = { Text(conn.name) },
-                                            onClick = {
-                                                wikiConnectionId = conn.id
-                                                wikiSpaceKey = ""
-                                                loadWikiSpaces(conn.id)
-                                                wikiConnectionExpanded = false
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-
-                            // Space dropdown (when connection selected)
-                            if (wikiConnectionId != null) {
-                                ExposedDropdownMenuBox(
-                                    expanded = wikiSpaceExpanded,
-                                    onExpandedChange = { wikiSpaceExpanded = it },
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    OutlinedTextField(
-                                        value = wikiSpaceKey,
-                                        onValueChange = { wikiSpaceKey = it },
-                                        label = { Text("Space Key") },
-                                        trailingIcon = {
-                                            if (loadingWikiSpaces) {
-                                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                                            } else {
-                                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = wikiSpaceExpanded)
-                                            }
-                                        },
-                                        modifier = Modifier.menuAnchor()
-                                    )
-                                    ExposedDropdownMenu(
-                                        expanded = wikiSpaceExpanded && wikiSpaces.isNotEmpty(),
-                                        onDismissRequest = { wikiSpaceExpanded = false }
-                                    ) {
-                                        wikiSpaces.forEach { space ->
-                                            DropdownMenuItem(
-                                                text = {
-                                                    Column {
-                                                        Text("${space.id} - ${space.name}")
-                                                        space.description?.let {
-                                                            Text(it, style = MaterialTheme.typography.labelSmall)
-                                                        }
-                                                    }
-                                                },
-                                                onClick = {
-                                                    wikiSpaceKey = space.id
-                                                    wikiSpaceExpanded = false
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
-                            }
+                    clientConnections.forEach { connection ->
+                        if (connection.capabilities.isNotEmpty()) {
+                            ProjectConnectionCapabilityCard(
+                                connection = connection,
+                                projectCapabilities = connectionCapabilities,
+                                clientCapabilities = client?.connectionCapabilities ?: emptyList(),
+                                availableResources = availableResources,
+                                loadingResources = loadingResources,
+                                onLoadResources = { capability -> loadResourcesForCapability(connection.id, capability) },
+                                onUpdateConfig = { config -> updateCapabilityConfig(config) },
+                                onRemoveConfig = { capability -> removeCapabilityConfig(connection.id, capability) },
+                                getConfig = { capability -> getCapabilityConfig(connection.id, capability) },
+                                getClientConfig = { capability -> getClientCapabilityConfig(connection.id, capability) }
+                            )
                         }
                     }
                 }
@@ -719,12 +385,7 @@ private fun ProjectEditForm(
                         project.copy(
                             name = name,
                             description = description.ifBlank { null },
-                            gitRepositoryConnectionId = gitRepositoryConnectionId?.ifBlank { null },
-                            gitRepositoryIdentifier = gitRepositoryIdentifier.ifBlank { null },
-                            bugtrackerConnectionId = bugtrackerConnectionId?.ifBlank { null },
-                            bugtrackerProjectKey = bugtrackerProjectKey.ifBlank { null },
-                            wikiConnectionId = wikiConnectionId?.ifBlank { null },
-                            wikiSpaceKey = wikiSpaceKey.ifBlank { null },
+                            connectionCapabilities = connectionCapabilities,
                             gitCommitMessageFormat = if (useCustomGitConfig) gitCommitMessageFormat.ifBlank { null } else null,
                             gitCommitAuthorName = if (useCustomGitConfig) gitCommitAuthorName.ifBlank { null } else null,
                             gitCommitAuthorEmail = if (useCustomGitConfig) gitCommitAuthorEmail.ifBlank { null } else null,
@@ -740,5 +401,245 @@ private fun ProjectEditForm(
                 Text("Uložit")
             }
         }
+    }
+}
+
+@Composable
+private fun ProjectConnectionCapabilityCard(
+    connection: ConnectionResponseDto,
+    projectCapabilities: List<ProjectConnectionCapabilityDto>,
+    clientCapabilities: List<com.jervis.dto.ClientConnectionCapabilityDto>,
+    availableResources: Map<Pair<String, ConnectionCapability>, List<ConnectionResourceDto>>,
+    loadingResources: Set<Pair<String, ConnectionCapability>>,
+    onLoadResources: (ConnectionCapability) -> Unit,
+    onUpdateConfig: (ProjectConnectionCapabilityDto) -> Unit,
+    onRemoveConfig: (ConnectionCapability) -> Unit,
+    getConfig: (ConnectionCapability) -> ProjectConnectionCapabilityDto?,
+    getClientConfig: (ConnectionCapability) -> com.jervis.dto.ClientConnectionCapabilityDto?
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("📌", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        connection.name,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        connection.capabilities.joinToString(", ") { it.name },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+                Icon(
+                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            if (expanded) {
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(8.dp))
+
+                connection.capabilities.forEach { capability ->
+                    ProjectCapabilityConfigItem(
+                        connectionId = connection.id,
+                        capability = capability,
+                        config = getConfig(capability),
+                        clientConfig = getClientConfig(capability),
+                        resources = availableResources[Pair(connection.id, capability)] ?: emptyList(),
+                        isLoadingResources = Pair(connection.id, capability) in loadingResources,
+                        onLoadResources = { onLoadResources(capability) },
+                        onUpdateConfig = onUpdateConfig,
+                        onRemoveConfig = { onRemoveConfig(capability) }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProjectCapabilityConfigItem(
+    connectionId: String,
+    capability: ConnectionCapability,
+    config: ProjectConnectionCapabilityDto?,
+    clientConfig: com.jervis.dto.ClientConnectionCapabilityDto?,
+    resources: List<ConnectionResourceDto>,
+    isLoadingResources: Boolean,
+    onLoadResources: () -> Unit,
+    onUpdateConfig: (ProjectConnectionCapabilityDto) -> Unit,
+    onRemoveConfig: () -> Unit
+) {
+    val hasProjectOverride = config != null
+    val isEnabled = config?.enabled ?: false
+    val selectedResource = config?.resourceIdentifier
+
+    // Load resources when expanding
+    LaunchedEffect(hasProjectOverride) {
+        if (hasProjectOverride && resources.isEmpty()) {
+            onLoadResources()
+        }
+    }
+
+    Column {
+        // Show inheritance info
+        if (clientConfig != null) {
+            val clientResourceDisplay = if (clientConfig.indexAllResources) {
+                "Všechny zdroje"
+            } else {
+                clientConfig.selectedResources.joinToString(", ").ifEmpty { "Žádné zdroje" }
+            }
+            Text(
+                "Zděděno z klienta: $clientResourceDisplay",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(Modifier.height(4.dp))
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(
+                checked = hasProjectOverride,
+                onCheckedChange = { override ->
+                    if (override) {
+                        onUpdateConfig(
+                            ProjectConnectionCapabilityDto(
+                                connectionId = connectionId,
+                                capability = capability,
+                                enabled = true,
+                                resourceIdentifier = null,
+                                selectedResources = emptyList()
+                            )
+                        )
+                        onLoadResources()
+                    } else {
+                        onRemoveConfig()
+                    }
+                }
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(
+                "Přepsat: ${getCapabilityLabel(capability)}",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+
+        if (hasProjectOverride) {
+            Column(modifier = Modifier.padding(start = 40.dp)) {
+                // Resource selection dropdown
+                var resourceExpanded by remember { mutableStateOf(false) }
+
+                Text(
+                    "Vyberte konkrétní zdroj pro tento projekt:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(Modifier.height(4.dp))
+
+                ExposedDropdownMenuBox(
+                    expanded = resourceExpanded,
+                    onExpandedChange = { resourceExpanded = it },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = selectedResource ?: "",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text(getResourceLabel(capability)) },
+                        placeholder = { Text("Vyberte...") },
+                        trailingIcon = {
+                            if (isLoadingResources) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            } else {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = resourceExpanded)
+                            }
+                        },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = resourceExpanded && resources.isNotEmpty(),
+                        onDismissRequest = { resourceExpanded = false }
+                    ) {
+                        resources.forEach { resource ->
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text("${resource.id} - ${resource.name}")
+                                        resource.description?.let {
+                                            Text(
+                                                it,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    onUpdateConfig(
+                                        ProjectConnectionCapabilityDto(
+                                            connectionId = connectionId,
+                                            capability = capability,
+                                            enabled = true,
+                                            resourceIdentifier = resource.id,
+                                            selectedResources = listOf(resource.id)
+                                        )
+                                    )
+                                    resourceExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                if (resources.isEmpty() && !isLoadingResources) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Žádné dostupné zdroje.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun getCapabilityLabel(capability: ConnectionCapability): String {
+    return when (capability) {
+        ConnectionCapability.BUGTRACKER -> "Bug Tracker"
+        ConnectionCapability.WIKI -> "Wiki"
+        ConnectionCapability.REPOSITORY -> "Repository"
+        ConnectionCapability.EMAIL -> "Email"
+        ConnectionCapability.GIT -> "Git"
+    }
+}
+
+private fun getResourceLabel(capability: ConnectionCapability): String {
+    return when (capability) {
+        ConnectionCapability.BUGTRACKER -> "Projekt"
+        ConnectionCapability.WIKI -> "Prostor"
+        ConnectionCapability.REPOSITORY -> "Repozitář"
+        ConnectionCapability.EMAIL -> "Složka"
+        ConnectionCapability.GIT -> "Repozitář"
     }
 }
