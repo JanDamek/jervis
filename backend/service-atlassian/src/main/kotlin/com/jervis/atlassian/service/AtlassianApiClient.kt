@@ -1175,7 +1175,7 @@ class AtlassianApiClient(
     suspend fun listJiraProjects(request: BugTrackerProjectsRequest): BugTrackerProjectsResponse {
         logger.info { "Listing Jira projects for baseUrl=${request.baseUrl}" }
         val auth =
-            when (request.authType.uppercase()) {
+            when (request.authType.name) {
                 "BASIC" -> {
                     com.jervis.common.dto.atlassian.AtlassianAuth.Basic(
                         request.basicUsername.orEmpty(),

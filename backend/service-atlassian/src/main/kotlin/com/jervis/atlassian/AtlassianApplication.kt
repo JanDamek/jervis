@@ -1,8 +1,10 @@
 package com.jervis.atlassian
 
 import com.jervis.atlassian.service.AtlassianApiClient
+import com.jervis.atlassian.service.AtlassianProviderService
 import com.jervis.atlassian.service.AtlassianServiceImpl
 import com.jervis.common.client.IAtlassianClient
+import com.jervis.common.client.IProviderService
 import com.jervis.common.client.IBugTrackerClient
 import com.jervis.common.client.IWikiClient
 import io.ktor.client.HttpClient
@@ -47,6 +49,7 @@ fun main() {
 
     val atlassianApiClient = AtlassianApiClient(httpClient)
     val atlassianService = AtlassianServiceImpl(atlassianApiClient)
+    val providerService = AtlassianProviderService(atlassianService)
 
     embeddedServer(Netty, port = port, host = host) {
         install(WebSockets)
@@ -70,6 +73,7 @@ fun main() {
                     }
                 }
 
+                registerService<IProviderService> { providerService }
                 registerService<IAtlassianClient> { atlassianService }
                 registerService<IBugTrackerClient> { atlassianService }
                 registerService<IWikiClient> { atlassianService }

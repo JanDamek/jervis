@@ -19,11 +19,9 @@ data class EndpointProperties(
     val tika: Host,
     val joern: Host,
     val whisper: Host,
-    val atlassian: Host,
     val junie: Host,
-    val github: Host,
-    val gitlab: Host,
     val knowledgebase: Host,
+    val providers: Map<String, String> = emptyMap(),
 ) {
     data class Api(
         val apiKey: String,

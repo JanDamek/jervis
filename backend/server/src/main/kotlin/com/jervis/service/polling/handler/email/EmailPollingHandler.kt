@@ -1,7 +1,7 @@
 package com.jervis.service.polling.handler.email
 
+import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ProtocolEnum
-import com.jervis.dto.connection.ProviderCapabilities
 import com.jervis.dto.connection.ProviderEnum
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.service.polling.PollingResult
@@ -24,7 +24,9 @@ class EmailPollingHandler(
     override val provider: ProviderEnum = ProviderEnum.GENERIC_EMAIL
 
     override fun canHandle(connectionDocument: ConnectionDocument): Boolean {
-        return ProviderCapabilities.isEmailProvider(connectionDocument.provider)
+        return connectionDocument.availableCapabilities.any {
+            it == ConnectionCapability.EMAIL_READ || it == ConnectionCapability.EMAIL_SEND
+        }
     }
 
     override suspend fun poll(

@@ -1,12 +1,14 @@
 package com.jervis.integration.bugtracker.internal
 
 import com.jervis.common.client.IBugTrackerClient
+import com.jervis.common.dto.AuthType
 import com.jervis.common.dto.bugtracker.BugTrackerIssueRequest
 import com.jervis.common.dto.bugtracker.BugTrackerSearchRequest
 import com.jervis.common.rpc.withRpcRetry
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ConnectionId
-import com.jervis.configuration.RpcReconnectHandler
+import com.jervis.configuration.ProviderRegistry
+import com.jervis.dto.connection.ProviderEnum
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.integration.bugtracker.BugTrackerComment
 import com.jervis.integration.bugtracker.BugTrackerIssue
@@ -24,7 +26,7 @@ class BugTrackerServiceImpl(
     private val bugTrackerClient: IBugTrackerClient,
     private val connectionService: ConnectionService,
     private val clientService: ClientService,
-    private val reconnectHandler: RpcReconnectHandler,
+    private val providerRegistry: ProviderRegistry,
 ) : BugTrackerService {
     private val logger = KotlinLogging.logger {}
 
@@ -40,15 +42,15 @@ class BugTrackerServiceImpl(
         val response =
             withRpcRetry(
                 name = "BugTrackerSearch",
-                reconnect = { reconnectHandler.reconnectAtlassian() },
+                reconnect = { providerRegistry.reconnect(ProviderEnum.ATLASSIAN) },
             ) {
                 bugTrackerClient.searchIssues(
                     BugTrackerSearchRequest(
                         baseUrl = connection.baseUrl,
-                        authType = getAuthType(connection),
-                        basicUsername = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.username,
-                        basicPassword = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.password,
-                        bearerToken = (connection.credentials as? ConnectionDocument.HttpCredentials.Bearer)?.token,
+                        authType = AuthType.valueOf(connection.authType.name),
+                        basicUsername = connection.username,
+                        basicPassword = connection.password,
+                        bearerToken = connection.bearerToken,
                         query = finalQuery,
                         maxResults = maxResults,
                     ),
@@ -65,7 +67,7 @@ class BugTrackerServiceImpl(
                 reporter = issue.reporter ?: "Unknown",
                 created = issue.created,
                 updated = issue.updated,
-                issueType = "Task", // Defaulting as not available in generic DTO
+                issueType = "Task",
                 priority = issue.priority,
                 labels = emptyList(),
             )
@@ -83,15 +85,15 @@ class BugTrackerServiceImpl(
         val response =
             withRpcRetry(
                 name = "BugTrackerGetIssue",
-                reconnect = { reconnectHandler.reconnectAtlassian() },
+                reconnect = { providerRegistry.reconnect(ProviderEnum.ATLASSIAN) },
             ) {
                 bugTrackerClient.getIssue(
                     BugTrackerIssueRequest(
                         baseUrl = connection.baseUrl,
-                        authType = getAuthType(connection),
-                        basicUsername = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.username,
-                        basicPassword = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.password,
-                        bearerToken = (connection.credentials as? ConnectionDocument.HttpCredentials.Bearer)?.token,
+                        authType = AuthType.valueOf(connection.authType.name),
+                        basicUsername = connection.username,
+                        basicPassword = connection.password,
+                        bearerToken = connection.bearerToken,
                         issueKey = issueKey,
                     ),
                 )
@@ -113,9 +115,6 @@ class BugTrackerServiceImpl(
     }
 
     override suspend fun listProjects(clientId: ClientId): List<BugTrackerProject> {
-        // NOTE: IAtlassianClient doesn't have listProjects yet.
-        // For now, return empty or implement via search if possible.
-        // Actually, AtlassianApiClient might have it. Let's check.
         return emptyList()
     }
 
@@ -123,8 +122,6 @@ class BugTrackerServiceImpl(
         clientId: ClientId,
         issueKey: String,
     ): List<BugTrackerComment> {
-        // Jira comments are currently not supported by generic BugTrackerClient.
-        // Needs addition to IBugTrackerClient if required.
         return emptyList()
     }
 
@@ -152,7 +149,7 @@ class BugTrackerServiceImpl(
         for (id in connectionIds) {
             val conn = connectionService.findById(id) ?: continue
             if (conn.state == com.jervis.dto.connection.ConnectionStateEnum.VALID &&
-                conn.connectionType == ConnectionDocument.ConnectionTypeEnum.HTTP &&
+                conn.protocol == com.jervis.dto.connection.ProtocolEnum.HTTP &&
                 conn.baseUrl.contains("atlassian.net", ignoreCase = true)
             ) {
                 return conn
@@ -160,11 +157,4 @@ class BugTrackerServiceImpl(
         }
         return null
     }
-
-    private fun getAuthType(connection: ConnectionDocument): String =
-        when (connection.credentials) {
-            is ConnectionDocument.HttpCredentials.Basic -> "BASIC"
-            is ConnectionDocument.HttpCredentials.Bearer -> "BEARER"
-            else -> "NONE"
-        }
 }

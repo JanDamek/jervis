@@ -5,7 +5,6 @@ import com.jervis.dto.connection.AuthTypeEnum
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionStateEnum
 import com.jervis.dto.connection.ProtocolEnum
-import com.jervis.dto.connection.ProviderCapabilities
 import com.jervis.dto.connection.ProviderEnum
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.CompoundIndex
@@ -84,17 +83,7 @@ data class ConnectionDocument(
     @Deprecated("Removed - not needed")
     val gitConfig: com.jervis.domain.git.GitConfig? = null,
 ) {
-    /**
-     * Get capabilities for this connection.
-     * Uses stored value if available, otherwise derives from provider/protocol.
-     */
-    fun getCapabilities(): Set<ConnectionCapability> {
-        return if (availableCapabilities.isNotEmpty()) {
-            availableCapabilities
-        } else {
-            ProviderCapabilities.forProviderAndProtocol(provider, protocol)
-        }
-    }
+    fun getCapabilities(): Set<ConnectionCapability> = availableCapabilities
 
     // Legacy enum (deprecated)
     @Deprecated("Use ProtocolEnum from DTO instead")

@@ -56,130 +56,6 @@ enum class ConnectionCapability {
     EMAIL_SEND,   // Send emails
 }
 
-// =============================================================================
-// Backwards compatibility aliases (deprecated, will be removed)
-// =============================================================================
-
-@Deprecated("Use ProtocolEnum instead", ReplaceWith("ProtocolEnum"))
-typealias ConnectionTypeEnum = ProtocolEnum
-
-@Deprecated("Use AuthTypeEnum instead", ReplaceWith("AuthTypeEnum"))
-typealias HttpAuthTypeEnum = AuthTypeEnum
-
-/**
- * Service capabilities response - returned by each microservice to declare what it supports.
- */
-@Serializable
-data class ServiceCapabilitiesDto(
-    val capabilities: Set<ConnectionCapability>,
-)
-
-/**
- * Provider capabilities mapping - what each provider supports.
- */
-object ProviderCapabilities {
-    private val DEVOPS_CAPABILITIES = setOf(
-        ConnectionCapability.REPOSITORY,
-        ConnectionCapability.BUGTRACKER,
-        ConnectionCapability.WIKI
-    )
-
-    private val EMAIL_CAPABILITIES = setOf(
-        ConnectionCapability.EMAIL_READ,
-        ConnectionCapability.EMAIL_SEND
-    )
-
-    fun forProvider(provider: ProviderEnum): Set<ConnectionCapability> = when (provider) {
-        ProviderEnum.GITHUB -> DEVOPS_CAPABILITIES
-        ProviderEnum.GITLAB -> DEVOPS_CAPABILITIES
-        ProviderEnum.ATLASSIAN -> DEVOPS_CAPABILITIES
-        ProviderEnum.AZURE_DEVOPS -> DEVOPS_CAPABILITIES
-        ProviderEnum.GOOGLE_CLOUD -> DEVOPS_CAPABILITIES
-
-        ProviderEnum.GOOGLE_WORKSPACE -> EMAIL_CAPABILITIES
-        ProviderEnum.MICROSOFT_365 -> EMAIL_CAPABILITIES
-        ProviderEnum.GENERIC_EMAIL -> EMAIL_CAPABILITIES
-    }
-
-    /**
-     * Get capabilities based on provider and protocol.
-     * For email providers, protocol determines read/send capabilities.
-     */
-    fun forProviderAndProtocol(provider: ProviderEnum, protocol: ProtocolEnum): Set<ConnectionCapability> {
-        return when (provider) {
-            // DevOps providers always use HTTP and have all capabilities
-            ProviderEnum.GITHUB,
-            ProviderEnum.GITLAB,
-            ProviderEnum.ATLASSIAN,
-            ProviderEnum.AZURE_DEVOPS,
-            ProviderEnum.GOOGLE_CLOUD -> DEVOPS_CAPABILITIES
-
-            // Email providers - capabilities depend on protocol
-            ProviderEnum.GOOGLE_WORKSPACE,
-            ProviderEnum.MICROSOFT_365,
-            ProviderEnum.GENERIC_EMAIL -> when (protocol) {
-                ProtocolEnum.IMAP -> setOf(ConnectionCapability.EMAIL_READ, ConnectionCapability.EMAIL_SEND)
-                ProtocolEnum.POP3 -> setOf(ConnectionCapability.EMAIL_READ)
-                ProtocolEnum.SMTP -> setOf(ConnectionCapability.EMAIL_SEND)
-                ProtocolEnum.HTTP -> emptySet() // Email providers don't use HTTP
-            }
-        }
-    }
-
-    /**
-     * Get available protocols for a provider.
-     */
-    fun protocolsForProvider(provider: ProviderEnum): Set<ProtocolEnum> = when (provider) {
-        ProviderEnum.GITHUB,
-        ProviderEnum.GITLAB,
-        ProviderEnum.ATLASSIAN,
-        ProviderEnum.AZURE_DEVOPS,
-        ProviderEnum.GOOGLE_CLOUD -> setOf(ProtocolEnum.HTTP)
-
-        ProviderEnum.GOOGLE_WORKSPACE,
-        ProviderEnum.MICROSOFT_365 -> setOf(ProtocolEnum.IMAP, ProtocolEnum.SMTP)
-
-        ProviderEnum.GENERIC_EMAIL -> setOf(ProtocolEnum.IMAP, ProtocolEnum.POP3, ProtocolEnum.SMTP)
-    }
-
-    /**
-     * Get available auth types for a provider.
-     */
-    fun authTypesForProvider(provider: ProviderEnum): Set<AuthTypeEnum> = when (provider) {
-        ProviderEnum.GITHUB -> setOf(AuthTypeEnum.BEARER, AuthTypeEnum.OAUTH2)
-        ProviderEnum.GITLAB -> setOf(AuthTypeEnum.BEARER, AuthTypeEnum.OAUTH2)
-        ProviderEnum.ATLASSIAN -> setOf(AuthTypeEnum.BASIC, AuthTypeEnum.OAUTH2)
-        ProviderEnum.AZURE_DEVOPS -> setOf(AuthTypeEnum.BEARER, AuthTypeEnum.OAUTH2)
-        ProviderEnum.GOOGLE_CLOUD -> setOf(AuthTypeEnum.OAUTH2)
-
-        ProviderEnum.GOOGLE_WORKSPACE -> setOf(AuthTypeEnum.OAUTH2)
-        ProviderEnum.MICROSOFT_365 -> setOf(AuthTypeEnum.OAUTH2, AuthTypeEnum.BASIC)
-        ProviderEnum.GENERIC_EMAIL -> setOf(AuthTypeEnum.BASIC)
-    }
-
-    /**
-     * Check if provider is a DevOps provider.
-     */
-    fun isDevOpsProvider(provider: ProviderEnum): Boolean = when (provider) {
-        ProviderEnum.GITHUB,
-        ProviderEnum.GITLAB,
-        ProviderEnum.ATLASSIAN,
-        ProviderEnum.AZURE_DEVOPS,
-        ProviderEnum.GOOGLE_CLOUD -> true
-        else -> false
-    }
-
-    /**
-     * Check if provider is an email provider.
-     */
-    fun isEmailProvider(provider: ProviderEnum): Boolean = when (provider) {
-        ProviderEnum.GOOGLE_WORKSPACE,
-        ProviderEnum.MICROSOFT_365,
-        ProviderEnum.GENERIC_EMAIL -> true
-        else -> false
-    }
-}
-
 /**
  * Rate limit configuration DTO.
  */
@@ -236,20 +112,6 @@ data class ConnectionResponseDto(
     val confluenceRootPageId: String? = null,
     val bitbucketRepoSlug: String? = null,
     val gitRemoteUrl: String? = null,
-
-    // Legacy compatibility
-    @Deprecated("Use capabilities instead")
-    val hasCredentials: Boolean = false,
-    @Deprecated("Use protocol instead")
-    val type: ProtocolEnum? = null,
-    @Deprecated("Use bearerToken instead")
-    val httpBearerToken: String? = null,
-    @Deprecated("Use username instead")
-    val httpBasicUsername: String? = null,
-    @Deprecated("Use password instead")
-    val httpBasicPassword: String? = null,
-    @Deprecated("Removed - not needed")
-    val gitProvider: String? = null,
 )
 
 /**
@@ -298,18 +160,6 @@ data class ConnectionCreateRequestDto(
     val confluenceRootPageId: String? = null,
     val bitbucketRepoSlug: String? = null,
     val gitRemoteUrl: String? = null,
-
-    // Legacy compatibility
-    @Deprecated("Use protocol instead")
-    val type: ProtocolEnum? = null,
-    @Deprecated("Use bearerToken instead")
-    val httpBearerToken: String? = null,
-    @Deprecated("Use username instead")
-    val httpBasicUsername: String? = null,
-    @Deprecated("Use password instead")
-    val httpBasicPassword: String? = null,
-    @Deprecated("Removed - not needed")
-    val gitProvider: String? = null,
 )
 
 /**
@@ -359,16 +209,6 @@ data class ConnectionUpdateRequestDto(
     val confluenceRootPageId: String? = null,
     val bitbucketRepoSlug: String? = null,
     val gitRemoteUrl: String? = null,
-
-    // Legacy compatibility
-    @Deprecated("Use bearerToken instead")
-    val httpBearerToken: String? = null,
-    @Deprecated("Use username instead")
-    val httpBasicUsername: String? = null,
-    @Deprecated("Use password instead")
-    val httpBasicPassword: String? = null,
-    @Deprecated("Removed - not needed")
-    val gitProvider: String? = null,
 )
 
 /**

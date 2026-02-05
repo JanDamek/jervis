@@ -163,7 +163,7 @@ class OAuth2Service(
             val accessToken = tokenResponse["access_token"] as String
             val updatedConnection =
                 connection.copy(
-                    credentials = ConnectionDocument.HttpCredentials.Bearer(accessToken),
+                    bearerToken = accessToken,  // Store in the standard field, not legacy credentials
                     state = ConnectionStateEnum.VALID,
                 )
             connectionService.save(updatedConnection)

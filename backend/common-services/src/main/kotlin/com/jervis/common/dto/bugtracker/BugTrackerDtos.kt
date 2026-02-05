@@ -1,11 +1,12 @@
 package com.jervis.common.dto.bugtracker
 
+import com.jervis.common.dto.AuthType
 import kotlinx.serialization.Serializable
 
 @Serializable
 data class BugTrackerUserRequest(
     val baseUrl: String,
-    val authType: String, // BASIC, BEARER, OAUTH2
+    val authType: AuthType, // BASIC, BEARER, OAUTH2
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
@@ -23,7 +24,7 @@ data class BugTrackerUserDto(
 @Serializable
 data class BugTrackerSearchRequest(
     val baseUrl: String,
-    val authType: String,
+    val authType: AuthType,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
@@ -41,7 +42,7 @@ data class BugTrackerSearchResponse(
 @Serializable
 data class BugTrackerIssueRequest(
     val baseUrl: String,
-    val authType: String,
+    val authType: AuthType,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
@@ -82,7 +83,7 @@ data class BugTrackerAttachmentDto(
 @Serializable
 data class BugTrackerProjectsRequest(
     val baseUrl: String,
-    val authType: String,
+    val authType: AuthType,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
@@ -105,7 +106,7 @@ data class BugTrackerProjectDto(
 @Serializable
 data class BugTrackerAttachmentRequest(
     val baseUrl: String,
-    val authType: String,
+    val authType: AuthType,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,

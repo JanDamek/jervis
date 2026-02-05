@@ -57,8 +57,9 @@ import com.jervis.dto.connection.ConnectionCreateRequestDto
 import com.jervis.dto.connection.ConnectionResponseDto
 import com.jervis.dto.connection.ConnectionUpdateRequestDto
 import com.jervis.dto.connection.ProtocolEnum
-import com.jervis.dto.connection.ProviderCapabilities
+import com.jervis.dto.connection.ProviderDescriptor
 import com.jervis.dto.connection.ProviderEnum
+import com.jervis.dto.connection.ProviderUiHints
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.components.StatusIndicator
 import com.jervis.ui.design.JPrimaryButton
@@ -72,6 +73,7 @@ fun ConnectionsSettings(repository: JervisRepository) {
 
     var connections by remember { mutableStateOf<List<ConnectionResponseDto>>(emptyList()) }
     var clients by remember { mutableStateOf<List<ClientDto>>(emptyList()) }
+    var descriptors by remember { mutableStateOf<Map<ProviderEnum, ProviderDescriptor>>(emptyMap()) }
     var isLoading by remember { mutableStateOf(false) }
 
     // Dialog states
@@ -88,12 +90,13 @@ fun ConnectionsSettings(repository: JervisRepository) {
         }
     }
 
-    // Load connections and clients initially
+    // Load connections, clients, and descriptors initially
     LaunchedEffect(Unit) {
         isLoading = true
         try {
             connections = repository.connections.getAllConnections()
             clients = repository.clients.getAllClients()
+            descriptors = repository.connections.getProviderDescriptors()
         } catch (e: Exception) {
             snackbarHostState.showSnackbar("Chyba načítání: ${e.message}")
         }
@@ -159,6 +162,7 @@ fun ConnectionsSettings(repository: JervisRepository) {
     // Create Dialog
     if (showCreateDialog) {
         ConnectionCreateDialog(
+            descriptors = descriptors,
             onDismiss = { showCreateDialog = false },
             onCreate = { request ->
                 scope.launch {
@@ -185,6 +189,7 @@ fun ConnectionsSettings(repository: JervisRepository) {
     showEditDialog?.let { connection ->
         ConnectionEditDialog(
             connection = connection,
+            descriptors = descriptors,
             onDismiss = { showEditDialog = null },
             onSave = { id, request ->
                 scope.launch {
@@ -350,6 +355,7 @@ private val ConnectionResponseDto.displayUrl: String
 
 @Composable
 private fun ConnectionCreateDialog(
+    descriptors: Map<ProviderEnum, ProviderDescriptor>,
     onDismiss: () -> Unit,
     onCreate: (ConnectionCreateRequestDto) -> Unit,
 ) {
@@ -384,13 +390,15 @@ private fun ConnectionCreateDialog(
     var useSsl by remember { mutableStateOf(true) }
     var useTls by remember { mutableStateOf(true) }
 
-    // Determine if this is a DevOps or Email provider
-    val isDevOpsProvider = ProviderCapabilities.isDevOpsProvider(provider)
-    val isEmailProvider = ProviderCapabilities.isEmailProvider(provider)
+    // Derive UI hints from descriptors
+    val descriptor = descriptors[provider]
+    val uiHints = descriptor?.uiHints ?: ProviderUiHints()
+    val isEmailProvider = uiHints.showEmailFields
+    val isDevOpsProvider = !isEmailProvider
 
-    // Get available auth types for this provider
-    val availableAuthTypes = ProviderCapabilities.authTypesForProvider(provider)
-    val availableProtocols = ProviderCapabilities.protocolsForProvider(provider)
+    // Get available auth types and protocols from descriptor
+    val availableAuthTypes = descriptor?.authTypes?.toSet() ?: setOf(AuthTypeEnum.NONE)
+    val availableProtocols = descriptor?.protocols ?: setOf(ProtocolEnum.HTTP)
 
     // Protocol (derived from provider for DevOps, selectable for email)
     var protocol by remember { mutableStateOf(ProtocolEnum.HTTP) }
@@ -545,8 +553,8 @@ private fun ConnectionCreateDialog(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // Cloud checkbox for OAuth2
-                if (isDevOpsProvider && authType == AuthTypeEnum.OAUTH2) {
+                // Cloud checkbox for OAuth2 (only for GitHub/GitLab, Atlassian always needs URL)
+                if (isDevOpsProvider && authType == AuthTypeEnum.OAUTH2 && provider != ProviderEnum.ATLASSIAN) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth(),
@@ -555,17 +563,23 @@ private fun ConnectionCreateDialog(
                             checked = isCloud,
                             onCheckedChange = { isCloud = it },
                         )
-                        Text("Cloud (veřejný GitHub/GitLab/Atlassian)", modifier = Modifier.weight(1f))
+                        Text("Cloud (veřejný GitHub/GitLab)", modifier = Modifier.weight(1f))
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // Base URL (for DevOps providers) - hidden for cloud OAuth2
-                if (isDevOpsProvider && (authType != AuthTypeEnum.OAUTH2 || !isCloud)) {
+                // Base URL (for DevOps providers)
+                // For cloud OAuth2: hidden for GitHub/GitLab (auto-set), shown for Atlassian (user-specific)
+                val showBaseUrlField = isDevOpsProvider && (
+                    authType != AuthTypeEnum.OAUTH2 ||
+                    !isCloud ||
+                    provider == ProviderEnum.ATLASSIAN
+                )
+                if (showBaseUrlField) {
                     OutlinedTextField(
                         value = baseUrl,
                         onValueChange = { baseUrl = it },
-                        label = { Text("Base URL") },
+                        label = { Text(if (provider == ProviderEnum.ATLASSIAN) "Atlassian URL (např. https://firma.atlassian.net)" else "Base URL") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -688,6 +702,7 @@ private fun ConnectionCreateDialog(
 @Composable
 private fun ConnectionEditDialog(
     connection: ConnectionResponseDto,
+    descriptors: Map<ProviderEnum, ProviderDescriptor>,
     onDismiss: () -> Unit,
     onSave: (String, ConnectionUpdateRequestDto) -> Unit,
 ) {
@@ -717,11 +732,13 @@ private fun ConnectionEditDialog(
     var folderName by remember { mutableStateOf(connection.folderName ?: "INBOX") }
     var useSsl by remember { mutableStateOf(connection.useSsl ?: true) }
 
-    // Determine if this is a DevOps or Email provider
-    val isDevOpsProvider = ProviderCapabilities.isDevOpsProvider(provider)
-    val isEmailProvider = ProviderCapabilities.isEmailProvider(provider)
-    val availableAuthTypes = ProviderCapabilities.authTypesForProvider(provider)
-    val availableProtocols = ProviderCapabilities.protocolsForProvider(provider)
+    // Derive UI hints from descriptors
+    val descriptor = descriptors[provider]
+    val uiHints = descriptor?.uiHints ?: ProviderUiHints()
+    val isEmailProvider = uiHints.showEmailFields
+    val isDevOpsProvider = !isEmailProvider
+    val availableAuthTypes = descriptor?.authTypes?.toSet() ?: setOf(AuthTypeEnum.NONE)
+    val availableProtocols = descriptor?.protocols ?: setOf(ProtocolEnum.HTTP)
 
     val enabled =
         name.isNotBlank() &&

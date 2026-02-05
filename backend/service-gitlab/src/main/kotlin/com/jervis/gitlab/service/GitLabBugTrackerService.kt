@@ -1,10 +1,7 @@
 package com.jervis.gitlab.service
 
 import com.jervis.common.client.IBugTrackerClient
-import com.jervis.common.client.IGitLabClient
 import com.jervis.common.dto.bugtracker.*
-import com.jervis.dto.connection.ConnectionCapability
-import com.jervis.dto.connection.ServiceCapabilitiesDto
 import mu.KotlinLogging
 
 /**
@@ -12,18 +9,8 @@ import mu.KotlinLogging
  */
 class GitLabBugTrackerService(
     private val apiClient: GitLabApiClient,
-) : IBugTrackerClient,
-    IGitLabClient {
+) : IBugTrackerClient {
     private val log = KotlinLogging.logger {}
-
-    override suspend fun getCapabilities(): ServiceCapabilitiesDto = ServiceCapabilitiesDto(
-        capabilities = setOf(
-            ConnectionCapability.REPOSITORY,
-            ConnectionCapability.BUGTRACKER,
-            ConnectionCapability.WIKI,
-            ConnectionCapability.REPOSITORY,
-        )
-    )
 
     override suspend fun getUser(request: BugTrackerUserRequest): BugTrackerUserDto {
         val token = request.bearerToken ?: throw IllegalArgumentException("Bearer token required for GitLab")

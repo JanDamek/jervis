@@ -6,6 +6,8 @@ import com.jervis.dto.connection.ConnectionResourceDto
 import com.jervis.dto.connection.ConnectionResponseDto
 import com.jervis.dto.connection.ConnectionTestResultDto
 import com.jervis.dto.connection.ConnectionUpdateRequestDto
+import com.jervis.dto.connection.ProviderDescriptor
+import com.jervis.dto.connection.ProviderEnum
 import kotlinx.rpc.annotations.Rpc
 
 @Rpc
@@ -46,4 +48,6 @@ interface IConnectionService {
         connectionId: String,
         capability: ConnectionCapability,
     ): List<ConnectionResourceDto>
+
+    suspend fun getProviderDescriptors(): Map<ProviderEnum, ProviderDescriptor>
 }

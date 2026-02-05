@@ -155,17 +155,15 @@ endpoints:
     baseUrl: wss://jervis.damek-soft.eu/tika/
   whisper:
     baseUrl: wss://jervis.damek-soft.eu/whisper/
-  atlassian:
-    baseUrl: wss://jervis.damek-soft.eu/atlassian/
   aider:
     baseUrl: wss://jervis.damek-soft.eu/aider/
   coding:
     baseUrl: wss://jervis.damek-soft.eu/coding/
   junie:
     baseUrl: wss://jervis.damek-soft.eu/junie/
-  github:
-    baseUrl: wss://jervis.damek-soft.eu/github/
-  gitlab:
-    baseUrl: wss://jervis.damek-soft.eu/gitlab/
   knowledgebase:
     baseUrl: wss://jervis.damek-soft.eu/knowledgebase/
+  providers:
+    github: wss://jervis.damek-soft.eu/github/
+    gitlab: wss://jervis.damek-soft.eu/gitlab/
+    atlassian: wss://jervis.damek-soft.eu/atlassian/

@@ -39,6 +39,8 @@ class ClientService(
                 defaultLanguageEnum = client.defaultLanguageEnum,
                 lastSelectedProjectId = client.lastSelectedProjectId,
                 connectionIds = client.connectionIds,
+                connectionCapabilities = client.connectionCapabilities,
+                gitCommitConfig = client.gitCommitConfig,
             )
 
         val updated = clientRepository.save(merged)

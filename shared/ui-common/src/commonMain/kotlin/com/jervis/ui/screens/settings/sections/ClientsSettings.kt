@@ -271,7 +271,7 @@ private fun ClientEditForm(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Text(
-                                        connection?.type?.name ?: "",
+                                        connection?.protocol?.name ?: "",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                     )
@@ -307,7 +307,7 @@ private fun ClientEditForm(
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(conn.name, style = MaterialTheme.typography.bodyMedium)
-                                        Text(conn.type?.name ?: "", style = MaterialTheme.typography.bodySmall)
+                                        Text(conn.protocol.name, style = MaterialTheme.typography.bodySmall)
                                     }
                                 }
                                 HorizontalDivider()

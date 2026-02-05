@@ -1,11 +1,12 @@
 package com.jervis.common.dto.repository
 
+import com.jervis.common.dto.AuthType
 import kotlinx.serialization.Serializable
 
 @Serializable
 data class RepositoryUserRequest(
     val baseUrl: String,
-    val authType: String,
+    val authType: AuthType,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null
@@ -22,7 +23,7 @@ data class RepositoryUserDto(
 @Serializable
 data class RepositoryListRequest(
     val baseUrl: String,
-    val authType: String,
+    val authType: AuthType,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
@@ -37,7 +38,7 @@ data class RepositoryListResponse(
 @Serializable
 data class RepositoryRequest(
     val baseUrl: String,
-    val authType: String,
+    val authType: AuthType,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
@@ -66,7 +67,7 @@ data class RepositoryDto(
 @Serializable
 data class RepositoryIssuesRequest(
     val baseUrl: String,
-    val authType: String,
+    val authType: AuthType,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
@@ -95,7 +96,7 @@ data class RepositoryIssueDto(
 @Serializable
 data class RepositoryFileRequest(
     val baseUrl: String,
-    val authType: String,
+    val authType: AuthType,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,

@@ -1,6 +1,7 @@
 package com.jervis.integration.bugtracker.internal.polling
 
 import com.jervis.common.client.IBugTrackerClient
+import com.jervis.common.dto.AuthType
 import com.jervis.common.dto.bugtracker.BugTrackerSearchRequest
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ConnectionId
@@ -8,11 +9,6 @@ import com.jervis.common.types.ProjectId
 import com.jervis.domain.PollingStatusEnum
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.ConnectionDocument
-import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
-import com.jervis.entity.connection.basicPassword
-import com.jervis.entity.connection.basicUsername
-import com.jervis.entity.connection.bearerToken
-import com.jervis.entity.connection.toAuthType
 import com.jervis.integration.bugtracker.internal.entity.BugTrackerIssueIndexDocument
 import com.jervis.integration.bugtracker.internal.repository.BugTrackerIssueIndexRepository
 import com.jervis.service.client.ClientService
@@ -50,7 +46,7 @@ class BugTrackerPollingHandler(
         clientService = clientService,
     ) {
     fun canHandle(connectionDocument: ConnectionDocument): Boolean =
-        connectionDocument.connectionType == ConnectionDocument.ConnectionTypeEnum.HTTP &&
+        connectionDocument.protocol == com.jervis.dto.connection.ProtocolEnum.HTTP &&
             (connectionDocument.baseUrl.contains("atlassian.net") || connectionDocument.baseUrl.contains("atlassian"))
 
     override fun getSystemName(): String = "Jira"
@@ -107,7 +103,6 @@ class BugTrackerPollingHandler(
 
     override suspend fun fetchFullIssues(
         connectionDocument: ConnectionDocument,
-        credentials: HttpCredentials,
         clientId: ClientId,
         projectId: ProjectId?,
         query: String,
@@ -117,10 +112,10 @@ class BugTrackerPollingHandler(
             val searchRequest =
                 BugTrackerSearchRequest(
                     baseUrl = connectionDocument.baseUrl,
-                    authType = credentials.toAuthType().name,
-                    basicUsername = credentials.basicUsername(),
-                    basicPassword = credentials.basicPassword(),
-                    bearerToken = credentials.bearerToken(),
+                    authType = AuthType.valueOf(connectionDocument.authType.name),
+                    basicUsername = connectionDocument.username,
+                    basicPassword = connectionDocument.password,
+                    bearerToken = connectionDocument.bearerToken,
                     query = query,
                 )
 

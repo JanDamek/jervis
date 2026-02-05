@@ -139,20 +139,18 @@ data:
         baseUrl: ws://jervis-tika:8081/
       whisper:
         baseUrl: ws://jervis-whisper:8083/
-      atlassian:
-        baseUrl: ws://jervis-atlassian:8084/
       aider:
         baseUrl: ws://jervis-aider:3100/
       coding:
         baseUrl: ws://jervis-coding-engine:3200/
       junie:
         baseUrl: ws://jervis-junie:3300/
-      github:
-        baseUrl: ws://jervis-github:8085/
-      gitlab:
-        baseUrl: ws://jervis-gitlab:8086/
       knowledgebase:
         baseUrl: http://jervis-knowledgebase:8080/
+      providers:
+        github: ws://jervis-github:8085/
+        gitlab: ws://jervis-gitlab:8086/
+        atlassian: ws://jervis-atlassian:8084/
 
 
 ---

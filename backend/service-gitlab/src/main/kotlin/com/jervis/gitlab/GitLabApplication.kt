@@ -1,11 +1,12 @@
 package com.jervis.gitlab
 
 import com.jervis.common.client.IBugTrackerClient
-import com.jervis.common.client.IGitLabClient
+import com.jervis.common.client.IProviderService
 import com.jervis.common.client.IRepositoryClient
 import com.jervis.common.client.IWikiClient
 import com.jervis.gitlab.service.GitLabApiClient
 import com.jervis.gitlab.service.GitLabBugTrackerService
+import com.jervis.gitlab.service.GitLabProviderService
 import com.jervis.gitlab.service.GitLabRepositoryService
 import com.jervis.gitlab.service.GitLabWikiService
 import io.ktor.client.HttpClient
@@ -52,6 +53,7 @@ fun main() {
     val repositoryService = GitLabRepositoryService(gitlabApiClient)
     val bugTrackerService = GitLabBugTrackerService(gitlabApiClient)
     val wikiService = GitLabWikiService(gitlabApiClient)
+    val providerService = GitLabProviderService(repositoryService, bugTrackerService, wikiService)
 
     embeddedServer(Netty, port = port, host = host) {
         install(WebSockets)
@@ -75,10 +77,10 @@ fun main() {
                     }
                 }
 
+                registerService<IProviderService> { providerService }
                 registerService<IRepositoryClient> { repositoryService }
                 registerService<IBugTrackerClient> { bugTrackerService }
                 registerService<IWikiClient> { wikiService }
-                registerService<IGitLabClient> { repositoryService }
             }
         }
     }.start(wait = false)

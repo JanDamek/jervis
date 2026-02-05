@@ -4,10 +4,10 @@ import com.jervis.common.types.ClientId
 import com.jervis.common.types.ConnectionId
 import com.jervis.common.types.ProjectId
 import com.jervis.dto.connection.ConnectionCapability
+import com.jervis.dto.connection.ProtocolEnum
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.ProjectDocument
 import com.jervis.entity.connection.ConnectionDocument
-import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
 import com.jervis.service.client.ClientService
 import com.jervis.service.polling.PollingResult
 import com.jervis.service.polling.PollingStateService
@@ -42,8 +42,8 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
         connectionDocument: ConnectionDocument,
         context: PollingContext,
     ): PollingResult {
-        if (connectionDocument.connectionType != ConnectionDocument.ConnectionTypeEnum.HTTP || connectionDocument.credentials == null) {
-            logger.warn { "  → ${getSystemName()} handler: Invalid connectionDocument or credentials" }
+        if (connectionDocument.protocol != ProtocolEnum.HTTP) {
+            logger.warn { "  → ${getSystemName()} handler: Invalid connection protocol ${connectionDocument.protocol}" }
             return PollingResult(errors = 1)
         }
 
@@ -126,9 +126,6 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
         project: ProjectDocument?,
         resourceFilter: ResourceFilter,
     ): PollingResult {
-        val credentials =
-            requireNotNull(connectionDocument.credentials) { "HTTP credentials required for ${getSystemName()} polling" }
-
         // Get last polling state for incremental polling
         val state = pollingStateService.getState(connectionDocument.id, connectionDocument.provider)
         val query = buildQuery(client, connectionDocument, state?.lastSeenUpdatedAt, resourceFilter)
@@ -138,7 +135,6 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
         val fullIssues =
             fetchFullIssues(
                 connectionDocument = connectionDocument,
-                credentials = credentials,
                 clientId = client.id,
                 projectId = project?.id,
                 query = query,
@@ -218,7 +214,6 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
      */
     protected abstract suspend fun fetchFullIssues(
         connectionDocument: ConnectionDocument,
-        credentials: HttpCredentials,
         clientId: ClientId,
         projectId: ProjectId?,
         query: String,

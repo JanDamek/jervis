@@ -6,6 +6,8 @@ import com.jervis.common.dto.wiki.WikiSearchRequest
 import com.jervis.common.rpc.withRpcRetry
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ConnectionId
+import com.jervis.configuration.ProviderRegistry
+import com.jervis.dto.connection.ProviderEnum
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.integration.wiki.CreatePageRequest
 import com.jervis.integration.wiki.UpdatePageRequest
@@ -22,7 +24,7 @@ class WikiServiceImpl(
     private val wikiClient: IWikiClient,
     private val clientService: ClientService,
     private val connectionService: ConnectionService,
-    private val reconnectHandler: com.jervis.configuration.RpcReconnectHandler,
+    private val providerRegistry: ProviderRegistry,
 ) : WikiService {
     private val logger = KotlinLogging.logger {}
 
@@ -37,15 +39,15 @@ class WikiServiceImpl(
         val response =
             withRpcRetry(
                 name = "WikiSearch",
-                reconnect = { reconnectHandler.reconnectAtlassian() },
+                reconnect = { providerRegistry.reconnect(ProviderEnum.ATLASSIAN) },
             ) {
                 wikiClient.searchPages(
                     WikiSearchRequest(
                         baseUrl = connection.baseUrl,
-                        authType = getAuthType(connection),
-                        basicUsername = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.username,
-                        basicPassword = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.password,
-                        bearerToken = (connection.credentials as? ConnectionDocument.HttpCredentials.Bearer)?.token,
+                        authType = connection.authType.name,
+                        basicUsername = connection.username,
+                        basicPassword = connection.password,
+                        bearerToken = connection.bearerToken,
                         spaceKey = spaceKey,
                         query = query,
                         maxResults = maxResults,
@@ -78,15 +80,15 @@ class WikiServiceImpl(
         val response =
             withRpcRetry(
                 name = "WikiGetPage",
-                reconnect = { reconnectHandler.reconnectAtlassian() },
+                reconnect = { providerRegistry.reconnect(ProviderEnum.ATLASSIAN) },
             ) {
                 wikiClient.getPage(
                     WikiPageRequest(
                         baseUrl = connection.baseUrl,
-                        authType = getAuthType(connection),
-                        basicUsername = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.username,
-                        basicPassword = (connection.credentials as? ConnectionDocument.HttpCredentials.Basic)?.password,
-                        bearerToken = (connection.credentials as? ConnectionDocument.HttpCredentials.Bearer)?.token,
+                        authType = connection.authType.name,
+                        basicUsername = connection.username,
+                        basicPassword = connection.password,
+                        bearerToken = connection.bearerToken,
                         pageId = pageId,
                     ),
                 )
@@ -135,7 +137,7 @@ class WikiServiceImpl(
         for (id in connectionIds) {
             val conn = connectionService.findById(id) ?: continue
             if (conn.state == com.jervis.dto.connection.ConnectionStateEnum.VALID &&
-                conn.connectionType == ConnectionDocument.ConnectionTypeEnum.HTTP &&
+                conn.protocol == com.jervis.dto.connection.ProtocolEnum.HTTP &&
                 conn.baseUrl.contains("atlassian.net", ignoreCase = true)
             ) {
                 return conn
@@ -143,11 +145,4 @@ class WikiServiceImpl(
         }
         return null
     }
-
-    private fun getAuthType(connection: ConnectionDocument): String =
-        when (connection.credentials) {
-            is ConnectionDocument.HttpCredentials.Basic -> "BASIC"
-            is ConnectionDocument.HttpCredentials.Bearer -> "BEARER"
-            else -> "NONE"
-        }
 }

@@ -1,25 +1,13 @@
 package com.jervis.gitlab.service
 
-import com.jervis.common.client.IGitLabClient
 import com.jervis.common.client.IRepositoryClient
 import com.jervis.common.dto.repository.*
-import com.jervis.dto.connection.ConnectionCapability
-import com.jervis.dto.connection.ServiceCapabilitiesDto
 import mu.KotlinLogging
 
 class GitLabRepositoryService(
-    private val apiClient: GitLabApiClient
-) : IRepositoryClient, IGitLabClient {
+    private val apiClient: GitLabApiClient,
+) : IRepositoryClient {
     private val log = KotlinLogging.logger {}
-
-    override suspend fun getCapabilities(): ServiceCapabilitiesDto = ServiceCapabilitiesDto(
-        capabilities = setOf(
-            ConnectionCapability.REPOSITORY,
-            ConnectionCapability.BUGTRACKER,
-            ConnectionCapability.WIKI,
-            ConnectionCapability.REPOSITORY,
-        )
-    )
 
     override suspend fun getUser(request: RepositoryUserRequest): RepositoryUserDto {
         val token = request.bearerToken ?: throw IllegalArgumentException("Bearer token required for GitLab")
