@@ -12,10 +12,13 @@ import com.jervis.common.dto.atlassian.JiraIssueRequest
 import com.jervis.common.dto.atlassian.JiraIssueResponse
 import com.jervis.common.dto.atlassian.JiraSearchRequest
 import com.jervis.common.dto.atlassian.JiraSearchResponse
+import com.jervis.dto.connection.ServiceCapabilitiesDto
 import kotlinx.rpc.annotations.Rpc
 
 @Rpc
 interface IAtlassianClient {
+    suspend fun getCapabilities(): ServiceCapabilitiesDto
+
     suspend fun getMyself(request: AtlassianMyselfRequest): AtlassianUserDto
 
     suspend fun searchJiraIssues(request: JiraSearchRequest): JiraSearchResponse

@@ -6,6 +6,8 @@ import com.jervis.common.client.IWikiClient
 import com.jervis.common.dto.atlassian.*
 import com.jervis.common.dto.bugtracker.*
 import com.jervis.common.dto.wiki.*
+import com.jervis.dto.connection.ConnectionCapability
+import com.jervis.dto.connection.ServiceCapabilitiesDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -18,6 +20,14 @@ class AtlassianServiceImpl(
     IBugTrackerClient,
     IWikiClient {
     // --- IAtlassianClient ---
+
+    override suspend fun getCapabilities(): ServiceCapabilitiesDto = ServiceCapabilitiesDto(
+        capabilities = setOf(
+            ConnectionCapability.BUGTRACKER,
+            ConnectionCapability.WIKI,
+            ConnectionCapability.REPOSITORY,
+        )
+    )
 
     override suspend fun getMyself(request: AtlassianMyselfRequest): AtlassianUserDto =
         withContext(Dispatchers.IO) {

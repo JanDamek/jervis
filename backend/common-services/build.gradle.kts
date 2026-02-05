@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.kotlinx.rpc)
+    `java-library`
 }
 
 java {
@@ -24,7 +25,7 @@ dependencies {
     implementation(enforcedPlatform("org.jetbrains.kotlinx:kotlinx-serialization-bom:${libs.versions.serialization.get()}"))
     implementation(platform("org.springframework.boot:spring-boot-dependencies:${libs.versions.spring.boot.get()}"))
 
-    implementation(project(":shared:common-api"))
+    api(project(":shared:common-api"))
 
     implementation(libs.kotlin.stdlib)
     implementation(libs.kotlin.reflect)
@@ -42,6 +43,9 @@ dependencies {
     implementation(libs.kotlinx.rpc.krpc.server)
     implementation(libs.kotlinx.rpc.krpc.ktor.server)
     implementation(libs.kotlinx.rpc.krpc.serialization.cbor)
+
+    // MongoDB BSON for ObjectId
+    implementation(libs.mongodb.bson)
 }
 
 kotlin {

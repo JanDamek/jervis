@@ -629,7 +629,8 @@ private fun getCapabilityLabel(capability: ConnectionCapability): String {
         ConnectionCapability.BUGTRACKER -> "Bug Tracker"
         ConnectionCapability.WIKI -> "Wiki"
         ConnectionCapability.REPOSITORY -> "Repository"
-        ConnectionCapability.EMAIL -> "Email"
+        ConnectionCapability.EMAIL_READ -> "Email (Read)"
+        ConnectionCapability.EMAIL_SEND -> "Email (Send)"
         ConnectionCapability.GIT -> "Git"
     }
 }
@@ -639,7 +640,8 @@ private fun getResourceLabel(capability: ConnectionCapability): String {
         ConnectionCapability.BUGTRACKER -> "Projekt"
         ConnectionCapability.WIKI -> "Prostor"
         ConnectionCapability.REPOSITORY -> "Repozitář"
-        ConnectionCapability.EMAIL -> "Složka"
+        ConnectionCapability.EMAIL_READ -> "Složka"
+        ConnectionCapability.EMAIL_SEND -> "Odesílatel"
         ConnectionCapability.GIT -> "Repozitář"
     }
 }

@@ -3,6 +3,8 @@ package com.jervis.github.service
 import com.jervis.common.client.IBugTrackerClient
 import com.jervis.common.client.IGitHubClient
 import com.jervis.common.dto.bugtracker.*
+import com.jervis.dto.connection.ConnectionCapability
+import com.jervis.dto.connection.ServiceCapabilitiesDto
 import mu.KotlinLogging
 
 /**
@@ -13,6 +15,15 @@ class GitHubBugTrackerService(
 ) : IBugTrackerClient,
     IGitHubClient {
     private val log = KotlinLogging.logger {}
+
+    override suspend fun getCapabilities(): ServiceCapabilitiesDto = ServiceCapabilitiesDto(
+        capabilities = setOf(
+            ConnectionCapability.REPOSITORY,
+            ConnectionCapability.BUGTRACKER,
+            ConnectionCapability.WIKI,
+            ConnectionCapability.GIT,
+        )
+    )
 
     override suspend fun getUser(request: BugTrackerUserRequest): BugTrackerUserDto {
         val token = request.bearerToken ?: throw IllegalArgumentException("Bearer token required for GitHub")

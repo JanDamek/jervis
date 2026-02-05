@@ -328,7 +328,8 @@ private fun CapabilityChip(capability: ConnectionCapability) {
             ConnectionCapability.BUGTRACKER -> "BugTracker" to MaterialTheme.colorScheme.error
             ConnectionCapability.WIKI -> "Wiki" to MaterialTheme.colorScheme.tertiary
             ConnectionCapability.REPOSITORY -> "Repo" to MaterialTheme.colorScheme.primary
-            ConnectionCapability.EMAIL -> "Email" to MaterialTheme.colorScheme.secondary
+            ConnectionCapability.EMAIL_READ -> "Email Read" to MaterialTheme.colorScheme.secondary
+            ConnectionCapability.EMAIL_SEND -> "Email Send" to MaterialTheme.colorScheme.secondary
             ConnectionCapability.GIT -> "Git" to MaterialTheme.colorScheme.primary
         }
 

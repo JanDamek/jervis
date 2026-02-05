@@ -53,7 +53,7 @@ abstract class EmailPollingHandlerBase(
         // Process each client
         for (client in context.clients) {
             // Check capability configuration - get resource filter
-            val resourceFilter = context.getResourceFilter(client.id, ConnectionCapability.EMAIL)
+            val resourceFilter = context.getResourceFilter(client.id, ConnectionCapability.EMAIL_READ)
 
             // Skip if capability is disabled (null filter)
             if (resourceFilter == null) {

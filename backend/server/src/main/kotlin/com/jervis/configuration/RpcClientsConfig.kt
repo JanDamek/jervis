@@ -3,10 +3,14 @@ package com.jervis.configuration
 import com.jervis.common.client.IAtlassianClient
 import com.jervis.common.client.IBugTrackerClient
 import com.jervis.common.client.ICodingClient
+import com.jervis.common.client.IGitHubClient
+import com.jervis.common.client.IGitLabClient
 import com.jervis.common.client.IJoernClient
 import com.jervis.common.client.ITikaClient
 import com.jervis.common.client.IWhisperClient
 import com.jervis.common.client.IWikiClient
+import com.jervis.dto.connection.ServiceCapabilitiesDto
+import com.jervis.common.dto.CodingRequest
 import com.jervis.common.dto.atlassian.AtlassianMyselfRequest
 import com.jervis.common.dto.atlassian.AtlassianUserDto
 import com.jervis.common.dto.atlassian.ConfluenceAttachmentDownloadRequest
@@ -19,7 +23,21 @@ import com.jervis.common.dto.atlassian.JiraIssueRequest
 import com.jervis.common.dto.atlassian.JiraIssueResponse
 import com.jervis.common.dto.atlassian.JiraSearchRequest
 import com.jervis.common.dto.atlassian.JiraSearchResponse
+import com.jervis.common.dto.bugtracker.BugTrackerProjectsRequest
+import com.jervis.common.dto.bugtracker.BugTrackerProjectsResponse
+import com.jervis.common.dto.wiki.WikiSpacesRequest
+import com.jervis.common.dto.wiki.WikiSpacesResponse
+import com.jervis.common.types.ClientId
 import com.jervis.configuration.properties.EndpointProperties
+import com.jervis.knowledgebase.KnowledgeService
+import com.jervis.knowledgebase.model.EvidencePack
+import com.jervis.knowledgebase.model.FullIngestRequest
+import com.jervis.knowledgebase.model.FullIngestResult
+import com.jervis.knowledgebase.model.IngestRequest
+import com.jervis.knowledgebase.model.IngestResult
+import com.jervis.knowledgebase.model.RetrievalRequest
+import com.jervis.knowledgebase.service.graphdb.model.GraphNode
+import com.jervis.knowledgebase.service.graphdb.model.TraversalSpec
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.websocket.WebSockets
@@ -49,6 +67,25 @@ class RpcClientsConfig(
     private var _atlassianClient: IAtlassianClient? = null
     private var _bugTrackerClient: IBugTrackerClient? = null
     private var _wikiClient: IWikiClient? = null
+    private var _gitHubClient: IGitHubClient? = null
+    private var _gitLabClient: IGitLabClient? = null
+    private var _knowledgeService: KnowledgeService? = null
+
+    @Bean
+    fun knowledgeService(): KnowledgeService =
+        object : KnowledgeService {
+            override suspend fun ingest(request: IngestRequest): IngestResult = getKnowledgeService().ingest(request)
+
+            override suspend fun ingestFull(request: FullIngestRequest): FullIngestResult = getKnowledgeService().ingestFull(request)
+
+            override suspend fun retrieve(request: RetrievalRequest): EvidencePack = getKnowledgeService().retrieve(request)
+
+            override suspend fun traverse(
+                clientId: ClientId,
+                startKey: String,
+                spec: TraversalSpec,
+            ): List<GraphNode> = getKnowledgeService().traverse(clientId, startKey, spec)
+        }
 
     @Bean
     fun tikaClient(): ITikaClient =
@@ -71,6 +108,8 @@ class RpcClientsConfig(
     @Bean
     fun atlassianClient(): IAtlassianClient =
         object : IAtlassianClient {
+            override suspend fun getCapabilities(): ServiceCapabilitiesDto = getAtlassianClient().getCapabilities()
+
             override suspend fun getMyself(request: AtlassianMyselfRequest): AtlassianUserDto = getAtlassianClient().getMyself(request)
 
             override suspend fun searchJiraIssues(request: JiraSearchRequest): JiraSearchResponse =
@@ -92,13 +131,31 @@ class RpcClientsConfig(
         }
 
     @Bean
+    fun gitHubRpcClient(): IGitHubClient =
+        object : IGitHubClient {
+            override suspend fun getCapabilities(): ServiceCapabilitiesDto = getGitHubClient().getCapabilities()
+        }
+
+    @Bean
+    fun gitLabRpcClient(): IGitLabClient =
+        object : IGitLabClient {
+            override suspend fun getCapabilities(): ServiceCapabilitiesDto = getGitLabClient().getCapabilities()
+        }
+
+    @Bean
     fun bugTrackerClient(): IBugTrackerClient =
         object : IBugTrackerClient {
-            override suspend fun getUser(request: com.jervis.common.dto.bugtracker.BugTrackerUserRequest) = getBugTrackerClient().getUser(request)
+            override suspend fun getUser(request: com.jervis.common.dto.bugtracker.BugTrackerUserRequest) =
+                getBugTrackerClient().getUser(request)
 
-            override suspend fun searchIssues(request: com.jervis.common.dto.bugtracker.BugTrackerSearchRequest) = getBugTrackerClient().searchIssues(request)
+            override suspend fun searchIssues(request: com.jervis.common.dto.bugtracker.BugTrackerSearchRequest) =
+                getBugTrackerClient().searchIssues(request)
 
-            override suspend fun getIssue(request: com.jervis.common.dto.bugtracker.BugTrackerIssueRequest) = getBugTrackerClient().getIssue(request)
+            override suspend fun getIssue(request: com.jervis.common.dto.bugtracker.BugTrackerIssueRequest) =
+                getBugTrackerClient().getIssue(request)
+
+            override suspend fun listProjects(request: BugTrackerProjectsRequest): BugTrackerProjectsResponse =
+                getBugTrackerClient().listProjects(request)
         }
 
     @Bean
@@ -109,24 +166,26 @@ class RpcClientsConfig(
             override suspend fun searchPages(request: com.jervis.common.dto.wiki.WikiSearchRequest) = getWikiClient().searchPages(request)
 
             override suspend fun getPage(request: com.jervis.common.dto.wiki.WikiPageRequest) = getWikiClient().getPage(request)
+
+            override suspend fun listSpaces(request: WikiSpacesRequest): WikiSpacesResponse = getWikiClient().listSpaces(request)
         }
 
     @Bean
     fun aiderClient(): ICodingClient =
         object : ICodingClient {
-            override suspend fun execute(request: com.jervis.common.client.CodingRequest) = getAider().execute(request)
+            override suspend fun execute(request: CodingRequest) = getAider().execute(request)
         }
 
     @Bean
     fun codingEngineClient(): ICodingClient =
         object : ICodingClient {
-            override suspend fun execute(request: com.jervis.common.client.CodingRequest) = getCodingEngine().execute(request)
+            override suspend fun execute(request: CodingRequest) = getCodingEngine().execute(request)
         }
 
     @Bean
     fun junieClient(): ICodingClient =
         object : ICodingClient {
-            override suspend fun execute(request: com.jervis.common.client.CodingRequest) = getJunie().execute(request)
+            override suspend fun execute(request: CodingRequest) = getJunie().execute(request)
         }
 
     @Bean
@@ -150,6 +209,14 @@ class RpcClientsConfig(
                 _wikiClient = createRpcClient(endpoints.atlassian.baseUrl)
             }
 
+            override suspend fun reconnectGitHub() {
+                _gitHubClient = createRpcClient(endpoints.github.baseUrl)
+            }
+
+            override suspend fun reconnectGitLab() {
+                _gitLabClient = createRpcClient(endpoints.gitlab.baseUrl)
+            }
+
             override suspend fun reconnectAider() {
                 _aiderClient = createRpcClient(endpoints.aider.baseUrl)
             }
@@ -160,6 +227,10 @@ class RpcClientsConfig(
 
             override suspend fun reconnectJunie() {
                 _junieClient = createRpcClient(endpoints.junie.baseUrl)
+            }
+
+            override suspend fun reconnectKnowledgebase() {
+                _knowledgeService = KnowledgeServiceRestClient(endpoints.knowledgebase.baseUrl)
             }
         }
 
@@ -199,6 +270,20 @@ class RpcClientsConfig(
             }
         }
 
+    private fun getGitHubClient(): IGitHubClient =
+        _gitHubClient ?: synchronized(this) {
+            _gitHubClient ?: createRpcClient<IGitHubClient>(endpoints.github.baseUrl).also {
+                _gitHubClient = it
+            }
+        }
+
+    private fun getGitLabClient(): IGitLabClient =
+        _gitLabClient ?: synchronized(this) {
+            _gitLabClient ?: createRpcClient<IGitLabClient>(endpoints.gitlab.baseUrl).also {
+                _gitLabClient = it
+            }
+        }
+
     private fun getAider(): ICodingClient =
         _aiderClient ?: synchronized(this) {
             _aiderClient ?: createRpcClient<ICodingClient>(endpoints.aider.baseUrl).also { _aiderClient = it }
@@ -214,6 +299,12 @@ class RpcClientsConfig(
     private fun getJunie(): ICodingClient =
         _junieClient ?: synchronized(this) {
             _junieClient ?: createRpcClient<ICodingClient>(endpoints.junie.baseUrl).also { _junieClient = it }
+        }
+
+    private fun getKnowledgeService(): KnowledgeService =
+        _knowledgeService ?: synchronized(this) {
+            _knowledgeService
+                ?: KnowledgeServiceRestClient(endpoints.knowledgebase.baseUrl).also { _knowledgeService = it }
         }
 
     private inline fun <@Rpc reified T : Any> createRpcClient(baseUrl: String): T {

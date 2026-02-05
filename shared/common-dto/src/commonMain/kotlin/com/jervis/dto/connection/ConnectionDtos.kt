@@ -38,9 +38,18 @@ enum class ConnectionCapability {
     BUGTRACKER, // Bug tracker (Jira, GitHub Issues, GitLab Issues, etc.)
     WIKI, // Wiki/documentation (Confluence, MediaWiki, Notion, etc.)
     REPOSITORY, // Code repository (GitHub, GitLab, Bitbucket, etc.)
-    EMAIL, // Email (IMAP, POP3, SMTP)
+    EMAIL_READ, // Read emails (IMAP, POP3)
+    EMAIL_SEND, // Send emails (SMTP, IMAP with SMTP relay)
     GIT, // Git operations
 }
+
+/**
+ * Service capabilities response - returned by each microservice to declare what it supports.
+ */
+@Serializable
+data class ServiceCapabilitiesDto(
+    val capabilities: Set<ConnectionCapability>,
+)
 
 /**
  * Rate limit configuration DTO.

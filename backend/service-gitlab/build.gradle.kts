@@ -69,6 +69,7 @@ application {
 }
 
 tasks.jar {
+    dependsOn(":backend:common-services:jar")
     manifest {
         attributes["Main-Class"] = "com.jervis.gitlab.GitLabApplicationKt"
     }

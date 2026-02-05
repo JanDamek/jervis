@@ -480,7 +480,7 @@ class ConnectionRpcImpl(
         return when (capability) {
             ConnectionCapability.BUGTRACKER -> listBugtrackerProjects(connection)
             ConnectionCapability.WIKI -> listWikiSpaces(connection)
-            ConnectionCapability.EMAIL -> listEmailFolders(connection)
+            ConnectionCapability.EMAIL_READ, ConnectionCapability.EMAIL_SEND -> listEmailFolders(connection)
             ConnectionCapability.REPOSITORY, ConnectionCapability.GIT -> listRepositories(connection)
         }
     }
@@ -609,7 +609,7 @@ class ConnectionRpcImpl(
                     id = subfolder.fullName,
                     name = subfolder.name,
                     description = "Email folder: ${subfolder.fullName}",
-                    capability = ConnectionCapability.EMAIL,
+                    capability = ConnectionCapability.EMAIL_READ,
                 ),
             )
             // Recursively list subfolders
@@ -1292,11 +1292,17 @@ private fun detectCapabilities(
             }
         }
 
-        ConnectionDocument.ConnectionTypeEnum.IMAP,
-        ConnectionDocument.ConnectionTypeEnum.POP3,
-        ConnectionDocument.ConnectionTypeEnum.SMTP,
-        -> {
-            capabilities.add(ConnectionCapability.EMAIL)
+        ConnectionDocument.ConnectionTypeEnum.IMAP -> {
+            capabilities.add(ConnectionCapability.EMAIL_READ)
+            capabilities.add(ConnectionCapability.EMAIL_SEND)
+        }
+
+        ConnectionDocument.ConnectionTypeEnum.POP3 -> {
+            capabilities.add(ConnectionCapability.EMAIL_READ)
+        }
+
+        ConnectionDocument.ConnectionTypeEnum.SMTP -> {
+            capabilities.add(ConnectionCapability.EMAIL_SEND)
         }
 
         ConnectionDocument.ConnectionTypeEnum.GIT -> {
