@@ -33,9 +33,20 @@ data class ProjectDto(
     val connectionCapabilities: List<ProjectConnectionCapabilityDto> = emptyList(),
 )
 
+/**
+ * Connection capability configuration at project level.
+ * Overrides client-level defaults when specified.
+ */
 @Serializable
 data class ProjectConnectionCapabilityDto(
+    /** The connection providing this capability */
     val connectionId: String,
+    /** The capability type (BUGTRACKER, WIKI, REPOSITORY, EMAIL, GIT) */
     val capability: ConnectionCapability,
+    /** Whether this capability is enabled for this project */
+    val enabled: Boolean = true,
+    /** Resource identifier specific to this project (e.g., project key, repo name) */
     val resourceIdentifier: String? = null,
+    /** Specific resources to index for this project (overrides client's selectedResources) */
+    val selectedResources: List<String> = emptyList(),
 )

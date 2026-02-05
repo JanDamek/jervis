@@ -8,13 +8,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.jervis.dto.ClientConnectionCapabilityDto
 import com.jervis.dto.ClientDto
+import com.jervis.dto.connection.ConnectionCapability
+import com.jervis.dto.connection.ConnectionResourceDto
 import com.jervis.dto.connection.ConnectionResponseDto
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.*
@@ -32,7 +37,7 @@ fun ClientsSettings(repository: JervisRepository) {
         scope.launch {
             isLoading = true
             try {
-                clients = repository.clients.listClients()
+                clients = repository.clients.getAllClients()
             } catch (e: Exception) {
                 // Error handling can be added here
             } finally {
@@ -125,6 +130,15 @@ private fun ClientEditForm(
     var availableConnections by remember { mutableStateOf<List<ConnectionResponseDto>>(emptyList()) }
     var showConnectionsDialog by remember { mutableStateOf(false) }
 
+    // Capability configuration
+    var connectionCapabilities by remember {
+        mutableStateOf(client.connectionCapabilities.toMutableList())
+    }
+    var availableResources by remember {
+        mutableStateOf<Map<Pair<String, ConnectionCapability>, List<ConnectionResourceDto>>>(emptyMap())
+    }
+    var loadingResources by remember { mutableStateOf<Set<Pair<String, ConnectionCapability>>>(emptySet()) }
+
     // Projects
     var projects by remember { mutableStateOf<List<com.jervis.dto.ProjectDto>>(emptyList()) }
     var showCreateProjectDialog by remember { mutableStateOf(false) }
@@ -134,7 +148,7 @@ private fun ClientEditForm(
     fun loadConnections() {
         scope.launch {
             try {
-                availableConnections = repository.connections.listConnections()
+                availableConnections = repository.connections.getAllConnections()
             } catch (e: Exception) {
                 // Error handling
             }
@@ -149,6 +163,41 @@ private fun ClientEditForm(
                 // Error handling
             }
         }
+    }
+
+    fun loadResourcesForCapability(connectionId: String, capability: ConnectionCapability) {
+        val key = Pair(connectionId, capability)
+        if (key in availableResources || key in loadingResources) return
+
+        scope.launch {
+            loadingResources = loadingResources + key
+            try {
+                val resources = repository.connections.listAvailableResources(connectionId, capability)
+                availableResources = availableResources + (key to resources)
+            } catch (e: Exception) {
+                // Error handling - just leave empty
+                availableResources = availableResources + (key to emptyList())
+            } finally {
+                loadingResources = loadingResources - key
+            }
+        }
+    }
+
+    fun getCapabilityConfig(connectionId: String, capability: ConnectionCapability): ClientConnectionCapabilityDto? {
+        return connectionCapabilities.find { it.connectionId == connectionId && it.capability == capability }
+    }
+
+    fun updateCapabilityConfig(config: ClientConnectionCapabilityDto) {
+        connectionCapabilities = connectionCapabilities
+            .filter { !(it.connectionId == config.connectionId && it.capability == config.capability) }
+            .toMutableList()
+            .apply { add(config) }
+    }
+
+    fun removeCapabilityConfig(connectionId: String, capability: ConnectionCapability) {
+        connectionCapabilities = connectionCapabilities
+            .filter { !(it.connectionId == connectionId && it.capability == capability) }
+            .toMutableList()
     }
 
     LaunchedEffect(Unit) {
@@ -222,7 +271,7 @@ private fun ClientEditForm(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Text(
-                                        connection?.type ?: "",
+                                        connection?.type?.name ?: "",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                     )
@@ -258,7 +307,7 @@ private fun ClientEditForm(
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(conn.name, style = MaterialTheme.typography.bodyMedium)
-                                        Text(conn.type, style = MaterialTheme.typography.bodySmall)
+                                        Text(conn.type?.name ?: "", style = MaterialTheme.typography.bodySmall)
                                     }
                                 }
                                 HorizontalDivider()
@@ -271,6 +320,43 @@ private fun ClientEditForm(
                         }
                     }
                 )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Capability configuration section
+            JSection(title = "Konfigurace schopností") {
+                Text(
+                    "Nastavte, které zdroje z připojení se mají indexovat pro tohoto klienta.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                if (selectedConnectionIds.isEmpty()) {
+                    Text(
+                        "Nejprve přiřaďte alespoň jedno připojení.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    selectedConnectionIds.forEach { connId ->
+                        val connection = availableConnections.firstOrNull { it.id == connId }
+                        if (connection != null && connection.capabilities.isNotEmpty()) {
+                            ConnectionCapabilityCard(
+                                connection = connection,
+                                capabilities = connectionCapabilities,
+                                availableResources = availableResources,
+                                loadingResources = loadingResources,
+                                onLoadResources = { capability -> loadResourcesForCapability(connId, capability) },
+                                onUpdateConfig = { config -> updateCapabilityConfig(config) },
+                                onRemoveConfig = { capability -> removeCapabilityConfig(connId, capability) },
+                                getConfig = { capability -> getCapabilityConfig(connId, capability) }
+                            )
+                        }
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -509,6 +595,7 @@ private fun ClientEditForm(
                             name = name,
                             description = description.ifBlank { null },
                             connectionIds = selectedConnectionIds.toList(),
+                            connectionCapabilities = connectionCapabilities,
                             gitCommitMessageFormat = gitCommitMessageFormat.ifBlank { null },
                             gitCommitAuthorName = gitCommitAuthorName.ifBlank { null },
                             gitCommitAuthorEmail = gitCommitAuthorEmail.ifBlank { null },
@@ -524,6 +611,289 @@ private fun ClientEditForm(
                 Text("Uložit")
             }
         }
+    }
+}
+
+@Composable
+private fun ConnectionCapabilityCard(
+    connection: ConnectionResponseDto,
+    capabilities: List<ClientConnectionCapabilityDto>,
+    availableResources: Map<Pair<String, ConnectionCapability>, List<ConnectionResourceDto>>,
+    loadingResources: Set<Pair<String, ConnectionCapability>>,
+    onLoadResources: (ConnectionCapability) -> Unit,
+    onUpdateConfig: (ClientConnectionCapabilityDto) -> Unit,
+    onRemoveConfig: (ConnectionCapability) -> Unit,
+    getConfig: (ConnectionCapability) -> ClientConnectionCapabilityDto?
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("📌", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        connection.name,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        connection.capabilities.joinToString(", ") { it.name },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+                Icon(
+                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            if (expanded) {
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(8.dp))
+
+                connection.capabilities.forEach { capability ->
+                    CapabilityConfigItem(
+                        connectionId = connection.id,
+                        capability = capability,
+                        config = getConfig(capability),
+                        resources = availableResources[Pair(connection.id, capability)] ?: emptyList(),
+                        isLoadingResources = Pair(connection.id, capability) in loadingResources,
+                        onLoadResources = { onLoadResources(capability) },
+                        onUpdateConfig = onUpdateConfig,
+                        onRemoveConfig = { onRemoveConfig(capability) }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CapabilityConfigItem(
+    connectionId: String,
+    capability: ConnectionCapability,
+    config: ClientConnectionCapabilityDto?,
+    resources: List<ConnectionResourceDto>,
+    isLoadingResources: Boolean,
+    onLoadResources: () -> Unit,
+    onUpdateConfig: (ClientConnectionCapabilityDto) -> Unit,
+    onRemoveConfig: () -> Unit
+) {
+    val isEnabled = config?.enabled ?: false
+    val indexAllResources = config?.indexAllResources ?: true
+    val selectedResources = config?.selectedResources ?: emptyList()
+
+    // Load resources when expanding specific resources option
+    LaunchedEffect(isEnabled, indexAllResources) {
+        if (isEnabled && !indexAllResources && resources.isEmpty()) {
+            onLoadResources()
+        }
+    }
+
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(
+                checked = isEnabled,
+                onCheckedChange = { enabled ->
+                    if (enabled) {
+                        onUpdateConfig(
+                            ClientConnectionCapabilityDto(
+                                connectionId = connectionId,
+                                capability = capability,
+                                enabled = true,
+                                indexAllResources = true,
+                                selectedResources = emptyList()
+                            )
+                        )
+                    } else {
+                        onRemoveConfig()
+                    }
+                }
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(
+                getCapabilityLabel(capability),
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+
+        if (isEnabled) {
+            Column(modifier = Modifier.padding(start = 40.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable {
+                        onUpdateConfig(
+                            ClientConnectionCapabilityDto(
+                                connectionId = connectionId,
+                                capability = capability,
+                                enabled = true,
+                                indexAllResources = true,
+                                selectedResources = emptyList()
+                            )
+                        )
+                    }
+                ) {
+                    RadioButton(
+                        selected = indexAllResources,
+                        onClick = {
+                            onUpdateConfig(
+                                ClientConnectionCapabilityDto(
+                                    connectionId = connectionId,
+                                    capability = capability,
+                                    enabled = true,
+                                    indexAllResources = true,
+                                    selectedResources = emptyList()
+                                )
+                            )
+                        }
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        getIndexAllLabel(capability),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable {
+                        onUpdateConfig(
+                            ClientConnectionCapabilityDto(
+                                connectionId = connectionId,
+                                capability = capability,
+                                enabled = true,
+                                indexAllResources = false,
+                                selectedResources = selectedResources
+                            )
+                        )
+                        onLoadResources()
+                    }
+                ) {
+                    RadioButton(
+                        selected = !indexAllResources,
+                        onClick = {
+                            onUpdateConfig(
+                                ClientConnectionCapabilityDto(
+                                    connectionId = connectionId,
+                                    capability = capability,
+                                    enabled = true,
+                                    indexAllResources = false,
+                                    selectedResources = selectedResources
+                                )
+                            )
+                            onLoadResources()
+                        }
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        "Pouze vybrané:",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                if (!indexAllResources) {
+                    Column(modifier = Modifier.padding(start = 32.dp, top = 4.dp)) {
+                        if (isLoadingResources) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "Načítám dostupné zdroje...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        } else if (resources.isEmpty()) {
+                            Text(
+                                "Žádné zdroje k dispozici.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            resources.forEach { resource ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                                ) {
+                                    Checkbox(
+                                        checked = resource.id in selectedResources,
+                                        onCheckedChange = { checked ->
+                                            val newSelected = if (checked) {
+                                                selectedResources + resource.id
+                                            } else {
+                                                selectedResources - resource.id
+                                            }
+                                            onUpdateConfig(
+                                                ClientConnectionCapabilityDto(
+                                                    connectionId = connectionId,
+                                                    capability = capability,
+                                                    enabled = true,
+                                                    indexAllResources = false,
+                                                    selectedResources = newSelected
+                                                )
+                                            )
+                                        },
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Column {
+                                        Text(
+                                            resource.name,
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                        resource.description?.let { desc ->
+                                            Text(
+                                                desc,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun getCapabilityLabel(capability: ConnectionCapability): String {
+    return when (capability) {
+        ConnectionCapability.BUGTRACKER -> "Bug Tracker"
+        ConnectionCapability.WIKI -> "Wiki"
+        ConnectionCapability.REPOSITORY -> "Repository"
+        ConnectionCapability.EMAIL -> "Email"
+        ConnectionCapability.GIT -> "Git"
+    }
+}
+
+private fun getIndexAllLabel(capability: ConnectionCapability): String {
+    return when (capability) {
+        ConnectionCapability.BUGTRACKER -> "Indexovat všechny projekty"
+        ConnectionCapability.WIKI -> "Indexovat všechny prostory"
+        ConnectionCapability.EMAIL -> "Indexovat celou schránku"
+        ConnectionCapability.REPOSITORY -> "Indexovat všechny repozitáře"
+        ConnectionCapability.GIT -> "Indexovat všechny repozitáře"
     }
 }
 

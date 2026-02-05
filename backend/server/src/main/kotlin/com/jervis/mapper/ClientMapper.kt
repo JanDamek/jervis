@@ -1,12 +1,12 @@
 package com.jervis.mapper
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
 import com.jervis.dto.ClientConnectionCapabilityDto
 import com.jervis.dto.ClientDto
 import com.jervis.entity.ClientConnectionCapability
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.GitCommitConfig
-import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
 import org.bson.types.ObjectId
 
 fun ClientDocument.toDto(): ClientDto =
@@ -61,12 +61,18 @@ fun ClientConnectionCapability.toDto(): ClientConnectionCapabilityDto =
     ClientConnectionCapabilityDto(
         connectionId = this.connectionId.toString(),
         capability = this.capability,
+        enabled = this.enabled,
         resourceIdentifier = this.resourceIdentifier,
+        indexAllResources = this.indexAllResources,
+        selectedResources = this.selectedResources,
     )
 
 fun ClientConnectionCapabilityDto.toEntity(): ClientConnectionCapability =
     ClientConnectionCapability(
         connectionId = ObjectId(this.connectionId),
         capability = this.capability,
+        enabled = this.enabled,
         resourceIdentifier = this.resourceIdentifier,
+        indexAllResources = this.indexAllResources,
+        selectedResources = this.selectedResources,
     )

@@ -7,6 +7,33 @@ import kotlinx.serialization.Serializable
  * Generic capability types (vendor-agnostic).
  */
 @Serializable
+enum class ConnectionTypeEnum {
+    HTTP,
+    IMAP,
+    POP3,
+    SMTP,
+    OAUTH2,
+}
+
+@Serializable
+enum class ProviderEnum {
+    GITHUB,
+    GITLAB,
+    ATLASSIAN,
+    IMAP,
+    POP3,
+    SMTP,
+    OAUTH2,
+}
+
+@Serializable
+enum class HttpAuthTypeEnum {
+    NONE,
+    BASIC,
+    BEARER,
+}
+
+@Serializable
 enum class ConnectionCapability {
     BUGTRACKER, // Bug tracker (Jira, GitHub Issues, GitLab Issues, etc.)
     WIKI, // Wiki/documentation (Confluence, MediaWiki, Notion, etc.)
@@ -30,7 +57,8 @@ data class RateLimitConfigDto(
 @Serializable
 data class ConnectionResponseDto(
     val id: String,
-    val type: String, // HTTP, IMAP, POP3, SMTP, OAUTH2
+    val type: ConnectionTypeEnum,
+    val provider: ProviderEnum,
     val name: String,
     val state: ConnectionStateEnum,
     val baseUrl: String? = null,
@@ -38,7 +66,7 @@ data class ConnectionResponseDto(
     val port: Int? = null,
     val username: String? = null,
     // HTTP-specific (typed)
-    val authType: String? = null, // NONE, BASIC, BEARER
+    val authType: HttpAuthTypeEnum? = null,
     val httpBasicUsername: String? = null,
     val httpBasicPassword: String? = null,
     val httpBearerToken: String? = null,
@@ -74,12 +102,16 @@ data class ConnectionResponseDto(
  */
 @Serializable
 data class ConnectionCreateRequestDto(
-    val type: String, // HTTP, IMAP, POP3, SMTP, OAUTH2
+    val type: ConnectionTypeEnum,
+    val provider: ProviderEnum,
     val name: String,
     val state: ConnectionStateEnum = ConnectionStateEnum.NEW,
+    // Cloud flag for OAuth2 providers (GitHub, GitLab, Atlassian)
+    // When true, baseUrl is not required and will be determined from provider configuration
+    val isCloud: Boolean = false,
     // HTTP specific
     val baseUrl: String? = null,
-    val authType: String? = null, // NONE, BASIC, BEARER
+    val authType: HttpAuthTypeEnum? = null,
     val httpBasicUsername: String? = null,
     val httpBasicPassword: String? = null,
     val httpBearerToken: String? = null,
@@ -117,10 +149,14 @@ data class ConnectionCreateRequestDto(
 @Serializable
 data class ConnectionUpdateRequestDto(
     val name: String? = null,
+    val provider: ProviderEnum? = null,
     val state: ConnectionStateEnum? = null,
+    // Cloud flag for OAuth2 providers (GitHub, GitLab, Atlassian)
+    // When true, baseUrl is not required and will be determined from provider configuration
+    val isCloud: Boolean? = null,
     // HTTP specific
     val baseUrl: String? = null,
-    val authType: String? = null, // NONE, BASIC, BEARER
+    val authType: HttpAuthTypeEnum? = null,
     val httpBasicUsername: String? = null,
     val httpBasicPassword: String? = null,
     val httpBearerToken: String? = null,
@@ -170,4 +206,20 @@ data class ConnectionImportProjectDto(
     val name: String,
     val description: String? = null,
     val url: String? = null,
+)
+
+/**
+ * Available resource from a connection for a given capability.
+ * Used to populate dropdowns in UI for selecting which resources to index.
+ */
+@Serializable
+data class ConnectionResourceDto(
+    /** Unique identifier for this resource (e.g., project key, folder name, repo slug) */
+    val id: String,
+    /** Human-readable name */
+    val name: String,
+    /** Description or additional context */
+    val description: String? = null,
+    /** The capability this resource belongs to */
+    val capability: ConnectionCapability,
 )

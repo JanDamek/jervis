@@ -14,6 +14,12 @@ import com.jervis.common.dto.atlassian.JiraIssueRequest
 import com.jervis.common.dto.atlassian.JiraIssueResponse
 import com.jervis.common.dto.atlassian.JiraSearchRequest
 import com.jervis.common.dto.atlassian.JiraSearchResponse
+import com.jervis.common.dto.bugtracker.BugTrackerProjectDto
+import com.jervis.common.dto.bugtracker.BugTrackerProjectsRequest
+import com.jervis.common.dto.bugtracker.BugTrackerProjectsResponse
+import com.jervis.common.dto.wiki.WikiSpaceDto
+import com.jervis.common.dto.wiki.WikiSpacesRequest
+import com.jervis.common.dto.wiki.WikiSpacesResponse
 import com.jervis.common.ratelimit.DomainRateLimiter
 import com.jervis.common.ratelimit.RateLimitConfig
 import com.jervis.common.ratelimit.UrlUtils
@@ -34,12 +40,12 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.util.encodeBase64
-import java.nio.charset.StandardCharsets
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
+import java.nio.charset.StandardCharsets
 
 @Serializable
 private data class JiraSearchResultDto(
@@ -262,6 +268,31 @@ private data class ConfluenceChildrenDto(
 )
 
 @Serializable
+private data class ConfluencePlainDescriptionDto(
+    val value: String? = null,
+)
+
+@Serializable
+private data class ConfluenceSpaceDescriptionDto(
+    val plain: ConfluencePlainDescriptionDto? = null,
+)
+
+@Serializable
+private data class ConfluenceSpaceItemDto(
+    val id: Long,
+    val key: String,
+    val name: String,
+    val type: String? = null,
+    val description: ConfluenceSpaceDescriptionDto? = null,
+)
+
+@Serializable
+private data class ConfluenceSpacesResultDto(
+    val results: List<ConfluenceSpaceItemDto>? = null,
+    val size: Int? = null,
+)
+
+@Serializable
 private data class ConfluencePageDetailDto(
     val id: String,
     val title: String,
@@ -346,7 +377,7 @@ class AtlassianApiClient(
     suspend fun getMyself(request: AtlassianMyselfRequest): AtlassianUserDto {
         logger.info { "Resolving Atlassian user for baseUrl=${request.baseUrl}" }
         val auth =
-            when (request.authType?.uppercase()) {
+            when (request.authType.uppercase()) {
                 "BASIC" -> {
                     com.jervis.common.dto.atlassian.AtlassianAuth.Basic(
                         request.basicUsername.orEmpty(),
@@ -1139,5 +1170,132 @@ class AtlassianApiClient(
         val bytes = response.body<ByteArray>()
         logger.debug { "Successfully downloaded Confluence attachment, size=${bytes?.size ?: 0} bytes" }
         return bytes
+    }
+
+    suspend fun listJiraProjects(request: BugTrackerProjectsRequest): BugTrackerProjectsResponse {
+        logger.info { "Listing Jira projects for baseUrl=${request.baseUrl}" }
+        val auth =
+            when (request.authType.uppercase()) {
+                "BASIC" -> {
+                    com.jervis.common.dto.atlassian.AtlassianAuth.Basic(
+                        request.basicUsername.orEmpty(),
+                        request.basicPassword.orEmpty(),
+                    )
+                }
+
+                "BEARER" -> {
+                    com.jervis.common.dto.atlassian.AtlassianAuth
+                        .Bearer(request.bearerToken.orEmpty())
+                }
+
+                else -> {
+                    com.jervis.common.dto.atlassian.AtlassianAuth.None
+                }
+            }
+        val conn = AtlassianConnection(baseUrl = request.baseUrl, auth = auth)
+
+        val isCloud = request.baseUrl.contains("atlassian.net")
+        val apiVersion = if (isCloud) "3" else "2"
+        val url = "${conn.baseUrl.trimEnd('/')}/rest/api/$apiVersion/project"
+
+        val response =
+            rateLimitedRequest(url) { client, _ ->
+                client.request(url) {
+                    method = HttpMethod.Get
+                    applyAuth(conn)
+                }
+            }
+
+        if (response.status.value !in 200..299) {
+            logger.warn { "Jira list projects failed with status=${response.status.value}" }
+            return BugTrackerProjectsResponse(projects = emptyList())
+        }
+
+        val projects =
+            runCatching {
+                response.body<String>().let {
+                    json.decodeFromString(
+                        kotlinx.serialization.builtins.ListSerializer(JiraProjectDto.serializer()),
+                        it,
+                    )
+                }
+            }.onFailure {
+                logger.error(it) { "Failed to deserialize Jira projects response" }
+            }.getOrNull()
+
+        return BugTrackerProjectsResponse(
+            projects = projects?.map { project ->
+                BugTrackerProjectDto(
+                    id = project.id,
+                    key = project.key,
+                    name = project.name,
+                    description = null,
+                    url = "${conn.baseUrl.trimEnd('/')}/browse/${project.key}",
+                )
+            } ?: emptyList(),
+        )
+    }
+
+    suspend fun listConfluenceSpaces(request: WikiSpacesRequest): WikiSpacesResponse {
+        logger.info { "Listing Confluence spaces for baseUrl=${request.baseUrl}" }
+        val auth =
+            when (request.authType.uppercase()) {
+                "BASIC" -> {
+                    com.jervis.common.dto.atlassian.AtlassianAuth.Basic(
+                        request.basicUsername.orEmpty(),
+                        request.basicPassword.orEmpty(),
+                    )
+                }
+
+                "BEARER" -> {
+                    com.jervis.common.dto.atlassian.AtlassianAuth
+                        .Bearer(request.bearerToken.orEmpty())
+                }
+
+                else -> {
+                    com.jervis.common.dto.atlassian.AtlassianAuth.None
+                }
+            }
+        val conn = AtlassianConnection(baseUrl = request.baseUrl, auth = auth)
+
+        val url = "${conn.baseUrl.trimEnd('/')}/wiki/rest/api/space"
+
+        val response =
+            rateLimitedRequest(url) { client, _ ->
+                client.request(url) {
+                    method = HttpMethod.Get
+                    applyAuth(conn)
+                    url {
+                        parameters.append("limit", "100")
+                        parameters.append("expand", "description.plain")
+                    }
+                }
+            }
+
+        if (response.status.value !in 200..299) {
+            logger.warn { "Confluence list spaces failed with status=${response.status.value}" }
+            return WikiSpacesResponse(spaces = emptyList())
+        }
+
+        val dto =
+            runCatching {
+                response.body<String>().let {
+                    json.decodeFromString(ConfluenceSpacesResultDto.serializer(), it)
+                }
+            }.onFailure {
+                logger.error(it) { "Failed to deserialize Confluence spaces response" }
+            }.getOrNull()
+
+        return WikiSpacesResponse(
+            spaces = dto?.results?.map { space ->
+                WikiSpaceDto(
+                    id = space.id.toString(),
+                    key = space.key,
+                    name = space.name,
+                    description = space.description?.plain?.value,
+                    url = "${conn.baseUrl.trimEnd('/')}/wiki/spaces/${space.key}",
+                )
+            } ?: emptyList(),
+        )
     }
 }

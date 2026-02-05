@@ -86,4 +86,21 @@ class GitLabBugTrackerService(
                 ),
         )
     }
+
+    override suspend fun listProjects(request: BugTrackerProjectsRequest): BugTrackerProjectsResponse {
+        val token = request.bearerToken ?: throw IllegalArgumentException("Bearer token required for GitLab")
+        val projects = apiClient.listProjects(request.baseUrl, token)
+
+        return BugTrackerProjectsResponse(
+            projects = projects.map { project ->
+                BugTrackerProjectDto(
+                    id = project.id.toString(),
+                    key = project.path_with_namespace,
+                    name = project.name,
+                    description = project.description,
+                    url = project.web_url,
+                )
+            },
+        )
+    }
 }

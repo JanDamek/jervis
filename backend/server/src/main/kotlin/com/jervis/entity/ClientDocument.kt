@@ -1,12 +1,9 @@
 package com.jervis.entity
 
-import com.jervis.domain.git.GitAuthTypeEnum
-import com.jervis.domain.git.GitConfig
-import com.jervis.domain.git.GitProviderEnum
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
 import com.jervis.domain.language.LanguageEnum
 import com.jervis.dto.connection.ConnectionCapability
-import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.Indexed
@@ -48,6 +45,12 @@ data class ClientConnectionCapability(
     val connectionId: ObjectId,
     /** The capability type (BUGTRACKER, WIKI, REPOSITORY, EMAIL, GIT) */
     val capability: ConnectionCapability,
+    /** Whether this capability is enabled for indexing */
+    val enabled: Boolean = true,
     /** Default resource identifier (can be overridden at project level) */
     val resourceIdentifier: String? = null,
+    /** If true, index all resources; if false, only index selectedResources */
+    val indexAllResources: Boolean = true,
+    /** Specific resources to index (folders, projects, spaces) when indexAllResources=false */
+    val selectedResources: List<String> = emptyList(),
 )

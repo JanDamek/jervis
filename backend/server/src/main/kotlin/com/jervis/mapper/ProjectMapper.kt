@@ -1,12 +1,12 @@
 package com.jervis.mapper
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
 import com.jervis.dto.ProjectConnectionCapabilityDto
 import com.jervis.dto.ProjectDto
 import com.jervis.entity.GitCommitConfig
 import com.jervis.entity.ProjectConnectionCapability
 import com.jervis.entity.ProjectDocument
-import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
 import org.bson.types.ObjectId
 
 fun ProjectDocument.toDto(): ProjectDto =
@@ -36,18 +36,22 @@ fun ProjectDto.toDocument(): ProjectDocument {
     val resolvedId = if (ObjectId.isValid(this.id)) ObjectId(this.id) else ObjectId.get()
     val resolvedClientId = requireNotNull(this.clientId) { "clientId is required" }
 
-    val gitCommitConfig = if (gitCommitMessageFormat != null || gitCommitAuthorName != null ||
-                               gitCommitAuthorEmail != null || gitCommitGpgSign != null) {
-        GitCommitConfig(
-            messageFormat = gitCommitMessageFormat,
-            authorName = gitCommitAuthorName,
-            authorEmail = gitCommitAuthorEmail,
-            committerName = gitCommitCommitterName,
-            committerEmail = gitCommitCommitterEmail,
-            gpgSign = gitCommitGpgSign ?: false,
-            gpgKeyId = gitCommitGpgKeyId,
-        )
-    } else null
+    val gitCommitConfig =
+        if (gitCommitMessageFormat != null || gitCommitAuthorName != null ||
+            gitCommitAuthorEmail != null || gitCommitGpgSign != null
+        ) {
+            GitCommitConfig(
+                messageFormat = gitCommitMessageFormat,
+                authorName = gitCommitAuthorName,
+                authorEmail = gitCommitAuthorEmail,
+                committerName = gitCommitCommitterName,
+                committerEmail = gitCommitCommitterEmail,
+                gpgSign = gitCommitGpgSign ?: false,
+                gpgKeyId = gitCommitGpgKeyId,
+            )
+        } else {
+            null
+        }
 
     return ProjectDocument(
         id = ProjectId(resolvedId),
@@ -71,13 +75,21 @@ fun ProjectDto.toDocument(): ProjectDocument {
 fun ProjectConnectionCapability.toDto(): ProjectConnectionCapabilityDto =
     ProjectConnectionCapabilityDto(
         connectionId = this.connectionId.toString(),
-        capability = com.jervis.dto.connection.ConnectionCapability.valueOf(this.capability.name),
+        capability =
+            com.jervis.dto.connection.ConnectionCapability
+                .valueOf(this.capability.name),
+        enabled = this.enabled,
         resourceIdentifier = this.resourceIdentifier,
+        selectedResources = this.selectedResources,
     )
 
 fun ProjectConnectionCapabilityDto.toEntity(): ProjectConnectionCapability =
     ProjectConnectionCapability(
         connectionId = ObjectId(this.connectionId),
-        capability = com.jervis.dto.connection.ConnectionCapability.valueOf(this.capability.name),
+        capability =
+            com.jervis.dto.connection.ConnectionCapability
+                .valueOf(this.capability.name),
+        enabled = this.enabled,
         resourceIdentifier = this.resourceIdentifier,
+        selectedResources = this.selectedResources,
     )

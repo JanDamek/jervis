@@ -124,6 +124,12 @@ class AtlassianServiceImpl(
             )
         }
 
+    override suspend fun listProjects(request: BugTrackerProjectsRequest): BugTrackerProjectsResponse =
+        withContext(Dispatchers.IO) {
+            logger.info { "BugTracker: listProjects request for baseUrl=${request.baseUrl}" }
+            atlassianApiClient.listJiraProjects(request)
+        }
+
     // --- IWikiClient ---
 
     override suspend fun getUser(request: WikiUserRequest): WikiUserDto =
@@ -186,6 +192,12 @@ class AtlassianServiceImpl(
             WikiPageResponse(
                 page = response.toWikiPageDto(request.baseUrl),
             )
+        }
+
+    override suspend fun listSpaces(request: WikiSpacesRequest): WikiSpacesResponse =
+        withContext(Dispatchers.IO) {
+            logger.info { "Wiki: listSpaces request for baseUrl=${request.baseUrl}" }
+            atlassianApiClient.listConfluenceSpaces(request)
         }
 
     // --- Helpers ---

@@ -69,4 +69,21 @@ class GitHubBugTrackerService(
         // This is a limitation - in real implementation, we'd need additional context
         throw NotImplementedError("getIssue requires repository context - use searchIssues instead")
     }
+
+    override suspend fun listProjects(request: BugTrackerProjectsRequest): BugTrackerProjectsResponse {
+        val token = request.bearerToken ?: throw IllegalArgumentException("Bearer token required for GitHub")
+        val repos = apiClient.listRepositories(token)
+
+        return BugTrackerProjectsResponse(
+            projects = repos.map { repo ->
+                BugTrackerProjectDto(
+                    id = repo.id.toString(),
+                    key = repo.full_name,
+                    name = repo.name,
+                    description = repo.description,
+                    url = repo.html_url,
+                )
+            },
+        )
+    }
 }

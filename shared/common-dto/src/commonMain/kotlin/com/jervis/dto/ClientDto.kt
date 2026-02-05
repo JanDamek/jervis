@@ -28,9 +28,22 @@ data class ClientDto(
     val connectionCapabilities: List<ClientConnectionCapabilityDto> = emptyList(),
 )
 
+/**
+ * Connection capability configuration at client level.
+ * Serves as defaults for all projects under this client.
+ */
 @Serializable
 data class ClientConnectionCapabilityDto(
+    /** The connection providing this capability */
     val connectionId: String,
+    /** The capability type (BUGTRACKER, WIKI, REPOSITORY, EMAIL, GIT) */
     val capability: ConnectionCapability,
+    /** Whether this capability is enabled for indexing */
+    val enabled: Boolean = true,
+    /** Resource identifier (e.g., Jira project key, Confluence space key) */
     val resourceIdentifier: String? = null,
+    /** If true, index all resources; if false, only index selectedResources */
+    val indexAllResources: Boolean = true,
+    /** Specific resources to index (folders, projects, spaces) when indexAllResources=false */
+    val selectedResources: List<String> = emptyList(),
 )

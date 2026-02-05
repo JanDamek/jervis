@@ -75,4 +75,22 @@ class GitLabWikiService(
                 ),
         )
     }
+
+    override suspend fun listSpaces(request: WikiSpacesRequest): WikiSpacesResponse {
+        val token = request.bearerToken ?: throw IllegalArgumentException("Bearer token required for GitLab")
+        // For GitLab, "spaces" are projects with wikis enabled
+        val projects = apiClient.listProjects(request.baseUrl, token)
+
+        return WikiSpacesResponse(
+            spaces = projects.map { project ->
+                WikiSpaceDto(
+                    id = project.id.toString(),
+                    key = project.path_with_namespace,
+                    name = project.name,
+                    description = project.description,
+                    url = project.web_url,
+                )
+            },
+        )
+    }
 }

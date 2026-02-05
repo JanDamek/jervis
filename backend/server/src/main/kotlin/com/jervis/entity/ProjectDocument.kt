@@ -1,11 +1,9 @@
 package com.jervis.entity
 
-import com.jervis.domain.git.GitAuthTypeEnum
-import com.jervis.domain.git.GitConfig
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
 import com.jervis.domain.language.LanguageEnum
 import com.jervis.dto.connection.ConnectionCapability
-import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.Indexed
@@ -52,7 +50,7 @@ data class ProjectCostPolicy(
     val allowCloudModels: Boolean = false,
     val monthlyBudgetLimit: Double = 0.0, // 0.0 = unlimited or inherited
     val allowedCloudProviders: List<String> = emptyList(), // e.g. ["anthropic", "openai", "google"]
-    val requireApprovalForCloudSpend: Boolean = true
+    val requireApprovalForCloudSpend: Boolean = true,
 )
 
 /**
@@ -101,6 +99,10 @@ data class ProjectConnectionCapability(
     val connectionId: ObjectId,
     /** The capability type (BUGTRACKER, WIKI, REPOSITORY, EMAIL, GIT) */
     val capability: ConnectionCapability,
+    /** Whether this capability is enabled for this project */
+    val enabled: Boolean = true,
     /** Resource identifier specific to this capability (e.g., project key, repo name, space key) */
     val resourceIdentifier: String? = null,
+    /** Specific resources to index for this project (overrides client's selectedResources) */
+    val selectedResources: List<String> = emptyList(),
 )
