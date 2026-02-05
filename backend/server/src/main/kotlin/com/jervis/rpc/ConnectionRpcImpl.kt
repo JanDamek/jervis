@@ -4,6 +4,7 @@ import com.jervis.common.client.IBugTrackerClient
 import com.jervis.common.client.IWikiClient
 import com.jervis.common.dto.bugtracker.BugTrackerUserRequest
 import com.jervis.common.rpc.withRpcRetry
+import com.jervis.common.types.ConnectionId
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionCreateRequestDto
 import com.jervis.dto.connection.ConnectionResponseDto
@@ -14,7 +15,6 @@ import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
 import com.jervis.service.IConnectionService
 import com.jervis.service.connection.ConnectionService
-import com.jervis.types.ConnectionId
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
