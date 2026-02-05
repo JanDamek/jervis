@@ -1,6 +1,6 @@
 # Jervis – Engineering & Architecture Guidelines (2026)
 
-**Status:** Production Documentation (2026-02-04)
+**Status:** Production Documentation (2026-02-05)
 **Purpose:** Single source of truth for engineering, architecture, and UI guidelines
 
 ---
@@ -81,6 +81,17 @@ Where code might expand, replace `if/when` with:
 **✅ ALWAYS create:** Proper data classes with typed fields
 
 **Why?** No type safety, no IDE support, no refactoring support, poor readability
+
+### DTO & Data Modeling
+
+**❌ NO String Constants for Types:**
+- Never use `String` for fixed sets of values (e.g., `type: String` for "HTTP", "IMAP").
+- ✅ ALWAYS use `enum class` (e.g., `ConnectionTypeEnum`).
+
+**❌ NO UI-Modifiable State in DTOs:**
+- `state` fields in DTOs (e.g., `ConnectionStateEnum`) are for **read-only display** in UI.
+- UI must NOT allow changing state directly.
+- State changes happen only in backend services (e.g., on error, on successful connection test).
 
 ---
 
@@ -355,16 +366,19 @@ suspend fun interpretRequest(): String {
 **Connection** → **Client** → **Project**
 
 1. **Connection** - Technical connection to external system (GitHub, Jira, Confluence...)
-   - Contains: credentials, URL, auth type
+   - Contains: credentials, URL, auth type, capabilities (BUGTRACKER, WIKI, REPOSITORY, EMAIL, GIT)
    - Global or assigned to client
 
 2. **Client** - Organization/Team
-   - Has assigned Connections
+   - Has assigned Connections (`connectionIds`)
+   - Has `connectionCapabilities` - default capability configuration:
+     - Per capability: enabled, indexAllResources, selectedResources
    - Has default Git commit configuration for all projects
-   - Can inherit or override per-project
 
 3. **Project** - Specific project within client
-   - Selects sources from client's connections
+   - Has `connectionCapabilities` - overrides client defaults when set:
+     - Per capability: enabled, resourceIdentifier (specific repo/project/space)
+   - Inheritance: missing capabilities inherit from client
    - Can override Git commit configuration
 
 ### Design Principles
