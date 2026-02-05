@@ -11,9 +11,11 @@ import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.prompt.dsl.Prompt
 import com.jervis.common.client.IJoernClient
 import com.jervis.configuration.RpcReconnectHandler
+import com.jervis.integration.bugtracker.BugTrackerService
+import com.jervis.integration.wiki.WikiService
+import com.jervis.knowledgebase.KnowledgeService
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.SmartModelSelector
-import com.jervis.koog.qualifier.KoogQualifierAgent
 import com.jervis.koog.tools.CommunicationTools
 import com.jervis.koog.tools.KnowledgeStorageTools
 import com.jervis.koog.tools.analysis.JoernTools
@@ -49,13 +51,9 @@ import com.jervis.orchestrator.tools.ExecutionMemoryTools
 import com.jervis.orchestrator.tools.InternalAgentTools
 import com.jervis.orchestrator.tools.ProjectStructureTools
 import com.jervis.orchestrator.tools.ValidationTools
-import com.jervis.knowledgebase.KnowledgeService
-import com.jervis.knowledgebase.internal.graphdb.GraphDBService
 import com.jervis.service.background.TaskService
-import com.jervis.integration.wiki.WikiService
 import com.jervis.service.connection.ConnectionService
 import com.jervis.service.email.EmailService
-import com.jervis.integration.bugtracker.BugTrackerService
 import com.jervis.service.learning.LearningService
 import com.jervis.service.link.IndexedLinkService
 import com.jervis.service.link.LinkContentService
@@ -109,7 +107,6 @@ class OrchestratorAgent(
     private val linkContentService: LinkContentService,
     private val indexedLinkService: IndexedLinkService,
     private val smartModelSelector: SmartModelSelector,
-    private val graphDBService: GraphDBService,
     private val connectionService: ConnectionService,
     private val jiraService: BugTrackerService,
     private val confluenceService: WikiService,
@@ -128,7 +125,6 @@ class OrchestratorAgent(
     private val reviewerAgent: ReviewerAgent,
     private val solutionArchitectAgent: SolutionArchitectAgent,
     private val interpreterAgent: InterpreterAgent,
-    private val qualifierAgent: KoogQualifierAgent,
     private val workflowAnalyzer: WorkflowAnalyzer,
     private val programManager: ProgramManager,
     private val memoryRetriever: MemoryRetriever,
@@ -233,7 +229,7 @@ class OrchestratorAgent(
             ToolRegistry {
                 tools(ChatHistoryTools(modelTask, chatMessageRepository, json))
                 tools(ExecutionMemoryTools(task))
-                tools(ValidationTools(task, knowledgeService, graphDBService))
+                tools(ValidationTools(task, knowledgeService))
                 tools(
                     com.jervis.koog.tools.preferences.PreferenceTools(
                         task,
@@ -260,7 +256,7 @@ class OrchestratorAgent(
                         plannerAgent,
                         researchAgent,
                         reviewerAgent,
-                        qualifierAgent,
+                        knowledgeService,
                         solutionArchitectAgent,
                         interpreterAgent,
                         workflowAnalyzer,
@@ -270,7 +266,7 @@ class OrchestratorAgent(
                         codeMapper,
                     ),
                 )
-                tools(KnowledgeStorageTools(task, knowledgeService, graphDBService))
+                tools(KnowledgeStorageTools(task, knowledgeService))
                 tools(
                     QualifierRoutingTools(
                         task,
@@ -288,7 +284,7 @@ class OrchestratorAgent(
                 tools(BugTrackerReadTools(task, jiraService))
                 tools(WikiReadTools(task, confluenceService))
                 tools(EmailReadTools(task, emailService))
-                tools(JoernTools(task, joernClient, projectService, directoryStructureService, reconnectHandler))
+                tools(JoernTools(task, joernClient, projectService, directoryStructureService))
                 tools(LogSearchTools(task, Paths.get("logs")))
             }
 

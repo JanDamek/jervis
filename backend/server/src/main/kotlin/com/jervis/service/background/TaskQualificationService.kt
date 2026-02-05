@@ -1,10 +1,8 @@
 package com.jervis.service.background
 
-import com.jervis.configuration.prompts.ProviderCapabilitiesService
 import com.jervis.configuration.properties.KoogProperties
-import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.entity.TaskDocument
-import com.jervis.koog.qualifier.KoogQualifierAgent
+import com.jervis.koog.qualifier.SimpleQualifierAgent
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.catch
@@ -15,19 +13,27 @@ import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
 /**
- * CPU/GPU qualification service.
- * Prepares robust prompts with One-Shot examples to force 14B models into Tool Use.
+ * Simplified qualification service.
+ *
+ * Delegates all heavy lifting to KB microservice:
+ * - Text extraction (Tika)
+ * - Vision/OCR (qwen3-vl)
+ * - RAG indexing
+ * - Graph creation
+ * - Summary generation for routing
+ *
+ * Routes based on KB's hasActionableContent flag:
+ * - true → READY_FOR_GPU (user action required)
+ * - false → DONE (just indexed)
  *
  * SINGLETON GUARANTEE:
  * - Only ONE instance of processAllQualifications() can run at a time
  * - Uses an atomic flag to prevent concurrent execution
- * - This ensures the qualifier agent runs exactly once per application instance
  */
 @Service
 class TaskQualificationService(
     private val taskService: TaskService,
-    private val koogQualifierAgent: KoogQualifierAgent,
-    private val providerCapabilitiesService: ProviderCapabilitiesService,
+    private val simpleQualifierAgent: SimpleQualifierAgent,
     private val koogProperties: KoogProperties,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -49,10 +55,11 @@ class TaskQualificationService(
         }
 
         try {
-            logger.debug { "QUALIFICATION_CYCLE_START: Acquired singleton lock" }
+            logger.debug { "QUALIFICATION_CYCLE_START: Acquired singleton lock (simplified)" }
 
-            val capabilities = providerCapabilitiesService.getProviderCapabilities(ModelProviderEnum.OLLAMA_QUALIFIER)
-            val effectiveConcurrency = (capabilities.maxConcurrentRequests).coerceAtLeast(1)
+            // Process tasks sequentially - KB microservice handles the heavy lifting
+            // Concurrency is limited since we're just proxying to KB
+            val effectiveConcurrency = 2
 
             taskService
                 .findTasksForQualification()
@@ -94,10 +101,10 @@ class TaskQualificationService(
                 return
             }
 
-        koogQualifierAgent.run(task)
+        val summary = simpleQualifierAgent.run(task)
 
         logger.info {
-            "QUALIFICATION_RESULT: id=${task.id} type=${task.type} completed"
+            "QUALIFICATION_RESULT: id=${task.id} type=${task.type} summary=${summary.take(100)}"
         }
     }
 

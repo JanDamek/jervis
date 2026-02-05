@@ -3,8 +3,11 @@ package com.jervis.orchestrator.tools
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
+import com.jervis.common.types.SourceUrn
 import com.jervis.entity.TaskDocument
-import com.jervis.koog.qualifier.KoogQualifierAgent
+import com.jervis.knowledgebase.KnowledgeService
+import com.jervis.knowledgebase.model.EvidencePack
+import com.jervis.knowledgebase.model.IngestRequest
 import com.jervis.orchestrator.agents.CodeMapper
 import com.jervis.orchestrator.agents.ContextAgent
 import com.jervis.orchestrator.agents.EvidenceCollector
@@ -17,7 +20,6 @@ import com.jervis.orchestrator.agents.ReviewerAgent
 import com.jervis.orchestrator.agents.SolutionArchitectAgent
 import com.jervis.orchestrator.agents.WorkflowAnalyzer
 import com.jervis.orchestrator.model.ContextPack
-import com.jervis.orchestrator.model.EvidencePack
 import com.jervis.orchestrator.model.OrderedPlan
 import com.jervis.orchestrator.model.PlanStep
 import kotlinx.serialization.json.Json
@@ -36,7 +38,7 @@ class InternalAgentTools(
     private val plannerAgent: PlannerAgent,
     private val researchAgent: ResearchAgent,
     private val reviewerAgent: ReviewerAgent,
-    private val qualifierAgent: KoogQualifierAgent,
+    private val knowledgeService: KnowledgeService,
     private val solutionArchitectAgent: SolutionArchitectAgent,
     private val interpreterAgent: InterpreterAgent,
     private val workflowAnalyzer: WorkflowAnalyzer,
@@ -63,7 +65,7 @@ class InternalAgentTools(
         - goals: list of normalized goals
         - entities: mentioned entities (tickets, files, etc.)
         - outcome: expected outcome description
-        """
+        """,
     )
     suspend fun interpretRequest(): String {
         logger.info { "🔧 TOOL_CALL | tool=interpretRequest | correlationId=${task.correlationId}" }
@@ -86,11 +88,11 @@ class InternalAgentTools(
         - readinessChecks: Pre-conditions for state transitions
 
         Example: analyzeWorkflow(jiraWorkflowJson) before planning epic implementation
-        """
+        """,
     )
     suspend fun analyzeWorkflow(
         @LLMDescription("Workflow definition JSON from issue tracker (Jira, GitHub, etc.)")
-        workflowDefinitionJson: String
+        workflowDefinitionJson: String,
     ): String {
         logger.info { "TOOL_analyzeWorkflow | correlationId=${task.correlationId}" }
         // Potřebujeme převést entity.TaskDocument na model.TaskDocument pro agenta
@@ -118,11 +120,11 @@ class InternalAgentTools(
         - timeline: Estimated duration and milestones
 
         Example: planEpic(epicId="JERVIS-42") to create implementation plan
-        """
+        """,
     )
     suspend fun planEpic(
         @LLMDescription("Jira epic identifier (e.g., 'PROJ-123', 'EPIC-456')")
-        epicId: String
+        epicId: String,
     ): String {
         logger.info { "TOOL_planEpic | epicId=$epicId, correlationId=${task.correlationId}" }
         val state = programManager.planEpic(clientId = task.clientId, epicId = epicId)
@@ -157,7 +159,7 @@ class InternalAgentTools(
         - testCommand: how to run tests (if applicable)
         - knownFacts: list of known facts about the project from knowledge base
         - missingInfo: list of information gaps that need research
-        """
+        """,
     )
     suspend fun getContext(
         @LLMDescription("The user's original request/query text - REQUIRED parameter, cannot be omitted")
@@ -166,7 +168,8 @@ class InternalAgentTools(
         logger.info { "🔧 TOOL_CALL | tool=getContext | userQuery='${userQuery.take(100)}' | correlationId=${task.correlationId}" }
 
         if (userQuery.isBlank()) {
-            val error = "ERROR: userQuery parameter is required and cannot be blank. Please provide the user's original request."
+            val error =
+                "ERROR: userQuery parameter is required and cannot be blank. Please provide the user's original request."
             logger.error { "❌ TOOL_CALL_INVALID | tool=getContext | error=$error | correlationId=${task.correlationId}" }
             return """{"error": "$error"}"""
         }
@@ -198,7 +201,6 @@ class InternalAgentTools(
         val plan =
             plannerAgent.run(
                 task = task,
-                userQuery = userQuery,
                 context = context,
                 evidence = evidence,
                 existingPlan = existingPlan,
@@ -267,10 +269,16 @@ class InternalAgentTools(
         informationToIngest: String,
     ): String {
         logger.info { "TOOL_ingestKnowledge | correlationId=${task.correlationId}" }
-        // Adapt input to TaskDocument for qualifier agent
-        return qualifierAgent.run(task.copy(content = informationToIngest)) { msg, meta ->
-            logger.info { "QUALIFIER_PROGRESS: $msg | $meta" }
-        }
+        val request = IngestRequest(
+            clientId = task.clientId,
+            projectId = task.projectId,
+            sourceUrn = SourceUrn("orchestrator:${task.correlationId}"),
+            kind = "analysis",
+            content = informationToIngest,
+            metadata = mapOf("taskId" to task.id.toString(), "correlationId" to task.correlationId),
+        )
+        val result = knowledgeService.ingest(request)
+        return if (result.success) "OK: ${result.summary}" else "ERROR: ${result.error}"
     }
 
     @Tool
