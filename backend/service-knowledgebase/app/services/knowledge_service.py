@@ -5,32 +5,56 @@ from app.api.models import (
 )
 from app.services.rag_service import RagService
 from app.services.graph_service import GraphService
+from app.services.hybrid_retriever import HybridRetriever
 from app.services.clients.tika_client import TikaClient
 from app.services.clients.joern_client import JoernClient, JoernQueryDto, JoernResultDto
 from app.services.image_service import ImageService
 from langchain_community.document_loaders import RecursiveUrlLoader
 import asyncio
 
+
 class KnowledgeService:
     def __init__(self):
         self.rag_service = RagService()
         self.graph_service = GraphService()
+        self.hybrid_retriever = HybridRetriever(self.rag_service, self.graph_service)
         self.tika_client = TikaClient()
         self.joern_client = JoernClient()
         self.image_service = ImageService()
 
     async def ingest(self, request: IngestRequest) -> IngestResult:
-        # 1. RAG Ingest
-        chunks_count = await self.rag_service.ingest(request)
-        
-        # 2. Graph Ingest
-        nodes_created, edges_created = await self.graph_service.ingest(request)
-        
+        """
+        Ingest content with bidirectional linking between RAG and Graph.
+
+        Flow:
+        1. RAG Ingest → get chunk IDs
+        2. Graph Ingest with chunk IDs → get entity keys (nodes link to chunks)
+        3. Update RAG chunks with entity keys (chunks link to nodes)
+        """
+        # 1. RAG Ingest - get chunk IDs
+        chunks_count, chunk_ids = await self.rag_service.ingest(request)
+
+        # 2. Graph Ingest - pass chunk IDs for bidirectional linking
+        #    Graph nodes will store ragChunks = chunk_ids
+        #    Graph edges will store evidenceChunkIds = chunk_ids
+        nodes_created, edges_created, entity_keys = await self.graph_service.ingest(
+            request,
+            chunk_ids=chunk_ids
+        )
+
+        # 3. Update RAG chunks with discovered entity keys (bidirectional link)
+        #    Each chunk now knows which graph entities it references
+        if entity_keys and chunk_ids:
+            for chunk_id in chunk_ids:
+                await self.rag_service.update_chunk_graph_refs(chunk_id, entity_keys)
+
         return IngestResult(
             status="success",
             chunks_count=chunks_count,
             nodes_created=nodes_created,
-            edges_created=edges_created
+            edges_created=edges_created,
+            chunk_ids=chunk_ids,
+            entity_keys=entity_keys
         )
 
     async def ingest_file(self, file_bytes: bytes, filename: str, request: IngestRequest) -> IngestResult:
@@ -59,12 +83,33 @@ class KnowledgeService:
         return await self.joern_client.run(query, project_zip_base64)
 
     async def retrieve(self, request: RetrievalRequest) -> EvidencePack:
-        # 1. RAG Retrieve
-        evidence = await self.rag_service.retrieve(request)
-        
-        # 2. (Optional) Graph Expansion could happen here
-        
-        return evidence
+        """
+        Retrieve evidence using hybrid RAG + Graph approach.
+
+        Uses the HybridRetriever for advanced retrieval with:
+        - Vector similarity search (RAG)
+        - Graph traversal expansion
+        - Entity extraction from query
+        - Reciprocal Rank Fusion (RRF) scoring
+        - Source diversity
+        """
+        return await self.hybrid_retriever.retrieve(
+            request,
+            expand_graph=request.expandGraph,
+            extract_entities=True,
+            use_rrf=True,
+            max_graph_hops=2,
+            max_seeds=10,
+            diversity_factor=0.7
+        )
+
+    async def retrieve_simple(self, request: RetrievalRequest) -> EvidencePack:
+        """
+        Simple RAG-only retrieval without graph expansion.
+
+        Use this for fast queries where graph context is not needed.
+        """
+        return await self.rag_service.retrieve(request)
 
     async def traverse(self, request: TraversalRequest) -> list[GraphNode]:
         return await self.graph_service.traverse(request)
@@ -103,7 +148,7 @@ class KnowledgeService:
                 continue
 
             ingest_req = IngestRequest(
-                clientId=request.clientId or "GENERAL",
+                clientId=request.clientId,  # Empty string = global (default)
                 projectId=request.projectId,
                 sourceUrn=doc.metadata.get("source", request.url),
                 kind="documentation",
