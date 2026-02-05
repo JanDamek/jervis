@@ -209,8 +209,8 @@ class ConnectionRpcImpl(
         throw UnsupportedOperationException("importProject not yet implemented")
     }
 
-    override suspend fun getProviderDescriptors(): Map<ProviderEnum, ProviderDescriptor> =
-        providerRegistry.getAllDescriptors()
+    override suspend fun getProviderDescriptors(): List<ProviderDescriptor> =
+        providerRegistry.getAllDescriptors().values.toList()
 
     private fun getDefaultPort(protocol: ProtocolEnum): Int = when (protocol) {
         ProtocolEnum.HTTP -> 443

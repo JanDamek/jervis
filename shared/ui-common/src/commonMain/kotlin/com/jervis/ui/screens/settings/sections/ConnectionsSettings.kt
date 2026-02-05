@@ -96,7 +96,7 @@ fun ConnectionsSettings(repository: JervisRepository) {
         try {
             connections = repository.connections.getAllConnections()
             clients = repository.clients.getAllClients()
-            descriptors = repository.connections.getProviderDescriptors()
+            descriptors = repository.connections.getProviderDescriptors().associateBy { it.provider }
         } catch (e: Exception) {
             snackbarHostState.showSnackbar("Chyba načítání: ${e.message}")
         }
