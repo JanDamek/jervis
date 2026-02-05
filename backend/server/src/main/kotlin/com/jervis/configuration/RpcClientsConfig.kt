@@ -1,10 +1,16 @@
 package com.jervis.configuration
 
+import com.jervis.common.client.IAtlassianClient
+import com.jervis.common.client.IBugTrackerClient
 import com.jervis.common.client.ICodingClient
 import com.jervis.common.client.IJoernClient
 import com.jervis.common.client.ITikaClient
 import com.jervis.common.client.IWhisperClient
+import com.jervis.common.client.IWikiClient
 import com.jervis.common.dto.CodingRequest
+import com.jervis.common.dto.atlassian.*
+import com.jervis.common.dto.bugtracker.*
+import com.jervis.common.dto.wiki.*
 import com.jervis.configuration.properties.EndpointProperties
 import com.jervis.knowledgebase.KnowledgeService
 import com.jervis.knowledgebase.model.EvidencePack
@@ -43,6 +49,11 @@ class RpcClientsConfig(
     private var _codingEngineClient: ICodingClient? = null
     private var _junieClient: ICodingClient? = null
     private var _knowledgeService: KnowledgeService? = null
+
+    // Provider-specific fine-grained RPC clients (used by indexers and services for data operations)
+    private var _atlassianClient: IAtlassianClient? = null
+    private var _bugTrackerClient: IBugTrackerClient? = null
+    private var _wikiClient: IWikiClient? = null
 
     @Bean
     fun knowledgeService(): KnowledgeService =
@@ -91,6 +102,36 @@ class RpcClientsConfig(
     fun junieClient(): ICodingClient =
         object : ICodingClient {
             override suspend fun execute(request: CodingRequest) = getJunie().execute(request)
+        }
+
+    @Bean
+    fun atlassianClient(): IAtlassianClient =
+        object : IAtlassianClient {
+            override suspend fun getMyself(request: AtlassianMyselfRequest) = getAtlassian().getMyself(request)
+            override suspend fun searchJiraIssues(request: JiraSearchRequest) = getAtlassian().searchJiraIssues(request)
+            override suspend fun getJiraIssue(request: JiraIssueRequest) = getAtlassian().getJiraIssue(request)
+            override suspend fun searchConfluencePages(request: ConfluenceSearchRequest) = getAtlassian().searchConfluencePages(request)
+            override suspend fun getConfluencePage(request: ConfluencePageRequest) = getAtlassian().getConfluencePage(request)
+            override suspend fun downloadJiraAttachment(request: JiraAttachmentDownloadRequest) = getAtlassian().downloadJiraAttachment(request)
+            override suspend fun downloadConfluenceAttachment(request: ConfluenceAttachmentDownloadRequest) = getAtlassian().downloadConfluenceAttachment(request)
+        }
+
+    @Bean
+    fun bugTrackerClient(): IBugTrackerClient =
+        object : IBugTrackerClient {
+            override suspend fun getUser(request: BugTrackerUserRequest) = getBugTracker().getUser(request)
+            override suspend fun searchIssues(request: BugTrackerSearchRequest) = getBugTracker().searchIssues(request)
+            override suspend fun getIssue(request: BugTrackerIssueRequest) = getBugTracker().getIssue(request)
+            override suspend fun listProjects(request: BugTrackerProjectsRequest) = getBugTracker().listProjects(request)
+        }
+
+    @Bean
+    fun wikiClient(): IWikiClient =
+        object : IWikiClient {
+            override suspend fun getUser(request: WikiUserRequest) = getWiki().getUser(request)
+            override suspend fun searchPages(request: WikiSearchRequest) = getWiki().searchPages(request)
+            override suspend fun getPage(request: WikiPageRequest) = getWiki().getPage(request)
+            override suspend fun listSpaces(request: WikiSpacesRequest) = getWiki().listSpaces(request)
         }
 
     @Bean
@@ -155,6 +196,24 @@ class RpcClientsConfig(
         _knowledgeService ?: synchronized(this) {
             _knowledgeService
                 ?: KnowledgeServiceRestClient(endpoints.knowledgebase.baseUrl).also { _knowledgeService = it }
+        }
+
+    private fun atlassianUrl(): String =
+        endpoints.providers["atlassian"] ?: throw IllegalStateException("No endpoint configured for atlassian")
+
+    private fun getAtlassian(): IAtlassianClient =
+        _atlassianClient ?: synchronized(this) {
+            _atlassianClient ?: createRpcClient<IAtlassianClient>(atlassianUrl()).also { _atlassianClient = it }
+        }
+
+    private fun getBugTracker(): IBugTrackerClient =
+        _bugTrackerClient ?: synchronized(this) {
+            _bugTrackerClient ?: createRpcClient<IBugTrackerClient>(atlassianUrl()).also { _bugTrackerClient = it }
+        }
+
+    private fun getWiki(): IWikiClient =
+        _wikiClient ?: synchronized(this) {
+            _wikiClient ?: createRpcClient<IWikiClient>(atlassianUrl()).also { _wikiClient = it }
         }
 
     private inline fun <@Rpc reified T : Any> createRpcClient(baseUrl: String): T {
