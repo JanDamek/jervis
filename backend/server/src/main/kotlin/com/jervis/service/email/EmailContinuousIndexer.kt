@@ -1,12 +1,12 @@
 package com.jervis.service.email
 
+import com.jervis.common.types.SourceUrn
 import com.jervis.domain.PollingStatusEnum
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.email.EmailMessageIndexDocument
 import com.jervis.repository.EmailMessageIndexRepository
 import com.jervis.service.background.TaskService
 import com.jervis.service.text.TikaTextExtractionService
-import com.jervis.types.SourceUrn
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -15,7 +15,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import mu.KotlinLogging
-import org.springframework.context.annotation.Profile
 import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Service
 
@@ -37,8 +36,7 @@ private val logger = KotlinLogging.logger {}
  * - FAILED: Same as NEW + error field (for retry)
  */
 @Service
-@Order(11) // Start after BugTrackerContinuousIndexer
-@Profile("!cli")
+@Order(11)
 class EmailContinuousIndexer(
     private val repository: EmailMessageIndexRepository,
     private val taskService: TaskService,

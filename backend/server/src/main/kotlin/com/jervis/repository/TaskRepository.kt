@@ -1,12 +1,12 @@
 package com.jervis.repository
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
+import com.jervis.common.types.TaskId
 import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.ProcessingMode
 import com.jervis.entity.TaskDocument
-import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
-import com.jervis.types.TaskId
 import kotlinx.coroutines.flow.Flow
 import org.springframework.data.repository.kotlin.CoroutineCrudRepository
 import org.springframework.stereotype.Repository

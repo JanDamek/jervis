@@ -52,12 +52,7 @@ class TikaTextExtractionService(
                     includeMetadata = false,
                 )
 
-            val result = withRpcRetry(
-                name = "Tika",
-                reconnect = { reconnectHandler.reconnectTika() }
-            ) {
-                tikaClient.process(request)
-            }
+            val result = tikaClient.process(request)
 
             if (result.success) {
                 val plainText = result.plainText.trim()

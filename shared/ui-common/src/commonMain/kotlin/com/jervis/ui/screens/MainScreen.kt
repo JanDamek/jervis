@@ -1,13 +1,9 @@
 package com.jervis.ui.screens
 
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import com.jervis.ui.MainViewModel
-import com.jervis.ui.design.JTopBar
 import com.jervis.ui.MainScreenView as MainScreenViewInternal
 
 /**
@@ -15,7 +11,10 @@ import com.jervis.ui.MainScreenView as MainScreenViewInternal
  * TODO: Copy full implementation from mobile-app after testing
  */
 @Composable
-fun MainScreen(viewModel: MainViewModel, onNavigate: (com.jervis.ui.navigation.Screen) -> Unit = {}) {
+fun MainScreen(
+    viewModel: MainViewModel,
+    onNavigate: (com.jervis.ui.navigation.Screen) -> Unit = {},
+) {
     val clients by viewModel.clients.collectAsState()
     val projects by viewModel.projects.collectAsState()
     val selectedClientId by viewModel.selectedClientId.collectAsState()
@@ -38,7 +37,6 @@ fun MainScreen(viewModel: MainViewModel, onNavigate: (com.jervis.ui.navigation.S
         chatMessages = chatMessages,
         inputText = inputText,
         isLoading = isLoading || isInitialLoading,
-        connectionState = connectionState.name,
         queueSize = queueSize,
         runningProjectId = runningProjectId,
         runningProjectName = runningProjectName,
@@ -48,6 +46,5 @@ fun MainScreen(viewModel: MainViewModel, onNavigate: (com.jervis.ui.navigation.S
         onInputChanged = viewModel::updateInputText,
         onSendClick = viewModel::sendMessage,
         onNavigate = onNavigate,
-        onReconnectClick = viewModel::manualReconnect
     )
 }

@@ -1,9 +1,9 @@
 package com.jervis.domain.task
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.ProjectDocument
-import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
 
 /**
  * TaskContext - Execution context for Koog Workflow Agent.

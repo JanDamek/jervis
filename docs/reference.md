@@ -1,7 +1,7 @@
 # Reference - Terminology, Examples & Quick Lookup
 
-**Last updated:** 2026-02-02  
-**Status:** Production Reference  
+**Last updated:** 2026-02-05
+**Status:** Production Reference
 **Purpose:** Quick lookup for terminology, constants, examples, and copy-paste snippets
 
 ---
@@ -9,10 +9,10 @@
 ## Table of Contents
 
 1. [Unified Terminology](#unified-terminology)
-2. [Security Headers Reference](#security-headers-reference)
+2. [Architecture Layers](#architecture-layers)
 3. [Node Key Conventions](#node-key-conventions)
-4. [Quick Examples](#quick-examples)
-5. [Dependencies & Libraries](#dependencies--libraries)
+4. [Naming Conventions](#naming-conventions)
+5. [New Code Checklist](#new-code-checklist)
 
 ---
 
@@ -53,9 +53,11 @@ Correct architecture:
 | `JiraPollingHandler` | Specific name | `BugTrackerPollingHandler` |
 | `JiraExtraction` | Vendor-specific | `BugTrackerIssueExtraction` |
 
-### Architectural Layers
+---
 
-#### Layer 1: Server (Generic)
+## Architecture Layers
+
+### Layer 1: Server (Generic)
 
 ```kotlin
 // ✅ CORRECT - Generic types
@@ -80,7 +82,7 @@ data class BugTrackerIssueExtraction(
 )
 ```
 
-#### Layer 2: Connection (Capability-Based)
+### Layer 2: Connection (Capability-based)
 
 ```kotlin
 enum class ConnectionCapability {
@@ -91,6 +93,7 @@ enum class ConnectionCapability {
     GIT            // Capability: provides git operations
 }
 
+// Connection determines WHERE data is, NOT what specific system it is
 data class ConnectionDocument(
     val name: String,
     val baseUrl: String,
@@ -98,100 +101,32 @@ data class ConnectionDocument(
 )
 ```
 
-#### Layer 3: Microservices (Vendor-Specific)
+### Layer 3: Microservices (Vendor-specific)
 
 ```kotlin
 // service-atlassian
 interface IAtlassianClient : IBugTrackerClient, IWikiClient {
-    // Atlassian-specific implementation
+    // Implementation specific to Atlassian Cloud API
 }
 
 // service-github
 interface IGitHubClient : IBugTrackerClient, IRepositoryClient {
-    // GitHub-specific implementation
+    // Implementation specific to GitHub API
 }
 
 // service-gitlab
 interface IGitLabClient : IBugTrackerClient, IRepositoryClient {
-    // GitLab-specific implementation
+    // Implementation specific to GitLab API
 }
-```
-
----
-
-## Security Headers Reference
-
-### Quick Lookup Table
-
-| Header | Value | Required | Validation |
-|--------|-------|----------|-----------|
-| `X-Jervis-Client` | `a7f3c9e2-4b8d-11ef-9a1c-0242ac120002` | YES | Must match config |
-| `X-Jervis-Platform` | `iOS`, `Android`, or `Desktop` | YES | Must be in allowed set |
-| `X-Jervis-Client-IP` | Local IP (e.g., `192.168.1.100`) | NO | Debug only |
-
-### Configuration
-
-**File:** `application.yml`
-
-```yaml
-jervis:
-  security:
-    client-token: a7f3c9e2-4b8d-11ef-9a1c-0242ac120002
-```
-
-**Shared Constants:** `SecurityConstants.kt`
-
-```kotlin
-const val CLIENT_TOKEN = "a7f3c9e2-4b8d-11ef-9a1c-0242ac120002"
-const val CLIENT_HEADER = "X-Jervis-Client"
-const val PLATFORM_HEADER = "X-Jervis-Platform"
-const val PLATFORM_IOS = "iOS"
-const val PLATFORM_ANDROID = "Android"
-const val PLATFORM_DESKTOP = "Desktop"
-```
-
-### Test Cases (Copy-Paste Ready)
-
-#### Valid Request
-
-```bash
-wscat -c ws://localhost:5500/rpc \
-  -H "X-Jervis-Client: a7f3c9e2-4b8d-11ef-9a1c-0242ac120002" \
-  -H "X-Jervis-Platform: Desktop"
-```
-
-#### Missing Token
-
-```bash
-wscat -c ws://localhost:5500/rpc \
-  -H "X-Jervis-Platform: Desktop"
-```
-
-#### Invalid Token
-
-```bash
-wscat -c ws://localhost:5500/rpc \
-  -H "X-Jervis-Client: wrong" \
-  -H "X-Jervis-Platform: Desktop"
-```
-
-#### Invalid Platform
-
-```bash
-wscat -c ws://localhost:5500/rpc \
-  -H "X-Jervis-Client: a7f3c9e2-4b8d-11ef-9a1c-0242ac120002" \
-  -H "X-Jervis-Platform: BadValue"
 ```
 
 ---
 
 ## Node Key Conventions
 
-### Knowledge Base - Generic Node Keys
-
 Knowledge Base uses **generic prefixes** without vendor lock-in:
 
-#### ✅ CORRECT
+### ✅ CORRECT
 
 ```kotlin
 // Bug tracker issues
@@ -216,7 +151,7 @@ Knowledge Base uses **generic prefixes** without vendor lock-in:
 "file::<path>"                   // file::src/main/kotlin/Main.kt
 ```
 
-#### ❌ INCORRECT
+### ❌ INCORRECT
 
 ```kotlin
 "jira::TASK-123"         // Vendor-specific!
@@ -224,9 +159,9 @@ Knowledge Base uses **generic prefixes** without vendor lock-in:
 "github::repo-456"       // Vendor-specific!
 ```
 
-### Source URN - Preserving Origin
+### Source URN - Preserving Source
 
-Although node keys are generic, **SourceUrn preserves specific origin**:
+While node keys are generic, **SourceUrn preserves the specific source**:
 
 ```kotlin
 data class SourceUrn(
@@ -244,191 +179,105 @@ SourceUrn.parse("confluence://conn-456/pages/789?v=1234567890")
 
 **Why?**
 - **Node key** = generic for RAG/Graph queries (`bugtracker::TASK-456`)
-- **SourceUrn** = specific for querying back to source system
+- **SourceUrn** = specific for back-queries to source system
 
 ---
 
-## Quick Examples
+## Naming Conventions
 
-### HTTP Client Usage
+### Services
 
-#### KtorClientFactory (No Rate Limiting)
+| Pattern | Example | Scope |
+|---------|---------|-------|
+| `{Capability}Service` | `BugTrackerService` | Server - generic |
+| `{Vendor}{Capability}Client` | `AtlassianBugTrackerClient` | Microservice - specific |
 
+### Handlers
+
+| Pattern | Example | Scope |
+|---------|---------|-------|
+| `{Capability}PollingHandler` | `BugTrackerPollingHandler` | Server - generic |
+| `{Capability}ContinuousIndexer` | `BugTrackerContinuousIndexer` | Server - generic |
+
+### Entities
+
+| Pattern | Example | Scope |
+|---------|---------|-------|
+| `{Capability}{Type}IndexDocument` | `BugTrackerIssueIndexDocument` | Server MongoDB |
+| `{Capability}{Type}State` | `BugTrackerIssueState` | Indexing state |
+
+### DTOs
+
+| Pattern | Example | Scope |
+|---------|---------|-------|
+| `{Capability}{Operation}Request` | `BugTrackerSearchRequest` | API contract |
+| `{Capability}{Type}Dto` | `BugTrackerIssueDto` | Data transfer |
+
+---
+
+## Reasons for Generalization
+
+### 1. Vendor Independence
 ```kotlin
-@Service
-class OllamaClient(private val ktorClientFactory: KtorClientFactory) {
-    private val httpClient by lazy { 
-        ktorClientFactory.getHttpClient("ollama.primary") 
-    }
-    
-    suspend fun callModel(request: OllamaRequest): OllamaResponse {
-        return httpClient.post("/api/generate") { 
-            setBody(request) 
-        }.body()
-    }
-}
+// ❌ What if client switches from Jira to GitHub Issues?
+class JiraService { ... }  // Have to rename entire service!
+
+// ✅ Generic name works for any vendor
+class BugTrackerService { ... }  // Works for Jira, GitHub, GitLab, YouTrack...
 ```
 
-#### Ktor with DomainRateLimiter
-
+### 2. Unified Knowledge Base
 ```kotlin
-@Service
-class LinkScraperService {
-    private val rateLimiter = DomainRateLimiter(
-        RateLimitConfig(maxRequestsPerSecond = 10)
-    )
-    
-    suspend fun scrapeUrl(url: String): String {
-        if (!UrlUtils.isInternalUrl(url)) {
-            rateLimiter.acquire(UrlUtils.extractDomain(url))
-        }
-        return httpClient.get(url).body()
-    }
-}
+// ❌ Agent must know all vendor-specific node keys
+knowledgeService.search("jira::TASK-123")
+knowledgeService.search("github::issue-456")
+knowledgeService.search("youtrack::BUG-789")
+
+// ✅ Agent uses generic queries
+knowledgeService.search("bugtracker::*")  // Finds issues from all systems
 ```
 
-#### NDJSON Streaming
-
+### 3. Simplified Agent Prompts
 ```kotlin
-val response: HttpResponse = httpClient.post("/api/pull") { 
-    setBody(body) 
-}
-val channel: ByteReadChannel = response.bodyAsChannel()
+// ❌ Agent prompt must specify all systems
+"Analyze this JIRA ticket, GitHub issue, GitLab issue, or YouTrack bug..."
 
-while (!channel.isClosedForRead) {
-    val line = channel.readUTF8Line() ?: break
-    if (line.isNotBlank()) {
-        val status = Json.parseToJsonElement(line)
-            .jsonObject["status"]?.jsonPrimitive?.content
-        // Process line...
-    }
-}
+// ✅ Generic terminology
+"Analyze this bug tracker issue..."
 ```
 
-### Prompt Templating
-
+### 4. Extensibility
 ```kotlin
-// 1. Define template
-val template = """
-{
-  "id": "{id}",
-  "type": "{type}",
-  "clientId": "{clientId}",
-  "content": {contentRaw}
-}
-"""
-
-// 2. Prepare values
-val values = mapOf(
-    "id" to taskId.toString(),
-    "type" to "ANALYSIS",
-    "clientId" to client.id.toString(),
-    "contentRaw" to Json.encodeToString(content)
-)
-
-// 3. Render
-val json = PromptBuilderService.render(template, values)
-```
-
-### Tool Registration
-
-```kotlin
-@Tool
-@LLMDescription(
-    "Search knowledge base for related documents. " +
-    "Returns list of relevant entries."
-)
-suspend fun searchKnowledge(query: String): String {
-    return knowledgeService.search(query)
-        .map { it.content }
-        .joinToString("\n---\n")
-}
+// ✅ Adding new vendor (Mantis, Asana, ClickUp) doesn't require server changes!
+// Just add new microservice with `IBugTrackerClient` implementation
 ```
 
 ---
 
-## Dependencies & Libraries
-
-### Core Framework Versions
-
-| Library | Version | Use |
-|---------|---------|-----|
-| Kotlin | 2.0.0+ | Language |
-| Koog Framework | 0.6.0 | AI Agent DSL |
-| Ktor | 3.0+ | HTTP Server & Client |
-| kotlinx-rpc | 0.10.1+ | Type-safe RPC |
-| kotlinx.serialization | 1.7.0 | Serialization |
-| Spring Boot WebFlux | 3.x | Server framework |
-| MongoDB Driver | 5.0+ | Document DB |
-| ArangoDB | 3.10+ | Knowledge Graph |
-| Weaviate Client | 4.x | Vector Store |
-
-### Key Classes
-
-| Class | Module | Purpose |
-|-------|--------|---------|
-| `IBugTrackerClient` | common-services | Generic issue interface |
-| `IWikiClient` | common-services | Generic wiki interface |
-| `IRepositoryClient` | common-services | Generic repo interface |
-| `ConnectionCapability` | domain | Capability enum |
-| `KtorClientFactory` | server | HTTP client factory |
-| `DomainRateLimiter` | common-services | Rate limiting |
-| `KoogQualifierAgent` | server | Qualifier agent |
-| `KnowledgeService` | server | RAG service |
-| `GraphDBService` | server | Knowledge graph service |
-
----
-
-## Log Patterns
-
-### Valid Connection
-
-```
-DEBUG Verified client connection. RemoteHost: 192.168.1.100, Platform: iOS
-```
-
-### Missing Headers
-
-```
-WARN Unverified client detected - missing required security headers.
-     RemoteHost: 192.168.1.100, URI: /rpc, ClientToken: MISSING, Platform: present
-```
-
-### Invalid Token
-
-```
-WARN Unverified client detected - invalid client token.
-     RemoteHost: 192.168.1.100, URI: /rpc, Platform: Android
-```
-
-### Invalid Platform
-
-```
-WARN Unverified client detected - invalid platform value.
-     RemoteHost: 192.168.1.100, URI: /rpc, Platform: UnknownOS
-```
-
----
-
-## Checklist for New Code
+## New Code Checklist
 
 Before adding new code, ask yourself:
 
 - [ ] Am I using **generic** names (`BugTracker`, `Wiki`) instead of vendor-specific (`Jira`, `Confluence`)?
-- [ ] Is my code **vendor-independent** (works for any system of same type)?
+- [ ] Is my code **vendor-independent** (works for any system of the same type)?
 - [ ] Am I using **ConnectionCapability** enum instead of hardcoded vendor names?
-- [ ] Are Knowledge Base node keys **generic** (`bugtracker::`, `wiki::`)?
-- [ ] Does **SourceUrn preserve specific origin** for queries?
-- [ ] Do agent prompts use **generic terminology**?
+- [ ] Are node keys in Knowledge Base **generic** (`bugtracker::`, `wiki::`)?
+- [ ] Does SourceUrn **preserve specific source** for back-queries?
+- [ ] Do Agent prompts use **generic terminology**?
 
 ---
 
-## Summary
+## References
 
-**Key References:**
-1. Terminology → Generic not vendor-specific
-2. Security headers → Client token + Platform
-3. Node keys → Generic prefixes + SourceUrn for origin
-4. HTTP clients → Choose by use case
-5. Prompts → Templated strings with variables
+### Documents using correct terminology:
+- `docs/knowledge-base.md` - ✅ Uses generic node keys
+- `backend/common-services/.../IBugTrackerClient.kt` - ✅ Generic interface
+- `backend/common-services/.../IWikiClient.kt` - ✅ Generic interface
 
+---
+
+## Version History
+
+- **2026-02-01**: Initial terminology guide
+- **2026-02-04**: Consolidated from individual documentation files
+- **2026-02-05**: Translated to English, removed duplicates

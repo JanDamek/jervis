@@ -1,25 +1,20 @@
 package com.jervis.rpc
 
-import com.jervis.service.error.ErrorLogService
-import mu.KotlinLogging
-
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
 import com.jervis.dto.ClientDto
 import com.jervis.mapper.toDocument
 import com.jervis.mapper.toDto
 import com.jervis.service.IClientService
 import com.jervis.service.client.ClientService
-import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Component
 
 @Component
 class ClientRpcImpl(
-    private val clientService: ClientService
+    private val clientService: ClientService,
 ) : IClientService {
-
-    override suspend fun getAllClients(): List<ClientDto> =
-        clientService.list().map { it.toDto() }
+    override suspend fun getAllClients(): List<ClientDto> = clientService.list().map { it.toDto() }
 
     override suspend fun getClientById(id: String): ClientDto? =
         try {
@@ -28,10 +23,12 @@ class ClientRpcImpl(
             null
         }
 
-    override suspend fun createClient(client: ClientDto): ClientDto =
-        clientService.create(client.toDocument()).toDto()
+    override suspend fun createClient(client: ClientDto): ClientDto = clientService.create(client.toDocument()).toDto()
 
-    override suspend fun updateClient(id: String, client: ClientDto): ClientDto {
+    override suspend fun updateClient(
+        id: String,
+        client: ClientDto,
+    ): ClientDto {
         // Ensure ID from path/param matches DTO or is used
         val clientDoc = client.copy(id = id).toDocument()
         return clientService.update(clientDoc).toDto()
@@ -41,11 +38,15 @@ class ClientRpcImpl(
         clientService.delete(ClientId(ObjectId(id)))
     }
 
-    override suspend fun updateLastSelectedProject(id: String, projectId: String?): ClientDto {
+    override suspend fun updateLastSelectedProject(
+        id: String,
+        projectId: String?,
+    ): ClientDto {
         val client = clientService.getClientById(ClientId(ObjectId(id)))
-        val updatedClient = client.copy(
-            lastSelectedProjectId = if (projectId.isNullOrBlank()) null else ProjectId(ObjectId(projectId))
-        )
+        val updatedClient =
+            client.copy(
+                lastSelectedProjectId = if (projectId.isNullOrBlank()) null else ProjectId(ObjectId(projectId)),
+            )
         return clientService.update(updatedClient).toDto()
     }
 }

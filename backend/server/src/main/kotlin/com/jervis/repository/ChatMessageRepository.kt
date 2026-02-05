@@ -1,10 +1,9 @@
 package com.jervis.repository
 
+import com.jervis.common.types.TaskId
 import com.jervis.entity.ChatMessageDocument
 import com.jervis.entity.MessageRole
-import com.jervis.types.TaskId
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.toList
 import org.bson.types.ObjectId
 import org.springframework.data.mongodb.repository.Query
 import org.springframework.data.repository.kotlin.CoroutineCrudRepository

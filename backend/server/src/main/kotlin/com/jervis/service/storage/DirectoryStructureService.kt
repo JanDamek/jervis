@@ -1,12 +1,12 @@
 package com.jervis.service.storage
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
 import com.jervis.configuration.properties.DataRootProperties
 import com.jervis.domain.storage.DirectoryStructure
 import com.jervis.domain.storage.ProjectSubdirectoryEnum
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.ProjectDocument
-import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -430,7 +430,10 @@ class DirectoryStructureService(
             val attachmentsDir = clientAttachmentsDir(clientId)
 
             // Generate unique filename: {uuid}_{sanitized_filename}
-            val uuid = java.util.UUID.randomUUID().toString()
+            val uuid =
+                java.util.UUID
+                    .randomUUID()
+                    .toString()
             val sanitizedFilename = filename.replace(Regex("[^a-zA-Z0-9._-]"), "_")
             val uniqueFilename = "${uuid}_$sanitizedFilename"
 

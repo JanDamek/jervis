@@ -8,10 +8,10 @@ import ai.koog.agents.core.dsl.extension.nodeLLMRequestStructured
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.prompt.dsl.Prompt
 import com.jervis.entity.TaskDocument
+import com.jervis.knowledgebase.model.EvidencePack
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.SmartModelSelector
 import com.jervis.orchestrator.model.ContextPack
-import com.jervis.orchestrator.model.EvidencePack
 import com.jervis.orchestrator.model.OrderedPlan
 import com.jervis.orchestrator.model.PlanStep
 import com.jervis.orchestrator.prompts.NoGuessingDirectives
@@ -44,12 +44,7 @@ class PlannerAgent(
      * Create planner agent instance.
      * Returns OrderedPlan directly via structured output - Koog serializes automatically.
      */
-    suspend fun create(
-        task: TaskDocument,
-        context: ContextPack,
-        evidence: EvidencePack? = null,
-        existingPlan: OrderedPlan? = null,
-    ): AIAgent<String, OrderedPlan> {
+    suspend fun create(task: TaskDocument): AIAgent<String, OrderedPlan> {
         val promptExecutor = promptExecutorFactory.getExecutor("OLLAMA")
 
         val examplePlan =
@@ -90,7 +85,6 @@ class PlannerAgent(
             smartModelSelector.selectModelBlocking(
                 baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
                 inputContent = task.content,
-                projectId = task.projectId
             )
 
         val agentConfig =
@@ -218,7 +212,6 @@ class PlannerAgent(
      * Run planner agent.
      *
      * @param task TaskDocument
-     * @param userQuery Original user query
      * @param context Mandatory context from ContextAgent
      * @param evidence Evidence from previous iteration (null on first run)
      * @param existingPlan Current plan if refining
@@ -226,12 +219,14 @@ class PlannerAgent(
      */
     suspend fun run(
         task: TaskDocument,
-        userQuery: String,
         context: ContextPack,
         evidence: EvidencePack? = null,
         existingPlan: OrderedPlan? = null,
     ): OrderedPlan {
-        logger.info { "PLANNER_AGENT_START | correlationId=${task.correlationId} | hasEvidence=${evidence != null} | refiningPlan=${existingPlan != null}" }
+        logger.info {
+            @Suppress("ktlint:standard:max-line-length")
+            "PLANNER_AGENT_START | correlationId=${task.correlationId} | hasEvidence=${evidence != null} | refiningPlan=${existingPlan != null}"
+        }
 
         val promptInput =
             buildString {
@@ -276,7 +271,7 @@ class PlannerAgent(
                 }
             }
 
-        val agent = create(task, context, evidence, existingPlan)
+        val agent = create(task)
         val result = agent.run(promptInput)
 
         logger.debug { "PLANNER_AGENT_COMPLETE | steps=${result.steps.size}" }

@@ -1,6 +1,6 @@
 # Jervis – System Architecture & Design (2026)
 
-**Status:** Production Documentation (2026-02-04)
+**Status:** Production Documentation (2026-02-05)
 **Purpose:** System architecture, design patterns, and knowledge base implementation
 
 ---
@@ -346,7 +346,7 @@ data class GraphNode(
 - Confluence page content (ConfluenceContinuousIndexer)
 - Git commit message (GitContinuousIndexer)
 
-#### 3. KoogQualifierAgent - New Tools (2025-12-07)
+#### 3. KoogQualifierAgent - Tools
 
 ```kotlin
 // RagTools.storeChunk - ATOMIC chunk storage (PREFERRED)
@@ -866,6 +866,6 @@ EvidencePack(
 
 ---
 
-**Document Version:** 2.0
-**Last Updated:** 2026-02-04
+**Document Version:** 2.1
+**Last Updated:** 2026-02-05
 **Applies To:** System architecture, design patterns, and knowledge base implementation in Jervis

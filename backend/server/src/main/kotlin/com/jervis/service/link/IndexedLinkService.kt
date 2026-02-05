@@ -1,16 +1,16 @@
 package com.jervis.service.link
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
+import com.jervis.common.types.TaskId
 import com.jervis.domain.PollingStatusEnum
 import com.jervis.entity.IndexedLinkDocument
-import com.jervis.integration.wiki.internal.entity.WikiPageIndexDocument
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.integration.bugtracker.internal.entity.BugTrackerIssueIndexDocument
 import com.jervis.integration.bugtracker.internal.repository.BugTrackerIssueIndexRepository
-import com.jervis.repository.IndexedLinkRepository
+import com.jervis.integration.wiki.internal.entity.WikiPageIndexDocument
 import com.jervis.integration.wiki.internal.repository.WikiPageIndexRepository
-import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
-import com.jervis.types.TaskId
+import com.jervis.repository.IndexedLinkRepository
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service

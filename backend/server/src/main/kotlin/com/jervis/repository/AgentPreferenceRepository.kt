@@ -1,8 +1,8 @@
 package com.jervis.repository
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
 import com.jervis.entity.AgentPreferenceDocument
-import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
 import kotlinx.coroutines.flow.Flow
 import org.bson.types.ObjectId
 import org.springframework.data.repository.kotlin.CoroutineCrudRepository

@@ -1,10 +1,10 @@
 package com.jervis.service.oauth2
 
+import com.jervis.common.types.ConnectionId
 import com.jervis.domain.OAuth2Provider
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionStateEnum
 import com.jervis.entity.connection.ConnectionDocument
-import com.jervis.types.ConnectionId
 import io.ktor.client.HttpClient
 import io.ktor.client.request.accept
 import io.ktor.client.request.forms.submitForm
@@ -83,49 +83,41 @@ class OAuth2Service(
     }
 
     private fun determineProvider(connection: ConnectionDocument): OAuth2Provider {
-        // Check if it's a git provider
+        // First, try to use the provider field directly (most reliable)
+        when (connection.provider) {
+            com.jervis.dto.connection.ProviderEnum.GITHUB -> return OAuth2Provider.GITHUB
+            com.jervis.dto.connection.ProviderEnum.GITLAB -> return OAuth2Provider.GITLAB
+            com.jervis.dto.connection.ProviderEnum.ATLASSIAN -> return OAuth2Provider.ATLASSIAN
+            else -> {
+                // provider is not one of the OAuth2 ones, continue with other checks
+            }
+        }
+
+        // Check gitProvider
         connection.gitProvider?.let {
             return when (it.name) {
-                "GITHUB" -> {
-                    OAuth2Provider.GITHUB
-                }
-
-                "GITLAB" -> {
-                    OAuth2Provider.GITLAB
-                }
-
-                "BITBUCKET" -> {
-                    OAuth2Provider.BITBUCKET
-                }
-
+                "GITHUB" -> OAuth2Provider.GITHUB
+                "GITLAB" -> OAuth2Provider.GITLAB
+                "BITBUCKET" -> OAuth2Provider.BITBUCKET
                 else -> {
-                    // Check if it's Atlassian based on baseUrl or capabilities
-                    if (connection.baseUrl.contains("atlassian.net") ||
-                        (
-                            connection.availableCapabilities.contains(ConnectionCapability.BUGTRACKER) &&
-                                connection.availableCapabilities.contains(ConnectionCapability.WIKI)
-                        )
-                    ) {
+                    // Check capabilities for Atlassian
+                    if (connection.availableCapabilities.contains(ConnectionCapability.BUGTRACKER) &&
+                        connection.availableCapabilities.contains(ConnectionCapability.WIKI)) {
                         OAuth2Provider.ATLASSIAN
                     } else {
-                        // efault fallback
                         OAuth2Provider.GITHUB
                     }
                 }
             }
         }
 
-        // Check if it's Atlassian based on baseUrl or capabilities
-        if (connection.baseUrl.contains("atlassian.net") ||
-            (
-                connection.availableCapabilities.contains(ConnectionCapability.BUGTRACKER) &&
-                    connection.availableCapabilities.contains(ConnectionCapability.WIKI)
-            )
-        ) {
+        // Check capabilities for Atlassian (if both bugtracker and wiki)
+        if (connection.availableCapabilities.contains(ConnectionCapability.BUGTRACKER) &&
+            connection.availableCapabilities.contains(ConnectionCapability.WIKI)) {
             return OAuth2Provider.ATLASSIAN
         }
 
-        // Default to github
+        // Default fallback
         return OAuth2Provider.GITHUB
     }
 

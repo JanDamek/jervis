@@ -1,10 +1,10 @@
 package com.jervis.service.preferences
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
 import com.jervis.entity.AgentPreferenceDocument
 import com.jervis.entity.PreferenceSource
 import com.jervis.repository.AgentPreferenceRepository
-import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -20,7 +20,7 @@ import java.time.Instant
  */
 @Service
 class PreferenceService(
-    private val preferenceRepository: AgentPreferenceRepository
+    private val preferenceRepository: AgentPreferenceRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -32,7 +32,7 @@ class PreferenceService(
         key: String,
         clientId: ClientId? = null,
         projectId: ProjectId? = null,
-        default: String? = null
+        default: String? = null,
     ): String? {
         // 1. Try project scope
         if (clientId != null && projectId != null) {
@@ -65,7 +65,7 @@ class PreferenceService(
      */
     suspend fun getAllPreferences(
         clientId: ClientId? = null,
-        projectId: ProjectId? = null
+        projectId: ProjectId? = null,
     ): Map<String, String> {
         val prefs = mutableMapOf<String, String>()
 
@@ -103,39 +103,40 @@ class PreferenceService(
         projectId: ProjectId? = null,
         source: PreferenceSource = PreferenceSource.AGENT_LEARNED,
         confidence: Double = 0.7,
-        description: String? = null
+        description: String? = null,
     ): AgentPreferenceDocument {
         val existing = preferenceRepository.findByClientIdAndProjectIdAndKey(clientId, projectId, key)
 
-        val preference = if (existing != null) {
-            // Update existing
-            existing.copy(
-                value = value,
-                description = description ?: existing.description,
-                confidence = confidence,
-                updatedAt = Instant.now(),
-                usageCount = existing.usageCount + 1,
-                lastUsedAt = Instant.now()
-            )
-        } else {
-            // Create new
-            AgentPreferenceDocument(
-                clientId = clientId,
-                projectId = projectId,
-                key = key,
-                value = value,
-                description = description,
-                source = source,
-                confidence = confidence,
-                createdAt = Instant.now(),
-                updatedAt = Instant.now()
-            )
-        }
+        val preference =
+            if (existing != null) {
+                // Update existing
+                existing.copy(
+                    value = value,
+                    description = description ?: existing.description,
+                    confidence = confidence,
+                    updatedAt = Instant.now(),
+                    usageCount = existing.usageCount + 1,
+                    lastUsedAt = Instant.now(),
+                )
+            } else {
+                // Create new
+                AgentPreferenceDocument(
+                    clientId = clientId,
+                    projectId = projectId,
+                    key = key,
+                    value = value,
+                    description = description,
+                    source = source,
+                    confidence = confidence,
+                    createdAt = Instant.now(),
+                    updatedAt = Instant.now(),
+                )
+            }
 
         val saved = preferenceRepository.save(preference)
         logger.info {
             "PREFERENCE_SET | key=$key | value=$value | " +
-            "scope=${getScopeString(clientId, projectId)} | source=$source | confidence=$confidence"
+                "scope=${getScopeString(clientId, projectId)} | source=$source | confidence=$confidence"
         }
         return saved
     }
@@ -146,7 +147,7 @@ class PreferenceService(
     suspend fun deletePreference(
         key: String,
         clientId: ClientId? = null,
-        projectId: ProjectId? = null
+        projectId: ProjectId? = null,
     ): Boolean {
         val existing = preferenceRepository.findByClientIdAndProjectIdAndKey(clientId, projectId, key)
         return if (existing != null) {
@@ -162,18 +163,21 @@ class PreferenceService(
      * Increment usage counter and update lastUsedAt.
      */
     private suspend fun incrementUsage(pref: AgentPreferenceDocument) {
-        val updated = pref.copy(
-            usageCount = pref.usageCount + 1,
-            lastUsedAt = Instant.now()
-        )
+        val updated =
+            pref.copy(
+                usageCount = pref.usageCount + 1,
+                lastUsedAt = Instant.now(),
+            )
         preferenceRepository.save(updated)
     }
 
-    private fun getScopeString(clientId: ClientId?, projectId: ProjectId?): String {
-        return when {
+    private fun getScopeString(
+        clientId: ClientId?,
+        projectId: ProjectId?,
+    ): String =
+        when {
             clientId == null && projectId == null -> "GLOBAL"
             projectId == null -> "CLIENT:$clientId"
             else -> "PROJECT:$clientId/$projectId"
         }
-    }
 }

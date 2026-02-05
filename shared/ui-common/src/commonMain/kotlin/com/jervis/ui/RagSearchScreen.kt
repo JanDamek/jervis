@@ -57,7 +57,7 @@ fun RagSearchScreen(
     LaunchedEffect(Unit) {
         isLoadingData = true
         try {
-            clients = repository.clients.listClients()
+            clients = repository.clients.getAllClients()
             projects = repository.projects.getAllProjects()
             if (clients.isNotEmpty()) {
                 selectedClient = clients[0]

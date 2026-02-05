@@ -1,7 +1,8 @@
 package com.jervis.entity.polling
 
-import com.jervis.types.ConnectionId
-import com.jervis.types.PollingStateId
+import com.jervis.common.types.ConnectionId
+import com.jervis.common.types.PollingStateId
+import com.jervis.dto.connection.ProviderEnum
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.CompoundIndex
 import org.springframework.data.mongodb.core.index.CompoundIndexes
@@ -21,7 +22,7 @@ import java.time.Instant
  * - POP3: tracks lastFetchedMessageNumber for incremental email polling
  *
  * Architecture:
- * - One document per (connectionId, handlerType) pair
+ * - One document per (connectionId, provider) pair
  * - Unique compound index ensures no duplicates
  * - Each handler writes only its own document → no race conditions
  * - Spring Data MongoDB upsert ensures atomic updates
@@ -29,16 +30,16 @@ import java.time.Instant
 @Document(collection = "polling_states")
 @CompoundIndexes(
     CompoundIndex(
-        name = "connection_handler_unique_idx",
-        def = "{'connectionId': 1, 'handlerType': 1}",
-        unique = true
-    )
+        name = "connection_provider_unique_idx",
+        def = "{'connectionId': 1, 'provider': 1}",
+        unique = true,
+    ),
 )
 data class PollingStateDocument(
     @Id
     val id: PollingStateId = PollingStateId.generate(),
     val connectionId: ConnectionId,
-    val handlerType: String, // "JIRA", "CONFLUENCE", "IMAP", "POP3", etc.
+    val provider: ProviderEnum,
     val lastFetchedUid: Long? = null,
     val lastFetchedMessageNumber: Int? = null,
     val lastSeenUpdatedAt: Instant? = null,

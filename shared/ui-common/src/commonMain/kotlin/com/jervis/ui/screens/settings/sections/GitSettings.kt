@@ -26,7 +26,7 @@ fun GitSettings(repository: JervisRepository) {
         scope.launch {
             isLoading = true
             try {
-                clients = repository.clients.listClients()
+                clients = repository.clients.getAllClients()
             } catch (e: Exception) {
             } finally {
                 isLoading = false

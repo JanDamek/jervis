@@ -3,6 +3,7 @@ package com.jervis.integration.wiki.internal.indexing
 import com.jervis.common.client.IAtlassianClient
 import com.jervis.common.dto.atlassian.ConfluenceAttachmentDownloadRequest
 import com.jervis.common.dto.atlassian.ConfluencePageRequest
+import com.jervis.common.types.SourceUrn
 import com.jervis.domain.atlassian.AttachmentMetadata
 import com.jervis.domain.atlassian.AttachmentType
 import com.jervis.dto.TaskTypeEnum
@@ -12,14 +13,12 @@ import com.jervis.integration.wiki.internal.state.WikiStateManager
 import com.jervis.service.background.TaskService
 import com.jervis.service.connection.ConnectionService
 import com.jervis.service.storage.DirectoryStructureService
-import com.jervis.types.SourceUrn
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import mu.KotlinLogging
-import org.springframework.context.annotation.Profile
 import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Service
 
@@ -44,8 +43,7 @@ private val logger = KotlinLogging.logger {}
  * ETL Flow: MongoDB (NEW minimal) → API (full details) → CONFLUENCE_PROCESSING Task → KoogQualifierAgent → Graph + RAG
  */
 @Service
-@Profile("!cli")
-@Order(10) // Start after WeaviateSchemaInitializer
+@Order(10)
 class WikiContinuousIndexer(
     private val stateManager: WikiStateManager,
     private val taskService: TaskService,

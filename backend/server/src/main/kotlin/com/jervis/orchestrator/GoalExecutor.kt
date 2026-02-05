@@ -11,8 +11,13 @@ import ai.koog.agents.core.dsl.extension.onAssistantMessage
 import ai.koog.agents.core.dsl.extension.onToolCall
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.prompt.dsl.Prompt
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.SourceUrn
+import com.jervis.common.types.TaskId
 import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
+import com.jervis.knowledgebase.model.EvidenceItem
+import com.jervis.knowledgebase.model.EvidencePack
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.SmartModelSelector
 import com.jervis.orchestrator.agents.ContextAgent
@@ -20,22 +25,17 @@ import com.jervis.orchestrator.agents.PlannerAgent
 import com.jervis.orchestrator.agents.ReviewerAgent
 import com.jervis.orchestrator.model.Artifact
 import com.jervis.orchestrator.model.ContextPack
-import com.jervis.orchestrator.model.EvidenceItem
-import com.jervis.orchestrator.model.EvidencePack
 import com.jervis.orchestrator.model.GoalResult
 import com.jervis.orchestrator.model.GoalSpec
 import com.jervis.orchestrator.model.OrderedPlan
 import com.jervis.orchestrator.model.RequestType
 import com.jervis.orchestrator.model.ReviewResult
 import com.jervis.orchestrator.prompts.NoGuessingDirectives
-import com.jervis.types.ClientId
-import com.jervis.types.SourceUrn
-import com.jervis.types.TaskId
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
+import com.jervis.common.types.ProjectId as TypeProjectId
 import com.jervis.entity.TaskDocument as EntityTaskDocument
 import com.jervis.orchestrator.model.TaskDocument as ModelTaskDocument
-import com.jervis.types.ProjectId as TypeProjectId
 import java.time.Instant as JavaInstant
 
 /**
@@ -84,7 +84,7 @@ class GoalExecutor(
 
             val context = gatherContext(goal, entityTask, previousResults)
             val plan = createPlan(goal, entityTask, context)
-            val evidence = executePlan(goal, plan, entityTask, toolRegistry)
+            val evidence = executePlan(goal, plan, toolRegistry)
             if (shouldReview(goal)) {
                 reviewExecution(goal, plan, evidence, entityTask)
             }
@@ -161,7 +161,6 @@ class GoalExecutor(
         // Standard planning for most goal types
         return plannerAgent.run(
             task = task,
-            userQuery = goal.outcome,
             context = context,
             evidence = null,
             existingPlan = null,
@@ -171,7 +170,6 @@ class GoalExecutor(
     private suspend fun executePlan(
         goal: GoalSpec,
         plan: OrderedPlan,
-        entityTask: EntityTaskDocument,
         toolRegistry: ToolRegistry,
     ): EvidencePack {
         logger.info { "⚙️ EXECUTE | goalId=${goal.id} | steps=${plan.steps.size}" }
@@ -181,7 +179,6 @@ class GoalExecutor(
             smartModelSelector.selectModelBlocking(
                 baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
                 inputContent = goal.outcome,
-                projectId = entityTask.projectId,
             )
 
         val prompt =

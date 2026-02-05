@@ -19,6 +19,9 @@ import com.jervis.configuration.RpcReconnectHandler
 import com.jervis.entity.TaskDocument
 import com.jervis.integration.bugtracker.BugTrackerService
 import com.jervis.integration.wiki.WikiService
+import com.jervis.knowledgebase.KnowledgeService
+import com.jervis.knowledgebase.model.EvidenceItem
+import com.jervis.knowledgebase.model.EvidencePack
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.SmartModelSelector
 import com.jervis.koog.tools.KnowledgeStorageTools
@@ -29,10 +32,7 @@ import com.jervis.koog.tools.external.EmailReadTools
 import com.jervis.koog.tools.external.IssueTrackerTool
 import com.jervis.koog.tools.external.WikiReadTools
 import com.jervis.orchestrator.model.ContextPack
-import com.jervis.orchestrator.model.EvidencePack
 import com.jervis.orchestrator.prompts.NoGuessingDirectives
-import com.jervis.knowledgebase.KnowledgeService
-import com.jervis.knowledgebase.internal.graphdb.GraphDBService
 import com.jervis.service.email.EmailService
 import com.jervis.service.project.ProjectService
 import com.jervis.service.storage.DirectoryStructureService
@@ -48,7 +48,7 @@ import java.nio.file.Paths
  * - Iterate until has enough information or reaches max iterations
  * - Return EvidencePack with collected items and summary
  *
- * Koog pattern: Tool-call loop with stopping condition.
+ * Koog pattern: Tool-call loop with a stopping condition.
  *
  * Used by Orchestrator when:
  * - Planner creates "research" step
@@ -60,7 +60,6 @@ class ResearchAgent(
     private val promptExecutorFactory: KoogPromptExecutorFactory,
     private val smartModelSelector: SmartModelSelector,
     private val knowledgeService: KnowledgeService,
-    private val graphDBService: GraphDBService,
     private val jiraService: BugTrackerService,
     private val confluenceService: WikiService,
     private val emailService: EmailService,
@@ -77,17 +76,14 @@ class ResearchAgent(
      * Create research agent instance.
      * Returns EvidencePack directly - Koog serializes automatically.
      */
-    suspend fun create(
-        task: TaskDocument,
-        context: ContextPack,
-    ): AIAgent<String, EvidencePack> {
+    suspend fun create(task: TaskDocument): AIAgent<String, EvidencePack> {
         val promptExecutor = promptExecutorFactory.getExecutor("OLLAMA")
 
         val exampleEvidencePack =
             EvidencePack(
                 items =
                     listOf(
-                        com.jervis.orchestrator.model.EvidenceItem(
+                        EvidenceItem(
                             source = "RAG",
                             content = "Found implementation of UserService in src/main/UserService.kt",
                             confidence = 0.9,
@@ -149,7 +145,6 @@ class ResearchAgent(
             smartModelSelector.selectModelBlocking(
                 baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
                 inputContent = task.content,
-                projectId = task.projectId,
             )
 
         val agentConfig =
@@ -195,7 +190,7 @@ class ResearchAgent(
         val toolRegistry =
             ToolRegistry {
                 // Knowledge tools (RAG + GraphDB)
-                tools(KnowledgeStorageTools(task, knowledgeService, graphDBService))
+                tools(KnowledgeStorageTools(task, knowledgeService))
 
                 // External read tools
                 tools(BugTrackerReadTools(task, jiraService))
@@ -203,7 +198,7 @@ class ResearchAgent(
                 tools(EmailReadTools(task, emailService))
 
                 // Analysis tools
-                tools(JoernTools(task, joernClient, projectService, directoryStructureService, reconnectHandler))
+                tools(JoernTools(task, joernClient, projectService, directoryStructureService))
                 tools(LogSearchTools(task, Paths.get("logs")))
 
                 tools(
@@ -239,7 +234,7 @@ class ResearchAgent(
     ): EvidencePack {
         logger.info { "RESEARCH_AGENT_START | correlationId=${task.correlationId} | question=$researchQuestion" }
 
-        val agent = create(task, context)
+        val agent = create(task)
 
         val promptInput =
             buildString {

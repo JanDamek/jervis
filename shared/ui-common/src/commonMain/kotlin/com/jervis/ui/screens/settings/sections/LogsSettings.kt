@@ -28,7 +28,7 @@ fun LogsSettings(repository: JervisRepository) {
         scope.launch {
             isLoading = true
             try {
-                logs = repository.errorLogs.listAllErrorLogs(100)
+                logs = repository.errorLogs.listAll(100)
             } catch (e: Exception) {
             } finally {
                 isLoading = false

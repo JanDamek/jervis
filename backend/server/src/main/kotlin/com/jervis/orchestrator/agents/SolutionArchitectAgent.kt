@@ -8,11 +8,11 @@ import ai.koog.agents.core.dsl.extension.nodeLLMRequestStructured
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.prompt.dsl.Prompt
 import com.jervis.entity.TaskDocument
+import com.jervis.knowledgebase.model.EvidencePack
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.SmartModelSelector
 import com.jervis.orchestrator.model.ContextPack
 import com.jervis.orchestrator.model.DelegationSpec
-import com.jervis.orchestrator.model.EvidencePack
 import com.jervis.orchestrator.model.PlanStep
 import mu.KotlinLogging
 import org.springframework.stereotype.Component

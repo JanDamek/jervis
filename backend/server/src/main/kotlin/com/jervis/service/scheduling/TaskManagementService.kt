@@ -1,12 +1,12 @@
 package com.jervis.service.scheduling
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
+import com.jervis.common.types.SourceUrn
+import com.jervis.common.types.TaskId
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.TaskDocument
 import com.jervis.repository.TaskRepository
-import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
-import com.jervis.types.SourceUrn
-import com.jervis.types.TaskId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withContext

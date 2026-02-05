@@ -1,19 +1,18 @@
 package com.jervis.rpc
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
+import com.jervis.common.types.SourceUrn
 import com.jervis.dto.ChatHistoryDto
 import com.jervis.dto.ChatMessageDto
 import com.jervis.dto.ChatRequestDto
 import com.jervis.dto.ChatResponseDto
 import com.jervis.dto.ChatResponseType
-import com.jervis.koog.qualifier.KoogQualifierAgent
 import com.jervis.mapper.toDomain
 import com.jervis.mapper.toDto
 import com.jervis.repository.ChatMessageRepository
 import com.jervis.repository.TaskRepository
 import com.jervis.service.IAgentOrchestratorService
-import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
-import com.jervis.types.SourceUrn
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -31,7 +30,6 @@ import java.util.concurrent.ConcurrentHashMap
 class AgentOrchestratorRpcImpl(
     private val chatMessageRepository: ChatMessageRepository,
     private val taskRepository: TaskRepository,
-    private val qualifierAgent: KoogQualifierAgent,
     private val taskService: com.jervis.service.background.TaskService,
 ) : IAgentOrchestratorService {
     private val logger = KotlinLogging.logger {}
@@ -217,9 +215,6 @@ class AgentOrchestratorRpcImpl(
 
         val clientIdTyped = ClientId.fromString(clientId)
         val projectIdTyped = if (projectId.isNullOrBlank()) null else ProjectId.fromString(projectId)
-
-        // CRITICAL: Stop any running qualifier agent for this session
-        qualifierAgent.cancel(sessionKey)
 
         val stream =
             chatStreams.getOrPut(sessionKey) {

@@ -151,3 +151,24 @@ data:
         baseUrl: ws://jervis-github:8085/
       gitlab:
         baseUrl: ws://jervis-gitlab:8086/
+      knowledgebase:
+        baseUrl: http://jervis-knowledgebase:8080/
+
+
+---
+# ConfigMap pro service-knowledgebase
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jervis-knowledgebase-config
+  namespace: jervis
+data:
+  OLLAMA_BASE_URL: "http://192.168.100.117:11434"
+  OLLAMA_EMBEDDING_BASE_URL: "http://192.168.100.117:11436"
+  WEAVIATE_URL: "http://192.168.100.117:8080"
+  WEAVIATE_GRPC_URL: "192.168.100.117:50051"
+  ARANGO_URL: "http://192.168.100.117:8529"
+  ARANGO_DB: "jervis"
+  ARANGO_USER: "root"
+  TIKA_URL: "http://192.168.100.117:8081"
+  JOERN_URL: "http://192.168.100.117:8082"

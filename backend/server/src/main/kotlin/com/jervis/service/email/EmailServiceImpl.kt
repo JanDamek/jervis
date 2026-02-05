@@ -1,7 +1,7 @@
 package com.jervis.service.email
 
+import com.jervis.common.types.ClientId
 import com.jervis.repository.EmailMessageIndexRepository
-import com.jervis.types.ClientId
 import kotlinx.coroutines.flow.toList
 import org.springframework.stereotype.Service
 
@@ -43,7 +43,10 @@ class EmailServiceImpl(
         emailId: String,
     ): Email {
         val doc =
-            repository.findAll().toList().find { it.clientId == clientId && (it.messageId == emailId || it.messageUid == emailId) }
+            repository
+                .findAll()
+                .toList()
+                .find { it.clientId == clientId && (it.messageId == emailId || it.messageUid == emailId) }
                 ?: throw NoSuchElementException("Email not found: $emailId")
         return doc.toEmail()
     }
@@ -57,7 +60,14 @@ class EmailServiceImpl(
             repository
                 .findAll()
                 .toList()
-                .filter { it.clientId == clientId && (it.messageId?.contains(threadId) == true || it.messageUid.contains(threadId)) } // Mock thread logic
+                .filter {
+                    it.clientId == clientId && (
+                        it.messageId?.contains(threadId) == true ||
+                            it.messageUid.contains(
+                                threadId,
+                            )
+                    )
+                } // Mock thread logic
                 .map { it.toEmail() }
 
         return EmailThread(

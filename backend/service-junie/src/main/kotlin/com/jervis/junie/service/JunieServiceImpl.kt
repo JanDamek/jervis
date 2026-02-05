@@ -1,9 +1,9 @@
 package com.jervis.junie.service
 
-import com.jervis.common.client.CodingRequest
-import com.jervis.common.client.CodingResult
 import com.jervis.common.client.ICodingClient
-import com.jervis.common.client.VerificationResult
+import com.jervis.common.dto.CodingRequest
+import com.jervis.common.dto.CodingResult
+import com.jervis.common.dto.VerificationResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging

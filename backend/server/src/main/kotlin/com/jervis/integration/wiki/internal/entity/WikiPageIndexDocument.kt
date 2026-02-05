@@ -1,9 +1,9 @@
 package com.jervis.integration.wiki.internal.entity
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ConnectionId
+import com.jervis.common.types.ProjectId
 import com.jervis.domain.PollingStatusEnum
-import com.jervis.types.ClientId
-import com.jervis.types.ConnectionId
-import com.jervis.types.ProjectId
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.CompoundIndex

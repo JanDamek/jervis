@@ -1,10 +1,10 @@
 package com.jervis.coding.service
 
 import com.jervis.coding.configuration.CodingEngineProperties
-import com.jervis.common.client.CodingRequest
-import com.jervis.common.client.CodingResult
 import com.jervis.common.client.ICodingClient
-import com.jervis.common.client.VerificationResult
+import com.jervis.common.dto.CodingRequest
+import com.jervis.common.dto.CodingResult
+import com.jervis.common.dto.VerificationResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging

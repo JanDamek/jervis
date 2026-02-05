@@ -25,7 +25,7 @@ fun BugTrackerSettings(repository: JervisRepository) {
         scope.launch {
             isLoading = true
             try {
-                val clients = repository.clients.listClients()
+                 val clients = repository.clients.getAllClients()
                 clientsWithStatus = clients.map { client ->
                     client.name to repository.bugTrackerSetup.getStatus(client.id)
                 }

@@ -1,6 +1,6 @@
 package com.jervis.integration.bugtracker
 
-import com.jervis.types.ClientId
+import com.jervis.common.types.ClientId
 import kotlinx.serialization.Serializable
 
 /**

@@ -3,6 +3,7 @@ package com.jervis.integration.bugtracker.internal.indexing
 import com.jervis.common.client.IAtlassianClient
 import com.jervis.common.dto.atlassian.JiraAttachmentDownloadRequest
 import com.jervis.common.dto.atlassian.JiraIssueRequest
+import com.jervis.common.types.SourceUrn
 import com.jervis.domain.PollingStatusEnum
 import com.jervis.domain.atlassian.AttachmentMetadata
 import com.jervis.dto.TaskTypeEnum
@@ -17,7 +18,6 @@ import com.jervis.integration.bugtracker.internal.state.BugTrackerStateManager
 import com.jervis.service.background.TaskService
 import com.jervis.service.connection.ConnectionService
 import com.jervis.service.storage.DirectoryStructureService
-import com.jervis.types.SourceUrn
 import com.jervis.util.toAttachmentType
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineScope
@@ -25,7 +25,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import mu.KotlinLogging
-import org.springframework.context.annotation.Profile
 import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Service
 
@@ -45,8 +44,7 @@ private val logger = KotlinLogging.logger {}
  * ETL Flow: MongoDB (NEW minimal) → API (full details) → JIRA_PROCESSING Task → KoogQualifierAgent → Graph + RAG
  */
 @Service
-@Profile("!cli")
-@Order(10) // Start after WeaviateSchemaInitializer
+@Order(10)
 class BugTrackerContinuousIndexer(
     private val stateManager: BugTrackerStateManager,
     private val taskService: TaskService,
@@ -179,7 +177,7 @@ class BugTrackerContinuousIndexer(
                             val request =
                                 JiraAttachmentDownloadRequest(
                                     baseUrl = connection.baseUrl,
-                                    authType = credentials.toAuthType(),
+                                    authType = credentials.toAuthType().name,
                                     basicUsername = credentials.basicUsername(),
                                     basicPassword = credentials.basicPassword(),
                                     bearerToken = credentials.bearerToken(),

@@ -1,7 +1,12 @@
 package com.jervis.ui
 
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -68,18 +73,18 @@ fun JervisApp(
         // Show loading screen while connecting
         Box(
             modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 CircularProgressIndicator()
                 Text("Connecting to server...")
                 Text(
                     text = serverBaseUrl,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -89,19 +94,17 @@ fun JervisApp(
     val repository =
         remember(currentServices) {
             JervisRepository(
-                clientService = currentServices.clientService,
-                projectService = currentServices.projectService,
-                userTaskService = currentServices.userTaskService,
-                ragSearchService = currentServices.ragSearchService,
-                taskSchedulingService = currentServices.taskSchedulingService,
-                agentOrchestratorService = currentServices.agentOrchestratorService,
-                errorLogService = currentServices.errorLogService,
-                gitConfigurationService = currentServices.gitConfigurationService,
-                pendingTaskService = currentServices.pendingTaskService,
-                connectionService = currentServices.connectionService,
-                notificationService = currentServices.notificationService,
-                bugTrackerSetupService = currentServices.bugTrackerSetupService,
-                integrationSettingsService = currentServices.integrationSettingsService,
+                clients = currentServices.clientService,
+                projects = currentServices.projectService,
+                userTasks = currentServices.userTaskService,
+                ragSearch = currentServices.ragSearchService,
+                scheduledTasks = currentServices.taskSchedulingService,
+                agentOrchestrator = currentServices.agentOrchestratorService,
+                errorLogs = currentServices.errorLogService,
+                pendingTasks = currentServices.pendingTaskService,
+                connections = currentServices.connectionService,
+                notifications = currentServices.notificationService,
+                bugTrackerSetup = currentServices.bugTrackerSetupService,
             )
         }
 
@@ -119,6 +122,6 @@ fun JervisApp(
                 servicesState = null
                 refreshTrigger++
             }
-        }
+        },
     )
 }

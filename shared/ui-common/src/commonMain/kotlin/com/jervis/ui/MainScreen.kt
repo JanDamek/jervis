@@ -34,7 +34,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -43,11 +42,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
-import com.jervis.dto.ChatMessageDto
 import com.jervis.dto.ui.ChatMessage
 import com.jervis.ui.design.JTopBar
 import com.jervis.ui.util.rememberClipboardManager
@@ -70,7 +67,6 @@ fun MainScreenView(
     chatMessages: List<ChatMessage>,
     inputText: String,
     isLoading: Boolean,
-    connectionState: String = "DISCONNECTED", // CONNECTED, CONNECTING, RECONNECTING, DISCONNECTED
     queueSize: Int = 0,
     runningProjectId: String? = null,
     runningProjectName: String? = null,
@@ -80,17 +76,9 @@ fun MainScreenView(
     onInputChanged: (String) -> Unit,
     onSendClick: () -> Unit,
     onNavigate: (com.jervis.ui.navigation.Screen) -> Unit = {},
-    onReconnectClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     var showMenu by remember { mutableStateOf(false) }
-
-    // Obrazovka "Spojení ztraceno" s možností manuálního obnovení
-    if (connectionState == "DISCONNECTED" && onReconnectClick != null) {
-        // Zde by mohl být speciální UI pro odpojený stav, 
-        // ale my už máme overlay v App.kt. 
-        // Přidáme alespoň tlačítko pro refresh do TopBaru, pokud je potřeba.
-    }
 
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
@@ -99,22 +87,6 @@ fun MainScreenView(
                 title = "JERVIS Assistant",
                 actions = {
                     // Connection status indicator
-                    Box(modifier = Modifier.padding(horizontal = 8.dp)) {
-                        Text(
-                            text = when (connectionState) {
-                                "CONNECTED" -> "●"
-                                "CONNECTING" -> "⟳"
-                                "RECONNECTING" -> "⟳"
-                                else -> "○"
-                            },
-                            style = MaterialTheme.typography.titleMedium,
-                            color = when (connectionState) {
-                                "CONNECTED" -> MaterialTheme.colorScheme.primary
-                                "CONNECTING", "RECONNECTING" -> MaterialTheme.colorScheme.secondary
-                                else -> MaterialTheme.colorScheme.error
-                            }
-                        )
-                    }
                     IconButton(onClick = { showMenu = true }) {
                         Text("⋮", style = MaterialTheme.typography.headlineMedium)
                     }
@@ -247,7 +219,7 @@ private fun SelectorsRow(
         ExposedDropdownMenuBox(
             expanded = clientExpanded,
             onExpandedChange = { clientExpanded = it },
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
         ) {
             OutlinedTextField(
                 value = clients.find { it.id == selectedClientId }?.name ?: "Vyberte klienta...",
@@ -284,7 +256,7 @@ private fun SelectorsRow(
         ExposedDropdownMenuBox(
             expanded = projectExpanded,
             onExpandedChange = { projectExpanded = it },
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
         ) {
             OutlinedTextField(
                 value = projects.find { it.id == selectedProjectId }?.name ?: "Vyberte projekt...",
@@ -401,8 +373,11 @@ private fun ChatMessageItem(
                 colors =
                     CardDefaults.cardColors(
                         containerColor =
-                            if (isMe) MaterialTheme.colorScheme.primaryContainer
-                            else MaterialTheme.colorScheme.secondaryContainer,
+                            if (isMe) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.secondaryContainer
+                            },
                     ),
                 modifier = Modifier.widthIn(max = 280.dp),
             ) {
@@ -411,8 +386,11 @@ private fun ChatMessageItem(
                 ) {
                     Text(
                         text =
-                            if (isMe) "Já"
-                            else "Asistent",
+                            if (isMe) {
+                                "Já"
+                            } else {
+                                "Asistent"
+                            },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -463,26 +441,27 @@ private fun InputArea(
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Project name + task preview on single line
                 Text(
-                    text = buildString {
-                        append("⚙️ ${runningProjectName ?: runningProjectId}")
-                        if (runningTaskPreview != null) {
-                            append(": $runningTaskPreview")
-                        }
-                    },
+                    text =
+                        buildString {
+                            append("⚙️ ${runningProjectName ?: runningProjectId}")
+                            if (runningTaskPreview != null) {
+                                append(": $runningTaskPreview")
+                            }
+                        },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
                     maxLines = 1,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
                 if (queueSize > 0) {
                     Text(
                         text = "Fronta: $queueSize",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -504,12 +483,13 @@ private fun InputArea(
                 maxLines = 4,
             )
 
-            val buttonText = when {
-                runningProjectId == null || runningProjectId == "none" -> "Odeslat"
-                runningProjectId != currentProjectId -> "Do fronty"
-                queueSize > 0 -> "Do fronty (${queueSize + 1})"
-                else -> "Do fronty"
-            }
+            val buttonText =
+                when {
+                    runningProjectId == null || runningProjectId == "none" -> "Odeslat"
+                    runningProjectId != currentProjectId -> "Do fronty"
+                    queueSize > 0 -> "Do fronty (${queueSize + 1})"
+                    else -> "Do fronty"
+                }
 
             Button(
                 onClick = onSendClick,

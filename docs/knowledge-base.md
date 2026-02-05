@@ -1,6 +1,6 @@
 # Knowledge Base - Implementation and Architecture
 
-**Status:** Production Documentation (2026-02-04)
+**Status:** Production Documentation (2026-02-05)
 **Purpose:** Knowledge base implementation, graph design, and architecture
 
 ---
@@ -217,60 +217,27 @@ confluence_page --[references]--> jira_issue
 
 ---
 
-## Knowledge Base Implementation
+## Knowledge Base Implementation (Python Service)
 
-### Architecture Overview
+The Knowledge Base is implemented as a Python service (`service-knowledgebase`) to leverage the rich ecosystem of AI and Data tools.
 
-**Knowledge Base is the most critical component** of Jervis. Agent cannot function without quality structured data and relationships.
+### Tech Stack
+*   **Language**: Python 3.11+
+*   **Framework**: FastAPI
+*   **RAG**: LangChain, Weaviate Client v4
+*   **Graph**: Python-Arango
+*   **LLM**: Ollama (Qwen 2.5, Qwen 3-VL)
 
-#### Dual Storage Model
+### Features
+1.  **Web Crawling**: `POST /crawl` endpoint to index documentation from URLs.
+2.  **File Ingestion**: `POST /ingest/file` supports PDF, DOCX, etc. using Tika.
+3.  **Code Analysis**: `POST /analyze/code` integrates with Joern service.
+4.  **Image Understanding**: Automatically detects images and uses `qwen-3-vl` to generate descriptions.
+5.  **Scoped Search**: Filters results by Client and Project.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    KNOWLEDGE BASE                        │
-├─────────────────────────┬───────────────────────────────┤
-│        RAG Store        │        Graph Store            │
-│      (Weaviate)         │       (ArangoDB)              │
-├─────────────────────────┼───────────────────────────────┤
-│ • Vector embeddings     │ • Vertices (entities)         │
-│ • Semantic search       │ • Edges (relationships)       │
-│ • Chunk storage         │ • Structured navigation      │
-│ • Metadata              │ • Traversal queries          │
-└─────────────────────────┴───────────────────────────────┘
-          ↓                           ↓
-┌───────────────────────────────────────┐
-│   Bidirectional linking:              │
-│   - Chunks → Graph nodes (graphRefs)  │
-│   - Graph nodes → Chunks (ragChunks)  │
-│   - Edges → Chunks (evidenceChunkIds) │
-└───────────────────────────────────────┘
-```
-
-### Flow: Ingest → Storage
-
-```kotlin
-IngestRequest
-   ↓
-1. Chunking (simple paragraph split)
-   ↓
-2. Extraction
-   - extractNodes()        // Pattern: "type:id"
-   - extractRelationships() // Formats: "from|edge|to", "from->edge->to", "from -[edge]-> to"
-   ↓
-3. Normalization
-   - normalizeGraphRefs()   // Canonical form
-   - resolveCanonicalGraphRef() // Alias resolution via MongoDB registry
-   ↓
-4. RAG Storage (Weaviate)
-   - Embedding via EmbeddingGateway
-   - Metadata: sourceUrn, clientId, kind, graphRefs, graphAreas
-   ↓
-5. Graph Storage (ArangoDB)
-   - buildGraphPayload()    // Parse relationships, expand short-hand refs
-   - persistGraph()         // Upsert nodes + edges with evidence
-   ↓
-IngestResult (success, summary, ingestedNodes[])
-```
+### Integration
+*   **Tika Service**: Used for text extraction (OCR).
+*   **Joern Service**: Used for deep code analysis.
 
 ### Relationship Extraction
 

@@ -1,7 +1,6 @@
 package com.jervis.configuration.prompts
 
 import com.jervis.configuration.properties.YamlPropertySourceFactory
-import com.jervis.domain.model.ExecutionMode
 import com.jervis.domain.model.ModelProviderEnum
 import com.jervis.domain.model.ProviderCapabilities
 import org.springframework.boot.context.properties.ConfigurationProperties
@@ -23,7 +22,6 @@ class ProviderCapabilitiesService {
 
     data class ProviderConfig(
         var endpoint: String,
-        var executionMode: ExecutionMode,
         var maxConcurrentRequests: Int,
     )
 
@@ -36,7 +34,6 @@ class ProviderCapabilitiesService {
                 provider = provider,
                 endpoint = config.endpoint,
                 maxConcurrentRequests = config.maxConcurrentRequests,
-                executionMode = config.executionMode,
             )
         }
 
@@ -49,7 +46,6 @@ class ProviderCapabilitiesService {
                 provider = provider,
                 endpoint = config.endpoint,
                 maxConcurrentRequests = config.maxConcurrentRequests,
-                executionMode = config.executionMode,
             )
         } ?: error("Provider configuration not found for $provider")
 }

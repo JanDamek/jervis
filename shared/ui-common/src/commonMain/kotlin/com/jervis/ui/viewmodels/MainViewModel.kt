@@ -41,7 +41,7 @@ class MainViewModel(
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
 
             try {
-                val clients = repository.clients.listClients()
+                 val clients = repository.clients.getAllClients()
                 val projects = repository.projects.getAllProjects()
 
                 _uiState.value = _uiState.value.copy(

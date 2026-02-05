@@ -1,8 +1,8 @@
 package com.jervis.integration.wiki.internal.repository
 
+import com.jervis.common.types.ConnectionId
 import com.jervis.domain.PollingStatusEnum
 import com.jervis.integration.wiki.internal.entity.WikiPageIndexDocument
-import com.jervis.types.ConnectionId
 import kotlinx.coroutines.flow.Flow
 import org.bson.types.ObjectId
 import org.springframework.data.repository.kotlin.CoroutineCrudRepository

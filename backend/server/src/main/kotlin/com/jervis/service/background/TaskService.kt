@@ -1,5 +1,9 @@
 package com.jervis.service.background
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
+import com.jervis.common.types.SourceUrn
+import com.jervis.common.types.TaskId
 import com.jervis.domain.atlassian.AttachmentMetadata
 import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
@@ -8,10 +12,6 @@ import com.jervis.entity.TaskDocument
 import com.jervis.repository.TaskRepository
 import com.jervis.rpc.NotificationRpcImpl
 import com.jervis.service.text.TikaTextExtractionService
-import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
-import com.jervis.types.SourceUrn
-import com.jervis.types.TaskId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.firstOrNull
@@ -42,7 +42,6 @@ class TaskService(
         projectId: ProjectId? = null,
         state: TaskStateEnum = TaskStateEnum.READY_FOR_QUALIFICATION,
         attachments: List<AttachmentMetadata> = emptyList(),
-        
     ): TaskDocument {
         require(content.isNotBlank()) { "PendingTask content must be provided and non-blank" }
 
@@ -58,7 +57,6 @@ class TaskService(
                 correlationId = correlationId,
                 sourceUrn = sourceUrn,
                 attachments = attachments,
-                
             )
 
         val saved = taskRepository.save(task)
@@ -86,12 +84,13 @@ class TaskService(
 
     suspend fun findTasksToRun(): Flow<TaskDocument> =
         flow {
-            taskRepository.findOneByScheduledAtLessThanAndTypeOrderByScheduledAtAsc(
-                Instant.now(),
-                TaskTypeEnum.SCHEDULED_TASK,
-            )?.let {
-                emit(it)
-            }
+            taskRepository
+                .findOneByScheduledAtLessThanAndTypeOrderByScheduledAtAsc(
+                    Instant.now(),
+                    TaskTypeEnum.SCHEDULED_TASK,
+                )?.let {
+                    emit(it)
+                }
             emitAll(taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.READY_FOR_GPU))
         }
 
@@ -101,14 +100,12 @@ class TaskService(
      *
      * @return Next FOREGROUND task to process, or null if no tasks
      */
-    suspend fun getNextForegroundTask(): TaskDocument? {
-        return taskRepository
+    suspend fun getNextForegroundTask(): TaskDocument? =
+        taskRepository
             .findByProcessingModeAndStateOrderByQueuePositionAsc(
                 ProcessingMode.FOREGROUND,
                 TaskStateEnum.READY_FOR_GPU,
-            )
-            .firstOrNull()
-    }
+            ).firstOrNull()
 
     /**
      * Get next BACKGROUND task (autonomous) ordered by createdAt (oldest first).
@@ -116,14 +113,12 @@ class TaskService(
      *
      * @return Next BACKGROUND task to process, or null if no tasks
      */
-    suspend fun getNextBackgroundTask(): TaskDocument? {
-        return taskRepository
+    suspend fun getNextBackgroundTask(): TaskDocument? =
+        taskRepository
             .findByProcessingModeAndStateOrderByCreatedAtAsc(
                 ProcessingMode.BACKGROUND,
                 TaskStateEnum.READY_FOR_GPU,
-            )
-            .firstOrNull()
-    }
+            ).firstOrNull()
 
     /**
      * Mark task as currently running (for queue status tracking)
@@ -135,22 +130,24 @@ class TaskService(
     /**
      * Get currently running task (for progress display)
      */
-    fun getCurrentRunningTask(): TaskDocument? {
-        return currentRunningTask
-    }
+    fun getCurrentRunningTask(): TaskDocument? = currentRunningTask
 
     /**
      * Get queue status: currently running task and queue size
      */
-    suspend fun getQueueStatus(clientId: ClientId, projectId: ProjectId?): Pair<TaskDocument?, Int> {
-        val queueSize = taskRepository.countByStateAndTypeAndClientId(
-            state = TaskStateEnum.READY_FOR_GPU,
-            type = TaskTypeEnum.USER_INPUT_PROCESSING,
-            clientId = clientId
-        )
-        logger.debug { 
+    suspend fun getQueueStatus(
+        clientId: ClientId,
+        projectId: ProjectId?,
+    ): Pair<TaskDocument?, Int> {
+        val queueSize =
+            taskRepository.countByStateAndTypeAndClientId(
+                state = TaskStateEnum.READY_FOR_GPU,
+                type = TaskTypeEnum.USER_INPUT_PROCESSING,
+                clientId = clientId,
+            )
+        logger.debug {
             "GET_QUEUE_STATUS | clientId=$clientId | projectId=$projectId | " +
-            "queueSize=$queueSize | hasRunningTask=${currentRunningTask != null}"
+                "queueSize=$queueSize | hasRunningTask=${currentRunningTask != null}"
         }
         return currentRunningTask to queueSize.toInt()
     }
@@ -288,7 +285,9 @@ class TaskService(
                 )
 
             if (cleaned.isBlank() && content.isNotBlank()) {
-                logger.warn { "Tika returned empty content for $correlationId (type=$taskType). Using original content to prevent data loss." }
+                logger.warn {
+                    "Tika returned empty content for $correlationId (type=$taskType). Using original content to prevent data loss."
+                }
                 return content
             }
 

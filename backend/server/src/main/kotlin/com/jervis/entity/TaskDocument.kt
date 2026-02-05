@@ -1,12 +1,12 @@
 package com.jervis.entity
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
+import com.jervis.common.types.SourceUrn
+import com.jervis.common.types.TaskId
 import com.jervis.domain.atlassian.AttachmentMetadata
 import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
-import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
-import com.jervis.types.SourceUrn
-import com.jervis.types.TaskId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.Indexed
 import org.springframework.data.mongodb.core.mapping.Document
@@ -95,46 +95,28 @@ import java.time.Instant
 data class TaskDocument(
     @Id
     val id: TaskId = TaskId.generate(),
-
     @Indexed
     val type: TaskTypeEnum,
-
     val taskName: String = "Unnamed Task",
-
     val content: String,
-
     val projectId: ProjectId? = null,
-
     val clientId: ClientId,
-
     @Indexed
     val createdAt: Instant = Instant.now(),
-
     @Indexed
     var state: TaskStateEnum = TaskStateEnum.NEW,
-
     @Indexed
     val processingMode: ProcessingMode = ProcessingMode.BACKGROUND,
-
     val queuePosition: Int? = null,
-
     val correlationId: String = id.toString(),
-
     val sourceUrn: SourceUrn,
-
     val errorMessage: String? = null,
-
     val qualificationRetries: Int = 0,
-
     val attachments: List<AttachmentMetadata> = emptyList(),
-
     val scheduledAt: Instant? = null,
-
     val cronExpression: String? = null,
-
     // NEW: Agent session persistence for continuous conversation
     val agentCheckpointJson: String? = null,
-
     // NEW (2026-01): User interaction state for async USER_TASK workflow
     /**
      * Question agent is waiting for user to answer (when state = USER_TASK).
@@ -142,7 +124,6 @@ data class TaskDocument(
      * Cleared when user responds and task returns to READY_FOR_GPU.
      */
     val pendingUserQuestion: String? = null,
-
     /**
      * Context explaining WHY agent asked the question.
      * Helps user understand what agent needs and why.

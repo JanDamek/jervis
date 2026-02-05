@@ -1,8 +1,8 @@
 package com.jervis.integration.bugtracker.internal.repository
 
+import com.jervis.common.types.ConnectionId
 import com.jervis.domain.PollingStatusEnum
 import com.jervis.integration.bugtracker.internal.entity.BugTrackerIssueIndexDocument
-import com.jervis.types.ConnectionId
 import kotlinx.coroutines.flow.Flow
 import org.bson.types.ObjectId
 import org.springframework.data.repository.kotlin.CoroutineCrudRepository
@@ -16,7 +16,9 @@ interface BugTrackerIssueIndexRepository : CoroutineCrudRepository<BugTrackerIss
         latestChangelogId: String,
     ): Boolean
 
-    suspend fun findAllByStatusOrderByBugtrackerUpdatedAtDesc(status: PollingStatusEnum = PollingStatusEnum.NEW): Flow<BugTrackerIssueIndexDocument>
+    suspend fun findAllByStatusOrderByBugtrackerUpdatedAtDesc(
+        status: PollingStatusEnum = PollingStatusEnum.NEW,
+    ): Flow<BugTrackerIssueIndexDocument>
 
     suspend fun findByConnectionIdAndIssueKey(
         connectionId: ConnectionId,

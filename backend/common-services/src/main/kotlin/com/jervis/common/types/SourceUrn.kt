@@ -1,7 +1,14 @@
 package com.jervis.common.types
 
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import org.bson.types.ObjectId
 
+@Serializable(with = SourceUrnSerializer::class)
 @JvmInline
 value class SourceUrn(
     val value: String,
@@ -54,4 +61,10 @@ value class SourceUrn(
                 .replace(",", "%2C")
                 .replace(":", "%3A")
     }
+}
+
+object SourceUrnSerializer : KSerializer<SourceUrn> {
+    override val descriptor = PrimitiveSerialDescriptor("SourceUrn", PrimitiveKind.STRING)
+    override fun serialize(encoder: Encoder, value: SourceUrn) = encoder.encodeString(value.value)
+    override fun deserialize(decoder: Decoder): SourceUrn = SourceUrn(decoder.decodeString())
 }

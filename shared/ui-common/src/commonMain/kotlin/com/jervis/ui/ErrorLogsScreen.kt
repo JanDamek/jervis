@@ -1,18 +1,46 @@
 package com.jervis.ui
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.error.ErrorLogDto
 import com.jervis.repository.JervisRepository
-import com.jervis.ui.design.*
-import com.jervis.ui.util.*
+import com.jervis.ui.design.JCenteredLoading
+import com.jervis.ui.design.JEmptyState
+import com.jervis.ui.design.JErrorState
+import com.jervis.ui.design.JTableHeaderCell
+import com.jervis.ui.design.JTableHeaderRow
+import com.jervis.ui.design.JTableRowCard
+import com.jervis.ui.design.JTopBar
+import com.jervis.ui.util.ConfirmDialog
+import com.jervis.ui.util.CopyableTextCard
+import com.jervis.ui.util.DeleteIconButton
+import com.jervis.ui.util.RefreshIconButton
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -34,7 +62,7 @@ fun ErrorLogsScreen(
             isLoading = true
             errorMessage = null
             try {
-                errorLogs = repository.errorLogs.listAllErrorLogs(500)
+                errorLogs = repository.errorLogs.listAll()
             } catch (e: Exception) {
                 errorMessage = "Failed to load error logs: ${e.message}"
             } finally {
@@ -54,7 +82,7 @@ fun ErrorLogsScreen(
                 onBack = onBack,
                 actions = {
                     RefreshIconButton(onClick = { loadErrorLogs() })
-                }
+                },
             )
         },
     ) { padding ->
@@ -63,15 +91,18 @@ fun ErrorLogsScreen(
                 isLoading -> {
                     JCenteredLoading()
                 }
+
                 errorMessage != null -> {
                     JErrorState(
                         message = errorMessage!!,
-                        onRetry = { loadErrorLogs() }
+                        onRetry = { loadErrorLogs() },
                     )
                 }
+
                 errorLogs.isEmpty() -> {
                     JEmptyState(message = "Žádné chyby nezaznamenány")
                 }
+
                 else -> {
                     Column(modifier = Modifier.fillMaxSize()) {
                         // Error logs table
@@ -82,7 +113,7 @@ fun ErrorLogsScreen(
                             onDeleteClick = { logId ->
                                 selectedLogId = logId
                                 showDeleteDialog = true
-                            }
+                            },
                         )
 
                         // Details with copy (unified component)
@@ -91,13 +122,14 @@ fun ErrorLogsScreen(
                             Spacer(Modifier.height(8.dp))
                             CopyableTextCard(
                                 title = "Detaily chyby (kopírovat)",
-                                content = buildString {
-                                    appendLine(selected.message)
-                                    selected.stackTrace?.let {
-                                        appendLine()
-                                        appendLine(it)
-                                    }
-                                }.trimEnd(),
+                                content =
+                                    buildString {
+                                        appendLine(selected.message)
+                                        selected.stackTrace?.let {
+                                            appendLine()
+                                            appendLine(it)
+                                        }
+                                    }.trimEnd(),
                                 useMonospace = true,
                             )
                         }
@@ -116,7 +148,7 @@ fun ErrorLogsScreen(
         onConfirm = {
             scope.launch {
                 try {
-                    repository.errorLogs.deleteErrorLog(selectedLogId!!)
+                    repository.errorLogs.delete(selectedLogId!!)
                     selectedLogId = null
                     showDeleteDialog = false
                     loadErrorLogs()
@@ -126,7 +158,7 @@ fun ErrorLogsScreen(
                 }
             }
         },
-        onDismiss = { showDeleteDialog = false }
+        onDismiss = { showDeleteDialog = false },
     )
 }
 
@@ -135,7 +167,7 @@ private fun ErrorLogsTable(
     errorLogs: List<ErrorLogDto>,
     selectedLogId: String?,
     onRowSelected: (String?) -> Unit,
-    onDeleteClick: (String) -> Unit
+    onDeleteClick: (String) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -145,7 +177,7 @@ private fun ErrorLogsTable(
         // Header
         item {
             JTableHeaderRow(
-                modifier = Modifier.padding(horizontal = 0.dp)
+                modifier = Modifier.padding(horizontal = 0.dp),
             ) {
                 JTableHeaderCell("Čas", modifier = Modifier.weight(0.25f))
                 JTableHeaderCell("Zpráva", modifier = Modifier.weight(0.55f))
@@ -159,9 +191,10 @@ private fun ErrorLogsTable(
             val isSelected = selectedLogId == log.id
             JTableRowCard(
                 selected = isSelected,
-                modifier = Modifier.fillMaxWidth().clickable {
-                    onRowSelected(if (isSelected) null else log.id)
-                }
+                modifier =
+                    Modifier.fillMaxWidth().clickable {
+                        onRowSelected(if (isSelected) null else log.id)
+                    },
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -194,7 +227,7 @@ private fun ErrorLogsTable(
                     // Delete action
                     Box(modifier = Modifier.weight(0.05f), contentAlignment = Alignment.CenterEnd) {
                         DeleteIconButton(
-                            onClick = { onDeleteClick(log.id) }
+                            onClick = { onDeleteClick(log.id) },
                         )
                     }
                 }

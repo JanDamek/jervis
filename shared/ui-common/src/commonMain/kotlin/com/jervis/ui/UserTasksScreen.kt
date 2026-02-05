@@ -88,7 +88,7 @@ fun UserTasksScreen(
             isLoading = true
             errorMessage = null
             try {
-                val clients = repository.clients.listClients()
+                val clients = repository.clients.getAllClients()
                 val allTasksList = mutableListOf<UserTaskDto>()
 
                 for (client in clients) {

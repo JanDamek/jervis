@@ -1,6 +1,6 @@
 # Operations - Deployment, Verification & Monitoring
 
-**Last updated:** 2026-02-02  
+**Last updated:** 2026-02-05  
 **Status:** Production Ready  
 **Purpose:** Deployment checklists, verification procedures, and status tracking
 
@@ -459,7 +459,139 @@ kubectl rollout status deployment/jervis-server -n jervis
 
 ---
 
-## OAuth2 & Connection Testing (Phase 1)
+## OAuth2 Quick Start
+
+**Status:** Production Documentation
+**Last updated:** 2026-02-05
+
+Quick guide for setting up OAuth2 in Jervis.
+
+---
+
+### OAuth2 Providers Setup
+
+### GitHub
+**Create OAuth App**: https://github.com/settings/developers
+
+```bash
+Application name:     Jervis
+Homepage URL:         https://jervis.damek-soft.eu
+Callback URL:         https://jervis.damek-soft.eu/oauth2/callback
+```
+
+After creation, copy **Client ID** and **Client Secret** and add to Kubernetes Secret.
+
+---
+
+### GitLab
+**Create OAuth App**: https://gitlab.com/-/profile/applications
+
+```bash
+Name:                 Jervis
+Redirect URI:         https://jervis.damek-soft.eu/oauth2/callback
+Scopes:               api, read_user, read_repository
+```
+
+After creation, copy **Application ID** and **Secret** and add to Kubernetes Secret.
+
+---
+
+### Bitbucket
+**Create OAuth Consumer**: `https://bitbucket.org/YOUR_WORKSPACE/workspace/settings/oauth-consumers/new`
+
+```bash
+Name:                 Jervis
+Callback URL:         https://jervis.damek-soft.eu/oauth2/callback
+Permissions:          Account: Read, Repositories: Read
+```
+
+After creation, copy **Key** and **Secret** and add to Kubernetes Secret.
+
+---
+
+### Atlassian (Jira + Confluence)
+**Create OAuth App**: https://developer.atlassian.com/console/myapps/
+
+```bash
+App name:             Jervis
+App type:             OAuth 2.0 integration
+Callback URL:         https://jervis.damek-soft.eu/oauth2/callback
+Permissions:
+  - Jira: read:jira-work, read:jira-user
+  - Confluence: read:confluence-space.summary, read:confluence-content.all
+```
+
+After creation, copy **Client ID** and **Secret** and add to Kubernetes Secret.
+
+---
+
+## Kubernetes Deployment
+
+### 1. Edit Kubernetes Secret
+
+Add copied credentials to `k8s/secrets/oauth2-secrets.yaml`:
+
+```yaml
+stringData:
+  GITHUB_CLIENT_ID: "Iv1.1234567890abcdef"
+  GITHUB_CLIENT_SECRET: "1234567890abcdef..."
+
+  GITLAB_CLIENT_ID: "1234567890abcdef..."
+  GITLAB_CLIENT_SECRET: "abcdef1234567890..."
+
+  BITBUCKET_CLIENT_ID: "AbCdEfGhIjKlMnOpQr"
+  BITBUCKET_CLIENT_SECRET: "1234567890abcdef..."
+
+  ATLASSIAN_CLIENT_ID: "AbCdEfGhIjKlMnOpQrStUvWxYz"
+  ATLASSIAN_CLIENT_SECRET: "1234567890abcdef..."
+```
+
+### 2. Apply to Kubernetes
+
+```bash
+kubectl apply -f k8s/secrets/oauth2-secrets.yaml
+kubectl rollout restart deployment/jervis-server -n jervis
+```
+
+### 3. Verify Deployment
+
+```bash
+kubectl logs -f deployment/jervis-server -n jervis
+```
+
+You should see:
+```
+INFO  OAuth2Properties - GitHub OAuth2: configured ✓
+INFO  OAuth2Properties - GitLab OAuth2: configured ✓
+INFO  OAuth2Properties - Bitbucket OAuth2: configured ✓
+INFO  OAuth2Properties - Atlassian OAuth2: configured ✓
+```
+
+---
+
+## Detailed Documentation
+
+For detailed guide with images and troubleshooting see:
+- **[OAuth2 Providers Setup Guide](oauth2-providers-setup.md)** - complete guide
+- **[OAuth2 Setup](oauth2-setup.md)** - technical documentation
+
+---
+
+## Usage in UI
+
+After setting up credentials:
+
+1. **Settings → Connections → Add connection**
+2. Select type: **GITHUB** / **GITLAB** / **BITBUCKET** / **ATLASSIAN**
+3. Enter name
+4. In "Authentication" section select **OAUTH2**
+5. Save
+6. Click **🔐 OAuth2** button → authorize in browser
+7. Done! Connection is ready to use.
+
+---
+
+## OAuth2 Testing Checklist (Phase 1)
 
 ### Pre-Deployment Checklist: OAuth2
 
@@ -639,11 +771,11 @@ connection:
 - All platforms connecting successfully
 
 **OAuth2 Phase 1 Status:**
-- ✅ Test Connection button implemented
-- ✅ OAuth2 Authorize button for type=OAUTH2
-- ✅ Server callbacks receive code + state
-- ✅ HTML success/error pages user-friendly
-- ✅ Desktop/Mobile polling for token update
+- ✓ Test Connection button implemented
+- ✓ OAuth2 Authorize button for type=OAUTH2
+- ✓ Server callbacks receive code + state
+- ✓ HTML success/error pages user-friendly
+- ✓ Desktop/Mobile polling for token update
 
 **Not Yet Implemented (Future Phases):**
 - ❌ Redis state storage (Phase 2)

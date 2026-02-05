@@ -15,7 +15,7 @@ private val logger = KotlinLogging.logger {}
  * Provider concurrency is defined in models-config.yaml.
  *
  * NONBLOCKING providers (CPU qualifiers): Respect concurrency limits, cannot be interrupted.
- * INTERRUPTIBLE providers (GPU models): Respect concurrency limits can be interrupted by foreground tasks.
+ * INTERRUPTIBLE providers (GPU models): Foreground tasks can interrupt respect concurrency limits.
  *
  * ALL providers respect maxConcurrentRequests to prevent overwhelming the backend server.
  * This ensures back-pressure: if a provider's concurrency limit is reached,
@@ -43,7 +43,7 @@ class ProviderConcurrencyManager(
         val semaphore =
             semaphores.computeIfAbsent(provider) {
                 logger.info {
-                    "Initializing semaphore for provider $provider (${capabilities.executionMode}) with maxConcurrentRequests=$maxConcurrent"
+                    "Initializing semaphore for provider $provider with maxConcurrentRequests=$maxConcurrent"
                 }
                 Semaphore(maxConcurrent)
             }

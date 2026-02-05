@@ -1,13 +1,16 @@
 package com.jervis.koog.executor
 
-import ai.koog.prompt.executor.llms.SingleLLMPromptExecutor
-import ai.koog.prompt.executor.ollama.client.OllamaClient
-import ai.koog.prompt.executor.model.PromptExecutor
-import ai.koog.prompt.message.Message
-import ai.koog.prompt.llm.LLModel
-import com.jervis.configuration.properties.EndpointProperties
-import ai.koog.prompt.streaming.StreamFrame
+import ai.koog.agents.core.tools.ToolDescriptor
 import ai.koog.prompt.dsl.ModerationResult
+import ai.koog.prompt.dsl.Prompt
+import ai.koog.prompt.executor.llms.SingleLLMPromptExecutor
+import ai.koog.prompt.executor.model.PromptExecutor
+import ai.koog.prompt.executor.ollama.client.OllamaClient
+import ai.koog.prompt.llm.LLModel
+import ai.koog.prompt.message.Message
+import ai.koog.prompt.streaming.StreamFrame
+import com.jervis.configuration.properties.EndpointProperties
+import kotlinx.coroutines.flow.Flow
 import org.springframework.stereotype.Component
 
 @Component
@@ -17,27 +20,29 @@ class OllamaPromptExecutor(
     private val delegate: PromptExecutor =
         SingleLLMPromptExecutor(
             OllamaClient(
-                baseUrl = endpointProperties.ollama.primary.baseUrl.removeSuffix("/"),
+                baseUrl =
+                    endpointProperties.ollama.primary.baseUrl
+                        .removeSuffix("/"),
                 timeoutConfig = infiniteTimeoutConfig(),
             ),
         )
 
     override suspend fun execute(
-        prompt: ai.koog.prompt.dsl.Prompt,
+        prompt: Prompt,
         model: LLModel,
-        tools: List<ai.koog.agents.core.tools.ToolDescriptor>
-    ): List<Message.Response> =
-        delegate.execute(prompt, model, tools)
+        tools: List<ToolDescriptor>,
+    ): List<Message.Response> = delegate.execute(prompt, model, tools)
 
     override fun executeStreaming(
-        prompt: ai.koog.prompt.dsl.Prompt,
+        prompt: Prompt,
         model: LLModel,
-        tools: List<ai.koog.agents.core.tools.ToolDescriptor>
-    ): kotlinx.coroutines.flow.Flow<ai.koog.prompt.streaming.StreamFrame> =
-        delegate.executeStreaming(prompt, model, tools)
+        tools: List<ToolDescriptor>,
+    ): Flow<StreamFrame> = delegate.executeStreaming(prompt, model, tools)
 
-    override suspend fun moderate(prompt: ai.koog.prompt.dsl.Prompt, model: LLModel): ai.koog.prompt.dsl.ModerationResult =
-        delegate.moderate(prompt, model)
+    override suspend fun moderate(
+        prompt: Prompt,
+        model: LLModel,
+    ): ModerationResult = delegate.moderate(prompt, model)
 
     override fun close() {
         delegate.close()

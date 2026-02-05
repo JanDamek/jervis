@@ -1,7 +1,7 @@
 package com.jervis.domain.storage
 
-import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
 import java.nio.file.Path
 import java.nio.file.Paths
 

@@ -13,7 +13,6 @@ import com.jervis.koog.SmartModelSelector
 import com.jervis.koog.tools.coding.CodingTools
 import com.jervis.orchestrator.model.CodeMapSummary
 import com.jervis.orchestrator.model.TaskDocument
-import com.jervis.types.ProjectId
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
 
@@ -37,49 +36,58 @@ class CodeMapper(
     suspend fun create(task: TaskDocument): AIAgent<String, CodeMapSummary> {
         val promptExecutor = promptExecutorFactory.getExecutor("OLLAMA")
 
-        val agentStrategy = strategy<String, CodeMapSummary>("Code Mapping") {
-            val nodeMap by nodeLLMRequestStructured<CodeMapSummary>().transform { it.getOrThrow().data }
-            edge(nodeStart forwardTo nodeMap)
-            edge(nodeMap forwardTo nodeFinish)
-        }
+        val agentStrategy =
+            strategy<String, CodeMapSummary>("Code Mapping") {
+                val nodeMap by nodeLLMRequestStructured<CodeMapSummary>().transform { it.getOrThrow().data }
+                edge(nodeStart forwardTo nodeMap)
+                edge(nodeMap forwardTo nodeFinish)
+            }
 
-        val model = smartModelSelector.selectModelBlocking(
-            baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
-            inputContent = task.content,
-            projectId = task.projectId?.let { ProjectId.fromString(it) }
-        )
+        val model =
+            smartModelSelector.selectModelBlocking(
+                baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
+                inputContent = task.content,
+            )
 
-        val toolRegistry = ToolRegistry {
-            tools(codingTools)
-        }
+        val toolRegistry =
+            ToolRegistry {
+                tools(codingTools)
+            }
 
-        val agentConfig = AIAgentConfig(
-            prompt = Prompt.build("code-mapper") {
-                system("""
-                    You are Code Mapper for JERVIS Orchestrator.
-                    Your goal is to identify relevant source code entrypoints, modules, and files for a given task.
-                    
-                    Workflow:
-                    1. Use coding tools to explore the codebase.
-                    2. Identify core classes, functions, and files related to the goal.
-                    3. Produce a concise CodeMapSummary.
-                    
-                    Keep the summary focused and avoid listing irrelevant files.
-                """.trimIndent())
-            },
-            model = model,
-            maxAgentIterations = 100
-        )
+        val agentConfig =
+            AIAgentConfig(
+                prompt =
+                    Prompt.build("code-mapper") {
+                        system(
+                            """
+                            You are Code Mapper for JERVIS Orchestrator.
+                            Your goal is to identify relevant source code entrypoints, modules, and files for a given task.
+                            
+                            Workflow:
+                            1. Use coding tools to explore the codebase.
+                            2. Identify core classes, functions, and files related to the goal.
+                            3. Produce a concise CodeMapSummary.
+                            
+                            Keep the summary focused and avoid listing irrelevant files.
+                            """.trimIndent(),
+                        )
+                    },
+                model = model,
+                maxAgentIterations = 100,
+            )
 
         return AIAgent(
             promptExecutor = promptExecutor,
             toolRegistry = toolRegistry,
             strategy = agentStrategy,
-            agentConfig = agentConfig
+            agentConfig = agentConfig,
         )
     }
 
-    suspend fun run(task: TaskDocument, goal: String): CodeMapSummary {
+    suspend fun run(
+        task: TaskDocument,
+        goal: String,
+    ): CodeMapSummary {
         val agent = create(task)
         return agent.run(goal)
     }

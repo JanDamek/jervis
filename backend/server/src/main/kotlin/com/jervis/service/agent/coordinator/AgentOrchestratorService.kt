@@ -1,16 +1,16 @@
 package com.jervis.service.agent.coordinator
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
+import com.jervis.common.types.SourceUrn
 import com.jervis.domain.atlassian.AttachmentMetadata
-import com.jervis.dto.ChatResponseDto
 import com.jervis.dto.ChatRequestContextDto
+import com.jervis.dto.ChatResponseDto
 import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.TaskDocument
 import com.jervis.service.background.TaskService
 import com.jervis.service.text.CzechKeyboardNormalizer
-import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
-import com.jervis.types.SourceUrn
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -39,7 +39,6 @@ class AgentOrchestratorService(
         text: String,
         clientId: ClientId,
         projectId: ProjectId?,
-        
         attachments: List<AttachmentMetadata> = emptyList(),
     ): TaskDocument {
         val normalizedText = czechKeyboardNormalizer.convertIfMistyped(text)
@@ -54,7 +53,6 @@ class AgentOrchestratorService(
             sourceUrn = SourceUrn.chat(clientId),
             state = TaskStateEnum.READY_FOR_GPU,
             attachments = attachments,
-            
         )
     }
 
@@ -73,13 +71,23 @@ class AgentOrchestratorService(
         if (normalizedText != text) {
             logger.info { "AGENT_INPUT_NORMALIZED: original='${text.take(100)}' normalized='${normalizedText.take(100)}'" }
         }
-        
-        val clientIdTyped = try { ClientId.fromString(ctx.clientId) } catch (e: Exception) { ClientId(ObjectId(ctx.clientId)) }
-        val projectIdTyped = ctx.projectId?.let { 
-            try { ProjectId.fromString(it) } catch (e: Exception) { ProjectId(ObjectId(it)) }
-        }
 
-        logger.info { "AGENT_HANDLE_START: text='${normalizedText.take(100)}' clientId=${clientIdTyped} projectId=${projectIdTyped}" }
+        val clientIdTyped =
+            try {
+                ClientId.fromString(ctx.clientId)
+            } catch (e: Exception) {
+                ClientId(ObjectId(ctx.clientId))
+            }
+        val projectIdTyped =
+            ctx.projectId?.let {
+                try {
+                    ProjectId.fromString(it)
+                } catch (e: Exception) {
+                    ProjectId(ObjectId(it))
+                }
+            }
+
+        logger.info { "AGENT_HANDLE_START: text='${normalizedText.take(100)}' clientId=$clientIdTyped projectId=$projectIdTyped" }
 
         val taskContext =
             TaskDocument(

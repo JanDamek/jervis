@@ -1,9 +1,9 @@
 package com.jervis.koog.cost
 
+import com.jervis.common.types.ProjectId
 import com.jervis.entity.cost.LlmCostDocument
 import com.jervis.repository.cost.LlmCostRepository
 import com.jervis.service.project.ProjectService
-import com.jervis.types.ProjectId
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.time.LocalDate

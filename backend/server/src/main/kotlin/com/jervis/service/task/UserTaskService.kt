@@ -1,13 +1,10 @@
 package com.jervis.service.task
 
-import com.jervis.dto.TaskTypeEnum
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.TaskId
 import com.jervis.entity.TaskDocument
 import com.jervis.repository.TaskRepository
 import com.jervis.rpc.NotificationRpcImpl
-import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
-import com.jervis.types.SourceUrn
-import com.jervis.types.TaskId
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -51,14 +48,15 @@ class UserTaskService(
             }
 
         // Update existing task to USER_TASK and refresh its content for UI display.
-        val updatedTask = task.copy(
-            taskName = title,
-            content = description,
-            state = com.jervis.dto.TaskStateEnum.USER_TASK,
-            type = com.jervis.dto.TaskTypeEnum.USER_TASK,
-            pendingUserQuestion = pendingQuestion,
-            userQuestionContext = questionContext
-        )
+        val updatedTask =
+            task.copy(
+                taskName = title,
+                content = description,
+                state = com.jervis.dto.TaskStateEnum.USER_TASK,
+                type = com.jervis.dto.TaskTypeEnum.USER_TASK,
+                pendingUserQuestion = pendingQuestion,
+                userQuestionContext = questionContext,
+            )
         userTaskRepository.save(updatedTask)
 
         // Notify client via kRPC stream
@@ -68,8 +66,8 @@ class UserTaskService(
     }
 
     suspend fun findActiveTasksByClient(clientId: ClientId): List<TaskDocument> =
-        userTaskRepository.findAll().toList().filter { 
-            it.clientId == clientId && it.type == com.jervis.dto.TaskTypeEnum.USER_TASK 
+        userTaskRepository.findAll().toList().filter {
+            it.clientId == clientId && it.type == com.jervis.dto.TaskTypeEnum.USER_TASK
         }
 
     suspend fun cancelTask(taskId: TaskId): TaskDocument {
@@ -82,8 +80,7 @@ class UserTaskService(
 
     suspend fun getTaskById(taskId: TaskId) = getTaskByIdOrNull(taskId)
 
-    suspend fun getTaskByIdOrNull(taskId: TaskId): TaskDocument? =
-        userTaskRepository.findAll().toList().find { it.id == taskId }
+    suspend fun getTaskByIdOrNull(taskId: TaskId): TaskDocument? = userTaskRepository.findAll().toList().find { it.id == taskId }
 
     suspend fun deleteTaskById(id: TaskId) {
         getTaskByIdOrNull(id)?.let { userTaskRepository.delete(it) }

@@ -167,3 +167,5 @@ endpoints:
     baseUrl: wss://jervis.damek-soft.eu/github/
   gitlab:
     baseUrl: wss://jervis.damek-soft.eu/gitlab/
+  knowledgebase:
+    baseUrl: wss://jervis.damek-soft.eu/knowledgebase/

@@ -62,13 +62,25 @@ class KnowledgeService:
         is_image = filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif'))
         
         if is_image:
-            try:
-                text = await self.image_service.describe_image(file_bytes)
-                request.kind = "image"
-            except Exception as e:
-                print(f"Image description failed: {e}")
-                # Fallback to Tika (OCR) if vision model fails?
-                text = await self.tika_client.process_file(file_bytes, filename)
+            # Step 1: Try OCR first (fast, cheap)
+            ocr_text = await self.tika_client.process_file(file_bytes, filename)
+            
+            # Step 2: Evaluate OCR result
+            # Use thresholds from config
+            ocr_threshold = settings.OCR_TEXT_THRESHOLD
+            if ocr_text and len(ocr_text.strip()) > ocr_threshold:
+                # OCR extracted sufficient text, use it
+                text = ocr_text
+                request.kind = "document"  # or "image_ocr"
+            else:
+                # OCR insufficient, use VL model for complex image
+                try:
+                    text = await self.image_service.describe_image(file_bytes)
+                    request.kind = "image"
+                except Exception as e:
+                    # VL model failed, fallback to whatever OCR got
+                    text = ocr_text
+                    request.kind = "image_ocr"
         else:
             # Use Tika to extract text
             text = await self.tika_client.process_file(file_bytes, filename)
@@ -194,14 +206,24 @@ class KnowledgeService:
                 is_image = filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif'))
 
                 if is_image:
-                    # Use vision model
-                    try:
-                        text = await self.image_service.describe_image(file_bytes)
-                        content_type = "image"
-                    except Exception as e:
-                        # Fallback to Tika OCR
-                        text = await self.tika_client.process_file(file_bytes, filename)
+                    # OCR-first approach: try OCR before using expensive VL model
+                    ocr_text = await self.tika_client.process_file(file_bytes, filename)
+                    
+                    # Evaluate OCR result
+                    ocr_threshold = settings.OCR_TEXT_THRESHOLD
+                    if ocr_text and len(ocr_text.strip()) > ocr_threshold:
+                        # OCR extracted sufficient text, use it
+                        text = ocr_text
                         content_type = "image_ocr"
+                    else:
+                        # OCR insufficient, use VL model for complex image
+                        try:
+                            text = await self.image_service.describe_image(file_bytes)
+                            content_type = "image"
+                        except Exception as e:
+                            # VL model failed, fallback to whatever OCR got
+                            text = ocr_text
+                            content_type = "image_ocr"
                 else:
                     # Use Tika for documents
                     text = await self.tika_client.process_file(file_bytes, filename)

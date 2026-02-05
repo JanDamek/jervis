@@ -66,8 +66,8 @@ fun PendingTasksScreen(
             isLoading = true
             error = null
             runCatching {
-                tasks = repository.pendingTasks.listPendingTasks(selectedTaskType, selectedState)
-                totalTasks = repository.pendingTasks.countPendingTasks(selectedTaskType, selectedState)
+                tasks = repository.pendingTasks.listTasks(selectedTaskType, selectedState)
+                totalTasks = repository.pendingTasks.countTasks(selectedTaskType, selectedState)
             }.onFailure { error = it.message }
             isLoading = false
         }

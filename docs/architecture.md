@@ -1,6 +1,6 @@
 # Architecture - Complete System Overview
 
-**Status:** Production Documentation (2026-02-04)
+**Status:** Production Documentation (2026-02-05)
 **Purpose:** Comprehensive architecture guide for all major components and frameworks
 
 ---
@@ -121,18 +121,18 @@ The Jervis system uses Kotlin RPC (kRPC) for type-safe, cross-platform communica
 
 ### Stage 1: Polling Handler
 
-**Purpose:** Stahování dat z externích API a ukládání do indexovací MongoDB kolekce.
+**Purpose:** Download data from external APIs and store in indexing MongoDB collection.
 
 #### Responsibilities:
 
-1. **Pravidelné spouštění** podle `ConnectionDocument` (např. každých 5 minut)
+1. **Scheduled execution** based on `ConnectionDocument` (e.g., every 5 minutes)
 2. **Initial Sync vs Incremental Sync**:
-   - **Initial Sync** (`lastSeenUpdatedAt == null`): Stahuje VŠECHNA data s **pagination**
-   - **Incremental Sync**: Stahuje jen změny od posledního pollu (bez pagination)
-3. **Deduplication** - kontroluje existenci podle `issueKey`/`messageId` (3 úrovně)
-4. **Change detection** - ukládá dokument jako `NEW` pokud:
-   - Dokument neexistuje (nový ticket/email)
-   - Dokument existuje, ale `updatedAt` je novější (změna statusu, nový komentář)
+   - **Initial Sync** (`lastSeenUpdatedAt == null`): Downloads ALL data with **pagination**
+   - **Incremental Sync**: Downloads only changes since last poll (no pagination)
+3. **Deduplication** - checks existence by `issueKey`/`messageId` (3 levels)
+4. **Change detection** - saves document as `NEW` if:
+   - Document doesn't exist (new ticket/email)
+   - Document exists but `updatedAt` is newer (status change, new comment)
 
 ### Initial Sync s Pagination
 

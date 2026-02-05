@@ -1,6 +1,6 @@
 package com.jervis.entity
 
-import com.jervis.types.TaskId
+import com.jervis.common.types.TaskId
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.CompoundIndex
@@ -36,22 +36,15 @@ import java.time.Instant
 data class ChatMessageDocument(
     @Id
     val id: ObjectId = ObjectId(),
-
     @Indexed
     val taskId: TaskId,
-
     @Indexed
     val correlationId: String,
-
     val role: MessageRole,
-
     val content: String,
-
     val timestamp: Instant = Instant.now(),
-
     @Indexed
     val sequence: Long,
-
     val metadata: Map<String, String> = emptyMap(),
 )
 

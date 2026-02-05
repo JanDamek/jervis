@@ -3,6 +3,7 @@ package com.jervis.koog.tools.qualifier
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
+import com.jervis.common.types.SourceUrn
 import com.jervis.dto.TaskStateEnum
 import com.jervis.entity.TaskDocument
 import com.jervis.service.background.TaskService
@@ -54,16 +55,23 @@ Routing Options:
         @LLMDescription("Routing decision. Allowed: DONE, LIFT_UP, USER_TASK, NONE")
         routing: RoutingDecision,
         @LLMDescription("Reason for routing, especially for USER_TASK or LIFT_UP")
-        reason: String? = null
+        reason: String? = null,
     ): String {
         when (routing) {
-            RoutingDecision.LIFT_UP -> taskService.updateState(task, TaskStateEnum.READY_FOR_GPU)
+            RoutingDecision.LIFT_UP -> {
+                taskService.updateState(task, TaskStateEnum.READY_FOR_GPU)
+            }
+
             RoutingDecision.USER_TASK -> {
                 val escalationReason = reason ?: "Qualifier requested user interaction"
                 // Mark as error with reason, BackgroundEngine will escalate to UserTask
                 taskService.markAsError(task, escalationReason)
             }
-            RoutingDecision.DONE -> taskService.deleteTask(task)
+
+            RoutingDecision.DONE -> {
+                taskService.deleteTask(task)
+            }
+
             RoutingDecision.NONE -> {}
         }
         return "OK-$routing"
@@ -196,9 +204,7 @@ Background processing: Returns immediately, download happens asynchronously""",
                             content = enrichedContent,
                             clientId = task.clientId,
                             projectId = task.projectId,
-                            sourceUrn =
-                                com.jervis.types.SourceUrn
-                                    .link(url),
+                            sourceUrn = SourceUrn.link(url),
                             correlationId = correlationId,
                         )
 

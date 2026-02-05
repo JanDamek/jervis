@@ -1,13 +1,13 @@
 package com.jervis.orchestrator.agents
 
+import com.jervis.common.types.ClientId
 import com.jervis.orchestrator.WorkTrackerAdapter
 import com.jervis.orchestrator.model.*
-import com.jervis.types.ClientId
 import org.springframework.stereotype.Component
 
 /**
  * ProgramManager (Specialist 6.7)
- * 
+ *
  * Responsibilities:
  * - Handle EPIC/backlog execution
  * - Readiness pass (workflow-aware)
@@ -15,46 +15,53 @@ import org.springframework.stereotype.Component
  */
 @Component
 class ProgramManager(
-    private val tracker: WorkTrackerAdapter
+    private val tracker: WorkTrackerAdapter,
 ) {
-    suspend fun planEpic(clientId: ClientId, epicId: String): ProgramState {
+    suspend fun planEpic(
+        clientId: ClientId,
+        epicId: String,
+    ): ProgramState {
         val children = tracker.listChildren(clientId, epicId)
-        val allTasks = children.map { item ->
-            val deps = tracker.getDependencies(clientId, item.id)
-            val workflow = tracker.getWorkflow(clientId, item.type, null)
-            
-            val readiness = evaluateReadiness(item, deps, workflow)
-            
-            WorkItemState(
-                id = item.id,
-                type = item.type,
-                status = item.status,
-                title = item.summary,
-                readiness = readiness,
-                dependencies = deps.map { it.id }
-            )
-        }
-        
+        val allTasks =
+            children.map { item ->
+                val deps = tracker.getDependencies(clientId, item.id)
+                val workflow = tracker.getWorkflow(clientId, item.type, null)
+
+                val readiness = evaluateReadiness(item, deps, workflow)
+
+                WorkItemState(
+                    id = item.id,
+                    type = item.type,
+                    status = item.status,
+                    title = item.summary,
+                    readiness = readiness,
+                    dependencies = deps.map { it.id },
+                )
+            }
+
         // Jednoduchý algoritmus pro vlny (waves) na základě závislostí
         val stateWithWaves = assignWaves(allTasks)
-        
+
         // Zavedení WIP limitu pro vlny (maximálně 3 úkoly najednou v rámci jedné vlny)
         val finalTasks = applyWipLimit(stateWithWaves, wipLimit = 3)
-        
+
         val readyIds = finalTasks.filter { it.readiness?.ready == true }.map { it.id }
         val blockedIds = finalTasks.filter { it.readiness?.ready == false }.map { it.id }
 
         return ProgramState(
             tasks = finalTasks,
             queue = readyIds,
-            blocked = blockedIds
+            blocked = blockedIds,
         )
     }
 
-    private fun applyWipLimit(tasks: List<WorkItemState>, wipLimit: Int): List<WorkItemState> {
+    private fun applyWipLimit(
+        tasks: List<WorkItemState>,
+        wipLimit: Int,
+    ): List<WorkItemState> {
         val result = mutableListOf<WorkItemState>()
         val waves = tasks.groupBy { it.wave }.toSortedMap()
-        
+
         var waveOffset = 0
         waves.forEach { (waveNum, waveTasks) ->
             waveTasks.chunked(wipLimit).forEachIndexed { index, chunk ->
@@ -67,22 +74,28 @@ class ProgramManager(
         return result
     }
 
-    private fun evaluateReadiness(item: WorkItem, deps: List<WorkItem>, workflow: WorkflowDefinition): ReadinessReport {
-        val statusGroup = when {
-            workflow.stateGroups.executionReadyStates.contains(item.status) -> "READY"
-            workflow.stateGroups.draftStates.contains(item.status) -> "DRAFT"
-            workflow.stateGroups.doingStates.contains(item.status) -> "DOING"
-            workflow.stateGroups.reviewStates.contains(item.status) -> "REVIEW"
-            workflow.stateGroups.blockedStates.contains(item.status) -> "BLOCKED"
-            workflow.stateGroups.terminalStates.contains(item.status) -> "TERMINAL"
-            else -> "UNKNOWN"
-        }
+    private fun evaluateReadiness(
+        item: WorkItem,
+        deps: List<WorkItem>,
+        workflow: WorkflowDefinition,
+    ): ReadinessReport {
+        val statusGroup =
+            when {
+                workflow.stateGroups.executionReadyStates.contains(item.status) -> "READY"
+                workflow.stateGroups.draftStates.contains(item.status) -> "DRAFT"
+                workflow.stateGroups.doingStates.contains(item.status) -> "DOING"
+                workflow.stateGroups.reviewStates.contains(item.status) -> "REVIEW"
+                workflow.stateGroups.blockedStates.contains(item.status) -> "BLOCKED"
+                workflow.stateGroups.terminalStates.contains(item.status) -> "TERMINAL"
+                else -> "UNKNOWN"
+            }
 
-        val blockingDeps = deps.filter { dep -> 
-            // Závislost je blokující, pokud není v terminálním stavu
-            // Poznámka: Zde bychom potřebovali i workflow závislosti, zjednodušujeme
-            dep.status != "Done" 
-        }
+        val blockingDeps =
+            deps.filter { dep ->
+                // Závislost je blokující, pokud není v terminálním stavu
+                // Poznámka: Zde bychom potřebovali i workflow závislosti, zjednodušujeme
+                dep.status != "Done"
+            }
 
         val missingReqs = mutableListOf<String>()
         if (statusGroup != "READY") {
@@ -97,7 +110,14 @@ class ProgramManager(
             statusGroup = statusGroup,
             missingRequirements = missingReqs,
             blockingRelations = blockingDeps.map { it.id },
-            commentDraft = if (statusGroup != "READY") "JERVIS: This item is not ready for execution because it is in state '${item.status}'." else null
+            commentDraft =
+                if (statusGroup !=
+                    "READY"
+                ) {
+                    "JERVIS: This item is not ready for execution because it is in state '${item.status}'."
+                } else {
+                    null
+                },
         )
     }
 
@@ -110,12 +130,12 @@ class ProgramManager(
         fun calculateWave(taskId: String): Int {
             if (currentPath.contains(taskId)) return 0 // Cycle detected, fallback
             val state = taskIdToState[taskId] ?: return 0
-            
+
             // Pro zjednodušení nepoužíváme memoizaci wave, abychom se vyhnuli problémům s mutable listem
             currentPath.add(taskId)
             val maxDepWave = state.dependencies.map { calculateWave(it) }.maxOrNull() ?: -1
             currentPath.remove(taskId)
-            
+
             return maxDepWave + 1
         }
 

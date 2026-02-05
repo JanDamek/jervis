@@ -1,12 +1,13 @@
 package com.jervis.service.project
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
 import com.jervis.dto.ProjectDto
 import com.jervis.entity.ProjectDocument
 import com.jervis.mapper.toDocument
 import com.jervis.mapper.toDto
 import com.jervis.repository.ProjectRepository
 import com.jervis.service.storage.DirectoryStructureService
-import com.jervis.types.ProjectId
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -23,15 +24,14 @@ class ProjectService(
 
     suspend fun getAllProjects(): List<ProjectDocument> = projectRepository.findAll().toList()
 
-    suspend fun listProjectsForClient(clientId: com.jervis.types.ClientId): List<ProjectDocument> = 
-        projectRepository.findByClientId(clientId).toList()
+    suspend fun listProjectsForClient(clientId: ClientId): List<ProjectDocument> = projectRepository.findByClientId(clientId).toList()
 
     suspend fun saveProject(project: ProjectDocument): ProjectDto {
         val existing = getProjectByIdOrNull(project.id)
         val isNew = existing == null
 
-        val merged = if (existing != null) {
-            existing.copy(
+        val merged =
+            existing?.copy(
                 name = project.name,
                 description = project.description,
                 communicationLanguageEnum = project.communicationLanguageEnum,
@@ -43,11 +43,9 @@ class ProjectService(
                 wikiSpaceKey = project.wikiSpaceKey,
                 buildConfig = project.buildConfig,
                 costPolicy = project.costPolicy,
-                gitCommitConfig = project.gitCommitConfig
+                gitCommitConfig = project.gitCommitConfig,
             )
-        } else {
-            project
-        }
+                ?: project
 
         val savedProject = projectRepository.save(merged)
 

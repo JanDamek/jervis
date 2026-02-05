@@ -1,8 +1,8 @@
 package com.jervis.repository
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ConnectionId
 import com.jervis.entity.ClientDocument
-import com.jervis.types.ClientId
-import com.jervis.types.ConnectionId
 import kotlinx.coroutines.flow.Flow
 import org.springframework.data.repository.kotlin.CoroutineCrudRepository
 import org.springframework.stereotype.Repository

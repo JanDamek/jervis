@@ -60,7 +60,7 @@ class ConnectionManager(
         if (status is ConnectionStatus.Connected) {
             scope.launch {
                 try {
-                    repository?.clients?.listClients()
+                    repository?.clients?.getAllClients()
                 } catch (e: Exception) {
                     println("Connectivity check failed: ${e.message}")
                     // Use NetworkModule reconnect instead of full re-initialization
@@ -104,29 +104,27 @@ class ConnectionManager(
                 // Create repository
                 repository =
                     JervisRepository(
-                        clientService = services!!.clientService,
-                        projectService = services!!.projectService,
-                        userTaskService = services!!.userTaskService,
-                        ragSearchService = services!!.ragSearchService,
-                        taskSchedulingService = services!!.taskSchedulingService,
-                        agentOrchestratorService = services!!.agentOrchestratorService,
-                        errorLogService = services!!.errorLogService,
-                        gitConfigurationService = services!!.gitConfigurationService,
-                        pendingTaskService = services!!.pendingTaskService,
-                        connectionService = services!!.connectionService,
-                        notificationService = services!!.notificationService,
-                        bugTrackerSetupService = services!!.bugTrackerSetupService,
-                        integrationSettingsService = services!!.integrationSettingsService,
+                        clients = services!!.clientService,
+                        projects = services!!.projectService,
+                        userTasks = services!!.userTaskService,
+                        ragSearch = services!!.ragSearchService,
+                        scheduledTasks = services!!.taskSchedulingService,
+                        agentOrchestrator = services!!.agentOrchestratorService,
+                        errorLogs = services!!.errorLogService,
+                        pendingTasks = services!!.pendingTaskService,
+                        connections = services!!.connectionService,
+                        notifications = services!!.notificationService,
+                        bugTrackerSetup = services!!.bugTrackerSetupService,
                     )
 
                 // Try a simple test call to verify connectivity
                 try {
-                    val clients = repository!!.clients.listClients()
+                    val clients = repository!!.clients.getAllClients()
                     status = ConnectionStatus.Connected
 
                     // Start event stream for the first client (Desktop usually manages one or all)
-                    clients.firstOrNull()?.id?.let { clientId ->
-                        startEventStream(clientId)
+                    clients.firstOrNull()?.let { client ->
+                        startEventStream(client.id)
                     }
 
                     // Update badge with initial task count
@@ -191,7 +189,7 @@ class ConnectionManager(
     private suspend fun updateTaskBadge() {
         try {
             val repo = repository ?: return
-            val clients = repo.clients.listClients()
+            val clients = repo.clients.getAllClients()
             var total = 0
             for (client in clients) {
                 runCatching {

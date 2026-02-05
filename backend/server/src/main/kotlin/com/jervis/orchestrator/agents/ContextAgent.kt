@@ -15,8 +15,6 @@ import com.jervis.entity.TaskDocument
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.SmartModelSelector
 import com.jervis.orchestrator.model.ContextPack
-import com.jervis.knowledgebase.internal.graphdb.GraphDBService
-import com.jervis.knowledgebase.internal.graphdb.model.Direction
 import com.jervis.service.project.ProjectService
 import com.jervis.service.storage.DirectoryStructureService
 import mu.KotlinLogging
@@ -40,7 +38,6 @@ import org.springframework.stereotype.Component
 class ContextAgent(
     private val promptExecutorFactory: KoogPromptExecutorFactory,
     private val smartModelSelector: SmartModelSelector,
-    private val graphDBService: GraphDBService,
     private val projectService: ProjectService,
     private val directoryStructureService: DirectoryStructureService,
 ) {
@@ -57,7 +54,6 @@ class ContextAgent(
             smartModelSelector.selectModelBlocking(
                 baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
                 inputContent = task.content,
-                projectId = task.projectId,
             )
 
         val promptExecutor = promptExecutorFactory.getExecutor("OLLAMA")
@@ -125,7 +121,7 @@ class ContextAgent(
         val toolRegistry =
             ToolRegistry {
                 // Tools for context gathering
-                tools(ContextGatheringTools(task, projectService, graphDBService, directoryStructureService))
+                tools(ContextGatheringTools(task, projectService, directoryStructureService))
             }
 
         return AIAgent(
@@ -161,7 +157,6 @@ class ContextAgent(
 class ContextGatheringTools(
     private val task: TaskDocument,
     private val projectService: ProjectService,
-    private val graphDBService: GraphDBService,
     private val directoryStructureService: DirectoryStructureService,
 ) : ToolSet {
     @Tool
@@ -195,24 +190,6 @@ class ContextGatheringTools(
             appendLine("  \"projectPath\": \"$projectPath\",")
             appendLine("  \"missing\": $missing")
             appendLine("}")
-        }
-    }
-
-    @Tool
-    @LLMDescription("Get known facts from GraphDB for this project")
-    suspend fun getKnownFacts(): List<String> {
-        val projectId = task.projectId ?: return emptyList()
-        return try {
-            graphDBService
-                .getRelated(
-                    clientId = task.clientId,
-                    nodeKey = "project::$projectId",
-                    edgeTypes = emptyList(),
-                    direction = Direction.ANY,
-                    limit = 10,
-                ).map { "${it.key} (${it.entityType})" }
-        } catch (e: Exception) {
-            throw IllegalStateException("Failed to load GraphDB facts for projectId=$projectId", e)
         }
     }
 

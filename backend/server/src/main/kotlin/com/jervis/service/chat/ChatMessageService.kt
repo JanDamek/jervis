@@ -1,9 +1,9 @@
 package com.jervis.service.chat
 
+import com.jervis.common.types.TaskId
 import com.jervis.entity.ChatMessageDocument
 import com.jervis.entity.MessageRole
 import com.jervis.repository.ChatMessageRepository
-import com.jervis.types.TaskId
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -186,7 +186,5 @@ class ChatMessageService(
      * @param taskId Task to count messages for
      * @return Number of messages
      */
-    suspend fun getMessageCount(taskId: TaskId): Long {
-        return chatMessageRepository.countByTaskId(taskId)
-    }
+    suspend fun getMessageCount(taskId: TaskId): Long = chatMessageRepository.countByTaskId(taskId)
 }

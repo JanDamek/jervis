@@ -5,7 +5,6 @@ import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
 import com.jervis.common.client.IJoernClient
 import com.jervis.common.dto.JoernQueryDto
-import com.jervis.common.rpc.withRpcRetry
 import com.jervis.entity.TaskDocument
 import com.jervis.service.project.ProjectService
 import com.jervis.service.storage.DirectoryStructureService
@@ -28,7 +27,6 @@ class JoernTools(
     private val joernClient: IJoernClient,
     private val projectService: ProjectService,
     private val directoryStructureService: DirectoryStructureService,
-    private val reconnectHandler: com.jervis.configuration.RpcReconnectHandler,
 ) : ToolSet {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -72,13 +70,7 @@ class JoernTools(
                     projectZipBase64 = zipBase64,
                 )
 
-            val result =
-                withRpcRetry(
-                    name = "Joern",
-                    reconnect = { reconnectHandler.reconnectJoern() },
-                ) {
-                    joernClient.run(request)
-                }
+            val result = joernClient.run(request)
 
             JoernQueryResult(
                 success = result.exitCode == 0,

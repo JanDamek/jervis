@@ -1,6 +1,6 @@
 package com.jervis.service.email
 
-import com.jervis.types.ClientId
+import com.jervis.common.types.ClientId
 import kotlinx.serialization.Serializable
 
 /**

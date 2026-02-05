@@ -1,13 +1,9 @@
 package com.jervis.service.polling.handler.git
 
-import com.jervis.entity.ClientDocument
-import com.jervis.entity.ProjectDocument
 import com.jervis.entity.connection.ConnectionDocument
-import com.jervis.service.indexing.git.state.GitCommitInfo
 import com.jervis.service.indexing.git.state.GitCommitStateManager
 import com.jervis.service.polling.PollingResult
 import com.jervis.service.polling.handler.PollingContext
-import com.jervis.service.polling.handler.PollingHandler
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
 import java.time.Instant
@@ -23,12 +19,12 @@ class GitPollingHandler(
     private val stateManager: GitCommitStateManager,
     // Note: GitRemoteClient will be used by the Indexer, 
     // here we just simulate discovery or trigger a fetch.
-) : PollingHandler {
+) {
 
-    override fun canHandle(connectionDocument: ConnectionDocument): Boolean =
+    fun canHandle(connectionDocument: ConnectionDocument): Boolean =
         connectionDocument.connectionType == ConnectionDocument.ConnectionTypeEnum.GIT
 
-    override suspend fun poll(
+    suspend fun poll(
         connectionDocument: ConnectionDocument,
         context: PollingContext,
     ): PollingResult {

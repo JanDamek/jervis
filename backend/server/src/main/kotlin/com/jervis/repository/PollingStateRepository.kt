@@ -1,8 +1,8 @@
 package com.jervis.repository
 
+import com.jervis.common.types.ConnectionId
+import com.jervis.common.types.PollingStateId
 import com.jervis.entity.polling.PollingStateDocument
-import com.jervis.types.ConnectionId
-import com.jervis.types.PollingStateId
 import org.springframework.data.repository.kotlin.CoroutineCrudRepository
 import org.springframework.stereotype.Repository
 
@@ -15,12 +15,12 @@ import org.springframework.stereotype.Repository
 @Repository
 interface PollingStateRepository : CoroutineCrudRepository<PollingStateDocument, PollingStateId> {
     /**
-     * Find polling state for a specific connection and handler combination.
+     * Find polling state for a specific connection and provider combination.
      * Returns null if no state exists yet (first poll).
      */
-    suspend fun findByConnectionIdAndHandlerType(
+    suspend fun findByConnectionIdAndProvider(
         connectionId: ConnectionId,
-        handlerType: String,
+        provider: com.jervis.dto.connection.ProviderEnum,
     ): PollingStateDocument?
 
     /**

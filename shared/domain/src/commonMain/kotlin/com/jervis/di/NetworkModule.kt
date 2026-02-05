@@ -1,14 +1,14 @@
 package com.jervis.di
 
 import com.jervis.api.SecurityConstants
-import com.jervis.service.IBugTrackerSetupService
-import com.jervis.service.IIntegrationSettingsService
 import com.jervis.service.IAgentOrchestratorService
+import com.jervis.service.IBugTrackerSetupService
 import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
 import com.jervis.service.IConnectionService
 import com.jervis.service.IErrorLogService
 import com.jervis.service.IGitConfigurationService
+import com.jervis.service.IIntegrationSettingsService
 import com.jervis.service.INotificationService
 import com.jervis.service.IPendingTaskService
 import com.jervis.service.IProjectService
@@ -23,8 +23,6 @@ import io.ktor.client.plugins.logging.DEFAULT
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logger
 import io.ktor.client.plugins.logging.Logging
-import io.ktor.client.plugins.websocket.WebSockets
-import io.ktor.client.plugins.websocket.pingInterval
 import io.ktor.http.encodedPath
 import kotlinx.rpc.krpc.ktor.client.KtorRpcClient
 import kotlinx.rpc.krpc.ktor.client.installKrpc
@@ -32,7 +30,6 @@ import kotlinx.rpc.krpc.ktor.client.rpc
 import kotlinx.rpc.krpc.serialization.cbor.cbor
 import kotlinx.rpc.withService
 import kotlinx.serialization.ExperimentalSerializationApi
-import kotlin.time.Duration.Companion.seconds
 
 /**
  * Interface for UI applications to handle RPC reconnection.
@@ -74,10 +71,6 @@ object NetworkModule {
                 socketTimeoutMillis = 60_000
             }
 
-            install(WebSockets) {
-                pingInterval = 20.seconds
-            }
-
             installKrpc {
                 serialization {
                     cbor()
@@ -97,9 +90,10 @@ object NetworkModule {
         val cleanBaseUrl = baseUrl.trimEnd('/')
 
         // Convert HTTP(S) URLs to WebSocket URLs for RPC
-        val wsUrl = cleanBaseUrl
-            .replace("https://", "wss://")
-            .replace("http://", "ws://")
+        val wsUrl =
+            cleanBaseUrl
+                .replace("https://", "wss://")
+                .replace("http://", "ws://")
 
         val url = io.ktor.http.Url(wsUrl)
 
@@ -123,10 +117,10 @@ object NetworkModule {
     ): Services {
         _baseUrl = baseUrl
         _httpClient = httpClient
-        
+
         val rpcClient = createRpcClient(baseUrl, httpClient)
         _rpcClient = rpcClient
-        
+
         val services = createServices(rpcClient)
         _services = services
         return services
@@ -163,18 +157,20 @@ object NetworkModule {
      * Create all service instances from RPC client
      * UI applications (Desktop/iOS/Android) MUST use RPC only
      */
-    fun createServices(rpcClient: KtorRpcClient): Services =
-        Services(rpcClient).apply { updateFrom(rpcClient) }
+    fun createServices(rpcClient: KtorRpcClient): Services = Services(rpcClient).apply { updateFrom(rpcClient) }
 
     /**
      * Container for all services
      */
-    class Services(initialRpcClient: KtorRpcClient) {
+    class Services(
+        initialRpcClient: KtorRpcClient,
+    ) {
         var projectService: IProjectService = initialRpcClient.withService<IProjectService>()
             private set
         var clientService: IClientService = initialRpcClient.withService<IClientService>()
             private set
-        var clientProjectLinkService: IClientProjectLinkService = initialRpcClient.withService<IClientProjectLinkService>()
+        var clientProjectLinkService: IClientProjectLinkService =
+            initialRpcClient.withService<IClientProjectLinkService>()
             private set
         var userTaskService: IUserTaskService = initialRpcClient.withService<IUserTaskService>()
             private set
@@ -182,7 +178,8 @@ object NetworkModule {
             private set
         var taskSchedulingService: ITaskSchedulingService = initialRpcClient.withService<ITaskSchedulingService>()
             private set
-        var agentOrchestratorService: IAgentOrchestratorService = initialRpcClient.withService<IAgentOrchestratorService>()
+        var agentOrchestratorService: IAgentOrchestratorService =
+            initialRpcClient.withService<IAgentOrchestratorService>()
             private set
         var errorLogService: IErrorLogService = initialRpcClient.withService<IErrorLogService>()
             private set
@@ -196,7 +193,8 @@ object NetworkModule {
             private set
         var bugTrackerSetupService: IBugTrackerSetupService = initialRpcClient.withService<IBugTrackerSetupService>()
             private set
-        var integrationSettingsService: IIntegrationSettingsService = initialRpcClient.withService<IIntegrationSettingsService>()
+        var integrationSettingsService: IIntegrationSettingsService =
+            initialRpcClient.withService<IIntegrationSettingsService>()
             private set
 
         fun updateFrom(rpcClient: KtorRpcClient) {
@@ -220,9 +218,10 @@ object NetworkModule {
     /**
      * Access to reconnection handler for repositories.
      */
-    val reconnectHandler = object : UiRpcReconnectHandler {
-        override suspend fun reconnect() {
-            this@NetworkModule.reconnect()
+    val reconnectHandler =
+        object : UiRpcReconnectHandler {
+            override suspend fun reconnect() {
+                this@NetworkModule.reconnect()
+            }
         }
-    }
 }

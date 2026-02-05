@@ -8,17 +8,19 @@ import ai.koog.agents.core.dsl.extension.nodeLLMRequestStructured
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.prompt.dsl.Prompt
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
+import com.jervis.common.types.SourceUrn
+import com.jervis.integration.bugtracker.BugTrackerService
+import com.jervis.integration.wiki.WikiService
+import com.jervis.knowledgebase.model.EvidencePack
 import com.jervis.koog.KoogPromptExecutorFactory
 import com.jervis.koog.SmartModelSelector
 import com.jervis.koog.tools.external.BugTrackerReadTools
 import com.jervis.koog.tools.external.EmailReadTools
 import com.jervis.koog.tools.external.WikiReadTools
-import com.jervis.orchestrator.model.EvidencePack
 import com.jervis.orchestrator.model.TaskDocument
-import com.jervis.integration.wiki.WikiService
 import com.jervis.service.email.EmailService
-import com.jervis.integration.bugtracker.BugTrackerService
-import com.jervis.types.ProjectId
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
 
@@ -55,18 +57,17 @@ class EvidenceCollector(
             smartModelSelector.selectModelBlocking(
                 baseModelName = SmartModelSelector.BaseModelTypeEnum.AGENT,
                 inputContent = task.content,
-                projectId = task.projectId?.let { ProjectId.fromString(it) },
             )
 
         val entityTask =
             com.jervis.entity.TaskDocument(
                 content = task.content,
                 clientId =
-                    com.jervis.types.ClientId
+                    ClientId
                         .fromString(task.clientId),
                 projectId = task.projectId?.let { ProjectId.fromString(it) },
                 correlationId = task.correlationId,
-                sourceUrn = com.jervis.types.SourceUrn(task.sourceUrn),
+                sourceUrn = SourceUrn(task.sourceUrn),
                 type =
                     com.jervis.dto.TaskTypeEnum
                         .valueOf(task.type),

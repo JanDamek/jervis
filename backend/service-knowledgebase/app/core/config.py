@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "qwen2.5:14b"
     VISION_MODEL: str = "qwen3-vl-tool:latest"
 
+    # OCR-first image processing configuration
+    OCR_TEXT_THRESHOLD: int = 100  # Minimum characters for OCR to be considered sufficient
+    OCR_PRINTABLE_RATIO: float = 0.85  # Minimum ratio of printable characters (0.0-1.0)
+
     class Config:
         env_file = ".env"
 

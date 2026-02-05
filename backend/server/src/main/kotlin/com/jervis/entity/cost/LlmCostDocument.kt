@@ -1,6 +1,6 @@
 package com.jervis.entity.cost
 
-import com.jervis.types.ProjectId
+import com.jervis.common.types.ProjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.mapping.Document
 import java.time.Instant
@@ -18,5 +18,5 @@ data class LlmCostDocument(
     val inputTokens: Int,
     val outputTokens: Int,
     val costUsd: Double,
-    val timestamp: Instant = Instant.now()
+    val timestamp: Instant = Instant.now(),
 )

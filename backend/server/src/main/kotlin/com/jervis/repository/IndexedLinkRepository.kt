@@ -1,7 +1,7 @@
 package com.jervis.repository
 
+import com.jervis.common.types.ClientId
 import com.jervis.entity.IndexedLinkDocument
-import com.jervis.types.ClientId
 import org.bson.types.ObjectId
 import org.springframework.data.repository.kotlin.CoroutineCrudRepository
 import org.springframework.stereotype.Repository

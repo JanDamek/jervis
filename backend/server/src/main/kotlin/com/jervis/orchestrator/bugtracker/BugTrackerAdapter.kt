@@ -1,13 +1,13 @@
 package com.jervis.orchestrator.bugtracker
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
 import com.jervis.integration.bugtracker.BugTrackerService
 import com.jervis.orchestrator.WorkTrackerAdapter
 import com.jervis.orchestrator.model.WorkItem
 import com.jervis.orchestrator.model.WorkflowDefinition
 import com.jervis.orchestrator.model.WorkflowMapping
 import com.jervis.orchestrator.model.WorkflowTransition
-import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
 import org.springframework.stereotype.Component
 
 @Component

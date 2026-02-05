@@ -4,6 +4,9 @@ import com.jervis.common.client.IBugTrackerClient
 import com.jervis.common.dto.bugtracker.BugTrackerIssueRequest
 import com.jervis.common.dto.bugtracker.BugTrackerSearchRequest
 import com.jervis.common.rpc.withRpcRetry
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ConnectionId
+import com.jervis.configuration.RpcReconnectHandler
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.integration.bugtracker.BugTrackerComment
 import com.jervis.integration.bugtracker.BugTrackerIssue
@@ -11,8 +14,8 @@ import com.jervis.integration.bugtracker.BugTrackerProject
 import com.jervis.integration.bugtracker.BugTrackerService
 import com.jervis.integration.bugtracker.CreateBugTrackerIssueRequest
 import com.jervis.integration.bugtracker.UpdateBugTrackerIssueRequest
+import com.jervis.service.client.ClientService
 import com.jervis.service.connection.ConnectionService
-import com.jervis.types.ClientId
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
@@ -20,8 +23,8 @@ import org.springframework.stereotype.Service
 class BugTrackerServiceImpl(
     private val bugTrackerClient: IBugTrackerClient,
     private val connectionService: ConnectionService,
-    private val clientService: com.jervis.service.client.ClientService,
-    private val reconnectHandler: com.jervis.configuration.RpcReconnectHandler,
+    private val clientService: ClientService,
+    private val reconnectHandler: RpcReconnectHandler,
 ) : BugTrackerService {
     private val logger = KotlinLogging.logger {}
 
@@ -144,7 +147,7 @@ class BugTrackerServiceImpl(
 
     private suspend fun findBugTrackerConnection(clientId: ClientId): ConnectionDocument? {
         val client = clientService.getClientById(clientId)
-        val connectionIds = client.connectionIds.map { com.jervis.types.ConnectionId(it) }
+        val connectionIds = client.connectionIds.map { ConnectionId(it) }
 
         for (id in connectionIds) {
             val conn = connectionService.findById(id) ?: continue

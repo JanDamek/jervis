@@ -1,8 +1,9 @@
 package com.jervis.entity.connection
 
+import com.jervis.common.types.ConnectionId
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionStateEnum
-import com.jervis.types.ConnectionId
+import com.jervis.dto.connection.ProviderEnum
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.CompoundIndex
 import org.springframework.data.mongodb.core.index.CompoundIndexes
@@ -35,6 +36,7 @@ data class ConnectionDocument(
     @Id
     val id: ConnectionId = ConnectionId.generate(),
     val name: String,
+    val provider: ProviderEnum,
     var state: ConnectionStateEnum = ConnectionStateEnum.NEW,
     val rateLimitConfig: RateLimitConfig = RateLimitConfig(maxRequestsPerSecond = 10, maxRequestsPerMinute = 100),
     val baseUrl: String = "",
@@ -118,10 +120,10 @@ data class ConnectionDocument(
     }
 }
 
-fun ConnectionDocument.HttpCredentials.toAuthType(): String =
+fun ConnectionDocument.HttpCredentials.toAuthType(): com.jervis.dto.connection.HttpAuthTypeEnum =
     when (this) {
-        is ConnectionDocument.HttpCredentials.Basic -> "BASIC"
-        is ConnectionDocument.HttpCredentials.Bearer -> "BEARER"
+        is ConnectionDocument.HttpCredentials.Basic -> com.jervis.dto.connection.HttpAuthTypeEnum.BASIC
+        is ConnectionDocument.HttpCredentials.Bearer -> com.jervis.dto.connection.HttpAuthTypeEnum.BEARER
     }
 
 fun ConnectionDocument.HttpCredentials.basicUsername(): String? = (this as? ConnectionDocument.HttpCredentials.Basic)?.username

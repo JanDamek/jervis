@@ -1,16 +1,11 @@
 package com.jervis.orchestrator.model
 
-import com.jervis.dto.TaskStateEnum
-import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
-import com.jervis.types.SourceUrn
-import com.jervis.types.TaskId
+import com.jervis.knowledgebase.model.EvidenceItem
 import kotlinx.serialization.Serializable
-import java.time.Instant
 
 /**
  * TaskDocument - The single state document for JERVIS Orchestrator.
- * 
+ *
  * It serves as:
  * - Session state (STM)
  * - Program state (task registry)
@@ -29,7 +24,6 @@ data class TaskDocument(
     val correlationId: String,
     val sourceUrn: String,
     val createdAt: String,
-    
     // Orchestrator Extensions
     val resumePoint: TaskResumePoint? = null,
     val stmSummary: String = "",
@@ -37,7 +31,7 @@ data class TaskDocument(
     val evidence: List<EvidenceItem> = emptyList(),
     val programState: ProgramState? = null,
     val stagingLtm: List<EvidenceItem> = emptyList(),
-    val pendingQuestions: List<PendingUserQuestion> = emptyList()
+    val pendingQuestions: List<PendingUserQuestion> = emptyList(),
 )
 
 @Serializable
@@ -46,21 +40,21 @@ data class CodeMapSummary(
     val modules: List<String> = emptyList(),
     val symbols: List<String> = emptyList(),
     val affectedFiles: List<String> = emptyList(),
-    val summary: String = ""
+    val summary: String = "",
 )
 
 @Serializable
 data class PendingUserQuestion(
     val question: String,
     val context: String? = null,
-    val workItemId: String? = null
+    val workItemId: String? = null,
 )
 
 @Serializable
 data class TaskResumePoint(
     val phase: String,
     val cursor: String,
-    val subCursor: String? = null
+    val subCursor: String? = null,
 )
 
 @Serializable
@@ -68,7 +62,7 @@ data class ProgramState(
     val tasks: List<WorkItemState> = emptyList(),
     val queue: List<String> = emptyList(), // task IDs
     val running: List<String> = emptyList(),
-    val blocked: List<String> = emptyList()
+    val blocked: List<String> = emptyList(),
 )
 
 @Serializable
@@ -79,7 +73,7 @@ data class WorkItemState(
     val title: String,
     val readiness: ReadinessReport? = null,
     val dependencies: List<String> = emptyList(),
-    val wave: Int = 0
+    val wave: Int = 0,
 )
 
 @Serializable
@@ -89,5 +83,5 @@ data class ReadinessReport(
     val missingRequirements: List<String> = emptyList(),
     val blockingRelations: List<String> = emptyList(),
     val commentDraft: String? = null,
-    val transitionRequest: String? = null
+    val transitionRequest: String? = null,
 )

@@ -8,7 +8,10 @@ import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.response.respondText
+import io.ktor.server.request.receive
+import io.ktor.server.response.respond
 import io.ktor.server.routing.get
+import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import kotlinx.rpc.krpc.ktor.server.rpc
@@ -33,6 +36,17 @@ fun main() {
         routing {
             get("/") {
                 call.respondText("""{"status":"UP"}""", io.ktor.http.ContentType.Application.Json)
+            }
+
+            post("/api/joern/run") {
+                try {
+                    val request = call.receive<com.jervis.common.dto.JoernQueryDto>()
+                    val result = joernService.run(request)
+                    call.respond(result)
+                } catch (e: Exception) {
+                    logger.error(e) { "Joern processing failed: ${e.message}" }
+                    call.respond(io.ktor.http.HttpStatusCode.InternalServerError, e.message ?: "Unknown error")
+                }
             }
 
             rpc("/rpc") {

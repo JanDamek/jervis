@@ -1,23 +1,24 @@
 package com.jervis.rpc
 
+import com.jervis.common.types.ClientId
 import com.jervis.dto.ProjectDto
 import com.jervis.mapper.toDocument
 import com.jervis.mapper.toDto
 import com.jervis.service.IProjectService
 import com.jervis.service.error.ErrorLogService
 import com.jervis.service.project.ProjectService
-
+import org.bson.types.ObjectId
 import org.springframework.stereotype.Component
 
 @Component
 class ProjectRpcImpl(
     private val projectService: ProjectService,
     errorLogService: ErrorLogService,
-) : BaseRpcImpl(errorLogService), IProjectService {
-
+) : BaseRpcImpl(errorLogService),
+    IProjectService {
     override suspend fun listProjectsForClient(clientId: String): List<ProjectDto> =
         executeWithErrorHandling("listProjectsForClient") {
-            projectService.listProjectsForClient(com.jervis.types.ClientId(org.bson.types.ObjectId(clientId))).map { it.toDto() }
+            projectService.listProjectsForClient(ClientId(ObjectId(clientId))).map { it.toDto() }
         }
 
     override suspend fun getAllProjects(): List<ProjectDto> =

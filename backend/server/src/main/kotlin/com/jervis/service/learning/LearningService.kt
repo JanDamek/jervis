@@ -1,11 +1,11 @@
 package com.jervis.service.learning
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
 import com.jervis.entity.LearningDocument
 import com.jervis.entity.LearningSource
 import com.jervis.entity.LearningType
 import com.jervis.repository.LearningRepository
-import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -21,7 +21,7 @@ import java.time.Instant
  */
 @Service
 class LearningService(
-    private val learningRepository: LearningRepository
+    private val learningRepository: LearningRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -41,7 +41,7 @@ class LearningService(
         content: String? = null,
         evidence: List<String> = emptyList(),
         tags: List<String> = emptyList(),
-        sourceTaskId: String? = null
+        sourceTaskId: String? = null,
     ): LearningDocument? {
         // Reject low-confidence learnings
         if (confidence < 0.5) {
@@ -51,25 +51,26 @@ class LearningService(
             return null
         }
 
-        val learning = LearningDocument(
-            clientId = clientId,
-            projectId = projectId,
-            summary = summary,
-            content = content,
-            category = category,
-            learningType = learningType,
-            source = source,
-            confidence = confidence,
-            sourceTaskId = sourceTaskId,
-            evidence = evidence,
-            tags = tags,
-            learnedAt = Instant.now()
-        )
+        val learning =
+            LearningDocument(
+                clientId = clientId,
+                projectId = projectId,
+                summary = summary,
+                content = content,
+                category = category,
+                learningType = learningType,
+                source = source,
+                confidence = confidence,
+                sourceTaskId = sourceTaskId,
+                evidence = evidence,
+                tags = tags,
+                learnedAt = Instant.now(),
+            )
 
         val saved = learningRepository.save(learning)
         logger.info {
             "LEARNING_STORED | category=$category | type=$learningType | " +
-            "confidence=$confidence | scope=${getScopeString(clientId, projectId)} | summary='$summary'"
+                "confidence=$confidence | scope=${getScopeString(clientId, projectId)} | summary='$summary'"
         }
         return saved
     }
@@ -81,19 +82,21 @@ class LearningService(
     suspend fun getAllLearnings(
         clientId: ClientId? = null,
         projectId: ProjectId? = null,
-        minConfidence: Double = 0.5
+        minConfidence: Double = 0.5,
     ): List<LearningDocument> {
         val learnings = mutableListOf<LearningDocument>()
 
         // 1. Global learnings
-        learningRepository.findByClientIdIsNullAndProjectIdIsNullAndIsValidTrue()
+        learningRepository
+            .findByClientIdIsNullAndProjectIdIsNullAndIsValidTrue()
             .toList()
             .filter { it.confidence >= minConfidence }
             .let { learnings.addAll(it) }
 
         // 2. Client learnings
         if (clientId != null) {
-            learningRepository.findByClientIdAndProjectIdAndIsValidTrue(clientId, null)
+            learningRepository
+                .findByClientIdAndProjectIdAndIsValidTrue(clientId, null)
                 .toList()
                 .filter { it.confidence >= minConfidence }
                 .let { learnings.addAll(it) }
@@ -101,7 +104,8 @@ class LearningService(
 
         // 3. Project learnings
         if (clientId != null && projectId != null) {
-            learningRepository.findByClientIdAndProjectIdAndIsValidTrue(clientId, projectId)
+            learningRepository
+                .findByClientIdAndProjectIdAndIsValidTrue(clientId, projectId)
                 .toList()
                 .filter { it.confidence >= minConfidence }
                 .let { learnings.addAll(it) }
@@ -109,7 +113,7 @@ class LearningService(
 
         logger.info {
             "LEARNINGS_LOADED | count=${learnings.size} | minConfidence=$minConfidence | " +
-            "scope=${getScopeString(clientId, projectId)}"
+                "scope=${getScopeString(clientId, projectId)}"
         }
 
         return learnings
@@ -120,12 +124,12 @@ class LearningService(
      */
     suspend fun getLearningsByCategory(
         category: String,
-        minConfidence: Double = 0.5
-    ): List<LearningDocument> {
-        return learningRepository.findByCategoryAndIsValidTrue(category)
+        minConfidence: Double = 0.5,
+    ): List<LearningDocument> =
+        learningRepository
+            .findByCategoryAndIsValidTrue(category)
             .toList()
             .filter { it.confidence >= minConfidence }
-    }
 
     /**
      * Confirm learning (increment success count, boost confidence).
@@ -133,12 +137,13 @@ class LearningService(
     suspend fun confirmLearning(id: org.bson.types.ObjectId): LearningDocument? {
         val learning = learningRepository.findById(id) ?: return null
 
-        val updated = learning.copy(
-            successCount = learning.successCount + 1,
-            lastUsedAt = Instant.now(),
-            // Boost confidence slightly (max 1.0)
-            confidence = minOf(1.0, learning.confidence + 0.05)
-        )
+        val updated =
+            learning.copy(
+                successCount = learning.successCount + 1,
+                lastUsedAt = Instant.now(),
+                // Boost confidence slightly (max 1.0)
+                confidence = minOf(1.0, learning.confidence + 0.05),
+            )
 
         val saved = learningRepository.save(updated)
         logger.info { "LEARNING_CONFIRMED | id=$id | newConfidence=${saved.confidence}" }
@@ -152,11 +157,12 @@ class LearningService(
         val learning = learningRepository.findById(id) ?: return null
 
         val newConfidence = learning.confidence - 0.1
-        val updated = learning.copy(
-            failureCount = learning.failureCount + 1,
-            confidence = maxOf(0.0, newConfidence),
-            isValid = newConfidence >= 0.3  // Invalidate if confidence drops too low
-        )
+        val updated =
+            learning.copy(
+                failureCount = learning.failureCount + 1,
+                confidence = maxOf(0.0, newConfidence),
+                isValid = newConfidence >= 0.3, // Invalidate if confidence drops too low
+            )
 
         val saved = learningRepository.save(updated)
         logger.warn {
@@ -175,11 +181,13 @@ class LearningService(
         return true
     }
 
-    private fun getScopeString(clientId: ClientId?, projectId: ProjectId?): String {
-        return when {
+    private fun getScopeString(
+        clientId: ClientId?,
+        projectId: ProjectId?,
+    ): String =
+        when {
             clientId == null && projectId == null -> "GENERAL"
             projectId == null -> "CLIENT:$clientId"
             else -> "PROJECT:$clientId/$projectId"
         }
-    }
 }

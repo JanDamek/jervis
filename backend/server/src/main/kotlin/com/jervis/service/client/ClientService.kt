@@ -1,10 +1,8 @@
 package com.jervis.service.client
 
+import com.jervis.common.types.ClientId
 import com.jervis.entity.ClientDocument
-import com.jervis.knowledgebase.internal.WeaviatePerClientProvisioner
-import com.jervis.knowledgebase.internal.graphdb.GraphDBService
 import com.jervis.repository.ClientRepository
-import com.jervis.types.ClientId
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -13,8 +11,6 @@ import org.springframework.stereotype.Service
 @Service
 class ClientService(
     private val clientRepository: ClientRepository,
-    private val graphDBService: GraphDBService,
-    private val weaviateProvisioner: WeaviatePerClientProvisioner,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -22,22 +18,6 @@ class ClientService(
         val document = ClientDocument(name = clientName)
         val saved = clientRepository.save(document)
         logger.info { "Created client ${saved.name}" }
-
-        // Initialize ArangoDB graph schema and Weaviate collections for new client
-        try {
-            val graphStatus = graphDBService.ensureSchema(saved.id)
-            weaviateProvisioner.ensureClientCollections(saved.id)
-
-            if (graphStatus.ok) {
-                logger.info { "Initialized graph schema for client ${saved.name}" }
-            } else {
-                logger.warn { "Graph schema initialization had warnings for ${saved.name}: ${graphStatus.warnings}" }
-            }
-        } catch (e: Exception) {
-            logger.error(e) { "Failed to initialize graph/RAG for client ${saved.name}" }
-            // Continue - client is created, schema can be initialized later
-        }
-
         return saved
     }
 
@@ -45,22 +25,6 @@ class ClientService(
         val newClient = client.copy(id = ClientId(ObjectId.get()))
         val saved = clientRepository.save(newClient)
         logger.info { "Created client ${saved.name} with id ${saved.id}" }
-
-        // Initialize ArangoDB graph schema and Weaviate collections for new client
-        try {
-            val graphStatus = graphDBService.ensureSchema(saved.id)
-            weaviateProvisioner.ensureClientCollections(saved.id)
-
-            if (graphStatus.ok) {
-                logger.info { "Initialized graph schema for client ${saved.name}" }
-            } else {
-                logger.warn { "Graph schema initialization had warnings for ${saved.name}: ${graphStatus.warnings}" }
-            }
-        } catch (e: Exception) {
-            logger.error(e) { "Failed to initialize graph/RAG for client ${saved.name}" }
-            // Continue - client is created, schema can be initialized later
-        }
-
         return saved
     }
 
@@ -92,8 +56,7 @@ class ClientService(
 
     suspend fun getClientById(id: ClientId): ClientDocument = getClientByIdOrNull(id) ?: throw ClientNotFoundException(id)
 
-    suspend fun getClientByIdOrNull(id: ClientId): ClientDocument? =
-        clientRepository.findAll().toList().find { it.id == id }
+    suspend fun getClientByIdOrNull(id: ClientId): ClientDocument? = clientRepository.findAll().toList().find { it.id == id }
 }
 
 class ClientNotFoundException(

@@ -1,7 +1,7 @@
 package com.jervis.entity
 
-import com.jervis.types.ClientId
-import com.jervis.types.TaskId
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.TaskId
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.CompoundIndex

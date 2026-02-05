@@ -4,6 +4,8 @@ import com.jervis.common.client.IWikiClient
 import com.jervis.common.dto.wiki.WikiPageRequest
 import com.jervis.common.dto.wiki.WikiSearchRequest
 import com.jervis.common.rpc.withRpcRetry
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ConnectionId
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.integration.wiki.CreatePageRequest
 import com.jervis.integration.wiki.UpdatePageRequest
@@ -12,8 +14,6 @@ import com.jervis.integration.wiki.WikiService
 import com.jervis.integration.wiki.WikiSpace
 import com.jervis.service.client.ClientService
 import com.jervis.service.connection.ConnectionService
-import com.jervis.types.ClientId
-import com.jervis.types.ConnectionId
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 

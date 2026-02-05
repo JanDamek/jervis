@@ -1,31 +1,26 @@
 package com.jervis.rpc
- 
-import com.jervis.domain.atlassian.AttachmentMetadata
+
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.TaskId
 import com.jervis.dto.AttachmentDto
 import com.jervis.dto.ChatResponseDto
 import com.jervis.dto.ChatResponseType
 import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
-import com.jervis.service.error.ErrorLogService
-import mu.KotlinLogging
-
 import com.jervis.dto.user.TaskRoutingMode
 import com.jervis.dto.user.UserTaskCountDto
 import com.jervis.dto.user.UserTaskDto
-import com.jervis.entity.TaskDocument
-import com.jervis.mapper.toDomain
 import com.jervis.mapper.toUserTaskDto
 import com.jervis.service.IUserTaskService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.background.TaskService
 import com.jervis.service.task.UserTaskService
-import com.jervis.types.ClientId
-import com.jervis.types.TaskId
 import kotlinx.coroutines.flow.toList
+import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Component
 import java.time.Instant
- 
+
 @Component
 class UserTaskRpcImpl(
     private val userTaskService: UserTaskService,
@@ -76,65 +71,72 @@ class UserTaskRpcImpl(
                     agentOrchestratorRpc.emitToChatStream(
                         clientId = task.clientId.toString(),
                         projectId = task.projectId?.toString() ?: "",
-                        response = ChatResponseDto(
-                            message = additionalInput ?: "Uživatel pokračuje v úloze: ${task.taskName}",
-                            type = ChatResponseType.USER_MESSAGE,
-                            metadata = mapOf(
-                                "sender" to "user",
-                                "clientId" to task.clientId.toString(),
-                                "timestamp" to Instant.now().toString(),
-                                "resumedFromTask" to task.id.toString()
-                            )
-                        )
+                        response =
+                            ChatResponseDto(
+                                message = additionalInput ?: "Uživatel pokračuje v úloze: ${task.taskName}",
+                                type = ChatResponseType.USER_MESSAGE,
+                                metadata =
+                                    mapOf(
+                                        "sender" to "user",
+                                        "clientId" to task.clientId.toString(),
+                                        "timestamp" to Instant.now().toString(),
+                                        "resumedFromTask" to task.id.toString(),
+                                    ),
+                            ),
                     )
 
                     // CRITICAL: Return to SAME TaskDocument, not create new one!
                     // This preserves agent checkpoint and conversation history.
                     // Calculate next queuePosition for FOREGROUND tasks
-                    val maxPosition = taskRepository
-                        .findByProcessingModeAndStateOrderByQueuePositionAsc(
-                            com.jervis.entity.ProcessingMode.FOREGROUND,
-                            TaskStateEnum.READY_FOR_GPU
-                        )
-                        .toList()
-                        .maxOfOrNull { it.queuePosition ?: 0 } ?: 0
+                    val maxPosition =
+                        taskRepository
+                            .findByProcessingModeAndStateOrderByQueuePositionAsc(
+                                com.jervis.entity.ProcessingMode.FOREGROUND,
+                                TaskStateEnum.READY_FOR_GPU,
+                            ).toList()
+                            .maxOfOrNull { it.queuePosition ?: 0 } ?: 0
 
-                    val updatedTask = task.copy(
-                        type = TaskTypeEnum.USER_INPUT_PROCESSING,
-                        state = TaskStateEnum.READY_FOR_GPU,
-                        processingMode = com.jervis.entity.ProcessingMode.FOREGROUND,
-                        queuePosition = maxPosition + 1,
-                        content = additionalInput ?: "User response: ${task.taskName}",
-                        pendingUserQuestion = null,  // Clear question after user responds
-                        userQuestionContext = null
-                    )
+                    val updatedTask =
+                        task.copy(
+                            type = TaskTypeEnum.USER_INPUT_PROCESSING,
+                            state = TaskStateEnum.READY_FOR_GPU,
+                            processingMode = com.jervis.entity.ProcessingMode.FOREGROUND,
+                            queuePosition = maxPosition + 1,
+                            content = additionalInput ?: "User response: ${task.taskName}",
+                            pendingUserQuestion = null, // Clear question after user responds
+                            userQuestionContext = null,
+                        )
                     taskRepository.save(updatedTask)
 
                     // Add user response to ChatMessageDocument (conversation history)
                     // Include question context if this was answering a pending question
-                    val messageContent = buildString {
-                        if (task.pendingUserQuestion != null) {
-                            appendLine("Original Question: ${task.pendingUserQuestion}")
-                            if (task.userQuestionContext != null) {
-                                appendLine("Context: ${task.userQuestionContext}")
+                    val messageContent =
+                        buildString {
+                            if (task.pendingUserQuestion != null) {
+                                appendLine("Original Question: ${task.pendingUserQuestion}")
+                                if (task.userQuestionContext != null) {
+                                    appendLine("Context: ${task.userQuestionContext}")
+                                }
+                                appendLine()
+                                appendLine("User Answer:")
                             }
-                            appendLine()
-                            appendLine("User Answer:")
+                            append(additionalInput ?: "Uživatel pokračuje v úloze: ${task.taskName}")
                         }
-                        append(additionalInput ?: "Uživatel pokračuje v úloze: ${task.taskName}")
-                    }
 
                     val messageSequence = chatMessageRepository.countByTaskId(task.id) + 1
-                    val userMessage = com.jervis.entity.ChatMessageDocument(
-                        taskId = task.id,
-                        correlationId = task.correlationId,
-                        role = com.jervis.entity.MessageRole.USER,
-                        content = messageContent,
-                        sequence = messageSequence,
-                        timestamp = Instant.now(),
-                    )
+                    val userMessage =
+                        com.jervis.entity.ChatMessageDocument(
+                            taskId = task.id,
+                            correlationId = task.correlationId,
+                            role = com.jervis.entity.MessageRole.USER,
+                            content = messageContent,
+                            sequence = messageSequence,
+                            timestamp = Instant.now(),
+                        )
                     chatMessageRepository.save(userMessage)
-                    logger.info { "USER_TASK_RESPONSE_SAVED | taskId=${task.id} | sequence=$messageSequence | processingMode=FOREGROUND | queuePosition=${updatedTask.queuePosition} | answeredQuestion=${task.pendingUserQuestion != null}" }
+                    logger.info {
+                        "USER_TASK_RESPONSE_SAVED | taskId=${task.id} | sequence=$messageSequence | processingMode=FOREGROUND | queuePosition=${updatedTask.queuePosition} | answeredQuestion=${task.pendingUserQuestion != null}"
+                    }
 
                     // Notify client that task was removed from user task list
                     notificationRpc.emitUserTaskCancelled(task.clientId.toString(), task.id.toString(), task.taskName)
@@ -142,28 +144,30 @@ class UserTaskRpcImpl(
 
                 TaskRoutingMode.BACK_TO_PENDING -> {
                     // Return task to SAME TaskDocument (BACKGROUND mode for autonomous processing)
-                    val updatedTask = task.copy(
-                        type = TaskTypeEnum.USER_INPUT_PROCESSING,
-                        state = TaskStateEnum.READY_FOR_GPU,
-                        processingMode = com.jervis.entity.ProcessingMode.BACKGROUND,
-                        queuePosition = null, // BACKGROUND tasks don't use queuePosition
-                        content = additionalInput ?: task.content,
-                        pendingUserQuestion = null,  // Clear question after user responds
-                        userQuestionContext = null
-                    )
+                    val updatedTask =
+                        task.copy(
+                            type = TaskTypeEnum.USER_INPUT_PROCESSING,
+                            state = TaskStateEnum.READY_FOR_GPU,
+                            processingMode = com.jervis.entity.ProcessingMode.BACKGROUND,
+                            queuePosition = null, // BACKGROUND tasks don't use queuePosition
+                            content = additionalInput ?: task.content,
+                            pendingUserQuestion = null, // Clear question after user responds
+                            userQuestionContext = null,
+                        )
                     taskRepository.save(updatedTask)
 
                     // Add user response to ChatMessageDocument if additionalInput provided
                     if (!additionalInput.isNullOrBlank()) {
                         val messageSequence = chatMessageRepository.countByTaskId(task.id) + 1
-                        val userMessage = com.jervis.entity.ChatMessageDocument(
-                            taskId = task.id,
-                            correlationId = task.correlationId,
-                            role = com.jervis.entity.MessageRole.USER,
-                            content = additionalInput,
-                            sequence = messageSequence,
-                            timestamp = Instant.now(),
-                        )
+                        val userMessage =
+                            com.jervis.entity.ChatMessageDocument(
+                                taskId = task.id,
+                                correlationId = task.correlationId,
+                                role = com.jervis.entity.MessageRole.USER,
+                                content = additionalInput,
+                                sequence = messageSequence,
+                                timestamp = Instant.now(),
+                            )
                         chatMessageRepository.save(userMessage)
                     }
 

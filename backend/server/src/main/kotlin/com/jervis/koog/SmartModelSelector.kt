@@ -3,10 +3,7 @@ package com.jervis.koog
 import ai.koog.prompt.llm.LLMCapability
 import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.llm.LLModel
-import com.jervis.koog.cost.CostTrackingService
-import com.jervis.service.project.ProjectService
 import com.jervis.service.token.TokenCountingService
-import com.jervis.types.ProjectId
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
@@ -47,8 +44,6 @@ import org.springframework.stereotype.Service
 @Service
 class SmartModelSelector(
     private val tokenCountingService: TokenCountingService,
-    private val projectService: ProjectService,
-    private val costTrackingService: CostTrackingService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -114,80 +109,23 @@ class SmartModelSelector(
     fun selectModelBlocking(
         baseModelName: BaseModelTypeEnum,
         inputContent: String = "",
-        projectId: ProjectId? = null,
     ): LLModel =
         kotlinx.coroutines.runBlocking {
-            selectModel(baseModelName, inputContent, projectId)
+            selectModel(baseModelName, inputContent)
         }
 
     suspend fun selectModel(
         baseModelName: BaseModelTypeEnum,
         inputContent: String = "",
-        projectId: ProjectId? = null,
     ): LLModel {
         val inputTokens = if (inputContent.isNotBlank()) tokenCountingService.countTokens(inputContent) else 8192
 
-        if (projectId != null) {
-            val project = projectService.getProjectById(projectId)
-            val policy = project.costPolicy
-
-            if (policy.allowCloudModels && inputTokens > 32000) {
-                val cloudProvider = policy.allowedCloudProviders.firstOrNull() ?: "anthropic"
-                val cloudModelId =
-                    when (cloudProvider.lowercase()) {
-                        "anthropic" -> "claude-3-5-sonnet-20241022"
-                        "openai" -> "gpt-4o"
-                        else -> "claude-3-5-sonnet-20241022"
-                    }
-
-                if (!costTrackingService.checkBudget(projectId, cloudModelId, inputTokens)) {
-                    if (policy.requireApprovalForCloudSpend) {
-                        logger.info { "BUDGET_APPROVAL_REQUIRED | projectId=$projectId | model=$cloudModelId" }
-                        // Special model ID that tells orchestrator to ask for approval
-                        return LLModel(
-                            provider = LLMProvider.Anthropic,
-                            id = "CLOUD_SPEND_APPROVAL_REQUIRED:$cloudModelId",
-                            capabilities = emptyList(),
-                            contextLength = 0,
-                        )
-                    }
-                    logger.warn { "BUDGET_EXCEEDED_OR_NOT_ALLOWED | projectId=$projectId | model=$cloudModelId" }
-                }
-
-                logger.info {
-                    "ESCALATING_TO_CLOUD | projectId=$projectId | tokens=$inputTokens | provider=$cloudProvider | model=$cloudModelId"
-                }
-
-                return LLModel(
-                    provider =
-                        when (cloudProvider.lowercase()) {
-                            "anthropic" -> LLMProvider.Anthropic
-                            "openai" -> LLMProvider.OpenAI
-                            else -> LLMProvider.Anthropic
-                        },
-                    id = cloudModelId,
-                    capabilities =
-                        listOf(
-                            LLMCapability.Tools,
-                            LLMCapability.Schema.JSON.Basic,
-                            LLMCapability.Temperature,
-                            LLMCapability.ToolChoice,
-                            LLMCapability.Document,
-                        ),
-                    contextLength = 200000,
-                )
-            }
-        }
-
-        // Zvýšení rezervy pro komplexní úlohy a zajištění dostatečného bufferu pro výstup.
-        // Koog orchestrátor potřebuje prostor pro tool-call loop a analytickou práci v celém kontextu.
-        // Používáme agresivnější odhad celkové potřeby tokenů (1.5x vstupu + minimálně 4k rezerva).
         val totalTokensNeeded = inputTokens + (inputTokens * 1.5).toInt().coerceAtLeast(4096)
 
         val selectedTierK =
             AVAILABLE_TIERS.firstOrNull { tierK ->
                 (tierK * 1024) >= totalTokensNeeded
-            } ?: AVAILABLE_TIERS.last() // Fallback to max tier (256k)
+            } ?: AVAILABLE_TIERS.last()
 
         val contextLength = selectedTierK * 1024
         val modelId = insertTierIntoModelName(baseModelName.modelName, selectedTierK)

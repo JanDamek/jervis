@@ -1,11 +1,11 @@
 package com.jervis.service.scheduling
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
+import com.jervis.common.types.TaskId
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.TaskDocument
 import com.jervis.repository.TaskRepository
-import com.jervis.types.ClientId
-import com.jervis.types.ProjectId
-import com.jervis.types.TaskId
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -51,8 +51,7 @@ class TaskSchedulingService(
      */
     suspend fun cancelTask(taskId: TaskId): Boolean = taskManagementService.cancelTask(taskId)
 
-    suspend fun findById(taskId: TaskId): TaskDocument? =
-        scheduledTaskRepository.findAll().toList().find { it.id == taskId }
+    suspend fun findById(taskId: TaskId): TaskDocument? = scheduledTaskRepository.findAll().toList().find { it.id == taskId }
 
     suspend fun listAllTasks(): List<TaskDocument> = scheduledTaskRepository.findAll().toList()
 

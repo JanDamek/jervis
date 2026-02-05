@@ -51,6 +51,7 @@ include(
     ":backend:service-github",
     ":backend:service-gitlab",
     ":backend:service-junie",
+    ":backend:service-knowledgebase",
 )
 
 if (System.getenv("DOCKER_BUILD") != "true") {

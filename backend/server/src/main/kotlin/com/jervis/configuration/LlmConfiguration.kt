@@ -23,7 +23,7 @@ class LlmConfiguration(
         logger.info { "Configured ${providers.size} providers:" }
         providers.forEach { provider ->
             logger.info {
-                "  - ${provider.provider}: ${provider.executionMode} mode, " +
+                "  - ${provider.provider}, " +
                     "max ${provider.maxConcurrentRequests} concurrent requests, " +
                     "endpoint=${provider.endpoint}"
             }

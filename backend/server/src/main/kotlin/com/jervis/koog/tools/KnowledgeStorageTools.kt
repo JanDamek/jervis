@@ -3,15 +3,12 @@ package com.jervis.koog.tools
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
+import com.jervis.common.types.SourceUrn
 import com.jervis.entity.TaskDocument
-import com.jervis.knowledgebase.IngestRequest
 import com.jervis.knowledgebase.KnowledgeService
-import com.jervis.knowledgebase.RetrievalRequest
-import com.jervis.knowledgebase.internal.graphdb.GraphDBService
-import com.jervis.knowledgebase.internal.graphdb.model.Direction
-import com.jervis.knowledgebase.internal.graphdb.model.TraversalSpec
-import kotlinx.coroutines.flow.take
-import kotlinx.coroutines.flow.toList
+import com.jervis.knowledgebase.model.IngestRequest
+import com.jervis.knowledgebase.model.RetrievalRequest
+import com.jervis.knowledgebase.service.graphdb.model.TraversalSpec
 import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 
@@ -23,7 +20,6 @@ import mu.KotlinLogging
 class KnowledgeStorageTools(
     private val task: TaskDocument,
     private val knowledgeService: KnowledgeService,
-    private val graphDBService: GraphDBService,
 ) : ToolSet {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -36,8 +32,6 @@ class KnowledgeStorageTools(
     suspend fun searchKnowledgeBase(
         @LLMDescription("Search query - be specific (e.g. 'NTB nákup Alza', 'email purchase notebook')")
         query: String,
-        @LLMDescription("Max results (10=standard, 20=detailed)")
-        limit: Int = 10,
     ): SearchResult {
         val result =
             knowledgeService.retrieve(
@@ -49,53 +43,6 @@ class KnowledgeStorageTools(
             )
         logger.info { "SEARCH_KNOWLEDGEBASE_COMPLETE: query='$query' | resultsLength=${result.combinedSummary().length}" }
         return SearchResult(success = true, results = result.combinedSummary(), query = query)
-    }
-
-    @Tool
-    @LLMDescription(
-        "Alias for searchKnowledgeBase - search for relevant knowledge chunks.",
-    )
-    suspend fun searchKnowledge(
-        @LLMDescription("Search query")
-        query: String,
-        @LLMDescription("Max results> 10=standard")
-        limit: Int = 10,
-    ): SearchResult = searchKnowledgeBase(query, limit)
-
-    @Tool
-    @LLMDescription("Get related nodes via graph relationships")
-    suspend fun getRelated(
-        @LLMDescription("Starting node key")
-        nodeKey: String,
-        @LLMDescription("Edge types to follow (empty = all)")
-        edgeTypes: List<String> = emptyList(),
-        @LLMDescription("Direction: OUTBOUND, INBOUND, ANY")
-        direction: String = "ANY",
-        @LLMDescription("Max results")
-        limit: Int = 20,
-    ): RelatedNodesResult {
-        val dir =
-            when (direction.uppercase()) {
-                "OUTBOUND" -> Direction.OUTBOUND
-                "INBOUND" -> Direction.INBOUND
-                else -> Direction.ANY
-            }
-
-        val nodes =
-            graphDBService.getRelated(
-                clientId = task.clientId,
-                nodeKey = nodeKey,
-                edgeTypes = edgeTypes,
-                direction = dir,
-                limit = limit,
-            )
-
-        logger.info { "GET_RELATED: found ${nodes.size} nodes for $nodeKey" }
-        return RelatedNodesResult(
-            success = true,
-            sourceNode = nodeKey,
-            relatedNodes = nodes.map { NodeInfo(it.key, it.entityType, it.ragChunks.size) },
-        )
     }
 
     @Tool
@@ -117,7 +64,7 @@ class KnowledgeStorageTools(
             )
 
         val nodes =
-            graphDBService
+            knowledgeService
                 .traverse(task.clientId, startKey, spec)
                 .take(limit)
                 .toList()
@@ -158,7 +105,7 @@ class KnowledgeStorageTools(
                 IngestRequest(
                     clientId = task.clientId,
                     projectId = task.projectId,
-                    sourceUrn = sourceUrn?.let { com.jervis.types.SourceUrn(it) } ?: task.sourceUrn,
+                    sourceUrn = sourceUrn?.let { SourceUrn(it) } ?: task.sourceUrn,
                     kind = kind,
                     content = content,
                     metadata =
@@ -210,32 +157,6 @@ class KnowledgeStorageTools(
         )
     }
 
-    @Tool
-    @LLMDescription("Store a relationship between two entities in GraphDB.")
-    suspend fun storeRelationship(
-        @LLMDescription("Source node key (e.g. 'git:hash', 'class:com.example.Service')")
-        from: String,
-        @LLMDescription("Edge type (e.g. 'AFFECTS', 'CALLS', 'IMPLEMENTS', 'MODIFIED')")
-        edgeType: String,
-        @LLMDescription("Target node key")
-        to: String,
-        @LLMDescription("Evidence chunk ID (stable identifier from previous storeKnowledge call)")
-        evidenceChunkId: String,
-    ): CombinedStoreResult {
-        runCatching {
-            graphDBService.upsertEdge(
-                clientId = task.clientId,
-                edge = com.jervis.knowledgebase.internal.graphdb.model.GraphEdge(
-                    edgeType = edgeType.lowercase(),
-                    fromKey = from,
-                    toKey = to,
-                    evidenceChunkIds = listOf(evidenceChunkId)
-                )
-            )
-        }
-        return CombinedStoreResult(success = true, chunkId = evidenceChunkId)
-    }
-
     @Serializable
     data class SearchResult(
         val success: Boolean,
@@ -249,14 +170,6 @@ class KnowledgeStorageTools(
         val key: String,
         val entityType: String,
         val ragChunksCount: Int,
-    )
-
-    @Serializable
-    data class RelatedNodesResult(
-        val success: Boolean,
-        val sourceNode: String,
-        val relatedNodes: List<NodeInfo>,
-        val error: String? = null,
     )
 
     @Serializable

@@ -3,8 +3,8 @@ package com.jervis.koog.tools.coding
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
-import com.jervis.common.client.CodingRequest
 import com.jervis.common.client.ICodingClient
+import com.jervis.common.dto.CodingRequest
 import com.jervis.common.rpc.withRpcRetry
 import mu.KotlinLogging
 import org.springframework.beans.factory.annotation.Qualifier
@@ -47,7 +47,7 @@ class CodingTools(
         - "Fix the null pointer exception in UserService.kt line 42"
         - "Add input validation to the login form"
         - "Update the API endpoint to return 404 instead of 500"
-        """
+        """,
     )
     suspend fun executeAider(
         @LLMDescription("Clear, specific coding instructions") instructions: String,
@@ -57,19 +57,15 @@ class CodingTools(
         logger.info { "Executing Aider coding task: ${instructions.take(100)}..." }
 
         return try {
-            val request = CodingRequest(
-                instructions = instructions,
-                files = files,
-                verifyCommand = verifyCommand,
-                maxIterations = 3,
-            )
+            val request =
+                CodingRequest(
+                    instructions = instructions,
+                    files = files,
+                    verifyCommand = verifyCommand,
+                    maxIterations = 3,
+                )
 
-            val result = withRpcRetry(
-                name = "Aider",
-                reconnect = { reconnectHandler.reconnectAider() }
-            ) {
-                aiderClient.execute(request)
-            }
+            val result = aiderClient.execute(request)
 
             if (result.success) {
                 buildString {
@@ -100,7 +96,11 @@ class CodingTools(
                     }
                 }
             } else {
-                "❌ **Aider Task Failed**: ${result.errorMessage ?: "Unknown error"}\n\n**Log:**\n```\n${result.log.takeLast(1000)}\n```"
+                "❌ **Aider Task Failed**: ${result.errorMessage ?: "Unknown error"}\n\n**Log:**\n```\n${
+                    result.log.takeLast(
+                        1000,
+                    )
+                }\n```"
             }
         } catch (e: Exception) {
             logger.error(e) { "Aider execution failed" }
@@ -133,7 +133,7 @@ class CodingTools(
         - "Refactor the authentication module to use JWT instead of sessions"
         - "Implement a new REST API for user management with full CRUD operations"
         - "Add comprehensive error handling across all service classes"
-        """
+        """,
     )
     suspend fun executeOpenHands(
         @LLMDescription("Detailed coding instructions with context") instructions: String,
@@ -142,19 +142,21 @@ class CodingTools(
         logger.info { "Executing OpenHands coding task: ${instructions.take(100)}..." }
 
         return try {
-            val request = CodingRequest(
-                instructions = instructions,
-                files = emptyList(), // OpenHands explores the project itself
-                verifyCommand = verifyCommand,
-                maxIterations = 10, // OpenHands can iterate more
-            )
+            val request =
+                CodingRequest(
+                    instructions = instructions,
+                    files = emptyList(), // OpenHands explores the project itself
+                    verifyCommand = verifyCommand,
+                    maxIterations = 10, // OpenHands can iterate more
+                )
 
-            val result = withRpcRetry(
-                name = "OpenHands",
-                reconnect = { reconnectHandler.reconnectCodingEngine() }
-            ) {
-                codingEngineClient.execute(request)
-            }
+            val result =
+                withRpcRetry(
+                    name = "OpenHands",
+                    reconnect = { reconnectHandler.reconnectCodingEngine() },
+                ) {
+                    codingEngineClient.execute(request)
+                }
 
             if (result.success) {
                 buildString {
@@ -185,7 +187,11 @@ class CodingTools(
                     }
                 }
             } else {
-                "❌ **OpenHands Task Failed**: ${result.errorMessage ?: "Unknown error"}\n\n**Log:**\n```\n${result.log.takeLast(2000)}\n```"
+                "❌ **OpenHands Task Failed**: ${result.errorMessage ?: "Unknown error"}\n\n**Log:**\n```\n${
+                    result.log.takeLast(
+                        2000,
+                    )
+                }\n```"
             }
         } catch (e: Exception) {
             logger.error(e) { "OpenHands execution failed" }
@@ -222,7 +228,7 @@ class CodingTools(
         - "Production is down - fix the database connection pooling issue immediately"
         - "OpenHands failed twice - implement the payment gateway integration"
         - "Critical security vulnerability - patch the SQL injection in AuthController"
-        """
+        """,
     )
     suspend fun executeJunie(
         @LLMDescription("Detailed coding instructions") instructions: String,
@@ -231,19 +237,15 @@ class CodingTools(
         logger.warn { "Using EXPENSIVE Junie agent for: ${instructions.take(100)}..." }
 
         return try {
-            val request = CodingRequest(
-                instructions = instructions,
-                files = emptyList(), // Junie explores the project itself
-                verifyCommand = verifyCommand,
-                maxIterations = 5,
-            )
+            val request =
+                CodingRequest(
+                    instructions = instructions,
+                    files = emptyList(), // Junie explores the project itself
+                    verifyCommand = verifyCommand,
+                    maxIterations = 5,
+                )
 
-            val result = withRpcRetry(
-                name = "Junie",
-                reconnect = { reconnectHandler.reconnectJunie() }
-            ) {
-                junieClient.execute(request)
-            }
+            val result = junieClient.execute(request)
 
             if (result.success) {
                 buildString {
@@ -274,7 +276,11 @@ class CodingTools(
                     }
                 }
             } else {
-                "❌ **Junie Task Failed**: ${result.errorMessage ?: "Unknown error"}\n\n**Log:**\n```\n${result.log.takeLast(2000)}\n```"
+                "❌ **Junie Task Failed**: ${result.errorMessage ?: "Unknown error"}\n\n**Log:**\n```\n${
+                    result.log.takeLast(
+                        2000,
+                    )
+                }\n```"
             }
         } catch (e: Exception) {
             logger.error(e) { "Junie execution failed" }
@@ -294,18 +300,28 @@ class CodingTools(
         - Small tasks (1-3 files) -> Aider
         - Complex tasks / Refactorings -> OpenHands
         - Critical / Repeated failure -> Junie
-        """
+        """,
     )
     suspend fun execute(
         @LLMDescription("Clear, specific coding instructions") instructions: String,
         @LLMDescription("Optional list of file paths to modify (if known)") files: List<String> = emptyList(),
         @LLMDescription("Optional command to verify the changes") verifyCommand: String? = null,
-        @LLMDescription("Strategy hint: 'FAST' (Aider), 'THOROUGH' (OpenHands), 'PREMIUM' (Junie), 'AUTO' (System decides)") strategy: String = "AUTO"
-    ): String {
-        return when(strategy.uppercase()) {
-            "FAST" -> executeAider(instructions, files, verifyCommand)
-            "THOROUGH" -> executeOpenHands(instructions, verifyCommand)
-            "PREMIUM" -> executeJunie(instructions, verifyCommand)
+        @LLMDescription("Strategy hint: 'FAST' (Aider), 'THOROUGH' (OpenHands), 'PREMIUM' (Junie), 'AUTO' (System decides)") strategy:
+            String = "AUTO",
+    ): String =
+        when (strategy.uppercase()) {
+            "FAST" -> {
+                executeAider(instructions, files, verifyCommand)
+            }
+
+            "THOROUGH" -> {
+                executeOpenHands(instructions, verifyCommand)
+            }
+
+            "PREMIUM" -> {
+                executeJunie(instructions, verifyCommand)
+            }
+
             else -> {
                 // Heuristic: if many files or no files specified, use OpenHands, otherwise Aider
                 if (files.isEmpty() || files.size > 3) {
@@ -315,5 +331,4 @@ class CodingTools(
                 }
             }
         }
-    }
 }

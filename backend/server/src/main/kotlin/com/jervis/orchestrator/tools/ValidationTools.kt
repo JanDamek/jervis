@@ -5,13 +5,13 @@ import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
 import com.jervis.entity.TaskDocument
 import com.jervis.knowledgebase.KnowledgeService
-import com.jervis.knowledgebase.internal.graphdb.GraphDBService
+import com.jervis.knowledgebase.model.RetrievalRequest
 import mu.KotlinLogging
 
 /**
  * Tools for validating information from external sources against existing knowledge.
  *
- * CRITICAL for multi-step reasoning:
+ * CRITICAL for multistep reasoning:
  * - Validate framework versions match
  * - Detect conflicting information
  * - Check if code samples are for correct technology
@@ -20,7 +20,6 @@ import mu.KotlinLogging
 class ValidationTools(
     private val task: TaskDocument,
     private val knowledgeService: KnowledgeService,
-    private val graphDBService: GraphDBService,
 ) : ToolSet {
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -45,7 +44,7 @@ class ValidationTools(
         - recommendation: "ACCEPT", "ADAPT", or "REJECT"
 
         Example: Detect if tutorial is for Koog 0.5 while we use Koog 0.6
-        """
+        """,
     )
     suspend fun validateExternalInfo(
         @LLMDescription("External information text to validate (code snippet, tutorial, config)")
@@ -55,30 +54,35 @@ class ValidationTools(
     ): String {
         logger.info {
             "🔍 VALIDATE_EXTERNAL_INFO | technology=$concernedTechnology | " +
-            "infoLength=${externalInfo.length} | correlationId=${task.correlationId}"
+                "infoLength=${externalInfo.length} | correlationId=${task.correlationId}"
         }
 
         try {
             // 1. Search knowledge base for our technology usage
-            val evidencePack = knowledgeService.retrieve(
-                com.jervis.knowledgebase.RetrievalRequest(
-                    query = "technology stack $concernedTechnology version dependencies",
-                    clientId = task.clientId,
-                    projectId = task.projectId,
-                    maxResults = 5
+            val evidencePack =
+                knowledgeService.retrieve(
+                    RetrievalRequest(
+                        query = "technology stack $concernedTechnology version dependencies",
+                        clientId = task.clientId,
+                        projectId = task.projectId,
+                        maxResults = 5,
+                    ),
                 )
-            )
 
             // 2. Extract version mentions from external info
             val versionRegex = Regex("""(\d+\.\d+(?:\.\d+)?)""")
-            val externalVersions = versionRegex.findAll(externalInfo)
-                .map { it.value }
-                .toList()
+            val externalVersions =
+                versionRegex
+                    .findAll(externalInfo)
+                    .map { it.value }
+                    .toList()
 
             // 3. Extract version from our knowledge (from evidence items)
-            val ourVersions = evidencePack.items.flatMap { item ->
-                versionRegex.findAll(item.content).map { it.value }.toList()
-            }.distinct()
+            val ourVersions =
+                evidencePack.items
+                    .flatMap { item ->
+                        versionRegex.findAll(item.content).map { it.value }.toList()
+                    }.distinct()
 
             // 4. Detect conflicts
             val conflicts = mutableListOf<String>()
@@ -94,12 +98,13 @@ class ValidationTools(
             }
 
             // Check for deprecated API patterns (heuristic)
-            val deprecatedPatterns = listOf(
-                "deprecated" to "Mentions deprecated API",
-                "removed in" to "API removed in newer version",
-                "replaced by" to "API replaced by different approach",
-                "no longer supported" to "Feature no longer supported"
-            )
+            val deprecatedPatterns =
+                listOf(
+                    "deprecated" to "Mentions deprecated API",
+                    "removed in" to "API removed in newer version",
+                    "replaced by" to "API replaced by different approach",
+                    "no longer supported" to "Feature no longer supported",
+                )
 
             deprecatedPatterns.forEach { (pattern, message) ->
                 if (externalInfo.contains(pattern, ignoreCase = true)) {
@@ -108,39 +113,50 @@ class ValidationTools(
             }
 
             // 5. Determine recommendation
-            val recommendation = when {
-                conflicts.isEmpty() -> "ACCEPT"
-                conflicts.size == 1 && conflicts.first().contains("deprecated", ignoreCase = true) -> "ADAPT"
-                conflicts.any { it.contains("Major version mismatch") } -> "REJECT"
-                else -> "ADAPT"
-            }
+            val recommendation =
+                when {
+                    conflicts.isEmpty() -> "ACCEPT"
+                    conflicts.size == 1 && conflicts.first().contains("deprecated", ignoreCase = true) -> "ADAPT"
+                    conflicts.any { it.contains("Major version mismatch") } -> "REJECT"
+                    else -> "ADAPT"
+                }
 
-            val confidence = when {
-                evidencePack.isEmpty() -> 0.3 // Low confidence - no baseline
-                externalVersions.isEmpty() && ourVersions.isEmpty() -> 0.5 // Medium - no version info
-                conflicts.isEmpty() -> 0.9 // High - no conflicts found
-                else -> 0.7 // Medium-high - conflicts but analyzable
-            }
+            val confidence =
+                when {
+                    evidencePack.isEmpty() -> 0.3
+
+                    // Low confidence - no baseline
+                    externalVersions.isEmpty() && ourVersions.isEmpty() -> 0.5
+
+                    // Medium - no version info
+                    conflicts.isEmpty() -> 0.9
+
+                    // High - no conflicts found
+                    else -> 0.7 // Medium-high - conflicts but analyzable
+                }
 
             logger.info {
                 "✅ VALIDATION_COMPLETE | technology=$concernedTechnology | " +
-                "recommendation=$recommendation | confidence=$confidence | conflicts=${conflicts.size}"
+                    "recommendation=$recommendation | confidence=$confidence | conflicts=${conflicts.size}"
             }
 
             return """
-            {
-                "isCompatible": ${conflicts.isEmpty()},
-                "detectedVersion": "${externalVersions.firstOrNull() ?: "unknown"}",
-                "ourVersion": "${ourVersions.firstOrNull() ?: "unknown"}",
-                "conflicts": ${conflicts.joinToString(",") { "\"$it\"" }.let { "[$it]" }},
-                "confidence": $confidence,
-                "recommendation": "$recommendation",
-                "reasoning": "Found ${evidencePack.items.size} knowledge base entries for $concernedTechnology. ${
-                    if (conflicts.isNotEmpty()) "Detected ${conflicts.size} potential issues."
-                    else "No compatibility issues detected."
-                }"
-            }
-            """.trimIndent()
+                                                            {
+                                                                "isCompatible": ${conflicts.isEmpty()},
+                                                                "detectedVersion": "${externalVersions.firstOrNull() ?: "unknown"}",
+                                                                "ourVersion": "${ourVersions.firstOrNull() ?: "unknown"}",
+                                                                "conflicts": ${conflicts.joinToString(",") { "\"$it\"" }.let { "[$it]" }},
+                                                                "confidence": $confidence,
+                                                                "recommendation": "$recommendation",
+                                                                "reasoning": "Found ${evidencePack.items.size} knowledge base entries for $concernedTechnology. ${
+                if (conflicts.isNotEmpty()) {
+                    "Detected ${conflicts.size} potential issues."
+                } else {
+                    "No compatibility issues detected."
+                }
+            }"
+                                                            }
+                """.trimIndent()
         } catch (e: Exception) {
             logger.error(e) { "❌ VALIDATION_FAILED | technology=$concernedTechnology" }
             return """{"error": "Validation failed: ${e.message}"}"""
@@ -163,7 +179,7 @@ class ValidationTools(
         - conflictDescription: What specifically conflicts
         - trustScore: How much to trust new info (0.0-1.0)
         - action: "ADD_TO_KB", "FLAG_FOR_REVIEW", or "IGNORE"
-        """
+        """,
     )
     suspend fun crossCheckKnowledge(
         @LLMDescription("New information to validate against knowledge base")
@@ -173,70 +189,90 @@ class ValidationTools(
     ): String {
         logger.info {
             "🔎 CROSS_CHECK_KNOWLEDGE | topic=$topic | " +
-            "infoLength=${newInformation.length} | correlationId=${task.correlationId}"
+                "infoLength=${newInformation.length} | correlationId=${task.correlationId}"
         }
 
         try {
             // Search for related existing knowledge
-            val evidencePack = knowledgeService.retrieve(
-                com.jervis.knowledgebase.RetrievalRequest(
-                    query = topic,
-                    clientId = task.clientId,
-                    projectId = task.projectId,
-                    maxResults = 10
+            val evidencePack =
+                knowledgeService.retrieve(
+                    RetrievalRequest(
+                        query = topic,
+                        clientId = task.clientId,
+                        projectId = task.projectId,
+                        maxResults = 10,
+                    ),
                 )
-            )
 
             val existingFacts = evidencePack.items.map { it.content }
 
             // Simple heuristic conflict detection
-            val conflictKeywords = listOf(
-                "don't" to "do",
-                "never" to "always",
-                "avoid" to "use",
-                "deprecated" to "recommended"
-            )
+            val conflictKeywords =
+                listOf(
+                    "don't" to "do",
+                    "never" to "always",
+                    "avoid" to "use",
+                    "deprecated" to "recommended",
+                )
 
-            val hasConflict = conflictKeywords.any { (negative, positive) ->
-                (newInformation.contains(negative, ignoreCase = true) &&
-                 existingFacts.any { it.contains(positive, ignoreCase = true) }) ||
-                (newInformation.contains(positive, ignoreCase = true) &&
-                 existingFacts.any { it.contains(negative, ignoreCase = true) })
-            }
+            val hasConflict =
+                conflictKeywords.any { (negative, positive) ->
+                    (
+                        newInformation.contains(negative, ignoreCase = true) &&
+                            existingFacts.any { it.contains(positive, ignoreCase = true) }
+                    ) ||
+                        (
+                            newInformation.contains(positive, ignoreCase = true) &&
+                                existingFacts.any { it.contains(negative, ignoreCase = true) }
+                        )
+                }
 
-            val trustScore = when {
-                existingFacts.isEmpty() -> 0.5 // No baseline
-                hasConflict -> 0.3 // Conflicts with existing knowledge
-                existingFacts.any {
-                    it.contains(newInformation.take(50), ignoreCase = true)
-                } -> 0.95 // Confirms existing knowledge
-                else -> 0.7 // New but not conflicting
-            }
+            val trustScore =
+                when {
+                    existingFacts.isEmpty() -> 0.5
 
-            val action = when {
-                hasConflict -> "FLAG_FOR_REVIEW"
-                trustScore > 0.8 -> "ADD_TO_KB"
-                else -> "ADD_TO_KB" // Add but with lower confidence
-            }
+                    // No baseline
+                    hasConflict -> 0.3
+
+                    // Conflicts with existing knowledge
+                    existingFacts.any {
+                        it.contains(newInformation.take(50), ignoreCase = true)
+                    } -> 0.95
+
+                    // Confirms existing knowledge
+                    else -> 0.7 // New but not conflicting
+                }
+
+            val action =
+                when {
+                    hasConflict -> "FLAG_FOR_REVIEW"
+                    trustScore > 0.8 -> "ADD_TO_KB"
+                    else -> "ADD_TO_KB" // Add but with lower confidence
+                }
 
             logger.info {
                 "✅ CROSS_CHECK_COMPLETE | topic=$topic | hasConflict=$hasConflict | " +
-                "trustScore=$trustScore | action=$action"
+                    "trustScore=$trustScore | action=$action"
             }
 
             return """
-            {
-                "hasConflict": $hasConflict,
-                "existingFacts": ${existingFacts.take(3).joinToString(",") { "\"${it.take(100)}...\"" }.let { "[$it]" }},
-                "conflictDescription": "${if (hasConflict) "New info contradicts existing best practices" else "No conflicts detected"}",
-                "trustScore": $trustScore,
-                "action": "$action",
-                "reasoning": "Found ${existingFacts.size} related knowledge base entries. ${
-                    if (hasConflict) "Detected contradictory advice."
-                    else "Information appears consistent with existing knowledge."
-                }"
-            }
-            """.trimIndent()
+                                                            {
+                                                                "hasConflict": $hasConflict,
+                                                                "existingFacts": ${
+                existingFacts.take(3).joinToString(",") { "\"${it.take(100)}...\"" }.let { "[$it]" }
+            },
+                                                                "conflictDescription": "${if (hasConflict) "New info contradicts existing best practices" else "No conflicts detected"}",
+                                                                "trustScore": $trustScore,
+                                                                "action": "$action",
+                                                                "reasoning": "Found ${existingFacts.size} related knowledge base entries. ${
+                if (hasConflict) {
+                    "Detected contradictory advice."
+                } else {
+                    "Information appears consistent with existing knowledge."
+                }
+            }"
+                                                            }
+                """.trimIndent()
         } catch (e: Exception) {
             logger.error(e) { "❌ CROSS_CHECK_FAILED | topic=$topic" }
             return """{"error": "Cross-check failed: ${e.message}"}"""
@@ -256,7 +292,7 @@ class ValidationTools(
         - trustScore: Validation confidence (0.0-1.0)
 
         Returns: Success confirmation with stored entry ID
-        """
+        """,
     )
     suspend fun storeValidatedKnowledge(
         @LLMDescription("Information content to store in knowledge base")
@@ -270,19 +306,23 @@ class ValidationTools(
     ): String {
         logger.info {
             "💾 STORE_KNOWLEDGE | category=$category | source=$source | " +
-            "trustScore=$trustScore | correlationId=${task.correlationId}"
+                "trustScore=$trustScore | correlationId=${task.correlationId}"
         }
 
         try {
             // Store in knowledge base with metadata
-            val metadata = mapOf(
-                "category" to category,
-                "source" to source,
-                "trustScore" to trustScore.toString(),
-                "addedBy" to "orchestrator",
-                "addedAt" to java.time.Instant.now().toString(),
-                "correlationId" to task.correlationId
-            )
+            val metadata =
+                mapOf(
+                    "category" to category,
+                    "source" to source,
+                    "trustScore" to trustScore.toString(),
+                    "addedBy" to "orchestrator",
+                    "addedAt" to
+                        java.time.Instant
+                            .now()
+                            .toString(),
+                    "correlationId" to task.correlationId,
+                )
 
             // Add to RAG (if available)
             // Note: Actual implementation depends on KnowledgeService API
@@ -293,15 +333,15 @@ class ValidationTools(
             }
 
             return """
-            {
-                "success": true,
-                "entryId": "kb_${System.currentTimeMillis()}",
-                "message": "Information stored in knowledge base under category '$category'",
-                "category": "$category",
-                "source": "$source",
-                "trustScore": $trustScore
-            }
-            """.trimIndent()
+                {
+                    "success": true,
+                    "entryId": "kb_${System.currentTimeMillis()}",
+                    "message": "Information stored in knowledge base under category '$category'",
+                    "category": "$category",
+                    "source": "$source",
+                    "trustScore": $trustScore
+                }
+                """.trimIndent()
         } catch (e: Exception) {
             logger.error(e) { "❌ STORE_KNOWLEDGE_FAILED | category=$category" }
             return """{"success": false, "error": "${e.message}"}"""

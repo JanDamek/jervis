@@ -13,13 +13,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.time.delay
 import kotlinx.coroutines.withTimeout
 import mu.KotlinLogging
-import org.springframework.context.annotation.Profile
 import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Service
 import java.time.Duration
@@ -58,8 +56,7 @@ import java.util.concurrent.atomic.AtomicReference
  * This guarantees vector store schema is ready before any indexing/processing begins.
  */
 @Service
-@Order(10) // Start after schema initialization
-@Profile("!cli")
+@Order(10)
 class BackgroundEngine(
     private val taskService: TaskService,
     private val taskQualificationService: TaskQualificationService,
@@ -187,6 +184,7 @@ class BackgroundEngine(
      * Execution loop - processes qualified tasks (needsQualification = false) during idle GPU time.
      * Waits for GPU to be idle before running strong model tasks.
      */
+
     /**
      * Execution loop - processes tasks during idle GPU time.
      *
@@ -251,7 +249,7 @@ class BackgroundEngine(
                                 clientId = task.clientId.toString(),
                                 projectId = task.projectId?.toString(),
                                 message = message,
-                                metadata = metadata
+                                metadata = metadata,
                             )
                         } catch (e: Exception) {
                             logger.warn(e) { "Failed to emit progress for task ${task.id}" }
@@ -267,7 +265,7 @@ class BackgroundEngine(
                             agentOrchestratorRpc.emitToChatStream(
                                 clientId = task.clientId.toString(),
                                 projectId = task.projectId?.toString(),
-                                response = finalResponse
+                                response = finalResponse,
                             )
                             logger.info { "FINAL_RESPONSE_EMITTED | taskId=${task.id} | messageLength=${finalResponse.message.length}" }
                         } catch (e: Exception) {
@@ -282,8 +280,11 @@ class BackgroundEngine(
                             // Agent checkpoint is preserved in agentCheckpointJson for future continuations
                             // BUT: Change state to DISPATCHED_GPU so task is not picked up again
                             taskService.updateState(task, TaskStateEnum.DISPATCHED_GPU)
-                            logger.info { "FOREGROUND_TASK_COMPLETED | taskId=${task.id} | state=DISPATCHED_GPU | keeping for chat continuation" }
+                            logger.info {
+                                "FOREGROUND_TASK_COMPLETED | taskId=${task.id} | state=DISPATCHED_GPU | keeping for chat continuation"
+                            }
                         }
+
                         com.jervis.entity.ProcessingMode.BACKGROUND -> {
                             // BACKGROUND tasks are deleted after completion (unless USER_TASK)
                             if (task.state != com.jervis.dto.TaskStateEnum.USER_TASK) {
@@ -306,14 +307,15 @@ class BackgroundEngine(
                             com.jervis.dto.ChatResponseDto(
                                 message = "Queue is empty",
                                 type = com.jervis.dto.ChatResponseType.QUEUE_STATUS,
-                                metadata = mapOf(
-                                    "runningProjectId" to "none",
-                                    "runningProjectName" to "None",
-                                    "runningTaskPreview" to "",
-                                    "runningTaskType" to "",
-                                    "queueSize" to "0"
-                                )
-                            )
+                                metadata =
+                                    mapOf(
+                                        "runningProjectId" to "none",
+                                        "runningProjectName" to "None",
+                                        "runningTaskPreview" to "",
+                                        "runningTaskType" to "",
+                                        "queueSize" to "0",
+                                    ),
+                            ),
                         )
                         logger.info { "QUEUE_STATUS_CLEARED | clientId=$clientIdForStatus" }
                     } catch (e: Exception) {
@@ -334,14 +336,15 @@ class BackgroundEngine(
                             com.jervis.dto.ChatResponseDto(
                                 message = "Task cancelled",
                                 type = com.jervis.dto.ChatResponseType.QUEUE_STATUS,
-                                metadata = mapOf(
-                                    "runningProjectId" to "none",
-                                    "runningProjectName" to "None",
-                                    "runningTaskPreview" to "",
-                                    "runningTaskType" to "",
-                                    "queueSize" to "0"
-                                )
-                            )
+                                metadata =
+                                    mapOf(
+                                        "runningProjectId" to "none",
+                                        "runningProjectName" to "None",
+                                        "runningTaskPreview" to "",
+                                        "runningTaskType" to "",
+                                        "queueSize" to "0",
+                                    ),
+                            ),
                         )
                     } catch (e: Exception) {
                         logger.warn(e) { "Failed to emit queue status after cancellation" }
@@ -428,29 +431,33 @@ class BackgroundEngine(
                 val (_, queueSize) = taskService.getQueueStatus(runningTask.clientId, runningTask.projectId)
 
                 // Get project name
-                val projectName = runningTask.projectId?.let { projectId ->
-                    try {
-                        projectService.getProjectById(projectId).name
-                    } catch (e: Exception) {
-                        null
-                    }
-                } ?: "General"
+                val projectName =
+                    runningTask.projectId?.let { projectId ->
+                        try {
+                            projectService.getProjectById(projectId).name
+                        } catch (e: Exception) {
+                            null
+                        }
+                    } ?: "General"
 
                 // Get task text preview (first 50 chars)
-                val taskPreview = runningTask.content.take(50).let {
-                    if (runningTask.content.length > 50) "$it..." else it
-                }
+                val taskPreview =
+                    runningTask.content.take(50).let {
+                        if (runningTask.content.length > 50) "$it..." else it
+                    }
 
-                val response = com.jervis.dto.ChatResponseDto(
-                    message = "Queue status update",
-                    type = com.jervis.dto.ChatResponseType.QUEUE_STATUS,
-                    metadata = mapOf(
-                        "runningProjectId" to (runningTask.projectId?.toString() ?: "none"),
-                        "runningProjectName" to projectName,
-                        "runningTaskPreview" to taskPreview,
-                        "queueSize" to queueSize.toString()
+                val response =
+                    com.jervis.dto.ChatResponseDto(
+                        message = "Queue status update",
+                        type = com.jervis.dto.ChatResponseType.QUEUE_STATUS,
+                        metadata =
+                            mapOf(
+                                "runningProjectId" to (runningTask.projectId?.toString() ?: "none"),
+                                "runningProjectName" to projectName,
+                                "runningTaskPreview" to taskPreview,
+                                "queueSize" to queueSize.toString(),
+                            ),
                     )
-                )
 
                 agentOrchestratorRpc.emitQueueStatus(runningTask.clientId.toString(), response)
             }

@@ -1,22 +1,22 @@
 package com.jervis.service.connection
 
+import com.jervis.common.types.ConnectionId
 import com.jervis.dto.connection.ConnectionStateEnum
 import com.jervis.dto.connection.ConnectionTestResultDto
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.repository.ConnectionRepository
-import com.jervis.types.ConnectionId
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
 import jakarta.mail.Session
-import java.util.Properties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
+import java.util.Properties
 
 /**
  * Service for managing ConnectionDocument entities.
@@ -92,8 +92,8 @@ class ConnectionService(
      * @param connectionDocument connection to test
      * @return ConnectionTestResultDto with success status and message
      */
-    suspend fun testConnection(connectionDocument: ConnectionDocument): ConnectionTestResultDto {
-        return try {
+    suspend fun testConnection(connectionDocument: ConnectionDocument): ConnectionTestResultDto =
+        try {
             when (connectionDocument.connectionType) {
                 ConnectionDocument.ConnectionTypeEnum.HTTP -> {
                     testHttpConnection(connectionDocument)
@@ -134,23 +134,23 @@ class ConnectionService(
                 message = "Connection test failed: ${e.message}",
             )
         }
-    }
 
-    private suspend fun testHttpConnection(connectionDocument: ConnectionDocument): ConnectionTestResultDto {
-        return try {
-            val response = httpClient.get(connectionDocument.baseUrl) {
-                connectionDocument.credentials?.let { creds ->
-                    when (creds) {
-                        is ConnectionDocument.HttpCredentials.Basic -> {
-                            header(HttpHeaders.Authorization, creds.toAuthHeader())
-                        }
+    private suspend fun testHttpConnection(connectionDocument: ConnectionDocument): ConnectionTestResultDto =
+        try {
+            val response =
+                httpClient.get(connectionDocument.baseUrl) {
+                    connectionDocument.credentials?.let { creds ->
+                        when (creds) {
+                            is ConnectionDocument.HttpCredentials.Basic -> {
+                                header(HttpHeaders.Authorization, creds.toAuthHeader())
+                            }
 
-                        is ConnectionDocument.HttpCredentials.Bearer -> {
-                            header(HttpHeaders.Authorization, creds.toAuthHeader())
+                            is ConnectionDocument.HttpCredentials.Bearer -> {
+                                header(HttpHeaders.Authorization, creds.toAuthHeader())
+                            }
                         }
                     }
                 }
-            }
 
             ConnectionTestResultDto(
                 success = response.status.isSuccess(),
@@ -168,10 +168,9 @@ class ConnectionService(
                 message = "Connection test failed: ${e.message}",
             )
         }
-    }
 
-    private suspend fun testImapConnection(connectionDocument: ConnectionDocument): ConnectionTestResultDto {
-        return withContext(Dispatchers.IO) {
+    private suspend fun testImapConnection(connectionDocument: ConnectionDocument): ConnectionTestResultDto =
+        withContext(Dispatchers.IO) {
             try {
                 val properties =
                     Properties().apply {
@@ -210,10 +209,9 @@ class ConnectionService(
                 )
             }
         }
-    }
 
-    private suspend fun testPop3Connection(connectionDocument: ConnectionDocument): ConnectionTestResultDto {
-        return withContext(Dispatchers.IO) {
+    private suspend fun testPop3Connection(connectionDocument: ConnectionDocument): ConnectionTestResultDto =
+        withContext(Dispatchers.IO) {
             try {
                 val properties =
                     Properties().apply {
@@ -252,10 +250,9 @@ class ConnectionService(
                 )
             }
         }
-    }
 
-    private suspend fun testSmtpConnection(connectionDocument: ConnectionDocument): ConnectionTestResultDto {
-        return withContext(Dispatchers.IO) {
+    private suspend fun testSmtpConnection(connectionDocument: ConnectionDocument): ConnectionTestResultDto =
+        withContext(Dispatchers.IO) {
             try {
                 val properties =
                     Properties().apply {
@@ -292,5 +289,4 @@ class ConnectionService(
                 )
             }
         }
-    }
 }

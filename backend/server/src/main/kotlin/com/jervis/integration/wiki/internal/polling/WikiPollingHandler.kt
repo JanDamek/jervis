@@ -2,14 +2,14 @@ package com.jervis.integration.wiki.internal.polling
 
 import com.jervis.common.client.IWikiClient
 import com.jervis.common.dto.wiki.WikiSearchRequest
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ConnectionId
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
 import com.jervis.integration.wiki.internal.entity.WikiPageIndexDocument
 import com.jervis.integration.wiki.internal.repository.WikiPageIndexRepository
 import com.jervis.service.polling.PollingStateService
-import com.jervis.types.ClientId
-import com.jervis.types.ConnectionId
 import org.springframework.stereotype.Component
 import java.time.Instant
 
@@ -32,7 +32,7 @@ class WikiPollingHandler(
 ) : WikiPollingHandlerBase<WikiPageIndexDocument>(
         pollingStateService = pollingStateService,
     ) {
-    override fun canHandle(connectionDocument: ConnectionDocument): Boolean =
+    fun canHandle(connectionDocument: ConnectionDocument): Boolean =
         connectionDocument.connectionType == ConnectionDocument.ConnectionTypeEnum.HTTP &&
             (connectionDocument.baseUrl.contains("atlassian.net") || connectionDocument.baseUrl.contains("atlassian"))
 
