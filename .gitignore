@@ -36,3 +36,6 @@
 .aider*
 /data/
 /.junie/
+
+# Kubernetes secrets (never commit real secrets!)
+k8s/secrets.yaml
