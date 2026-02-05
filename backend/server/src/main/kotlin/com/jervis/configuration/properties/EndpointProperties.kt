@@ -21,6 +21,9 @@ data class EndpointProperties(
     val whisper: Host,
     val atlassian: Host,
     val junie: Host,
+    val github: Host,
+    val gitlab: Host,
+    val knowledgebase: Host,
 ) {
     data class Api(
         val apiKey: String,

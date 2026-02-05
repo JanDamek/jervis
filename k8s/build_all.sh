@@ -37,6 +37,12 @@ echo ""
 "${K8S_DIR}/build_server.sh"
 echo ""
 
+"${K8S_DIR}/build_kb.sh"
+echo ""
+
+# Note: qualification service removed - SimpleQualifierAgent calls KB directly
+
+echo ""
 echo "=== ✓ All services built and deployed successfully ==="
 echo ""
 kubectl get deployments -n jervis
