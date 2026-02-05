@@ -1275,22 +1275,20 @@ private fun detectCapabilities(
                 capabilities.add(ConnectionCapability.REPOSITORY)
                 capabilities.add(ConnectionCapability.BUGTRACKER)
                 capabilities.add(ConnectionCapability.WIKI)
+                capabilities.add(ConnectionCapability.GIT)
             }
             // GitLab
             else if (url.contains("gitlab.com") || url.contains("gitlab")) {
                 capabilities.add(ConnectionCapability.REPOSITORY)
                 capabilities.add(ConnectionCapability.BUGTRACKER)
                 capabilities.add(ConnectionCapability.WIKI)
+                capabilities.add(ConnectionCapability.GIT)
             }
-            // Atlassian (Jira/Confluence)
-            else if (url.contains("atlassian.net") || url.contains("jira") || url.contains("confluence")) {
+            // Atlassian (Jira/Confluence/Bitbucket)
+            else if (url.contains("atlassian.net") || url.contains("jira") || url.contains("confluence") || url.contains("bitbucket")) {
                 capabilities.add(ConnectionCapability.BUGTRACKER)
                 capabilities.add(ConnectionCapability.WIKI)
-            }
-            // Bitbucket
-            else if (url.contains("bitbucket")) {
                 capabilities.add(ConnectionCapability.REPOSITORY)
-                capabilities.add(ConnectionCapability.BUGTRACKER)
             }
         }
 
