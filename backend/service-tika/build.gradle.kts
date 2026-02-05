@@ -77,6 +77,7 @@ application {
 val mergedServicesDir = layout.buildDirectory.dir("merged-services")
 
 tasks.jar {
+    dependsOn(":backend:common-services:jar")
     manifest {
         attributes["Main-Class"] = "com.jervis.ocr.TikaKtorServerKt"
     }

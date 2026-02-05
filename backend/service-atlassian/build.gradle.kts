@@ -84,6 +84,7 @@ application {
 
 tasks.jar {
     dependsOn(":backend:common-services:jar")
+    dependsOn(":backend:common-services:jar")
     manifest {
         attributes["Main-Class"] = "com.jervis.atlassian.AtlassianApplicationKt"
     }
