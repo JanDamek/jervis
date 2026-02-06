@@ -1,10 +1,14 @@
+import logging
+import uuid
+
 from langchain_ollama import OllamaEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from app.core.config import settings
 from app.db.weaviate import get_weaviate_client
 from app.api.models import IngestRequest, RetrievalRequest, EvidenceItem, EvidencePack
 import weaviate.classes.config as wvc
-import uuid
+
+logger = logging.getLogger(__name__)
 
 class RagService:
     def __init__(self):
@@ -88,7 +92,7 @@ class RagService:
             )
             return True
         except Exception as e:
-            print(f"Failed to update chunk graphRefs: {e}")
+            logger.warning("Failed to update chunk graphRefs: %s", e)
             return False
 
     async def get_chunks_by_ids(self, chunk_ids: list[str]) -> list[dict]:

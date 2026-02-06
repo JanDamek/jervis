@@ -11,27 +11,27 @@ class TikaClient:
 
     async def process_file(self, file_bytes: bytes, filename: str) -> str:
         data_base64 = base64.b64encode(file_bytes).decode("utf-8")
-        
-        # Construct payload for Kotlinx Serialization (Sealed Class)
-        # Assuming "type" discriminator with simple class name "FileBytes"
+
         payload = {
             "source": {
-                "type": "FileBytes", 
+                "type": "FileBytes",
                 "fileName": filename,
                 "dataBase64": data_base64
             },
             "includeMetadata": False
         }
-        
+
+        logger.info("Calling Tika file=%s size=%d", filename, len(file_bytes))
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(f"{self.base_url}/api/tika/process", json=payload, timeout=60.0)
                 response.raise_for_status()
                 result = response.json()
-                return result.get("plainText", "")
+                text = result.get("plainText", "")
+                logger.info("Tika result file=%s extracted_chars=%d", filename, len(text))
+                return text
             except Exception as e:
-                logger.error(f"Tika processing failed: {e}")
-                # Fallback: return empty string or raise
+                logger.error("Tika processing failed file=%s: %s", filename, e)
                 raise e
 
     async def process_text(self, text: str) -> str:

@@ -1,3 +1,7 @@
+import json
+import asyncio
+import logging
+
 from app.db.arango import get_arango_db
 from app.api.models import IngestRequest, TraversalRequest, GraphNode, TraversalSpec
 from app.services.normalizer import (
@@ -9,8 +13,8 @@ from app.services.alias_registry import AliasRegistry
 from langchain_ollama import ChatOllama
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from app.core.config import settings
-import json
-import asyncio
+
+logger = logging.getLogger(__name__)
 
 
 class GraphService:
@@ -57,8 +61,11 @@ class GraphService:
         edges_created = 0
         all_entity_keys = []
 
+        logger.info("Graph ingest: %d text chunks to process via LLM model=%s", len(chunks), settings.LLM_MODEL)
+
         # Process chunks sequentially (for LLM rate limiting)
-        for chunk in chunks:
+        for i, chunk in enumerate(chunks, 1):
+            logger.info("Calling LLM for entity extraction chunk %d/%d", i, len(chunks))
             n, e, keys = await self._process_chunk(chunk, request, chunk_ids)
             nodes_created += n
             edges_created += e
@@ -67,6 +74,7 @@ class GraphService:
         # Deduplicate entity keys
         all_entity_keys = list(set(all_entity_keys))
 
+        logger.info("Graph ingest done nodes=%d edges=%d entities=%d", nodes_created, edges_created, len(all_entity_keys))
         return nodes_created, edges_created, all_entity_keys
 
     async def _process_chunk(
@@ -115,7 +123,7 @@ Text: {text}
 
             data = json.loads(content)
         except Exception as e:
-            print(f"LLM extraction failed: {e}")
+            logger.warning("LLM extraction failed: %s", e)
             return 0, 0, []
 
         local_nodes = 0
@@ -349,7 +357,7 @@ Text: {text}
                 ))
             return nodes
         except Exception as e:
-            print(f"Traversal failed: {e}")
+            logger.warning("Traversal failed: %s", e)
             return []
 
     async def get_node(self, key: str, client_id: str = "", project_id: str = None) -> GraphNode | None:
@@ -398,7 +406,7 @@ Text: {text}
                 )
             return None
         except Exception as e:
-            print(f"Get node failed: {e}")
+            logger.warning("Get node failed: %s", e)
             return None
 
     async def search_nodes(
@@ -455,5 +463,5 @@ Text: {text}
                 ))
             return nodes
         except Exception as e:
-            print(f"Search nodes failed: {e}")
+            logger.warning("Search nodes failed: %s", e)
             return []

@@ -9,6 +9,8 @@ This module implements sophisticated hybrid search combining:
 5. Source diversity and deduplication
 """
 
+import logging
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 from app.api.models import (
@@ -18,7 +20,8 @@ from app.api.models import (
 from app.services.rag_service import RagService
 from app.services.graph_service import GraphService
 from app.services.normalizer import normalize_graph_ref, extract_namespace
-import re
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -245,7 +248,7 @@ class HybridRetriever:
                             metadata={"matchedEntity": entity}
                         ))
             except Exception as e:
-                print(f"Entity chunk fetch failed for {entity}: {e}")
+                logger.warning("Entity chunk fetch failed for %s: %s", entity, e)
 
         return chunks
 
@@ -333,7 +336,7 @@ class HybridRetriever:
                         ))
 
             except Exception as e:
-                print(f"Graph expansion failed for {seed_key}: {e}")
+                logger.warning("Graph expansion failed for %s: %s", seed_key, e)
 
         # Fetch content for graph-discovered chunks
         if chunks:

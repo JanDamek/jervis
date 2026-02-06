@@ -27,9 +27,12 @@ Usage:
     await registry.merge("client-abc", "user:john", "user:john.doe")
 """
 
+import logging
 from datetime import datetime
 from typing import Optional
 from app.services.normalizer import normalize_graph_ref
+
+logger = logging.getLogger(__name__)
 
 
 class AliasRegistry:
@@ -98,7 +101,7 @@ class AliasRegistry:
                 })
                 return doc.get("canonicalKey", normalized_alias)
         except Exception as e:
-            print(f"Alias resolution failed: {e}")
+            logger.warning("Alias resolution failed: %s", e)
 
         return normalized_alias
 
@@ -168,7 +171,7 @@ class AliasRegistry:
             return normalized_canonical
 
         except Exception as e:
-            print(f"Alias registration failed: {e}")
+            logger.warning("Alias registration failed: %s", e)
             return normalized_alias
 
     async def set_canonical(
@@ -219,7 +222,7 @@ class AliasRegistry:
                 collection.insert(doc)
             return True
         except Exception as e:
-            print(f"Set canonical failed: {e}")
+            logger.warning("Set canonical failed: %s", e)
             return False
 
     async def merge(
@@ -288,7 +291,7 @@ class AliasRegistry:
             return count
 
         except Exception as e:
-            print(f"Merge failed: {e}")
+            logger.warning("Merge failed: %s", e)
             return 0
 
     async def get_aliases(self, client_id: str, canonical_key: str) -> list[str]:
@@ -317,7 +320,7 @@ class AliasRegistry:
             })
             return list(cursor)
         except Exception as e:
-            print(f"Get aliases failed: {e}")
+            logger.warning("Get aliases failed: %s", e)
             return []
 
     async def get_stats(self, client_id: str) -> dict:
@@ -354,5 +357,5 @@ class AliasRegistry:
             results = list(cursor)
             return results[0] if results else {"totalAliases": 0, "uniqueCanonicals": 0, "topAliases": []}
         except Exception as e:
-            print(f"Get stats failed: {e}")
+            logger.warning("Get stats failed: %s", e)
             return {"totalAliases": 0, "uniqueCanonicals": 0, "topAliases": []}

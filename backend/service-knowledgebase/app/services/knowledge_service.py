@@ -1,3 +1,6 @@
+import asyncio
+import logging
+
 from app.api.models import (
     IngestRequest, IngestResult, RetrievalRequest, EvidencePack,
     TraversalRequest, GraphNode, CrawlRequest,
@@ -9,8 +12,10 @@ from app.services.hybrid_retriever import HybridRetriever
 from app.services.clients.tika_client import TikaClient
 from app.services.clients.joern_client import JoernClient, JoernQueryDto, JoernResultDto
 from app.services.image_service import ImageService
+from app.core.config import settings
 from langchain_community.document_loaders import RecursiveUrlLoader
-import asyncio
+
+logger = logging.getLogger(__name__)
 
 
 class KnowledgeService:
@@ -31,6 +36,9 @@ class KnowledgeService:
         2. Graph Ingest with chunk IDs → get entity keys (nodes link to chunks)
         3. Update RAG chunks with entity keys (chunks link to nodes)
         """
+        logger.info("Ingest started  source=%s kind=%s content_len=%d",
+                     request.sourceUrn, request.kind or "?", len(request.content or ""))
+
         # 1. RAG Ingest - get chunk IDs
         chunks_count, chunk_ids = await self.rag_service.ingest(request)
 
@@ -48,6 +56,9 @@ class KnowledgeService:
             for chunk_id in chunk_ids:
                 await self.rag_service.update_chunk_graph_refs(chunk_id, entity_keys)
 
+        logger.info("Ingest complete source=%s chunks=%d nodes=%d edges=%d entities=%d",
+                     request.sourceUrn, chunks_count, nodes_created, edges_created, len(entity_keys))
+
         return IngestResult(
             status="success",
             chunks_count=chunks_count,
@@ -58,37 +69,34 @@ class KnowledgeService:
         )
 
     async def ingest_file(self, file_bytes: bytes, filename: str, request: IngestRequest) -> IngestResult:
-        # Check if image
         is_image = filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif'))
-        
+
         if is_image:
-            # Step 1: Try OCR first (fast, cheap)
+            logger.info("Processing image file=%s size=%d – calling Tika OCR", filename, len(file_bytes))
             ocr_text = await self.tika_client.process_file(file_bytes, filename)
-            
-            # Step 2: Evaluate OCR result
-            # Use thresholds from config
+
             ocr_threshold = settings.OCR_TEXT_THRESHOLD
             if ocr_text and len(ocr_text.strip()) > ocr_threshold:
-                # OCR extracted sufficient text, use it
                 text = ocr_text
-                request.kind = "document"  # or "image_ocr"
+                request.kind = "document"
+                logger.info("OCR sufficient for %s (%d chars), skipping VLM", filename, len(ocr_text.strip()))
             else:
-                # OCR insufficient, use VL model for complex image
+                logger.info("OCR insufficient for %s (%d chars), calling VLM model=%s",
+                            filename, len((ocr_text or "").strip()), settings.VISION_MODEL)
                 try:
                     text = await self.image_service.describe_image(file_bytes)
                     request.kind = "image"
+                    logger.info("VLM description ready for %s (%d chars)", filename, len(text))
                 except Exception as e:
-                    # VL model failed, fallback to whatever OCR got
+                    logger.warning("VLM failed for %s: %s – falling back to OCR", filename, e)
                     text = ocr_text
                     request.kind = "image_ocr"
         else:
-            # Use Tika to extract text
+            logger.info("Processing document file=%s size=%d – calling Tika", filename, len(file_bytes))
             text = await self.tika_client.process_file(file_bytes, filename)
-        
-        # Update request content
+            logger.info("Tika extracted %d chars from %s", len(text or ""), filename)
+
         request.content = text
-        
-        # Proceed with normal ingest
         return await self.ingest(request)
 
     async def analyze_code(self, query: str, project_zip_base64: str = None) -> JoernResultDto:
@@ -145,18 +153,19 @@ class KnowledgeService:
         
         # Run blocking load in thread pool
         docs = await asyncio.to_thread(loader.load)
-        
+        logger.info("Crawl fetched %d pages from %s (depth=%d)", len(docs), request.url, request.maxDepth)
+
         total_chunks = 0
         total_nodes = 0
         total_edges = 0
-        
+
         for doc in docs:
             # Extract text using Tika
             try:
                 # doc.page_content is raw HTML
                 text = await self.tika_client.process_file(doc.page_content.encode('utf-8'), "page.html")
             except Exception as e:
-                print(f"Failed to extract text with Tika for {doc.metadata.get('source')}: {e}")
+                logger.warning("Tika extraction failed for %s: %s", doc.metadata.get('source'), e)
                 continue
 
             ingest_req = IngestRequest(
@@ -172,7 +181,10 @@ class KnowledgeService:
             total_chunks += res.chunks_count
             total_nodes += res.nodes_created
             total_edges += res.edges_created
-            
+
+        logger.info("Crawl complete url=%s pages=%d chunks=%d nodes=%d edges=%d",
+                     request.url, len(docs), total_chunks, total_nodes, total_edges)
+
         return IngestResult(
             status="success",
             chunks_count=total_chunks,
@@ -196,6 +208,9 @@ class KnowledgeService:
         all_content_parts = []
         attachment_results = []
 
+        logger.info("Full ingest started source=%s type=%s attachments=%d",
+                     request.sourceUrn, request.sourceType or "?", len(attachments))
+
         # Add main content
         if request.content:
             all_content_parts.append(f"=== MAIN CONTENT ===\n{request.content}")
@@ -206,26 +221,24 @@ class KnowledgeService:
                 is_image = filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif'))
 
                 if is_image:
-                    # OCR-first approach: try OCR before using expensive VL model
+                    logger.info("Attachment %s is image – calling Tika OCR", filename)
                     ocr_text = await self.tika_client.process_file(file_bytes, filename)
-                    
-                    # Evaluate OCR result
+
                     ocr_threshold = settings.OCR_TEXT_THRESHOLD
                     if ocr_text and len(ocr_text.strip()) > ocr_threshold:
-                        # OCR extracted sufficient text, use it
                         text = ocr_text
                         content_type = "image_ocr"
                     else:
-                        # OCR insufficient, use VL model for complex image
+                        logger.info("OCR insufficient for %s, calling VLM model=%s", filename, settings.VISION_MODEL)
                         try:
                             text = await self.image_service.describe_image(file_bytes)
                             content_type = "image"
                         except Exception as e:
-                            # VL model failed, fallback to whatever OCR got
+                            logger.warning("VLM failed for attachment %s: %s", filename, e)
                             text = ocr_text
                             content_type = "image_ocr"
                 else:
-                    # Use Tika for documents
+                    logger.info("Attachment %s – calling Tika", filename)
                     text = await self.tika_client.process_file(file_bytes, filename)
                     content_type = "document"
 
@@ -237,6 +250,7 @@ class KnowledgeService:
                     extractedText=text[:500] if text else None  # Truncate for result
                 ))
             except Exception as e:
+                logger.warning("Attachment processing failed file=%s: %s", filename, e)
                 attachment_results.append(AttachmentResult(
                     filename=filename,
                     status="failed",
@@ -275,6 +289,13 @@ class KnowledgeService:
 
         attachments_processed = sum(1 for r in attachment_results if r.status == "success")
         attachments_failed = sum(1 for r in attachment_results if r.status == "failed")
+
+        logger.info("Full ingest complete source=%s chunks=%d nodes=%d edges=%d "
+                     "attachments_ok=%d attachments_fail=%d actionable=%s",
+                     request.sourceUrn, ingest_result.chunks_count,
+                     ingest_result.nodes_created, ingest_result.edges_created,
+                     attachments_processed, attachments_failed,
+                     summary_result["hasActionableContent"])
 
         return FullIngestResult(
             status="success",
@@ -340,8 +361,11 @@ suggestedActions examples: "reply_email", "review_code", "fix_issue", "answer_qu
 Respond ONLY with valid JSON."""
 
         try:
+            logger.info("Calling LLM for summary generation model=qwen2.5:7b source_type=%s", source_type)
             response = await llm.ainvoke(prompt)
             result = json.loads(response.content)
+            logger.info("Summary generated entities=%d actionable=%s",
+                        len(result.get("entities", [])), result.get("hasActionableContent", False))
             return {
                 "summary": result.get("summary", "No summary available"),
                 "entities": result.get("entities", []),
@@ -349,7 +373,7 @@ Respond ONLY with valid JSON."""
                 "suggestedActions": result.get("suggestedActions", [])
             }
         except Exception as e:
-            print(f"Summary generation failed: {e}")
+            logger.warning("Summary generation failed: %s", e)
             return {
                 "summary": f"Content from {source_type}: {subject or 'No subject'}",
                 "entities": [],
