@@ -44,7 +44,7 @@ class GitLabApiClient(
 
     suspend fun getProject(baseUrl: String, token: String, projectId: String): GitLabProject {
         val apiUrl = getApiUrl(baseUrl)
-        val response = httpClient.get("$apiUrl/projects/${projectId.encodeURLPath()}") {
+        val response = httpClient.get("$apiUrl/projects/${projectId.encodeURLParameter()}") {
             header(HttpHeaders.Authorization, "Bearer $token")
         }
         val responseText = response.bodyAsText()
@@ -53,7 +53,7 @@ class GitLabApiClient(
 
     suspend fun listIssues(baseUrl: String, token: String, projectId: String): List<GitLabIssue> {
         val apiUrl = getApiUrl(baseUrl)
-        val response = httpClient.get("$apiUrl/projects/${projectId.encodeURLPath()}/issues") {
+        val response = httpClient.get("$apiUrl/projects/${projectId.encodeURLParameter()}/issues") {
             header(HttpHeaders.Authorization, "Bearer $token")
             parameter("per_page", 100)
         }
@@ -63,7 +63,7 @@ class GitLabApiClient(
 
     suspend fun getIssue(baseUrl: String, token: String, projectId: String, issueIid: Int): GitLabIssue {
         val apiUrl = getApiUrl(baseUrl)
-        val response = httpClient.get("$apiUrl/projects/${projectId.encodeURLPath()}/issues/$issueIid") {
+        val response = httpClient.get("$apiUrl/projects/${projectId.encodeURLParameter()}/issues/$issueIid") {
             header(HttpHeaders.Authorization, "Bearer $token")
         }
         val responseText = response.bodyAsText()
@@ -72,7 +72,7 @@ class GitLabApiClient(
 
     suspend fun listWikis(baseUrl: String, token: String, projectId: String): List<GitLabWikiPage> {
         val apiUrl = getApiUrl(baseUrl)
-        val response = httpClient.get("$apiUrl/projects/${projectId.encodeURLPath()}/wikis") {
+        val response = httpClient.get("$apiUrl/projects/${projectId.encodeURLParameter()}/wikis") {
             header(HttpHeaders.Authorization, "Bearer $token")
         }
         val responseText = response.bodyAsText()
@@ -81,7 +81,7 @@ class GitLabApiClient(
 
     suspend fun getWikiPage(baseUrl: String, token: String, projectId: String, slug: String): GitLabWikiPage {
         val apiUrl = getApiUrl(baseUrl)
-        val response = httpClient.get("$apiUrl/projects/${projectId.encodeURLPath()}/wikis/$slug") {
+        val response = httpClient.get("$apiUrl/projects/${projectId.encodeURLParameter()}/wikis/$slug") {
             header(HttpHeaders.Authorization, "Bearer $token")
         }
         val responseText = response.bodyAsText()
@@ -90,7 +90,7 @@ class GitLabApiClient(
 
     suspend fun getFile(baseUrl: String, token: String, projectId: String, filePath: String, ref: String?): GitLabFile {
         val apiUrl = getApiUrl(baseUrl)
-        val response = httpClient.get("$apiUrl/projects/${projectId.encodeURLPath()}/repository/files/${filePath.encodeURLPath()}") {
+        val response = httpClient.get("$apiUrl/projects/${projectId.encodeURLParameter()}/repository/files/${filePath.encodeURLParameter()}") {
             header(HttpHeaders.Authorization, "Bearer $token")
             parameter("ref", ref ?: "main")
         }

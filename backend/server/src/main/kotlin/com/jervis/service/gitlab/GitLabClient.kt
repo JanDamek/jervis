@@ -65,7 +65,7 @@ class GitLabClient(
             ?: throw IllegalArgumentException("GitLab connection requires Bearer token")
 
         val baseUrl = getBaseUrl(connection)
-        val response = httpClient.get("$baseUrl/projects/${projectId.encodeURLPath()}") {
+        val response = httpClient.get("$baseUrl/projects/${projectId.encodeURLParameter()}") {
             header(HttpHeaders.Authorization, "Bearer $token")
         }
 
@@ -81,7 +81,7 @@ class GitLabClient(
             ?: throw IllegalArgumentException("GitLab connection requires Bearer token")
 
         val baseUrl = getBaseUrl(connection)
-        val response = httpClient.get("$baseUrl/projects/${projectId.encodeURLPath()}/issues") {
+        val response = httpClient.get("$baseUrl/projects/${projectId.encodeURLParameter()}/issues") {
             header(HttpHeaders.Authorization, "Bearer $token")
             parameter("per_page", 100)
         }
